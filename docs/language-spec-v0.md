@@ -6,8 +6,9 @@ This document describes both the language and the file format: the text syntax *
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
 gathered at the end and numbered Q-1, Q-2…
 
-Scope of v0: what milestone M0 needs (types, functions, nodes, errors, loops, `match` and
-`handle`) and the place reserved for what follows (events, panel, timed loops, PLC mode).
+Scope of v0: the language of milestone M0 (types, functions, nodes, errors, loops, `match` and
+`handle`; section 9 lists what M0 implements and what comes later) and the place reserved for what
+follows (events, panel widgets, timed loops, PLC mode).
 
 ## 1. Model
 
@@ -30,24 +31,26 @@ Scope of v0: what milestone M0 needs (types, functions, nodes, errors, loops, `m
 | Extension | `.lcf` for a function, `.lct` for a type (Q-1) |
 | Encoding | UTF-8, LF line endings; the file ends with a single line feed |
 | Header | `labcraft 1`: format version; older versions are migrated, a newer version is refused with a clear message |
-| Section order | header, `use`, documentation comment, `fn`, `panel` (optional), `layout` (optional), `icon` (optional) |
+| Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
 
 Skeleton of a function file:
 
 ```text
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Documentation of the function (read by the IDE, the CLI and agents).
 fn name(inputs) -> (outputs) {
     diagram
 }
 
-panel { … }      // optional: attached panel (section 10)
-layout { … }     // optional: layout on screen (section 11)
-icon 32 { … }    // optional: icon of the compact view (section 11.1)
+panel { … } // optional: attached panel (section 10)
+
+layout { … } // optional: layout on screen (section 11)
+
+icon 32 { … } // optional: icon of the compact view (section 11.1)
 ```
 
 ## 3. Types
@@ -129,7 +132,7 @@ signatures still say what the session designates.
 
 Everything is computed at compile time; at run time units no longer exist (zero cost), only scale
 conversions add a multiplication. A physical error is detected at edit time:
-`power: f64[W] = mul(r, i)` is rejected, because R × I gives V.
+an output `power: f64[W]` bound to `mul(r, i)` is rejected, because R × I gives V.
 
 **Limits in v0:**
 
@@ -172,7 +175,7 @@ whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the r
 /// Reads a voltage and tells whether it is within the limits.
 fn check_voltage(
     resource: string,
-    low: f64[V] = 220 V,        // optional input: default value
+    low: f64[V] = 220 V, // optional input: default value
     high: f64[V] = 240 V,
     err: error = none,
 ) -> (verdict: Verdict, voltage: f64[V], err: error) {
@@ -264,9 +267,9 @@ written. Two lines with no dependency between them can run in parallel.
 - A reference to a value that does not exist, or a cycle (a value can only be fed back through a
   carry, 6.2), is an error at edit time.
 
-**Canonical form.** It is the order in which the IDE and `labcraft fmt` write the lines, and it
-guarantees the text → graph → text round trip, byte for byte (D-08). It applies to each body on its
-own: the function body, each arm, each loop body.
+**Canonical form.** It is how the IDE and `labcraft fmt` write a file: the order of the lines, then
+the layout of the text. It guarantees the text → graph → text round trip, byte for byte (D-08). The
+order applies to each body on its own: the function body, each arm, each loop body.
 
 - **The inputs of a line** are the names it reads, including those read in its sub-bodies and in
   `after:`, that another line of the same body defines. A label (`#close`) counts as a name.
@@ -274,7 +277,7 @@ own: the function body, each arm, each loop body.
   A call statement without a label has the empty name.
 - **Algorithm**: repeatedly emit, among the lines whose inputs are all emitted, the one that comes
   first in this order:
-  1. ordinary lines, by name in Unicode order. A node that produces a function output is an
+  1. ordinary lines, by name in code point order. A node that produces a function output is an
      ordinary line (`voltage = with_unit(raw, [V])` in section 12);
   2. `next` lines (whose first output that is not `_` is `next x`), by carry name;
   3. `collect` lines, in their written order (it is the order of the outputs, R-6);
@@ -282,11 +285,78 @@ own: the function body, each arm, each loop body.
   5. in the function body only, the lines that only bind a function output to a value
      (`err = e3`), in signature order.
 
-  Ties keep the written order. The `yield` of an arm is last, by grammar.
+  Ties keep the written order. The `yield` of an arm is last, by grammar. A body with an error at
+  edit time (a cycle, an unknown name) keeps its written order.
 - **Comments** move with their statement: a comment is attached to the statement that follows it,
-  or to the one that ends on its line.
-- **The examples are canonical**: those of this document and those of `examples/`, which
-  `python tools/lcf-poc/lcf.py fmt --check examples` checks.
+  or to the one that ends on its line. A comment with no statement after it in its body stays at
+  the end of the body, at the level of the body. A comment outside a declaration belongs to the
+  section that follows it, or to the last section at the end of the file; there is none between
+  two `use` lines. An end-of-line comment after an opening `{` (of a function, an arm, a `match`, a
+  `handle`, a loop) stays attached to that line. A comment in an arm whose body is only a `yield`
+  goes on the line before the arm. Inside a split signature, struct, enum or list of loop clauses
+  (below), a comment is attached to the item that follows it, or to the one that ends on its line.
+
+**Layout of the text.** The canonical form also fixes how each line is written, so that a program
+has one text:
+
+- **Sections**: header, `use` lines, documentation comment and declaration, `panel`, `layout`,
+  `icon`, separated by exactly one blank line. An `extern` line and its `fn` line form one
+  declaration, with no blank line between them (4.1). The `use` lines are sorted in code point
+  order, one per line, each library once. No blank line inside a body or a section.
+- **Indentation**: 4 spaces per level, no tab, no space at the end of a line.
+- **Spaces**:
+  - one after a comma, a `;` and the `:` of a parameter, a field, a named argument or a label, none
+    before them (`[f64; 2]`, `after: e2`);
+  - one on each side of `=`, `=>` and `->`, and one before an opening `{`;
+  - one inside braces written on one line (a struct, an enum, a struct construction:
+    `struct { name: string }`); none inside parentheses, square brackets and angle brackets; empty
+    ones are written `()`, `[]`, `{}`; no trailing comma in a form written on one line;
+  - none between the name of a function, a type, a variant, a category, a library, a panel kind, the
+    wildcard `_` or the `fn` of a function type and the `(`, `[` or `<` that follows it
+    (`add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
+    `numeric(format: "0.000")`, `fn(visa.session)`); one after any other keyword, a number, or a
+    word of the `layout` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
+    `at (40, 80)`, `rect (2, 4)`);
+  - none around `..`, `..=`, `.`, after `#`, before `...` (`0..5`, `visa.*`, `#close`,
+    `parts: string...`), after a unary minus (`-1`), nor inside a unit (`m/s^2`, `kg/(m*s)`);
+  - one between a number and its unit (`2 s`, `9.81 m/s^2`).
+- **No alignment**: `=>`, `=` and comments are never aligned with the neighboring lines
+  (`true => yield …`), so that adding a line never changes the others.
+- **Braces of a body** (function, arm, `match`, `handle`, `loop`, `for`): `{` ends its line and `}`
+  stands alone on its line, at the level of the statement; an empty body is `{}`. An arm whose
+  body is only a `yield` is written on one line, `pattern => yield …`; any other arm has a body in
+  braces. A `match` or a `handle` is never written on one line.
+- **Line width: 100 characters**, counted in Unicode code points, indentation included and
+  comments excluded (they are never rewrapped).
+  - **A signature** is written on one line if it fits and has no comment between its parentheses.
+    Otherwise its parameters go one per line, each followed by a comma, and `) -> (outputs) {` goes
+    on its own line (`check_voltage`, section 12). If that line still does not fit, or the outputs
+    contain a comment, the outputs are split the same way: `) -> (` ends the line, one output per
+    line followed by a comma, then `) {`. Outputs are split only when the parameters are; a
+    function without parameters keeps `fn name() -> (` on its first line.
+  - **The fields of a struct and the variants of an enum** follow the same rule: one line if it fits
+    and has no comment between its braces, otherwise one item per line, each followed by a comma.
+  - **A `loop` or a `for`** whose clauses (`in` clauses and carries) do not fit, or contain a
+    comment, ends its line with the keyword (with `parallel` or `continue_on_error` if present),
+    then puts one clause per line, indented one level and separated by commas, then `{` alone at the
+    level of the statement (`station`, section 13).
+  - **Every other statement stays on one line**, whatever its length, struct constructions
+    included; for a `match`, a `handle`, a `loop` or a `for`, that line runs up to its `{`. One node
+    per line (5.1) keeps most lines short; a call with many named arguments can still go past 100
+    characters (`run_step`, section 13).
+- **Literals keep their spelling**: `4.7 kΩ` is not rewritten as `4700 Ω`, nor `1e3` as `1000`.
+  Only the space before the unit is normalized: `2s` becomes `2 s`.
+- **Comments**: `//` and `///` are followed by at least one space, or by nothing when the comment
+  is empty: `fmt` adds a missing space and never removes one, so that indented text in a comment
+  is kept. An end-of-line comment is preceded by one space. Comments are never rewrapped.
+- Line endings and the end of the file: section 2.
+
+**The examples are canonical**: the complete code blocks of this document and the files of
+`examples/` and `docs/rfc/`. `python tools/lcf-poc/lcf.py fmt --check --spec
+docs/language-spec-v0.md examples docs/rfc` checks the layout of all of them, and the order of
+lines in the files.
+Reference listings, such as the types of 3.2 and the signatures of appendix A, are not files and
+keep their alignment.
 
 ### 5.3 Order of side effects
 
@@ -384,7 +454,7 @@ The equivalent of LabVIEW's Case structure.
 
 ```text
 verdict = match in_range {
-    true  => yield Verdict.Pass
+    true => yield Verdict.Pass
     false => yield Verdict.Fail
 }
 ```
@@ -505,11 +575,11 @@ Categories are hierarchical. A library declares its own in its manifest.
 
 ```text
 reading, e7 = handle e6 {
-    ok              => yield (value, none)
-    dmm.overload    => yield (nan V, none)            // handled: cleared
-    io.timeout(err) => yield (nan V, err)             // passed on
-    visa.*(err)     => yield (nan V, err)
-    _(err)          => yield (nan V, err)
+    ok => yield (value, none)
+    dmm.overload => yield (nan V, none) // handled: cleared
+    io.timeout(err) => yield (nan V, err) // passed on
+    visa.*(err) => yield (nan V, err)
+    _(err) => yield (nan V, err)
 }
 ```
 
@@ -544,6 +614,21 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
 - Independent branches can run in parallel; the program must not depend on an order between them.
 - **Deterministic mode** (tests, agents): fixed order, simulated clock, same results at every run
   (D-12).
+  - **Discrete-event clock.** Everything that takes simulated time (waits, and the latency and
+    timeouts of simulated instruments) overlaps between parallel branches, as in real time: two
+    branches that each wait 100 ms advance the clock by 100 ms, not 200 ms. Two calls on the same
+    session do not overlap: the session is locked during a call (8.1).
+  - **Global order.** The runtime repeatedly runs, among the nodes ready at the current simulated
+    time, the first one in this order: the position of a node is the list of the canonical
+    positions (5.2) of the statements that contain it, from the top-level function down through
+    calls, loops and arms, each loop adding its iteration number, compared element by element. A
+    node that becomes ready takes its place
+    in this order; it does not run before a ready node that comes first.
+  - **A value set at time t**, such as a panel element set by a command (Q-20), is seen by the reads
+    made at t.
+  - **Noise.** Each simulated quantity draws its noise from its own random sequence: two branches
+    that use different instruments get the same values whatever their order. Branches that use the
+    same instrument depend on the order of their calls, hence the warning of 8.1.
 
 ### 8.1 Concurrency: values and resources
 
@@ -566,20 +651,85 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
 - **`ref<T>` is not read then written in two nodes**, which would open a race between the two: it
   is modified in an access structure that locks it during its body (syntax for M2, Q-19).
 
-## 9. Minimal library for M0
+### 8.2 Stopping a run
 
-| Library | Content |
+Besides its normal end, a run stops in one of three ways: Stop, planned by the program; Abort,
+requested from outside; a fault, found by the runtime.
+
+- **Stop, planned by the program.** The program reads a panel element, a `switch` when several
+  loops must stop (section 10), and its loops end on it: `stop = ui.get(stop_switch, after: …)`,
+  then `until stop`, or `until or(done, stop)`. After the press, what runs is what the diagram
+  says: the loops end their iteration and exit, the nodes downstream run, `visa.close` closes the
+  sessions, a supply is switched off if the program does it. The run ends normally, with or
+  without an error on `err`. A user presses Stop on the panel; an agent, the CLI or a test sets it
+  by a command (Q-20). This is the only clean stop: a program that must leave its bench in a safe
+  state does it in its diagram, on Stop. A `for` has no `until` (R-6): a loop that must stop on
+  Stop is written as a `loop` with an index carry (`next i = add(i, 1)`, `until or(done, stop)`);
+  leaving a `for` early is Q-22.
+- **Abort, the last resort of the runtime.** Requested from outside: Ctrl-C on the CLI, an MCP
+  command, a time limit on the run. No node starts any more, `always` nodes included: an abort has
+  no exception and runs nothing of the diagram. Waits (`time.wait`) end at once. A native call in
+  progress ends or reaches its own timeout; one that has none, or still runs after a grace period
+  of the runtime, is abandoned and its resource is reported as leaked. The runtime then releases
+  the other resources the run opened (it closes the session handles) without running a node. The run
+  ends with an `aborted` status, the time of the abort and where each loop was, and no output: the
+  function did not finish. The report warns that the instruments are in an unknown state: closing
+  a session does not switch a supply off.
+- **A fault, found by the runtime.** A fault is not an `error` value that a wire carries: it is a
+  failure of the run itself, such as a limit reached (below), a value the runtime cannot represent,
+  or a bug of the runtime. It stops the run like an abort: no node starts any more, the resources
+  are released, no output is reported. The report gives the `fault` status, a code and the node
+  where it happened.
+
+**Limits.** The depth of calls is always limited, to protect the stack. By default, the number of
+iterations per loop and of nodes executed is limited only in deterministic mode: there it protects
+a test or an agent from a program that never ends, including one whose simulated clock no longer
+advances. In real time a loop runs as long as the program says, for days on a bench, unless the run
+is given a limit. Which other run-time failures are faults rather than `error` values (integer
+overflow, `to_i32` of `nan`, integer division by zero) is Q-25.
+
+**Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
+top-level function holds an error (7.5); `aborted`; `fault`.
+
+Stop matches the Boolean that a LabVIEW program reads to end its loops, and Abort the Abort
+Execution button of the LabVIEW toolbar, which runs no cleanup of the diagram either. In
+deterministic mode, a press of Stop (Q-20) and a time limit are dated on the simulated clock, so a
+test replays them exactly.
+
+**Panel elements belong to their call** (10): a loop in a subfunction does not see the
+`stop_switch` of its caller, and must receive what it needs to stop. How a Stop reaches the loops
+of subfunctions is Q-24.
+
+## 9. What M0 implements
+
+This section is the reference for the content of milestone M0; the [roadmap](roadmap.md) points
+to it.
+
+**Language.** Everything this document describes, except:
+
+| Part | Milestone |
 |---|---|
-| `core` | arithmetic, comparisons, logic, `select`, conversions, units, `call` (function references, section 4) |
-| `string` | `concat` (variadic), `join`, `format` (5.4), number parsing |
-| `array` | size, index, subarray, construction |
-| `errors` | `merge`, error creation |
-| `visa` | `open`, `close`, `write`, `read`, `query` (text) |
-| `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`) |
-| `sim` | simulated instruments described in `instruments/` (D-17) |
-| `time` | `now`, `wait`, `elapsed` |
-| `config` | reading a configuration file into a declared type (Q-15) |
-| `ui` | `get`, `set`: panel elements read and written live (section 10) |
+| Generic functions written by the user (3.5); the built-in primitives are generic from M0 | M2 |
+| Running external functions (4.1); they are read and checked from M0 | M8 |
+| The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
+| `ref<T>` and its access structure (8.1, Q-19) | M2 |
+| Manifests (1, D-25): the built-in libraries declare their categories, `always` functions and resources from M0; manifests of user libraries, versions and dependencies | M2 |
+| Structures planned outside v0: events, queues, timed loops, cyclic tasks (6.4) | M2 and later |
+
+**Libraries.**
+
+| Library | Content | Milestone |
+|---|---|---|
+| `core` | arithmetic, comparisons, logic, `select`, conversions, units, `call` (function references, section 4) | M0 |
+| `string` | `concat` (variadic), `join`, `format` (5.4), number parsing | M0 |
+| `array` | size, index, subarray, construction | M0 |
+| `errors` | `merge`, error creation | M0 |
+| `visa` | `open`, `close`, `write`, `read`, `query` (text), on simulated instruments; real instruments in M4 | M0 |
+| `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`) | M0 |
+| `sim` | simulated instruments described in `instruments/` (D-17) | M0 |
+| `time` | `now`, `wait`, `elapsed` | M0 |
+| `ui` | `get`, `set`: panel elements read and written live (section 10) | M0 |
+| `config` | reading a configuration file into a declared type (Q-15) | M2 |
 
 The signatures of the functions this document uses are in appendix A.
 
@@ -608,16 +758,26 @@ if an input or an output of the function has the same name (R-1).
 
 In a loop, these nodes run at each iteration: this is how a Stop button is read or a graph is fed.
 An element that is neither an input nor an output exists only live. `ui.get` has no `err` input:
-when order matters, it goes through `after:` (5.3). A button is latching: a press stays true until
-its first read, so that it is not missed between two iterations.
+when order matters, it goes through `after:` (5.3).
+
+Two kinds of element hold a boolean that the user presses:
+
+- a **`switch`** keeps its value until it is changed again, by the user, a command or `ui.set`. It
+  is the element that stops several loops: each one reads it;
+- a **`button`** is latching: a press stays true until its first read, then returns to false, so
+  that it is not missed between two iterations. Only one read sees a press: two `ui.get` of the
+  same button give a warning at edit time ("only one of these reads sees a press: use a switch").
+
+When a press takes effect (on press, on release, while pressed), which LabVIEW's mechanical actions
+also distinguish, is left to M3, with a real panel.
 
 ```text
 labcraft 1
 
-use visa
 use scpi
 use time
 use ui
+use visa
 
 /// Displays the voltage continuously until the operator presses Stop.
 fn monitor(resource: string, period: f64[s] = 200 ms) -> (count: i32, err: error) {
@@ -667,10 +827,10 @@ polling in a loop.
 
 ```text
 layout {
-    node dmm     at (40, 80) view standard
+    node dmm at (40, 80) view standard
     node reading at (220, 80)
     node verdict at (400, 80)
-    node #close  at (580, 80)
+    node #close at (580, 80)
     wire reading -> verdict via (300, 80) (300, 120)
 }
 ```
@@ -743,8 +903,8 @@ File `check_voltage.lcf`:
 ```text
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Reads the DC voltage of a multimeter and tells whether it is within the limits.
 fn check_voltage(
@@ -761,12 +921,12 @@ fn check_voltage(
     below = le(voltage, high)
     in_range = and(above, below)
     measured = match in_range {
-        true  => yield Verdict.Pass
+        true => yield Verdict.Pass
         false => yield Verdict.Fail
     }
     verdict = handle e2 {
         ok => yield measured
-        _  => yield Verdict.Error
+        _ => yield Verdict.Error
     }
     err = e3
 }
@@ -799,7 +959,7 @@ type State = enum { Init, WaitDut, RunStep, Report, Stop }
 
 type Step = struct {
     name: string,
-    route: string,          // name of a route in the relay table
+    route: string, // name of a route in the relay table
     voltage: f64[V],
     low: f64[V],
     high: f64[V],
@@ -870,15 +1030,14 @@ One step, `run_step.lcf`:
 ```text
 labcraft 1
 
-use relays
 use psu
+use relays
 
 /// Switch, set, wait for the reading to settle, measure, compare to the limits.
 fn run_step(bench: Bench, step: Step, err: error = none) -> (result: StepResult, err: error) {
     _, e1 = relays.apply(bench.relays, step.route, err: err)
     _, e2 = psu.set_voltage(bench.source, step.voltage, err: e1)
-    v, e3 = settle(bench.dmm, target: step.voltage, tolerance: 0.2 V,
-                   period: 50 ms, timeout: 1 s, err: e2)
+    v, e3 = settle(bench.dmm, target: step.voltage, tolerance: 0.2 V, period: 50 ms, timeout: 1 s, err: e2)
     above = ge(v, step.low)
     below = le(v, step.high)
     passed = and(above, below)
@@ -892,19 +1051,22 @@ Measure until settled, `settle.lcf`:
 ```text
 labcraft 1
 
-use visa
-use time
-use errors
 use dmm_driver
+use errors
+use time
+use visa
 
 /// Measures every `period` until within `tolerance` of `target`, or io.timeout error.
-fn settle(dmm: visa.session, target: f64[V], tolerance: f64[V], period: duration,
-          timeout: duration, err: error = none) -> (value: f64[V], err: error) {
+fn settle(
+    dmm: visa.session,
+    target: f64[V],
+    tolerance: f64[V],
+    period: duration,
+    timeout: duration,
+    err: error = none,
+) -> (value: f64[V], err: error) {
     t0 = time.now(after: err)
-    value, err_out = loop
-        carry v = 0 V,
-        carry e = err
-    {
+    value, err_out = loop carry v = 0 V, carry e = err {
         e1 = time.wait(period, err: e)
         t = time.elapsed(t0)
         late = gt(t, timeout)
@@ -1127,6 +1289,7 @@ What the grammar alone does not say:
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. |
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error (6.1). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
+| R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
 
 ## 15. Open questions
 
@@ -1153,6 +1316,10 @@ What the grammar alone does not say:
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
 | Q-20 | Setting a panel element from the CLI or MCP | For example `--set stop_button=true@5s` in deterministic mode, and the equivalent MCP command |
 | Q-21 | Default values not covered by 7.2 | `timestamp` (the origin of the clock?), function references (a reference that fails when called?), `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?) |
+| Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
+| Q-23 | Unicode normalization | Some characters of names and units exist twice: `µ` (U+00B5, micro sign, or U+03BC, Greek mu), `Ω` (U+03A9, Greek omega, or U+2126, ohm sign). Are they the same name or unit? Does `fmt` normalize them (NFC, or a fixed choice), although literals keep their spelling (5.2)? |
+| Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
+| Q-25 | Fault or error at run time | Integer overflow, `to_i32` of `nan` or out of range, integer division by zero: a fault (8.2), an `error` value on `err`, or a default value? |
 
 ## Appendix A. Library signatures (v0)
 

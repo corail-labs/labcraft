@@ -3,8 +3,13 @@ labcraft 1
 /// Shot of a projectile with air drag, in Euler steps of `dt`, until it returns to the ground.
 /// Quadratic drag F = -drag·|v|·v, where `drag` is ½·ρ·Cd·A; `drag = 0 kg/m` gives the
 /// parabola without drag. No instrument: the units check every formula.
-fn projectile(vx0: f64[m/s], vy0: f64[m/s], mass: f64[kg], drag: f64[kg/m] = 0 kg/m,
-              dt: f64[s] = 10 ms) -> (flight_time: f64[s], range: f64[m], apex: f64[m]) {
+fn projectile(
+    vx0: f64[m/s],
+    vy0: f64[m/s],
+    mass: f64[kg],
+    drag: f64[kg/m] = 0 kg/m,
+    dt: f64[s] = 10 ms,
+) -> (flight_time: f64[s], range: f64[m], apex: f64[m]) {
     g = 9.81 m/s^2
     k = div(drag, mass)
     flight_time, range, _, _, _, apex = loop

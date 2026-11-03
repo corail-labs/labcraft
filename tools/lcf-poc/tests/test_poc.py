@@ -515,6 +515,488 @@ layout {
         (line, msg), = check_fn(fn)
         self.assertIn("expected `above = ge(…)`", msg)
 
+    def test_canonical_skipped_on_edit_time_error(self):
+        from lcfpoc.canon import check_fn
+        from lcfpoc.ir import lower_file
+        from lcfpoc.library import parse
+
+        def probs(body):
+            src = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n" + body + "}\n"
+            fn, _, _, _ = lower_file(src, "f.lcf", parse(src))
+            return check_fn(fn)
+        # unknown name: written order kept
+        self.assertEqual(probs("    z = add(q, 1)\n    b = add(a, 1)\n    x = b\n"), [])
+        # cycle: written order kept
+        self.assertEqual(probs("    m = add(a, 1)\n    b = add(a, 1)\n    z = add(y, 1)\n"
+                               "    y = add(z, b)\n    x = add(m, y)\n"), [])
+        # an ordinary body that reads an input is still checked
+        self.assertEqual(len(probs("    m = add(a, 2)\n    b = add(a, 1)\n    x = add(m, b)\n")), 1)
+
+    def test_layout_fn_type_unary_minus_trailing_comment(self):
+        g = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n    x = add(a, -1)\n}\n"
+        self.assertEqual(self.layout(g), [])
+        self.assertBreaks(g.replace("-1", "- 1"), 4, "unary minus")
+        t = ("labcraft 1\n\nfn f(m: fn(visa.session, err: error) -> (x: i32)) -> (x: i32) {\n"
+             "    x = add(1, 2)\n}\n")
+        self.assertEqual(self.layout(t), [])
+        self.assertBreaks(t.replace("fn(visa", "fn (visa"), 3, "no space between `fn`")
+        body = "    x = add(a, -1)\n"
+        self.assertEqual(self.layout(g.replace(body, body + "    // trailing\n")), [])
+        self.assertBreaks(g.replace(body, body + "// trailing\n"), 5, "indentation")
+        self.assertBreaks(g.replace(body, body + "        // trailing\n"), 5, "indentation")
+        m = ("labcraft 1\n\nfn f() -> () {\n    m = match 1 {\n        _ => {\n            q = add(1, 2)\n            yield q\n%s"
+             "        }\n    }\n}\n")
+        self.assertEqual(self.layout(m % "            // trailing\n"), [])
+        self.assertBreaks(m % "        // trailing\n", 8, "indentation")
+
+    def test_fmt_check_empty_file_line(self):
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            for name, text in (("e.lcf", ""), ("h.lcf", "labcraft 1\n")):
+                (Path(d) / name).write_text(text, encoding="utf-8", newline="\n")
+            r = subprocess.run([sys.executable, str(Path(__file__).parent.parent / "lcf.py"), "fmt", "--check", d],
+                               capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1)
+        self.assertNotIn(":-1:", r.stdout)
+        self.assertIn("e.lcf:1:", r.stdout)
+
+    GOOD_LAYOUT = (
+        "labcraft 1\n\nuse a\nuse b\n\n// note\n/// Doc.\nfn f(x: i32 = 1, y: f64[V] = 2 V) -> (z: i32) {\n"
+        "    z = add(x, 1) // end\n    m = match z {\n        true => yield 1\n    }\n}\n")
+
+    def layout(self, src):
+        from lcfpoc.layout import check_layout
+        return check_layout(src)
+
+    def assertBreaks(self, src, line, text):
+        got = [m for n, m in self.layout(src) if n == line]
+        self.assertTrue(any(text in m for m in got), (text, self.layout(src)))
+
+    def test_layout_examples_pass(self):
+        from lcfpoc.layout import check_layout
+        self.assertEqual(check_layout(self.GOOD_LAYOUT), [])
+        for folder in (EX, str(ROOT / "docs" / "rfc")):
+            for f in sorted(Path(folder).glob("*.lc[ft]")):
+                self.assertEqual(check_layout(f.read_bytes().decode("utf-8")), [], f.name)
+
+    def test_layout_file(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("\n", "\r\n"), 1, "CR LF")
+        self.assertBreaks(g[:-1], 13, "does not end with a line feed")
+        self.assertBreaks(g + "\n", 14, "more than one line feed")
+        self.assertBreaks(g.replace("add(x, 1) // end", "add(x, 1) // end "), 9, "end of the line")
+
+    def test_layout_sections(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("use a\n", "use a\n\n"), 5, "no blank line")
+        self.assertBreaks(g.replace("use b\n\n", "use b\n"), 5, "separated by one blank line")
+        self.assertBreaks(g.replace("// note\n", "// note\n\n"), 8, "no blank line")
+        self.assertBreaks(g.replace("use b\n\n", "use b\n\n\n"), 7, "more than one blank")
+        self.assertBreaks(g.replace("    z = add", "\n    z = add"), 9, "inside a body")
+        self.assertBreaks(g.replace("use a\nuse b", "use b\nuse a"), 3, "not sorted")
+        self.assertBreaks(g + "panel {}\n", 14, "one blank line")
+
+    def test_layout_indentation(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("    z = add", "  z = add"), 9, "expected 4")
+        self.assertBreaks(g.replace("    z = add", "\tz = add"), 9, "tab")
+        self.assertBreaks(g.replace("        true =>", "          true =>"), 11, "expected 8")
+        self.assertBreaks(g.replace("// note", "  // note"), 6, "expected 0")
+
+    def test_layout_spaces(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("add(x, 1)", "add(x,1)"), 9, "after a comma")
+        self.assertBreaks(g.replace("add(x, 1)", "add(x , 1)"), 9, "before a comma")
+        self.assertBreaks(g.replace("x: i32", "x : i32"), 8, "before `:`")
+        self.assertBreaks(g.replace("x: i32", "x:i32"), 8, "after `:`")
+        self.assertBreaks(g.replace("z = add", "z= add"), 9, "each side of `=`")
+        self.assertBreaks(g.replace("-> (z", "->(z"), 8, "each side of `->`")
+        self.assertBreaks(g.replace("true =>", "true=>"), 11, "each side of `=>`")
+        self.assertBreaks(g.replace("add(x, 1)", "add( x, 1)"), 9, "after `(`")
+        self.assertBreaks(g.replace("add(x, 1)", "add(x, 1 )"), 9, "before `)`")
+        self.assertBreaks(g.replace("f64[V]", "f64[ V]"), 8, "after `[`")
+        self.assertBreaks(g + "type T = struct {a: i32 }\n", 14, "after `{`")
+        self.assertBreaks(g + "type T = struct { a: i32}\n", 14, "before `}`")
+        self.assertBreaks(g.replace("2 V", "2V"), 8, "number `2` and its unit")
+        self.assertEqual(self.layout(g.replace("add(x, 1)", "add(x, 1e3)").replace("2 V", "4.7 kΩ")), [])
+        self.assertEqual(self.layout(g.replace("add(x, 1)", 'add("a,b  :{(", 1)')), [])
+
+    def test_layout_alignment_and_comments(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("true => yield", "true  => yield"), 11, "alignment")
+        self.assertBreaks(g.replace("1) // end", "1)  // end"), 9, "exactly one space")
+        self.assertBreaks(g.replace("1) // end", "1)// end"), 9, "exactly one space")
+        self.assertBreaks(g.replace("// end", "//end"), 9, "at least one space")
+        self.assertBreaks(g.replace("/// Doc.", "///Doc."), 7, "at least one space")
+        self.assertEqual(self.layout(g.replace("// end", "//")), [])
+
+    def test_layout_width(self):
+        g = self.GOOD_LAYOUT
+        long = "a_long_parameter_name: f64[V] = 220 V"
+        one = f"fn f({long}, {long.replace('a_', 'b_')}, {long.replace('a_', 'c_')}) -> (z: i32) {{\n"
+        self.assertGreater(len(one), 100)
+        src = g.replace(g.splitlines()[7] + "\n", one)
+        self.assertBreaks(src, 8, "over 100")
+        split = (one.replace("fn f(", "fn f(\n    ").replace(", ", ",\n    ").replace(") ->", ",\n) ->"))
+        self.assertEqual(self.layout(g.replace(g.splitlines()[7] + "\n", split)), [])
+        self.assertBreaks(g.replace("fn f(x: i32 = 1, y: f64[V] = 2 V)", "fn f(\n    x: i32 = 1,\n    y: f64[V] = 2 V,\n)"),
+                          8, "fits on one line")
+        merged = split.replace(",\n    b_", ", b_")
+        self.assertBreaks(g.replace(g.splitlines()[7] + "\n", merged), 9, "one parameter per line")
+        self.assertBreaks(g.replace("fn f(x: i32 = 1, y: f64[V] = 2 V)",
+                                    "fn f(\n    x: i32 = 1 // c\n    y: f64[V] = 2 V,\n)"), 9, "ends with a comma")
+        t = "type S = struct { a: i32, b: i32 }\n"
+        self.assertEqual(self.layout("labcraft 1\n\n" + t), [])
+        self.assertBreaks("labcraft 1\n\ntype S = struct {\n    a: i32,\n    b: i32,\n}\n", 3, "fits on one line")
+        self.assertEqual(self.layout("labcraft 1\n\ntype S = struct {\n    a: i32, // c\n    b: i32,\n}\n"), [])
+        self.assertEqual(self.layout("labcraft 1\n\ntype S = enum {\n    A, // c\n    B,\n}\n"), [])
+        loop = ("    r = loop\n        carry a = 0,\n        carry b = 1\n    {\n        until a\n    }\n")
+        body = "labcraft 1\n\nfn f() -> (r: i32) {\n" + loop + "}\n"
+        self.assertBreaks(body, 4, "fit on one line")
+        wide = body.replace("carry a = 0", "carry a" + "x" * 80 + " = 0")
+        self.assertEqual(self.layout(wide), [])
+        one_line = wide.replace("loop\n        carry", "loop carry").replace(",\n        carry", ", carry").replace("\n    {", " {")
+        self.assertBreaks(one_line, 4, "over 100")
+        self.assertBreaks(wide.replace("    {\n        until", "        {\n        until"), 7, "expected 4")
+        self.assertBreaks(wide.replace("carry b = 1", "carry b = 1,"), 6, "no comma after the last")
+        self.assertBreaks(wide.replace("= 0,", "= 0"), 5, "separated by commas")
+        self.assertBreaks(g.replace("add(x, 1)", "add(x,\n        1)"), 9, "stays on one line")
+
+    HDR = "labcraft 1\n\n"
+
+    def body(self, stmts):
+        return self.HDR + "fn f() -> (r: i32) {\n" + stmts + "}\n"
+
+    def test_layout_struct_width_boundary(self):
+        def one(k):
+            return "type S = struct { a: i32, " + "é" * k + ": i32 }"
+
+        def split(k):
+            return "type S = struct {\n    a: i32,\n    " + "é" * k + ": i32,\n}"
+        k = 100 - len(one(0))
+        self.assertEqual(len(one(k)), 100)
+        self.assertGreater(len(one(k).encode("utf-8")), 100)  # counted in code points, not bytes
+        self.assertEqual(self.layout(self.HDR + one(k) + "\n"), [])
+        self.assertBreaks(self.HDR + split(k) + "\n", 3, "fits on one line (100 characters)")
+        self.assertBreaks(self.HDR + one(k + 1) + "\n", 3, "over 100")
+        self.assertEqual(self.layout(self.HDR + split(k + 1) + "\n"), [])
+        # the suggested one-line text is canonical: no comma before the brace
+        got = [m for n, m in self.layout(self.HDR + split(0) + "\n")]
+        self.assertTrue(any("expected `type S = struct { a: i32, : i32 }`" in m for m in got), got)
+        self.assertEqual(self.layout(self.HDR + "type E = enum { A, B }\n"), [])
+        self.assertBreaks(self.HDR + "type E = enum {\n    A,\n    B,\n}\n", 3, "fits on one line")
+
+    def test_layout_trailing_comma_one_line(self):
+        self.assertBreaks(self.HDR + "type S = struct { a: i32, b: i32, }\n", 3, "no comma before `}`")
+        self.assertBreaks(self.HDR + "type E = enum { A, B, }\n", 3, "no comma before `}`")
+        self.assertBreaks(self.body("    r = add(a, b,)\n"), 4, "no comma before `)`")
+        self.assertEqual(self.layout(self.HDR + "type S = struct {}\n"), [])
+        self.assertBreaks(self.HDR + "type S = struct { }\n", 3, "empty braces")
+
+    def test_layout_signature_width_boundary(self):
+        def one(k):
+            return "fn f(a: i32) -> (" + "é" * k + ": i32) {"
+        k = 100 - len(one(0))
+        self.assertEqual(len(one(k)), 100)
+        self.assertEqual(self.layout(self.HDR + one(k) + "\n}\n"), [])
+        sp = "fn f(\n    a: i32,\n) -> (" + "é" * (k + 1) + ": i32) {\n}\n"
+        self.assertBreaks(self.HDR + one(k + 1) + "\n}\n", 3, "over 100")
+        self.assertEqual(self.layout(self.HDR + sp), [])
+        self.assertBreaks(self.HDR + sp.replace("é" * (k + 1), "é" * k), 3, "fits on one line (100 characters)")
+
+    def test_layout_output_split(self):
+        o = "o" * 40
+        good = f"fn f(\n    a: i32,\n) -> (\n    {o}1: i32,\n    {o}2: i32,\n) {{\n}}\n"
+        self.assertEqual(self.layout(self.HDR + good), [])
+        # `) -> (outputs) {` fits: the outputs are not split
+        pa, pb = "a" * 50, "b" * 50
+        short = f"fn f(\n    {pa}: i32,\n    {pb}: i32,\n) -> (\n    x: i32,\n    y: i32,\n) {{\n}}\n"
+        self.assertBreaks(self.HDR + short, 6, "outputs fit on one line")
+        # a comment in the outputs forces the split form
+        com = "fn f(\n    a: i32,\n) -> (\n    x: i32, // c\n    y: i32,\n) {\n}\n"
+        self.assertEqual(self.layout(self.HDR + com), [])
+        # each output ends with a comma
+        self.assertBreaks(self.HDR + good.replace(f"{o}2: i32,", f"{o}2: i32"), 7, "ends with a comma")
+
+    def test_layout_zero_parameter_signature(self):
+        o = "o" * 45
+        long_one = f"fn f() -> ({o}1: i32, {o}2: i32) {{\n}}\n"
+        self.assertGreater(len(long_one.splitlines()[0]), 100)
+        self.assertBreaks(self.HDR + long_one, 3, "over 100")
+        good = f"fn f() -> (\n    {o}1: i32,\n    {o}2: i32,\n) {{\n}}\n"
+        self.assertEqual(self.layout(self.HDR + good), [])
+        wrong = f"fn f(\n) -> (\n    {o}1: i32,\n    {o}2: i32,\n) {{\n}}\n"
+        self.assertBreaks(self.HDR + wrong, 3, "without parameters")
+        self.assertBreaks(self.HDR + "fn f() -> (\n    x: i32,\n) {\n}\n", 3, "fits on one line")
+
+    def test_layout_extern(self):
+        ex = 'extern python(module: "a", function: "b")\nfn spectrum(samples: [f64[V]]) -> (err: error)\n'
+        self.assertEqual(self.layout(self.HDR + "/// Doc.\n" + ex), [])
+        self.assertBreaks(self.HDR + ex.replace(")\nfn", ")\n\nfn"), 5, "directly by its `fn` line")
+        # a bodyless function never reaches the next section
+        self.assertEqual(self.layout(self.HDR + ex + "\npanel {}\n"), [])
+        many = ex.replace("(samples: [f64[V]])", "(\n    samples: [f64[V]],\n)")
+        self.assertBreaks(self.HDR + many, 4, "fits on one line")
+        two = self.HDR + ex + 'extern c(library: "a", symbol: "b")\nfn g() -> (err: error)\n'
+        self.assertBreaks(two, 5, "separated by one blank line")
+
+    def test_layout_struct_construction(self):
+        self.assertEqual(self.layout(self.body("    r = S { x: a, y: b }\n")), [])
+        self.assertBreaks(self.body("    r = S {\n        x: a,\n    }\n"), 4, "struct construction")
+        self.assertBreaks(self.body("    r = lib.S {\n        x: a,\n    }\n"), 4, "struct construction")
+        wide = "    r = S { " + ", ".join(f"field{i}: value{i}" for i in range(14)) + " }\n"
+        self.assertGreater(len(wide), 101)
+        self.assertEqual(self.layout(self.body(wide)), [])  # whatever its length
+        self.assertBreaks(self.body("    r = S {x: a }\n"), 4, "after `{`")
+
+    def test_layout_for_and_loop_clauses(self):
+        fits = "    r = for\n        x in a,\n        carry c = 0\n    {\n        collect x\n    }\n"
+        self.assertBreaks(self.body(fits), 4, "fit on one line")
+        one = "    r = for x in a, carry c = 0 {\n        collect x\n    }\n"
+        self.assertEqual(self.layout(self.body(one)), [])
+        wide = "    r = for\n        x in " + "x" * 70 + ",\n        carry c = 0\n    {\n        collect x\n    }\n"
+        self.assertEqual(self.layout(self.body(wide)), [])
+        wide_one = (wide.replace("for\n        x", "for x").replace(",\n        carry", ", carry")
+                    .replace("\n    {", " {"))
+        self.assertBreaks(self.body(wide_one), 4, "over 100")
+        com = "    r = for\n        x in a, // c\n        carry c = 0\n    {\n        collect x\n    }\n"
+        self.assertEqual(self.layout(self.body(com)), [])
+        self.assertBreaks(self.body(wide.replace(",\n        carry", "\n        carry")), 5, "separated by commas")
+        self.assertBreaks(self.body(wide.replace("carry c = 0", "carry c = 0,")), 6, "no comma after the last")
+        self.assertBreaks(self.body(wide.replace("        carry", "      carry")), 6, "expected 8")
+        self.assertBreaks(self.body(wide.replace("carry c = 0", "carry c = 0, carry d = 1")), 6, "one clause per line")
+        # the comment after the `{` does not force the split form
+        self.assertEqual(self.layout(self.body(one.replace("0 {", "0 { // c"))), [])
+        # loop without clause, and `for parallel`
+        self.assertEqual(self.layout(self.body("    r = loop {\n        until a\n    }\n")), [])
+        self.assertEqual(self.layout(self.body("    r = for parallel x in a {\n        collect x\n    }\n")), [])
+
+    def test_layout_trailing_comments_and_widths(self):
+        # the comment is not counted in the width of the line
+        o = "o" * 44
+        sig = f"fn f(a: i32) -> ({o}: i32) {{ // a comment that makes the line longer than 100 code points\n}}\n"
+        self.assertEqual(self.layout(self.HDR + sig), [])
+        # a comment after the closing brace of a struct does not force the split
+        self.assertEqual(self.layout(self.HDR + "type S = struct { a: i32 } // c\n"), [])
+        self.assertBreaks(self.HDR + "type S = struct {\n    a: i32,\n} // c\n", 3, "fits on one line")
+        self.assertEqual(self.layout(self.HDR + "type S = struct { // c\n    a: i32,\n}\n"), [])
+        self.assertBreaks(self.HDR + "fn f(\n    a: i32,\n) -> (r: i32) { // c\n}\n", 3, "fits on one line")
+
+    def test_layout_comments_spacing(self):
+        g = self.GOOD_LAYOUT
+        self.assertEqual(self.layout(g.replace("// end", "//")), [])
+        self.assertEqual(self.layout(g.replace("/// Doc.", "///")), [])
+        # at least one space: indented text in a comment is kept
+        self.assertEqual(self.layout(g.replace("// end", "//    end")), [])
+        self.assertEqual(self.layout(g.replace("/// Doc.", "///  Doc.")), [])
+        self.assertBreaks(g.replace("// end", "//\tend"), 9, "at least one space")
+
+    def test_layout_use(self):
+        g = self.GOOD_LAYOUT
+        self.assertBreaks(g.replace("use b", "use a"), 4, "appears twice")
+        self.assertEqual(self.layout(g.replace("use a\nuse b", "use Z\nuse a")), [])  # code point order
+        self.assertBreaks(g.replace("use a\nuse b", "use a\nuse Z"), 3, "not sorted")
+        self.assertBreaks(g.replace("use a\nuse b", "use a\n// c\nuse b"), 4, "no comment between `use` lines")
+        self.assertBreaks(g.replace("use b\n\n// note", "use b\n// note"), 5, "separated by one blank line")
+
+    def test_layout_new_spaces(self):
+        b = self.body
+        self.assertEqual(self.layout(b("    r = for i in 0..5 {\n        collect i\n    }\n")), [])
+        self.assertBreaks(b("    r = g(0 ..5)\n"), 4, "`..`")
+        self.assertBreaks(b("    r = g(0.. 5)\n"), 4, "`..`")
+        self.assertBreaks(b("    r = g(1 ..= 5)\n"), 4, "`..`")
+        self.assertBreaks(b("    r = a . b\n"), 4, "around `.`")
+        self.assertBreaks(b("    r = a. b\n"), 4, "around `.`")
+        self.assertBreaks(b("    # close: r = g()\n"), 4, "after `#`")
+        self.assertEqual(self.layout(b("    #close: r = g()\n")), [])
+        self.assertBreaks(self.HDR + "fn f(parts: string ...) -> (r: i32) {\n}\n", 3, "before `...`")
+        self.assertEqual(self.layout(self.HDR + "fn f(parts: string...) -> (r: i32) {\n}\n"), [])
+        self.assertBreaks(self.HDR + "fn f(a: [f64;2]) -> (r: i32) {\n}\n", 3, "after `;`")
+        self.assertBreaks(self.HDR + "fn f(a: [f64 ; 2]) -> (r: i32) {\n}\n", 3, "before `;`")
+        self.assertEqual(self.layout(self.HDR + "fn f(a: [f64; 2]) -> (r: i32) {\n}\n"), [])
+        self.assertBreaks(b("    r = g (a)\n"), 4, "between `g` and `(`")
+        self.assertBreaks(b("    r = g.h [0]\n"), 4, "between `g.h` and `[`")
+        self.assertBreaks(self.HDR + "fn mean <T: Number>(a: T) -> (r: T) {\n}\n", 3, "between `mean` and `<`")
+        self.assertBreaks(self.HDR + "fn mean<T: Number >(a: T) -> (r: T) {\n}\n", 3, "before `>`")
+        self.assertBreaks(self.HDR + "fn mean< T: Number>(a: T) -> (r: T) {\n}\n", 3, "after `<`")
+        self.assertEqual(self.layout(self.HDR + "fn mean<T: Number>(a: T) -> (r: T) {\n}\n"), [])
+        self.assertEqual(self.layout(b("    r = yield (a, b)\n")), [])
+        self.assertBreaks(b("    r = g( )\n"), 4, "after `(`")
+        self.assertBreaks(self.HDR + "fn f(a: f64[ ]) -> (r: i32) {\n}\n", 3, "after `[`")
+        self.assertBreaks(self.HDR + "fn f(a: f64[m / s]) -> (r: i32) {\n}\n", 3, "inside a unit")
+        self.assertBreaks(b("    g = 9.81 m/ s^2\n"), 4, "inside a unit")
+        self.assertEqual(self.layout(b("    g = 9.81 m/s^2\n    k = 1 kg/(m*s)\n")), [])
+        self.assertBreaks(b("    g = 9.81 m/(m * s)\n"), 4, "inside a unit")
+
+    def test_layout_braces_of_a_body(self):
+        b = self.body
+        self.assertEqual(self.layout(self.HDR + "fn f() -> (r: i32) {}\n"), [])
+        self.assertBreaks(self.HDR + "fn f() -> (r: i32) { r = 1 }\n", 3, "function body")
+        self.assertBreaks(b("    r = match N { 1 => yield 1 }\n"), 4, "never written on one line")
+        self.assertBreaks(b("    r = handle e { ok => yield 1 }\n"), 4, "never written on one line")
+        self.assertBreaks(b("    r = match N {\n        1 => { yield 1 }\n    }\n"), 5, "arm")
+        self.assertBreaks(b("    r = match N {\n        1 => {\n            yield 1\n        }\n    }\n"), 5,
+                          "only a `yield`")
+        self.assertEqual(self.layout(b("    r = match N {\n        1 => yield 1\n        _ => {\n"
+                                       "            x = add(N, 1)\n            yield x\n        }\n    }\n")), [])
+        self.assertBreaks(b("    r = for x in a { collect x }\n"), 4, "ends with `{`")
+        self.assertBreaks(b("    r = match N {\n        1 => yield 1 }\n"), 5, "`}` stands alone")
+
+    def test_layout_partial_splits(self):
+        b = self.body
+        self.assertBreaks(self.HDR + "type S = struct { a: i32,\n    b: i32 }\n", 3, "ends its line")
+        self.assertBreaks(self.HDR + "type S = struct { a: i32,\n    b: i32 }\n", 4, "`}` stands alone")
+        self.assertBreaks(b("    r = loop carry n = 0,\n        carry m = 1 {\n        until n\n    }\n"), 4, "`loop`")
+        self.assertBreaks(b("    r = S { x: 1,\n        y: 2 }\n"), 4, "ends its line")
+        self.assertBreaks(b("    r = s {\n        x: 1,\n    }\n"), 4, "struct construction")  # lowercase type
+
+    def test_layout_false_positives(self):
+        b = self.body
+        self.assertEqual(self.layout(b("    r = handle e {\n        visa.* => yield (1, none)\n"
+                                       "        _ => yield (2, none)\n    }\n")), [])
+        self.assertEqual(self.layout(b("    r = loop carry n = N {\n        until n\n    }\n")), [])
+
+    def test_layout_loop_keywords_may_follow(self):
+        b = self.body
+        wide = "x" * 80
+        for kw, head in (("parallel", "for"), ("continue_on_error", "loop")):
+            src = b(f"    r = {head} {kw}\n        carry c{wide} = 0,\n        carry d = 1\n    {{\n"
+                    "        until c\n    }\n")
+            self.assertEqual([m for n, m in self.layout(src) if "expected" in m or "alone" in m], [], kw)
+
+    def test_layout_spaces_before_brackets(self):
+        b = self.body
+        self.assertBreaks(b("    r = yield(a, b)\n"), 4, "`yield` and `(`")
+        self.assertEqual(self.layout(b("    r = add(a, b)\n    s = io.timeout(err)\n")), [])
+        self.assertBreaks(b("    r = io.timeout (err)\n"), 4, "no space between")
+        h = b("    r = handle e {\n        code -1073807339 (err) => yield 1\n        _ => yield 2\n    }\n")
+        self.assertEqual(self.layout(h), [])
+        bad = self.layout(h.replace("339 (err)", "339(err)"))
+        self.assertTrue(any("and `(`" in m for n, m in bad if n == 5), bad)
+        sect = self.HDR + "fn f() -> () {}\n\n"
+        self.assertEqual(self.layout(sect + "layout {\n    node a at (40, 80)\n    wire a -> b via (1, 2) (3, 4)\n}\n"
+                                     "\nicon 32 {\n    rect (2, 4) (30, 28) radius 4\n}\n"), [])
+        self.assertBreaks(sect + "layout {\n    node a at(40, 80)\n}\n", 6, "layout")
+        self.assertBreaks(sect + "layout {\n    wire a -> b via (1, 2)(3, 4)\n}\n", 6, "layout")
+        self.assertBreaks(sect + "icon 32 {\n    rect(2, 4) (30, 28)\n}\n", 6, "layout")
+
+    def test_layout_signature_outputs_only_with_split_parameters(self):
+        src = self.HDR + "fn f(a: i32) -> (\n    x: i32, // c\n) {\n}\n"
+        self.assertBreaks(src, 3, "only when the parameters are")
+
+    def test_layout_is_linear(self):
+        import time
+        src = self.HDR + "fn f() -> (r: i32) {\n" + "    // c\n" * 20000 + "    r = 1\n}\n"
+        t = time.time()
+        self.assertEqual(self.layout(src), [])
+        self.assertLess(time.time() - t, 2.0)
+        t = time.time()
+        self.layout(self.HDR + "fn f() -> (r: i32) {\n" + "    r = loop\n" * 20000 + "}\n")
+        self.assertLess(time.time() - t, 2.0)
+        t = time.time()
+        self.layout("labcraft 1\n\n" + "use a\n// c\n" * 5000)
+        self.assertLess(time.time() - t, 2.0)
+
+    def test_fmt_check_size_limit_and_empty_message(self):
+        import contextlib
+        import io
+        from unittest import mock
+        import lcf
+        from lcfpoc import library
+        from lark.exceptions import LarkError
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "big.lcf").write_text("labcraft 1\n\n" + "// c\n" * 10, encoding="utf-8", newline="\n")
+            buf = io.StringIO()
+            with mock.patch.object(library, "MAX_FILE", 20), contextlib.redirect_stdout(buf):
+                self.assertEqual(lcf.fmt_check([td]), 1)
+            self.assertIn("file too large", buf.getvalue())
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "a.lcf").write_text("labcraft 1\n", encoding="utf-8", newline="\n")
+            buf = io.StringIO()
+            with mock.patch("lcfpoc.ir.lower_file", side_effect=LarkError("")), contextlib.redirect_stdout(buf):
+                self.assertEqual(lcf.fmt_check([td]), 1)
+            self.assertIn("syntax error", buf.getvalue())
+            self.assertNotIn("Traceback", buf.getvalue())
+
+    def test_extern_is_reported_cleanly(self):
+        import contextlib
+        import io
+        import lcf
+        spec = (ROOT / "docs" / "language-spec-v0.md").read_text(encoding="utf-8")
+        block = spec[spec.index("labcraft 1\n\n/// Amplitude spectrum"):]
+        block = block[:block.index("```")]
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "spectrum.lcf").write_text(block, encoding="utf-8", newline="\n")
+            rep = api.check(td)
+            self.assertFalse(rep["ok"])
+            self.assertTrue(any("extern functions are not supported" in d["message"] and d["line"] == 4
+                                for d in rep["diagnostics"]), rep["diagnostics"])
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(lcf.fmt_check([td]), 0)  # its layout is still checked
+            self.assertNotIn("StopIteration", buf.getvalue())
+
+    def test_layout_cr(self):
+        g = self.GOOD_LAYOUT
+        got = self.layout(g.replace("z = add", "z =\r add"))
+        self.assertTrue(any("not followed by a line feed" in m for n, m in got), got)
+        self.assertFalse(any("CR LF" in m or "consecutive" in m for n, m in got), got)
+        self.assertEqual([n for n, m in got if "CR" in m], [9])
+
+    def test_fmt_check_hostile_files_and_paths(self):
+        import contextlib
+        import io
+        import lcf
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            a.mkdir()
+            b.mkdir()
+            good = "labcraft 1\n\ntype Verdict = enum { Pass, Fail }\n"
+            (a / "verdict.lct").write_text(good, encoding="utf-8", newline="\n")
+            (b / "verdict.lct").write_text(good + "\n", encoding="utf-8", newline="\n")
+            (b / "binary.lcf").write_bytes(b"labcraft 1\n\xff\xfe\x00\n")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = lcf.fmt_check([str(a), str(b), str(Path(td) / "missing.lcf")])
+            out = buf.getvalue()
+            self.assertEqual(code, 1)
+            self.assertNotIn("Traceback", out)
+            self.assertIn(f"{a.as_posix()}/verdict.lct", out)
+            self.assertIn(f"{b.as_posix()}/verdict.lct:4:", out)
+            self.assertIn(f"{b.as_posix()}/binary.lcf:2: not UTF-8", out)
+            self.assertIn("missing.lcf: no such file", out)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(lcf.fmt_check([str(a)]), 0)
+
+    def test_layout_spec_blocks(self):
+        import contextlib
+        import io
+        import lcf
+        from lcfpoc.layout import check_spec_layout
+        problems, done, skipped = check_spec_layout(ROOT / "docs" / "language-spec-v0.md")
+        self.assertEqual(problems, [])
+        self.assertGreaterEqual(done, 15)
+        self.assertGreaterEqual(skipped, 2)
+        with tempfile.TemporaryDirectory() as td:
+            md = Path(td) / "s.md"
+            md.write_text(
+                "# T\n\n```text\nlabcraft 1\n\nfn f() -> (r: i32) {\n    r = add(a,b)\n}\n```\n\n"
+                "```text\nr = add(a, b) // c\nq = mul (r, 2)\n```\n\n"
+                "```text\nfn g(x: i32) -> (r: i32)\n```\n\n"
+                "```text\n[f64]   // reference listing: skipped\n```\n\n"
+                "```text\nr = add(a,b) …\n```\n\n"
+                "## Appendix A\n\n```text\nfn g(x:i32)\n```\n", encoding="utf-8", newline="\n")
+            problems, done, skipped = check_spec_layout(md)
+            self.assertEqual([n for n, m in problems], [7, 13], problems)
+            self.assertEqual((done, skipped), (3, 2))
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(lcf.fmt_check([], str(md)), 1)
+            self.assertIn(f"{md.as_posix()}:7:", buf.getvalue())
+
 
 class Hostile(unittest.TestCase):
     """Criterion 3: never a crash, always an error reported with file and line."""

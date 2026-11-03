@@ -39,7 +39,7 @@ concept must stay green:
 pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
 python tools/lcf-poc/lcf.py check examples
-python tools/lcf-poc/lcf.py fmt --check examples
+python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples
 python tools/lcf-poc/lcf.py check docs/rfc
 python tools/lcf-poc/lcf.py fmt --check docs/rfc
 python -m unittest discover tools/lcf-poc/tests

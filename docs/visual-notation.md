@@ -261,7 +261,7 @@ the order of the text.
 
 ## 6. Run-time states
 
-For the debugger (M2) and, later, for images rendered from a run trace
+For the debugger (M5) and, later, for images rendered from a run trace
 (`tools/lcf-poc/lcf.py run … --trace`):
 
 | State | Rendering |

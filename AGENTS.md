@@ -53,8 +53,8 @@ throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner
 - `examples/` is also a library for the Python proof of concept: it must pass
   `python tools/lcf-poc/lcf.py check examples`, and `python -m unittest discover tools/lcf-poc/tests`
   must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`).
-- Examples and spec code blocks must be in canonical form (spec 5.2):
-  `python tools/lcf-poc/lcf.py fmt --check examples`.
+- Examples and spec code blocks must be in canonical form (spec 5.2: order of lines and layout of
+  the text): `python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples`.
 - `docs/rfc/` (programs discussed in the RFCs) follows the same rules: `check docs/rfc` and
   `fmt --check docs/rfc`. Its diagrams in `docs/images/rfc/` are rendered by `tools/lcf-figcraft`;
   rerender them when a file changes.

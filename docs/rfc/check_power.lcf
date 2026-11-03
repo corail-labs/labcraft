@@ -1,7 +1,7 @@
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Reads back the voltage and the current of a power supply and checks the power drawn.
 fn check_power(
@@ -18,12 +18,12 @@ fn check_power(
     power = mul(voltage, current)
     below = lt(power, limit)
     measured = match below {
-        true  => yield Verdict.Pass
+        true => yield Verdict.Pass
         false => yield Verdict.Fail
     }
     verdict = handle e3 {
         ok => yield measured
-        _  => yield Verdict.Error
+        _ => yield Verdict.Error
     }
     err = e4
 }

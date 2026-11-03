@@ -44,8 +44,8 @@ The diagram is drawn from a text file, which is the format itself,
 ```text
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Reads the DC voltage of a multimeter.
 fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: error) {
@@ -100,6 +100,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 |---|---|
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
+| [docs/acceptance-m0.md](docs/acceptance-m0.md) | The five scenarios that say when M0 is done, and what they need written first |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |
 | [docs/inspirations.md](docs/inspirations.md) | Ideas to borrow (languages, compilers, tools, UX) |

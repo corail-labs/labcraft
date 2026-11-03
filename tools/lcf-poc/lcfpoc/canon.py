@@ -58,6 +58,11 @@ def _lines(body, outputs=None, both=frozenset()):
 
 
 def canonical(items):
+    return _canon(items)[0]
+
+
+def _canon(items):
+    """(lines in canonical order, True if the lines contain a cycle)."""
     definer = {}
     for it in items:
         for name in it.defines:
@@ -69,12 +74,73 @@ def canonical(items):
                  if all(definer[d] is it or id(definer[d]) in done for d in it.deps if d in definer)]
         if not ready:  # cycle: reported by `check`; keep the written order
             out += [it for _, it in pending]
-            break
+            return out, True
         i, it = min(ready, key=lambda p: (p[1].key, p[0]))
         out.append(it)
         done.add(id(it))
         pending.remove((i, it))
-    return out
+    return out, False
+
+
+def _strict_refs(op):
+    """Names an operand reads that must be defined in the diagram. A bare unit (`[V]`) and a dotted
+    path (`Verdict.Pass`, `io.timeout`: a variant or a category) are not values of the diagram."""
+    if op.kind == "ref":
+        return {op.parts[0]} if len(op.parts) == 1 else set()
+    if op.kind == "array":
+        return set().union(*[_strict_refs(i) for i in op.items]) if op.items else set()
+    return _refs(op) if op.kind == "label" else set()
+
+
+def _reads(body):
+    """[(names read directly by the body, sub-body, names it binds)] flattened: names read by the
+    body itself (not by its sub-bodies), then its sub-bodies as (body, bound names)."""
+    from .ir import Call, For, Handle, Loop, Match, StructLit
+    own, subs = set(), []
+    for n in body.nodes:
+        r = n.rhs
+        if isinstance(r, Call):
+            for a in r.args:
+                own |= _strict_refs(a.op)
+        elif isinstance(r, StructLit):
+            for _, o in r.fields:
+                own |= _strict_refs(o)
+        elif isinstance(r, (Match, Handle)):
+            own |= _strict_refs(r.sel)
+            subs += [(a.body, set(a.pat.binds)) for a in r.arms]
+        elif isinstance(r, Loop):
+            for c in r.carries:
+                own |= _strict_refs(c.init)
+            subs.append((r.body, {c.name for c in r.carries}))
+        elif isinstance(r, For):
+            for c in r.clauses:
+                own |= _strict_refs(c.lo) | (_strict_refs(c.hi) if c.hi else set())
+            for c in r.carries:
+                own |= _strict_refs(c.init)
+            subs.append((r.body, {c.name for c in r.clauses} | {c.name for c in r.carries}))
+        elif isinstance(r, Operand):
+            own |= _strict_refs(r)
+    for op in body.untils + body.collects + [o for y in body.yields for o in y]:
+        own |= _strict_refs(op)
+    return own, subs
+
+
+def _defined(body):
+    names = set()
+    for n in body.nodes:
+        names |= {t.name for t in n.targets if t.kind in ("name", "next")}
+        if n.label:
+            names.add("#" + n.label)
+    return names
+
+
+def _unknown(body, scope):
+    """True if the body, or a body inside it, reads a name that nobody defines."""
+    scope = scope | _defined(body)
+    own, subs = _reads(body)
+    if own - scope:
+        return True
+    return any(_unknown(b, scope | binds) for b, binds in subs)
 
 
 def _bodies(body):
@@ -88,23 +154,31 @@ def _bodies(body):
             yield r.body
 
 
+def _subs(body):
+    return _reads(body)[1]
+
+
 def check_fn(fn):
     """[(line, message)] for each body of `fn` that is not in canonical order."""
     outs = [o[0] for o in fn.outputs]
     both = frozenset({p.name for p in fn.params} & set(outs))
     problems = []
 
-    def walk(body, top):
+    def walk(body, top, scope):
         items = _lines(body, outs if top else None, both if top else frozenset())
-        want = canonical(items)
+        want, cyclic = _canon(items)
+        scope = scope | _defined(body)
+        # a body with an error at edit time (cycle, unknown name) keeps its written order (5.2)
         for got, exp in zip(items, want):
+            if cyclic or _unknown(body, scope):
+                break
             if got is not exp:
                 order = "; ".join(x.text for x in want)
                 problems.append((got.line, f"not in canonical order (5.2): expected `{exp.text}` here, "
                                            f"found `{got.text}`. Canonical order: {order}"))
                 break
-        for sub in _bodies(body):
-            walk(sub, False)
+        for sub, binds in _subs(body):
+            walk(sub, False, scope | binds)
 
-    walk(fn.body, True)
+    walk(fn.body, True, {p.name for p in fn.params})
     return problems

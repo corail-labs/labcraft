@@ -1,7 +1,7 @@
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Reads the DC voltage of a multimeter and tells whether it is within the limits.
 fn check_voltage(
@@ -18,12 +18,12 @@ fn check_voltage(
     below = le(voltage, high)
     in_range = and(above, below)
     measured = match in_range {
-        true  => yield Verdict.Pass
+        true => yield Verdict.Pass
         false => yield Verdict.Fail
     }
     verdict = handle e2 {
         ok => yield measured
-        _  => yield Verdict.Error
+        _ => yield Verdict.Error
     }
     err = e3
 }

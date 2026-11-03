@@ -12,17 +12,19 @@ project stands, what the milestones are, and how the Rust code will be organized
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
-| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-21 |
+| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-25 |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-12 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
 | Python proof of concept ([tools/lcf-poc](../tools/lcf-poc/README.md)) | Checks and runs the examples against simulated instruments; MCP server driven by an AI agent |
 | Diagram rendering ([tools/lcf-figcraft](../tools/lcf-figcraft/README.md)) | Throwaway: renders a function following the visual notation |
 
-Still to write before M0: the acceptance scenarios in detail (below), the architecture (from the
-layers below), the command catalog v0, and the MCP and CLI specification. Two feasibility
-prototypes, throwaway as well: an egui canvas with 1,000 nodes and 2,000 wires at 60 frames/s, and
-a scheduler with two parallel loops and a clean stop.
+Still to write before M0: the architecture (from the layers below), the command catalog v0, the MCP
+and CLI specification (with the schema of diagnostics and the stable error codes), how the CLI and
+MCP set a panel element (Q-20), and what the acceptance scenarios list under "write first"
+([acceptance-m0.md](acceptance-m0.md)). Two feasibility prototypes, throwaway as well: an egui
+canvas with 1,000 nodes and 2,000 wires at 60 frames/s, and a scheduler with two parallel loops
+and a clean stop.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -32,9 +34,9 @@ M0 is a thin vertical slice that crosses all layers, as in SolidCraft.
 
 | # | Milestone | Content |
 |---|---|---|
-| **M0** | Vertical slice without UI | Text format → check → interpreter → result. Numbers, strings, `loop`, `match`. A multimeter simulated over SCPI. `labcraft-cli run` and `labcraft-cli mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
+| **M0** | Vertical slice without UI | Text format → check → interpreter → result. The v0 language, as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements): what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references, static type checking and live panel elements. A multimeter simulated over SCPI. `labcraft-cli run` and `labcraft-cli mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | M1 | Diagram editor | egui canvas, placement, wiring, selection, undo, quick insertion of a node by name, automatic layout; the agent edits the program while the human watches. Target: 1,000 nodes and 2,000 wires at 60 frames/s |
-| M2 | Full language v1 | All structures, arrays and structs, carries, queues, events, subfunctions, libraries |
+| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, generic functions, manifests of user libraries and their dependencies |
 | M3 | Panel | Controls and indicators, graphs, live update, properties |
 | M4 | Real instruments | TCP/IP, serial, USBTMC, HiSLIP; binding to an installed VISA; SCPI library |
 | M5 | Debugger | Probes, breakpoints, single-stepping, execution animation, value history |
@@ -47,17 +49,23 @@ M0 is a thin vertical slice that crosses all layers, as in SolidCraft.
 
 **Horizon 2, after v1:** real-time embedded Linux targets (D-24), controller mode and fieldbuses
 (D-26), libraries generated from Craft apps and SolidCraft plugins (D-27). The package manifest
-(D-25) is designed from M2, when libraries appear, even if the registry comes later. The WASM build
-(D-22) is maintained from M0, even if the web app ships only in M10.
+(D-25) is designed from M2, when user libraries appear (built-in libraries declare their categories,
+`always` functions and resources from M0), even if the registry comes later. The WASM build (D-22)
+is maintained from M0, even if the web app ships only in M10.
 
-## M0 acceptance scenarios (to detail)
+## M0 acceptance scenarios
+
+Detailed in [acceptance-m0.md](acceptance-m0.md), with what each one needs written first.
 
 1. An agent is given: "Read the voltage of a multimeter over SCPI, check that it is between 220
    and 240 V, return PASS or FAIL." It produces a valid program, runs it against the simulated
    multimeter, and gets PASS. The simulated voltage is changed to 250 V, and it gets FAIL.
 2. A program with a type error is rejected with a message that names the node and the wire at
    fault, readable by an agent.
-3. Two parallel loops communicate through a queue; stopping one cleanly stops the other.
+3. Two independent branches run in parallel: their order does not change the result, an error in one
+   does not stop the other, a Stop switch ends both loops cleanly, and an abort leaves no session
+   open except those it reports as leaked. (Two loops that communicate through a queue: M2, with
+   queues.)
 4. A hostile file (truncated, absurd values, deep nesting) never crashes the tool.
 5. The same program, saved again, produces a byte-for-byte identical file.
 
