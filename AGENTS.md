@@ -63,7 +63,10 @@ throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner
 
 ## Commits
 
-- Commit or push only when the owner asks. Changes in `plan/` are committed separately.
+- Commit or push only when the owner asks. Changes in `plan/` are committed separately, directly.
+- Every change to this repository goes through a pull request, the owner's too: one branch per
+  topic, the `checks` workflow green, squash merge. `main` is protected: never push to it.
+- Open the pull request with `gh pr create`; merge only when the owner asks.
 - Short English subject line; end with the `Co-Authored-By:` trailer, as in the Craft repos.
 - Contributions are licensed MIT OR Apache-2.0, inbound = outbound, no DCO or CLA (D-19).
 
