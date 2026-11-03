@@ -1,0 +1,31 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r tools/lcf-poc/requirements.txt
+      - name: Grammar, examples and spec code blocks
+        run: python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
+      - name: Check the libraries
+        run: |
+          python tools/lcf-poc/lcf.py check examples
+          python tools/lcf-poc/lcf.py check docs/rfc
+      - name: Canonical form
+        run: python tools/lcf-poc/lcf.py fmt --check examples docs/rfc
+      - name: Proof of concept tests
+        run: python -m unittest discover tools/lcf-poc/tests
+      - name: MCP round trip
+        run: python tools/lcf-poc/tests/mcp_smoke.py

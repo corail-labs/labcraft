@@ -12,7 +12,7 @@ The diagrams of the main README come from this tool: `--fn read_voltage --out bu
 Writes `build/<fn>.figcraft`, `.svg`, `.png` (and `.jsonl`, the script that was run). `--theme Dark` switches the
 token mode; `--scale` sets the PNG scale. Requires `figcraft-cli` from FigCraft
 (<https://github.com/storytold/figcraft>): variable `FIGCRAFT_CLI`, otherwise the default Windows path
-`C:\Program Files\ArtCraft\FigCraft\figcraft-cli.exe`. Also `pip install lark mcp` for the PoC.
+`C:\Program Files\ArtCraft\FigCraft\figcraft-cli.exe`. Also `pip install -r tools/lcf-poc/requirements.txt` for the PoC.
 
 ## Architecture
 

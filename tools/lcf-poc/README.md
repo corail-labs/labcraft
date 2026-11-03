@@ -6,8 +6,9 @@ an agent writes a `.lcf`, checks it, runs it against a simulated instrument, rea
 fixes it. It then serves as the **executable reference** for M0 (same examples, same results).
 Throwaway code: no performance work, no Rust.
 
-Requirements: `pip install lark mcp` (Python 3.11 or later). The parser is the one in
-`tools/lcf-view/lcf_view.py` (same grammar as the spec, section 14).
+Requirements: `pip install -r tools/lcf-poc/requirements.txt` (Python 3.11 or later; `mcp` 1.x,
+since 2.x renamed the server API). The parser is the one in `tools/lcf-view/lcf_view.py` (same
+grammar as the spec, section 14).
 
 ## Running
 

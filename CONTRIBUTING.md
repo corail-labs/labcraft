@@ -36,14 +36,17 @@ the RFC programs (`docs/rfc/`) must check and be in canonical form (spec 5.2), a
 concept must stay green:
 
 ```sh
-pip install lark mcp
+pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py fmt --check examples
 python tools/lcf-poc/lcf.py check docs/rfc
 python tools/lcf-poc/lcf.py fmt --check docs/rfc
 python -m unittest discover tools/lcf-poc/tests
+python tools/lcf-poc/tests/mcp_smoke.py
 ```
+
+The `checks` workflow runs the same commands on every pull request.
 
 The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/lcf_view.py`
 (Lark): a change to one goes in the other. `.lcf` and `.lct` files use LF line endings.
@@ -67,8 +70,10 @@ build never breaks, every asset attributed. See [docs/craft-ecosystem.md](docs/c
 
 ## Sending a change
 
-1. Keep a pull request to one topic and say what you checked.
-2. Use a short English subject line for commits.
+1. Every change goes through a pull request, the maintainers' too. Keep it to one topic and say
+   what you checked; the `checks` workflow must be green.
+2. Pull requests are squash-merged: the title becomes the commit on `main`, so give it a short
+   English subject line.
 3. If an AI agent helped, say so (a `Co-Authored-By:` trailer is fine).
 
 ## Licence

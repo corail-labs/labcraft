@@ -74,7 +74,7 @@ the function runs against a simulated power supply.
 The proof of concept is in Python (3.11 or later):
 
 ```sh
-pip install lark mcp
+pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml --arg resource=SIM::DMM0
 ```

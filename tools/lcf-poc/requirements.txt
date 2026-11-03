@@ -1,0 +1,4 @@
+# Proof of concept and the other throwaway tools: pip install -r tools/lcf-poc/requirements.txt
+lark>=1.2,<2
+# mcp 2.x renamed FastMCP to MCPServer; the PoC server uses the 1.x API
+mcp>=1.2,<2
