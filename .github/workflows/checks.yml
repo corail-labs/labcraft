@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install lark mcp
+      - run: pip install -r tools/lcf-poc/requirements.txt
       - name: Grammar, examples and spec code blocks
         run: python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
       - name: Check the libraries

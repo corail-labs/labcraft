@@ -36,7 +36,7 @@ the RFC programs (`docs/rfc/`) must check and be in canonical form (spec 5.2), a
 concept must stay green:
 
 ```sh
-pip install lark mcp
+pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py fmt --check examples

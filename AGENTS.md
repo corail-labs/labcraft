@@ -52,7 +52,7 @@ throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner
   Blocks containing `…` are illustrative fragments and are skipped. Requires `pip install lark`.
 - `examples/` is also a library for the Python proof of concept: it must pass
   `python tools/lcf-poc/lcf.py check examples`, and `python -m unittest discover tools/lcf-poc/tests`
-  must stay green (needs `pip install lark mcp`).
+  must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`).
 - Examples and spec code blocks must be in canonical form (spec 5.2):
   `python tools/lcf-poc/lcf.py fmt --check examples`.
 - `docs/rfc/` (programs discussed in the RFCs) follows the same rules: `check docs/rfc` and
