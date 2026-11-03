@@ -1,0 +1,28 @@
+# Local planning, private: never part of this repository
+/plan/
+
+# Build output
+/target/
+
+# Editor settings
+/.vscode/
+
+# Generated previews (throwaway)
+/lcf-view.html
+/docs/graphes-v0.html
+
+# Python
+__pycache__/
+*.pyc
+
+# lcf-figcraft renders (throwaway)
+/build/
+
+# Crashpad logs left by Chromium-based tools
+debug.log
+
+# Scratch folder for trying the PoC
+/demo/
+
+# Local agent instructions (private)
+/CLAUDE.local.md

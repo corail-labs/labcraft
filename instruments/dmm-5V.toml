@@ -1,0 +1,12 @@
+# Simulated multimeter: stable 5.02 V, slight noise (fixed seed: reproducible results).
+[[instrument]]
+resource = "SIM::DMM0"
+idn = "SIM,DMM,0,1.0"
+
+[instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[instrument.quantity.voltage]
+value = 5.02
+noise = 0.002
+seed = 1

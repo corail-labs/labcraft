@@ -1,0 +1,4 @@
+labcraft 1
+
+/// Result of a check. `Error`: the measurement did not take place (upstream error).
+type Verdict = enum { Pass, Fail, Error }

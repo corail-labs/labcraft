@@ -1,0 +1,11 @@
+labcraft 1
+
+/// Counts up to `limit`. The new value is named, so `done` reads it.
+fn count_to_fixed(limit: i32) -> (n: i32) {
+    n = loop carry c = 0 {
+        c1 = add(c, 1)
+        done = ge(c1, limit)
+        next c = c1
+        until done
+    }
+}

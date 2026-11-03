@@ -1,0 +1,27 @@
+LabCraft
+Copyright (c) 2026 LabCraft contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Trademarks
+
+LabCraft is an independent project. It is not affiliated with, endorsed by or sponsored by
+National Instruments Corporation (NI) or Emerson. LabVIEW, TestStand and NI are trademarks of
+National Instruments Corporation. Other product and company names mentioned in this repository
+are trademarks of their respective owners. They are used only to describe the domain and
+compatibility goals.
+
+LabCraft is designed from public documentation, general domain knowledge and user feedback. It
+contains no NI code, icons, artwork, help text, examples or screenshots, and is not derived from
+any NI file format.
+
+Third-party material
+
+This repository bundles no third-party code or assets. The throwaway Python tools in tools/ use
+these packages, installed separately from PyPI:
+
+- Lark (lark) — MIT License. https://github.com/lark-parser/lark
+- MCP Python SDK (mcp) — MIT License. https://github.com/modelcontextprotocol/python-sdk
+
+The preview page written by tools/lcf-view (lcf-view.html, not part of the repository) loads
+elkjs 0.9.3 from a CDN at view time — Eclipse Public License 2.0. https://github.com/kieler/elkjs

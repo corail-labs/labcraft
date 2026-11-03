@@ -1,0 +1,6 @@
+# LabCraft sources use LF line endings (spec v0, section 2)
+*.lcf text eol=lf
+*.lct text eol=lf
+
+# FigCraft files are zip archives
+*.figcraft binary

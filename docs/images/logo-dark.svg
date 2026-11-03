@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" height="256" viewBox="0 0 256 256">
+  <title>LabCraft</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path id="_1_tile" data-name="1 tile" d="M48 0 L208 0 C234.51 0 256 21.49 256 48 L256 208 C256 234.51 234.51 256 208 256 L48 256 C21.49 256 0 234.51 0 208 L0 48 C0 21.49 21.49 0 48 0 Z" fill="#1f2328"/>
+    <line id="_1_error_wire" data-name="1 error wire" x1="20" y1="168" x2="236" y2="168" fill="none" stroke="#ea7a45" stroke-width="10" stroke-linecap="round" stroke-miterlimit="10"/>
+    <line id="_1_session_wire" data-name="1 session wire" x1="20" y1="120" x2="236" y2="120" fill="none" stroke="#5aa2e6" stroke-width="10" stroke-linecap="round" stroke-miterlimit="10"/>
+    <path id="_1_node" data-name="1 node" d="M88 52 L168 52 C176.837 52 184 59.163 184 68 L184 188 C184 196.837 176.837 204 168 204 L88 204 C79.163 204 72 196.837 72 188 L72 68 C72 59.163 79.163 52 88 52 Z" fill="#2a2f36" stroke="#e6e8eb" stroke-width="8" stroke-miterlimit="10"/>
+    <line id="_1_header" data-name="1 header" x1="72" y1="88" x2="184" y2="88" fill="none" stroke="#e6e8eb" stroke-width="6" stroke-miterlimit="10"/>
+    <rect id="_1_session_in" data-name="1 session in" x="63" y="111" width="18" height="18" fill="#5aa2e6"/>
+    <rect id="_1_session_out" data-name="1 session out" x="175" y="111" width="18" height="18" fill="#5aa2e6"/>
+    <path id="_1_chevrons" data-name="1 chevrons" d="M30 154 L44 168 L30 182 M196 154 L210 168 L196 182 M220 154 L234 168 L220 182" fill="none" stroke="#ea7a45" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <polygon id="_1_error_terminal" data-name="1 error terminal" points="48,154 62,168 48,182" fill="#ea7a45" stroke="#ea7a45" stroke-width="4" stroke-linejoin="round"/>
+  </g>
+</svg>

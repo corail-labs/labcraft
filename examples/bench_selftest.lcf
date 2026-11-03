@@ -1,0 +1,10 @@
+labcraft 1
+
+use scpi
+
+/// Empties the error queues of the multimeter and the source; the first error found is reported.
+fn bench_selftest(bench: Bench, err: error = none) -> (err: error) {
+    _, e1 = scpi.check_errors(bench.dmm, err: err)
+    _, e2 = scpi.check_errors(bench.source, err: e1)
+    err = e2
+}

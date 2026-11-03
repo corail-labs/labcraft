@@ -1,0 +1,29 @@
+labcraft 1
+
+use visa
+use scpi
+
+/// Reads back the voltage and the current of a power supply and checks the power drawn.
+fn check_power(
+    resource: string,
+    limit: f64[W] = 2 W,
+    err: error = none,
+) -> (verdict: Verdict, power: f64[W], err: error) {
+    supply, e1 = visa.open(resource, timeout: 2 s, err: err)
+    raw_v, supply2, e2 = scpi.query_f64(supply, "MEAS:VOLT?", err: e1)
+    raw_i, supply3, e3 = scpi.query_f64(supply2, "MEAS:CURR?", err: e2)
+    current = with_unit(raw_i, [A])
+    #close: e4 = visa.close(supply3, err: e3)
+    voltage = with_unit(raw_v, [V])
+    power = mul(voltage, current)
+    below = lt(power, limit)
+    measured = match below {
+        true  => yield Verdict.Pass
+        false => yield Verdict.Fail
+    }
+    verdict = handle e3 {
+        ok => yield measured
+        _  => yield Verdict.Error
+    }
+    err = e4
+}

@@ -1,0 +1,4 @@
+labcraft 1
+
+/// States of the test station state machine.
+type State = enum { Init, WaitDut, RunStep, Report, Stop }

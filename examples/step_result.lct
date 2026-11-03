@@ -1,0 +1,3 @@
+labcraft 1
+
+type StepResult = struct { name: string, value: f64[V], passed: bool }

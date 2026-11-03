@@ -1,0 +1,9 @@
+labcraft 1
+
+use visa
+use relays
+use psu
+
+// `relays.bank` and `psu.session` are opaque types that their libraries declare as aliases of
+// `visa.session` (`type bank = visa.session` in `relays`): `scpi` functions accept them.
+type Bench = struct { dmm: visa.session, relays: relays.bank, source: psu.session }

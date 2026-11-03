@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Counts up to `limit`. Returns limit + 1: `done` reads the current value of the carry.
+fn count_to(limit: i32) -> (n: i32) {
+    n = loop carry c = 0 {
+        done = ge(c, limit)
+        next c = add(c, 1)
+        until done
+    }
+}

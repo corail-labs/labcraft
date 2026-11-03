@@ -1,0 +1,22 @@
+labcraft 1
+
+use visa
+use scpi
+use errors
+
+/// Reads the input and the output voltage of a device on two multimeters.
+fn read_in_out(
+    input: string,
+    output: string,
+    err: error = none,
+) -> (v_in: f64[V], v_out: f64[V], err: error) {
+    dmm_in, e1 = visa.open(input, timeout: 2 s, err: err)
+    dmm_out, e4 = visa.open(output, timeout: 2 s, err: err)
+    raw_in, dmm_in2, e2 = scpi.query_f64(dmm_in, "MEAS:VOLT:DC?", err: e1)
+    #close_in: e3 = visa.close(dmm_in2, err: e2)
+    raw_out, dmm_out2, e5 = scpi.query_f64(dmm_out, "MEAS:VOLT:DC?", err: e4)
+    #close_out: e6 = visa.close(dmm_out2, err: e5)
+    err = errors.merge(e3, e6)
+    v_in = with_unit(raw_in, [V])
+    v_out = with_unit(raw_out, [V])
+}

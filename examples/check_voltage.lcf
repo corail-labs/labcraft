@@ -1,0 +1,36 @@
+labcraft 1
+
+use visa
+use scpi
+
+/// Reads the DC voltage of a multimeter and tells whether it is within the limits.
+fn check_voltage(
+    resource: string,
+    low: f64[V] = 220 V,
+    high: f64[V] = 240 V,
+    err: error = none,
+) -> (verdict: Verdict, voltage: f64[V], err: error) {
+    dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
+    raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
+    #close: e3 = visa.close(dmm2, err: e2)
+    voltage = with_unit(raw, [V])
+    above = ge(voltage, low)
+    below = le(voltage, high)
+    in_range = and(above, below)
+    measured = match in_range {
+        true  => yield Verdict.Pass
+        false => yield Verdict.Fail
+    }
+    verdict = handle e2 {
+        ok => yield measured
+        _  => yield Verdict.Error
+    }
+    err = e3
+}
+
+icon 32 {
+    rect (2, 4) (30, 28) radius 4
+    path "M7 21 A9 9 0 0 1 25 21"
+    line (16, 21) (21, 13)
+    text "V" at (16, 27) size 6
+}

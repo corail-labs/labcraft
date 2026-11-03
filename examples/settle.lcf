@@ -1,0 +1,29 @@
+labcraft 1
+
+use visa
+use time
+use errors
+use dmm_driver
+
+/// Measures every `period` until within `tolerance` of `target`, or io.timeout error.
+fn settle(dmm: visa.session, target: f64[V], tolerance: f64[V], period: duration,
+          timeout: duration, err: error = none) -> (value: f64[V], err: error) {
+    t0 = time.now(after: err)
+    value, err_out = loop
+        carry v = 0 V,
+        carry e = err
+    {
+        e1 = time.wait(period, err: e)
+        t = time.elapsed(t0)
+        late = gt(t, timeout)
+        x, _, e2 = dmm_driver.read_dc_volts(dmm, err: e1)
+        gap = sub(x, target)
+        dist = abs(gap)
+        stable = le(dist, tolerance)
+        done = or(stable, late)
+        next e = errors.raise_if(late, io.timeout, "reading not settled", err: e2)
+        next v = x
+        until done
+    }
+    err = err_out
+}

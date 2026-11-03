@@ -1,0 +1,12 @@
+# The measurement succeeds but the instrument reports an SCPI error in its queue (SYST:ERR?).
+[[instrument]]
+resource = "SIM::DMM0"
+
+[instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[instrument.quantity.voltage]
+value = 230.0
+
+[instrument.faults]
+error_queue = [[-221, "Settings conflict"], [-113, "Undefined header"]]

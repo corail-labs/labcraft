@@ -1,0 +1,19 @@
+# Simulated power supply feeding a product: 5.02 V, 0.30 A read back, about 1.5 W.
+# Slight noise with a fixed seed: reproducible results.
+[[instrument]]
+resource = "SIM::PSU0"
+idn = "SIM,PSU,0,1.0"
+
+[instrument.measure]
+"MEAS:VOLT?" = "voltage"
+"MEAS:CURR?" = "current"
+
+[instrument.quantity.voltage]
+value = 5.02
+noise = 0.002
+seed = 1
+
+[instrument.quantity.current]
+value = 0.30
+noise = 0.001
+seed = 2
