@@ -3,9 +3,9 @@
 *Last updated: 2026-11-03. Status: draft, nothing is frozen.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
-document defines its graphical view. It serves the M1 editor and, before it, the project images
-generated from real `.lcf` files. Open questions are numbered N-1, N-2… at the end of the
-document.
+document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
+the project images generated from real `.lcf` files. Open questions are numbered N-1, N-2… at the
+end of the document.
 
 [![Board of the visual notation v0: wire families and terminals, nodes and primitives, structures, run-time states, zoom levels and theme tokens](images/visual-notation-board.png)](images/visual-notation-board.png)
 
@@ -261,7 +261,8 @@ the order of the text.
 
 ## 6. Run-time states
 
-For the debugger (M5) and, later, for images rendered from a run trace
+For the values of a run on the wires (M0v, once M0b runs programs), the debugger (M5) and images
+rendered from a run trace
 (`tools/lcf-poc/lcf.py run … --trace`):
 
 | State | Rendering |
@@ -274,7 +275,8 @@ For the debugger (M5) and, later, for images rendered from a run trace
 
 ## 7. Zoom and density
 
-M1 target: 1,000 nodes and 2,000 wires at 60 frames/s (`roadmap.md`). Rendering depends on the
+M0v target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s; M1 keeps it while
+editing (`roadmap.md`). Rendering depends on the
 zoom:
 
 | Zoom | Shown |

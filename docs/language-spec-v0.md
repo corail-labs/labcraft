@@ -200,12 +200,14 @@ fn check_voltage(
   of LabVIEW's *Call By Reference*, and what makes it possible to write `settle` or `retry` once
   for all measurements.
 
-### 4.1 External functions (reserved, M8)
+### 4.1 External functions
 
 A function can be declared without a body and implemented outside LabCraft (D-14). The syntax is
-fixed from v0 so that libraries can plan for it; execution comes in M8. In v0, an external function
-is read and checked as a signature; calling it returns an `error` of category
-`extern.unavailable` on its `err` output.
+fixed from v0 so that libraries can plan for it. The `rust` interface runs from M0: it is how the
+libraries shipped with LabCraft implement their native functions (`visa`, roadmap, `libs/`). The
+other interfaces run from M8; until then, an external function is read and checked as a
+signature, and calling it returns an `error` of category `extern.unavailable` on its `err`
+output.
 
 ```text
 labcraft 1
@@ -220,11 +222,13 @@ fn spectrum(samples: [f64[V]], rate: f64[Hz]) -> (magnitude: [f64[V]], err: erro
 | `c` | `library`, `symbol` | C ABI, dynamic loading; in-process, or isolated in a separate process |
 | `dotnet` | `assembly`, `type`, `method` | Hosted CLR (D-14) |
 | `python` | `module`, `function` | The user's Python interpreter, in a separate process: LabCraft does not embed Python |
+| `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft. For example `extern rust(crate: "labcraft-visa", function: "close")` before `fn close(…)` in `libs/visa` |
 
 - **The declaration is the contract.** Types are converted and checked at the boundary, at run
   time. Units cannot be: the declaration asserts them, like `with_unit`.
 - **An `err` output is required** (R-13): missing library, exception, timeout.
-- An external function does not exist in the browser (D-22): error at edit time for the web target.
+- An external function does not exist in the browser (D-22): error at edit time for the web
+  target, except a `rust` function whose crate is built for WebAssembly (the simulator of `visa`).
 
 ## 5. Diagram
 
@@ -242,7 +246,7 @@ dmm, e1 = visa.open(resource)
   wire splits. Semantics are by value; copies are made only when necessary (D-11).
 - **No nesting in v0**: `add(mul(a, b), c)` is rejected; each node is a line with named outputs.
   This is longer but unambiguous, easy to reread, and every node has a name (Q-5).
-- Constants are written directly as arguments (`scpi.query(dmm, "MEAS:VOLT:DC?")`).
+- Constants are written directly as arguments (`visa.query(dmm, "MEAS:VOLT:DC?")`).
 - **A path can be an argument**: a field access (`step.voltage` reads a field of a struct), a
   variant (`State.Init`), an error category (`io.timeout`). For example
   `relays.apply(bench.relays, step.route)`. A path is not a nesting of calls.
@@ -267,9 +271,9 @@ written. Two lines with no dependency between them can run in parallel.
 - A reference to a value that does not exist, or a cycle (a value can only be fed back through a
   carry, 6.2), is an error at edit time.
 
-**Canonical form.** It is how the IDE and `labcraft fmt` write a file: the order of the lines, then
-the layout of the text. It guarantees the text → graph → text round trip, byte for byte (D-08). The
-order applies to each body on its own: the function body, each arm, each loop body.
+**Canonical form.** It is how the IDE and `labcraft-cli fmt` write a file: the order of the lines,
+then the layout of the text. It guarantees the text → graph → text round trip, byte for byte (D-08).
+The order applies to each body on its own: the function body, each arm, each loop body.
 
 - **The inputs of a line** are the names it reads, including those read in its sub-bodies and in
   `after:`, that another line of the same body defines. A label (`#close`) counts as a name.
@@ -638,7 +642,7 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   session (two copies of the handle designate the same connection, and the instrument has a
   state), a `ref<T>` reference, a panel element read or written live (10), a file.
 - **Each call is atomic on its resource.** The runtime locks a session for the duration of a
-  native call: `scpi.query` writes then reads without another branch stepping in. A race therefore
+  native call: `visa.query` writes then reads without another branch stepping in. A race therefore
   never corrupts a message; it leaves the order between calls undetermined.
 - **Warning at edit time** when two nodes receive the same resource with no dependency path between
   them (data, error wire or `after:`), for example two branches that set the same instrument:
@@ -710,10 +714,10 @@ to it.
 | Part | Milestone |
 |---|---|
 | Generic functions written by the user (3.5); the built-in primitives are generic from M0 | M2 |
-| Running external functions (4.1); they are read and checked from M0 | M8 |
+| Running external functions (4.1), except `extern rust`, which runs from M0; they are all read and checked from M0 | M8 |
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
 | `ref<T>` and its access structure (8.1, Q-19) | M2 |
-| Manifests (1, D-25): the built-in libraries declare their categories, `always` functions and resources from M0; manifests of user libraries, versions and dependencies | M2 |
+| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
 | Structures planned outside v0: events, queues, timed loops, cyclic tasks (6.4) | M2 and later |
 
 **Libraries.**
@@ -721,17 +725,18 @@ to it.
 | Library | Content | Milestone |
 |---|---|---|
 | `core` | arithmetic, comparisons, logic, `select`, conversions, units, `call` (function references, section 4) | M0 |
-| `string` | `concat` (variadic), `join`, `format` (5.4), number parsing | M0 |
+| `string` | `concat` (variadic), `join`, `format` (5.4), `split`, number parsing (`to_f64`, `to_i32`) | M0 |
 | `array` | size, index, subarray, construction | M0 |
-| `errors` | `merge`, error creation | M0 |
-| `visa` | `open`, `close`, `write`, `read`, `query` (text), on simulated instruments; real instruments in M4 | M0 |
-| `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`) | M0 |
-| `sim` | simulated instruments described in `instruments/` (D-17) | M0 |
+| `errors` | `merge`, error creation (`make`, `raise_if`) | M0 |
+| `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`), shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17). Real instruments in M4 | M0 |
+| `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`). Written in LabCraft over `visa`, shipped in `libs/scpi` | M0 |
 | `time` | `now`, `wait`, `elapsed` | M0 |
 | `ui` | `get`, `set`: panel elements read and written live (section 10) | M0 |
 | `config` | reading a configuration file into a declared type (Q-15) | M2 |
 
-The signatures of the functions this document uses are in appendix A.
+`visa` and `scpi` are not part of the language (section 1): they are libraries shipped with
+LabCraft, outside the crates of the tool ([roadmap](roadmap.md)). The signatures of the functions
+this document uses are in appendix A.
 
 ## 10. Panel (`panel` section)
 
@@ -850,7 +855,11 @@ layout {
   preference "everything in standard" is not in the file.
 - Section missing or incomplete: the IDE places the missing nodes. An agent never writes this
   section.
-- Renaming a value updates the section (IDE and CLI command).
+- Renaming a value updates the section (IDE and CLI command). An entry that names a node that
+  does not exist, for example after an agent renamed a value in the text, gives a warning at edit
+  time; `fmt` removes it.
+- Coordinates are integers between -1,000,000 and 1,000,000 *(range proposed)*; a value outside
+  is an error at edit time.
 
 ### 11.1 Icon (`icon` section)
 
@@ -1385,6 +1394,12 @@ fn time.now() -> (timestamp: timestamp)                    // order it with `aft
 fn time.elapsed(since: timestamp) -> (duration: duration)
 fn time.wait(duration: duration, err: error = none) -> (err: error)
 
+fn string.split(text: string, separator: string) -> (parts: [string])   // not in the PoC
+fn string.to_f64(text: string, err: error = none) -> (value: f64, err: error)   // not in the PoC
+fn string.to_i32(text: string, err: error = none) -> (value: i32, err: error)   // not in the PoC
+
+fn errors.make(category: kind category, code: i32 = 0,
+               message: string = "") -> (err: error)                 // not in the PoC
 fn errors.raise_if(condition: bool, category: kind category, message: string = "",
                    err: error = none) -> (err: error)
 fn errors.merge(errs: error...) -> (err: error)            // 7.4; the PoC takes up to six
@@ -1393,8 +1408,10 @@ fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the ele
 fn ui.set<T>(element: kind element, value: T) -> (value: T)   // section 10; not in the PoC
 ```
 
-`array.get` fails with the category `array.index_out_of_range`; `errors.raise_if` produces an
-error of the given category when `condition` is true, `none` otherwise.
+`array.get` fails with the category `array.index_out_of_range`, `string.to_f64` and
+`string.to_i32` with `string.parse`; `errors.make` produces an error of the given category and
+code; `errors.raise_if` produces an error of the given category when `condition` is true, `none`
+otherwise.
 
 ### A.3 `visa` and `scpi`
 
@@ -1415,10 +1432,18 @@ fn scpi.check_errors(session: visa.session,
                      err: error = none) -> (session: visa.session, err: error)   // SYST:ERR?
 ```
 
+The `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
+`visa.close` as `always`. `scpi` is written in LabCraft over `visa`, in `libs/scpi`:
+`query_f64` is a `visa.query` followed by `string.to_f64`. A `scpi` call is therefore atomic only
+per `visa` call (8.1). The proof of concept implements both natively.
+
 ### A.4 Libraries of the examples
 
 `dmm_driver`, `relays`, `psu` and `results_log` belong to the examples (section 13), not to the
-minimal library; the proof of concept implements them natively.
+libraries shipped with LabCraft. They are to be written as libraries of the examples, before
+M0a: `dmm_driver`, `relays` and `psu` in LabCraft over `visa` and `scpi`, like real drivers;
+`results_log`, which writes a file, as an `extern rust` function. The proof of concept
+implements them natively.
 
 ```text
 fn dmm_driver.read_dc_volts(session: visa.session,

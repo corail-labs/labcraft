@@ -21,11 +21,12 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-03): specification phase.** The language and its text format are described
-(spec v0), with example programs. There is no product code in Rust yet: only throwaway Python
-tools, including a proof of concept that checks and runs the examples against simulated
-instruments, and that an AI agent drives over MCP. The first milestone in Rust (M0) is described
-in [docs/roadmap.md](docs/roadmap.md).
+**Status (2026-11-03): specification phase.** The language and its text format are described (spec
+v0), with example programs. There is no product code in Rust yet: only throwaway Python tools,
+including a proof of concept that checks and runs the examples against simulated instruments, and
+that an AI agent drives over MCP. The first milestone in Rust (M0: reading, checking and writing
+programs, then running them, with a read-only diagram viewer alongside) is described in
+[docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 
@@ -100,7 +101,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 |---|---|
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
-| [docs/acceptance-m0.md](docs/acceptance-m0.md) | The five scenarios that say when M0 is done, and what they need written first |
+| [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |
 | [docs/inspirations.md](docs/inspirations.md) | Ideas to borrow (languages, compilers, tools, UX) |

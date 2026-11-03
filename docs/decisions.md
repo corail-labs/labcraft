@@ -90,8 +90,8 @@ Rust is accepted for the engine, the compiler, the runtime and the IDE.
 **Points of attention:**
 
 - With thousands of nodes and wires, cache the canvas geometry (wire tessellation) instead of
-  recomputing everything on every frame. Prototype to measure early (see D-12 and
-  [roadmap.md](roadmap.md)).
+  recomputing everything on every frame. Measured early: it is a target of the M0v viewer (see
+  D-12 and [roadmap.md](roadmap.md)).
 - egui changes version often: versions are pinned, as in craft-libs.
 - The graph editor has to be written. `egui-snarl` and `egui_node_graph` serve as references, not
   as default dependencies.
@@ -315,8 +315,9 @@ Rejected: generating real, independent C# code (see D-10).
   (`docs/plugins.md` in the SolidCraft repository).
 - Plugins act only through commands: undoable, logged.
 - Permissions declared in a manifest; memory and compute limits.
-- Drivers that require native access (USB, vendor DLL) go through D-14 or through built-in
-  crates, not through WASM plugins.
+- Drivers that require native access (USB, vendor DLL) go through D-14, or through a library
+  shipped with LabCraft whose native functions are `extern rust` (spec 4.1, roadmap `libs/`), not
+  through WASM plugins.
 
 ## D-17 — Instruments
 
@@ -520,9 +521,9 @@ parametric design.
   plugin API in service (ABI v1, modules run by wasmi, manifest and parameter schema); that of
   SolidCraft (WIT components, `run(command, args)`) is being designed.
 - **Reservations:** plugins depend on the WASM backend (D-15), and each app has its own ABI; the
-  embedded editor requires an editor crate with no dependency on the IDE window, to keep in mind
-  from M1. This is a community entry point (vision, Positioning), but not what sets the order of
-  milestones.
+  embedded editor requires an editor crate with no dependency on the IDE window: the `editor` crate,
+  from the M0v viewer on (roadmap). This is a community entry point (vision, Positioning), but not
+  what sets the order of milestones.
 
 ## D-28 — Test executives
 

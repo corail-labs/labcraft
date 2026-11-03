@@ -31,7 +31,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **inline constant**, **pill** | A constant written as an argument, drawn on its terminal as a small pill rather than as a node. |
 | **layout** | Positions and wire routes on screen (`layout` section), separate from the program's meaning. |
 | **icon** | The drawing of a function's compact view (`icon` section). |
-| **canonical form** | The single text a program is formatted to (`labcraft fmt`), so that diffs only show real changes. Its order of lines and the layout of its text are defined in spec 5.2. |
+| **canonical form** | The single text a program is formatted to (`labcraft-cli fmt`), so that diffs only show real changes. Its order of lines and the layout of its text are defined in spec 5.2. |
 | **call statement** | A call written alone, with no output bound and an optional label (`#beep: sound.beep()`), for a function without outputs (spec 5.1). |
 | **contextual word** | A word reserved only where the syntax expects it (`ok` and `code` in a `handle` pattern, `in` in a `for` clause, `after` in an argument list); elsewhere an ordinary name (spec 14.1). |
 | **unit**, **dimension** | `f64[V]`: a number with a physical unit; its dimension is the vector of SI exponents. |
@@ -42,7 +42,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **probe** | A value shown on a wire while the program runs. |
 | **label** | A name given to a node (`#close:`), unique in its function; `after:` and the layout designate the node by it, and traces show it. |
 | **library**, **package** | A set of functions under one name (`visa`); a package is a library distributed with a version. |
-| **simulated instrument** | An instrument described in TOML (`instruments/`) that answers like the real one, so a program can be tested without hardware. |
+| **simulated instrument** | An instrument described in TOML that answers like the real one, so a program can be tested without hardware: the simulator of the `visa` library answers for its `SIM::` resources. The definitions are in `instruments/` today, and move to `libs/visa/sim/` when the Rust code starts. |
 | **test bench**, **test executive** | The hardware that tests a product; the software that sequences tests and records results (TestStand and others). LabCraft is called by an executive, it is not one. |
 | **milestone** | A step of the roadmap (M0, M1…). |
 | **Accepted**, **Proposed**, **Open** | Status of a decision in [decisions.md](decisions.md). |

@@ -13,8 +13,9 @@ language and file format specification, the decisions behind it, example program
 Python tools (a syntax checker and viewer, and a proof of concept that runs the examples against
 simulated instruments and exposes them to an agent over MCP).
 
-Code contributions in Rust open at the end of milestone M0, a small vertical slice that runs. Until
-then, the most useful help is feedback on the language.
+Code contributions in Rust open at the end of milestone M0a, when programs can be read, checked and
+written back: from there, the interpreter (M0b) and the diagram viewer (M0v) can move forward in
+parallel. Until then, the most useful help is feedback on the language.
 
 ## How to help now
 
