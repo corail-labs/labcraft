@@ -9,7 +9,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **native function** | A function implemented outside LabCraft: a standard-library primitive or an `extern` function. Only native functions are skipped on an error or marked `always`; a function written in LabCraft always runs its body (spec 7.2). |
 | **skipped node** | A node of a native function that did not run because its `err` input carried an error; its outputs take their default value, and an output named like an input passes that input through. |
 | **default value** | The value of a type when nothing else gives one: `false`, `0` in the type's unit, `""`, an empty array, `none` for an error… It is what a skipped node outputs and what `ui.get` returns without a user interface (spec 7.2). |
-| **`always` node** | A node of a native function marked `always`, which runs even when its `err` input carries an error (for example `visa.close`). |
+| **`always` node** | A node of a native function marked `always`, which runs even when its `err` input carries an error (for example `visa.close`), but not after an abort or a fault (spec 8.2). |
 | **primitive** | A `core` operation (`add`, `gt`, `select`…) whose compact view is a circle with a glyph. |
 | **wire** | A connection from one output to one or more inputs. |
 | **error wire**, **error chain** | The wire that carries an `error` value from node to node; the chain that orders "set, then measure". |
@@ -31,13 +31,13 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **inline constant**, **pill** | A constant written as an argument, drawn on its terminal as a small pill rather than as a node. |
 | **layout** | Positions and wire routes on screen (`layout` section), separate from the program's meaning. |
 | **icon** | The drawing of a function's compact view (`icon` section). |
-| **canonical form** | The single text a program is formatted to (`labcraft fmt`), so that diffs only show real changes. Its order of lines is defined in spec 5.2. |
+| **canonical form** | The single text a program is formatted to (`labcraft fmt`), so that diffs only show real changes. Its order of lines and the layout of its text are defined in spec 5.2. |
 | **call statement** | A call written alone, with no output bound and an optional label (`#beep: sound.beep()`), for a function without outputs (spec 5.1). |
 | **contextual word** | A word reserved only where the syntax expects it (`ok` and `code` in a `handle` pattern, `in` in a `for` clause, `after` in an argument list); elsewhere an ordinary name (spec 14.1). |
 | **unit**, **dimension** | `f64[V]`: a number with a physical unit; its dimension is the vector of SI exponents. |
 | **coercion** | An implicit conversion the editor shows (`mV` to `V`, `i16` to `i32`): it never changes the dimension or loses range. |
 | **implicit widening**, **explicit narrowing** | Conversions that cannot lose information are implicit; those that can are written. |
-| **error**, **fault** | An `error` is a value that flows in the program. A fault (proof of concept: `lcf.*`) is a failure of the program itself, such as an iteration limit. The proof of concept reports some checks, such as unit mismatches, only at run time; the language checks units at compile time. |
+| **error**, **fault** | An `error` is a value that flows in the program. A fault (proof of concept: `lcf.*`) is a failure of the run itself, such as an iteration limit: no wire carries it, and it stops the run (spec 8.2). The proof of concept reports some checks, such as unit mismatches, only at run time; the language checks units at compile time. |
 | **warning** | An editor message that does not prevent running. |
 | **probe** | A value shown on a wire while the program runs. |
 | **label** | A name given to a node (`#close:`), unique in its function; `after:` and the layout designate the node by it, and traces show it. |

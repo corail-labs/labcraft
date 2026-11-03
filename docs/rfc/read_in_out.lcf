@@ -1,8 +1,8 @@
 labcraft 1
 
-use visa
-use scpi
 use errors
+use scpi
+use visa
 
 /// Reads the input and the output voltage of a device on two multimeters.
 fn read_in_out(

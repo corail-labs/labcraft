@@ -3,7 +3,7 @@ labcraft 1
 /// A test step: relay route, source voltage and limits.
 type Step = struct {
     name: string,
-    route: string,          // name of a route in the relay table
+    route: string, // name of a route in the relay table
     voltage: f64[V],
     low: f64[V],
     high: f64[V],

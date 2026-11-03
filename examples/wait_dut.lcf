@@ -1,16 +1,13 @@
 labcraft 1
 
-use time
 use errors
 use scpi
+use time
 
 /// Polls for the presence of the product until `timeout`; io.timeout error if it does not arrive.
 fn wait_dut(bench: Bench, timeout: duration, err: error = none) -> (present: bool, err: error) {
     t0 = time.now(after: err)
-    present, err_out = loop
-        carry p = false,
-        carry e = err
-    {
+    present, err_out = loop carry p = false, carry e = err {
         level, _, e1 = scpi.query_f64(bench.relays, "DUT:PRES?", err: e)
         here = gt(level, 0.5)
         absent = not(here)

@@ -17,7 +17,7 @@ A library is a folder (`examples/`), one function per `.lcf` file, one type per 
 ```sh
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py list examples --builtins
-python tools/lcf-poc/lcf.py fmt --check examples
+python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc
 python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml \
     --arg resource=SIM::DMM0 --trace
 ```
@@ -26,9 +26,18 @@ python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230
   calls, outputs bound once, cycles, `match` exhaustiveness, warnings (error never read, `err`
   output not wired). Each diagnostic gives file, line and node. Exit code 1 if there is an error.
   `run` refuses to run until `check` is clean. `--json` prints the report as JSON.
-- `fmt --check`: reports each body whose lines are not in canonical order (spec 5.2), with the
-  expected order; the algorithm is described at the top of `lcfpoc/canon.py`. The PoC does not
-  rewrite files. Every file of `examples/` is canonical.
+- `fmt --check [--spec FILE] PATH...`: checks `.lcf` and `.lct` files (or folders) against the
+  canonical form of spec 5.2. It reports the bodies whose lines are not in canonical order, with the
+  expected order (algorithm at the top of `lcfpoc/canon.py`), and the breaks of the layout of the
+  text, each as `PATH:LINE` (the path as given) with the rule, and the expected text when it is
+  cheap to compute (`lcfpoc/layout.py` lists the rules: sections and blank lines, `use` lines,
+  `extern`, indentation, spaces, no alignment, line width in code points and split signatures,
+  structs, enums and loop or `for` clauses, comments, line endings). A file that is missing, is
+  not UTF-8 or does not parse is a problem (exit code 1), never a traceback. `--spec FILE` applies
+  the layout rules to the complete ```` ```text ```` blocks of the spec (not the order of lines):
+  whole files as files, other blocks (statements, a signature, types, `panel`, `layout` and
+  `icon` sections) completed with a header or a dummy function; blocks with `…`, the reference
+  listing of 3.2 and appendix A are skipped. The PoC does not rewrite files.
 - `run`: outputs, error, fault, and simulation state (simulated time, sessions still open,
   commands exchanged) as JSON. `--trace` adds each node in execution order, with the wire values
   at its inputs and outputs, the loop iterations, and `skipped: true` for a node skipped because
@@ -98,6 +107,17 @@ limits).
 - No generics, function references (`call`), `for parallel` (run sequentially), `panel` or
   `layout` (ignored), `labcraft.toml` manifest, or libraries other than the built-in
   primitives (`lcfpoc/stdlib.py`).
+- `fmt --check` is lexical: it does not check the order of the items of `panel`, `layout` and
+  `icon` (their blank lines and spaces are checked), the width of `extern` lines, nor the spelling
+  of literals; the order of lines is not checked in the blocks of the spec; it only reports and
+  never rewrites. A file larger than the library limit (1,000,000 bytes) is reported, not read.
 - Single thread: "parallel branches" run one after the other in canonical order.
+  The simulated clock adds up the waits of the branches (two `time.wait(1 s)` with no dependency
+  end at 2 s) instead of overlapping them, as spec 8 requires.
+- After a fault (for example `lcf.iteration_limit`) the run does not release the sessions it
+  opened: they stay in `open_sessions` of the report, unlike spec 8.2.
+- `extern` functions (spec 4.1) are not supported: `check` reports the file with the diagnostic
+  "extern functions are not supported by the proof of concept" and its line, and the function is
+  unknown to the other files; `fmt --check` still checks the layout of such a file.
 - `unitless(230 mV, [V])` returns 0.23 (explicit unit, spec 3.3); `duration` is a quantity in seconds.
 - `results_log.append_csv` keeps the results in memory (reported by `run`) instead of writing a file.

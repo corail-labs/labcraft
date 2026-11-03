@@ -24,7 +24,7 @@ jobs:
           python tools/lcf-poc/lcf.py check examples
           python tools/lcf-poc/lcf.py check docs/rfc
       - name: Canonical form
-        run: python tools/lcf-poc/lcf.py fmt --check examples docs/rfc
+        run: python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc
       - name: Proof of concept tests
         run: python -m unittest discover tools/lcf-poc/tests
       - name: MCP round trip

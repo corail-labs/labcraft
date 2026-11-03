@@ -1,7 +1,7 @@
 labcraft 1
 
-use visa
 use scpi
+use visa
 
 /// Reads the DC voltage of a multimeter.
 fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: error) {

@@ -191,6 +191,10 @@ class LowerError(Exception):
         self.msg, self.line = msg, line
 
 
+class ExternUnsupported(LowerError):
+    """A valid `extern` declaration (spec 4.1): the proof of concept does not execute it."""
+
+
 def line_of(t):
     if isinstance(t, Token):
         return t.line or 0
@@ -454,7 +458,13 @@ def lower_file(src, file, tree):
             if isinstance(u, Tree) and u.data == "use_decl"]
     uses_lines = {".".join(str(c) for c in u.children[0].children): line_of(u) for u in tree.children
                   if isinstance(u, Tree) and u.data == "use_decl"}
-    decl = next(c for c in tree.children if isinstance(c, Tree) and c.data in ("fn_decl", "type_decl"))
+    decl = next((c for c in tree.children if isinstance(c, Tree)
+                 and c.data in ("fn_decl", "extern_decl", "type_decl")), None)
+    if decl is None:
+        raise LowerError("no declaration found", 1)
+    if decl.data == "extern_decl":
+        raise ExternUnsupported("extern functions are not supported by the proof of concept (spec 4.1)",
+                                line_of(decl))
     doc = "\n".join(re.sub(r"^\s*/// ?", "", l) for l in src.splitlines()[:max(line_of(decl) - 1, 0)]
                     if l.strip().startswith("///"))
     header = next(c for c in tree.children if isinstance(c, Tree) and c.data == "header")
