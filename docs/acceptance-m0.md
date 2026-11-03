@@ -2,37 +2,52 @@
 
 *Last updated: 2026-11-03. Status: first draft.*
 
-M0 is the first vertical slice in Rust: text format → check → interpreter → result, with a
-simulated multimeter, `labcraft-cli run` and `labcraft-cli mcp` ([roadmap](roadmap.md)). It is
-done when the five scenarios below pass. Each one gives its setup, what is expected, how it is
+M0, the first milestone in Rust, comes in three parts ([roadmap](roadmap.md)): M0a reads, checks
+and writes programs; M0b runs them and opens the agent loop; M0a and M0b are a thin vertical
+slice. M0v, a read-only viewer of the diagram, comes after M0a, in parallel with M0b. Each part
+is done when its scenarios pass. Each scenario gives its setup, what is expected, how it is
 verified, what the Python proof of concept already does, and what must be written first.
+
+| Milestone | Scenarios |
+|---|---|
+| M0a | 2 (type error), 5 (round trip); 4 for `.lcf` and `.lct` files, through `fmt` and `check` |
+| M0b | 1 (agent), 3 (parallel, clean stop); 4 for runs, instruments, arguments and MCP; the points of 2, 5 and 6 marked *with M0b* |
+| M0v | 6 (viewer); 4 for `.lcf` and `.lct` files, through the viewer |
 
 Values marked *proposed* are starting points, to adjust when the scenarios are automated.
 
 ## Common conditions
 
-- **Through the tool, as a user would.** Every scenario goes through `labcraft-cli` (`check`,
-  `run`, `fmt`) or its MCP server (`labcraft-cli mcp`). The CLI with `--json` and the MCP server
-  return the same reports; their schema belongs to the CLI and MCP specification.
+- **Through the tool, as a user would.** Every scenario goes through `labcraft-cli` (`fmt`,
+  `check`, `run`, `diagram`) or its MCP server (`labcraft-cli mcp`); scenario 6 also goes through
+  the desktop and web viewers. The CLI with `--json` and the MCP server return the same reports;
+  their schema belongs to the CLI and MCP specification.
 - **Status and exit code.** Every run reports one of the statuses of spec 8.2: `ok`, `error`,
-  `aborted`, `fault`. *Proposed* exit codes of the CLI: 0 `ok`, 1 `error` (or a `check` that
-  fails), 2 wrong usage (unknown option, malformed `--arg`), 3 `aborted`, 4 `fault`.
+  `aborted`, `fault`. *Proposed* exit codes of the CLI: 0 `ok`; 1 `error`, or an error (not a
+  warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, malformed
+  `--arg`); 3 `aborted`; 4 `fault`. `fmt` exits 1 on a file it cannot read or parse, and leaves
+  it unchanged. `diagram` writes the SVG of every drawable function (6.3), type errors marked,
+  and exits 1 only for the functions it cannot draw.
+- **A point that needs a later milestone** is marked *with M0b* and checked when M0b closes, or
+  when its own milestone closes if M0b is already done.
 - **Deterministic mode by default** (D-12, spec 8): fixed order among ready nodes, a discrete-event
   simulated clock, one random sequence per simulated quantity. Scenario 3 also runs in real time.
 - **Never crash.** In no scenario does the tool panic, abort or get killed: every failure is a
-  report with a code and a location.
+  report with a code and a location. A viewer shows the report and stays responsive.
 - **Executable reference.** `examples/` and the proof of concept (`tools/lcf-poc`) give the
   expected results. Where M0 and the proof of concept differ, the spec decides, and the difference
   is recorded.
 - **Automated** in `tests/acceptance/` and run by the `checks` workflow, except the parts played by
-  an agent (scenario 1, second half of scenario 2), which are run by hand before M0 is tagged. The
+  an agent (scenario 1, second half of scenario 2), which are run by hand before the tag of their
+  milestone. The
   agent is Claude Code with the most capable model available at that time; the model and its
   version are recorded with the transcripts, which are attached to the pull request that closes the
   milestone. Another MCP client may run the same scenarios.
-- **WASM** (D-22). The parser, `check` and `fmt`, called as library functions, also pass the corpora
-  of scenarios 2 and 5 and the families Truncation, Encoding, Nesting, Absurd values and Semantics
-  of scenario 4 in a `wasm32-unknown-unknown` build, run by `wasm-bindgen-test` *(proposed)*. The
-  CLI, the file system and instruments are not part of this.
+- **WASM** (D-22). The parser, `check`, `fmt` and `diagram`, called as library functions, also pass
+  the corpora of scenarios 2 and 5, the snapshots of scenario 6, and the families Truncation,
+  Encoding, Nesting, Absurd values and Semantics of scenario 4 in a `wasm32-unknown-unknown` build,
+  run by `wasm-bindgen-test` *(proposed)*. The CLI, the file system and instruments are not part of
+  this.
 
 ## Scenario 1: an agent writes the PASS/FAIL program
 
@@ -40,7 +55,7 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 simulated multimeters `dmm-230V.toml` and `dmm-250V.toml`, and an MCP agent started in that folder
 and connected to `labcraft-cli mcp`. The agent has the MCP tools and the skills shipped with
 LabCraft (`skills/`), not the repository: `examples/` already contains the answer. The
-instructions of the M0 MCP server must not point to it (those of the proof of concept do).
+instructions of the M0b MCP server must not point to it (those of the proof of concept do).
 
 **Prompt**, given once and verbatim:
 
@@ -92,26 +107,26 @@ fault). Minimum content:
 
 **Expected:**
 
-1. The error is found by `check`, without running anything. `run` refuses the program, and no
-   command reaches the instrument.
+1. The error is found by `check`, without running anything. *With M0b*: `run` refuses the
+   program, and no command reaches the instrument.
 2. **One error, one diagnostic**: the nodes downstream of the fault produce no further errors.
 3. The diagnostic contains: a **stable code**; the severity; file, line and column range; the
    function; the **node** (the name of its line, 5.2, and its text); the **wires or terminals at
    fault**, when there are any (the value name, the source terminal `node.output` and the
    destination terminal `node.input`, with the names of the signatures); the expected type and the
    type found, units included; a fix when one exists (`with_unit`, `unitless`, `round_to_i32`…).
-4. Same report from the CLI (`--json`) and from MCP. Without `--json`, a human-readable form that
-   starts with `file:line:column`.
+4. Same report from the CLI (`--json`) and, *with M0b*, from MCP. Without `--json`, a
+   human-readable form that starts with `file:line:column`.
 
 **Agent half.** For each case of the corpus, an agent given only the file and the diagnostic fixes
-it at the first attempt, for all the cases but one at most *(proposed)*. By hand, before the M0
-tag.
+it at the first attempt, for all the cases but one at most *(proposed)*. By hand, through the CLI,
+before the M0a tag.
 
 **Proof of concept today.** Partial. Unknown names, cycles, missing inputs and a `handle` without
 `_` are found by `check`, with file, line and node. Types and units are found only at run time
 (faults `lcf.type_error`, `lcf.unit_mismatch`), without a column, a wire or a stable code, and
 some not at all: a session input that receives an `f64[V]` passes `check`, and the carry case above
-runs and returns 3.5 through an `i32` output. Static type checking is the main new piece of M0.
+runs and returns 3.5 through an `i32` output. Static type checking is the main new piece of M0a.
 
 **Write first:** the stable error codes (not written yet), and the diagnostic schema in the CLI and
 MCP specification.
@@ -174,8 +189,8 @@ abort, and does not have `two_benches`.
   and the discrete-event simulated clock (8).
 - How the CLI and MCP set a panel element (Q-20), and `ui.get` in the proof of concept.
 - The simulation files `two-dmm.toml` and `two-dmm-timeout.toml`.
-- The pre-M0 feasibility prototype (a scheduler with two parallel loops and a clean stop) answers
-  points 2, 4 and 5 before M0 starts.
+- The feasibility prototype (a scheduler with two parallel loops and a clean stop) answers
+  points 2, 4 and 5 before M0b starts.
 
 **For M2 (moved from M0):** two loops communicate through a queue; when the producer stops, the
 consumer stops cleanly, without losing an element already queued and without waiting forever.
@@ -183,7 +198,12 @@ consumer stops cleanly, without losing an element already queued and without wai
 ## Scenario 4: a hostile input never crashes the tool
 
 **Scope.** Everything LabCraft reads: `.lcf` and `.lct` files, instrument `.toml` files, `--arg`
-values, MCP requests. Each one goes through `check`, `fmt`, `run` and the MCP server.
+values, MCP requests, each through the components that read it, as they arrive:
+
+- M0a: the families Truncation, Encoding, Size, Nesting, Absurd values, Semantics and Library,
+  through `fmt` and `check`;
+- M0b: all the families, through `run` and the MCP server;
+- M0v: the same seven families as M0a, through `labcraft-cli diagram` and the viewers.
 
 **Corpus** `tests/acceptance/hostile/`:
 
@@ -207,15 +227,18 @@ values, MCP requests. Each one goes through `check`, `fmt`, `run` and the MCP se
    error when needed, and keeps running.
 2. Every problem gives a diagnostic or a fault with a code and a location. A bad file does not hide
    the diagnostics of the other files of the library.
-3. Bounded resources *(proposed)*: `check` of any single file of the corpus takes at most 2 s and
-   512 MB on a CI runner, the library of 100,000 files at most 60 s. Limits are part of the tool,
-   configurable, and reported with a code when reached. *Proposed* defaults: file size 16 MB,
+3. Bounded resources *(proposed)*: `fmt` and `check` of any single file of the corpus take at most
+   2 s and 512 MB on a CI runner, the library of 100,000 files at most 60 s; so do placing and
+   routing any single function in `diagram`. A function of more than 20,000 nodes is not drawn:
+   the viewer says why. Coordinates out of the range of spec 11 are an error, and are drawn
+   at the edge of the range. Limits are part of the tool, configurable, and reported with a code
+   when reached. *Proposed* defaults: file size 16 MB,
    nesting depth 256, call depth 1,024; in deterministic mode only (8.2), 10,000 iterations per
    loop and 1,000,000 nodes executed (the proof of concept has 24 calls and 100,000 nodes).
-4. **Fuzzing**: `cargo fuzz` targets for the parser, `check`, the `fmt` round trip and the
-   instrument files, seeded with `examples/` and the corpus. 60 s per target in each CI run, and
-   8 hours per target without a crash before the M0 tag *(proposed)*. Every crash found becomes a
-   corpus file.
+4. **Fuzzing**: `cargo fuzz` targets for the parser, `check` and the `fmt` round trip (M0a), the
+   instrument files (M0b), and placement and routing in `diagram` (M0v), seeded with `examples/`
+   and the corpus. Each target runs 60 s in each CI run, and 8 hours without a crash before the tag
+   of the milestone that adds it *(proposed)*. Every crash found becomes a corpus file.
 
 **Proof of concept today.** Binary, empty, deep and 1.1 MB files, a truncated file, iteration,
 node and recursion limits (tests `test_binary_and_empty_and_deep`, `test_truncated`,
@@ -223,32 +246,91 @@ node and recursion limits (tests `test_binary_and_empty_and_deep`, `test_truncat
 
 ## Scenario 5: saving again changes nothing
 
-In M0, "save" means reading a file into the model (graph, layout, icon, comments) and writing it
-back: `labcraft fmt` and every command that writes a file.
+Milestone M0a. Here "save" means reading a file into the model (graph, layout, icon, comments) and
+writing it back: `labcraft-cli fmt` and every command that writes a file.
 
 **Expected:**
 
 1. **Canonical file, identical file.** For every canonical file (`examples/`, `docs/rfc/`, the
-   complete code blocks of the spec, completed into files as the proof of concept does, the files
-   of the corpora that are canonical), writing what was
-   read gives the same bytes. Comments, documentation comments, `layout` and `icon` included.
-2. **Idempotence.** For every file that passes `check`, `fmt(fmt(f)) = fmt(f)`. A body with an
-   error at edit time keeps its written order (5.2).
+   complete code blocks of the spec, completed into files as the proof of concept does, the files of
+   the corpora that are canonical), writing what was read gives the same bytes. Comments,
+   documentation comments, `layout` and `icon` included.
+2. **Idempotence.** For every file that parses, `fmt(fmt(f)) = fmt(f)`. A body with an error at
+   edit time keeps its written order and only its layout is normalized (5.2).
 3. **Meaning preserved.** `fmt` changes neither the graph (nodes, wires, types) nor the results:
-   the model read before and after is the same, and the examples give the same run results.
+   the model read before and after is the same, and, *with M0b*, the examples give the same run
+   results.
 4. **Line endings.** A file with CRLF endings is written with LF, ending with a single line feed
    (section 2).
 
 **Proof of concept today.** `fmt --check` checks the order of lines and the layout of the text
 (5.2), lexically, on `examples/`, `docs/rfc/` and the complete blocks of the spec (the order of
 lines only in the files), but the proof of concept does not rewrite files: points 1 to 4 need the
-model and the writer of M0.
+model and the writer of M0a.
 
 **Write first:**
 
 - Done (2026-11-03): the layout of the text, in spec 5.2 next to the order of the lines.
-- Still open: the canonical writing of the `panel` and `layout` sections (order of their items,
-  how coordinates are written), and the Unicode normalization of names and units (Q-23).
+- Still open, before M0a: the canonical writing of the `panel` and `layout` sections (order of
+  their items, how coordinates are written), and the Unicode normalization of names and units
+  (Q-23).
+
+## Scenario 6: the viewer draws the program the agent writes
+
+Milestone M0v. Three ways in, read-only, all drawn by the same `diagram` crate following the
+[visual notation](visual-notation.md): the `labcraft` desktop app opens a library folder and
+watches its files; `labcraft-web` opens the bundled examples or a library folder dropped on the
+page, with the libraries of `libs/` bundled so that calls resolve; `labcraft-cli diagram --svg`
+writes the SVG of a function, for tests and for agents (*with M0b*, an MCP tool returns the same
+SVG, D-18). The canvas paints only the shapes that `diagram` computes, so the canvas and the SVG
+agree.
+
+**Expected:**
+
+1. **Every example is drawn.** Each function of `examples/` and `docs/rfc/` is drawn in compact
+   view by default, and in standard view on request (notation, section 3), with the families of
+   its wires, its terminals in signature order and its badges, which come from `check` (M0a). A
+   file without a `layout` section is placed automatically; a file with one is drawn at its
+   positions, the nodes it does not place are placed automatically, and its entries that name a
+   node that no longer exists (after an agent renamed a value) are ignored with a warning (spec 11).
+2. **The same drawing every time.** Placement and routing are deterministic: the SVG of each example
+   from `labcraft-cli diagram --svg` is a snapshot checked in CI, and the `diagram` crate built for
+   `wasm32-unknown-unknown` gives the same SVG as the native build. A change of the drawing is a
+   reviewed change of the snapshot.
+3. **Live, in the desktop app.** When an agent rewrites the file, the drawing is updated less than
+   200 ms after the file is saved *(proposed)*, measured in CI by a headless harness (file change
+   to new drawing); the viewport (zoom and position) is kept. The nodes that the change does not
+   touch keep their place as far as the placement rules allow (a goal, to be made precise with
+   them). A function is **drawable** when its file parses, its names resolve and it has no
+   cycle; everything else, type errors included, is drawn with the marks of the notation. A
+   function that is not drawable keeps its last drawing with its diagnostics, or shows only its
+   diagnostics if it never was drawable.
+4. **Large diagrams.** A generated function of 1,000 nodes and 2,000 wires is placed and routed in
+   less than 1 s *(proposed)*, measured in CI, and pans and zooms at 60 frames/s on a reference
+   machine, checked by hand before the M0v tag.
+5. **Never a crash.** A hostile file gives a diagnostic and the viewer stays responsive
+   (scenario 4).
+6. **Read-only.** Files are opened read-only: a test opens every example in the viewer and checks
+   that no file changed. Editing is M1.
+7. **Values on the wires**, *with M0b*, in the desktop app: from the trace file that
+   `labcraft-cli run` writes, each wire shows its last value, or its values per iteration in a
+   loop, and a skipped node is marked (notation). In the browser, runs come with M10.
+
+**Proof of concept today.** `tools/lcf-figcraft` draws a few functions of `examples/` and of
+`docs/rfc/` in standard view, through FigCraft, guessing the types of wires from a table;
+`tools/lcf-view` writes a plain graph view of `examples/` as HTML. Neither draws the compact view
+(N-12) nor redraws live.
+
+**Write first:**
+
+- The canonical writing of the `layout` section (scenario 5), which the viewer reads.
+- In the visual notation: the compact view (short labels and icons, N-10, N-11; primitives,
+  section 3.2); the rules of automatic placement (main error chain on a straight axis, N-7) and of
+  wire routing, with the stability goal of point 3; how values per iteration show on a wire.
+- For the snapshots: the font and its metrics (a fixed font, attributed, named in the SVG), the
+  view of `match` and `handle` (tabs or unfolded, N-2, N-9) and the theme they use.
+- The architecture of the `diagram` and `editor` crates: what `diagram` computes, what the
+  `editor` canvas draws (D-27).
 
 ## Not covered by these scenarios
 
@@ -258,10 +340,11 @@ are ordinary tests, not acceptance scenarios.
 
 ## Summary
 
-| Scenario | In CI | By hand, before the M0 tag | Proof of concept today | Write first |
-|---|---|---|---|---|
-| 1. Agent, PASS/FAIL | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
-| 2. Type error | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | Stable error codes, diagnostic schema |
-| 3. Parallel, clean stop | Points 1–6 | | Close after an error | Q-20; two-multimeter simulation files; scheduler prototype |
-| 4. Hostile inputs | Corpus, short fuzzing | Long fuzzing | Partial | Limits |
-| 5. Round trip | All canonical files | | Order and layout checked, no rewriting | `panel` and `layout` writing, Q-23 |
+| Scenario | Milestone | In CI | By hand, before the tag | Proof of concept today | Write first |
+|---|---|---|---|---|---|
+| 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
+| 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | Stable error codes, diagnostic schema |
+| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | Q-20; two-multimeter simulation files; scheduler prototype |
+| 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits |
+| 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | `panel` and `layout` writing, Q-23 |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | `layout` writing; compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
