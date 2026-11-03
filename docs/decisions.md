@@ -10,7 +10,8 @@ entries:
 - **Open**: to be settled by the project lead; the recommendation is only an opinion.
 
 This document is public: it is the project's decision register. A new decision, or a change to an
-accepted decision, goes through a public RFC (GitHub Discussions), then through an entry here.
+accepted decision, goes through a public RFC (a GitHub issue with the `rfc` label), then through an
+entry here, in the pull request that closes the issue.
 LabCraft publishes its decisions, because the language is designed with its users.
 
 ## Summary
