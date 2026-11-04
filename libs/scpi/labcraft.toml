@@ -1,0 +1,8 @@
+# The SCPI library shipped with LabCraft, written in LabCraft over `visa`.
+name = "scpi"
+version = "0.1.0"
+description = "Queries and the error queue of SCPI instruments"
+dependencies = ["visa"]
+always = []
+resources = []
+categories = ["scpi.instrument_error"]

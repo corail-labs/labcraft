@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Opens a session on a resource (`SIM::…`: a simulated instrument).
+extern rust(crate: "labcraft-visa", function: "open")
+fn open(
+    resource: string,
+    timeout: duration = 2 s,
+    err: error = none,
+) -> (session: session, err: error)

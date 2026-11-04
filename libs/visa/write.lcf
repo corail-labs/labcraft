@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Sends a command; a response waits for `visa.read`.
+extern rust(crate: "labcraft-visa", function: "write")
+fn write(session: session, command: string, err: error = none) -> (session: session, err: error)

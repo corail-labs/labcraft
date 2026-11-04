@@ -23,8 +23,7 @@ project stands, what the milestones are, and how the Rust code will be organized
 Still to write, besides the architecture (from the layers below) and what the acceptance scenarios
 list under "write first" ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0a**: the libraries of the examples (`dmm_driver`, `relays` and `psu` in LabCraft,
-  `results_log` as `extern rust`, spec A.4);
+- **before M0a**: the corpora of scenarios 2 and 4;
 - **before M0b**: the CLI specification of `run`, the MCP specification, the command catalog v0,
   how the CLI and MCP set a panel element (Q-20), and a throwaway feasibility prototype: a scheduler
   with two parallel loops and a clean stop;
@@ -122,8 +121,8 @@ When the registry exists, these libraries can be published as packages.
 
 | Library | Content |
 |---|---|
-| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (M0a); the native body: the simulator of `SIM::` resources and its instrument definitions, today in `instruments/`, moved to `libs/visa/sim/` when the Rust code starts (M0b); the real transports (M4) |
-| `libs/scpi` | Written in LabCraft over `visa` (M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
+| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources and its instrument definitions, today in `instruments/`, moved to `libs/visa/sim/` when the Rust code starts (M0b); the real transports (M4) |
+| `libs/scpi` | Written in LabCraft over `visa` (written, read from M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
 
 The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) stay native in
 `runtime`: they are the standard library.

@@ -1,0 +1,5 @@
+labcraft 1
+
+/// An open connection to an instrument: a handle, not the instrument. Its default value is an
+/// invalid handle.
+type session = opaque

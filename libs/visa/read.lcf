@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Reads the pending response; `io.timeout` if there is none.
+extern rust(crate: "labcraft-visa", function: "read")
+fn read(session: session, err: error = none) -> (text: string, session: session, err: error)

@@ -1,0 +1,17 @@
+labcraft 1
+
+use string
+use visa
+
+/// Sets the voltage of the power supply (`VOLT <value in V>`).
+fn set_voltage(
+    source: session,
+    voltage: f64[V],
+    err: error = none,
+) -> (source: session, err: error) {
+    volts = unitless(voltage, [V])
+    command = string.format("VOLT {volts:.6}", volts: volts)
+    s, e1 = visa.write(source, command, err: err)
+    source = s
+    err = e1
+}

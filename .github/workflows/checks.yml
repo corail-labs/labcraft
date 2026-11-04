@@ -18,13 +18,15 @@ jobs:
           python-version: "3.11"
       - run: pip install -r tools/lcf-poc/requirements.txt
       - name: Grammar, examples and spec code blocks
-        run: python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
+        run: python tools/lcf-view/lcf_view.py examples libs --spec docs/language-spec-v0.md
       - name: Check the libraries
         run: |
           python tools/lcf-poc/lcf.py check examples
           python tools/lcf-poc/lcf.py check docs/rfc
+          python tools/lcf-poc/lcf.py check libs/visa
+          python tools/lcf-poc/lcf.py check libs/scpi
       - name: Canonical form
-        run: python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc
+        run: python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc libs
       - name: Proof of concept tests
         run: python -m unittest discover tools/lcf-poc/tests
       - name: MCP round trip

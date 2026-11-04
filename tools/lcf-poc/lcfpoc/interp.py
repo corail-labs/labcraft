@@ -65,15 +65,20 @@ class Machine:
         self.stack, self.iters, self.callers = [], [], []
         self.results_log = []
 
+    def here(self):
+        """The library of the function that is running: names of types are resolved there."""
+        return self.stack[-1].lib if self.stack else self.lib
+
     # Types: default values and argument conversion --------------------------------------
 
-    def default_for(self, t, src, depth=0):
+    def default_for(self, t, src, depth=0, lib=None):
         if t is None or depth > 8 or not isinstance(t, Tree):
             return None
+        lib = lib or self.here()
         if t.data == "array_type":
             return []
         if t.data == "struct_type":
-            return Struct("struct", {str(f.children[0]): self.default_for(f.children[1], src, depth + 1) for f in t.children})
+            return Struct("struct", {str(f.children[0]): self.default_for(f.children[1], src, depth + 1, lib) for f in t.children})
         if t.data == "enum_type":
             v = t.children[0]
             return EnumVal("enum", str(v.children[0]))
@@ -100,14 +105,14 @@ class Machine:
             return b""
         if name in ("duration", "timestamp"):
             return Q(0.0, SECONDS, "s", 1.0)
-        decl = self.lib.types.get(parts[0])
+        decl = lib.find_type(parts)
         if decl is not None:
             if decl.tree.data == "enum_type":
                 return EnumVal(decl.name, str(decl.tree.children[0].children[0]))
             if decl.tree.data == "struct_type":
-                return Struct(decl.name, {str(f.children[0]): self.default_for(f.children[1], decl.src, depth + 1)
+                return Struct(decl.name, {str(f.children[0]): self.default_for(f.children[1], decl.src, depth + 1, decl.lib)
                                           for f in decl.tree.children})
-            return self.default_for(decl.tree, decl.src, depth + 1)
+            return None if lib.is_opaque(decl) else self.default_for(decl.tree, decl.src, depth + 1, decl.lib)
         return None
 
     def coerce(self, v, t, src, what):
@@ -117,13 +122,14 @@ class Machine:
         except (ValueError, TypeError, UnitError) as e:
             raise ArgError(f"argument '{what}': {e}") from None
 
-    def _coerce(self, v, t, src):
+    def _coerce(self, v, t, src, lib=None):
+        lib = lib or self.lib
         if t.data == "array_type":
             if isinstance(v, str):
                 v = json.loads(v)
             if not isinstance(v, list):
                 raise ValueError("array expected (JSON list)")
-            return [self._coerce(x, t.children[0], src) for x in v]
+            return [self._coerce(x, t.children[0], src, lib) for x in v]
         if t.data != "named_type":
             raise ValueError("argument type not supported")
         parts = [str(c) for c in t.children[0].children]
@@ -150,14 +156,14 @@ class Machine:
             return self._number(v, utext)
         if name == "error":
             return None
-        if name in ("visa.session", "relays.bank", "psu.session"):
+        decl = lib.find_type(parts)
+        if decl is not None and lib.is_opaque(decl):
             if not isinstance(v, str):
                 raise ValueError("resource name expected (the PoC test bench opens the session)")
             try:
                 return self.world.open(v, 2.0, external=True)
             except LcFail as f:
                 raise ValueError(f"{f.category}: {f.message}") from None
-        decl = self.lib.types.get(parts[0])
         if decl is not None:
             tree = decl.tree
             if tree.data == "struct_type":
@@ -170,7 +176,7 @@ class Machine:
                     fname = str(f.children[0])
                     if fname not in v:
                         raise ValueError(f"field '{fname}' missing in {decl.name}")
-                    fields[fname] = self._coerce(v[fname], f.children[1], decl.src)
+                    fields[fname] = self._coerce(v[fname], f.children[1], decl.src, decl.lib)
                 extra = set(v) - set(fields)
                 if extra:
                     raise ValueError(f"unknown fields in {decl.name}: {', '.join(sorted(extra))}")
@@ -180,7 +186,7 @@ class Machine:
                 if var not in decl.enum_variants():
                     raise ValueError(f"unknown variant of {decl.name}: {var}")
                 return EnumVal(decl.name, var)
-            return self._coerce(v, tree, decl.src)
+            return self._coerce(v, tree, decl.src, decl.lib)
         raise ValueError(f"type '{name}' is not supported for an argument")
 
     def _number(self, v, utext):
@@ -210,6 +216,8 @@ class Machine:
             fn = self.lib.functions.get(fname)
             if fn is None:
                 raise ArgError(f"unknown function '{fname}' (available: {', '.join(sorted(self.lib.functions)) or 'none'})")
+            if fn.extern:
+                raise ArgError(f"'{fname}' is an external function: call it from a function of the library")
             unknown = set(raw_args) - {p.name for p in fn.params}
             if unknown:
                 raise ArgError(f"unknown inputs: {', '.join(sorted(unknown))} (inputs: {', '.join(p.name for p in fn.params)})")
@@ -261,9 +269,9 @@ class Machine:
         out = {}
         for name, tree, _ in fn.outputs:
             if name in frame.both:
-                out[name] = frame.outputs.get(name, self.default_for(tree, fn.src))
+                out[name] = frame.outputs.get(name, self.default_for(tree, fn.src, lib=fn.lib))
             else:
-                out[name] = env.vars.get(name, self.default_for(tree, fn.src))
+                out[name] = env.vars.get(name, self.default_for(tree, fn.src, lib=fn.lib))
         return out
 
     def run_body(self, body, env, frame, ctx, top=False):
@@ -366,7 +374,7 @@ class Machine:
             for f in op.parts[1:]:
                 v = self.field(v, f)
             return v
-        if op.parts[0] in self.lib.types and len(op.parts) == 2:
+        if op.parts[0] in self.here().types and len(op.parts) == 2:
             return EnumVal(op.parts[0], op.parts[1])
         return PathConst(op.parts)
 
@@ -441,8 +449,9 @@ class Machine:
                 outs[i] = args[n]
 
     def defaults(self, callee):
-        if isinstance(callee, FnIR):
-            return [self.default_for(o[1], callee.src) for o in callee.outputs]
+        fn = callee if isinstance(callee, FnIR) else callee.decl  # an `extern` declaration has typed outputs
+        if fn is not None:
+            return [self.default_for(o[1], fn.src, lib=fn.lib) for o in fn.outputs]
         return list(callee.defaults)
 
     def origin(self, node, frame, what):
@@ -459,7 +468,7 @@ class Machine:
                 raise Fault(f.category, f.message) from None
             err = getattr(f, "error", None) or LcError(f.category, f.message, f.code)
             err.origin = self.origin(node, frame, b.qname)
-            outs = list(b.defaults)
+            outs = self.defaults(b)
             self.passthrough(b.outs, outs, args)
             outs[b.outs.index("err")] = err
             return tuple(outs)

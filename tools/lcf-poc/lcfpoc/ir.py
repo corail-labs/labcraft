@@ -167,6 +167,9 @@ class FnIR:
     file: str
     line: int
     doc: str = ""
+    extern: Any = None  # (interface, {argument: value}) of an `extern` declaration (4.1); no body
+    lib: Any = None
+    native: Any = None  # what runs an `extern` declaration: its signature, and the native body
 
 
 @dataclass
@@ -177,6 +180,8 @@ class TypeDecl:
     file: str
     line: int
     doc: str = ""
+    lib: Any = None
+    uses: Any = ()
 
     def enum_variants(self):
         t = self.tree
@@ -189,10 +194,6 @@ class LowerError(Exception):
     def __init__(self, msg, line=0):
         super().__init__(msg)
         self.msg, self.line = msg, line
-
-
-class ExternUnsupported(LowerError):
-    """A valid `extern` declaration (spec 4.1): the proof of concept does not execute it."""
 
 
 def line_of(t):
@@ -392,13 +393,19 @@ class Lowerer:
 
     def function(self, fn, uses, file, doc):
         kids = [c for c in fn.children if c is not None]
-        name = next(str(c) for c in kids if isinstance(c, Token) and c.type == "NAME")
+        names = [str(c) for c in kids if isinstance(c, Token) and c.type == "NAME"]
+        extern = None
+        if fn.data == "extern_decl":  # `extern interface(args)`, then the signature; no body
+            head = re.search(r"^extern\s+\w+\s*\((.*?)\)\s*$", self.src, re.M | re.S)
+            extern = (names[0], dict(re.findall(r'(\w+)\s*:\s*"([^"]*)"', head.group(1) if head else "")))
+            names = names[1:]
+        name = names[0]
         params = [self.param(c) for c in kids if isinstance(c, Tree) and c.data == "param"]
         outputs = [(str(c.children[0]), c.children[1], self.text(c.children[1]))
                    for c in kids if isinstance(c, Tree) and c.data == "output"]
         block = kids[-1]
-        body = self.body(block.children, line_of(block))
-        fir = FnIR(name, params, outputs, body, uses, file, line_of(fn), doc)
+        body = self.body([] if extern else block.children, line_of(fn if extern else block))
+        fir = FnIR(name, params, outputs, body, uses, file, line_of(fn), doc, extern)
         self.compute_free(body, set())
         return fir
 
@@ -462,14 +469,11 @@ def lower_file(src, file, tree):
                  and c.data in ("fn_decl", "extern_decl", "type_decl")), None)
     if decl is None:
         raise LowerError("no declaration found", 1)
-    if decl.data == "extern_decl":
-        raise ExternUnsupported("extern functions are not supported by the proof of concept (spec 4.1)",
-                                line_of(decl))
     doc = "\n".join(re.sub(r"^\s*/// ?", "", l) for l in src.splitlines()[:max(line_of(decl) - 1, 0)]
                     if l.strip().startswith("///"))
     header = next(c for c in tree.children if isinstance(c, Tree) and c.data == "header")
     version = int(str(header.children[0]))
-    if decl.data == "fn_decl":
+    if decl.data in ("fn_decl", "extern_decl"):
         fir = lw.function(decl, uses, file, doc)
         fir.src = src
         return fir, None, uses_lines, version

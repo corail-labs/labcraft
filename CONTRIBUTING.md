@@ -34,17 +34,20 @@ The open questions are listed in the spec, section 15; the decisions and their r
 
 ## Checks
 
-Every complete code block of the spec and every file in `examples/` must parse, the examples and
-the RFC programs (`docs/rfc/`) must check and be in canonical form (spec 5.2), and the proof of
-concept must stay green:
+Every complete code block of the spec and every file in `examples/` and `libs/` must parse, the
+examples, the RFC programs (`docs/rfc/`) and the shipped libraries (`libs/`) must check and be in
+canonical form (spec 5.2), and the proof of concept must stay green:
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
-python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
+python tools/lcf-view/lcf_view.py examples libs --spec docs/language-spec-v0.md
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples
 python tools/lcf-poc/lcf.py check docs/rfc
 python tools/lcf-poc/lcf.py fmt --check docs/rfc
+python tools/lcf-poc/lcf.py check libs/visa
+python tools/lcf-poc/lcf.py check libs/scpi
+python tools/lcf-poc/lcf.py fmt --check libs
 python -m unittest discover tools/lcf-poc/tests
 python tools/lcf-poc/tests/mcp_smoke.py
 ```

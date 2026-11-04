@@ -105,8 +105,10 @@ limits).
 - No static type checking: a type error is a fault reported at run time
   (`lcf.type_error`, `lcf.unit_mismatch`), with file, line and node.
 - No generics, function references (`call`), `for parallel` (run sequentially), `panel` or
-  `layout` (ignored), `labcraft.toml` manifest, or libraries other than the built-in
-  primitives (`lcfpoc/stdlib.py`).
+  `layout` (ignored). Libraries: the primitives (`lcfpoc/stdlib.py`), the sub-folders of the
+  library, and `libs/` (of its manifest, only `always` is read). No `--lib-path`, and no sub-library
+  other than a direct sub-folder is walked. Variants of another library (`lib.Type.Variant`), types
+  that contain themselves and `string.format` units in a field that never runs are not checked.
 - `fmt --check` is lexical: it does not check the width of `extern` lines, the spelling of literals,
   nor layout entries that name no node; the order of lines is not checked in the blocks of the spec;
   it only reports and never rewrites. A file larger than the library limit (1,000,000 bytes) is reported, not read.
@@ -115,9 +117,9 @@ limits).
   end at 2 s) instead of overlapping them, as spec 8 requires.
 - After a fault (for example `lcf.iteration_limit`) the run does not release the sessions it
   opened: they stay in `open_sessions` of the report, unlike spec 8.2.
-- `extern` functions (spec 4.1) are not supported: `check` reports the file with the diagnostic
-  "extern functions are not supported by the proof of concept" and its line, and the function is
-  unknown to the other files; `fmt --check` still checks the layout of such a file.
+- `extern` functions (spec 4.1) are read as signatures. `extern rust` runs the native body of
+  `lcfpoc/stdlib.py` registered for its crate and function; anything else returns
+  `extern.unavailable` on `err`.
 - Names and units are flagged by `fmt --check` when they are not in their one spelling (R-20), but
   are not normalized when read: `µV` and `μV` are different to `check` and `run`.
 - `unitless(230 mV, [V])` returns 0.23 (explicit unit, spec 3.3); `duration` is a quantity in seconds.

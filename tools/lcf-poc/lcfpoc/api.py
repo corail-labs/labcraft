@@ -1,7 +1,9 @@
 """Functions shared by the CLI and the MCP server: everything returns JSON dictionaries."""
+import re
+
 from . import stdlib
 from .interp import run_function
-from .library import load_library
+from .library import SHIPPED, load_library
 
 
 def _diags(lib):
@@ -26,7 +28,26 @@ def list_functions(folder, builtins=False):
     if builtins:
         out["builtins"] = [{"name": b.qname, "signature": b.signature(), "doc": b.doc,
                             "library": b.lib or "core (always available)"} for b in stdlib.BUILTINS.values()]
+        shipped = sorted(p for p in SHIPPED.iterdir() if p.is_dir()) if SHIPPED.is_dir() else []
+        libs = {p.name: load_library(p) for p in shipped}
+        libs.update({d.name: d for d in lib.loader.libs.values()} if lib.loader else {})
+        for name, one in sorted(libs.items()):
+            for f in one.functions.values():
+                out["builtins"].append(_entry(name, one, f))
     return out
+
+
+def _entry(name, lib, f):
+    """A function of a library, as a caller writes it: `visa.session`, not the `session` of its file."""
+    def typed(t):
+        for ty in lib.types:
+            t = re.sub(rf"(?<![\w.]){re.escape(ty)}(?![\w])", f"{name}.{ty}", t)
+        return t
+    inputs = ", ".join(f"{p.name}: {typed(p.type_text)}" + ("" if p.default is None else " = …") for p in f.params)
+    outputs = ", ".join(f"{n}: {typed(t)}" for n, _, t in f.outputs)
+    always = f.extern and lib.callee(f)[1].always
+    return {"name": f"{name}.{f.name}", "library": name, "doc": f.doc,
+            "signature": f"{'always ' if always else ''}fn {name}.{f.name}({inputs}) -> ({outputs})"}
 
 
 def run(folder, function, sim=None, args=None, trace=False, **limits):

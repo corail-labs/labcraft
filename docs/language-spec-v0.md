@@ -13,7 +13,10 @@ follows (events, panel widgets, timed loops, PLC mode).
 ## 1. Model
 
 - A **project** contains **libraries**. A library is a folder with a `labcraft.toml` manifest (name,
-  version, dependencies: the basis of the package, D-25).
+  version, dependencies: the basis of the package, D-25). In M0 only the libraries shipped with
+  LabCraft have one (section 9), with the fields `name`, `version`, `description`, `dependencies`,
+  `always` (native functions, 7.2), `resources` (opaque types, 8.1) and `categories` (of errors,
+  7.1); see `libs/visa`.
 - A library contains **functions** and **types**, **one per file** (D-07).
 - A **function** = a signature (inputs, outputs) + a **diagram**. A **panel** can be attached to it
   (D-06).
@@ -87,12 +90,15 @@ A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fai
 contain itself, directly or through other types.
 
 **Opaque types**: a library can declare a type whose content is hidden, handled only by its
-functions. This is the case for the session `visa.session` (the equivalent of LabVIEW's *VISA
-resource name*): it designates an open connection, not an instrument.
+functions: `type session = opaque`. This is the case for the session `visa.session` (the equivalent
+of LabVIEW's *VISA resource name*): it designates an open connection, not an instrument. Having
+neither fields nor variants, its name never appears among operands, so a value can bear it (R-1):
+`fn close(session: session, …)` in `libs/visa`.
 
 **Alias of an opaque type.** A driver library can declare its opaque type as an alias of another
 library's opaque type: `type bank = visa.session` in the `relays` library. `relays.bank` and
-`visa.session` are then two names of the same type: a `relays.bank` is accepted wherever a
+`visa.session` are then two names of the same type, and a resource (8.1) if the type is one: a
+`relays.bank` is accepted wherever a
 `visa.session` is expected, and the reverse. This is how the functions of a generic library apply
 to a driver's session (`scpi.query_f64(bench.relays, …)`, section 13), while the driver's own
 signatures still say what the session designates.
@@ -193,8 +199,14 @@ fn check_voltage(
   of the same library are named without qualification (`settle`, `Verdict`), so they cannot share
   a name. Anything from another
   library, types included, needs `use lib` in the file and the qualified name: after `use visa`,
-  `visa.open` and `visa.session`. `use a.b` imports `b`, a sub-library of `a` (a library nested in
-  the folder of `a`); its contents are named `a.b.name`.
+  `visa.open` and `visa.session`, and for a variant `lib.Type.Variant`. `use a.b` imports `b`, a
+  sub-library of `a` (a library nested in the folder of `a`); its contents are named `a.b.name`.
+- **The name of a library** is its path from the root of the project, the folder given to the tool:
+  `use relays` in `examples/station.lcf` is `examples/relays`. A library can use another of the
+  project and the libraries shipped with LabCraft, but not in a cycle, and nothing can use the root,
+  which has no name: a type shared with a sub-library is declared in that sub-library
+  (`results_log.StepResult`, section 13). A library shipped with LabCraft sees only the others that
+  are shipped: a folder `visa` in a project does not change what `scpi` runs.
 - **Function references** (Q-14): a named function can be passed as an argument, with a signature
   type checked at edit time, for example
   `measure: fn(visa.session, err: error) -> (f64[V], visa.session, error)`. The callee runs it
@@ -224,7 +236,7 @@ fn spectrum(samples: [f64[V]], rate: f64[Hz]) -> (magnitude: [f64[V]], err: erro
 | `c` | `library`, `symbol` | C ABI, dynamic loading; in-process, or isolated in a separate process |
 | `dotnet` | `assembly`, `type`, `method` | Hosted CLR (D-14) |
 | `python` | `module`, `function` | The user's Python interpreter, in a separate process: LabCraft does not embed Python |
-| `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft. For example `extern rust(crate: "labcraft-visa", function: "close")` before `fn close(…)` in `libs/visa` |
+| `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft and of the examples (`results_log`, A.4). How a project adds its own crate is for M8. For example `extern rust(crate: "labcraft-visa", function: "close")` before `fn close(…)` in `libs/visa` |
 
 - **The declaration is the contract.** Types are converted and checked at the boundary, at run
   time. Units cannot be: the declaration asserts them, like `with_unit`.
@@ -591,7 +603,8 @@ Categories are hierarchical. A library declares its own in its manifest.
 - **Default value of a type**: `false`; `0` in the unit of the type (`0 V`, `0 s` for a
   `duration`); `""`; an empty `bytes` or array; the first variant of an enumeration, with its data
   at their default values; for a struct, each field at its default value; `none` for an `error`.
-  An opaque type declares its default value in its library (an invalid handle). The default value
+  The default value of an opaque type is an invalid handle, on which the functions of its library
+  fail with an error. The default value
   of a panel element is that of its type, unless the panel item gives `default: …` (section 10).
   What `timestamp`, function references, `ref<T>` and `queue<T>` default to is Q-21.
 - **Default values flow like data.** A node without an `err` input (arithmetic, `match`) runs on
@@ -1006,6 +1019,7 @@ type Step = struct {
     high: f64[V],
 }
 
+// In the `results_log` library, which writes it: named `results_log.StepResult` elsewhere.
 type StepResult = struct { name: string, value: f64[V], passed: bool }
 
 // `relays.bank` and `psu.session` are opaque types that their libraries declare as aliases of
@@ -1027,7 +1041,7 @@ fn station(bench: Bench, steps: [Step], dut_count: i32 = 1, err: error = none) -
     _, _, _, _, err_out = loop
         carry state = State.Init,
         carry index = 0,
-        carry results: [StepResult] = [],
+        carry results: [results_log.StepResult] = [],
         carry tested = 0,
         carry err = err
     {
@@ -1073,16 +1087,21 @@ labcraft 1
 
 use psu
 use relays
+use results_log
 
 /// Switch, set, wait for the reading to settle, measure, compare to the limits.
-fn run_step(bench: Bench, step: Step, err: error = none) -> (result: StepResult, err: error) {
+fn run_step(
+    bench: Bench,
+    step: Step,
+    err: error = none,
+) -> (result: results_log.StepResult, err: error) {
     _, e1 = relays.apply(bench.relays, step.route, err: err)
     _, e2 = psu.set_voltage(bench.source, step.voltage, err: e1)
     v, e3 = settle(bench.dmm, target: step.voltage, tolerance: 0.2 V, period: 50 ms, timeout: 1 s, err: e2)
     above = ge(v, step.low)
     below = le(v, step.high)
     passed = and(above, below)
-    result = StepResult { name: step.name, value: v, passed: passed }
+    result = results_log.StepResult { name: step.name, value: v, passed: passed }
     err = e3
 }
 ```
@@ -1180,6 +1199,7 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `ok`, `code`: a `handle` pattern;
 - `in`: a `for` clause;
 - `after`: an argument list (`after:` is the order input, R-15);
+- `opaque`: the whole type of a `type` declaration (3.2);
 - `control`, `indicator`: a `panel` item;
 - `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`: a `layout` item;
 - `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item.
@@ -1200,7 +1220,7 @@ path          = IDENT { "." IDENT } ;
 
 type_decl     = "type" IDENT [ generics ] "=" type_expr ;
 fn_decl       = fn_sig block ;
-extern_decl   = "extern" IDENT "(" [ arg { "," arg } ] ")" fn_sig ;   (* reserved, M8 (4.1) *)
+extern_decl   = "extern" IDENT "(" [ arg { "," arg } ] ")" fn_sig ;   (* 4.1 *)
 fn_sig        = "fn" IDENT [ generics ]
                 "(" [ param { "," param } [ "," ] ] ")"
                 "->" "(" [ output { "," output } [ "," ] ] ")" ;
@@ -1315,7 +1335,7 @@ What the grammar alone does not say:
 
 | # | Rule |
 |---|---|
-| R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of an imported library, a visible type, or a panel element that is neither an input nor an output. |
+| R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of an imported library, a visible type (except an opaque type or an alias of one, 3.2), or a panel element that is neither an input nor an output. |
 | R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12). **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
 | R-3 | **A `carry` can shadow an outer name** (`carry err = err`): in the body, the name designates the carry. |
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
@@ -1424,18 +1444,18 @@ fn array.sum<N: Number>(values: [N]) -> (sum: N)           // not in the PoC
 
 fn string.concat(parts: string...) -> (text: string)       // 5.4; not in the PoC
 fn string.join(parts: [string]) -> (text: string)          // not in the PoC
-fn string.format(template: string, …) -> (text: string)    // an input per field (5.4); not in the PoC
+fn string.format(template: string, …) -> (text: string)    // an input per field (5.4)
 
 fn time.now() -> (timestamp: timestamp)                    // order it with `after:`
 fn time.elapsed(since: timestamp) -> (duration: duration)
 fn time.wait(duration: duration, err: error = none) -> (err: error)
 
-fn string.split(text: string, separator: string) -> (parts: [string])   // not in the PoC
-fn string.to_f64(text: string, err: error = none) -> (value: f64, err: error)   // not in the PoC
-fn string.to_i32(text: string, err: error = none) -> (value: i32, err: error)   // not in the PoC
+fn string.split(text: string, separator: string) -> (parts: [string])
+fn string.to_f64(text: string, err: error = none) -> (value: f64, err: error)
+fn string.to_i32(text: string, err: error = none) -> (value: i32, err: error)
 
 fn errors.make(category: kind category, code: i32 = 0,
-               message: string = "") -> (err: error)                 // not in the PoC
+               message: string = "") -> (err: error)
 fn errors.raise_if(condition: bool, category: kind category, message: string = "",
                    err: error = none) -> (err: error)
 fn errors.merge(errs: error...) -> (err: error)            // 7.4; the PoC takes up to six
@@ -1445,7 +1465,9 @@ fn ui.set<T>(element: kind element, value: T) -> (value: T)   // section 10; not
 ```
 
 `array.get` fails with the category `array.index_out_of_range`, `string.to_f64` and
-`string.to_i32` with `string.parse`; `errors.make` produces an error of the given category and
+`string.to_i32` with `string.parse`. Both ignore the spaces around the text: `to_f64` reads an
+optional sign, digits with decimals, an exponent, or `nan` and `inf` in any case; `to_i32` reads an
+optional sign and digits, in the range of `i32`. `errors.make` produces an error of the given category and
 code; `errors.raise_if` produces an error of the given category when `condition` is true, `none`
 otherwise.
 
@@ -1471,15 +1493,16 @@ fn scpi.check_errors(session: visa.session,
 The `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
 `visa.close` as `always`. `scpi` is written in LabCraft over `visa`, in `libs/scpi`:
 `query_f64` is a `visa.query` followed by `string.to_f64`. A `scpi` call is therefore atomic only
-per `visa` call (8.1). The proof of concept implements both natively.
+per `visa` call (8.1). The proof of concept reads these files; its native bodies stand in for the
+crate of `visa`.
 
 ### A.4 Libraries of the examples
 
 `dmm_driver`, `relays`, `psu` and `results_log` belong to the examples (section 13), not to the
-libraries shipped with LabCraft. They are to be written as libraries of the examples, before
-M0a: `dmm_driver`, `relays` and `psu` in LabCraft over `visa` and `scpi`, like real drivers;
-`results_log`, which writes a file, as an `extern rust` function. The proof of concept
-implements them natively.
+libraries shipped with LabCraft. They are sub-folders of `examples/`: `dmm_driver`, `relays` and
+`psu` written in LabCraft over `visa` and `scpi`, like real drivers; `results_log`, which writes a
+file, as an `extern rust` function, whose native body in the proof of concept keeps the results in
+memory.
 
 ```text
 fn dmm_driver.read_dc_volts(session: visa.session,
@@ -1488,7 +1511,7 @@ fn relays.apply(bank: relays.bank, route: string,
                 err: error = none) -> (bank: relays.bank, err: error)
 fn psu.set_voltage(source: psu.session, voltage: f64[V],
                    err: error = none) -> (source: psu.session, err: error)
-fn results_log.append_csv(results: [StepResult], err: error = none) -> (err: error)
+fn results_log.append_csv(results: [results_log.StepResult], err: error = none) -> (err: error)
 ```
 
 The libraries `instrument` (6.3), `sound` and `lamp` (5.3) are illustrative and have no signatures

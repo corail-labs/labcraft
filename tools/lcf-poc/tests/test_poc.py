@@ -1,6 +1,7 @@
 """Acceptance tests of the PoC (criteria 1 to 4 and 6): python -m unittest discover tools/lcf-poc/tests"""
 import json
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -44,7 +45,8 @@ class Acceptance(unittest.TestCase):
         close = next(t for t in r["trace"] if t["op"] == "visa.close")
         self.assertNotIn("skipped", close)
         skipped = [t["op"] for t in r["trace"] if t.get("skipped")]
-        self.assertEqual(skipped, ["scpi.query_f64"])
+        # `scpi.query_f64` is written in LabCraft: its body runs and its native nodes are skipped (7.2)
+        self.assertEqual(skipped, ["visa.query", "string.to_f64"])
 
     def test_session_closed_after_failed_measure(self):
         r = run("check_voltage", "dmm-timeout.toml", {"resource": "SIM::DMM0"})
@@ -254,6 +256,7 @@ fn order() -> (a: i32, b: i32) {
         for block in re.split(r"\n(?=fn )", self.FNS):
             files[re.match(r"fn (\w+)", block).group(1) + ".lcf"] = self.HEADER + block.strip() + "\n"
         lib_dir(self.td.name, files)
+        shutil.copytree(Path(EX) / "dmm_driver", Path(self.td.name) / "dmm_driver")
         self.dir = self.td.name
 
     def tearDown(self):
@@ -979,6 +982,196 @@ layout {
             self.assertIn("syntax error", buf.getvalue())
             self.assertNotIn("Traceback", buf.getvalue())
 
+    def test_extern_without_err_is_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"f.lcf": 'labcraft 1\n\nextern rust(crate: "a", function: "f")\nfn f() -> (x: i32)\n'})
+            self.assertTrue(any("R-13" in d["message"] for d in api.check(td)["diagnostics"]))
+
+    def test_shipped_libraries_match_their_native_bodies(self):
+        from lcfpoc.library import load_library
+        from lcfpoc import stdlib
+        for folder, names in ((ROOT / "libs" / "visa", {"open", "close", "write", "read", "query"}),
+                              (ROOT / "examples" / "results_log", {"append_csv"})):
+            lib = load_library(folder)
+            self.assertEqual(lib.errors, [])
+            self.assertEqual(set(lib.functions), names)
+            for fn in lib.functions.values():
+                b = stdlib.NATIVE[fn.extern[1]["crate"], fn.extern[1]["function"]]
+                self.assertEqual([p.name for p in b.params], [p.name for p in fn.params], fn.name)
+                self.assertEqual(list(b.outs), [o[0] for o in fn.outputs], fn.name)
+        # the manifest marks `always`, not the native body
+        visa = load_library(ROOT / "libs" / "visa")
+        self.assertTrue(visa.callee(visa.functions["close"])[1].always)
+        self.assertFalse(visa.callee(visa.functions["write"])[1].always)
+
+    def test_shipped_library_ignores_a_folder_of_the_project(self):
+        from lcfpoc.library import load_library
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"a.lcf": "labcraft 1\n\nuse scpi\nuse visa\n\nfn a() -> () {}\n"})
+            (Path(td) / "visa").mkdir()
+            lib_dir(Path(td) / "visa", {"fake.lcf": "labcraft 1\n\nfn fake() -> () {}\n"})
+            lib = load_library(td)
+            self.assertIn("fake", lib.deps["visa"].functions)  # the project replaces it for itself
+            self.assertIn("query", lib.deps["scpi"].deps["visa"].functions)  # not for `scpi`
+
+    def test_library_cycle(self):
+        with tempfile.TemporaryDirectory() as td:
+            for name, other in (("a", "b"), ("b", "a")):
+                (Path(td) / name).mkdir()
+                lib_dir(Path(td) / name, {"f.lcf": f"labcraft 1\n\nuse {other}\n\nfn f() -> () {{}}\n"})
+            msgs = [d["message"] for d in api.check(td)["diagnostics"]]
+            self.assertEqual(len([m for m in msgs if "use each other" in m]), 1, msgs)
+
+    def test_type_files_are_checked(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"a.lct": "labcraft 1\n\ntype a = nonexist.session\n",
+                         "b.lct": "labcraft 1\n\ntype b = struct { x: opaque, y: nonsense }\n",
+                         "c.lct": "labcraft 1\n\ntype c = [opaque]\n",
+                         "d.lct": "labcraft 1\n\ntype d = opaque[V]\n",
+                         "e.lct": "labcraft 1\n\ntype e = visa.session\n",
+                         "f.lct": "labcraft 1\n\ntype f = opaque\n"})
+            rep = api.check(td)
+            files = {d["file"] for d in rep["diagnostics"] if d["severity"] == "error"}
+            self.assertEqual(files, {"a.lct", "b.lct", "c.lct", "d.lct", "e.lct"}, rep["diagnostics"])
+
+    def test_struct_literal_needs_use(self):
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "lib").mkdir()
+            lib_dir(Path(td) / "lib", {"r.lct": "labcraft 1\n\ntype R = struct { a: i32 }\n"})
+            lib_dir(td, {"a.lcf": "labcraft 1\n\nuse lib\n\nfn a() -> () {}\n",
+                         "b.lcf": "labcraft 1\n\nfn b() -> (r: i32) {\n    x = lib.R { a: 1 }\n    r = x.a\n}\n"})
+            self.assertTrue(any("'lib' is not imported" in d["message"] for d in api.check(td)["diagnostics"]))
+
+    def test_declaration_is_the_contract(self):
+        ext = 'labcraft 1\n\nextern rust(crate: "labcraft-visa", function: "%s")\n'
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"myclose.lcf": ext % "close" + "fn myclose(hnd: string) -> (err: error)\n",
+                         "later.lcf": ext % "none_yet" + "fn later() -> (v: f64[V], err: error)\n",
+                         "t.lcf": "labcraft 1\n\nfn t() -> (w: f64[V], err: error) {\n    v, e = later()\n"
+                                  "    w = add(v, 1 V)\n    err = e\n}\n"})
+            msgs = [d["message"] for d in api.check(td)["diagnostics"]]
+            self.assertTrue(any("differs from its native body" in m for m in msgs), msgs)
+            (Path(td) / "myclose.lcf").unlink()
+            r = api.run(td, "t", None, {})  # a typed default value, not a fault (7.2)
+            self.assertIsNone(r["fault"], r)
+            self.assertEqual(r["error"]["category"], "extern.unavailable")
+            self.assertEqual(r["outputs"]["w"]["value"], 1.0)
+
+    def test_skipped_generic_output_reaches_a_driver_as_an_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            shutil.copytree(Path(EX) / "psu", Path(td) / "psu")
+            lib_dir(td, {"t.lcf": """labcraft 1
+
+use array
+use psu
+use visa
+
+fn t(values: [f64[V]]) -> (err: error) {
+    s, e0 = visa.open("SIM::PSU0")
+    v, e1 = array.get(values, 5, err: e0)
+    _, e2 = psu.set_voltage(s, v, err: e1)
+    #close: e3 = visa.close(s, err: e2)
+    err = e3
+}
+"""})
+            r = run("t", "psu-1W5.toml", {"values": "[]"}, folder=td)
+            self.assertIsNone(r["fault"], r)
+            self.assertEqual(r["error"]["category"], "array.index_out_of_range")
+
+    def test_bad_manifest_is_reported(self):
+        from unittest import mock
+        from lcfpoc import library
+        with tempfile.TemporaryDirectory() as td:
+            for text in ("always = 5\n", "always = [[]]\n", 'always = "close"\n', "not toml"):
+                lib_dir(td, {"labcraft.toml": text, "f.lcf": "labcraft 1\n\nfn f() -> () {}\n"})
+                with mock.patch.object(library, "SHIPPED", Path(td).resolve()):
+                    lib = library.load_library(td)
+                self.assertTrue(any("labcraft.toml" in d["file"] for d in lib.errors), text)
+
+    def test_list_shows_the_libraries_a_caller_can_use(self):
+        names = {b["name"]: b for b in api.list_functions(EX, True)["builtins"]}
+        for q in ("relays.apply", "psu.set_voltage", "dmm_driver.read_dc_volts", "scpi.query_f64", "add"):
+            self.assertIn(q, names)
+        self.assertEqual(names["visa.close"]["signature"],
+                         "always fn visa.close(session: visa.session, err: error = …) -> (err: error)")
+
+    def test_number_conversions(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"f.lcf": """labcraft 1
+
+use string
+
+fn f(t: string) -> (a: f64, b: i32, e1: error, e2: error) {
+    a, e1 = string.to_f64(t)
+    b, e2 = string.to_i32(t)
+}
+"""})
+            def errs(text):
+                o = api.run(td, "f", None, {"t": text})["outputs"]
+                return (o["e1"] is not None, o["e2"] is not None)
+            self.assertEqual(errs(" +12 "), (False, False))
+            self.assertEqual(errs("+2.3E+02"), (False, True))
+            self.assertEqual(errs("NaN"), (False, True))
+            for bad in ("1_000", "Infinity", "", "x"):
+                self.assertEqual(errs(bad), (True, True), bad)
+            self.assertEqual(errs("99999999999"), (False, True))
+
+    def test_library_not_imported_or_unknown(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"f.lcf": "labcraft 1\n\nfn f(s: visa.session) -> (err: error) {\n"
+                                  "    e = visa.close(s)\n    err = e\n}\n",
+                         "g.lcf": "labcraft 1\n\nuse nothing\n\nfn g() -> () {}\n"})
+            msgs = [d["message"] for d in api.check(td)["diagnostics"]]
+            self.assertTrue(any("'visa' is not imported" in m and "visa.close" in m for m in msgs), msgs)
+            self.assertTrue(any("type 'visa.session'" in m for m in msgs), msgs)
+            self.assertTrue(any("unknown library 'nothing'" in m and "scpi" in m for m in msgs), msgs)
+
+    def test_opaque_name_is_free_for_values_but_not_a_struct(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"bank.lct": "labcraft 1\n\nuse visa\n\ntype bank = visa.session\n",
+                         "s.lct": "labcraft 1\n\ntype s = struct { a: i32 }\n",
+                         "f.lcf": "labcraft 1\n\nfn f(bank: bank, err: error = none) -> (bank: bank, err: error) {\n"
+                                  "    bank = bank\n    err = err\n}\n",
+                         "g.lcf": "labcraft 1\n\nfn g(s: i32) -> (x: i32) {\n    x = s\n}\n"})
+            msgs = [d["message"] for d in api.check(td)["diagnostics"] if d["severity"] == "error"]
+            self.assertEqual(len(msgs), 1, msgs)
+            self.assertIn("'s' is the name of a library or a type", msgs[0])
+
+    def test_string_primitives(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"f.lcf": """labcraft 1
+
+use array
+use string
+
+fn f(v: f64[mV], t: string) -> (a: string, b: string, n: f64, e: error) {
+    a = string.format("{{{v}}} {v:.2 V} {x:.1}", v: v, x: 2.25)
+    parts = string.split(t, ",")
+    p0, e1 = array.get(parts, 0)
+    b, e2 = array.get(parts, 1, err: e1)
+    n, e3 = string.to_f64(p0, err: e2)
+    e = e3
+}
+"""})
+            r = api.run(td, "f", None, {"v": "230 mV", "t": "1.5,x"})
+            self.assertTrue(r["ok"], r)
+            self.assertEqual(r["outputs"]["a"], "{230 mV} 0.23 V 2.2")
+            self.assertEqual((r["outputs"]["b"], r["outputs"]["n"]), ("x", 1.5))
+            r = api.run(td, "f", None, {"v": "1 mV", "t": "no,x"})
+            self.assertEqual(r["error"]["category"], "string.parse")
+            lib_dir(td, {"f.lcf": """labcraft 1
+
+use string
+
+fn f(t: string) -> (a: string, b: string, c: string) {
+    a = string.format(t)
+    b = string.format("{x}")
+    c = string.format("x", y: 1)
+}
+"""})
+            msgs = [d["message"] for d in api.check(td)["diagnostics"] if "R-12" in d["message"]]
+            self.assertEqual(len(msgs), 3, msgs)
+
     def test_extern_is_reported_cleanly(self):
         import contextlib
         import io
@@ -989,9 +1182,12 @@ layout {
         with tempfile.TemporaryDirectory() as td:
             (Path(td) / "spectrum.lcf").write_text(block, encoding="utf-8", newline="\n")
             rep = api.check(td)
-            self.assertFalse(rep["ok"])
-            self.assertTrue(any("extern functions are not supported" in d["message"] and d["line"] == 4
-                                for d in rep["diagnostics"]), rep["diagnostics"])
+            self.assertTrue(rep["ok"], rep["diagnostics"])  # read and checked as a signature (4.1)
+            lib_dir(td, {"caller.lcf": "labcraft 1\n\nfn caller(a: [f64[V]], r: f64[Hz]) -> (err: error) {\n"
+                                       "    _, e = spectrum(a, r)\n    err = e\n}\n"})
+            r = api.run(td, "caller", None, {"a": "[]", "r": "1 Hz"})
+            self.assertEqual(r["error"]["category"], "extern.unavailable")
+            (Path(td) / "caller.lcf").unlink()
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 self.assertEqual(lcf.fmt_check([td]), 0)  # its layout is still checked
