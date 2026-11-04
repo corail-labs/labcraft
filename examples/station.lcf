@@ -9,7 +9,7 @@ fn station(bench: Bench, steps: [Step], dut_count: i32 = 1, err: error = none) -
     _, _, _, _, err_out = loop
         carry state = State.Init,
         carry index = 0,
-        carry results: [StepResult] = [],
+        carry results: [results_log.StepResult] = [],
         carry tested = 0,
         carry err = err
     {

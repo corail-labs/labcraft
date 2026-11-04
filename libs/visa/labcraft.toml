@@ -1,0 +1,8 @@
+# The VISA library shipped with LabCraft: declarations here, native bodies in its Rust crate (M0b).
+name = "visa"
+version = "0.1.0"
+description = "Sessions on instruments; SIM:: resources answer as the instruments of a simulation file"
+dependencies = []
+always = ["close"]
+resources = ["session"]
+categories = ["io.timeout", "visa.invalid_session", "visa.resource_not_found"]

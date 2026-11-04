@@ -55,6 +55,8 @@ throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner
   must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`).
 - Examples and spec code blocks must be in canonical form (spec 5.2: order of lines and layout of
   the text): `python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples`.
+- `libs/visa` and `libs/scpi` (libraries shipped with LabCraft) follow the same rules: `check` each
+  one, `fmt --check libs`, and `lcf_view.py` with `libs` next to `examples`.
 - `docs/rfc/` (programs discussed in the RFCs) follows the same rules: `check docs/rfc` and
   `fmt --check docs/rfc`. Its diagrams in `docs/images/rfc/` are rendered by `tools/lcf-figcraft`;
   rerender them when a file changes.

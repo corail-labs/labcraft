@@ -3,15 +3,18 @@
 Every file error becomes a diagnostic (file, line, node): never a raw Python traceback.
 """
 import difflib
+import functools
 import re
 import sys
+import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 from lark import Tree
 from lark.exceptions import LarkError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lcf-view"))
-from lcf_view import parse  # noqa: E402  (Lark grammar and line-ending rule shared with the viewer)
+from lcf_view import parse as _parse  # noqa: E402  (Lark grammar and line-ending rule shared with the viewer)
 
 from . import stdlib  # noqa: E402
 from .ir import (Call, For, FnIR, Handle, Loop, LowerError, Match, Operand, StructLit, TypeDecl,  # noqa: E402
@@ -19,9 +22,10 @@ from .ir import (Call, For, FnIR, Handle, Loop, LowerError, Match, Operand, Stru
 from .values import UnitError, parse_unit  # noqa: E402
 
 MAX_FILE = 1_000_000
+SHIPPED = Path(__file__).resolve().parents[3] / "libs"  # the libraries shipped with LabCraft
 BASE_TYPES = {"bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "c64", "c128",
               "string", "bytes", "timestamp", "duration", "error"}
-OPAQUE = {"visa.session", "relays.bank", "psu.session", "queue", "ref", "waveform"}
+OPAQUE = {"queue", "ref", "waveform"}
 ERR_OUT = "err"
 
 
@@ -32,14 +36,64 @@ class Diag(dict):
         return f"{where}: {self['severity']}: {ctx + ' ' if ctx else ''}{self['message']}"
 
 
+@functools.lru_cache(maxsize=512)
+def parse(src):
+    """Parsing is the slow part, and every load reads the same shipped libraries again."""
+    return _parse(src)
+
+
 class Library:
-    def __init__(self, path):
-        self.path = Path(path)
-        self.functions, self.types, self.diags, self.broken = {}, {}, [], set()
-        self.files = []
+    def __init__(self, path, loader=None, name="", prefix="", diags=None):
+        self.path, self.loader, self.name, self.prefix = Path(path), loader, name, prefix
+        self.functions, self.types, self.diags, self.broken = {}, {}, ([] if diags is None else diags), set()
+        self.files, self.deps = [], {}
+        self.shipped = self.path.resolve().is_relative_to(SHIPPED)
 
     def diag(self, severity, file, line, message, fn=None, node=None):
-        self.diags.append(Diag(severity=severity, file=file, line=line or 0, function=fn, node=node, message=message))
+        self.diags.append(Diag(severity=severity, file=self.prefix + file, line=line or 0, function=fn, node=node,
+                               message=message))
+
+    def find_type(self, parts):
+        """The declaration of a type named here: `Verdict`, or `visa.session` for a library in `deps`."""
+        if len(parts) == 1:
+            return self.types.get(parts[0])
+        dep = self.deps.get(".".join(parts[:-1]))
+        return dep.types.get(parts[-1]) if dep else None
+
+    def is_opaque(self, decl, depth=0):
+        """`type session = opaque`, or an alias of such a type (3.2)."""
+        t = decl.tree
+        if depth > 8 or not (isinstance(t, Tree) and t.data == "named_type"):
+            return False
+        parts = [str(c) for c in t.children[0].children]
+        if parts == ["opaque"]:
+            return not [c for c in t.children[1:] if c is not None]  # not `opaque[V]`
+        target = decl.lib.find_type(parts) if decl.lib else None
+        return target is not None and self.is_opaque(target, depth + 1)
+
+    def name_taken(self, name, uses):
+        """R-1: a value cannot have the name of a library or of a type that appears in operands."""
+        if name in stdlib.libraries() or name in uses:
+            return True
+        return name in self.types and not self.is_opaque(self.types[name])
+
+    def callee(self, fn):
+        if not fn.extern:
+            return "fn", fn
+        if fn.native is None:  # the declaration is the contract (4.1): the native body only runs it
+            qname = f"{self.name}.{fn.name}" if self.name else fn.name
+            base = self.native_body(fn)
+            params = [stdlib.P(p.name, stdlib.REQ if p.default is None else p.default.value) for p in fn.params]
+            outs = [o[0] for o in fn.outputs]
+            fn.native = stdlib.Builtin(qname, params, outs, (None,) * len(outs),
+                                       base.fn if base else stdlib.unavailable(qname), False, fn.doc)
+            fn.native.decl = fn
+        return "builtin", fn.native
+
+    @staticmethod
+    def native_body(fn):
+        interface, args = fn.extern
+        return stdlib.NATIVE.get((args.get("crate"), args.get("function"))) if interface == "rust" else None
 
     @property
     def errors(self):
@@ -49,7 +103,7 @@ class Library:
         """Callee: ('fn', FnIR) | ('builtin', Builtin) | ('variant', type, variant) | ('nolib', lib) | None."""
         if len(path) == 1:
             if path[0] in self.functions:
-                return "fn", self.functions[path[0]]
+                return self.callee(self.functions[path[0]])
             b = stdlib.BUILTINS.get(path[0])
             if b is not None and not b.lib:
                 return "builtin", b
@@ -60,19 +114,96 @@ class Library:
                 return "nolib", path[0]
             b = stdlib.BUILTINS.get(q)
             return ("builtin", b) if b else None
+        name = ".".join(path[:-1])
+        if name in uses and name in self.deps:
+            fn = self.deps[name].functions.get(path[-1])
+            return self.deps[name].callee(fn) if fn else None
         if path[0] in self.types and len(path) == 2:
             return "variant", path[0], path[1]
+        if self.loader and self.loader.find(name, self):
+            return "nolib", name
         return None
+
+
+class Loader:
+    """The libraries of a run: `use lib` finds a folder of the root library, then a shipped library."""
+
+    def __init__(self, root):
+        self.root, self.libs = root, {}
+
+    def find(self, name, lib):
+        """A library shipped with LabCraft sees only the others that are shipped (spec 4)."""
+        places = ((self.root.path, ""), (SHIPPED, "<labcraft>/"))
+        for base, prefix in places[1:] if lib.shipped else places:
+            p = base.joinpath(*name.split("."))
+            if p.is_dir() and (any(p.glob("*.lcf")) or any(p.glob("*.lct"))):
+                return p, f"{prefix}{name.replace('.', '/')}/"
+        return None
+
+    def get(self, name, by):
+        """The library `name` as `by` sees it, read with what it uses; None if there is none."""
+        found = self.find(name, by)
+        if not found:
+            return None
+        key = str(found[0].resolve())
+        if key in self.libs:
+            return self.libs[key]
+        lib = Library(found[0], self, name, found[1], self.root.diags)
+        self.libs[key] = lib  # before reading it: a cycle is reported, not followed for ever
+        read_library(lib)
+        return lib
 
 
 def load_library(path):
     lib = Library(path)
+    lib.loader = Loader(lib)
     root = lib.path
     if not root.is_dir():
         lib.diag("error", str(root), 0, "folder not found (a library is a folder)")
         return lib
+    read_library(lib)
+    for sub in sorted(x for x in root.iterdir() if x.is_dir() and not x.is_symlink() and not x.name.startswith(".")):
+        lib.loader.get(sub.name, lib)  # a sub-folder that holds files is a sub-library, and is checked too
+    _cycles(lib.loader.libs.values())
+    for one in [lib, *lib.loader.libs.values()]:
+        for ty in one.types.values():
+            if not one.is_opaque(ty):  # the file's own `use` lines decide what it can name
+                who = SimpleNamespace(uses=ty.uses, file=ty.file, name=ty.name, line=ty.line)
+                Checker(one, who).check_type(ty.tree, ty.line)
+        for fn in list(one.functions.values()):
+            try:
+                Checker(one, fn).run()
+            except Exception as e:  # the checker must never crash the tool
+                one.diag("error", fn.file, fn.line, f"check aborted (PoC bug): {e!r}", fn=fn.name)
+    return lib
+
+
+def _cycles(libs):
+    """Libraries cannot use each other in a cycle (spec 4): report each cycle once."""
+    done, seen = set(), set()
+
+    def visit(lib, path):
+        if lib in path:
+            cycle = path[path.index(lib):]
+            names = " → ".join(x.name for x in cycle + [lib])
+            if frozenset(cycle) not in seen:
+                seen.add(frozenset(cycle))
+                lib.diag("error", lib.files[0] if lib.files else "", 0, f"libraries use each other: {names}")
+            return
+        if lib in done:
+            return
+        for dep in lib.deps.values():
+            visit(dep, path + [lib])
+        done.add(lib)
+
+    for lib in libs:
+        visit(lib, [])
+
+
+def read_library(lib):
+    root = lib.path
     files = sorted(list(root.glob("*.lcf")) + list(root.glob("*.lct")))
-    if not files:
+    if not files and not lib.name:
         lib.diag("warning", str(root), 0, "no .lcf or .lct file in this folder")
     parsed = []
     for f in files:
@@ -94,12 +225,31 @@ def load_library(path):
     for item in parsed:
         if item:
             _register(lib, *item)
-    for fn in list(lib.functions.values()):
-        try:
-            Checker(lib, fn).run()
-        except Exception as e:  # the checker must never crash the tool
-            lib.diag("error", fn.file, fn.line, f"check aborted (PoC bug): {e!r}", fn=fn.name)
-    return lib
+    _read_manifest(lib)
+
+
+def _read_manifest(lib):
+    """Only the libraries shipped with LabCraft have a manifest until M2 (spec, section 9)."""
+    path = lib.path / "labcraft.toml"
+    if not lib.shipped or not path.is_file():
+        return
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as e:
+        lib.diag("error", path.name, 0, f"cannot read the manifest: {e}")
+        return
+    always = data.get("always", [])
+    if not (isinstance(always, list) and all(isinstance(x, str) for x in always)):
+        lib.diag("error", path.name, 0, "`always` is a list of function names")
+        return
+    for name in always:
+        fn = lib.functions.get(name)
+        kind, b = lib.callee(fn) if fn else (None, None)
+        if kind != "builtin":
+            lib.diag("error", path.name, 0, f"`always` can only mark a native function: '{name}' (7.2)")
+        else:
+            b.always = True
 
 
 def _load_file(lib, f, src):
@@ -139,10 +289,17 @@ def _load_file(lib, f, src):
 
 def _register(lib, fn, ty, use_lines):
     for name, line in use_lines.items():
-        if name not in stdlib.libraries():
+        if name in stdlib.libraries():
+            continue
+        dep = lib.loader.get(name, lib)
+        if dep is None:
+            shipped = sorted(p.name for p in SHIPPED.iterdir() if p.is_dir()) if SHIPPED.is_dir() else []
             lib.diag("error", fn.file if fn else ty.file, line, f"unknown library '{name}' "
-                     f"(available: {', '.join(stdlib.libraries())})")
+                     f"(available: {', '.join(stdlib.libraries() + shipped)})")
+        else:
+            lib.deps[name] = dep
     if fn:
+        fn.lib = lib
         if fn.name in lib.functions:
             old = lib.functions[fn.name]
             lib.diag("error", fn.file, fn.line, f"function '{fn.name}' defined twice (already in {old.file}:{old.line})")
@@ -151,6 +308,7 @@ def _register(lib, fn, ty, use_lines):
         else:
             lib.functions[fn.name] = fn
     if ty:
+        ty.lib, ty.uses = lib, list(use_lines)
         if ty.name in lib.types:
             old = lib.types[ty.name]
             lib.diag("error", ty.file, ty.line, f"type '{ty.name}' defined twice (already in {old.file}:{old.line})")
@@ -202,6 +360,8 @@ class Checker:
     def run(self):
         fn, lib = self.fn, self.lib
         names = [p.name for p in fn.params]
+        if fn.extern and ERR_OUT not in [o[0] for o in fn.outputs]:
+            self.d("error", fn.line, "an external function has an `err` output (R-13)")
         for n in {x for x in names if names.count(x) > 1}:
             self.d("error", fn.line, f"input '{n}' declared twice")
         outs = [o[0] for o in fn.outputs]
@@ -214,8 +374,14 @@ class Checker:
         for _, ty, _ in fn.outputs:
             self.check_type(ty, fn.line)
         for n in names + outs:
-            if n in stdlib.libraries() or n in lib.types:
+            if lib.name_taken(n, fn.uses):
                 self.d("error", fn.line, f"'{n}' is the name of a library or a type (R-1)")
+        if fn.extern:
+            base = lib.native_body(fn)
+            if base and ([p.name for p in base.params] != names or list(base.outs) != outs):
+                self.d("error", fn.line, "the declaration differs from its native body (4.1): "
+                                         f"{base.signature()}")
+            return
         both = set(names) & set(outs)
         self.labels = {}
         scope = Scope(names)
@@ -233,8 +399,14 @@ class Checker:
             path = t.children[0]
             parts = [str(c) for c in path.children]
             full = ".".join(parts)
-            if not (full in BASE_TYPES or full in OPAQUE or parts[0] in self.lib.types or full in self.lib.broken
-                    or parts[0] in self.lib.broken or self.generics.match(full)):
+            dep = self.lib.deps.get(".".join(parts[:-1]))
+            if len(parts) > 1 and self.lib.loader and self.lib.loader.find(".".join(parts[:-1]), self.lib) \
+                    and ".".join(parts[:-1]) not in self.fn.uses:
+                self.d("error", line_of(t) or line, f"type '{full}': library '{'.'.join(parts[:-1])}' is not imported "
+                                                    f"(add 'use {'.'.join(parts[:-1])}')")
+            elif not (full in BASE_TYPES or full in OPAQUE or parts[0] in self.lib.types or full in self.lib.broken
+                      or parts[0] in self.lib.broken or self.generics.match(full) or self.lib.find_type(parts)
+                      or (dep and parts[-1] in dep.broken)):
                 near = difflib.get_close_matches(full, sorted(BASE_TYPES | set(self.lib.types)), 1)
                 self.d("error", line_of(t) or line, f"unknown type '{full}'" + (f" (did you mean '{near[0]}'?)" if near else ""))
             for c in t.children[1:]:
@@ -264,7 +436,7 @@ class Checker:
             seen[name] = node
             if kind == "fn" and parent.has(name) and name not in both:
                 self.d("error", node.line, f"'{name}' is already an input of the function", node)
-            if name in stdlib.libraries() or name in self.lib.types:
+            if self.lib.name_taken(name, self.fn.uses):
                 self.d("error", node.line, f"a value cannot have the name of a library or a type: '{name}' (R-1)", node)
         if kind == "fn":
             for o in outs:
@@ -394,8 +566,10 @@ class Checker:
     def call(self, node, call, scope):
         res = self.lib.resolve(call.path, self.fn.uses)
         name = ".".join(call.path)
+        dep = self.lib.deps.get(".".join(call.path[:-1]))
         if res is None:
-            if call.path[0] not in self.lib.broken and name not in self.lib.broken:
+            if call.path[0] not in self.lib.broken and name not in self.lib.broken \
+                    and not (dep and call.path[-1] in dep.broken):
                 pool = sorted(set(self.lib.functions) | {q for q in stdlib.BUILTINS if "." not in q} |
                               {q for q in stdlib.BUILTINS if q.split(".")[0] in self.fn.uses})
                 near = difflib.get_close_matches(name, pool, 1, 0.6)
@@ -441,6 +615,9 @@ class Checker:
                 call.after = (call.after or []) + [a.op]
                 self.operand(a.op, scope, node)
                 continue
+            if getattr(callee, "template", False) and a.name not in pnames:
+                call.bound[a.name] = (a.op, "value")  # an input per field of the template (5.4)
+                continue
             if a.name not in pnames:
                 near = difflib.get_close_matches(a.name, pnames, 1)
                 self.d("error", a.op.line or node.line, f"'{name}' has no input '{a.name}'" +
@@ -452,6 +629,8 @@ class Checker:
         for pn, required, _ in params:
             if required and pn not in call.bound:
                 self.d("error", node.line, f"required input '{pn}' of '{name}' is not wired", node)
+        if getattr(callee, "template", False) and "template" in call.bound:
+            self.template(node, call, name)
         for pn, (op, kind) in list(call.bound.items()):
             if op.kind == "unit" and kind != "unit":
                 op = self.unit_as_array(op, name, pn, node)
@@ -467,6 +646,18 @@ class Checker:
             elif node.targets[k].kind == "name":
                 self.err_targets.append((node.targets[k].name, node))
 
+    def template(self, node, call, name):
+        """R-12: the template is a literal; its fields and the named arguments match exactly."""
+        op = call.bound["template"][0]
+        if op.kind != "const" or not isinstance(op.value, str):
+            self.d("error", node.line, f"'{name}': the template is a literal (R-12)", node)
+            return
+        fields, given = stdlib.template_fields(op.value), set(call.bound) - {"template"}
+        for f in sorted(set(fields) - given):
+            self.d("error", node.line, f"'{name}': field '{f}' of the template has no argument (R-12)", node)
+        for a in sorted(given - set(fields)):
+            self.d("error", node.line, f"'{name}': argument '{a}' has no field in the template (R-12)", node)
+
     def unit_as_array(self, op, name, pn, node):
         """`[x]` given to a value parameter: an array literal of one value (R-5)."""
         if re.fullmatch(r"[^\W\d_]\w*", op.value):
@@ -479,9 +670,13 @@ class Checker:
         for _, op in lit.fields:
             self.operand(op, scope, node)
         name = ".".join(lit.path)
-        decl = self.lib.types.get(name)
+        if len(lit.path) > 1 and ".".join(lit.path[:-1]) not in self.fn.uses:
+            self.d("error", node.line, f"'{name}': library '{'.'.join(lit.path[:-1])}' is not imported "
+                                       f"(add 'use {'.'.join(lit.path[:-1])}')", node)
+        decl = self.lib.find_type(list(lit.path))
+        dep = self.lib.deps.get(".".join(lit.path[:-1]))
         if decl is None:
-            if name not in self.lib.broken:
+            if name not in self.lib.broken and not (dep and lit.path[-1] in dep.broken):
                 self.d("error", node.line, f"unknown type '{name}' in struct construction", node)
             return
         t = decl.tree

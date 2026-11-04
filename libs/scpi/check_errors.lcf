@@ -1,0 +1,44 @@
+labcraft 1
+
+use array
+use errors
+use string
+use visa
+
+/// Drains the error queue of the instrument (`SYST:ERR?`), 20 entries at most. Each entry becomes a
+/// `scpi.instrument_error`, with its code and the response as its message: the first is the main
+/// error, the others go in its `others`. With an error on `err`, nothing is queried and it passes
+/// through; a failure while draining comes before the entries already read.
+fn check_errors(session: visa.session, err: error = none) -> (session: visa.session, err: error) {
+    s, _, found, e1 = loop continue_on_error
+        carry current = session,
+        carry i = 0,
+        carry seen: error = none,
+        carry e = err
+    {
+        i2 = add(i, 1)
+        full = ge(i2, 20)
+        text, s2, e2 = visa.query(current, "SYST:ERR?", err: e)
+        parts = string.split(text, ",")
+        first, e3 = array.get(parts, 0, err: e2)
+        code, e4 = string.to_i32(first, err: e3)
+        done = eq(code, 0)
+        added = match done {
+            true => yield seen
+            false => {
+                one = errors.make(scpi.instrument_error, code: code, message: text)
+                all = errors.merge(seen, one)
+                yield all
+            }
+        }
+        stop = or(done, full)
+        next current = s2
+        next e = e4
+        next i = i2
+        next seen = added
+        until stop
+    }
+    merged = errors.merge(e1, found)
+    session = s
+    err = merged
+}

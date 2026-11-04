@@ -1,7 +1,8 @@
-"""Minimal library (spec section 9): core, array, time, errors, visa, scpi, dmm_driver, relays,
-psu, results_log. Each primitive declares its inputs, its outputs and their default values
-(used when the node is skipped because of an error)."""
+"""The primitives of the language (spec section 9): core, array, string, time, errors; and the native
+bodies of `extern rust` functions, as the crates of the libraries will provide them. Each declares
+its inputs, its outputs and their default values (used when the node is skipped because of an error)."""
 import math
+import re
 
 from .values import (Fault, LcError, LcFail, PathConst, Q, Session, UnitConst, ZERO, dim_label, from_si, is_num,
                      parse_unit, UnitError)
@@ -17,9 +18,10 @@ class P:
 
 
 class Builtin:
-    def __init__(self, qname, params, outs, defaults, fn, always, doc):
+    def __init__(self, qname, params, outs, defaults, fn, always, doc, template=False):
         self.qname, self.params, self.outs, self.defaults = qname, params, outs, defaults
-        self.fn, self.always, self.doc = fn, always, doc
+        self.fn, self.always, self.doc, self.template = fn, always, doc, template
+        self.decl = None  # the `extern` declaration it runs, whose signature is the contract (4.1)
         self.lib, _, self.short = qname.rpartition(".")
 
     def signature(self):
@@ -28,14 +30,31 @@ class Builtin:
 
 
 BUILTINS = {}
+NATIVE = {}  # (crate, function) of an `extern rust` declaration -> its body in the proof of concept
 
 
-def builtin(qname, params, outs, defaults=None, always=False):
+def builtin(qname, params, outs, defaults=None, always=False, template=False):
     def deco(fn):
         BUILTINS[qname] = Builtin(qname, params, outs, defaults or (None,) * len(outs), fn, always,
-                                  (fn.__doc__ or "").strip())
+                                  (fn.__doc__ or "").strip(), template)
         return fn
     return deco
+
+
+def native(crate, qname, params, outs, defaults=None):
+    """A native body. `always` comes from the manifest of the library, as in the spec (7.2)."""
+    def deco(fn):
+        NATIVE[crate, qname.rpartition(".")[2]] = Builtin(qname, params, outs, defaults or (None,) * len(outs), fn,
+                                                          False, (fn.__doc__ or "").strip())
+        return fn
+    return deco
+
+
+def unavailable(qname):
+    """The body of an external function that does not run yet: `extern.unavailable` on `err` (4.1)."""
+    def body(m, **_):
+        raise LcFail("extern.unavailable", f"{qname}: this external function does not run yet (4.1)")
+    return body
 
 
 def libraries():
@@ -199,6 +218,8 @@ def _unit_of(u, who="with_unit"):
 @builtin("with_unit", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
 def with_unit(m, x, unit):
     """Attaches a unit to a number: `with_unit(raw, [V])`. Rejected if `x` already has one."""
+    if x is None:  # the default value of a skipped generic node, which the PoC does not type (7.2)
+        x = 0.0
     if not is_num(x) or isinstance(x, Q):
         raise Fault("lcf.type_error", "with_unit: unitless number expected")
     text, _ = _unit_of(unit)
@@ -208,6 +229,8 @@ def with_unit(m, x, unit):
 @builtin("unitless", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
 def unitless(m, x, unit):
     """Removes the unit by expressing the number in the requested unit: `unitless(230 mV, [V])` gives 0.23."""
+    if x is None:  # the default value of a skipped generic node, which the PoC does not type (7.2)
+        return (0.0,)
     if not isinstance(x, Q):
         raise Fault("lcf.type_error", "unitless: quantity with a unit expected")
     _, (dim, scale) = _unit_of(unit, "unitless")
@@ -277,6 +300,14 @@ def raise_if(m, condition, category, message="", err=None):
     return (None,)
 
 
+@builtin("errors.make", [P("category", kind="category"), P("code", 0), P("message", "")], ["err"])
+def errors_make(m, category, code=0, message=""):
+    """An error of the given category and code."""
+    if not isinstance(category, PathConst):
+        raise Fault("lcf.type_error", "errors.make: category expected as the first argument")
+    return (LcError(category.text, message, code),)
+
+
 @builtin("errors.merge", [P("a"), P("b"), P("c", None), P("d", None), P("e", None), P("f", None)], ["err"])
 def merge(m, a, b, c=None, d=None, e=None, f=None):
     """Merges errors: the first non-empty one becomes the main error, the others go in `others`."""
@@ -293,7 +324,79 @@ def is_none(m, err):
     return (err is None,)
 
 
-# visa / scpi -------------------------------------------------------------------------------
+# string ------------------------------------------------------------------------------------
+
+FIELD = re.compile(r"\{\{|\}\}|\{([^\W\d_]\w*)(?::([^{}]*))?\}")
+
+
+def template_fields(template):
+    """Names of the `{name}` fields of a `string.format` template (5.4)."""
+    return [m.group(1) for m in FIELD.finditer(template) if m.group(1)]
+
+
+def _format_field(v, spec):
+    m = re.fullmatch(r"(?:\.(\d+))?\s*(.*)", spec or "")
+    digits, unit = m.group(1), m.group(2).strip()
+    number = v
+    if isinstance(v, Q):
+        if unit:
+            try:
+                dim, scale = parse_unit(unit)
+            except UnitError as e:
+                raise Fault("lcf.unit_unknown", f"string.format: {e}") from None
+            if dim != v.dim:
+                raise Fault("lcf.unit_mismatch", f"string.format: {v!r} cannot be expressed in {unit}")
+            number = v.si / scale
+        else:
+            number, unit = v.value, v.unit
+    elif unit:
+        raise Fault("lcf.unit_mismatch", f"string.format: {v!r} has no unit to express in {unit}")
+    if not is_num(number):
+        return str(v)
+    text = f"{number:.{digits}f}" if digits is not None else f"{number:g}"
+    return f"{text} {unit}" if unit else text
+
+
+@builtin("string.format", [P("template", type="string")], ["text"], ("",), template=True)
+def string_format(m, /, template, **values):
+    """Text from a literal template: each `{name}` field is a named input (5.4)."""
+    def field(f):
+        if f.group(0) in ("{{", "}}"):
+            return f.group(0)[0]
+        return _format_field(values[f.group(1)], f.group(2))
+    return (FIELD.sub(field, template),)
+
+
+@builtin("string.split", [P("text", type="string"), P("separator", type="string")], ["parts"], ([],))
+def string_split(m, text, separator):
+    """Splits a text at each separator."""
+    if not separator:
+        raise Fault("lcf.bad_argument", "string.split: empty separator")
+    return (text.split(separator),)
+
+
+@builtin("string.to_f64", [P("text", type="string"), P("err", None)], ["value", "err"], (0.0, None))
+def string_to_f64(m, text, err=None):
+    """Number read from a text; `string.parse` if it is not one."""
+    t = text.strip()
+    if not re.fullmatch(r"[+-]?(?:(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|(?i:nan|inf))", t):
+        raise LcFail("string.parse", f"not a number: {text!r}")
+    return (float(t), None)
+
+
+@builtin("string.to_i32", [P("text", type="string"), P("err", None)], ["value", "err"], (0, None))
+def string_to_i32(m, text, err=None):
+    """Integer read from a text; `string.parse` if it is not one."""
+    t = text.strip()
+    if not re.fullmatch(r"[+-]?[0-9]+", t) or not -2**31 <= int(t) < 2**31:
+        raise LcFail("string.parse", f"not an i32: {text!r}")
+    return (int(t), None)
+
+
+# visa (crate labcraft-visa) -----------------------------------------------------------------
+
+VISA = "labcraft-visa"
+
 
 def _live(s):
     if not isinstance(s, Session) or not s.is_open:
@@ -301,14 +404,14 @@ def _live(s):
     return s
 
 
-@builtin("visa.open", [P("resource", type="string"), P("timeout", Q(2.0, parse_unit("s")[0], "s", 1.0)), P("err", None)],
-         ["session", "err"])
+@native(VISA, "visa.open", [P("resource", type="string"), P("timeout", Q(2.0, parse_unit("s")[0], "s", 1.0)), P("err", None)],
+        ["session", "err"])
 def visa_open(m, resource, timeout, err=None):
     """Opens a session on a resource (`SIM::…`: simulated instrument)."""
     return (m.world.open(resource, _seconds(timeout, "visa.open")), None)
 
 
-@builtin("visa.close", [P("session"), P("err", None)], ["err"], always=True)
+@native(VISA, "visa.close", [P("session"), P("err", None)], ["err"])
 def visa_close(m, session, err=None):
     """Closes the session. `always`: runs even if an error arrives on the input."""
     s = _live(session)
@@ -316,7 +419,7 @@ def visa_close(m, session, err=None):
     return (None,)
 
 
-@builtin("visa.write", [P("session"), P("command", type="string"), P("err", None)], ["session", "err"])
+@native(VISA, "visa.write", [P("session"), P("command", type="string"), P("err", None)], ["session", "err"])
 def visa_write(m, session, command, err=None):
     """Sends a command; any response waits for a `visa.read`."""
     s = _live(session)
@@ -326,7 +429,7 @@ def visa_write(m, session, command, err=None):
     return (s, None)
 
 
-@builtin("visa.read", [P("session"), P("err", None)], ["text", "session", "err"], ("", None, None))
+@native(VISA, "visa.read", [P("session"), P("err", None)], ["text", "session", "err"], ("", None, None))
 def visa_read(m, session, err=None):
     """Reads the pending response; `io.timeout` if there is none."""
     s = _live(session)
@@ -336,7 +439,8 @@ def visa_read(m, session, err=None):
     return (s.buffer.pop(0), s, None)
 
 
-@builtin("visa.query", [P("session"), P("command", type="string"), P("err", None)], ["text", "session", "err"], ("", None, None))
+@native(VISA, "visa.query", [P("session"), P("command", type="string"), P("err", None)], ["text", "session", "err"],
+        ("", None, None))
 def visa_query(m, session, command, err=None):
     """Writes, then reads."""
     s = _live(session)
@@ -347,80 +451,9 @@ def visa_query(m, session, command, err=None):
     return (resp, s, None)
 
 
-def _query_float(m, session, command):
-    text, s, _ = visa_query(m, session, command)
-    try:
-        return float(text), s
-    except ValueError:
-        raise LcFail("scpi.parse_error", f"non-numeric response to '{command}': {text!r}") from None
+# results_log (crate of the example, section 13) ------------------------------------------------
 
-
-@builtin("scpi.query_f64", [P("session"), P("command", type="string"), P("err", None)], ["value", "session", "err"], (0.0, None, None))
-def scpi_query_f64(m, session, command, err=None):
-    """SCPI query whose response is a number."""
-    v, s = _query_float(m, session, command)
-    return (v, s, None)
-
-
-@builtin("scpi.check_errors", [P("session"), P("err", None)], ["session", "err"])
-def scpi_check_errors(m, session, err=None):
-    """Drains the instrument error queue (`SYST:ERR?`); the first one becomes `scpi.instrument_error`."""
-    s = _live(session)
-    found = []
-    for _ in range(20):
-        text = s.instrument.execute("SYST:ERR?", s.timeout_s) or "0"
-        code_text, _, msg = text.partition(",")
-        try:
-            code = int(code_text)
-        except ValueError:
-            raise LcFail("scpi.parse_error", f"unreadable SYST:ERR? response: {text!r}") from None
-        if code == 0:
-            break
-        found.append((code, msg.strip('"')))
-    if found:
-        first = LcError("scpi.instrument_error", f"{s.resource}: {found[0][1]}", found[0][0])
-        first.others = [LcError("scpi.instrument_error", f"{s.resource}: {msg}", c) for c, msg in found[1:]]
-        raise _Carry(first)
-    return (s, None)
-
-
-class _Carry(LcFail):
-    """LcFail that carries an already built error (with `others`)."""
-
-    def __init__(self, error):
-        super().__init__(error.category, error.message, error.code)
-        self.error = error
-
-
-@builtin("dmm_driver.read_dc_volts", [P("session"), P("err", None)], ["volts", "session", "err"],
-         (Q(0.0, parse_unit("V")[0], "V", 1.0), None, None))
-def read_dc_volts(m, session, err=None):
-    """Multimeter driver: reads the DC voltage (`MEAS:VOLT:DC?`)."""
-    v, s = _query_float(m, session, "MEAS:VOLT:DC?")
-    return (Q.of(v, "V"), s, None)
-
-
-# relays / psu / results_log (test station, section 13) --------------------------------------
-
-@builtin("relays.apply", [P("bank"), P("route", type="string"), P("err", None)], ["bank", "err"])
-def relays_apply(m, bank, route, err=None):
-    """Closes the named route on the relay matrix (`ROUT:CLOS <route>`)."""
-    s = _live(bank)
-    s.instrument.execute(f"ROUT:CLOS {route}", s.timeout_s)
-    return (s, None)
-
-
-@builtin("psu.set_voltage", [P("source"), P("voltage"), P("err", None)], ["source", "err"])
-def psu_set_voltage(m, source, voltage, err=None):
-    """Sets the voltage setpoint of the power supply (`VOLT <value in V>`)."""
-    s = _live(source)
-    if not (isinstance(voltage, Q) and voltage.dim == parse_unit("V")[0]):
-        raise Fault("lcf.unit_mismatch", f"psu.set_voltage: voltage expected, got {voltage!r}")
-    s.instrument.execute(f"VOLT {voltage.si:.6f}", s.timeout_s)
-    return (s, None)
-
-
-@builtin("results_log.append_csv", [P("results"), P("err", None)], ["err"])
+@native("labcraft-results-log", "results_log.append_csv", [P("results"), P("err", None)], ["err"])
 def results_append(m, results, err=None):
     """Appends the results to the log (in memory in the PoC, reported by `run`)."""
     m.results_log.append(list(results))

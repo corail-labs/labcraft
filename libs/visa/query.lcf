@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Writes, then reads, without another branch stepping in (8.1).
+extern rust(crate: "labcraft-visa", function: "query")
+fn query(
+    session: session,
+    command: string,
+    err: error = none,
+) -> (text: string, session: session, err: error)

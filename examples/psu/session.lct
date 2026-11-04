@@ -1,0 +1,6 @@
+labcraft 1
+
+use visa
+
+/// A power supply: a session, under the name of what it designates (3.2).
+type session = visa.session

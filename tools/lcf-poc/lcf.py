@@ -76,14 +76,15 @@ def fmt_check(paths, spec=None):
     """Print the problems of each file (and of the code blocks of `spec`); 1 if any, else 0."""
     from lcfpoc.canon import check_fn
     from lcfpoc.layout import check_layout, check_spec_layout
-    from lcfpoc.ir import ExternUnsupported, LowerError, lower_file
+    from lcfpoc.ir import LowerError, lower_file
     from lcfpoc.library import MAX_FILE
     from lcfpoc.library import parse
     from lark.exceptions import LarkError
     files, bad = [], 0
     for p in map(Path, paths):
         if p.is_dir():
-            files += sorted([*p.glob("*.lcf"), *p.glob("*.lct")])
+            files += sorted(f for f in [*p.rglob("*.lcf"), *p.rglob("*.lct")]
+                            if not any(part.startswith(".") for part in f.relative_to(p).parts))
         elif p.exists():
             files.append(p)
         else:
@@ -114,8 +115,6 @@ def fmt_check(paths, spec=None):
         src = raw.replace(chr(13) + chr(10), chr(10))
         try:
             fn, _, _, _ = lower_file(src, f.name, parse(src))
-        except ExternUnsupported:
-            fn = None  # an `extern` file has no body: only its layout is checked
         except (LarkError, LowerError) as e:
             lines = str(e).strip().splitlines()
             line = getattr(e, "line", 0) or 0
@@ -129,7 +128,8 @@ def fmt_check(paths, spec=None):
             print(f"{name}: cannot be analyzed: {type(e).__name__}")
             bad += 1
             continue
-        problems = sorted((check_fn(fn) if fn else []) + check_layout(raw), key=lambda p: p[0])
+        # an `extern` file has no body: only its layout is checked
+        problems = sorted((check_fn(fn) if fn and not fn.extern else []) + check_layout(raw), key=lambda p: p[0])
         for line, msg in problems:
             print(f"{name}:{line}: {msg}")
         bad += bool(problems)

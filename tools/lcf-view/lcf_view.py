@@ -638,7 +638,7 @@ def main():
         sys.exit(1 if spec_errors else 0)
     files = []
     for p in map(Path, args.paths):
-        files += sorted(p.glob("*.lc[ft]")) if p.is_dir() else [p]
+        files += sorted(p.rglob("*.lc[ft]")) if p.is_dir() else [p]
     items = [view(f) for f in files]
     for it in items:
         print(("ERROR " if "error" in it else "ok    ") + it["file"] + (f": {it['error']}" if "error" in it else ""))

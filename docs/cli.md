@@ -107,6 +107,10 @@ the name of a file is not compared with the name of its function.
 4. the libraries shipped with LabCraft (`visa`, `scpi`), whose declarations are built into the tool,
    so that `check` works in any folder and in the WASM build.
 
+A library shipped with LabCraft follows only rules 1 and 4: a folder `visa` in a project replaces
+`visa` for that project, but not for `scpi`. Names are compared exactly, even on a file system that
+ignores case: `use VISA` does not find `visa`.
+
 Names of files and folders are compared with those of the program after normalization (R-20), so
 that `use é` finds a folder whose name the file system decomposes. A dependency found by rules 3
 and 4 is read for its signatures, types and manifest only: its bodies are checked when it is itself
@@ -278,6 +282,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0102` | error | Format version not supported, such as a newer one (`labcraft 99999`) | 2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
 | `LC0104` | error | `panel`, `layout` or `icon` section in a type file | R-19 |
+| `LC0105` | error | Manifest of a shipped library that cannot be read, or an `always` on something other than a native function | 1, 7.2 |
 
 ### Syntax: `LC10`
 
@@ -314,6 +319,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2018` | error | `next` for a name that is not a carry of the loop | R-6 |
 | `LC2019` | error | Two parameters, outputs, fields or variants with the same name | 4, 3.2 |
 | `LC2020` | warning | Library imported twice: `fmt` removes the line, unless it has a comment | 5.2 |
+| `LC2021` | error | Libraries that use each other in a cycle | 4 |
 
 ### Calls: `LC21`
 
@@ -362,7 +368,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC4002` | error | Function output not bound, or bound twice | R-2 |
 | `LC4003` | error | Carry with no `next`, or with two | R-6 |
 | `LC4004` | error | `for parallel` with a carry | 6.2 |
-| `LC4005` | error | External function without an `err` output | R-13 |
+| `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
 | `LC4006` | error | Feature planned for a later milestone: generic function written by the user, `ref<T>`… | 9 |
 | `LC4101` | warning | `err` output wired nowhere | 7.5 |
 | `LC4102` | warning | Concurrent access to a resource: two nodes with no dependency between them | 8.1 |

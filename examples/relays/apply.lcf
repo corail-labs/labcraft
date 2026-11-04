@@ -1,0 +1,12 @@
+labcraft 1
+
+use string
+use visa
+
+/// Closes a named route of the relay matrix (`ROUT:CLOS <route>`).
+fn apply(bank: bank, route: string, err: error = none) -> (bank: bank, err: error) {
+    command = string.format("ROUT:CLOS {route}", route: route)
+    b, e1 = visa.write(bank, command, err: err)
+    bank = b
+    err = e1
+}
