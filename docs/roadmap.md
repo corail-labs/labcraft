@@ -14,21 +14,22 @@ project stands, what the milestones are, and how the Rust code will be organized
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
 | Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-25 |
 | Command line ([cli.md](cli.md)) | First draft: `fmt` and `check`, reports, diagnostic codes |
+| Architecture ([architecture.md](architecture.md)) | First draft: the crates of M0a and the order of work |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-12 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
 | Python proof of concept ([tools/lcf-poc](../tools/lcf-poc/README.md)) | Checks and runs the examples against simulated instruments; MCP server driven by an AI agent |
 | Diagram rendering ([tools/lcf-figcraft](../tools/lcf-figcraft/README.md)) | Throwaway: renders a function following the visual notation |
 
-Still to write, besides the architecture (from the layers below) and what the acceptance scenarios
-list under "write first" ([acceptance-m0.md](acceptance-m0.md)):
+Still to write, besides what the acceptance scenarios list under "write first"
+([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0a**: the architecture of the crates of M0a;
 - **before M0b**: the CLI specification of `run`, the MCP specification, the command catalog v0,
   how the CLI and MCP set a panel element (Q-20), and a throwaway feasibility prototype: a scheduler
   with two parallel loops and a clean stop;
 - **before M0v**: the compact view, automatic placement and wire routing in the visual notation,
-  and the architecture of the `diagram` and `editor` crates. The egui canvas with 1,000 nodes and
+  and the architecture of the `diagram` and `editor` crates (in [architecture.md](architecture.md),
+  like that of the M0b crates). The egui canvas with 1,000 nodes and
   2,000 wires at 60 frames/s is not a separate prototype: it is a target of M0v.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
@@ -93,19 +94,21 @@ through its MCP server.
 
 ## Layers of the Rust code
 
-As in SolidCraft (L0 to L5): a crate depends only on lower layers, checked by
-`cargo xtask layers`. Nothing below L5 depends on egui.
+As in the Craft apps: a crate depends only on strictly lower layers, checked by
+`cargo xtask layers`. Nothing below L7 depends on egui.
 
 | Layer | Crates | Role |
 |---|---|---|
-| L0 | `types` | Types, values, physical units |
-| L1 | `graph`, `format` | Semantic model of the program, separate layout, reading and writing the format, migrations |
-| L2 | `check`, `ir` | Name resolution, signatures, type and connection checking, diagnostics; dataflow IR, analyses, linear IR |
-| L3 | `runtime` | Scheduler, interpreter, values, probes and breakpoints; the native primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) |
-| L3 | `diagram` | Automatic placement, wire routing and the visual notation as shapes, headless, with SVG export; run values come in as plain data |
-| L3 | `interop` | C ABI, .NET, Python |
-| L4 | `engine` | Session, command registry, undo, journal, crash reports |
-| L5 | `editor`, `ui-egui`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; IDE (window, panel, debugger); MCP server; Cranelift and building executables and DLLs |
+| L0 | `types` | Types, values, physical units, diagnostics |
+| L1 | `graph` | Semantic model of the program, separate layout |
+| L2 | `format` | Reading and writing the format, migrations |
+| L3 | `check` | Name resolution, signatures (those of the primitives too), type and connection checking |
+| L4 | `ir` | Dataflow IR, analyses, linear IR |
+| L5 | `runtime` | Scheduler, interpreter, values, probes and breakpoints; the native primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) |
+| L5 | `diagram` | Automatic placement, wire routing and the visual notation as shapes, headless, with SVG export; run values come in as plain data |
+| L5 | `interop` | C ABI, .NET, Python |
+| L6 | `engine` | Session, command registry, undo, journal, crash reports |
+| L7 | `editor`, `ui-egui`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; IDE (window, panel, debugger); MCP server; Cranelift and building executables and DLLs |
 | apps | `labcraft`, `labcraft-cli`, `labcraft-web` | Desktop, CLI, browser |
 
 ### Libraries shipped with LabCraft (`libs/`)
@@ -143,11 +146,11 @@ LabCraft/
 ├── Cargo.toml           workspace, edition 2024, resolver 3, shared lints
 ├── crates/              the layers above
 ├── apps/                labcraft, labcraft-cli, labcraft-web
-├── libs/                libraries shipped with LabCraft: visa, scpi
+├── libs/                libraries shipped with LabCraft: visa, scpi; embedded, the crate that embeds them
 ├── docs/                language, notation, architecture, MCP, commands
 ├── examples/            example programs, in the text format
 ├── skills/              skills for agents (write, debug, test a program)
-├── tests/               integration tests, file corpus, backend equivalence tests
+├── tests/               acceptance corpora and their harness, backend equivalence tests
 ├── xtask/               ci, layers, libs boundary, assets, wasm, command catalog
 └── tools/               the throwaway Python tools, until Rust replaces them
 ```
