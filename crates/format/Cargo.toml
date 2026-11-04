@@ -10,6 +10,10 @@ publish.workspace = true
 [dependencies]
 labcraft-graph = { workspace = true }
 labcraft-types = { workspace = true }
+unicode-properties = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

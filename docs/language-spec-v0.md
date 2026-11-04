@@ -1195,8 +1195,10 @@ STRING     = '"' { char | "\\" escape } '"' ;           (* char: not '"', "\" or
 UNIT_NAME  = [ "°" ] letter { letter | mark | digit | "_" } ;
                                                         (* checked against the unit table:
                                                            V, mV, A, Ω, kΩ, Hz, s, ms, °C, K… *)
-COMMENT    = "//" { char } end_of_line ;                (* not "///"; ignored *)
-DOC        = "///" { char } end_of_line ;               (* documentation, before the declaration *)
+COMMENT    = "//" { line_char } ;                       (* not "///"; ignored; line_char: anything
+                                                           but a line ending, up to it or the end
+                                                           of the file *)
+DOC        = "///" { line_char } ;                      (* documentation, before the declaration *)
 ```
 
 Reserved words, everywhere: `labcraft use fn extern type struct enum match for parallel loop

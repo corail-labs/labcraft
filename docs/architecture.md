@@ -124,10 +124,13 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
 
 - **Decoding, in this order**, stopping at the first failure (cli.md, section 1): size (`LC0006`),
   UTF-8 (`LC0003`), byte order mark removed, CR LF accepted, forbidden characters (`LC0004`).
-- **Lexer:** a hand-written iterator of tokens. Names and unit names become `Name`, numbers keep their
-  text, comments are tokens. Columns count the code points of the source as read. A bidirectional
-  control gives `LC0005` in a string or a comment, and is an unexpected character elsewhere (`LC1001`,
-  with no `LC0005`, as `encoding-bidi-in-a-name` expects).
+- **Lexer:** a hand-written iterator of tokens that ends at the first lexical error. Names and unit
+  names become `Name`, numbers keep their text, comments and line endings are tokens. Columns count the
+  code points of the source as read. A bidirectional control gives `LC0005` once per string or comment,
+  and is an unexpected character elsewhere (`LC1001`, with no `LC0005`, as `encoding-bidi-in-a-name`
+  expects). Warnings go straight to the file's own `Report`, which bounds them, since a file can hold
+  millions. The caller names the file with `Report::set_file` before merging, and replaces that report
+  when the file gets a code that stands alone (cli.md, section 1).
 - **Parser:** hand-written recursive descent on spec 14. Line endings are significant by context
   (14.1), and error messages must name what was expected for an agent to read: both are easier by hand
   than with a generator. A depth counter gives `LC0007` before the stack is in danger.
@@ -260,8 +263,8 @@ character boundary, and these crates hold little numerical code.
 | `codes` | `Code` equals the tables of cli.md, section 5 |
 | `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there |
 
-**Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20), a table of
-Unicode categories for 14.1, `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
+**Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
+`unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
 `thiserror` for the error type of a crate, where a function can fail on something other than the program,
 such as a file that cannot be written (the versions the Craft apps use). In tests: `wasm-bindgen-test`,
 `cargo-fuzz`. `assets` joins `xtask ci` with the first asset.

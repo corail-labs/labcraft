@@ -277,7 +277,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0002` | error | Nothing to check: no `.lcf` or `.lct` file under this path | 1 |
 | `LC0003` | error | Not valid UTF-8 | 2 |
 | `LC0004` | error | Forbidden character: a control character (Unicode category Cc) other than tab and line feed, a CR not followed by a line feed | 2 |
-| `LC0005` | warning | Bidirectional control character (U+202A to U+202E, U+2066 to U+2069) in a string or a comment: the text does not read as it runs. In a name it is a syntax error | 2 |
+| `LC0005` | warning | Bidirectional control character (U+202A to U+202E, U+2066 to U+2069) in a string or a comment, once for each of them: the text does not read as it runs. In a name it is a syntax error | 2 |
 | `LC0006` | error | File over the size limit | scenario 4 |
 | `LC0007` | error | Nesting over the limit | scenario 4 |
 | `LC0008` | error | File named explicitly without the `.lcf` or `.lct` extension | 2 |
