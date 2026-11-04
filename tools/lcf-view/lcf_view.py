@@ -240,8 +240,8 @@ def check_lines(src, tree):
         if d in SEQUENCES:
             prev = None
             kids = [k for k in t.children if isinstance(k, (Tree, Token)) and _span(k)]
-            if d in ("match_expr", "handle_expr"):
-                kids = kids[1:]  # the selector is part of the header
+            if d in ("match_expr", "handle_expr", "icon_section"):
+                kids = kids[1:]  # the selector or the size of the grid is part of the header
             for k in kids:
                 sp = _span(k)
                 if prev is not None and sp[0] == prev[1]:
@@ -262,8 +262,13 @@ def check_lines(src, tree):
     visit(tree)
 
 
+HEADER = re.compile(r"[ \t]*labcraft[ \t]+1[ \t]*(//(?!/)[^\n]*)?(\n|\Z)")
+
+
 def parse(src):
-    """Parses a file and checks its line endings; raises a LarkError subclass on error."""
+    """Parses a file, with its header and line endings; raises a LarkError subclass on error."""
+    if not HEADER.match(src):  # spec 14.2; Lark ignores what surrounds the header, as it ignores line endings
+        raise LineError("the first line must be the header `labcraft 1`", 1)
     tree = PARSER.parse(src)
     check_lines(src, tree)
     return tree

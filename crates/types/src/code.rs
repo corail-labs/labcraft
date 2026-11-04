@@ -144,6 +144,13 @@ codes! {
     Lc6003 = "LC6003" Error,
 }
 
+impl Code {
+    /// A file that gets this code is not read further, and gets no other diagnostic (`docs/cli.md`, section 1).
+    pub fn stands_alone(self) -> bool {
+        matches!(self, Code::Lc0001 | Code::Lc0003 | Code::Lc0004 | Code::Lc0006 | Code::Lc0007 | Code::Lc0101 | Code::Lc0102)
+    }
+}
+
 impl Serialize for Code {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(self.as_str())
@@ -173,6 +180,12 @@ mod tests {
         for code in Code::ALL {
             assert_eq!(format!("{code:?}").to_uppercase(), code.as_str());
         }
+    }
+
+    #[test]
+    fn the_codes_that_stand_alone_are_those_of_the_command_line() {
+        let alone: Vec<&str> = Code::ALL.iter().filter(|code| code.stands_alone()).map(|code| code.as_str()).collect();
+        assert_eq!(alone, ["LC0001", "LC0003", "LC0004", "LC0006", "LC0007", "LC0101", "LC0102"]);
     }
 
     #[test]

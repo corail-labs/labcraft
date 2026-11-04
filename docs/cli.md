@@ -38,7 +38,7 @@ diagnostics of the others.
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
 | `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)* |
-| `--max-nesting N` | Depth of nested structures, parentheses and types, default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage |
+| `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage |
 
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
 shortens the report. Output is in English (D-21), in UTF-8, without color unless stdout is a
@@ -279,13 +279,13 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0004` | error | Forbidden character: a control character (Unicode category Cc) other than tab and line feed, a CR not followed by a line feed | 2 |
 | `LC0005` | warning | Bidirectional control character (U+202A to U+202E, U+2066 to U+2069) in a string or a comment, once for each of them: the text does not read as it runs. In a name it is a syntax error | 2 |
 | `LC0006` | error | File over the size limit | scenario 4 |
-| `LC0007` | error | Nesting over the limit | scenario 4 |
+| `LC0007` | error | Nesting over the limit: the 257th level by default, all kinds counted together | 14.1, scenario 4 |
 | `LC0008` | error | File named explicitly without the `.lcf` or `.lct` extension | 2 |
 | `LC0009` | warning | Symbolic link met in a folder: not followed | scenario 4 |
 | `LC0010` | error | Files left out: too many files, levels of folders or bytes in a library | scenario 4 |
 | `LC0099` | error | Internal error of the tool, reported instead of a crash: always a bug | scenario 4 |
-| `LC0101` | error | First line is not a `labcraft N` header | 2 |
-| `LC0102` | error | Format version not supported, such as a newer one (`labcraft 99999`) | 2 |
+| `LC0101` | error | First line is not a `labcraft N` header: a blank line or a comment before it, other text on its line, a version that is not an integer | 2, 14.2 |
+| `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
 | `LC0104` | error | `panel`, `layout` or `icon` section in a type file | R-19 |
 | `LC0105` | error | Manifest of a shipped library that cannot be read, or an `always` on something other than a native function | 1, 7.2 |
@@ -297,8 +297,8 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC1001` | error | Syntax error; the message lists what was expected | 14 |
 | `LC1002` | error | Unexpected end of file (truncated file) | 14 |
 | `LC1003` | error | Unterminated string or unknown escape | 14.1 |
-| `LC1004` | error | Nested call; the fix names the intermediate value | R-9, 5.1 |
-| `LC1005` | error | Reserved word used as a name | 14.1 |
+| `LC1004` | error | Call where a value is expected, nested call above all; the fix names the intermediate value | R-9, 5.1 |
+| `LC1005` | error | Reserved word where a name is expected | 14.1 |
 | `LC1006` | error | Number or type out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent or scale out of bounds (±127, 1e300), an array of 0 or more than 32 dimensions, a type nested beyond `--max-nesting`, through its lines or its files *(bounds proposed)* | 3, scenario 4 |
 
 ### Names: `LC20`

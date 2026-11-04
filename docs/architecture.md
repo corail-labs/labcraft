@@ -71,19 +71,21 @@ The semantic model of one file. It is **syntactic**: it holds what the file says
 that means is the job of `check`.
 
 ```rust
-pub struct File { version: u32, uses: Vec<Use>, decl: Decl, panel: Option<Panel>,
-                  layout: Option<Layout>, icon: Option<Icon>, end: Vec<Comment> }
+pub struct File { version: u32, header_comment: Option<Comment>, use_comments: Vec<Comment>,
+                  uses: Vec<Use>, decl: Decl, panel: Option<Panel>, layout: Option<Layout>,
+                  icon: Option<Icon>, end: Vec<Comment> }
 pub enum Decl { Function(Function), Extern(Extern), Type(TypeDecl) }  // each with its comments
 pub struct Signature { generics: Vec<Generic>, params: Vec<Param>, outputs: Vec<Output> }
 pub struct Body { statements: Vec<Statement>, end: Vec<Comment> }
 pub struct Statement { id: Id, comments: Attached, label: Option<Label>, kind: StatementKind }
 pub enum StatementKind { Binding { targets: Vec<Target>, value: Rhs }, Call(Call),
                          Collect(Operand), Until(Operand) }
-pub enum Rhs { Call(Call), Match(Match), Handle(Handle), For(For), Loop(Loop),
-               Struct(StructLit), Operand(Operand) }
-pub struct Arm { id: Id, comments: Attached, pattern: Pattern, body: Body, yields: Yield }
-pub enum Operand { Path(Id, Vec<Name>), Number(Id, Number), Text(Id, RawString), Bool(Id, bool),
-                   None(Id), Array(Id, Vec<Operand>), Bracket(Id, UnitExpr) }
+pub enum Rhs { Call(Box<Call>), Match(Box<Branching>), Handle(Box<Branching>), For(Box<For>),
+               Loop(Box<Loop>), Struct(Box<StructLit>), Operand(Operand) }
+pub struct Arm { id: Id, comments: Attached, pattern: Pattern, open: Option<Comment>, body: Body,
+                 yields: Yield }
+pub enum Operand { Path(Path), Number(Id, Numeral, Option<Box<UnitExpr>>), Text(Id, Box<str>),
+                   Bool(Id, bool), None(Id), Array(Id, Vec<Operand>), Bracket(Id, Box<UnitExpr>) }
 ```
 
 Decisions:
@@ -95,8 +97,10 @@ Decisions:
     dimensions of an array and for coordinates.
   - **`TypeExpr` and `UnitExpr` keep the written form** (`kg/(m*s)`, `·`, `V/A`), which `Unit` and `Ty`
     would lose. `check` turns them into `Unit` and `TyId`.
-  - **`[x]` stays a `Bracket`** until `check` knows the kind of the parameter (R-5). `fmt` does not need
-    to know.
+  - **`[x]` as an argument stays a `Bracket`** until `check` knows the kind of the parameter (R-5), and
+    so does `[1]`, since `1` is also a unit term. `fmt` does not need to know.
+  - **The text of numbers is interned**, like names, and they are ASCII, so normalizing leaves them alone:
+    a file can hold millions of them.
 - **Every comment has a place:** on each item that can carry one, by `Attached` (the comments before it,
   the one that ends on its line): declarations with their documentation, `use` lines, parameters,
   outputs, fields, variants, loop clauses, statements, arms, `panel`, `layout` and `icon` items, sections.
@@ -115,10 +119,11 @@ Decisions:
 
 ```rust
 pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read;  // file, source map, diagnostics
-pub fn canonical_order(body: &Body) -> Result<Vec<usize>, Unorderable>;    // 5.2, public: M0b needs it (8)
-pub fn canonicalize(file: File) -> (File, Vec<Diagnostic>);                // all the fixes of `fmt`
-pub fn write(file: &File) -> String;                                       // prints what is stored
-pub fn write_line(statement: &Statement) -> String;                        // `node.text` of a diagnostic
+// `Name` is an index with no order, and numbers are names too: sorting and printing need the interner.
+pub fn canonical_order(body: &Body, names: &Interner) -> Result<Vec<usize>, Unorderable>;  // 5.2, public: M0b needs it (8)
+pub fn canonicalize(file: File, map: &SourceMap, names: &Interner) -> (File, Vec<Diagnostic>);  // all the fixes of `fmt`; ids renumbered, so `map` no longer applies
+pub fn write(file: &File, names: &Interner) -> String;                     // prints what is stored
+pub fn write_line(statement: &Statement, names: &Interner) -> String;      // `node.text` of a diagnostic
 pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;  // the above, for one file
 ```
 
@@ -129,11 +134,14 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
   code points of the source as read. A bidirectional control gives `LC0005` once per string or comment,
   and is an unexpected character elsewhere (`LC1001`, with no `LC0005`, as `encoding-bidi-in-a-name`
   expects). Warnings go straight to the file's own `Report`, which bounds them, since a file can hold
-  millions. The caller names the file with `Report::set_file` before merging, and replaces that report
-  when the file gets a code that stands alone (cli.md, section 1).
+  millions. The caller names the file with `Report::set_file` before merging. A file that gets a code that
+  stands alone (cli.md, section 1) gets a new report from `read`, with that code only.
 - **Parser:** hand-written recursive descent on spec 14. Line endings are significant by context
   (14.1), and error messages must name what was expected for an agent to read: both are easier by hand
-  than with a generator. A depth counter gives `LC0007` before the stack is in danger.
+  than with a generator. A depth counter gives `LC0007` before the stack is in danger. It reads one token
+  at a time, keeping none, and stops at the first syntax error, as the lexer does: a file that does not
+  parse has no model and one error, after the warnings met before it. `Read` holds the model, the source
+  map and the report of that file alone, replaced when the code stands alone.
 - **The stack.** Depth is bounded by the ceiling of `max_nesting`, and the bytes per level are measured
   in a test, at the maximum depth, covering parsing, `Drop`, `Clone`, `Eq` and writing. Each host gives
   that much stack: `labcraft-cli` and the viewer run the work on a thread of that size, and the WASM
