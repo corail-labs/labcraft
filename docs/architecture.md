@@ -217,8 +217,10 @@ crates, where WASM reaches it.
 ## 7. `xtask` and the workspace
 
 As in SolidCraft and GridCraft: edition 2024, resolver 3, `rust-version` 1.95, licence
-`MIT OR Apache-2.0`, shared lints and profiles at the root. A folder `crates/format` holds the package
-`labcraft-format`; this document and the table of layers use the short names, as theirs do.
+`MIT OR Apache-2.0`, shared lints and profiles at the root, and their `rustfmt.toml`. A folder
+`crates/format` holds the package `labcraft-format`; this document and the table of layers use the
+short names, as theirs do. As in GridCraft, `clippy.toml` refuses `Instant::now` and
+`SystemTime::now`, which trap in WASM.
 
 ```toml
 [workspace.lints.rust]
@@ -245,8 +247,8 @@ character boundary, and these crates hold little numerical code.
 | `cargo xtask` | Checks |
 |---|---|
 | `ci` | Everything below, plus `cargo fmt --check`, `clippy -D warnings`, tests |
-| `layers` | A crate depends only on lower layers, from `cargo metadata` and a table, as in GridCraft |
-| `licences` | No GPL, LGPL or AGPL dependency (D-23), as in SolidCraft |
+| `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
+| `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` |
 | `codes` | `Code` equals the tables of cli.md, section 5 |
 | `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there |
@@ -263,15 +265,17 @@ such as a file that cannot be written (the versions the Craft apps use). In test
 for the desktop viewer (M0v), `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
 [`craft-common-actions`](https://github.com/storytold/craft-common-actions) (`gate`, `supply-chain`,
-`release`) are to be evaluated when the Rust CI starts and at the first release; `release` is what a
-signed build for the launcher's catalog (D-20) would go through.
+`release`) wait for the first release; `release` is what a signed build for the launcher's catalog
+(D-20) would go through. `gate` was evaluated when the Rust CI started, and not adopted for now: it
+follows the `main` branch of another organization, and its job name would replace `checks`, the
+check required on `main`. Our single job takes the same steps, with its actions pinned by commit.
 
 ## 8. Tests
 
 A crate is tested on its own first: the corpora need no CLI to reach `format` and `check`, and the
 harness runs natively and in WASM. It lives in `tests/harness`, outside `crates/`, and embeds the corpora
-and `libs/embedded`. `#![forbid(unsafe_code)]` may not fit what `wasm_bindgen_test` expands to, which
-is to be verified at step 1; the harness is a test crate and can relax it.
+and `libs/embedded`. `forbid(unsafe_code)` holds there too: what `wasm_bindgen_test` expands to needs no
+exception (verified at step 1).
 
 | What | Where | Scenario |
 |---|---|---|

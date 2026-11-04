@@ -1,0 +1,11 @@
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# wasm32-unknown-unknown has no clock: these trap there instead of returning, and the crates must
+# keep working in WASM (D-22). Read the clock only outside WASM, and allow the lint at that call.
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "traps in WASM; read the clock only outside WASM" },
+    { path = "std::time::SystemTime::now", reason = "traps in WASM; read the clock only outside WASM" },
+]

@@ -21,12 +21,12 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-03): specification phase.** The language and its text format are described (spec
-v0), with example programs. There is no product code in Rust yet: only throwaway Python tools,
-including a proof of concept that checks and runs the examples against simulated instruments, and
-that an AI agent drives over MCP. The first milestone in Rust (M0: reading, checking and writing
-programs, then running them, with a read-only diagram viewer alongside) is described in
-[docs/roadmap.md](docs/roadmap.md).
+**Status (2026-11-04): the first milestone in Rust has started, and nothing is usable in Rust yet.**
+The language and its text format are described (spec v0), with example programs. What runs today is
+a set of throwaway Python tools, including a proof of concept that checks and runs the examples
+against simulated instruments, and that an AI agent drives over MCP. The first milestone (M0: reading,
+checking and writing programs, then running them, with a read-only diagram viewer alongside) is
+described in [docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 

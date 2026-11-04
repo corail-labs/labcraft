@@ -2,11 +2,11 @@
 
 *Last updated: 2026-11-04*
 
-LabCraft is in its specification phase: the language is described and tried out by a throwaway
-Python proof of concept, and there is no product code in Rust yet. This page says where the
-project stands, what the milestones are, and how the Rust code will be organized.
+The language is described and tried out by a throwaway Python proof of concept. M0a, the first
+milestone in Rust, has started ([order of work](architecture.md#9-order-of-work)). This page says
+where the project stands, what the milestones are, and how the Rust code is organized.
 
-## Where we are: phase 0, specification
+## Where we are: specification done for M0a, M0a started
 
 | Document or tool | Status |
 |---|---|
@@ -130,9 +130,9 @@ When the registry exists, these libraries can be published as packages.
 The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) stay native in
 `runtime`: they are the standard library.
 
-## Repository layout, once the Rust code starts
+## Repository layout
 
-Modeled on SolidCraft and GridCraft:
+Modeled on SolidCraft and GridCraft; folders appear with the milestones that need them:
 
 ```text
 LabCraft/

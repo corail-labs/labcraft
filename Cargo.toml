@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "tests/harness", "xtask"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# internal
+labcraft-types = { path = "crates/types" }
+labcraft-graph = { path = "crates/graph" }
+labcraft-format = { path = "crates/format" }
+labcraft-check = { path = "crates/check" }
+
+# tooling
+serde_json = "1"
+wasm-bindgen-test = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+# Dependencies are optimized and our crates are not: tests stay quick to build and quick to run.
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+# `check` reports a bug on one function as LC0099 and goes on, under catch_unwind (architecture, 5).
+panic = "unwind"
+lto = "thin"

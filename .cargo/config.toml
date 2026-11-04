@@ -1,0 +1,7 @@
+[alias]
+# `--locked`: building xtask must not rewrite a stale Cargo.lock, which would turn the checks green.
+xtask = "run --locked --package xtask --"
+
+# `cargo test --target wasm32-unknown-unknown`; `cargo xtask wasm` says how to install the runner.
+[target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"

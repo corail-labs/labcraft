@@ -8,10 +8,10 @@ cross-platform.
 
 ## Where the project is
 
-LabCraft is in its **specification phase**. There is no product code yet: the repository holds the
-language and file format specification, the decisions behind it, example programs, and throwaway
-Python tools (a syntax checker and viewer, and a proof of concept that runs the examples against
-simulated instruments and exposes them to an agent over MCP).
+LabCraft has **just started its first milestone in Rust**, and nothing is usable in Rust yet. The
+repository holds the language and file format specification, the decisions behind it, example
+programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
+concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
 
 Code contributions in Rust open at the end of milestone M0a, when programs can be read, checked and
 written back: from there, the interpreter (M0b) and the diagram viewer (M0v) can move forward in
@@ -71,9 +71,10 @@ The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/
 3. **No private material.** No customer data, machine designs or details of real projects: examples
    stay generic.
 
-When Rust code starts, the Craft rules apply as well: never crash (no `unwrap`, `expect`, `panic!`
-or `unsafe` in production code), everything is a command with a test, layered crates, the WASM
-build never breaks, every asset attributed. See [docs/craft-ecosystem.md](docs/craft-ecosystem.md).
+In Rust code, the Craft rules apply as well: never crash (no `unwrap`, `expect`, `panic!` or `unsafe`
+in production code), everything is a command with a test, layered crates, the WASM build never
+breaks, every asset attributed. See [docs/craft-ecosystem.md](docs/craft-ecosystem.md). `cargo xtask
+ci` runs the checks of the Rust code.
 
 ## Sending a change
 
