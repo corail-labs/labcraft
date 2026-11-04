@@ -107,15 +107,18 @@ signatures still say what the session designates.
 
 - A number can carry a unit: `f64[V]`, `f64[mA]`, `f64[V/s]`. Without a unit it is dimensionless:
   this is the default.
-- The 7 SI base dimensions, the prefixes (`n` `µ` `m` `k` `M` `G`) and the common derived units
-  (`Hz`, `Ω`, `W`, `F`…) are recognized. `V/A` and `Ω` are the same dimension.
+- The named units of v0 are the base units `m` `kg` `s` `A` `K` `mol` `cd`, then `g`, the derived
+  units `Hz` `N` `Pa` `J` `W` `C` `V` `F` `Ω` `S` `Wb` `T` `H`, the times `min` `h`, and the scales
+  `°C` `°F`. The prefixes are `p` `n` `µ` `m` `k` `M` `G`, on every name but `kg`, `min`, `h`, `°C`
+  and `°F`. `V/A` and `Ω` are the same unit.
 - **Same dimension, different units**: implicit conversion, shown as a coercion (`mV` to `V`). It
   is lossless in dimension; the scale factor is applied in floating point. The result of an
   operation takes the unit of its first operand: `add(1 V, 200 mV)` is `1.2 V`, `add(200 mV, 1 V)`
   is `1200 mV`.
 - **Different dimensions**: error at edit time (`add(voltage, current)` is rejected).
 - **Temperatures**: `°C` and `°F` are scales with an offset. A value in `°C` is an absolute
-  temperature; the difference of two temperatures is in `K`. Q-3.
+  temperature; the difference of two temperatures is in `K`. In a compound unit a temperature counts
+  as a difference, with no offset: `V/°C`, and even `°C^1`. Q-3.
 - Literals: `230 V`, `10 ms`, `4.7 kΩ`.
 - **Compound units**: `*` (or `·`), `/` and `^`. `^` applies to the unit just before it: `m/s^2`
   is m/(s²). `*`, `·` and `/` have equal precedence and apply from left to right: `kg/m*s` is
@@ -127,14 +130,15 @@ signatures still say what the session designates.
   change silently.
 
 **Mechanism (dimensional analysis).** A unit = a vector of exponents over the 7 base dimensions
-(m, kg, s, A, K, mol, cd) + a scale factor. Ω = kg·m²·s⁻³·A⁻², A = A¹.
+(m, kg, s, A, K, mol, cd) + an exact scale factor, so that two units are equal whatever the order of
+the operations that made them. Ω = kg·m²·s⁻³·A⁻², A = A¹.
 
 | Operation | Rule | Example |
 |---|---|---|
 | `mul` | adds the exponents | Ω × A = V; V × A = W |
 | `div` | subtracts the exponents | V / A = Ω |
 | `add`, `sub`, comparisons | identical exponents required | V + A rejected |
-| `sqrt` | divides the exponents by 2, rejected if impossible | √(V²) = V |
+| `sqrt` | divides the exponents by 2, rejected if impossible, or if the scale is not an exact square (`kV·V`) | √(V²) = V |
 | `pow` | constant integer exponent | V² |
 
 Everything is computed at compile time; at run time units no longer exist (zero cost), only scale
@@ -210,7 +214,9 @@ fn check_voltage(
 - **Function references** (Q-14): a named function can be passed as an argument, with a signature
   type checked at edit time, for example
   `measure: fn(visa.session, err: error) -> (f64[V], visa.session, error)`. The callee runs it
-  with `call(measure, …)`. No anonymous functions or closures in v0. This is the typed equivalent
+  with `call(measure, …)`. The name of an argument says how `call` wires it and is not part of the
+  type: `fn(x: f64[V])` and `fn(f64[V])` are the same type, and so is a function with its own names
+  for its parameters. No anonymous functions or closures in v0. This is the typed equivalent
   of LabVIEW's *Call By Reference*, and what makes it possible to write `settle` or `retry` once
   for all measurements.
 
