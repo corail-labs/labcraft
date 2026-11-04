@@ -130,6 +130,13 @@ impl Diagnostic {
         }
     }
 
+    /// Other crates cannot use struct update syntax here, since `code` and `severity` are private.
+    #[must_use]
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = Some(span);
+        self
+    }
+
     pub fn code(&self) -> Code {
         self.code
     }
@@ -211,6 +218,14 @@ impl Report {
         }
         self.diagnostics.push(diagnostic);
         self.prune_when_full();
+    }
+
+    /// Names the file of the diagnostics that have none yet: a crate that reads bytes does not know
+    /// where they came from. So the report of one file is made first, and merged once named.
+    pub fn set_file(&mut self, file: &str) {
+        for diagnostic in self.diagnostics.iter_mut().filter(|diagnostic| diagnostic.file.is_empty()) {
+            diagnostic.file = file.to_owned();
+        }
     }
 
     pub fn merge(&mut self, other: Report) {
@@ -697,6 +712,17 @@ mod tests {
         pruned.finish();
         assert_eq!(kept.diagnostics(), pruned.diagnostics());
         assert_eq!((kept.errors(), kept.warnings()), (pruned.errors(), pruned.warnings()));
+    }
+
+    #[test]
+    fn a_file_is_named_once() {
+        let mut report = Report::new(10);
+        report.push(Diagnostic::new(Code::Lc0005, "", ""));
+        report.push(Diagnostic::new(Code::Lc0005, "", "other.lcf"));
+        report.set_file("f.lcf");
+        report.finish();
+        let files: Vec<&str> = report.diagnostics().iter().map(|diagnostic| diagnostic.file.as_str()).collect();
+        assert_eq!(files, ["f.lcf", "other.lcf"]);
     }
 
     #[test]
