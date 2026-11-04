@@ -1201,6 +1201,11 @@ COMMENT    = "//" { line_char } ;                       (* not "///"; ignored; l
 DOC        = "///" { line_char } ;                      (* documentation, before the declaration *)
 ```
 
+**Invisible characters.** A code point with the Unicode property `Default_Ignorable_Code_Point` is
+neither a `letter` nor a `mark`, whatever its category, so no name or unit name can hold one: U+3164
+alone, or `a` followed by U+FE0F or U+034F, is a syntax error (`LC1001`). Such a character shows as
+nothing, so a name could otherwise hold text that no reader sees. Strings and comments may hold them.
+
 Reserved words, everywhere: `labcraft use fn extern type struct enum match for parallel loop
 continue_on_error carry next collect until yield handle panel layout icon true false none nan inf`.
 `panel`, `layout` and `icon` only start a section, but stay reserved.

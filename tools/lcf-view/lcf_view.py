@@ -27,11 +27,25 @@ from lark.exceptions import LarkError
 RESERVED = ("labcraft use fn extern type struct enum match for parallel loop continue_on_error carry next "
             "collect until yield handle panel layout icon true false none nan inf").split()
 
+# Spec 14.1: Default_Ignorable_Code_Point, from DerivedCoreProperties.txt (Unicode 17 and 18). None of
+# these is a letter or a mark, whatever its category. Same table as `crates/format/src/lexer.rs`.
+_DEFAULT_IGNORABLE = frozenset(
+    cp
+    for first, last in (
+        (0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160), (0x17B4, 0x17B5),
+        (0x180B, 0x180F), (0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164),
+        (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF), (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+        (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF),
+    )
+    for cp in range(first, last + 1)
+)
+
+
 def _unicode_class(prefix):
-    """Regex class body for the code points whose Unicode category starts with `prefix`."""
+    """Regex class body for the code points of spec 14.1 whose Unicode category starts with `prefix`."""
     out, start, prev = [], None, None
     for cp in range(0x30000):
-        if unicodedata.category(chr(cp)).startswith(prefix):
+        if unicodedata.category(chr(cp)).startswith(prefix) and cp not in _DEFAULT_IGNORABLE:
             if start is None:
                 start = cp
             prev = cp
