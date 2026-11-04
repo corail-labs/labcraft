@@ -571,6 +571,15 @@ layout {
         # any other coordinate is for `check`, and keeps its spelling
         self.assertFalse(any("plain decimal" in m for _, m in self.layout(head + "layout {\n    node a at (5.0, 1e3)\n}\n")))
 
+    def test_layout_single_value_has_no_parentheses(self):
+        src = "labcraft 1\n\nfn f(c: bool, a: i32) -> (x: i32) {\n    x = match c {\n        true => yield %s\n        false => yield a\n    }\n}\n"
+        self.assertEqual(self.layout(src % "a"), [])
+        self.assertTrue(any("parentheses" in m for _, m in self.layout(src % "(a)")))
+        call = "labcraft 1\n\nfn f(e2: error) -> (t: f64) {\n    t = g(%s)\n}\n"
+        self.assertEqual(self.layout(call % "after: e2"), [])
+        self.assertEqual(self.layout(call % "after: (#b, e2)"), [])
+        self.assertTrue(any("parentheses" in m for _, m in self.layout(call % "after: (e2)")))
+
     def test_layout_names_have_one_spelling(self):
         body = "labcraft 1\n\nfn f() -> (x: f64[%s]) {\n    x = 1 %s\n}\n"
         self.assertEqual(self.layout(body % ("\u00b5V", "\u00b5V")), [])

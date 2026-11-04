@@ -372,6 +372,8 @@ has one text:
     included; for a `match`, a `handle`, a `loop` or a `for`, that line runs up to its `{`. One node
     per line (5.1) keeps most lines short; a call with many named arguments can still go past 100
     characters (`run_step`, section 13).
+- **Parentheses around a single value** are dropped: `yield (a)` becomes `yield a`, `after: (e2)`
+  becomes `after: e2`.
 - **Literals keep their spelling**: `4.7 kΩ` is not rewritten as `4700 Ω`, nor `1e3` as `1000`.
   Only the space before the unit and the spelling of the unit name are normalized: `2s` becomes
   `2 s` (R-20).
@@ -684,7 +686,9 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   never corrupts a message; it leaves the order between calls undetermined.
 - **Warning at edit time** when two nodes receive the same resource with no dependency path between
   them (data, error wire or `after:`), for example two branches that set the same instrument:
-  "concurrent access to `dmm`: order by the error wire or `after:`". A library declares in its
+  "concurrent access to `dmm`: order by the error wire or `after:`". Two nodes in different arms of a
+  `match` or `handle` never run together and do not count; `bench.dmm` and `bench.source` are
+  different resources, and `bench` overlaps both. A library declares in its
   manifest which of its opaque types are resources, as it marks its `always` functions there. Same
   warning for a panel element written by two unordered nodes, and for a `for parallel` body that
   uses a resource.

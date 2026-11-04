@@ -38,7 +38,7 @@ diagnostics of the others.
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
 | `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)* |
-| `--max-nesting N` | Depth of nested structures, parentheses and types, default 256 *(proposed, scenario 4)* |
+| `--max-nesting N` | Depth of nested structures, parentheses and types, default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage |
 
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
 shortens the report. Output is in English (D-21), in UTF-8, without color unless stdout is a
@@ -295,7 +295,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC1003` | error | Unterminated string or unknown escape | 14.1 |
 | `LC1004` | error | Nested call; the fix names the intermediate value | R-9, 5.1 |
 | `LC1005` | error | Reserved word used as a name | 14.1 |
-| `LC1006` | error | Number out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent beyond ±127, an array of more than 32 dimensions *(bounds proposed)* | 3, scenario 4 |
+| `LC1006` | error | Number or type out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent beyond ±127, an array of more than 32 dimensions, a type nested beyond `--max-nesting`, through its lines or its files *(bounds proposed)* | 3, scenario 4 |
 
 ### Names: `LC20`
 
@@ -354,7 +354,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3013` | error | Selector of the wrong type in a `match` or `handle` | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
 | `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
-| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent, `pow` without a constant integer exponent | 3.3 | |
+| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent, `pow` without a constant integer exponent, an exponent that overflows through a chain of `mul` | 3.3 | |
 | `LC3017` | error | Default value of the wrong type, for a parameter or a panel element | 4, 10 | |
 | `LC3018` | error | Literal that does not fit its type: `300` for an `i8` | 3.4 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, or the wrong number of type arguments | 3.5 | |
@@ -373,7 +373,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
 | `LC4006` | error | Feature planned for a later milestone: generic function written by the user, `ref<T>`… | 9 |
 | `LC4101` | warning | `err` output wired nowhere | 7.5 |
-| `LC4102` | warning | Concurrent access to a resource: two nodes with no dependency between them | 8.1 |
+| `LC4102` | warning | Concurrent access to a resource: two nodes with no dependency between them. Once per resource | 8.1 |
 | `LC4103` | warning | Panel element written by two unordered nodes | 8.1 |
 | `LC4104` | warning | `for parallel` body that uses a resource | 8.1 |
 | `LC4105` | warning | Two reads of the same `button`: only one sees a press | 10 |

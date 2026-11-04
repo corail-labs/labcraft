@@ -349,6 +349,8 @@ def _space_rules(ln, out):
                 out(n, f"no space between `{m.group(1)}` and `{m.group(2)}`")
         for m in NO_SPACE_AFTER.finditer(b):
             out(n, f"one space is needed between `{m.group()}` and `{b[m.end()]}`")
+    for m in re.finditer(r"(?:\byield|\bafter:) \(([^,()]*)\)", b):
+        out(n, "no parentheses around a single value: `yield a`, `after: e2` (5.2)")
     for m in re.finditer(r"-\s", b):
         out(n, "no space after a unary minus (`-1`)")
     for m in re.finditer(r"\s\.\.\.", b):

@@ -103,6 +103,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
+| [docs/architecture.md](docs/architecture.md) | How the Rust code of M0a is arranged, and the order of work |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |
 | [docs/inspirations.md](docs/inspirations.md) | Ideas to borrow (languages, compilers, tools, UX) |
