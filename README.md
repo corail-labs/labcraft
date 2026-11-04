@@ -92,6 +92,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 |---|---|
 | [docs/language-spec-v0.md](docs/language-spec-v0.md) | Language and file format, v0 (first draft): types and units, dataflow, errors, structures, grammar, open questions |
 | [docs/visual-notation.md](docs/visual-notation.md) | How a diagram is drawn: nodes, terminals, wire families, structures (first draft) |
+| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (first draft) |
 | [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |
 

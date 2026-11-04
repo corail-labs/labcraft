@@ -13,6 +13,7 @@ import html
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 from lark import Lark, Token, Tree
@@ -25,6 +26,23 @@ from lark.exceptions import LarkError
 # UNIT_NAME also covers the IDENT of a unit variable (unit_term).
 RESERVED = ("labcraft use fn extern type struct enum match for parallel loop continue_on_error carry next "
             "collect until yield handle panel layout icon true false none nan inf").split()
+
+def _unicode_class(prefix):
+    """Regex class body for the code points whose Unicode category starts with `prefix`."""
+    out, start, prev = [], None, None
+    for cp in range(0x30000):
+        if unicodedata.category(chr(cp)).startswith(prefix):
+            if start is None:
+                start = cp
+            prev = cp
+        elif start is not None:
+            out.append(f"\\U{start:08x}-\\U{prev:08x}")
+            start = None
+    return "".join(out)
+
+
+_LETTER = _unicode_class("L")  # spec 14.1: letter
+_CONT = _LETTER + _unicode_class("M") + "0-9_"  # spec 14.1: letter, mark, digit or "_"
 
 GRAMMAR = r"""
 start: header use_decl* DOC* (fn_decl | extern_decl | type_decl) panel_section? layout_section? icon_section?
@@ -83,7 +101,7 @@ field_init: NAME ":" operand
 
 ?literal: number_lit | STRING -> string | "true" -> true | "false" -> false | "none" -> none | array_lit
 number_lit: NUMBER unit_expr?
-NUMBER: /-?(\d[\d_]*(\.\d[\d_]*)?([eE]-?\d[\d_]*)?|inf(?!\w))/ | /nan(?!\w)/
+NUMBER: /-?([0-9][0-9_]*(\.[0-9][0-9_]*)?([eE]-?[0-9][0-9_]*)?|inf(?!\w))/ | /nan(?!\w)/
 array_lit: "[" [operand ("," operand)*] "]"
 
 ?structure: match_expr | for_expr | loop_expr | handle_expr
@@ -91,7 +109,7 @@ match_expr: "match" operand "{" match_arm* "}"
 match_arm: pattern "=>" arm_body
 ?pattern: literal | range_pat | variant_pat | "_" -> wildcard
 range_pat: SIGNED_INT ".." "="? SIGNED_INT
-SIGNED_INT: /-?\d[\d_]*/
+SIGNED_INT: /-?[0-9][0-9_]*/
 variant_pat: path ("(" NAME ("," NAME)* ")")?
 for_expr: "for" PARALLEL? for_in ("," for_in)* ("," carry)* for_body
 PARALLEL: "parallel"
@@ -134,16 +152,16 @@ icon_item: "rect" point point ("radius" NUMBER)? icon_style -> icon_rect
 icon_style: FILL? ("accent" path)?
 FILL: "fill"
 
-NAME: /(?!(?:__RESERVED__)(?!\w))[^\W\d_]\w*/
-UNIT_NAME: /(?!(?:__RESERVED__)(?!\w))°?[^\W\d_]\w*/
-INT: /\d[\d_]*/
+NAME: /(?!(?:__RESERVED__)(?![__CONT__]))[__LETTER__][__CONT__]*/
+UNIT_NAME: /(?!(?:__RESERVED__)(?![__CONT__]))°?[__LETTER__][__CONT__]*/
+INT: /[0-9][0-9_]*/
 STRING: /"(\\["\\ntr]|[^"\\\n])*"/
 DOC: /\/\/\/[^\n]*/
 COMMENT: /\/\/(?!\/)[^\n]*/
 %import common.WS
 %ignore WS
 %ignore COMMENT
-""".replace("__RESERVED__", "|".join(RESERVED))
+""".replace("__RESERVED__", "|".join(RESERVED)).replace("__LETTER__", _LETTER).replace("__CONT__", _CONT)
 
 PARSER = Lark(GRAMMAR, start="start", parser="earley", propagate_positions=True)
 ERR_NAME = re.compile(r"^(e\d*|err\w*)$")

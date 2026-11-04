@@ -107,10 +107,9 @@ limits).
 - No generics, function references (`call`), `for parallel` (run sequentially), `panel` or
   `layout` (ignored), `labcraft.toml` manifest, or libraries other than the built-in
   primitives (`lcfpoc/stdlib.py`).
-- `fmt --check` is lexical: it does not check the order of the items of `panel`, `layout` and
-  `icon` (their blank lines and spaces are checked), the width of `extern` lines, nor the spelling
-  of literals; the order of lines is not checked in the blocks of the spec; it only reports and
-  never rewrites. A file larger than the library limit (1,000,000 bytes) is reported, not read.
+- `fmt --check` is lexical: it does not check the width of `extern` lines, the spelling of literals,
+  nor layout entries that name no node; the order of lines is not checked in the blocks of the spec;
+  it only reports and never rewrites. A file larger than the library limit (1,000,000 bytes) is reported, not read.
 - Single thread: "parallel branches" run one after the other in canonical order.
   The simulated clock adds up the waits of the branches (two `time.wait(1 s)` with no dependency
   end at 2 s) instead of overlapping them, as spec 8 requires.
@@ -119,5 +118,7 @@ limits).
 - `extern` functions (spec 4.1) are not supported: `check` reports the file with the diagnostic
   "extern functions are not supported by the proof of concept" and its line, and the function is
   unknown to the other files; `fmt --check` still checks the layout of such a file.
+- Names and units are flagged by `fmt --check` when they are not in their one spelling (R-20), but
+  are not normalized when read: `µV` and `μV` are different to `check` and `run`.
 - `unitless(230 mV, [V])` returns 0.23 (explicit unit, spec 3.3); `duration` is a quantity in seconds.
 - `results_log.append_csv` keeps the results in memory (reported by `run`) instead of writing a file.
