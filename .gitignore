@@ -7,6 +7,9 @@
 # Editor settings
 /.vscode/
 
+# Local settings of an agent
+/.claude/settings.local.json
+
 # Generated previews (throwaway)
 /lcf-view.html
 /docs/graphes-v0.html
