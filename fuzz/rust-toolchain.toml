@@ -1,0 +1,5 @@
+# Applies only from inside this folder. A pinned nightly: a new one must not turn the job red by itself.
+[toolchain]
+channel = "nightly-2026-10-20"
+profile = "minimal"
+components = ["rustfmt"]

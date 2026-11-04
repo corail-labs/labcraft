@@ -1,0 +1,25 @@
+# Outside the workspace of the root: this needs nightly, and the product builds on stable
+# (`docs/architecture.md`, section 8). So it has its own Cargo.lock.
+[package]
+name = "labcraft-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+labcraft-format = { path = "../crates/format" }
+labcraft-types = { path = "../crates/types" }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "read"
+path = "fuzz_targets/read.rs"
+test = false
+doc = false
+bench = false

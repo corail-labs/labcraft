@@ -1,0 +1,52 @@
+name: fuzz
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces its older run; every push to main runs to the end.
+concurrency:
+  group: fuzz-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # A workflow of its own on a pinned nightly, so that `checks` stays on stable (docs/architecture.md, section 8).
+  # Scenario 4: each target runs 60 s in each CI run.
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      # Also says when fuzz/Cargo.lock is out of date: cargo fuzz would rewrite it without a word.
+      - name: Licences of fuzz/
+        run: cargo xtask fuzz-licences
+      - name: Install the pinned nightly
+        working-directory: fuzz
+        run: rustup toolchain install --no-self-update
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Formatting of fuzz/
+        working-directory: fuzz
+        run: cargo fmt --check
+      - name: Fuzz the parser
+        run: bash fuzz/run.sh read 60
+      - name: Keep what crashed
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
