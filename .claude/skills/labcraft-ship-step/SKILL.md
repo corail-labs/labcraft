@@ -19,7 +19,7 @@ If the spec, `examples/`, `libs/` or `docs/rfc/` changed, also run the checks li
 
 ## 2. Independent review
 
-Unless this change has had one, launch the `labcraft-reviewer` agent with the scope and the documents only, never your conclusions. Sort its findings into:
+Unless this change has had one, launch the `labcraft-reviewer` agent with the scope, the documents and the owner's decisions on this change, even those not written anywhere yet: they are part of the contract. Never give it your own conclusions. Sort its findings into:
 
 - simple fixes, which you make;
 - decisions, which go to the owner with a recommendation;

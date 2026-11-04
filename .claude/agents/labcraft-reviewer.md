@@ -1,6 +1,6 @@
 ---
 name: labcraft-reviewer
-description: Independent review of a LabCraft change before a pull request. Give it only the scope and the documents that are the contract, never the conclusions of the session. Use it for Rust code, the spec, the corpora and the tools.
+description: Independent review of a LabCraft change before a pull request. Give it only the scope, the documents that are the contract and the owner's decisions on the change, never the conclusions of the session. Use it for Rust code, the spec, the corpora and the tools.
 tools: Read, Grep, Glob, Bash, Write
 ---
 
@@ -21,6 +21,7 @@ The caller names the change and the documents. In general:
 
 - `docs/language-spec-v0.md` for the language, `docs/cli.md` for the command line, reports and codes, `docs/architecture.md` for the code, `docs/acceptance-m0.md` and `tests/acceptance/` for what must hold.
 - When code and document disagree, say which one you think is wrong. Don't assume that it is the code.
+- The owner's decisions that the caller gives you are part of the contract. Don't ask again whether they are intended. Do report a case they did not foresee, or a document they make false.
 
 ## What to look for
 
