@@ -38,23 +38,30 @@ apps/labcraft-cli ──> check ──> format ──> graph ──> types
 
 What everything needs, with no knowledge of files.
 
-- `Name`: an identifier or unit name, always normalized (R-20). Its constructor is the only place that
-  normalizes. It is an interned `u32` from an `Interner` the caller owns: a file of 16 MiB can hold
+- `Name`: an identifier or unit name, always normalized (R-20): `Interner::intern` is the only way to
+  make one. It is an interned `u32` from an `Interner` the caller owns: a file of 16 MiB can hold
   8 million occurrences of a name, and a pointer per occurrence would threaten the memory bound.
-- `Unit`: 7 exponents in `i8`, a scale (a power of ten and a factor, so that named units are found
-  exactly) and an offset for `°C` and `°F` (3.3). The table of named units and prefixes; multiply,
+- `Unit`: 7 exponents in `i8`, a scale (exponents of 2, 3 and 5, which every unit of the table is exact
+  in, so that equal units are equal whatever the order of the operations, on every target) and an
+  offset for `°C` and `°F` (3.3). The table of named units and prefixes; multiply,
   divide and root as **checked** operations, since a chain of `mul` can overflow an exponent (`LC3016`);
-  display (`V`, otherwise the expanded form). `parse_unit` is public: `check` also needs it for the
-  fields of a `string.format` template.
+  display (`V`, otherwise the expanded form: `m/s^2`, `1000*m^2` when a scale has no name). `parse_unit`
+  is public: `check` also needs it for the fields of a `string.format` template. In a compound unit, a
+  temperature counts as a difference: `V/°C` has no offset. Q-3 stays open on the rest.
 - `Ty` and `TyId`: types are interned, and a value refers to its type by `TyId`. So `a1 = [a0]`,
   `a2 = [a1]`… cannot make a deep structure to drop, compare or print, and depth has a limit (`LC1006`).
-  `Ty::Error` matches everything, so that one error gives one diagnostic (cli.md, section 3).
+  A type with `Ty::Error` anywhere inside matches everything, so that one error gives one diagnostic
+  (cli.md, section 3). `TypeTable::matches` takes constant time, whatever the size of the types.
+  A named type is identified by a `LibraryId` that `check` makes and by its name, since two libraries
+  can bear one name, and it is written from where it is seen: `Verdict`, `visa.session`.
 - `Diagnostic`, `Span`, `Code`, `Severity`, `Report`: the schema of cli.md, section 4, with `serde`.
   `Code` is an enumeration; each variant gives its text and its severity. `cargo xtask codes` checks
-  that it equals the tables of cli.md, section 5. Cutting a report to `--max-report` is a separate
-  function: the app calls it last, once all folders and `LC0009`, `LC0010` are merged.
-- `Limits`: file size, total size of a library, nesting, report, with their defaults. `max_nesting` has
-  a hard ceiling (cli.md, section 1): a stack is sized from it (section 4).
+  that it equals the tables of cli.md, section 5. `Report` holds at most twice `--max-report`
+  diagnostics while they arrive, with complete counts, since a file of 16 MiB can hold millions of
+  errors; which ones it keeps does not depend on when it prunes. The app calls `finish` last, once all
+  folders and `LC0009`, `LC0010` are merged.
+- `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
+  `max_nesting` has a hard ceiling (cli.md, section 1): a stack is sized from it (section 4).
 
 Run-time values come with M0b.
 

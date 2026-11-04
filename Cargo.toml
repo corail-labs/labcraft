@@ -16,6 +16,10 @@ labcraft-graph = { path = "crates/graph" }
 labcraft-format = { path = "crates/format" }
 labcraft-check = { path = "crates/check" }
 
+# foundation
+serde = { version = "1", features = ["derive"] }
+unicode-normalization = "0.1"
+
 # tooling
 serde_json = "1"
 wasm-bindgen-test = "0.3"

@@ -51,8 +51,8 @@ under it. Files of the libraries built into the tool are shown as `<labcraft>/vi
 
 **Walking a folder.** Recursive, in code point order of the paths: `.lcf` and `.lct` files, skipping
 folders whose name starts with `.`. A symbolic link is not followed and gives the warning `LC0009`.
-At most 32 levels of folders and 100,000 files *(proposed, the limits of `gridcraft-cli check`)*;
-what is left out gives the error `LC0010`. A path where nothing is found gives the error `LC0002`:
+At most 32 levels of folders and 100,000 files *(proposed, the limits of `gridcraft-cli check`)*, and
+1 GiB in a library *(proposed)*; what is left out gives the error `LC0010`. A path where nothing is found gives the error `LC0002`:
 a typo in CI must not look like a success. A file named explicitly on the command line must have
 one of the two extensions.
 
@@ -214,12 +214,16 @@ A fix and a related place have this form:
 | `function` | no | The function at fault |
 | `node` | no | The name of its line (spec 5.2), absent if empty, and its text in canonical form |
 | `wires` | no | The wires or terminals at fault: `value`, the name of the wire; `from` and `to`, terminals (section 4.3). Each is present when it exists: a bad unit argument has only `to` (`n = unitless(voltage, [A])`: `to` is `n.unit`) |
-| `expected`, `found` | no | Types as written in the language, units included |
+| `expected`, `found` | no | Types as written in the language, units included. A scale that no unit name gives shows as a number (`f64[1000*m^2]`), which the language cannot read back; a type that an error upstream left unknown shows as `unknown` |
 | `fixes` | no | A fix when one exists: a `title`, and `edits` to apply to the file when the fix is mechanical |
 | `related` | no | Other places: where a name is already defined, the first of two conflicting arms |
 
-A field that does not apply is absent, not `null`. Long texts (`message`, `node.text`, a type) are cut
-at 200 code points and end with `…`, so that a hostile file cannot make the report huge.
+A field that does not apply is absent, not `null`. So that a hostile file cannot make the report huge,
+every text that can repeat a name of the file (`message`, `function`, `node`, `wires`, a type, the title
+of a fix, the message of a related place) is cut at 200 code points and ends with `…`, and a diagnostic
+lists at most 32 wires, fixes, edits or related places. An edit is never cut, since it would change the
+program when applied: a fix whose edits are too long or too many keeps its title alone. Paths are not
+cut: walking a folder bounds them.
 
 Fixes are suggestions and nothing applies them in M0a. `with_unit`, for example, asserts something
 the tool cannot know, and the choice stays with the author.
@@ -278,7 +282,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0007` | error | Nesting over the limit | scenario 4 |
 | `LC0008` | error | File named explicitly without the `.lcf` or `.lct` extension | 2 |
 | `LC0009` | warning | Symbolic link met in a folder: not followed | scenario 4 |
-| `LC0010` | error | Files left out: too many files or levels of folders | scenario 4 |
+| `LC0010` | error | Files left out: too many files, levels of folders or bytes in a library | scenario 4 |
 | `LC0099` | error | Internal error of the tool, reported instead of a crash: always a bug | scenario 4 |
 | `LC0101` | error | First line is not a `labcraft N` header | 2 |
 | `LC0102` | error | Format version not supported, such as a newer one (`labcraft 99999`) | 2 |
@@ -295,7 +299,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC1003` | error | Unterminated string or unknown escape | 14.1 |
 | `LC1004` | error | Nested call; the fix names the intermediate value | R-9, 5.1 |
 | `LC1005` | error | Reserved word used as a name | 14.1 |
-| `LC1006` | error | Number or type out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent beyond ±127, an array of more than 32 dimensions, a type nested beyond `--max-nesting`, through its lines or its files *(bounds proposed)* | 3, scenario 4 |
+| `LC1006` | error | Number or type out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent or scale out of bounds (±127, 1e300), an array of 0 or more than 32 dimensions, a type nested beyond `--max-nesting`, through its lines or its files *(bounds proposed)* | 3, scenario 4 |
 
 ### Names: `LC20`
 
@@ -354,7 +358,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3013` | error | Selector of the wrong type in a `match` or `handle` | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
 | `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
-| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent, `pow` without a constant integer exponent, an exponent that overflows through a chain of `mul` | 3.3 | |
+| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
 | `LC3017` | error | Default value of the wrong type, for a parameter or a panel element | 4, 10 | |
 | `LC3018` | error | Literal that does not fit its type: `300` for an `i8` | 3.4 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, or the wrong number of type arguments | 3.5 | |
