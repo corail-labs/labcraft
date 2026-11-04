@@ -122,6 +122,8 @@ version = "0.0.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
+ "labcraft-types",
+ "serde_json",
  "wasm-bindgen-test",
 ]
 

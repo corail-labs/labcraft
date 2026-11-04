@@ -25,6 +25,9 @@ commands:
 
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
 const WASM_RUNNER: &str = "wasm-bindgen-test-runner";
+/// About the call stack of V8 in a worker, half of the 984 KiB of a page: the web viewer works in a worker
+/// (`docs/architecture.md`, sections 4 and 5). The runner passes this to Node.
+const WASM_ENGINE_STACK: &str = "--stack-size=492";
 
 fn main() -> ExitCode {
     let command = std::env::args().nth(1);
@@ -92,7 +95,35 @@ fn wasm() -> Result<(), String> {
         return Err(format!("{WASM_RUNNER} is missing; install it with\n  cargo install wasm-bindgen-cli --version {version} --locked"));
     }
     run(&["build", "--locked", "--target", WASM_TARGET, "--package", "labcraft-format", "--package", "labcraft-check"])?;
-    run(&["test", "--locked", "--target", WASM_TARGET, "--package", "labcraft-harness"])
+    wasm_tests()
+}
+
+/// The tests run here only through an attribute that the harness imports for WASM: without it, the runner
+/// finds no test and succeeds. So some test must have passed.
+fn wasm_tests() -> Result<(), String> {
+    let args = ["test", "--locked", "--target", WASM_TARGET, "--package", "labcraft-harness", "--lib"];
+    let what = format!("cargo {}", args.join(" "));
+    eprintln!("$ {what}");
+    let output =
+        cargo().args(args).env("NODE_ARGS", WASM_ENGINE_STACK).stderr(Stdio::inherit()).output().map_err(|error| format!("{what}: {error}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    print!("{stdout}");
+    if !output.status.success() {
+        return Err(format!("{what}: {}", output.status));
+    }
+    match passed_tests(&stdout) {
+        0 => Err(format!("{what}: no test ran")),
+        _ => Ok(()),
+    }
+}
+
+/// The tests passed, from the lines `test result: ok. 6 passed; 0 failed; …`.
+fn passed_tests(output: &str) -> usize {
+    output
+        .lines()
+        .filter(|line| line.contains("test result:"))
+        .filter_map(|line| line.split(" passed").next()?.rsplit(' ').next()?.parse::<usize>().ok())
+        .sum()
 }
 
 /// The runner must have the same version as the library that the tests link.
@@ -142,4 +173,26 @@ fn cargo() -> Command {
 fn root() -> PathBuf {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest.parent().unwrap_or(manifest).to_path_buf()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::passed_tests;
+
+    #[test]
+    fn the_passed_tests_add_up_over_the_results() {
+        let output = "running 6 tests\ntest result: ok. 6 passed; 0 failed; 0 ignored\n\ntest result: ok. 1 passed; 0 failed\n";
+        assert_eq!(passed_tests(output), 7);
+    }
+
+    #[test]
+    fn no_result_or_no_test_is_nothing_passed() {
+        assert_eq!(passed_tests("no tests to run!\n"), 0);
+        assert_eq!(passed_tests("test result: ok. 0 passed; 0 failed\n"), 0);
+    }
+
+    #[test]
+    fn colours_do_not_hide_the_count() {
+        assert_eq!(passed_tests("test result: \u{1b}[32mok\u{1b}[0m. 6 passed; 0 failed\n"), 6);
+    }
 }

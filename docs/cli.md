@@ -38,7 +38,7 @@ diagnostics of the others.
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
 | `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)* |
-| `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage |
+| `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage. The WASM hosts stop at 256, so a file nested deeper reads only here ([architecture](architecture.md), section 4) |
 
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
 shortens the report. Output is in English (D-21), in UTF-8, without color unless stdout is a
