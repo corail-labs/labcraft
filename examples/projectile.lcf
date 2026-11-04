@@ -45,3 +45,20 @@ fn projectile(
         until landed
     }
 }
+
+panel {
+    control vx0: numeric
+    control vy0: numeric
+    control mass: numeric
+    control drag: numeric
+    control dt: numeric
+    indicator flight_time: numeric
+    indicator range: numeric
+    indicator apex: numeric
+}
+
+layout {
+    node flight_time at (400, 80)
+    node k at (220, 80) view standard
+    wire k -> flight_time via (300, 80) (300, 120)
+}

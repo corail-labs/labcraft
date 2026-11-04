@@ -62,7 +62,7 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 | **Clean room** | Black-box observation of the target product; never its code, icons or texts; no GPL code | Adopted and adapted to NI (D-23) |
 | **Attributed assets** | Every asset has a line in `ATTRIBUTION.md` | Adopted |
 | **Versioned format** | `solidcraft/N`, step-by-step migrations, clean refusal of future formats, a corpus of old files that must still open | Adopted (`labcraft/N`, D-07) |
-| **CLI and MCP** | `<app>-cli run / eval / mcp`; MCP headless or attached to the app through a local token-protected control channel | Adopted (D-18) |
+| **CLI and MCP** | `<app>-cli run / eval / mcp`; MCP headless or attached to the app through a local token-protected control channel. `gridcraft-cli check`: exit 0, 1, 2; `--json` prints one object with a named schema (`gridcraft-check/1`); `docs/cli.md` | Adopted (D-18, [cli.md](cli.md)) |
 | **Local `plan/`** | A local, git-ignored `plan/` folder for working notes | Adopted, except the ADRs: public in [decisions.md](decisions.md) (see [roadmap.md](roadmap.md)) |
 | **Progress docs** | One-page `ROADMAP.md`; detail in `docs/` (parity, ranked gaps, architecture) | Adopted |
 | **One task identifier per commit** | For example `M2.1: borders gallery` | Adopted |

@@ -39,15 +39,18 @@ code points, on the code of the line (an end-of-line comment is not counted). It
   alone) if and only if the one-line form is longer than 100 code points or has a comment before
   the `{`. Every other statement is one line, whatever its length.
 
-Not checked (not lexical, or not worth it): the order of the items of `panel`, `layout` and `icon`
-sections (their blank lines are checked: none inside a section), the order of the sections, the order of the lines (see `canon.py`),
-spaces around `<` `>` when used as operators (there are none in the language), the width of
-`extern` lines, the spelling of literals.
+- names and units in their one spelling (R-20): NFC, no Greek mu, outside strings and comments;
+- items of `panel` and `layout`: their order, plain decimal coordinates, no empty section.
+
+Not checked (not lexical, or not worth it): the order of the sections, the order of the lines (see
+`canon.py`), spaces around `<` `>` when used as operators (there are none in the language), the
+width of `extern` lines, the spelling of literals, layout entries that name no node.
 
 `check_layout` only reports; it never rewrites. `check_spec_layout` applies it to the code blocks
 of the spec (see its docstring).
 """
 import re
+import unicodedata
 
 WIDTH = 100
 STRUCT_OPEN = re.compile(r"\s=\s(?:loop(?: continue_on_error)?|for(?: parallel)?)$")
@@ -502,6 +505,104 @@ def _check_loop(L, i, out):
         out(ln.no, f"the clauses fit on one line ({len(one)} characters): expected `{one.strip()}`")
 
 
+def _groups(s):
+    """Contents of the top-level parenthesized groups of `s`."""
+    out, depth, start = [], 0, 0
+    for i, c in enumerate(s):
+        if c == "(":
+            depth += 1
+            if depth == 1:
+                start = i + 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                out.append(s[start:i])
+    return out
+
+
+def _names(group):
+    """Names of the parameters or outputs of a signature group."""
+    out, depth, cur = [], 0, ""
+    for c in group + ",":
+        depth += (c in "([{") - (c in ")]}")
+        if c == "," and depth == 0:
+            if cur.strip():
+                out.append(cur.split(":")[0].strip())
+            cur = ""
+        else:
+            cur += c
+    return out
+
+
+def _signature(L):
+    """(inputs, outputs) of the function of the file, from its text."""
+    for i, ln in enumerate(L):
+        if ln.depth == 0 and ln.body.startswith("fn "):
+            j = _sig_end(L, i)
+            if j is None:
+                break
+            groups = _groups(" ".join(l.body for l in L[i:j + 1]))
+            if len(groups) >= 2:
+                return _names(groups[0]), _names(groups[1])
+            break
+    return [], []
+
+
+def _first_unordered(items, out, what):
+    """Report the first of `items` [(key, line, text)] that is not where a stable sort puts it."""
+    want = sorted(items, key=lambda it: it[0])
+    for got, exp in zip(items, want):
+        if got is not exp:
+            out(got[1], f"items of `{what}` are not in canonical order (5.2): expected `{exp[2]}` "
+                        f"here, found `{got[2]}`")
+            return
+
+
+def _item_rules(L, out):
+    """Items of `panel` and `layout` (spec 5.2): order, plain coordinates, no empty section."""
+    inputs, outputs = _signature(L)
+    panel, layout = [], []
+    for k, ln in enumerate(L):
+        if ln.depth == 0 and ln.sname in ("panel", "layout") and ln.body:
+            before = k > 0 and L[k - 1].comment is not None and not L[k - 1].body
+            closed = ln.body == ln.sname + " {}"
+            wrapped = (ln.body == ln.sname + " {" and k + 1 < len(L) and L[k + 1].body == "}"
+                       and L[k + 1].comment is None)
+            if (closed or wrapped) and ln.comment is None and not before:
+                out(ln.no, f"an empty `{ln.sname}` section is removed (5.2)")
+        if ln.depth != 1 or not ln.body:
+            continue
+        if ln.sname == "panel":
+            m = re.match(r"(control|indicator) ([^\s:]+)\s*:", ln.body)
+            if m:
+                kind, name = m.groups()
+                terminals = inputs if kind == "control" else outputs
+                rank = (0, terminals.index(name), "") if name in terminals else (1, 0, name)
+                panel.append(((kind != "control", *rank), ln.no, ln.text))
+        elif ln.sname == "layout":
+            m = re.match(r"node (\S+)", ln.body)
+            w = re.match(r"wire (\S+) -> (\S+)", ln.body)
+            if m:
+                layout.append(((0, m.group(1), ""), ln.no, ln.text))
+            elif w:
+                layout.append(((1, w.group(1), w.group(2)), ln.no, ln.text))
+            for point in re.findall(r"\(([^()]*)\)", ln.body):
+                for x in point.split(","):
+                    x = x.strip()
+                    if re.fullmatch(r"-?[0-9][0-9_]*", x):
+                        value = int(x.replace("_", ""))
+                        if abs(value) <= 1_000_000 and x != str(value):
+                            out(ln.no, f"a coordinate is written in plain decimal: `{value}`, not `{x}` (5.2)")
+    _first_unordered(panel, out, "panel")
+    _first_unordered(layout, out, "layout")
+
+
+def _unicode_rules(ln, out):
+    """Names and units in their one spelling (R-20): `code` has strings masked, comments cut."""
+    if "\u03bc" in ln.code or unicodedata.normalize("NFC", ln.code) != ln.code:
+        out(ln.no, "a name or a unit is not in its one spelling (R-20): NFC, and U+00B5 for the micro sign")
+
+
 def _links(L):
     """One reverse pass: next line with code, next line with code or blank, arms made of a `yield`."""
     nc = ns = None
@@ -537,6 +638,8 @@ def check_layout(src):
     for ln in L:
         _space_rules(ln, out)
         _comment_rules(ln, out)
+        _unicode_rules(ln, out)
+    _item_rules(L, out)
     for i, ln in enumerate(L):
         if ln.depth == 0 and ln.body.startswith("fn "):
             _check_fn(L, i, out)

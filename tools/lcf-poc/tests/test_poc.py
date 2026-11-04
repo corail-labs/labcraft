@@ -524,13 +524,72 @@ layout {
             src = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n" + body + "}\n"
             fn, _, _, _ = lower_file(src, "f.lcf", parse(src))
             return check_fn(fn)
-        # unknown name: written order kept
-        self.assertEqual(probs("    z = add(q, 1)\n    b = add(a, 1)\n    x = b\n"), [])
+        # a name the file does not define creates no dependency: the body is still ordered (5.2)
+        self.assertEqual(len(probs("    z = add(q, 1)\n    b = add(a, 1)\n    x = b\n")), 1)
+        # value defined twice: written order kept
+        self.assertEqual(probs("    z = add(a, 1)\n    z = add(a, 2)\n    b = add(a, 1)\n    x = b\n"), [])
+        # the same for an output that is also an input, and for a label
+        self.assertEqual(probs("    x = a\n    x = add(a, 1)\n    b = add(a, 1)\n"), [])
+        self.assertEqual(probs("    #l: z = add(a, 1)\n    #l: b = add(a, 1)\n    x = b\n"), [])
         # cycle: written order kept
         self.assertEqual(probs("    m = add(a, 1)\n    b = add(a, 1)\n    z = add(y, 1)\n"
                                "    y = add(z, b)\n    x = add(m, y)\n"), [])
         # an ordinary body that reads an input is still checked
         self.assertEqual(len(probs("    m = add(a, 2)\n    b = add(a, 1)\n    x = add(m, b)\n")), 1)
+
+    def test_layout_items_of_panel_and_layout(self):
+        head = "labcraft 1\n\nfn f(a: i32, b: i32) -> (x: i32, y: i32) {}\n\n"
+        self.assertEqual(self.layout(head + "panel {\n    control a: numeric\n    control b: numeric\n"
+                                            "    control z: button\n    indicator x: numeric\n"
+                                            "    indicator y: numeric\n    indicator c: chart\n}\n"), [])
+        for items in ("    control b: numeric\n    control a: numeric\n",  # signature order
+                      "    control z: button\n    control a: numeric\n",  # terminals first
+                      "    indicator x: numeric\n    control a: numeric\n",  # controls first
+                      "    control z: button\n    control c: button\n"):  # others by name
+            self.assertTrue(any("items of `panel`" in m for _, m in self.layout(head + "panel {\n" + items + "}\n")),
+                            items)
+        self.assertEqual(self.layout(head + "layout {\n    node #close at (1, -2)\n    node dmm at (3, 4)\n"
+                                            "    wire a -> b\n    wire a -> c via (5, 6) (1, 1)\n}\n"), [])
+        for items in ("    node dmm at (3, 4)\n    node #close at (1, 2)\n",
+                      "    wire a -> b\n    node dmm at (3, 4)\n",
+                      "    wire b -> a\n    wire a -> c\n",
+                      "    wire a -> c\n    wire a -> b\n"):
+            self.assertTrue(any("items of `layout`" in m for _, m in self.layout(head + "layout {\n" + items + "}\n")),
+                            items)
+        for value in ("1_000", "-0", "007", "1_", "1__0"):
+            self.assertTrue(any("plain decimal" in m for _, m in
+                                self.layout(head + f"layout {{\n    node a at ({value}, 2)\n}}\n")), value)
+        for sect in ("panel {}\n", "layout {}\n", "panel {\n}\n"):
+            self.assertTrue(any("empty" in m for _, m in self.layout(head + sect)), sect)
+        # a comment is not an item: the section stays
+        for sect in ("layout {\n    // later\n}\n", "panel {} // later\n", "layout {\n} // later\n",
+                     "// later\npanel {}\n"):
+            self.assertFalse(any("empty" in m for _, m in self.layout(head + sect)), sect)
+        # any other coordinate is for `check`, and keeps its spelling
+        self.assertFalse(any("plain decimal" in m for _, m in self.layout(head + "layout {\n    node a at (5.0, 1e3)\n}\n")))
+
+    def test_layout_names_have_one_spelling(self):
+        body = "labcraft 1\n\nfn f() -> (x: f64[%s]) {\n    x = 1 %s\n}\n"
+        self.assertEqual(self.layout(body % ("\u00b5V", "\u00b5V")), [])
+        self.assertEqual(self.layout(body % ("k\u03a9", "k\u03a9")), [])
+        for spelled in ("\u03bcV", "k\u2126"):
+            self.assertTrue(any("R-20" in m for _, m in self.layout(body % (spelled, spelled))), spelled)
+        decomposed = "labcraft 1\n\nfn f(te\u0301: i32) -> (x: i32) {\n    x = te\u0301\n}\n"
+        self.assertTrue(any("R-20" in m for _, m in self.layout(decomposed)))
+        # strings and comments keep their text
+        self.assertEqual(self.layout('labcraft 1\n\nfn f() -> (x: string) {\n    x = "\u03bc k\u2126" // \u03bc\n}\n'), [])
+
+    def test_names_follow_the_lexicon(self):
+        from lark.exceptions import LarkError
+        from lcfpoc.library import parse
+        src = "labcraft 1\n\nfn f(%s: i32) -> (x: i32) {\n    x = %s\n}\n"
+        for name in ("te\u0301", "x\u20d7", "\u0915\u093f", "fn\u0300", "\u00b5", "\u03a9"):  # marks, letters
+            parse(src % (name, name))
+        for name in ("\u00b2x", "x\u00b2", "\u0663"):  # a superscript and a non-ASCII digit are not in a name
+            with self.assertRaises(LarkError, msg=name):
+                parse(src % (name, name))
+        with self.assertRaises(LarkError):
+            parse("labcraft 1\n\nfn f() -> (x: i32) {\n    x = \u0663\n}\n")
 
     def test_layout_fn_type_unary_minus_trailing_comment(self):
         g = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n    x = add(a, -1)\n}\n"
@@ -736,7 +795,7 @@ layout {
         self.assertEqual(self.layout(self.HDR + "/// Doc.\n" + ex), [])
         self.assertBreaks(self.HDR + ex.replace(")\nfn", ")\n\nfn"), 5, "directly by its `fn` line")
         # a bodyless function never reaches the next section
-        self.assertEqual(self.layout(self.HDR + ex + "\npanel {}\n"), [])
+        self.assertEqual(self.layout(self.HDR + ex + "\npanel {\n    control samples: numeric\n}\n"), [])
         many = ex.replace("(samples: [f64[V]])", "(\n    samples: [f64[V]],\n)")
         self.assertBreaks(self.HDR + many, 4, "fits on one line")
         two = self.HDR + ex + 'extern c(library: "a", symbol: "b")\nfn g() -> (err: error)\n'

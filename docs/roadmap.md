@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated: 2026-11-03*
+*Last updated: 2026-11-04*
 
 LabCraft is in its specification phase: the language is described and tried out by a throwaway
 Python proof of concept, and there is no product code in Rust yet. This page says where the
@@ -13,6 +13,7 @@ project stands, what the milestones are, and how the Rust code will be organized
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
 | Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-25 |
+| Command line ([cli.md](cli.md)) | First draft: `fmt` and `check`, reports, diagnostic codes |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-12 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
@@ -22,10 +23,8 @@ project stands, what the milestones are, and how the Rust code will be organized
 Still to write, besides the architecture (from the layers below) and what the acceptance scenarios
 list under "write first" ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0a**: the CLI specification of `fmt` and `check`, with the schema of diagnostics and
-  the stable error codes; the canonical writing of the `panel` and `layout` sections; Unicode
-  normalization (Q-23); the libraries of the examples (`dmm_driver`, `relays` and `psu` in
-  LabCraft, `results_log` as `extern rust`, spec A.4);
+- **before M0a**: the libraries of the examples (`dmm_driver`, `relays` and `psu` in LabCraft,
+  `results_log` as `extern rust`, spec A.4);
 - **before M0b**: the CLI specification of `run`, the MCP specification, the command catalog v0,
   how the CLI and MCP set a panel element (Q-20), and a throwaway feasibility prototype: a scheduler
   with two parallel loops and a clean stop;

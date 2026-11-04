@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-03. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-04. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -29,7 +29,7 @@ follows (events, panel widgets, timed loops, PLC mode).
 | Element | Proposed choice |
 |---|---|
 | Extension | `.lcf` for a function, `.lct` for a type (Q-1) |
-| Encoding | UTF-8, LF line endings; the file ends with a single line feed |
+| Encoding | UTF-8, LF line endings; the file ends with a single line feed. On reading, CR LF and a byte order mark at the start are accepted, and `fmt` removes them. A CR not followed by a line feed and the other control characters (Unicode category Cc), tab and line feed apart, are refused. A bidirectional control character in a string or a comment gives a warning: the text does not read as it runs |
 | Header | `labcraft 1`: format version; older versions are migrated, a newer version is refused with a clear message |
 | Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
 
@@ -83,7 +83,8 @@ queue<T>, ref<T>      // explicit references (D-04), never implicit
 `[f64; 2]` is a 2-dimensional array: the number after `;` counts dimensions, not elements (unlike
 Rust). The size of an array is a property of the value, not of its type.
 
-A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`).
+A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
+contain itself, directly or through other types.
 
 **Opaque types**: a library can declare a type whose content is hidden, handled only by its
 functions. This is the case for the session `visa.session` (the equivalent of LabVIEW's *VISA
@@ -189,7 +190,8 @@ fn check_voltage(
 - Call: `name(arguments)`, positional then named (`check_voltage(r, high: 250 V)`).
 - A parameter can be **variadic** (`parts: string...`): see 5.4.
 - **Scope.** `core` is always in scope, unqualified (`add`, `ge`, `select`). Functions and types
-  of the same library are named without qualification (`settle`, `Verdict`). Anything from another
+  of the same library are named without qualification (`settle`, `Verdict`), so they cannot share
+  a name. Anything from another
   library, types included, needs `use lib` in the file and the qualified name: after `use visa`,
   `visa.open` and `visa.session`. `use a.b` imports `b`, a sub-library of `a` (a library nested in
   the folder of `a`); its contents are named `a.b.name`.
@@ -276,7 +278,10 @@ then the layout of the text. It guarantees the text → graph → text round tri
 The order applies to each body on its own: the function body, each arm, each loop body.
 
 - **The inputs of a line** are the names it reads, including those read in its sub-bodies and in
-  `after:`, that another line of the same body defines. A label (`#close`) counts as a name.
+  `after:`, that another line of the same body defines. A label (`#close`) counts as a name. This
+  is read from the syntax alone: every operand reads its name or the first segment of its path
+  (`step` in `step.low`), `[x]` reads `x` whether it turns out to be a unit or an array, and a name
+  that a sub-body binds itself (a carry, a pattern, one of its lines) is not read from outside.
 - **The name of a line** is its first output that is neither `_` nor `next x`, or else its label.
   A call statement without a label has the empty name.
 - **Algorithm**: repeatedly emit, among the lines whose inputs are all emitted, the one that comes
@@ -289,16 +294,23 @@ The order applies to each body on its own: the function body, each arm, each loo
   5. in the function body only, the lines that only bind a function output to a value
      (`err = e3`), in signature order.
 
-  Ties keep the written order. The `yield` of an arm is last, by grammar. A body with an error at
-  edit time (a cycle, an unknown name) keeps its written order.
+  Ties keep the written order. The `yield` of an arm is last, by grammar. A body that cannot be
+  ordered (a cycle, a value or a label defined twice) keeps its written order. `fmt` reads no other file
+  ([cli.md](cli.md)): a name that the file does not define creates no dependency, and `check`
+  reports it if it resolves nowhere.
 - **Comments** move with their statement: a comment is attached to the statement that follows it,
   or to the one that ends on its line. A comment with no statement after it in its body stays at
   the end of the body, at the level of the body. A comment outside a declaration belongs to the
   section that follows it, or to the last section at the end of the file; there is none between
   two `use` lines. An end-of-line comment after an opening `{` (of a function, an arm, a `match`, a
-  `handle`, a loop) stays attached to that line. A comment in an arm whose body is only a `yield`
-  goes on the line before the arm. Inside a split signature, struct, enum or list of loop clauses
-  (below), a comment is attached to the item that follows it, or to the one that ends on its line.
+  `handle`, a loop) stays attached to that line, except in the next case. A comment in an arm whose
+  body is only a `yield`, even one after its `{`, goes on the line before the arm. A comment inside a
+  statement written over several lines goes on the line before the statement, in its written order. Inside a split signature, struct, enum or list of loop clauses
+  (below), and inside a `panel`, `layout` or `icon` section, a comment is attached to the item that
+  follows it, or to the one that ends on its line; with no item after it, it stays last, at the
+  level of the items.
+- **No comment is lost.** A line or a section that `fmt` would remove (a repeated `use`, a layout
+  entry that names no node, an empty section) stays if a comment is attached to it, or inside it.
 
 **Layout of the text.** The canonical form also fixes how each line is written, so that a program
 has one text:
@@ -349,10 +361,23 @@ has one text:
     per line (5.1) keeps most lines short; a call with many named arguments can still go past 100
     characters (`run_step`, section 13).
 - **Literals keep their spelling**: `4.7 kΩ` is not rewritten as `4700 Ω`, nor `1e3` as `1000`.
-  Only the space before the unit is normalized: `2s` becomes `2 s`.
+  Only the space before the unit and the spelling of the unit name are normalized: `2s` becomes
+  `2 s` (R-20).
+- **Names and units** are written in their one spelling (R-20), outside strings and comments.
+- **Items of `panel`**: the `control` items, then the `indicator` items. In each group, the
+  elements that have the name of an input (for `control`) or of an output (for `indicator`), in
+  signature order, then the others by name in code point order. Arguments keep their written order.
+- **Items of `layout`**: the `node` items by name, then the `wire` items by source and destination,
+  all in code point order on the text of the reference (so `#close` comes before `dmm`). Ties keep
+  the written order, and so do the points after `via`. A coordinate that is an integer literal in
+  the range (section 11) is written in plain decimal: `1_000` becomes `1000`, `-0` becomes `0`.
+  Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
+- **Items of `icon`** keep their written order: a shape is drawn over the ones before it.
+- **An empty `panel` or `layout` section**, with neither an item nor a comment, is removed.
 - **Comments**: `//` and `///` are followed by at least one space, or by nothing when the comment
   is empty: `fmt` adds a missing space and never removes one, so that indented text in a comment
-  is kept. An end-of-line comment is preceded by one space. Comments are never rewrapped.
+  is kept. An end-of-line comment is preceded by one space. Comments are never rewrapped. No line
+  ends with a space, even in a comment: `//   ` becomes `//`.
 - Line endings and the end of the file: section 2.
 
 **The examples are canonical**: the complete code blocks of this document and the files of
@@ -685,7 +710,8 @@ requested from outside; a fault, found by the runtime.
   are released, no output is reported. The report gives the `fault` status, a code and the node
   where it happened.
 
-**Limits.** The depth of calls is always limited, to protect the stack. By default, the number of
+**Limits.** The depth of calls is always limited, to protect the stack: a function may call itself
+(with a warning at edit time), and a run that goes too deep ends with a fault. By default, the number of
 iterations per loop and of nodes executed is limited only in deterministic mode: there it protects
 a test or an agent from a program that never ends, including one whose simulated clock no longer
 advances. In real time a loop runs as long as the program says, for days on a bench, unless the run
@@ -744,8 +770,10 @@ Widgets are detailed for M3. The model is fixed from v0, because it affects sema
 reads a Stop button, a graph updated at each iteration.
 
 The section lists the elements and their kind: `control resource: text_box`,
-`indicator verdict: led`, `indicator voltage: numeric(format: "0.000")`. Their layout goes in the
-`layout` section.
+`indicator verdict: led`, `indicator voltage: numeric(format: "0.000")`. Their placement on the
+panel will go in the `layout` section; its syntax comes with M3 (section 9). In M0 the kinds are
+`button`, `switch`, `numeric`, `text_box`, `led` and `chart`; another kind gives a warning, and only
+`default:` is checked among the arguments.
 
 **At the call terminals.** An element that has the name of an input of the function is a control:
 its value is read once, at the start of the call, like any input. An element that has the name of
@@ -805,8 +833,8 @@ panel {
     control resource: text_box
     control period: numeric
     control stop_button: button
-    indicator live_voltage: chart(history: 500)
     indicator count: numeric
+    indicator live_voltage: chart(history: 500)
 }
 ```
 
@@ -832,10 +860,10 @@ polling in a loop.
 
 ```text
 layout {
+    node #close at (580, 80)
     node dmm at (40, 80) view standard
     node reading at (220, 80)
     node verdict at (400, 80)
-    node #close at (580, 80)
     wire reading -> verdict via (300, 80) (300, 120)
 }
 ```
@@ -843,9 +871,11 @@ layout {
 - **Coordinates** are in canvas units: 1 unit = 1 logical pixel at 100% zoom, origin at the top
   left, y pointing down (visual notation, section 2). `node x at (40, 80)` places the top-left
   corner of the node; the points after `via` are waypoints of the route.
-- Nodes are designated by the name of their line (5.2): their first output that is neither `_` nor
-  `next x`, or else their label (`#close`). A node that has no such output (all its outputs are
-  `_` or `next x`, or a call statement) needs a label to be designated here.
+- Nodes are designated by their label (`#close`) if they have one, or by the name of their line
+  (5.2): their first output that is neither `_` nor `next x`. A node that has no such output (all
+  its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A line
+  that creates no node (`err = e3`, 5.1, R-4) designates nothing. A node or a wire has at most one
+  entry.
 - `wire a -> b` designates the wire from node `a` to node `b`. When it is not the only one,
   `wire a.out -> b.in` names the terminals, with the output and input names of the signatures:
   `wire raw.session -> #close.session` in `check_voltage` (section 12).
@@ -857,7 +887,9 @@ layout {
   section.
 - Renaming a value updates the section (IDE and CLI command). An entry that names a node that
   does not exist, for example after an agent renamed a value in the text, gives a warning at edit
-  time; `fmt` removes it.
+  time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
+  attached to the entry. A name defined in several bodies (two arms) is ambiguous here, and gives a
+  warning: use a label.
 - Coordinates are integers between -1,000,000 and 1,000,000 *(range proposed)*; a value outside
   is an error at edit time.
 
@@ -1122,14 +1154,17 @@ grammar describes the syntax; name resolution and types belong to checking (sect
 ### 14.1 Lexicon
 
 ```ebnf
-IDENT      = letter { letter | digit | "_" } ;          (* not a reserved word *)
+IDENT      = letter { letter | mark | digit | "_" } ;   (* not a reserved word *)
 letter     = a Unicode letter (a-z, A-Z, µ, Ω…) ;       (* never "_" or "°" *)
+mark       = a Unicode combining mark ;                 (* é as e + U+0301: one name (R-20) *)
+digit      = "0" | … | "9" ;
 INT        = digit { digit | "_" } ;
 FLOAT      = INT "." INT [ ( "e" | "E" ) [ "-" ] INT ] | INT ( "e" | "E" ) [ "-" ] INT ;
                                                         (* 1_000.5_0 is 1000.50, with no unit *)
 STRING     = '"' { char | "\\" escape } '"' ;           (* char: not '"', "\" or a line ending;
                                                            escape: \" \\ \n \t \r *)
-UNIT_NAME  = [ "°" ] letter { letter | digit | "_" } ;  (* checked against the unit table:
+UNIT_NAME  = [ "°" ] letter { letter | mark | digit | "_" } ;
+                                                        (* checked against the unit table:
                                                            V, mV, A, Ω, kΩ, Hz, s, ms, °C, K… *)
 COMMENT    = "//" { char } end_of_line ;                (* not "///"; ignored *)
 DOC        = "///" { char } end_of_line ;               (* documentation, before the declaration *)
@@ -1217,7 +1252,7 @@ field_init    = IDENT ":" operand ;
 
 literal       = number [ unit_expr ] | STRING | "true" | "false" | "none"
               | "[" [ operand { "," operand } ] "]" ;
-number        = [ "-" ] ( INT | FLOAT | "inf" ) | "nan" ;
+number        = [ "-" ] ( INT | FLOAT | "inf" ) | "nan" ;   (* no space after the minus *)
 ```
 
 ### 14.5 Structures
@@ -1299,6 +1334,7 @@ What the grammar alone does not say:
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. |
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error (6.1). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
 | R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
+| R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
 
 ## 15. Open questions
 
@@ -1326,7 +1362,7 @@ What the grammar alone does not say:
 | Q-20 | Setting a panel element from the CLI or MCP | For example `--set stop_button=true@5s` in deterministic mode, and the equivalent MCP command |
 | Q-21 | Default values not covered by 7.2 | `timestamp` (the origin of the clock?), function references (a reference that fails when called?), `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?) |
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
-| Q-23 | Unicode normalization | Some characters of names and units exist twice: `µ` (U+00B5, micro sign, or U+03BC, Greek mu), `Ω` (U+03A9, Greek omega, or U+2126, ohm sign). Are they the same name or unit? Does `fmt` normalize them (NFC, or a fixed choice), although literals keep their spelling (5.2)? |
+| Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
 | Q-25 | Fault or error at run time | Integer overflow, `to_i32` of `nan` or out of range, integer division by zero: a fault (8.2), an `error` value on `err`, or a default value? |
 

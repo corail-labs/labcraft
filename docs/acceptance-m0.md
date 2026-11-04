@@ -1,6 +1,6 @@
 # M0 acceptance scenarios
 
-*Last updated: 2026-11-03. Status: first draft.*
+*Last updated: 2026-11-04. Status: first draft.*
 
 M0, the first milestone in Rust, comes in three parts ([roadmap](roadmap.md)): M0a reads, checks
 and writes programs; M0b runs them and opens the agent loop; M0a and M0b are a thin vertical
@@ -21,10 +21,11 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 - **Through the tool, as a user would.** Every scenario goes through `labcraft-cli` (`fmt`,
   `check`, `run`, `diagram`) or its MCP server (`labcraft-cli mcp`); scenario 6 also goes through
   the desktop and web viewers. The CLI with `--json` and the MCP server return the same reports;
-  their schema belongs to the CLI and MCP specification.
+  [cli.md](cli.md) gives their schema for `fmt` and `check`; the rest belongs to the specifications
+  of M0b and M0v.
 - **Status and exit code.** Every run reports one of the statuses of spec 8.2: `ok`, `error`,
-  `aborted`, `fault`. *Proposed* exit codes of the CLI: 0 `ok`; 1 `error`, or an error (not a
-  warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, malformed
+  `aborted`, `fault`. Exit codes of the CLI ([cli.md](cli.md)): 0 `ok`; 1 `error`, or an error (not
+  a warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, malformed
   `--arg`); 3 `aborted`; 4 `fault`. `fmt` exits 1 on a file it cannot read or parse, and leaves
   it unchanged. `diagram` writes the SVG of every drawable function (6.3), type errors marked,
   and exits 1 only for the functions it cannot draw.
@@ -128,8 +129,8 @@ before the M0a tag.
 some not at all: a session input that receives an `f64[V]` passes `check`, and the carry case above
 runs and returns 3.5 through an `i32` output. Static type checking is the main new piece of M0a.
 
-**Write first:** the stable error codes (not written yet), and the diagnostic schema in the CLI and
-MCP specification.
+**Written (2026-11-04):** the stable error codes and the diagnostic schema, in [cli.md](cli.md);
+the codes of this corpus are marked `S2` there. The same schema goes in the MCP specification.
 
 ## Scenario 3: two branches in parallel, a clean stop
 
@@ -227,12 +228,12 @@ values, MCP requests, each through the components that read it, as they arrive:
    error when needed, and keeps running.
 2. Every problem gives a diagnostic or a fault with a code and a location. A bad file does not hide
    the diagnostics of the other files of the library.
-3. Bounded resources *(proposed)*: `fmt` and `check` of any single file of the corpus take at most
-   2 s and 512 MB on a CI runner, the library of 100,000 files at most 60 s; so do placing and
+3. Bounded resources *(proposed)*: `fmt` of any single file of the corpus, and `check` of a folder
+   that holds only that file, take at most 2 s and 512 MB on a CI runner, the library of 100,000 files at most 60 s; so do placing and
    routing any single function in `diagram`. A function of more than 20,000 nodes is not drawn:
    the viewer says why. Coordinates out of the range of spec 11 are an error, and are drawn
    at the edge of the range. Limits are part of the tool, configurable, and reported with a code
-   when reached. *Proposed* defaults: file size 16 MB,
+   when reached. *Proposed* defaults: file size 16 MiB,
    nesting depth 256, call depth 1,024; in deterministic mode only (8.2), 10,000 iterations per
    loop and 1,000,000 nodes executed (the proof of concept has 24 calls and 100,000 nodes).
 4. **Fuzzing**: `cargo fuzz` targets for the parser, `check` and the `fmt` round trip (M0a), the
@@ -251,12 +252,14 @@ writing it back: `labcraft-cli fmt` and every command that writes a file.
 
 **Expected:**
 
-1. **Canonical file, identical file.** For every canonical file (`examples/`, `docs/rfc/`, the
-   complete code blocks of the spec, completed into files as the proof of concept does, the files of
-   the corpora that are canonical), writing what was read gives the same bytes. Comments,
-   documentation comments, `layout` and `icon` included.
-2. **Idempotence.** For every file that parses, `fmt(fmt(f)) = fmt(f)`. A body with an error at
-   edit time keeps its written order and only its layout is normalized (5.2).
+1. **Canonical file, identical file.** For every canonical file (`examples/`, `docs/rfc/`, the code
+   blocks of the spec that are whole files, the files of the corpora that are canonical), writing
+   what was read gives the same bytes. Comments, documentation comments, `panel`, `layout` and
+   `icon` included (`examples/projectile.lcf` has a `panel` and a `layout`). A block of the spec that
+   is only a section is not a file: its nodes exist in no function.
+2. **Idempotence.** For every file that parses, `fmt(fmt(f)) = fmt(f)`. A body that cannot be
+   ordered (a cycle, a value defined twice) keeps its written order and only its layout is
+   normalized (5.2).
 3. **Meaning preserved.** `fmt` changes neither the graph (nodes, wires, types) nor the results:
    the model read before and after is the same, and, *with M0b*, the examples give the same run
    results.
@@ -268,12 +271,9 @@ writing it back: `labcraft-cli fmt` and every command that writes a file.
 lines only in the files), but the proof of concept does not rewrite files: points 1 to 4 need the
 model and the writer of M0a.
 
-**Write first:**
-
-- Done (2026-11-03): the layout of the text, in spec 5.2 next to the order of the lines.
-- Still open, before M0a: the canonical writing of the `panel` and `layout` sections (order of
-  their items, how coordinates are written), and the Unicode normalization of names and units
-  (Q-23).
+**Written:** the layout of the text and the order of the lines (2026-11-03); the canonical writing
+of the `panel` and `layout` sections and the Unicode normalization of names and units, R-20
+(2026-11-04), all in spec 5.2. The behavior of `fmt` is in [cli.md](cli.md).
 
 ## Scenario 6: the viewer draws the program the agent writes
 
@@ -323,7 +323,6 @@ agree.
 
 **Write first:**
 
-- The canonical writing of the `layout` section (scenario 5), which the viewer reads.
 - In the visual notation: the compact view (short labels and icons, N-10, N-11; primitives,
   section 3.2); the rules of automatic placement (main error chain on a straight axis, N-7) and of
   wire routing, with the stability goal of point 3; how values per iteration show on a wire.
@@ -343,8 +342,8 @@ are ordinary tests, not acceptance scenarios.
 | Scenario | Milestone | In CI | By hand, before the tag | Proof of concept today | Write first |
 |---|---|---|---|---|---|
 | 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
-| 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | Stable error codes, diagnostic schema |
+| 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | Q-20; two-multimeter simulation files; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits |
-| 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | `panel` and `layout` writing, Q-23 |
-| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | `layout` writing; compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
+| 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
