@@ -185,6 +185,11 @@ impl<'a, 'b> Lexer<'a, 'b> {
         self.position
     }
 
+    /// The interner it was given, which its reader needs too while it holds the lexer.
+    pub fn names(&mut self) -> &mut Interner {
+        self.names
+    }
+
     fn peek(&self) -> Option<char> {
         self.rest.chars().next()
     }

@@ -33,7 +33,7 @@ follows (events, panel widgets, timed loops, PLC mode).
 |---|---|
 | Extension | `.lcf` for a function, `.lct` for a type (Q-1) |
 | Encoding | UTF-8, LF line endings; the file ends with a single line feed. On reading, CR LF and a byte order mark at the start are accepted, and `fmt` removes them. A CR not followed by a line feed and the other control characters (Unicode category Cc), tab and line feed apart, are refused. A bidirectional control character in a string or a comment gives a warning: the text does not read as it runs |
-| Header | `labcraft 1`: format version; older versions are migrated, a newer version is refused with a clear message |
+| Header | `labcraft 1`: format version, on the first line (14.2); older versions are migrated, a newer version is refused with a clear message |
 | Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
 
 Skeleton of a function file:
@@ -319,14 +319,17 @@ The order applies to each body on its own: the function body, each arm, each loo
 - **Comments** move with their statement: a comment is attached to the statement that follows it,
   or to the one that ends on its line. A comment with no statement after it in its body stays at
   the end of the body, at the level of the body. A comment outside a declaration belongs to the
-  section that follows it, or to the last section at the end of the file; there is none between
-  two `use` lines. An end-of-line comment after an opening `{` (of a function, an arm, a `match`, a
+  section that follows it, or to the last section at the end of the file. There is none between
+  two `use` lines: a comment before or between them goes above all of them, in its written order. A
+  comment before the parameters of a declaration (after `fn`, in its generics, in the arguments of
+  `extern`) goes on the line before the declaration. An end-of-line comment after an opening `{` (of a function, an arm, a `match`, a
   `handle`, a loop) stays attached to that line, except in the next case. A comment in an arm whose
   body is only a `yield`, even one after its `{`, goes on the line before the arm. A comment inside a
   statement written over several lines goes on the line before the statement, in its written order. Inside a split signature, struct, enum or list of loop clauses
   (below), and inside a `panel`, `layout` or `icon` section, a comment is attached to the item that
   follows it, or to the one that ends on its line; with no item after it, it stays last, at the
-  level of the items.
+  level of the items. A comment inside an item, between its first and its last token, goes on the line
+  before that item.
 - **No comment is lost.** A line or a section that `fmt` would remove (a repeated `use`, a layout
   entry that names no node, an empty section) stays if a comment is attached to it, or inside it.
 
@@ -1210,6 +1213,10 @@ Reserved words, everywhere: `labcraft use fn extern type struct enum match for p
 continue_on_error carry next collect until yield handle panel layout icon true false none nan inf`.
 `panel`, `layout` and `icon` only start a section, but stay reserved.
 
+A reserved word where a name is expected is `LC1005`, including as a target (`next = 1`) or the name of
+an argument (`f(true: 1)`). A `yield`, `next`, `collect` or `until` out of place, or a structure without a
+target (`for i in a {}` alone), is a syntax error, `LC1001`.
+
 Contextual words, reserved only where the syntax expects them and ordinary identifiers elsewhere
 (`e.code` reads a field of an error, `ok` can name a value):
 
@@ -1223,8 +1230,18 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 
 **Line endings** end a statement, an arm, a `use`, and a `panel`, `layout` or `icon` item. They are
 ignored inside `( )` and `[ ]`, inside the braces of a `struct` or `enum` type or of a struct
-literal, and in a structure header up to its `{`. Two statements never share a line. The
-productions below do not show line endings; this rule applies on top of them.
+literal, in a structure header up to its `{`, in a declaration up to the `{` of its body or up to its
+end, and in the header of a section up to its `{`: `panel` and its `{` can be on two lines, and
+`f64` followed on a later line by `[V]` is one type in a `type` declaration. Two statements never share a
+line, and a declaration or a section ends its line: nothing but a comment follows it. A `}` may close the
+line of a statement, an arm or an item (`{ x = 1 }`). The productions below do not show line endings; this
+rule applies on top of them.
+
+**Nesting** has one limit (`--max-nesting`, 256 by default, `LC0007`) and one counter for all its kinds.
+These count for 1 each: a `match`, `handle`, `for` or `loop`; a parenthesis of a unit; an array, struct,
+enum or function type, or the `<` of a named type; the `[` of an array literal. The brackets around a unit
+add nothing (`f64[V]`, `with_unit(x, [V])`), and neither do the arms of a `match` or a `handle`: 256 nested
+`match` pass, and the 257th gives `LC0007`.
 
 ### 14.2 Files and declarations
 
@@ -1247,6 +1264,14 @@ generic       = IDENT [ ":" path ] ;     (* T: Number; T is a whole type, unit i
 param         = IDENT ":" type_expr ( [ "=" literal ] | "..." ) ;   (* "..." : variadic (5.4) *)
 output        = IDENT ":" type_expr ;
 ```
+
+**The header stands alone on the first line.** Only spaces and tabs go before it: a blank line or a comment
+there is `LC0101`. Only an end-of-line `//` comment goes after it. Any other text on the line is `LC0101`:
+`labcraft 1 x`, a `///` comment, and even what could not be read as a token (`labcraft 1 $`, a string left
+open). Extra spaces and tabs are tolerated, and `fmt` removes them.
+
+**The version is the exact text `1`.** Any other integer (`01`, `1_0`, `0`, `99999`) is `LC0102`, whose
+message says to write `labcraft 1` for `01`. What is not an integer (`1.5`, `x`, nothing) is `LC0101`.
 
 ### 14.3 Types
 
@@ -1356,11 +1381,11 @@ What the grammar alone does not say:
 | R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12). **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
 | R-3 | **A `carry` can shadow an outer name** (`carry err = err`): in the body, the name designates the carry. |
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
-| R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`with_unit(x, [V])`, `unitless(v, [mV])`, `with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise. |
+| R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`with_unit(x, [V])`, `unitless(v, [mV])`, `with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
 | R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, same types; a value with a unit needs the same dimension, and the other branches are converted to the unit of the first branch. |
 | R-8 | **A `match` on an enumeration is exhaustive**, otherwise `_` is required. |
-| R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. |
+| R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). |
 | R-12 | **The `string.format` template is a literal**; its fields and the named arguments match exactly (5.4). |
