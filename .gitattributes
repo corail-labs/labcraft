@@ -2,6 +2,9 @@
 *.lcf text eol=lf
 *.lct text eol=lf
 
+# A CR breaks a shell script, on Windows too
+*.sh text eol=lf
+
 # Hostile files are stored byte for byte (CR LF, BOM, invalid UTF-8)
 tests/acceptance/hostile/** -text
 
