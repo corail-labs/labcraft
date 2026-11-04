@@ -4,8 +4,8 @@ LabCraft is an AI-native graphical dataflow language and IDE, aiming to do at le
 does, in pure Rust, open and cross-platform. It follows the conventions of the Craft apps
 (storytold, SolidCraft); see `docs/craft-ecosystem.md`.
 
-**Current phase: planning and specification. There is no product code yet.** The only code is
-throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner says so.
+**Current phase: M0a in Rust** (`docs/architecture.md`, section 9), while the specifications of the
+next milestones go on. `tools/` remains throwaway, until Rust replaces it.
 
 ## Start every session here
 
@@ -76,8 +76,12 @@ throwaway tooling (`tools/`). Do not scaffold the Rust workspace until the owner
 
 - Be concise. Prefer one good document change over many small exchanges.
 
-## Later, when code starts
+## Rust code
 
-The Craft rules will apply (see `docs/craft-ecosystem.md`): never crash (no `unwrap`, `expect`,
-`panic!` or `unsafe` in production code), everything is a command, layered crates checked by
-`cargo xtask layers`, never break the WASM build, every asset attributed.
+`cargo xtask ci` must pass: formatting, layers, licences, the `libs/` boundary, clippy, tests, WASM.
+It needs the `wasm32-unknown-unknown` target and `wasm-bindgen-test-runner`; `cargo xtask wasm` gives
+the command that installs the runner.
+
+The Craft rules apply (see `docs/craft-ecosystem.md`): never crash (no `unwrap`, `expect`, `panic!` or
+`unsafe` in production code), everything is a command, layered crates, never break the WASM build,
+every asset attributed. `docs/architecture.md` says how the code is arranged.
