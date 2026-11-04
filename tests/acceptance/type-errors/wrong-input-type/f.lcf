@@ -1,0 +1,8 @@
+labcraft 1
+
+use scpi
+
+fn f(v: f64[V], err: error = none) -> (value: f64, err: error) {
+    value, _, e1 = scpi.query_f64(v, "MEAS:VOLT:DC?", err: err)
+    err = e1
+}

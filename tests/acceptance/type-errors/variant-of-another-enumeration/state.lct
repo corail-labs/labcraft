@@ -1,0 +1,3 @@
+labcraft 1
+
+type State = enum { Init, Stop }

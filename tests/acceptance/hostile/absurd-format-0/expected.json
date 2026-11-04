@@ -1,0 +1,15 @@
+{
+  "check": {
+    "exit": 1,
+    "codes": [
+      "LC0102"
+    ]
+  },
+  "fmt": {
+    "exit": 1,
+    "codes": [
+      "LC0102"
+    ],
+    "changes": false
+  }
+}

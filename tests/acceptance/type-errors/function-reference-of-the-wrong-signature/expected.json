@@ -1,0 +1,37 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3008",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 19
+        },
+        "end": {
+          "line": 4,
+          "column": 24
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "y",
+        "text": "y, e1 = apply(scale, x, err: err)"
+      },
+      "wires": [
+        {
+          "to": "y.measure"
+        }
+      ],
+      "expected": "fn(f64[V], err: error) -> (f64[V], error)",
+      "found": "fn(f64[V]) -> (f64[V])"
+    }
+  ]
+}

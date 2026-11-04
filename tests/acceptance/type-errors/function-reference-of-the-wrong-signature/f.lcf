@@ -1,0 +1,6 @@
+labcraft 1
+
+fn f(x: f64[V], err: error = none) -> (y: f64[V], err: error) {
+    y, e1 = apply(scale, x, err: err)
+    err = e1
+}

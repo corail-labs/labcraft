@@ -23,7 +23,7 @@ project stands, what the milestones are, and how the Rust code will be organized
 Still to write, besides the architecture (from the layers below) and what the acceptance scenarios
 list under "write first" ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0a**: the corpora of scenarios 2 and 4;
+- **before M0a**: the architecture of the crates of M0a;
 - **before M0b**: the CLI specification of `run`, the MCP specification, the command catalog v0,
   how the CLI and MCP set a panel element (Q-20), and a throwaway feasibility prototype: a scheduler
   with two parallel loops and a clean stop;

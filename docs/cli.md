@@ -43,7 +43,8 @@ diagnostics of the others.
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
 shortens the report. Output is in English (D-21), in UTF-8, without color unless stdout is a
 terminal. Every failure gives a diagnostic and processing goes on
-with the next file; the tool does not stop at the first bad file.
+with the next file; the tool does not stop at the first bad file. A file that gets `LC0001`, `LC0003`,
+`LC0004`, `LC0006`, `LC0007`, `LC0101` or `LC0102` is not read further, and gets no other diagnostic.
 
 **Paths in reports** use `/` on every platform, relative to the current folder when the file is
 under it. Files of the libraries built into the tool are shown as `<labcraft>/visa/close.lcf`.
@@ -212,7 +213,7 @@ A fix and a related place have this form:
 | `span` | no | Start and exclusive end. Lines and columns count from 1; **columns count Unicode code points** of the file as read, a byte order mark excluded, like the line width of spec 5.2. Absent when the problem concerns the file as a whole |
 | `function` | no | The function at fault |
 | `node` | no | The name of its line (spec 5.2), absent if empty, and its text in canonical form |
-| `wires` | no | The wires or terminals at fault: `value`, the name of the wire; `from` and `to`, terminals (section 4.3). Each is present when it exists: a bad unit argument has only `to` (`unitless(voltage, [A])`: `to` is `r.unit`) |
+| `wires` | no | The wires or terminals at fault: `value`, the name of the wire; `from` and `to`, terminals (section 4.3). Each is present when it exists: a bad unit argument has only `to` (`n = unitless(voltage, [A])`: `to` is `n.unit`) |
 | `expected`, `found` | no | Types as written in the language, units included |
 | `fixes` | no | A fix when one exists: a `title`, and `edits` to apply to the file when the fix is mechanical |
 | `related` | no | Other places: where a name is already defined, the first of two conflicting arms |
@@ -225,7 +226,8 @@ the tool cannot know, and the choice stays with the author.
 
 Diagnostics are sorted by `file` in code point order, then line, column (those with no `span` first),
 code and message, so that the same input always gives the same report. The expected results of the
-corpora compare everything except the text of `message` and `fixes.title`. A problem across files
+corpora ([tests/acceptance](../tests/acceptance/README.md)) compare everything except the text of
+`message` and `fixes`. A problem across files
 (`LC2013`, `LC2016`) is reported once, on the last file in path order for `LC2013` and on the first
 for `LC2016`, with the others in `related`.
 
@@ -237,7 +239,7 @@ the signatures:
 | Form | Terminal |
 |---|---|
 | `dmm.session`, `#close.err` | Output or input of a node, designated by the name of its line |
-| `@12.err` | Output or input of a node with no name (a call statement without a label), on line 12 |
+| `@12.err` | Output or input of a node with no name, on line 12: a call statement without a label, or a line whose outputs are all `_` or `next x` |
 | `fn.power` | Input or output of the function: `fn` is reserved, so no node has that name |
 | `next.n`, `until`, `collect.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect` and a value of a `yield`, by position from 0 |
 

@@ -1,0 +1,8 @@
+labcraft 1
+
+fn f() -> (x: i32) {
+    x = loop carry n = 0 {
+        next n = add(n, 1)
+        until false
+    }
+}

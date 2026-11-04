@@ -1,0 +1,5 @@
+labcraft 1
+
+fn f(voltage: f64[V], current: f64[A]) -> (p: f64[V]) {
+    p = add(voltage, current)
+}

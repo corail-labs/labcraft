@@ -1,0 +1,8 @@
+labcraft 1
+
+use array
+
+fn f(values: [f64], x: f64, err: error = none) -> (item: f64, err: error) {
+    item, e1 = array.get(values, x, err: err)
+    err = e1
+}

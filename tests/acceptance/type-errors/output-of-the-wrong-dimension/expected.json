@@ -1,0 +1,39 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3003",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 5
+        },
+        "end": {
+          "line": 4,
+          "column": 10
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "power",
+        "text": "power = mul(r, i)"
+      },
+      "wires": [
+        {
+          "value": "power",
+          "from": "power.result",
+          "to": "fn.power"
+        }
+      ],
+      "expected": "f64[W]",
+      "found": "f64[V]"
+    }
+  ]
+}

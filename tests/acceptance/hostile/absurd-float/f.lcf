@@ -1,0 +1,5 @@
+labcraft 1
+
+fn f() -> (x: f64) {
+    x = add(1e999, 1.0)
+}

@@ -1,0 +1,8 @@
+labcraft 1
+
+fn f(c: bool, v: f64[V]) -> (x: f64[V]) {
+    x = match c {
+        true => yield v
+        false => yield "none"
+    }
+}
