@@ -1,6 +1,9 @@
 //! `read`: the header, the codes of syntax errors, line endings, nesting and the shape of the model.
 
-use labcraft_format::{Read, read};
+mod deep;
+
+use deep::{DEEP, deep_array_type, deep_loop, in_body, nested};
+use labcraft_format::{Read, STACK_SIZE, read};
 use labcraft_graph::{
     Arg, Decl, File, Function, LayoutKind, Numeral, NumeralKind, Operand, OrderRef, Pattern, Rhs, Statement, StatementKind, Target, TypeExpr, UnitOp,
     UnitTerm,
@@ -9,10 +12,10 @@ use labcraft_types::{Code, Interner, Limits, Position, Span};
 
 const BIDI: &str = "\u{202E}";
 
-/// The ceiling of nesting needs more stack than a test thread has in a debug build. How much each host
-/// must give is measured apart.
+/// Deep nesting needs more stack than a test thread has in a debug build, so these tests take what a host
+/// gives. `tests/stack.rs` measures it.
 fn on_a_large_stack<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
-    std::thread::Builder::new().stack_size(512 * 1024 * 1024).spawn(work).unwrap().join().unwrap()
+    std::thread::Builder::new().stack_size(STACK_SIZE).spawn(work).unwrap().join().unwrap()
 }
 
 struct Reading {
@@ -45,10 +48,6 @@ impl Reading {
 
 fn codes(text: &str) -> Vec<Code> {
     Reading::of(text).read.report.diagnostics().iter().map(|diagnostic| diagnostic.code()).collect()
-}
-
-fn in_body(statements: &str) -> String {
-    format!("labcraft 1\nfn f() -> () {{\n{statements}\n}}\n")
 }
 
 fn statement_of(reading: &Reading) -> &Statement {
@@ -571,124 +570,10 @@ fn a_final_comma_only_where_the_grammar_allows_it() {
 
 // Nesting (14.1): one counter.
 
-fn nested(depth: usize, open: &str, innermost: &str, close: &str) -> String {
-    format!("{}{innermost}{}", open.repeat(depth), close.repeat(depth))
-}
-
-fn deep_match(depth: usize) -> String {
-    in_body(&nested(
-        depth - 1,
-        "v = match a {
-_ => {
-",
-        "v = match a {
-_ => yield 1
-}
-",
-        "yield v
-}
-}
-",
-    ))
-}
-
-fn deep_handle(depth: usize) -> String {
-    in_body(&nested(
-        depth - 1,
-        "v = handle a {
-_ => {
-",
-        "v = handle a {
-_ => yield 1
-}
-",
-        "yield v
-}
-}
-",
-    ))
-}
-
-fn deep_loop(depth: usize) -> String {
-    in_body(&nested(
-        depth,
-        "v = loop {
-",
-        "",
-        "until a
-}
-",
-    ))
-}
-
-fn deep_for(depth: usize) -> String {
-    in_body(&nested(
-        depth,
-        "v = for i in a {
-",
-        "",
-        "}
-",
-    ))
-}
-
-fn deep_unit(depth: usize) -> String {
-    format!("labcraft 1\nfn f(a: f64[{}V{}]) -> () {{}}\n", "(".repeat(depth), ")".repeat(depth))
-}
-
-fn deep_unit_after_a_number(depth: usize) -> String {
-    in_body(&format!("x = 1 {}V{}", "(".repeat(depth), ")".repeat(depth)))
-}
-
-fn deep_array_type(depth: usize) -> String {
-    format!("labcraft 1\nfn f(a: {}f64{}) -> () {{}}\n", "[".repeat(depth), "]".repeat(depth))
-}
-
-fn deep_array_literal(depth: usize) -> String {
-    in_body(&format!("x = {}1{}", "[".repeat(depth), "]".repeat(depth)))
-}
-
-fn deep_bracket_argument(depth: usize) -> String {
-    in_body(&format!("x = f({}1{})", "[".repeat(depth), "]".repeat(depth)))
-}
-
-fn deep_struct(depth: usize) -> String {
-    format!("labcraft 1\ntype T = {}\n", nested(depth, "struct { a: ", "f64", " }"))
-}
-
-fn deep_enum(depth: usize) -> String {
-    format!("labcraft 1\ntype T = {}\n", nested(depth, "enum { A(", "f64", ") }"))
-}
-
-fn deep_fn_type(depth: usize) -> String {
-    format!("labcraft 1\ntype T = {}\n", nested(depth, "fn(", "f64", ") -> ()"))
-}
-
-fn deep_type_arguments(depth: usize) -> String {
-    format!("labcraft 1\ntype T = {}\n", nested(depth, "T<", "f64", ">"))
-}
-
-type Generator = fn(usize) -> String;
-
-const DEEP: [(&str, Generator); 12] = [
-    ("match", deep_match),
-    ("handle", deep_handle),
-    ("loop", deep_loop),
-    ("for", deep_for),
-    ("unit", deep_unit),
-    ("unit after a number", deep_unit_after_a_number),
-    ("array type", deep_array_type),
-    ("array literal", deep_array_literal),
-    ("bracket argument", deep_bracket_argument),
-    ("struct", deep_struct),
-    ("enum", deep_enum),
-    ("fn type", deep_fn_type),
-];
-
 #[test]
 fn each_kind_of_nesting_passes_at_the_limit_and_fails_above_it() {
     on_a_large_stack(|| {
-        for (kind, deep) in DEEP.iter().chain([&("type arguments", deep_type_arguments as Generator)]) {
+        for (kind, deep) in DEEP {
             let at_limit = Reading::of(&deep(256));
             assert!(at_limit.read.file.is_some(), "{kind}: {:?}", at_limit.read.report.diagnostics());
             assert_eq!(codes(&deep(257)), [Code::Lc0007], "{kind}");

@@ -24,4 +24,4 @@ mod read;
 
 pub use decode::decode;
 pub use lexer::{Keyword, Lexer, Token, TokenKind};
-pub use read::{Read, read};
+pub use read::{Read, STACK_SIZE, read};

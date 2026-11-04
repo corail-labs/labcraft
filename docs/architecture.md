@@ -61,7 +61,7 @@ What everything needs, with no knowledge of files.
   errors; which ones it keeps does not depend on when it prunes. The app calls `finish` last, once all
   folders and `LC0009`, `LC0010` are merged.
 - `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
-  `max_nesting` has a hard ceiling (cli.md, section 1): a stack is sized from it (section 4).
+  `max_nesting` has a hard ceiling (cli.md, section 1), lower in WASM: a stack is sized from it (section 4).
 
 Run-time values come with M0b.
 
@@ -142,10 +142,21 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
   at a time, keeping none, and stops at the first syntax error, as the lexer does: a file that does not
   parse has no model and one error, after the warnings met before it. `Read` holds the model, the source
   map and the report of that file alone, replaced when the code stands alone.
-- **The stack.** Depth is bounded by the ceiling of `max_nesting`, and the bytes per level are measured
-  in a test, at the maximum depth, covering parsing, `Drop`, `Clone`, `Eq` and writing. Each host gives
-  that much stack: `labcraft-cli` and the viewer run the work on a thread of that size, and the WASM
-  build links a stack of that size (the default is 1 MiB, and an overflow there traps).
+- **The stack.** Depth is bounded by the ceiling of `max_nesting`, and `format::STACK_SIZE` is what each
+  host gives. `crates/format/tests/stack.rs` measures the bytes per level at the ceiling, for each kind of
+  nesting, covering parsing, `Clone`, `Eq` and `Drop` (`write` at step 5), and requires at most half of
+  `STACK_SIZE`, so that it is raised before a host runs out. `labcraft-cli` and the desktop viewer run the
+  work on a thread of that size.
+- **The stack in WASM** is two stacks. The linked stack is ours: `.cargo/config.toml` links `STACK_SIZE`, which
+  a harness test checks (a debug build traps with the default of 1 MiB, a release build passes). The call
+  stack of the engine is not: a browser does not let a page enlarge it, and the web viewer works in a worker
+  (section 5), which has half the stack of a page. Measured on a release build, the deepest `match` that reads
+  is about 990 levels on a page and 500 in a worker with Chrome and Edge, 2,300 and 1,300 with Firefox, and
+  varies with the tier of the engine; Safari was not measured. So `MAX_NESTING` is 256 in WASM, which is also
+  the default everywhere: a program within the default limit reads on every host, and no option can ask a WASM
+  host for what would overflow it. `cargo xtask wasm` runs the harness on 492 KiB, about what V8 gives a worker.
+  That build is a debug one, which takes 300 to 400 KiB at 256 levels: this keeps the release build at about
+  twice what it needs, and is not a margin for the debug build.
 - **Attaching comments** happens while parsing, following 5.2. A comment inside a statement written
   over several lines goes before the statement.
 - **`canonicalize`** does everything that `fmt` changes in the model: sorts `use` lines, orders bodies
@@ -269,7 +280,7 @@ character boundary, and these crates hold little numerical code.
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` |
 | `codes` | `Code` equals the tables of cli.md, section 5 |
-| `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there |
+| `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
 `unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
@@ -298,8 +309,8 @@ exception (verified at step 1).
 | What | Where | Scenario |
 |---|---|---|
 | Unit tests: units, lexer, each rule and comment slot of 5.2 | in each crate | |
-| Maximum nesting: parse, `Drop`, `Clone`, `Eq`, write, with the stack of each host | `format` tests | 4 |
-| `type-errors` and stored `hostile`, compared with their reports | `tests/harness`, native and WASM | 2, 4 |
+| Maximum nesting: parse, `Drop`, `Clone`, `Eq`, write: bytes per level, with the stack of each host | `format` tests, `tests/harness` | 4 |
+| `type-errors` and stored `hostile`, compared with their reports; Truncation and Nesting | `tests/harness`, native and WASM | 2, 4 |
 | Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |

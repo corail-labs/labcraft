@@ -2,8 +2,10 @@
 
 const MIB: u64 = 1024 * 1024;
 
-/// The hard ceiling of nesting: a stack is sized from it, so no option can go beyond it.
-pub const MAX_NESTING: u32 = 1024;
+/// The hard ceiling of nesting: a stack is sized from it, so no option can go beyond it. WASM has less: the
+/// engine also keeps a call stack of its own, which no build or host setting can enlarge in a browser
+/// (`docs/architecture.md`, section 4).
+pub const MAX_NESTING: u32 = if cfg!(target_arch = "wasm32") { 256 } else { 1024 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Limits {

@@ -1,9 +1,11 @@
 # Acceptance corpora
 
 Files for the [M0 acceptance scenarios](../../docs/acceptance-m0.md), and what the tool must report on
-them, in the terms of [docs/cli.md](../../docs/cli.md). Nothing runs them against Rust yet: the proof of
-concept has no static type checking and no stable codes. `tools/lcf-poc/tests/test_corpus.py` checks
-that the corpora themselves are sound, and that the proof of concept does not crash on them.
+them, in the terms of [docs/cli.md](../../docs/cli.md). `tests/harness` runs them against the Rust crates,
+natively and in WASM, as the steps of [the architecture](../../docs/architecture.md) arrive: so far the
+families Encoding, Truncation and Nesting, through `read`. The proof of concept has no static type checking
+and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
+that the proof of concept does not crash on them.
 
 ## `type-errors/`: scenario 2
 

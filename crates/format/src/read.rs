@@ -6,6 +6,11 @@ use labcraft_types::{Interner, Limits, Report};
 use crate::decode::decode;
 use crate::parser::parse_file;
 
+/// The stack that a host gives this work, at any `Limits::max_nesting` up to the ceiling
+/// (`docs/architecture.md`, section 4). A thread of this size natively; in WASM, whose ceiling is lower,
+/// `.cargo/config.toml` links it.
+pub const STACK_SIZE: usize = if cfg!(target_arch = "wasm32") { 8 * 1024 * 1024 } else { 32 * 1024 * 1024 };
+
 /// What reading a file gives. `file` is `None` when the report holds an error: a file that does not
 /// parse has no model. The report belongs to this file alone: the caller names it with
 /// `Report::set_file`, then merges it.
@@ -19,8 +24,7 @@ pub struct Read {
 /// Reads one file. It never fails otherwise, whatever the bytes. A file that gets a code that stands alone
 /// (`docs/cli.md`, section 1) keeps that code only, whatever warnings came before.
 ///
-/// The stack it takes depends on `Limits::max_nesting`, and the caller provides it
-/// (`docs/architecture.md`, section 4).
+/// The stack it takes depends on `Limits::max_nesting`, and the caller provides it: see [`STACK_SIZE`].
 pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read {
     let mut report = Report::new(limits.max_report);
     let text = match decode(bytes, limits) {

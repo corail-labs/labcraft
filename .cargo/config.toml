@@ -5,3 +5,6 @@ xtask = "run --locked --package xtask --"
 # `cargo test --target wasm32-unknown-unknown`; `cargo xtask wasm` says how to install the runner.
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
+# The stack of a host, `labcraft_format::STACK_SIZE`; at the ceiling of nesting a debug build traps with the
+# default of 1 MiB. The harness checks what was linked. An environment variable RUSTFLAGS replaces this line.
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]
