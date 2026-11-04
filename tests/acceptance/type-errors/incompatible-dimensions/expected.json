@@ -1,0 +1,44 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3002",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 22
+        },
+        "end": {
+          "line": 4,
+          "column": 29
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "p",
+        "text": "p = add(voltage, current)"
+      },
+      "wires": [
+        {
+          "value": "voltage",
+          "from": "fn.voltage",
+          "to": "p.a"
+        },
+        {
+          "value": "current",
+          "from": "fn.current",
+          "to": "p.b"
+        }
+      ],
+      "expected": "f64[V]",
+      "found": "f64[A]"
+    }
+  ]
+}

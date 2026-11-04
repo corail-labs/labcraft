@@ -1,0 +1,5 @@
+labcraft 1
+
+fn g(n: i32) -> (x: i32) {
+    x = f(n)
+}

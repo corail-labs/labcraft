@@ -1,0 +1,9 @@
+labcraft 1
+
+fn f() -> (x: i32) {
+    x = add(1, 1)
+}
+
+layout {
+    node x at (1e300, 0)
+}

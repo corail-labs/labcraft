@@ -1,0 +1,13 @@
+{
+  "check": {
+    "exit": 0,
+    "codes": [
+      "LC2016"
+    ]
+  },
+  "fmt": {
+    "exit": 0,
+    "codes": [],
+    "changes": false
+  }
+}

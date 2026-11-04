@@ -1,0 +1,10 @@
+labcraft 1
+
+fn apply(
+    measure: fn(f64[V], err: error) -> (f64[V], error),
+    x: f64[V],
+    err: error = none,
+) -> (y: f64[V], err: error) {
+    y, e1 = call(measure, x, err: err)
+    err = e1
+}

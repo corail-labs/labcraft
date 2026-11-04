@@ -1,0 +1,5 @@
+labcraft 1
+
+fn f(r: f64[Ω], i: f64[A]) -> (power: f64[W]) {
+    power = mul(r, i)
+}

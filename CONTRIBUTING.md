@@ -52,7 +52,8 @@ python -m unittest discover tools/lcf-poc/tests
 python tools/lcf-poc/tests/mcp_smoke.py
 ```
 
-The `checks` workflow runs the same commands on every pull request.
+The `checks` workflow runs the same commands on every pull request. The tests include the corpora of
+`tests/acceptance/`, which say what `check` and `fmt` must report once they exist in Rust.
 
 The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/lcf_view.py`
 (Lark): a change to one goes in the other. `.lcf` and `.lct` files use LF line endings.

@@ -1,0 +1,9 @@
+labcraft 1
+
+fn f(v: Verdict) -> (x: i32) {
+    x = match v {
+        Verdict.Pass => yield 1
+        Verdict.Fail => yield 2
+        State.Init => yield 3
+    }
+}

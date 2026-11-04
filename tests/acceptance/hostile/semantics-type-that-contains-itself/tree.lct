@@ -1,0 +1,3 @@
+labcraft 1
+
+type Tree = struct { value: f64, left: Tree }

@@ -1,0 +1,5 @@
+labcraft 1
+
+fn b(v: f64[V], i: f64[A]) -> (p: f64[V]) {
+    p = add(v, i)
+}

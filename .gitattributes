@@ -2,5 +2,8 @@
 *.lcf text eol=lf
 *.lct text eol=lf
 
+# Hostile files are stored byte for byte (CR LF, BOM, invalid UTF-8)
+tests/acceptance/hostile/** -text
+
 # FigCraft files are zip archives
 *.figcraft binary

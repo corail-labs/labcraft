@@ -1,0 +1,5 @@
+labcraft 1
+
+fn f() -> (x: string) {
+    x = "a‮b"
+}

@@ -1,0 +1,38 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3005",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 4,
+          "column": 27
+        },
+        "end": {
+          "line": 4,
+          "column": 30
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "n",
+        "text": "n = unitless(voltage, [A])"
+      },
+      "wires": [
+        {
+          "to": "n.unit"
+        }
+      ],
+      "expected": "[V]",
+      "found": "[A]",
+      "fix_mentions": "[V]"
+    }
+  ]
+}

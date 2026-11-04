@@ -1,0 +1,9 @@
+labcraft 1
+
+fn f() -> (total: i32) {
+    total = loop carry n: i32 = 0 {
+        done = ge(n, 3)
+        next n = add(n, 0.5)
+        until done
+    }
+}

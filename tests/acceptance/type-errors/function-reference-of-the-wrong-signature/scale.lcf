@@ -1,0 +1,5 @@
+labcraft 1
+
+fn scale(x: f64[V]) -> (y: f64[V]) {
+    y = x
+}

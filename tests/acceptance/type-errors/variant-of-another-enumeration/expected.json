@@ -1,0 +1,32 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3009",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 7,
+          "column": 9
+        },
+        "end": {
+          "line": 7,
+          "column": 19
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "x",
+        "text": "x = match v {"
+      },
+      "expected": "Verdict",
+      "found": "State"
+    }
+  ]
+}

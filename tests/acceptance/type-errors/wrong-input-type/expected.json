@@ -1,0 +1,39 @@
+{
+  "schema": "labcraft-check/1",
+  "status": "error",
+  "summary": {
+    "errors": 1,
+    "warnings": 0
+  },
+  "diagnostics": [
+    {
+      "code": "LC3001",
+      "severity": "error",
+      "file": "f.lcf",
+      "span": {
+        "start": {
+          "line": 6,
+          "column": 35
+        },
+        "end": {
+          "line": 6,
+          "column": 36
+        }
+      },
+      "function": "f",
+      "node": {
+        "name": "value",
+        "text": "value, _, e1 = scpi.query_f64(v, \"MEAS:VOLT:DC?\", err: err)"
+      },
+      "wires": [
+        {
+          "value": "v",
+          "from": "fn.v",
+          "to": "value.session"
+        }
+      ],
+      "expected": "visa.session",
+      "found": "f64[V]"
+    }
+  ]
+}
