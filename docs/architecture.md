@@ -275,12 +275,13 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | Everything below, plus `cargo fmt --check`, `clippy -D warnings`, tests |
+| `ci` | Everything below but `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` |
 | `codes` | `Code` equals the tables of cli.md, section 5 |
 | `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run |
+| `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
 `unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
@@ -317,7 +318,10 @@ exception (verified at step 1).
 | Fuzzing the parser, `check` and the round trip | `fuzz/` | 4 |
 
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the
-product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly.
+product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly. That job is
+the workflow `fuzz`, next to `checks`, which knows nothing of it and stays the only check GitHub requires on
+`main`; a red `fuzz` still stops the merge unless the owner decides otherwise for that pull request.
+`fuzz/README.md` says how to run a target and what becomes of a crash.
 
 The proof of concept remains the reference for what the examples do until M0b replaces it; it does not
 judge types, where the corpus decides.

@@ -21,6 +21,7 @@ commands:
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
   wasm     format and check build for wasm32-unknown-unknown, and the harness passes there
+  fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
 
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
@@ -35,6 +36,7 @@ fn main() -> ExitCode {
         Some("ci") => ci(),
         Some("layers") => check_layers(),
         Some("licences") => check_licences(),
+        Some("fuzz-licences") => check_fuzz_licences(),
         Some("libs") => check_libs(),
         Some("codes") => check_codes(),
         Some("wasm") => wasm(),
@@ -72,6 +74,15 @@ fn check_layers() -> Result<(), String> {
 fn check_licences() -> Result<(), String> {
     let packages = licences::from_metadata(&metadata(true)?)?;
     report("licences", packages.len(), "packages", licences::check(&packages))
+}
+
+/// `fuzz/` is a workspace of its own, which `cargo metadata` at the root does not see. `--locked` also refuses a
+/// stale `fuzz/Cargo.lock`.
+fn check_fuzz_licences() -> Result<(), String> {
+    let mut command = cargo();
+    command.args(["metadata", "--format-version", "1", "--locked", "--manifest-path", "fuzz/Cargo.toml"]);
+    let packages = licences::from_metadata(&metadata_of(command)?)?;
+    report("fuzz-licences", packages.len(), "packages", licences::check(&packages))
 }
 
 fn check_libs() -> Result<(), String> {
@@ -157,6 +168,10 @@ fn metadata(with_dependencies: bool) -> Result<Value, String> {
     if !with_dependencies {
         command.arg("--no-deps");
     }
+    metadata_of(command)
+}
+
+fn metadata_of(mut command: Command) -> Result<Value, String> {
     let output = command.output().map_err(|error| format!("cargo metadata: {error}"))?;
     if !output.status.success() {
         return Err(format!("cargo metadata:\n{}", String::from_utf8_lossy(&output.stderr)));

@@ -38,9 +38,9 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 - **Executable reference.** `examples/` and the proof of concept (`tools/lcf-poc`) give the
   expected results. Where M0 and the proof of concept differ, the spec decides, and the difference
   is recorded.
-- **Automated** in `tests/acceptance/` and run by the `checks` workflow, except the parts played by
-  an agent (scenario 1, second half of scenario 2), which are run by hand before the tag of their
-  milestone. The
+- **Automated** in `tests/acceptance/` and run by the `checks` workflow, except fuzzing (scenario 4),
+  run by the `fuzz` workflow, and the parts played by an agent (scenario 1, second half of scenario 2),
+  which are run by hand before the tag of their milestone. The
   agent is Claude Code with the most capable model available at that time; the model and its
   version are recorded with the transcripts, which are attached to the pull request that closes the
   milestone. Another MCP client may run the same scenarios.

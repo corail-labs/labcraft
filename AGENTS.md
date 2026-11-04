@@ -85,6 +85,11 @@ against `docs/cli.md`, clippy, tests, WASM.
 It needs the `wasm32-unknown-unknown` target and `wasm-bindgen-test-runner`; `cargo xtask wasm` gives
 the command that installs the runner.
 
+`fuzz/` is outside the workspace, with its own `Cargo.lock`, and the workflow `fuzz` runs it on a pinned
+nightly, under Linux: `fuzz/README.md` says how to run it, and what to do when it finds something.
+GitHub requires only `checks`, but a red `fuzz` stops the merge unless the owner decides otherwise for that
+pull request.
+
 The Craft rules apply (see `docs/craft-ecosystem.md`): never crash (no `unwrap`, `expect`, `panic!` or
 `unsafe` in production code), everything is a command, layered crates, never break the WASM build,
 every asset attributed. `docs/architecture.md` says how the code is arranged.

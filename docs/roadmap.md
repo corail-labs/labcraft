@@ -151,6 +151,7 @@ LabCraft/
 ├── examples/            example programs, in the text format
 ├── skills/              skills for agents (write, debug, test a program)
 ├── tests/               acceptance corpora and their harness, backend equivalence tests
+├── fuzz/                cargo fuzz targets, on a pinned nightly, outside the workspace
 ├── xtask/               ci, layers, libs boundary, assets, wasm, command catalog
 └── tools/               the throwaway Python tools, until Rust replaces them
 ```
