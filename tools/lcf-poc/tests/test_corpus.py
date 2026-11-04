@@ -19,6 +19,7 @@ import lcf  # noqa: E402
 from lcfpoc import api  # noqa: E402
 from lcfpoc.layout import check_layout  # noqa: E402
 from lcfpoc.library import parse  # noqa: E402
+from lcf_view import _DEFAULT_IGNORABLE  # noqa: E402  (on the path through lcfpoc.library)
 
 CORPUS = ROOT / "tests" / "acceptance"
 CLI = (ROOT / "docs" / "cli.md").read_text(encoding="utf-8")
@@ -101,6 +102,24 @@ class Hostile(unittest.TestCase):
         self.assertIn(b"\r\n", (CORPUS / "hostile" / "encoding-crlf" / "f.lcf").read_bytes())
         self.assertTrue((CORPUS / "hostile" / "encoding-bom" / "f.lcf").read_bytes().startswith(b"\xef\xbb\xbf"))
         self.assertEqual((CORPUS / "hostile" / "encoding-binary" / "f.lcf").read_bytes()[:2], b"\x00\xff")
+
+    def test_the_grammar_refuses_invisible_characters_in_names(self):
+        fn = "labcraft 1\n\nfn f() -> (%s: i32) {\n    %s = 1\n}\n"
+        for name in ("\u3164", "\u115f", "\uffa0", "a\u3164", "a\ufe0f", "a\u034f", "a\u17b4", "a\u180b"):
+            with self.assertRaises(Exception, msg=ascii(name)):
+                parse(fn % (name, name))
+        for name in ("a", "\u3163", "a\u0301", "a\u034e", "a\ufe20"):
+            parse(fn % (name, name))
+        parse('labcraft 1\n\n// a\ufe0f\nfn f() -> (x: string) {\n    x = "\u3164"\n}\n')
+
+    def test_the_grammar_has_the_table_of_the_lexer(self):
+        lexer = (ROOT / "crates" / "format" / "src" / "lexer.rs").read_text(encoding="utf-8")
+        body = lexer[lexer.index("fn is_default_ignorable"):lexer.index("fn is_letter")]
+        listed = set()
+        for first, last in re.findall(r"'\\u\{([0-9A-F]+)\}'(?:\.\.='\\u\{([0-9A-F]+)\}')?", body):
+            listed.update(range(int(first, 16), int(last or first, 16) + 1))
+        self.assertEqual(listed, set(_DEFAULT_IGNORABLE))
+        self.assertEqual(len(listed), 4174)  # Unicode 17 and 18
 
     def test_the_proof_of_concept_does_not_crash(self):
         for case in cases("hostile"):

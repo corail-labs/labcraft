@@ -120,17 +120,47 @@ fn is_bidirectional_control(c: char) -> bool {
     matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
+/// `Default_Ignorable_Code_Point` of Unicode (`DerivedCoreProperties.txt`, the same in 17 and 18). These
+/// show as nothing, and spec 14.1 keeps them out of names. The whole property is here, not only what
+/// is a letter or a mark today: part of it is reserved, and could be assigned as one later.
+fn is_default_ignorable(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{FFF0}'..='\u{FFF8}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0000}'..='\u{E0FFF}'
+    )
+}
+
 fn is_letter(c: char) -> bool {
-    c.general_category_group() == GeneralCategoryGroup::Letter
+    c.general_category_group() == GeneralCategoryGroup::Letter && !is_default_ignorable(c)
+}
+
+fn is_mark(c: char) -> bool {
+    c.general_category_group() == GeneralCategoryGroup::Mark && !is_default_ignorable(c)
 }
 
 fn is_name_char(c: char) -> bool {
-    is_letter(c) || c.is_ascii_digit() || c == '_' || c.general_category_group() == GeneralCategoryGroup::Mark
+    is_letter(c) || c.is_ascii_digit() || c == '_' || is_mark(c)
 }
 
 /// A character as a message can safely show it. Beyond ASCII it is a number: an invisible character,
-/// which even a letter can be (U+3164), or a control of the reading direction, would make the message
-/// itself lie.
+/// whose category can even be a letter (U+3164), or a control of the reading direction, would make the
+/// message itself lie.
 fn describe(c: char) -> String {
     if c.is_ascii_graphic() { format!("`{c}`") } else { format!("U+{:04X}", u32::from(c)) }
 }
@@ -486,6 +516,75 @@ mod tests {
         for bad in ["\u{0301}a", "\u{0663}", "$", "@", "~", "\u{00A0}", "\u{200B}", "\u{FEFF}"] {
             assert_eq!(error_code(bad), Code::Lc1001, "{bad:?}");
         }
+    }
+
+    /// `DerivedCoreProperties.txt`, written out again: a slip in the table of the lexer shows here.
+    const DEFAULT_IGNORABLE: [(u32, u32); 17] = [
+        (0x00AD, 0x00AD),
+        (0x034F, 0x034F),
+        (0x061C, 0x061C),
+        (0x115F, 0x1160),
+        (0x17B4, 0x17B5),
+        (0x180B, 0x180F),
+        (0x200B, 0x200F),
+        (0x202A, 0x202E),
+        (0x2060, 0x206F),
+        (0x3164, 0x3164),
+        (0xFE00, 0xFE0F),
+        (0xFEFF, 0xFEFF),
+        (0xFFA0, 0xFFA0),
+        (0xFFF0, 0xFFF8),
+        (0x1BCA0, 0x1BCA3),
+        (0x1D173, 0x1D17A),
+        (0xE0000, 0xE0FFF),
+    ];
+
+    #[test]
+    fn no_name_holds_an_invisible_character() {
+        for c in DEFAULT_IGNORABLE.iter().flat_map(|&(first, last)| first..=last).filter_map(char::from_u32) {
+            for text in [format!("{c}"), format!("{c}a"), format!("a{c}"), format!("a{c}b"), format!("\u{00B0}{c}"), format!("\u{00B0}C{c}")] {
+                let lexed = lex(&text);
+                let error = lexed.error.unwrap_or_else(|| panic!("no error for U+{:04X} in {text:?}", u32::from(c)));
+                assert_eq!(error.code(), Code::Lc1001, "{text:?}");
+                assert_eq!(lexed.report.warnings(), 0, "{text:?}");
+            }
+        }
+    }
+
+    /// Two copies typed by hand can lose the same line, so the count comes from the data file too: 4,174
+    /// code points in Unicode 17 and 18. The ranges were compared with that file when they were written.
+    #[test]
+    fn the_two_tables_of_invisible_characters_agree_and_have_the_count_of_unicode() {
+        let listed = |c: char| DEFAULT_IGNORABLE.iter().any(|&(first, last)| (first..=last).contains(&u32::from(c)));
+        for c in '\0'..=char::MAX {
+            assert_eq!(is_default_ignorable(c), listed(c), "U+{:04X}", u32::from(c));
+        }
+        assert_eq!(('\0'..=char::MAX).filter(|c| is_default_ignorable(*c)).count(), 4174);
+    }
+
+    #[test]
+    fn an_invisible_character_is_reported_where_it_stands() {
+        let lexed = lex("ab\u{FE0F}c");
+        assert_eq!(lexed.tokens, ["name:ab"]);
+        assert_eq!(error_span("ab\u{FE0F}c"), (1, 3, 1, 4));
+        assert_eq!(error_span("  \u{3164}"), (1, 3, 1, 4));
+    }
+
+    #[test]
+    fn the_neighbours_of_invisible_characters_stay_in_names() {
+        for c in ['\u{034E}', '\u{0350}', '\u{115E}', '\u{1161}', '\u{17B3}', '\u{17B6}', '\u{3163}', '\u{3165}', '\u{FE20}', '\u{FFA1}'] {
+            assert_eq!(tokens(&format!("a{c}")), [format!("name:a{c}")], "U+{:04X}", u32::from(c));
+        }
+        for c in ['\u{115E}', '\u{1161}', '\u{3163}', '\u{3165}', '\u{FFA1}'] {
+            assert_eq!(tokens(&format!("{c}")), [format!("name:{c}")], "U+{:04X}", u32::from(c));
+        }
+    }
+
+    #[test]
+    fn strings_and_comments_may_hold_invisible_characters() {
+        assert_eq!(tokens("\"\u{3164}a\u{FE0F}\""), ["str:\u{3164}a\u{FE0F}"]);
+        assert_eq!(tokens("// a\u{FE0F}\u{034F}"), ["comment: a\u{FE0F}\u{034F}"]);
+        assert_eq!(tokens("/// \u{200B}"), ["doc: \u{200B}"]);
     }
 
     #[test]

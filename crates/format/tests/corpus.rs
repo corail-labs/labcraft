@@ -67,7 +67,7 @@ fn the_encoding_family_gives_its_codes() {
             lex(&fs::read(case.join("f.lcf")).unwrap()).iter().map(|diagnostic| diagnostic.code().as_str().to_owned()).collect();
         assert_eq!(found, expected, "{name}");
     }
-    assert_eq!(cases, 11);
+    assert_eq!(cases, 12);
 }
 
 #[test]
