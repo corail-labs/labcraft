@@ -7,6 +7,10 @@ const MIB: u64 = 1024 * 1024;
 /// (`docs/architecture.md`, section 4).
 pub const MAX_NESTING: u32 = if cfg!(target_arch = "wasm32") { 256 } else { 1024 };
 
+/// The most that the command line lets `--max-file-size` ask for, as much as a whole library holds: reading and
+/// formatting take many times the size of a file, and running out of memory ends the process.
+pub const MAX_FILE_SIZE: u64 = 1024 * MIB;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Limits {
     /// Size of one file (`LC0006`).

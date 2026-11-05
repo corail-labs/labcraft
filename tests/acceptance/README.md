@@ -4,7 +4,9 @@ Files for the [M0 acceptance scenarios](../../docs/acceptance-m0.md), and what t
 them, in the terms of [docs/cli.md](../../docs/cli.md). `tests/harness` runs them against the Rust crates,
 natively and in WASM, as the steps of [the architecture](../../docs/architecture.md) arrive: so far the
 families Encoding, Truncation and Nesting, through `read`, and what `fmt` expects of the stored cases, through
-`format`. The proof of concept has no static type checking
+`format`. `apps/labcraft-cli/tests/fmt.rs` runs what needs files through the program: the stored cases, the
+families Size and Library, and Truncation and Nesting again. The half of each case for `check` waits for
+`labcraft-cli check`. The proof of concept has no static type checking
 and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
 that the proof of concept does not crash on them.
 

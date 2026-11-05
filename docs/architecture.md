@@ -244,7 +244,11 @@ crates, where WASM reaches it.
   needs `scpi`; no crate of `crates/` does.
 - **Arguments:** by hand, like `gridcraft-cli` and `solidcraft-cli`, with no parsing crate.
 - **Writing a file:** through `craft-atomic` (`craft-libs`), the suite's crash-safe save: a crash leaves
-  the old file or the new one.
+  the old file or the new one. It also keeps a symbolic link a link. A read-only file is refused before it is
+  called, since on Windows its rename retries for most of a second. A crash can leave its staging file next to the program, named `.name.pid-n.craft_tmp`, which no
+  walk reads.
+- **The work** runs on a thread of `format::STACK_SIZE`. A panic on one file is a bug, reported as `LC0099` on
+  that file while the others go on; a hook keeps it out of stderr, which is for wrong usage alone.
 - `fmt` and `check` become engine commands when `engine` arrives (M0b, D-18), and the last resort moves
   to `Session::execute`, as in the Craft apps. Until then the app calls the library functions directly;
   nothing here should make that move hard.
@@ -296,7 +300,7 @@ such as a file that cannot be written (the versions the Craft apps use). In test
 `cargo-fuzz`. `assets` joins `xtask ci` with the first asset.
 
 **From the suite.** `craft-atomic`, from [`craft-libs`](https://github.com/storytold/craft-libs)
-(Apache-2.0), pinned to a revision as the apps do, is the only shared crate M0a needs, and only in
+(MIT or Apache-2.0), pinned to a revision as the apps do, is the only shared crate M0a needs, and only in
 `labcraft-cli`. The others wait for what they serve: `craft-ui`, `craft-window` and `craft-keymap`
 for the desktop viewer (M0v), `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
@@ -328,6 +332,10 @@ product builds and ships on stable, and a separate CI job fuzzes on Linux with a
 the workflow `fuzz`, next to `checks`, which knows nothing of it and stays the only check GitHub requires on
 `main`; a red `fuzz` still stops the merge unless the owner decides otherwise for that pull request.
 `fuzz/README.md` says how to run a target and what becomes of a crash.
+
+The workflow `checks` also has a job `windows`, which runs the tests of `labcraft-cli` and `labcraft-libs`: paths,
+walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and
+a red one stops the merge in the same way.
 
 The proof of concept remains the reference for what the examples do until M0b replaces it; it does not
 judge types, where the corpus decides.

@@ -95,6 +95,20 @@ mod tests {
         }
     }
 
+    /// What the tool embeds is what WASM hosts will read, so it must read here too.
+    #[test]
+    fn the_embedded_libraries_are_canonical() {
+        assert!(labcraft_libs::find("visa").is_some() && labcraft_libs::find("scpi").is_some());
+        for library in labcraft_libs::LIBRARIES {
+            assert!(!library.files.is_empty(), "{}", library.name);
+            for file in library.files {
+                let mut names = Interner::new();
+                let text = format(file.bytes, &mut names, &Limits::default()).text;
+                assert_eq!(text.as_deref().map(str::as_bytes), Some(file.bytes), "{}/{}", library.name, file.name);
+            }
+        }
+    }
+
     /// Scenario 5, points 2 and 3, on every prefix that parses: what comes out reads again to the same model.
     #[test]
     fn saving_again_changes_nothing_on_every_prefix() {

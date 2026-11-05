@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # One job, so that the check required on main stays `checks`.
+  # One job for the whole gate, so that the check required on main stays `checks`.
   checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -63,3 +63,25 @@ jobs:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       - name: Rust gate
         run: cargo xtask ci
+
+  # Paths, walking folders and atomic writes differ on Windows. The crates are the same everywhere, and
+  # the gate above covers them, so this runs only what touches the file system.
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Command line tests
+        run: cargo test --locked -p labcraft-cli -p labcraft-libs -- --include-ignored

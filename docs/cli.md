@@ -37,12 +37,15 @@ diagnostics of the others.
 |---|---|
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
-| `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)*, for a file and for what `fmt` would write |
+| `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)*, for a file and for what `fmt` would write, at most 1 GiB *(proposed)*: reading takes many times the size of a file, and running out of memory ends the process. A larger value is wrong usage |
 | `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage. The WASM hosts stop at 256, so a file nested deeper reads only here ([architecture](architecture.md), section 4) |
+| `--` | What follows is a path, even if it starts with `-` |
+
+The exit code describes the files, so a stdout that cannot be written does not change it.
 
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
-shortens the report. Output is in English (D-21), in UTF-8, without color unless stdout is a
-terminal. Every failure gives a diagnostic and processing goes on
+shortens the report. Output is in English (D-21), an error of the operating system included, in UTF-8,
+without color unless stdout is a terminal. Every failure gives a diagnostic and processing goes on
 with the next file; the tool does not stop at the first bad file. A file that gets `LC0001`, `LC0003`,
 `LC0004`, `LC0006`, `LC0007`, `LC0101` or `LC0102` is not read further, and gets no other diagnostic.
 
@@ -52,9 +55,18 @@ under it. Files of the libraries built into the tool are shown as `<labcraft>/vi
 **Walking a folder.** Recursive, in code point order of the paths: `.lcf` and `.lct` files, skipping
 folders whose name starts with `.`. A symbolic link is not followed and gives the warning `LC0009`.
 At most 32 levels of folders and 100,000 files *(proposed, the limits of `gridcraft-cli check`)*, and
-1 GiB in a library *(proposed)*; what is left out gives the error `LC0010`. A path where nothing is found gives the error `LC0002`:
+1 GiB in a library *(proposed)*; what is left out gives the error `LC0010`. A path where nothing is found gives the error `LC0002`,
+unless reading it gave an error of its own:
 a typo in CI must not look like a success. A file named explicitly on the command line must have
-one of the two extensions.
+one of the two extensions, written in lower case; so must what it points to, if it is a link.
+
+These bounds apply to each folder given, which is the first level and counts among its 100,000 folders. Folders
+are walked in the order of their paths, depth first, so the same ones stay on every machine; among the files
+found, the first ones in the order of the paths stay. A file over the size limit counts only for what would be
+read of it. A file is known by its path without links, so one given twice, or also reached through a folder,
+counts once; the order of the paths on the command line changes nothing. A symbolic link named on the command line is followed, and `fmt`
+writes through it, so it stays a link. A device or a pipe with one of the two extensions is never read, and
+gives `LC0001`. On Windows, a stream (`notes.txt:a.lcf`) gives `LC0008`.
 
 ## 2. `fmt`
 
@@ -71,7 +83,8 @@ A file that cannot be read or parsed gets its diagnostics and stays unchanged, w
 
 **A canonical form over `--max-file-size`** gets the error `LC6003`, and the file stays unchanged, whatever the
 option. Indentation grows with nesting, so 16 MiB of short lines nested 256 levels deep would take over 4 GiB, and a
-text over the limit could not be read again.
+text over the limit could not be read again. **A file that cannot be replaced**, such as a read-only one, gets
+the same error.
 
 **What `fmt` changes:** line endings and the end of the file, a byte order mark (section 2 of the
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
@@ -149,7 +162,18 @@ check: 1 library, 14 functions, 3 types: 1 error, 0 warnings
 
 The first line of a diagnostic always starts with `file:line:column: severity[code]: message`
 (`file: severity[code]: message` when the problem has no position). Details follow, indented. The
-last line is the summary. Everything goes to stdout.
+last line is the summary. Everything goes to stdout. So that a file name cannot forge a line or drive a
+terminal, control characters, line separators and bidirectional controls and marks show as escapes (`\u{a}`).
+
+`fmt` first names each file it rewrote, and its summary counts files:
+
+```text
+formatted bench/power.lcf
+bench/old.lcf:4:1: error[LC1001]: expected a statement, found `)`
+fmt: 12 files, 1 changed: 1 error, 0 warnings
+```
+
+When the list is cut, the summary ends with the number listed: `(1000 listed)`.
 
 ### 4.2 JSON form
 
@@ -210,7 +234,9 @@ A fix and a related place have this form:
 
 `fmt --json` has the same form, with the schema `labcraft-fmt/1`, a summary
 (`files`, `changed`, `errors`, `warnings`, `truncated`) and a list
-`files: [{ "file": "...", "result": "unchanged" | "formatted" | "not_canonical" | "error" }]`.
+`files: [{ "file": "...", "result": "unchanged" | "formatted" | "not_canonical" | "error" }]`, in the order of
+the paths. `changed` counts the files rewritten, so it is 0 under `--check`. A folder or a path that does not
+exist is not a file: its diagnostics stand alone.
 
 | Field | Always | Content |
 |---|---|---|
@@ -282,7 +308,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
-| `LC0001` | error | Path missing or unreadable | scenario 4 |
+| `LC0001` | error | Path missing or unreadable, or not a regular file | scenario 4 |
 | `LC0002` | error | Nothing to check: no `.lcf` or `.lct` file under this path | 1 |
 | `LC0003` | error | Not valid UTF-8 | 2 |
 | `LC0004` | error | Forbidden character: a control character (Unicode category Cc) other than tab and line feed, a CR not followed by a line feed | 2 |
@@ -291,8 +317,8 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0007` | error | Nesting over the limit: the 257th level by default, all kinds counted together | 14.1, scenario 4 |
 | `LC0008` | error | File named explicitly without the `.lcf` or `.lct` extension | 2 |
 | `LC0009` | warning | Symbolic link met in a folder: not followed | scenario 4 |
-| `LC0010` | error | Files left out: too many files, levels of folders or bytes in a library | scenario 4 |
-| `LC0099` | error | Internal error of the tool, reported instead of a crash: always a bug | scenario 4 |
+| `LC0010` | error | Files left out: too many files, folders, levels of folders or bytes in a library | scenario 4 |
+| `LC0099` | error | Internal error of the tool, reported instead of a crash: a bug, or a system that would not let the work start | scenario 4 |
 | `LC0101` | error | First line is not a `labcraft N` header: a blank line or a comment before it, other text on its line, a version that is not an integer | 2, 14.2 |
 | `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
@@ -411,12 +437,13 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 |---|---|---|---|
 | `LC6001` | error | `fmt --check`: file not canonical | 5.2 |
 | `LC6002` | warning | Body left in written order: a cycle, or a value or a label defined twice | 5.2 |
-| `LC6003` | error | Canonical form could not be written: over `--max-file-size`, or the file system refused it. The file is unchanged | section 2 above |
+| `LC6003` | error | Canonical form could not be written: over `--max-file-size`, or the file system refused it, as for a read-only file. The file is unchanged | section 2 above |
 
 ## 6. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,
 giving `check` a file or a selection of functions, `--json-out FILE` (as in `solidcraft-cli`, since a
-shell's `>` can re-encode the output), and a `--target web` for the error on external functions
-(spec 4.1).
+shell's `>` can re-encode the output), a `--target web` for the error on external functions
+(spec 4.1), and an `--exclude` for folders such as `target/` and `node_modules`, which are walked like any
+other: a folder over the bounds of section 1 gives `LC0010` even if it holds no program.
