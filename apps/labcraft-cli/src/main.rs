@@ -1,4 +1,4 @@
-//! The command line (`docs/cli.md`). `check` arrives with step 7 of `docs/architecture.md`, section 9.
+//! The command line (`docs/cli.md`).
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod args;
+mod check;
 mod fmt;
 mod output;
 mod walk;
@@ -25,12 +26,19 @@ usage: labcraft-cli <command>
 
 commands:
   fmt [--check] [--json] [options] PATH...    write each file in canonical form
-  check [--json] [options] FOLDER...          not available yet
+  check [--json] [options] FOLDER...          read each library, and find what it uses; names, types and
+                                              the rest of `docs/cli.md`, section 3, are not checked yet
   version                                     print the version
   --help                                      print this text
 
 options of fmt:
   --check                nothing is written; a file that would change is an error
+
+options of check:
+  --deny-warnings        warnings count for the status and the exit code
+  --lib-path DIR         also look for libraries in this folder; can be given several times
+
+options of both:
   --json                 one JSON document on stdout, nothing else
   --max-report N         diagnostics listed, default 1000; the counts stay complete
   --max-file-size BYTES  limit of a file and of what is written, default 16 MiB, at most 1 GiB
@@ -55,22 +63,33 @@ fn main() -> ExitCode {
             Ok(options) => run_fmt(&options),
             Err(message) => usage_error(&message),
         },
-        (Some("check"), _) => usage_error("this command is not available yet"),
+        (Some("check"), _) => match args::parse_check(rest).and_then(|options| args::refuse_files(&options).map(|()| options)) {
+            Ok(options) => run_check(&options),
+            Err(message) => usage_error(&message),
+        },
         _ => usage_error("unknown command"),
     }
 }
 
-/// Reading takes the stack of the deepest nesting that an option can ask for (`format::STACK_SIZE`). Each file has a
-/// last resort of its own, so what ends here is a bug outside the work on a file.
 fn run_fmt(options: &args::FmtOptions) -> ExitCode {
+    on_the_stack_of_the_work(|| fmt::run(options), |what| fmt::internal_failure(options, what))
+}
+
+fn run_check(options: &args::CheckOptions) -> ExitCode {
+    on_the_stack_of_the_work(|| check::run(options), |what| check::internal_failure(options, what))
+}
+
+/// Reading takes the stack of the deepest nesting that an option can ask for (`format::STACK_SIZE`). The work has a
+/// last resort of its own, so what ends here is a bug outside it.
+fn on_the_stack_of_the_work(work: impl FnOnce() -> ExitCode + Send, failed: impl Fn(&str) -> ExitCode) -> ExitCode {
     let outcome = std::thread::scope(|scope| {
-        let worker = std::thread::Builder::new().stack_size(labcraft_format::STACK_SIZE).spawn_scoped(scope, || fmt::run(options));
+        let worker = std::thread::Builder::new().stack_size(labcraft_format::STACK_SIZE).spawn_scoped(scope, work);
         worker.map(std::thread::ScopedJoinHandle::join)
     });
     match outcome {
         Ok(Ok(code)) => code,
-        Ok(Err(_)) => fmt::internal_failure(options, &format!("a bug of the tool: {}", fmt::last_panic())),
-        Err(error) => fmt::internal_failure(options, &format!("cannot start the work: {}", walk::io_text(&error))),
+        Ok(Err(_)) => failed(&format!("a bug of the tool: {}", fmt::last_panic())),
+        Err(error) => failed(&format!("cannot start the work: {}", walk::io_text(&error))),
     }
 }
 

@@ -1,7 +1,7 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
 //! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`, and scenario 5, through `format`. The other families and the rest of each one come
-//! with their steps.
+//! scenario 4, through `read`, scenario 5, through `format`, and what pass 1 of `check` can say about the stored
+//! cases. The other families and the rest of each one come with their steps.
 
 /// A file of a corpus, with its path from the root of the repository.
 pub struct Embedded {
@@ -24,16 +24,17 @@ mod deep;
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::borrow::Cow;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    use labcraft_check as _;
+    use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
     use labcraft_format::{STACK_SIZE, canonicalize, format, read, write};
     use labcraft_types::{Code, Interner, Limits, MAX_NESTING, Report};
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::deep::{DEEP, Generator};
-    use super::{HOSTILE, PROGRAMS};
+    use super::{Embedded, HOSTILE, PROGRAMS};
 
     /// In WASM the stack is the one that `.cargo/config.toml` links.
     #[cfg(target_arch = "wasm32")]
@@ -56,7 +57,7 @@ mod tests {
         assert_eq!(usize::BITS == 32, cfg!(target_arch = "wasm32"));
     }
 
-    /// What `fmt` expects of every stored case. The half of `expected.json` for `check` waits for step 7.
+    /// What `fmt` expects of every stored case.
     #[test]
     fn the_stored_hostile_files_give_what_fmt_expects() {
         assert_eq!(HOSTILE.len(), 27);
@@ -77,6 +78,82 @@ mod tests {
             assert_eq!(found, codes, "{}", case.name);
             assert_eq!(u64::from(errors > 0), expected["exit"].as_u64().unwrap(), "{}", case.name);
             assert_eq!(changes, expected["changes"].as_bool().unwrap(), "{}", case.name);
+        }
+    }
+
+    /// The stored cases whose codes come with later steps.
+    fn later() -> Vec<&'static str> {
+        include_str!("../../acceptance/hostile-later.txt").lines().filter(|line| !line.starts_with('#')).collect()
+    }
+
+    /// The libraries shipped with LabCraft.
+    struct Shipped;
+
+    impl Libraries for Shipped {
+        fn find(&self, name: &str, _: Origin) -> Found {
+            labcraft_libs::source(name).map_or(Found::NotFound, Found::Library)
+        }
+    }
+
+    /// The folders under a root, from the paths of its files, with what a walk of them would give.
+    #[derive(Default)]
+    struct Tree {
+        files: Vec<SourceFile>,
+        folders: BTreeMap<String, Tree>,
+    }
+
+    impl Tree {
+        fn into_source(self, name: &str) -> LibrarySource {
+            LibrarySource {
+                files: self.files,
+                sub_libraries: self.folders.into_iter().map(|(name, tree)| tree.into_source(&name)).collect(),
+                ..LibrarySource::new(name.to_owned(), name.to_owned(), Origin::Project)
+            }
+        }
+    }
+
+    /// `root` is the start of the path of every file, with its last `/`.
+    fn project<'a>(root: &str, files: impl IntoIterator<Item = &'a Embedded>) -> LibrarySource {
+        let mut tree = Tree::default();
+        for file in files {
+            let relative = file.path.strip_prefix(root).unwrap();
+            let mut parts: Vec<&str> = relative.split('/').collect();
+            parts.pop();
+            let mut folder = &mut tree;
+            for part in parts {
+                folder = folder.folders.entry(part.to_owned()).or_default();
+            }
+            folder.files.push(SourceFile { shown: relative.to_owned(), content: Content::Bytes(Cow::Borrowed(file.bytes)) });
+        }
+        tree.into_source("")
+    }
+
+    fn checked_codes(root: LibrarySource) -> BTreeSet<&'static str> {
+        let mut names = Interner::new();
+        let checked = check(root, &Shipped, &mut names, &Limits::default());
+        checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect()
+    }
+
+    /// The half of `expected.json` for `check`, as far as the passes that exist can tell.
+    #[test]
+    fn the_stored_hostile_files_give_what_check_expects_so_far() {
+        for case in HOSTILE {
+            let expected: serde_json::Value = serde_json::from_str(case.expected).unwrap();
+            let expected = &expected["check"];
+            let codes: BTreeSet<&str> = expected["codes"].as_array().unwrap().iter().map(|code| code.as_str().unwrap()).collect();
+            let found = checked_codes(project(&format!("tests/acceptance/hostile/{}/", case.name), case.files));
+            assert!(found.is_subset(&codes), "{}: {found:?} is not in {codes:?}", case.name);
+            if !later().contains(&case.name) {
+                assert_eq!(found, codes, "{}", case.name);
+            }
+        }
+    }
+
+    #[test]
+    fn the_programs_of_the_repository_are_clean_under_check() {
+        for root in ["examples/", "libs/"] {
+            let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+            assert_eq!(checked_codes(project(root, files)), BTreeSet::new(), "{root}");
         }
     }
 

@@ -22,6 +22,7 @@ craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "2e2312d
 
 # foundation
 serde = { version = "1", features = ["derive"] }
+toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 unicode-normalization = "0.1"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 

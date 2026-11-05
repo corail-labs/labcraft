@@ -1,8 +1,6 @@
 //! `labcraft-cli fmt` (`docs/cli.md`, section 2): one file at a time, reading no other file. The logic stays in
 //! `labcraft-format`; here are the files, the atomic write and the last resort.
 
-use std::fs::File;
-use std::io::Read as _;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
 use std::process::ExitCode;
@@ -13,7 +11,7 @@ use labcraft_types::{Code, Diagnostic, FileEntry, FileResult, Interner, Limits, 
 
 use crate::args::FmtOptions;
 use crate::output;
-use crate::walk::{self, Found, io_text};
+use crate::walk::{self, Found, io_text, read_program};
 
 /// What the panic hook saw, for `LC0099`.
 static LAST_PANIC: Mutex<Option<String>> = Mutex::new(None);
@@ -35,7 +33,7 @@ pub fn run(options: &FmtOptions) -> ExitCode {
     let current = std::env::current_dir().ok();
     let walked = walk::walk(&options.paths, current.as_deref(), &options.limits);
     let mut report = walked.report;
-    let mut files: Vec<FileEntry> = walked.refused.into_iter().map(|file| FileEntry { file, result: FileResult::Error }).collect();
+    let mut files: Vec<FileEntry> = walked.refused.into_iter().map(|refused| FileEntry { file: refused.shown, result: FileResult::Error }).collect();
     let mut changed = 0;
     for found in &walked.files {
         let (result, file_report) = last_resort(found, &options.limits, || format_file(&found.path, options));
@@ -87,15 +85,13 @@ fn last_resort(found: &Found, limits: &Limits, work: impl FnOnce() -> (FileResul
 
 fn format_file(path: &Path, options: &FmtOptions) -> (FileResult, Report) {
     let limits = &options.limits;
-    let alone = |code, message: String| {
-        let mut report = Report::new(limits.max_report);
-        report.push(Diagnostic::new(code, message, ""));
-        (FileResult::Error, report)
-    };
-    let bytes = match read_file(path, limits) {
-        Ok(Contents::Bytes(bytes)) => bytes,
-        Ok(Contents::Over(size)) => return alone(Code::Lc0006, format!("file of {size} bytes, over the limit of {} bytes", limits.max_file_size)),
-        Err(error) => return alone(Code::Lc0001, format!("cannot read this file: {}", io_text(&error))),
+    let bytes = match read_program(path, limits) {
+        Ok(bytes) => bytes,
+        Err((code, message)) => {
+            let mut report = Report::new(limits.max_report);
+            report.push(Diagnostic::new(code, message, ""));
+            return (FileResult::Error, report);
+        }
     };
     let mut names = Interner::new();
     let formatted = format(&bytes, &mut names, limits);
@@ -126,25 +122,6 @@ fn format_file(path: &Path, options: &FmtOptions) -> (FileResult, Report) {
             (FileResult::Error, report)
         }
     }
-}
-
-enum Contents {
-    Bytes(Vec<u8>),
-    Over(u64),
-}
-
-/// Reads no more than the limit and one byte, even if the file grows meanwhile: `format` then refuses it.
-fn read_file(path: &Path, limits: &Limits) -> std::io::Result<Contents> {
-    let file = File::open(path)?;
-    let size = file.metadata()?.len();
-    if size > limits.max_file_size {
-        return Ok(Contents::Over(size));
-    }
-    let mut bytes = Vec::new();
-    // `with_capacity` aborts when memory runs out, and `--max-file-size` can ask for 1 GiB of it.
-    bytes.try_reserve_exact(usize::try_from(size).unwrap_or(usize::MAX)).map_err(|_| std::io::Error::from(std::io::ErrorKind::OutOfMemory))?;
-    file.take(limits.max_file_size.saturating_add(1)).read_to_end(&mut bytes)?;
-    Ok(Contents::Bytes(bytes))
 }
 
 /// The first line that differs, with its line ending, in the terms of a span (`docs/cli.md`, section 4.2): columns
