@@ -20,10 +20,10 @@ parallel. Until then, the most useful help is feedback on the language.
 ## How to help now
 
 - **Discuss the language.** Design questions are open as issues titled `[RFC] …`, with the
-  [`rfc` label](https://github.com/corailtech/labcraft/issues?q=label%3Arfc). Experience from
+  [`rfc` label](https://github.com/corail-labs/labcraft/issues?q=label%3Arfc). Experience from
   people who build test and measurement systems, in LabVIEW or anything else, is what we need
   most: what hurts, what must not change, what a text format must make easy. To propose one, open
-  an issue with the RFC template. [Discussions](https://github.com/corailtech/labcraft/discussions)
+  an issue with the RFC template. [Discussions](https://github.com/corail-labs/labcraft/discussions)
   are for questions and ideas.
 - **Report a problem in the spec or the examples** as an issue: a contradiction, a hole, an
   example that does not do what the text says.
