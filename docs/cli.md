@@ -71,11 +71,16 @@ A file that cannot be read or parsed gets its diagnostics and stays unchanged, w
 
 **A canonical form over `--max-file-size`** gets the error `LC6003`, and the file stays unchanged, whatever the
 option. Indentation grows with nesting, so 16 MiB of short lines nested 256 levels deep would take over 4 GiB, and a
-text over the limit could not be read again *(limit proposed)*.
+text over the limit could not be read again.
 
 **What `fmt` changes:** line endings and the end of the file, a byte order mark (section 2 of the
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
-the text; the items of `panel` and `layout`; layout entries that name no node (`LC5004`).
+the text; the items of `panel` and `layout`; layout entries that name no node (`LC5004`), apart from
+those that name an input or an output of the function, which stay for `check` (spec 11).
+
+**Layout entries outside a function.** An `extern` file has no node, so `fmt` removes all of its
+entries, even those that name a parameter (`LC5004`). In a type file it removes none: the section
+stays for `check` to refuse (`LC0104`).
 
 **What it never changes:** the text of strings and comments (apart from the space after `//` and
 the spaces at the end of a line), the spelling of number literals, the meaning of the program
@@ -393,7 +398,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC5001` | error | Panel element declared twice | 10 |
 | `LC5002` | error | `control` with the name of an output only, or `indicator` with the name of an input only | 10 |
 | `LC5003` | warning | Panel kind that M0 does not know (section 10); the element works without a widget | 10 |
-| `LC5004` | warning | Layout entry that names no node; `fmt` removes it | 11 |
+| `LC5004` | warning | Layout entry that names no node; `fmt` removes it, unless it names an input or an output of the function | 11 |
 | `LC5005` | error | Coordinate that is not an integer literal in the range (`5.0`, `1e3`, `2000000`) | 11 |
 | `LC5006` | warning | Layout entry that is ambiguous (a name defined in several bodies, or a `wire` that does not say which terminals), or a `wire` between terminals that are not connected | 11 |
 | `LC5007` | error | Two layout entries for the same node or wire | 11 |

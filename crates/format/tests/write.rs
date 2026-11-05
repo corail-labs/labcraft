@@ -587,6 +587,8 @@ fn a_struct_or_an_enum_goes_on_one_line_if_the_line_fits() {
     assert_stays(&format!("labcraft 1\n\ntype T = struct {{\n    a: struct {{\n        {inner}: f64,\n    }},\n    b: f64,\n}}\n"));
     // Inside an array, a function type, the arguments of a type: the same.
     assert_stays("labcraft 1\n\ntype T = [struct {\n    // above\n    a: f64,\n}]\n");
+    // The line is judged as a whole: the second one splits too, though it would fit (5.2).
+    assert_stays("labcraft 1\n\ntype T = fn(struct {\n    // above\n    a: f64,\n}, struct {\n    b: f64,\n}) -> ()\n");
     assert_stays("labcraft 1\n\ntype T = enum {\n    A(struct {\n        // above\n        a: f64,\n    }),\n}\n");
 }
 
@@ -745,6 +747,22 @@ fn a_layout_entry_that_names_no_node_is_removed() {
 }
 
 #[test]
+fn a_layout_entry_that_names_an_input_or_an_output_stays_for_check() {
+    let function = "labcraft 1\n\nfn f(a: i32) -> (err: i32) {\n    b = g(a)\n    err = b\n}\n\n";
+    let text = format!(
+        "{function}layout {{\n    node a at (1, 2)\n    node err at (1, 2)\n    wire a -> b via (1, 1)\n    wire a -> err\n    wire a.a -> b.x\n    wire b -> a\n    wire b -> err\n    wire err -> b\n}}\n"
+    );
+    assert_eq!(formatted(&text).text, text);
+    assert_eq!(formatted(&text).codes, []);
+    // An unknown name at the other end still makes it stale, and an input is not a label.
+    for stale in ["wire a -> z", "wire z -> err", "node #a at (1, 2)", "wire #a -> b"] {
+        let result = formatted(&format!("{function}layout {{\n    {stale}\n}}\n"));
+        assert_eq!(result.text, function.trim_end_matches('\n').to_owned() + "\n", "{stale}");
+        assert_eq!(result.codes, [Code::Lc5004], "{stale}");
+    }
+}
+
+#[test]
 fn a_node_in_a_nested_body_can_be_named() {
     let text = "labcraft 1\n\nfn f() -> () {\n    a = match c {\n        _ => {\n            b = g()\n            yield b\n        }\n    }\n    x = loop {\n        y = g()\n        until y\n    }\n}\n\nlayout {\n    node a at (1, 2)\n    node b at (1, 2)\n    node x at (1, 2)\n    node y at (1, 2)\n}\n";
     assert_stays(text);
@@ -778,6 +796,10 @@ fn a_function_that_cannot_be_ordered_keeps_its_layout_entries() {
 fn outside_a_function_entries_name_no_node_or_are_for_check() {
     let result = formatted("labcraft 1\n\nextern rust()\nfn f() -> ()\n\nlayout {\n    node a at (1, 2)\n}\n");
     assert_eq!(result.text, "labcraft 1\n\nextern rust()\nfn f() -> ()\n");
+    assert_eq!(result.codes, [Code::Lc5004]);
+    // With no node, a parameter does not keep it either (`docs/cli.md`, section 2).
+    let result = formatted("labcraft 1\n\nextern rust()\nfn f(a: i32) -> ()\n\nlayout {\n    node a at (1, 2)\n}\n");
+    assert_eq!(result.text, "labcraft 1\n\nextern rust()\nfn f(a: i32) -> ()\n");
     assert_eq!(result.codes, [Code::Lc5004]);
     // `LC0104` is for `check`: the section stays for it to see.
     let text = "labcraft 1\n\ntype T = f64\n\npanel {\n    control a: led\n}\n\nlayout {\n    node a at (1, 2)\n}\n\nicon 32 {}\n";

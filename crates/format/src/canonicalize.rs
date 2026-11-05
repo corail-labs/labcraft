@@ -170,9 +170,15 @@ fn sort_panel(panel: &mut Panel, signature: Option<&Signature>, names: &Interner
 }
 
 fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &mut Interner, report: &mut Report) {
-    let nodes = match &file.decl {
+    let known = match &file.decl {
         _ if !ordered => None,
-        Decl::Function(function) => Some(nodes_of(&function.body)),
+        Decl::Function(function) => {
+            let mut known = nodes_of(&function.body);
+            // Terminals of the frame, not nodes: an entry that names one is for `check` to judge (spec 11).
+            known.extend(function.signature.params.iter().map(|param| (param.name, false)));
+            known.extend(function.signature.outputs.iter().map(|output| (output.name, false)));
+            Some(known)
+        }
         Decl::Extern(_) => Some(HashSet::new()),
         // A section in a type file is the business of `check` (`LC0104`).
         Decl::Type(_) => None,
@@ -180,9 +186,9 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
     let Some(layout) = &mut file.layout else {
         return;
     };
-    if let Some(nodes) = nodes {
+    if let Some(known) = known {
         layout.items.retain(|item| {
-            let keep = names_a_node(item, &nodes) || !nothing_attached(&item.comments);
+            let keep = names_what_is_known(item, &known) || !nothing_attached(&item.comments);
             if !keep {
                 report_stale_entry(item, map, names, report);
             }
@@ -220,18 +226,19 @@ fn report_stale_entry(item: &LayoutItem, map: &SourceMap, names: &Interner, repo
             format!("wire {} -> {}", reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names))
         }
     };
-    let mut diagnostic = Diagnostic::new(Code::Lc5004, format!("`{what}` names no node of this function, so canonical form leaves it out"), "");
+    let mut diagnostic =
+        Diagnostic::new(Code::Lc5004, format!("`{what}` names nothing on the diagram of this function, so canonical form leaves it out"), "");
     if let Some(span) = map.span(item.id) {
         diagnostic = diagnostic.with_span(span);
     }
     report.push(diagnostic);
 }
 
-fn names_a_node(item: &LayoutItem, nodes: &HashSet<(Name, bool)>) -> bool {
-    let known = |node: &NodeRef| nodes.contains(&(node.name, node.is_label));
+fn names_what_is_known(item: &LayoutItem, known: &HashSet<(Name, bool)>) -> bool {
+    let is_known = |node: &NodeRef| known.contains(&(node.name, node.is_label));
     match &item.kind {
-        LayoutKind::Node { node, .. } => known(node),
-        LayoutKind::Wire { from, to, .. } => known(&from.node) && known(&to.node),
+        LayoutKind::Node { node, .. } => is_known(node),
+        LayoutKind::Wire { from, to, .. } => is_known(&from.node) && is_known(&to.node),
     }
 }
 
