@@ -1,6 +1,7 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
 //! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`. The other families and the rest of each one come with their steps.
+//! scenario 4, through `read`, and scenario 5, through `format`. The other families and the rest of each one come
+//! with their steps.
 
 /// A file of a corpus, with its path from the root of the repository.
 pub struct Embedded {
@@ -26,8 +27,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use labcraft_check as _;
-    use labcraft_format::{STACK_SIZE, read};
-    use labcraft_types::{Code, Interner, Limits, MAX_NESTING};
+    use labcraft_format::{STACK_SIZE, canonicalize, format, read, write};
+    use labcraft_types::{Code, Interner, Limits, MAX_NESTING, Report};
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
@@ -55,22 +56,61 @@ mod tests {
         assert_eq!(usize::BITS == 32, cfg!(target_arch = "wasm32"));
     }
 
-    /// What `fmt` reports on these comes from `read` alone. `changes` waits for `write` (step 5), and the
-    /// half of `expected.json` for `check` waits for step 7.
+    /// What `fmt` expects of every stored case. The half of `expected.json` for `check` waits for step 7.
     #[test]
-    fn encoding_gives_the_codes_and_the_exit_that_fmt_expects() {
-        let cases: Vec<_> = HOSTILE.iter().filter(|case| case.name.starts_with("encoding-")).collect();
-        assert_eq!(cases.len(), 12);
-        for case in cases {
+    fn the_stored_hostile_files_give_what_fmt_expects() {
+        assert_eq!(HOSTILE.len(), 27);
+        for case in HOSTILE {
             let expected: serde_json::Value = serde_json::from_str(case.expected).unwrap();
             let expected = &expected["fmt"];
             let codes: BTreeSet<&str> = expected["codes"].as_array().unwrap().iter().map(|code| code.as_str().unwrap()).collect();
-            let [file] = case.files else { panic!("{}: one file expected", case.name) };
-            let mut names = Interner::new();
-            let result = read(file.bytes, &mut names, &Limits::default());
-            let found: BTreeSet<&str> = result.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect();
+            let mut found = BTreeSet::new();
+            let mut errors = 0;
+            let mut changes = false;
+            for file in case.files {
+                let mut names = Interner::new();
+                let result = format(file.bytes, &mut names, &Limits::default());
+                found.extend(result.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()));
+                errors += result.report.errors();
+                changes |= result.text.as_ref().is_some_and(|text| text.as_bytes() != file.bytes);
+            }
             assert_eq!(found, codes, "{}", case.name);
-            assert_eq!(u64::from(result.report.errors() > 0), expected["exit"].as_u64().unwrap(), "{}", case.name);
+            assert_eq!(u64::from(errors > 0), expected["exit"].as_u64().unwrap(), "{}", case.name);
+            assert_eq!(changes, expected["changes"].as_bool().unwrap(), "{}", case.name);
+        }
+    }
+
+    /// Scenario 5, points 1 and 4, on what the WASM build embeds: every program is canonical (`libs/` and
+    /// `examples/`, with comments, `panel`, `layout` and `icon`), and comes back from CR LF endings.
+    #[test]
+    fn every_program_is_written_back_byte_for_byte() {
+        for program in PROGRAMS {
+            let text = std::str::from_utf8(program.bytes).unwrap();
+            let mut names = Interner::new();
+            let once = format(program.bytes, &mut names, &Limits::default()).text;
+            assert_eq!(once.as_deref(), Some(text), "{}", program.path);
+            let crlf = text.replace('\n', "\r\n");
+            let again = format(crlf.as_bytes(), &mut names, &Limits::default()).text;
+            assert_eq!(again.as_deref(), Some(text), "{}", program.path);
+        }
+    }
+
+    /// Scenario 5, points 2 and 3, on every prefix that parses: what comes out reads again to the same model.
+    #[test]
+    fn saving_again_changes_nothing_on_every_prefix() {
+        for program in PROGRAMS {
+            for end in 0..=program.bytes.len() {
+                let mut names = Interner::new();
+                let limits = Limits::default();
+                let reading = read(&program.bytes[..end], &mut names, &limits);
+                let Some(file) = reading.file else { continue };
+                let once = canonicalize(file, &reading.source_map, &mut names, &mut Report::new(1));
+                let text = write(&once, &names, &limits).unwrap();
+                let reading = read(text.as_bytes(), &mut names, &limits);
+                let again = canonicalize(reading.file.unwrap(), &reading.source_map, &mut names, &mut Report::new(1));
+                assert!(once == again, "{} cut at {end}", program.path);
+                assert_eq!(write(&again, &names, &limits).unwrap(), text, "{} cut at {end}", program.path);
+            }
         }
     }
 
@@ -109,14 +149,19 @@ mod tests {
     #[test]
     fn the_stack_of_a_host_holds_the_ceiling_of_nesting() {
         on_the_stack_of_a_host(|| {
-            let limits = Limits::default().with_max_nesting(MAX_NESTING).unwrap();
+            // At the ceiling, the indentation alone can pass the default limit of size, and `write` must really write.
+            let mut limits = Limits::default().with_max_nesting(MAX_NESTING).unwrap();
+            limits.max_file_size = u64::MAX;
             for (kind, deep) in DEEP {
                 assert_limit(kind, deep, MAX_NESTING, &limits);
                 let mut names = Interner::new();
                 let text = deep(MAX_NESTING as usize);
-                let file = read(text.as_bytes(), &mut names, &limits).file.unwrap();
+                let reading = read(text.as_bytes(), &mut names, &limits);
+                let file = reading.file.unwrap();
                 let copy = file.clone();
                 assert!(file == copy, "{kind}");
+                let canonical = canonicalize(file, &reading.source_map, &mut names, &mut Report::new(1));
+                assert!(write(&canonical, &names, &limits).is_ok(), "{kind}");
             }
         });
     }

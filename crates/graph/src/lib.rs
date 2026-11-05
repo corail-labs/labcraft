@@ -19,6 +19,8 @@
 
 use labcraft_types::{Name, Span};
 
+mod renumber;
+
 /// What a diagnostic can point at. [`SourceMap`] gives its place in the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Id(u32);
@@ -66,7 +68,9 @@ pub enum CommentKind {
     Doc,
 }
 
-/// A comment, with the text that follows its `//` or `///`, up to the line ending.
+/// A comment, with the text that follows its `//` or `///`, up to the line ending, in its one spelling (5.2):
+/// empty or starting with a space, and with no space at its end. That makes a comment a name of sorts: `read`
+/// gives this form, so that the model does not change when `fmt` writes the file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Comment {
     pub kind: CommentKind,

@@ -3,7 +3,8 @@
 Files for the [M0 acceptance scenarios](../../docs/acceptance-m0.md), and what the tool must report on
 them, in the terms of [docs/cli.md](../../docs/cli.md). `tests/harness` runs them against the Rust crates,
 natively and in WASM, as the steps of [the architecture](../../docs/architecture.md) arrive: so far the
-families Encoding, Truncation and Nesting, through `read`. The proof of concept has no static type checking
+families Encoding, Truncation and Nesting, through `read`, and what `fmt` expects of the stored cases, through
+`format`. The proof of concept has no static type checking
 and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
 that the proof of concept does not crash on them.
 
@@ -35,6 +36,7 @@ These families are too large or cannot be stored, so the test harness generates 
 | Size | A file of 100 MB, one just over the limit, a line of 10 MB | `LC0006` when over the limit |
 | Size | A function of 300,000 nodes under the limit, a library of 100,000 files | Ends within the bounds of scenario 4 |
 | Size | A library of 100,001 files | `LC0010` |
+| Size | Short lines nested deep, whose canonical form is over the limit | `LC6003` |
 | Nesting | 100,000 nested `match`, `loop` or `handle`, parentheses in a unit, nested array types | `LC0007` |
 | Library | A path that does not exist, an unreadable file | `LC0001` |
 | Library | A folder with nothing to check | `LC0002` |

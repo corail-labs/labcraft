@@ -260,7 +260,8 @@ writing it back: `labcraft-cli fmt` and every command that writes a file.
    is only a section is not a file: its nodes exist in no function.
 2. **Idempotence.** For every file that parses, `fmt(fmt(f)) = fmt(f)`. A body that cannot be
    ordered (a cycle, a value defined twice) keeps its written order and only its layout is
-   normalized (5.2).
+   normalized (5.2). A file whose canonical form is over the size limit gets `LC6003` and stays
+   unchanged ([cli.md](cli.md), section 2).
 3. **Meaning preserved.** `fmt` changes neither the graph (nodes, wires, types) nor the results:
    the model read before and after is the same, and, *with M0b*, the examples give the same run
    results.

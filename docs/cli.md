@@ -37,7 +37,7 @@ diagnostics of the others.
 |---|---|
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
-| `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)* |
+| `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)*, for a file and for what `fmt` would write |
 | `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage. The WASM hosts stop at 256, so a file nested deeper reads only here ([architecture](architecture.md), section 4) |
 
 Reaching a limit on the input is a diagnostic with a code, never a crash; `--max-report` only
@@ -68,6 +68,10 @@ file**, so its result depends only on the bytes of the file.
   at the first line that differs. Exit 1 if there is one.
 
 A file that cannot be read or parsed gets its diagnostics and stays unchanged, whatever the option.
+
+**A canonical form over `--max-file-size`** gets the error `LC6003`, and the file stays unchanged, whatever the
+option. Indentation grows with nesting, so 16 MiB of short lines nested 256 levels deep would take over 4 GiB, and a
+text over the limit could not be read again *(limit proposed)*.
 
 **What `fmt` changes:** line endings and the end of the file, a byte order mark (section 2 of the
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
@@ -402,7 +406,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 |---|---|---|---|
 | `LC6001` | error | `fmt --check`: file not canonical | 5.2 |
 | `LC6002` | warning | Body left in written order: a cycle, or a value or a label defined twice | 5.2 |
-| `LC6003` | error | Canonical form could not be written; the file is unchanged | section 2 above |
+| `LC6003` | error | Canonical form could not be written: over `--max-file-size`, or the file system refused it. The file is unchanged | section 2 above |
 
 ## 6. Left for later
 

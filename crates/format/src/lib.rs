@@ -17,11 +17,17 @@
 )]
 #![forbid(unsafe_code)]
 
+mod canonicalize;
 mod decode;
 mod lexer;
+mod order;
 mod parser;
 mod read;
+mod write;
 
+pub use canonicalize::{Formatted, canonicalize, format};
 pub use decode::decode;
 pub use lexer::{Keyword, Lexer, Token, TokenKind};
+pub use order::{Unorderable, canonical_order};
 pub use read::{Read, STACK_SIZE, read};
+pub use write::{TooLarge, write, write_line};
