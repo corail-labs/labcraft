@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+fn f(a: i32) -> (x: i32, y: i32) {
+    x = add(a, 2)
+    y = core.add(a, 2)
+}

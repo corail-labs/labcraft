@@ -97,13 +97,13 @@ fault). Minimum content:
 | Case | Example | At fault |
 |---|---|---|
 | Wrong type on an input | an `f64[V]` wired to the session input of `scpi.query_f64` | the wire and the input |
-| Incompatible dimensions | `add(voltage, current)` | the node and its two input wires |
-| Output of the wrong dimension | an output `power: f64[W]` bound to `mul(r, i)` (gives V, section 3.3) | the wire to the output |
+| Incompatible dimensions | `core.add(voltage, current)` | the node and its two input wires |
+| Output of the wrong dimension | an output `power: f64[W]` bound to `core.mul(r, i)` (gives V, section 3.3) | the wire to the output |
 | Implicit narrowing | an `f64` wired to an `i32` input (3.4) | the wire and the input |
-| `unitless` with a unit of another dimension | `unitless(voltage, [A])` | the node and its unit argument |
+| `unitless` with a unit of another dimension | `core.unitless(voltage, [A])` | the node and its unit argument |
 | Arms that disagree | a `match` whose arms yield `f64[V]` and `string` | the `yield` of the second arm |
-| Carry whose type changes | `carry n: i32 = 0` then `next n = add(n, 0.5)` | the `next n` line (`add` widens `n` to `f64`, 3.4) |
-| Function reference of the wrong signature | `call(measure, …)` with a function that has no `err` output | the argument |
+| Carry whose type changes | `carry n: i32 = 0` then `next n = core.add(n, 0.5)` | the `next n` line (`core.add` widens `n` to `f64`, 3.4) |
+| Function reference of the wrong signature | `core.call(measure, …)` with a function that has no `err` output | the argument |
 | Variant of another enumeration | a `match` on a `Verdict` with an arm `State.Init` | the pattern |
 
 **Expected:**
@@ -115,7 +115,7 @@ fault). Minimum content:
    function; the **node** (the name of its line, 5.2, and its text); the **wires or terminals at
    fault**, when there are any (the value name, the source terminal `node.output` and the
    destination terminal `node.input`, with the names of the signatures); the expected type and the
-   type found, units included; a fix when one exists (`with_unit`, `unitless`, `round_to_i32`…).
+   type found, units included; a fix when one exists (`core.with_unit`, `core.unitless`, `core.round_to_i32`…).
 4. Same report from the CLI (`--json`) and, *with M0b*, from MCP. Without `--json`, a
    human-readable form that starts with `file:line:column`.
 

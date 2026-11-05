@@ -1,5 +1,7 @@
 labcraft 1
 
+use core
+
 fn b(v: f64[V], i: f64[A]) -> (p: f64[V]) {
-    p = add(v, i)
+    p = core.add(v, i)
 }

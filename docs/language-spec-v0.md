@@ -113,9 +113,9 @@ signatures still say what the session designates.
   and `°F`. `V/A` and `Ω` are the same unit.
 - **Same dimension, different units**: implicit conversion, shown as a coercion (`mV` to `V`). It
   is lossless in dimension; the scale factor is applied in floating point. The result of an
-  operation takes the unit of its first operand: `add(1 V, 200 mV)` is `1.2 V`, `add(200 mV, 1 V)`
+  operation takes the unit of its first operand: `core.add(1 V, 200 mV)` is `1.2 V`, `core.add(200 mV, 1 V)`
   is `1200 mV`.
-- **Different dimensions**: error at edit time (`add(voltage, current)` is rejected).
+- **Different dimensions**: error at edit time (`core.add(voltage, current)` is rejected).
 - **Temperatures**: `°C` and `°F` are scales with an offset. A value in `°C` is an absolute
   temperature; the difference of two temperatures is in `K`. In a compound unit a temperature counts
   as a difference, with no offset: `V/°C`, and even `°C^1`. Q-3.
@@ -123,9 +123,9 @@ signatures still say what the session designates.
 - **Compound units**: `*` (or `·`), `/` and `^`. `^` applies to the unit just before it: `m/s^2`
   is m/(s²). `*`, `·` and `/` have equal precedence and apply from left to right: `kg/m*s` is
   (kg/m)·s. Use parentheses for anything else: `kg/(m*s)`.
-- `unitless(x, [V])` removes the unit by expressing `x` in the requested unit
-  (`unitless(230 mV, [V])` is 0.23), `with_unit(x, [V])` adds one: both are explicit, like any
-  conversion that can hide an error. The unit of `unitless` is mandatory and must have the
+- `core.unitless(x, [V])` removes the unit by expressing `x` in the requested unit
+  (`core.unitless(230 mV, [V])` is 0.23), `core.with_unit(x, [V])` adds one: both are explicit, like any
+  conversion that can hide an error. The unit of `core.unitless` is mandatory and must have the
   dimension of `x`: if the upstream type changes from `V` to `mV`, the resulting number does not
   change silently.
 
@@ -135,15 +135,15 @@ the operations that made them. Ω = kg·m²·s⁻³·A⁻², A = A¹.
 
 | Operation | Rule | Example |
 |---|---|---|
-| `mul` | adds the exponents | Ω × A = V; V × A = W |
-| `div` | subtracts the exponents | V / A = Ω |
-| `add`, `sub`, comparisons | identical exponents required | V + A rejected |
-| `sqrt` | divides the exponents by 2, rejected if impossible, or if the scale is not an exact square (`kV·V`) | √(V²) = V |
-| `pow` | constant integer exponent | V² |
+| `core.mul` | adds the exponents | Ω × A = V; V × A = W |
+| `core.div` | subtracts the exponents | V / A = Ω |
+| `core.add`, `core.sub`, comparisons | identical exponents required | V + A rejected |
+| `core.sqrt` | divides the exponents by 2, rejected if impossible, or if the scale is not an exact square (`kV·V`) | √(V²) = V |
+| `core.pow` | constant integer exponent | V² |
 
 Everything is computed at compile time; at run time units no longer exist (zero cost), only scale
 conversions add a multiplication. A physical error is detected at edit time:
-an output `power: f64[W]` bound to `mul(r, i)` is rejected, because R × I gives V.
+an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I gives V.
 
 **Limits in v0:**
 
@@ -160,7 +160,7 @@ an output `power: f64[W]` bound to `mul(r, i)` is rejected, because R × I gives
 
 - **Implicit widening**, shown in the IDE (coercion point): `i16` to `i32`, integers of up to 32
   bits to `f64`, `f32` to `f64`.
-- **Explicit narrowing** by a node: `to_i32(x)`, `round_to_i32(x)`, `to_f32(x)`.
+- **Explicit narrowing** by a node: `core.to_i32(x)`, `core.round_to_i32(x)`, `core.to_f32(x)`.
 - Cases that lose precision without changing size (`i64` and `u64` to `f64`) are explicit (Q-4).
 - **Literals**: an integer literal takes the type its context requires (`i32` if none); a decimal
   literal is `f64`; a literal with a unit is an `f64` with that unit (`0 V` is `f64[V]`).
@@ -176,7 +176,7 @@ whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the r
 `f64[V]`.
 
 - **The v0 bound is `Number`**: integers, floats and complex numbers, with any unit. A variable
-  without a bound stands for any type (`select`, appendix A).
+  without a bound stands for any type (`core.select`, appendix A).
 - A variable that stands for a unit alone (`f64[U]`) is open question Q-12, which also covers how
   to tell such a variable from a type variable.
 
@@ -199,12 +199,14 @@ fn check_voltage(
   gives a warning (7.5).
 - Call: `name(arguments)`, positional then named (`check_voltage(r, high: 250 V)`).
 - A parameter can be **variadic** (`parts: string...`): see 5.4.
-- **Scope.** `core` is always in scope, unqualified (`add`, `ge`, `select`). Functions and types
-  of the same library are named without qualification (`settle`, `Verdict`), so they cannot share
-  a name. Anything from another
-  library, types included, needs `use lib` in the file and the qualified name: after `use visa`,
-  `visa.open` and `visa.session`, and for a variant `lib.Type.Variant`. `use a.b` imports `b`, a
-  sub-library of `a` (a library nested in the folder of `a`); its contents are named `a.b.name`.
+- **Scope.** Functions and types of the same library are named without qualification (`settle`,
+  `Verdict`), so they cannot share a name. Anything from another library, types included, needs
+  `use lib` in the file and the qualified name: after `use visa`, `visa.open` and `visa.session`,
+  and for a variant `lib.Type.Variant`. The libraries of section 9 are no exception: after `use core`,
+  `core.add`, `core.ge`, `core.select`. So a library can define its own `add`, and a new function in
+  `core` breaks no program. The base types (3.1) and the bound `Number` (3.5) belong to the language and need no `use`. `use a.b`
+  imports `b`, a sub-library of `a` (a library nested in the folder of `a`); its contents are named
+  `a.b.name`.
 - **The name of a library** is its path from the root of the project, the folder given to the tool:
   `use relays` in `examples/station.lcf` is `examples/relays`. A library can use another of the
   project and the libraries shipped with LabCraft, but not in a cycle, and nothing can use the root,
@@ -214,7 +216,7 @@ fn check_voltage(
 - **Function references** (Q-14): a named function can be passed as an argument, with a signature
   type checked at edit time, for example
   `measure: fn(visa.session, err: error) -> (f64[V], visa.session, error)`. The callee runs it
-  with `call(measure, …)`. The name of an argument says how `call` wires it and is not part of the
+  with `core.call(measure, …)`. The name of an argument says how `core.call` wires it and is not part of the
   type: `fn(x: f64[V])` and `fn(f64[V])` are the same type, and so is a function with its own names
   for its parameters. No anonymous functions or closures in v0. This is the typed equivalent
   of LabVIEW's *Call By Reference*, and what makes it possible to write `settle` or `retry` once
@@ -245,7 +247,7 @@ fn spectrum(samples: [f64[V]], rate: f64[Hz]) -> (magnitude: [f64[V]], err: erro
 | `rust` | `crate`, `function` | A Rust crate linked into the application, from M0: the native functions of the libraries shipped with LabCraft and of the examples (`results_log`, A.4). How a project adds its own crate is for M8. For example `extern rust(crate: "labcraft-visa", function: "close")` before `fn close(…)` in `libs/visa` |
 
 - **The declaration is the contract.** Types are converted and checked at the boundary, at run
-  time. Units cannot be: the declaration asserts them, like `with_unit`.
+  time. Units cannot be: the declaration asserts them, like `core.with_unit`.
 - **An `err` output is required** (R-13): missing library, exception, timeout.
 - An external function does not exist in the browser (D-22): error at edit time for the web
   target, except a `rust` function whose crate is built for WebAssembly (the simulator of `visa`).
@@ -264,7 +266,7 @@ dmm, e1 = visa.open(resource)
   (`_, e2 = …`).
 - **One value = one wire.** It is defined once (no reassignment) and can feed several inputs: the
   wire splits. Semantics are by value; copies are made only when necessary (D-11).
-- **No nesting in v0**: `add(mul(a, b), c)` is rejected; each node is a line with named outputs.
+- **No nesting in v0**: `core.add(core.mul(a, b), c)` is rejected; each node is a line with named outputs.
   This is longer but unambiguous, easy to reread, and every node has a name (Q-5).
 - Constants are written directly as arguments (`visa.query(dmm, "MEAS:VOLT:DC?")`).
 - **A path can be an argument**: a field access (`step.voltage` reads a field of a struct), a
@@ -305,7 +307,7 @@ The order applies to each body on its own: the function body, each arm, each loo
 - **Algorithm**: repeatedly emit, among the lines whose inputs are all emitted, the one that comes
   first in this order:
   1. ordinary lines, by name in code point order. A node that produces a function output is an
-     ordinary line (`voltage = with_unit(raw, [V])` in section 12);
+     ordinary line (`voltage = core.with_unit(raw, [V])` in section 12);
   2. `next` lines (whose first output that is not `_` is `next x`), by carry name;
   3. `collect` lines, in their written order (it is the order of the outputs, R-6);
   4. the `until` line;
@@ -350,7 +352,7 @@ has one text:
     ones are written `()`, `[]`, `{}`; no trailing comma in a form written on one line;
   - none between the name of a function, a type, a variant, a category, a library, a panel kind, the
     wildcard `_` or the `fn` of a function type and the `(`, `[` or `<` that follows it
-    (`add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
+    (`core.add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
     `numeric(format: "0.000")`, `fn(visa.session)`); one after any other keyword, a number, or a
     word of the `layout` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
     `at (40, 80)`, `rect (2, 4)`);
@@ -527,8 +529,8 @@ an error (R-18).
 
 ```text
 total, scaled = for x in readings, carry acc = 0 V {
-    s = mul(x, 2.0)
-    next acc = add(acc, x)
+    s = core.mul(x, 2.0)
+    next acc = core.add(acc, x)
     collect s
 }
 ```
@@ -555,10 +557,10 @@ total, scaled = for x in readings, carry acc = 0 V {
 
 ```text
 count, e = loop carry n = 0, carry err = e0 {
-    done = ge(n, 10)
+    done = core.ge(n, 10)
     _, e5 = instrument.poll(dev, err: err)
     next err = e5
-    next n = add(n, 1)
+    next n = core.add(n, 1)
     until done
 }
 ```
@@ -718,13 +720,13 @@ requested from outside; a fault, found by the runtime.
 
 - **Stop, planned by the program.** The program reads a panel element, a `switch` when several
   loops must stop (section 10), and its loops end on it: `stop = ui.get(stop_switch, after: …)`,
-  then `until stop`, or `until or(done, stop)`. After the press, what runs is what the diagram
+  then `until stop`, or `halt = core.or(done, stop)` and `until halt`. After the press, what runs is what the diagram
   says: the loops end their iteration and exit, the nodes downstream run, `visa.close` closes the
   sessions, a supply is switched off if the program does it. The run ends normally, with or
   without an error on `err`. A user presses Stop on the panel; an agent, the CLI or a test sets it
   by a command (Q-20). This is the only clean stop: a program that must leave its bench in a safe
   state does it in its diagram, on Stop. A `for` has no `until` (R-6): a loop that must stop on
-  Stop is written as a `loop` with an index carry (`next i = add(i, 1)`, `until or(done, stop)`);
+  Stop is written as a `loop` with an index carry (`next i = core.add(i, 1)`, `until halt`);
   leaving a `for` early is Q-22.
 - **Abort, the last resort of the runtime.** Requested from outside: Ctrl-C on the CLI, an MCP
   command, a time limit on the run. No node starts any more, `always` nodes included: an abort has
@@ -747,7 +749,7 @@ iterations per loop and of nodes executed is limited only in deterministic mode:
 a test or an agent from a program that never ends, including one whose simulated clock no longer
 advances. In real time a loop runs as long as the program says, for days on a bench, unless the run
 is given a limit. Which other run-time failures are faults rather than `error` values (integer
-overflow, `to_i32` of `nan`, integer division by zero) is Q-25.
+overflow, `core.to_i32` of `nan`, integer division by zero) is Q-25.
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
 top-level function holds an error (7.5); `aborted`; `fault`.
@@ -838,6 +840,7 @@ also distinguish, is left to M3, with a real panel.
 ```text
 labcraft 1
 
+use core
 use scpi
 use time
 use ui
@@ -849,11 +852,11 @@ fn monitor(resource: string, period: f64[s] = 200 ms) -> (count: i32, err: error
     count, e4 = loop carry n = 0, carry e = e1 {
         raw, _, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e)
         e3 = time.wait(period, err: e2)
-        volts = with_unit(raw, [V])
+        volts = core.with_unit(raw, [V])
         shown = ui.set(live_voltage, volts)
         stop = ui.get(stop_button, after: shown)
         next e = e3
-        next n = add(n, 1)
+        next n = core.add(n, 1)
         until stop
     }
     #close: e5 = visa.close(dmm, err: e4)
@@ -980,6 +983,7 @@ File `check_voltage.lcf`:
 ```text
 labcraft 1
 
+use core
 use scpi
 use visa
 
@@ -993,10 +997,10 @@ fn check_voltage(
     dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
     raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
     #close: e3 = visa.close(dmm2, err: e2)
-    voltage = with_unit(raw, [V])
-    above = ge(voltage, low)
-    below = le(voltage, high)
-    in_range = and(above, below)
+    voltage = core.with_unit(raw, [V])
+    above = core.ge(voltage, low)
+    below = core.le(voltage, high)
+    in_range = core.and(above, below)
     measured = match in_range {
         true => yield Verdict.Pass
         false => yield Verdict.Fail
@@ -1056,6 +1060,7 @@ The state machine, `station.lcf` (`bench_selftest` and `wait_dut` are in `exampl
 labcraft 1
 
 use array
+use core
 use results_log
 
 /// Self-test, then for each of the `dut_count` products: wait, run the steps until the first failure, report.
@@ -1075,24 +1080,24 @@ fn station(bench: Bench, steps: [Step], dut_count: i32 = 1, err: error = none) -
             }
             State.WaitDut => {
                 present, e2 = wait_dut(bench, timeout: 30 s, err: err)
-                s = select(present, State.RunStep, State.WaitDut)
+                s = core.select(present, State.RunStep, State.WaitDut)
                 yield (s, 0, [], tested, e2, false)
             }
             State.RunStep => {
-                i2 = add(index, 1)
-                more = lt(i2, n)
+                i2 = core.add(index, 1)
+                more = core.lt(i2, n)
                 step, e5 = array.get(steps, index, err: err)
                 r, e3 = run_step(bench, step, err: e5)
                 all = array.push(results, r)
-                go_on = and(more, r.passed)
-                s = select(go_on, State.RunStep, State.Report)
+                go_on = core.and(more, r.passed)
+                s = core.select(go_on, State.RunStep, State.Report)
                 yield (s, i2, all, tested, e3, false)
             }
             State.Report => {
                 e4 = results_log.append_csv(results, err: err)
-                t2 = add(tested, 1)
-                again = lt(t2, dut_count)
-                s = select(again, State.WaitDut, State.Stop)
+                t2 = core.add(tested, 1)
+                again = core.lt(t2, dut_count)
+                s = core.select(again, State.WaitDut, State.Stop)
                 yield (s, 0, [], t2, e4, false)
             }
             State.Stop => yield (State.Stop, index, results, tested, err, true)
@@ -1108,6 +1113,7 @@ One step, `run_step.lcf`:
 ```text
 labcraft 1
 
+use core
 use psu
 use relays
 use results_log
@@ -1121,9 +1127,9 @@ fn run_step(
     _, e1 = relays.apply(bench.relays, step.route, err: err)
     _, e2 = psu.set_voltage(bench.source, step.voltage, err: e1)
     v, e3 = settle(bench.dmm, target: step.voltage, tolerance: 0.2 V, period: 50 ms, timeout: 1 s, err: e2)
-    above = ge(v, step.low)
-    below = le(v, step.high)
-    passed = and(above, below)
+    above = core.ge(v, step.low)
+    below = core.le(v, step.high)
+    passed = core.and(above, below)
     result = results_log.StepResult { name: step.name, value: v, passed: passed }
     err = e3
 }
@@ -1134,6 +1140,7 @@ Measure until settled, `settle.lcf`:
 ```text
 labcraft 1
 
+use core
 use dmm_driver
 use errors
 use time
@@ -1152,12 +1159,12 @@ fn settle(
     value, err_out = loop carry v = 0 V, carry e = err {
         e1 = time.wait(period, err: e)
         t = time.elapsed(t0)
-        late = gt(t, timeout)
+        late = core.gt(t, timeout)
         x, _, e2 = dmm_driver.read_dc_volts(dmm, err: e1)
-        gap = sub(x, target)
-        dist = abs(gap)
-        stable = le(dist, tolerance)
-        done = or(stable, late)
+        gap = core.sub(x, target)
+        dist = core.abs(gap)
+        stable = core.le(dist, tolerance)
+        done = core.or(stable, late)
         next e = errors.raise_if(late, io.timeout, "reading not settled", err: e2)
         next v = x
         until done
@@ -1250,7 +1257,7 @@ rule applies on top of them.
 **Nesting** has one limit (`--max-nesting`, 256 by default, `LC0007`) and one counter for all its kinds.
 These count for 1 each: a `match`, `handle`, `for` or `loop`; a parenthesis of a unit; an array, struct,
 enum or function type, or the `<` of a named type; the `[` of an array literal. The brackets around a unit
-add nothing (`f64[V]`, `with_unit(x, [V])`), and neither do the arms of a `match` or a `handle`: 256 nested
+add nothing (`f64[V]`, `core.with_unit(x, [V])`), and neither do the arms of a `match` or a `handle`: 256 nested
 `match` pass, and the 257th gives `LC0007`.
 
 ### 14.2 Files and declarations
@@ -1317,7 +1324,7 @@ call          = path [ "<" type_expr { "," type_expr } ">" ] "(" [ arg { "," arg
 arg           = [ IDENT ":" ] ( operand | unit_arg )
               | "after" ":" ( "#" IDENT | "(" order_ref { "," order_ref } ")" ) ;   (* R-15 *)
 order_ref     = operand | "#" IDENT ;
-unit_arg      = "[" unit_expr "]" ;                     (* with_unit(x, [V]) (R-5) *)
+unit_arg      = "[" unit_expr "]" ;                     (* core.with_unit(x, [V]) (R-5) *)
 operand       = path | literal ;                        (* path: value, field, variant, category *)
 struct_lit    = path "{" field_init { "," field_init } [ "," ] "}" ;
 field_init    = IDENT ":" operand ;
@@ -1391,7 +1398,7 @@ What the grammar alone does not say:
 | R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12). **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
 | R-3 | **A `carry` can shadow an outer name** (`carry err = err`): in the body, the name designates the carry. |
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
-| R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`with_unit(x, [V])`, `unitless(v, [mV])`, `with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
+| R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
 | R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, same types; a value with a unit needs the same dimension, and the other branches are converted to the unit of the first branch. |
 | R-8 | **A `match` on an enumeration is exhaustive**, otherwise `_` is required. |
@@ -1416,7 +1423,7 @@ What the grammar alone does not say:
 | Q-2 | `duration` distinct from `f64[s]`? | Yes for readability, implicit conversion between the two |
 | Q-3 | Temperatures and offset units | Rule 3.3; check the case of averaging temperatures |
 | Q-4 | `i64` to `f64` | Explicit, since precision can be lost |
-| Q-5 | Allow nesting `add(mul(a, b), c)`? | **Settled (2026-10-30): no in v0.** One node per line; can be added later without breaking files |
+| Q-5 | Allow nesting `core.add(core.mul(a, b), c)`? | **Settled (2026-10-30): no in v0.** One node per line; can be added later without breaking files |
 | Q-6 | Make parallelism visible in the text | Parallelism is visible in the diagram, but D-08 also asks for it in the text. The canonical form (5.2) does not mark independent branches yet, because "independent branch" needs a precise definition. To revisit on real examples |
 | Q-7 | Stopping a loop on error | **Settled (2026-10-31): stop by default** when an `error` carry holds an error, `continue_on_error` to avoid it (6.3) |
 | Q-8 | Retry | Generic `retry` function or documented loop pattern |
@@ -1436,7 +1443,8 @@ What the grammar alone does not say:
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
-| Q-25 | Fault or error at run time | Integer overflow, `to_i32` of `nan` or out of range, integer division by zero: a fault (8.2), an `error` value on `err`, or a default value? |
+| Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range, integer division by zero: a fault (8.2), an `error` value on `err`, or a default value? |
+| Q-26 | Name of a function and name of its file | Nothing ties them today: `math.lcf` can hold `fn scale`, and a file copied to another folder and renamed gives `LC2002`, unknown function, although the file is there. **Option A:** `fn scale` stays in the file and `check` requires the file `scale.lcf`, with one error on a renamed copy; an excerpt still says its name and the format does not change. **Option B:** no name in the file, the name of the file decides; a renamed copy works at once, but the grammar changes and an excerpt no longer says its name. Either way, names are limited by what file systems allow (`Add` and `add`, `con`, `nul`). To settle before the tag of M0a. |
 
 ## Appendix A. Library signatures (v0)
 
@@ -1455,35 +1463,35 @@ declarations without a body. Conventions:
 ### A.1 `core`
 
 ```text
-fn add<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a` (3.3)
-fn sub<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a`
-fn mul<A: Number, B: Number>(a: A, b: B) -> (result: A·B)  // exponents add
-fn div<A: Number, B: Number>(a: A, b: B) -> (result: A/B)  // exponents subtract; x/0: inf or nan
-fn abs<N: Number>(x: N) -> (result: N)
-fn neg<N: Number>(x: N) -> (result: N)
-fn sqrt<N: Number>(x: N) -> (result: √N)                   // exponents halved; rejected if odd
-fn pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; not in the PoC
-fn min<N: Number>(a: N, b: N) -> (result: N)               // same dimension
-fn max<N: Number>(a: N, b: N) -> (result: N)               // same dimension
+fn core.add<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a` (3.3)
+fn core.sub<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a`
+fn core.mul<A: Number, B: Number>(a: A, b: B) -> (result: A·B)  // exponents add
+fn core.div<A: Number, B: Number>(a: A, b: B) -> (result: A/B)  // exponents subtract; x/0: inf or nan
+fn core.abs<N: Number>(x: N) -> (result: N)
+fn core.neg<N: Number>(x: N) -> (result: N)
+fn core.sqrt<N: Number>(x: N) -> (result: √N)                   // exponents halved; rejected if odd
+fn core.pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; not in the PoC
+fn core.min<N: Number>(a: N, b: N) -> (result: N)               // same dimension
+fn core.max<N: Number>(a: N, b: N) -> (result: N)               // same dimension
 
-fn lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge
-fn eq<T>(a: T, b: T) -> (result: bool)                     // same for ne
-fn and(a: bool, b: bool) -> (result: bool)                 // same for or
-fn not(a: bool) -> (result: bool)
-fn select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
+fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge
+fn core.eq<T>(a: T, b: T) -> (result: bool)                     // same for ne
+fn core.and(a: bool, b: bool) -> (result: bool)                 // same for or
+fn core.not(a: bool) -> (result: bool)
+fn core.select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
-fn with_unit(x: f64, unit: kind unit) -> (result: f64[unit])     // `with_unit(raw, [V])`
-fn unitless<N: Number>(x: N, unit: kind unit) -> (result: f64)   // unit of the dimension of `x`
-fn to_i32(x: f64) -> (result: i32)                         // narrowing (3.4); not in the PoC
-fn round_to_i32(x: f64) -> (result: i32)                   // not in the PoC
-fn to_f32(x: f64) -> (result: f32)                         // not in the PoC
+fn core.with_unit(x: f64, unit: kind unit) -> (result: f64[unit])     // `core.with_unit(raw, [V])`
+fn core.unitless<N: Number>(x: N, unit: kind unit) -> (result: f64)   // unit of the dimension of `x`
+fn core.to_i32(x: f64) -> (result: i32)                         // narrowing (3.4); not in the PoC
+fn core.round_to_i32(x: f64) -> (result: i32)                   // not in the PoC
+fn core.to_f32(x: f64) -> (result: f32)                         // not in the PoC
 ```
 
-`call` runs a function reference (section 4); its inputs after the first and its outputs are those
+`core.call` runs a function reference (section 4); its inputs after the first and its outputs are those
 of the referenced function. Not in the PoC.
 
 ```text
-fn call(function: fn(…) -> (…), …) -> (…)
+fn core.call(function: fn(…) -> (…), …) -> (…)
 ```
 
 ### A.2 `array`, `string`, `time`, `errors`, `ui`

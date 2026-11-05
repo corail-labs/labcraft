@@ -1,5 +1,7 @@
 labcraft 1
 
+use core
+
 /// Shot of a projectile with air drag, in Euler steps of `dt`, until it returns to the ground.
 /// Quadratic drag F = -drag·|v|·v, where `drag` is ½·ρ·Cd·A; `drag = 0 kg/m` gives the
 /// parabola without drag. No instrument: the units check every formula.
@@ -11,7 +13,7 @@ fn projectile(
     dt: f64[s] = 10 ms,
 ) -> (flight_time: f64[s], range: f64[m], apex: f64[m]) {
     g = 9.81 m/s^2
-    k = div(drag, mass)
+    k = core.div(drag, mass)
     flight_time, range, _, _, _, apex = loop
         carry t = 0 s,
         carry x = 0 m,
@@ -20,27 +22,27 @@ fn projectile(
         carry vy = vy0,
         carry top = 0 m
     {
-        dx = mul(vx, dt)
-        dy = mul(vy, dt)
-        ny = add(y, dy)
-        landed = le(ny, 0 m)
-        vx2 = mul(vx, vx)
-        vy2 = mul(vy, vy)
-        v2 = add(vx2, vy2)
-        speed = sqrt(v2)
-        ks = mul(k, speed)
-        kvx = mul(ks, vx)
-        ax = neg(kvx)
-        dvx = mul(ax, dt)
-        kvy = mul(ks, vy)
-        drag_y = neg(kvy)
-        ay = sub(drag_y, g)
-        dvy = mul(ay, dt)
-        next t = add(t, dt)
-        next top = max(top, ny)
-        next vx = add(vx, dvx)
-        next vy = add(vy, dvy)
-        next x = add(x, dx)
+        dx = core.mul(vx, dt)
+        dy = core.mul(vy, dt)
+        ny = core.add(y, dy)
+        landed = core.le(ny, 0 m)
+        vx2 = core.mul(vx, vx)
+        vy2 = core.mul(vy, vy)
+        v2 = core.add(vx2, vy2)
+        speed = core.sqrt(v2)
+        ks = core.mul(k, speed)
+        kvx = core.mul(ks, vx)
+        ax = core.neg(kvx)
+        dvx = core.mul(ax, dt)
+        kvy = core.mul(ks, vy)
+        drag_y = core.neg(kvy)
+        ay = core.sub(drag_y, g)
+        dvy = core.mul(ay, dt)
+        next t = core.add(t, dt)
+        next top = core.max(top, ny)
+        next vx = core.add(vx, dvx)
+        next vy = core.add(vy, dvy)
+        next x = core.add(x, dx)
         next y = ny
         until landed
     }

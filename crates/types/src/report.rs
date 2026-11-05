@@ -399,9 +399,9 @@ mod tests {
     fn the_json_is_the_one_of_the_documentation() {
         let mut report = Report::new(1000);
         report.push(Diagnostic {
-            span: Some(Span { start: Position { line: 9, column: 22 }, end: Position { line: 9, column: 29 } }),
+            span: Some(Span { start: Position { line: 9, column: 27 }, end: Position { line: 9, column: 34 } }),
             function: Some("power".to_owned()),
-            node: Some(Node { name: Some("p".to_owned()), text: "p = add(voltage, current)".to_owned() }),
+            node: Some(Node { name: Some("p".to_owned()), text: "p = core.add(voltage, current)".to_owned() }),
             wires: vec![
                 Wire { value: Some("voltage".to_owned()), from: Some("fn.voltage".to_owned()), to: Some("p.a".to_owned()) },
                 Wire { value: Some("current".to_owned()), from: Some("current.result".to_owned()), to: Some("p.b".to_owned()) },
@@ -422,9 +422,9 @@ mod tests {
                     "severity": "error",
                     "message": "cannot add `f64[V]` and `f64[A]`: different dimensions",
                     "file": "bench/power.lcf",
-                    "span": { "start": { "line": 9, "column": 22 }, "end": { "line": 9, "column": 29 } },
+                    "span": { "start": { "line": 9, "column": 27 }, "end": { "line": 9, "column": 34 } },
                     "function": "power",
-                    "node": { "name": "p", "text": "p = add(voltage, current)" },
+                    "node": { "name": "p", "text": "p = core.add(voltage, current)" },
                     "wires": [
                         { "value": "voltage", "from": "fn.voltage", "to": "p.a" },
                         { "value": "current", "from": "current.result", "to": "p.b" }
@@ -442,8 +442,8 @@ mod tests {
         let span = |line, column, end| Span { start: Position { line, column }, end: Position { line, column: end } };
         let diagnostic = Diagnostic {
             fixes: vec![Fix {
-                title: "Convert with `round_to_i32`".to_owned(),
-                edits: vec![Edit { span: span(4, 5, 5), text: "n2 = round_to_i32(x)\n    ".to_owned() }],
+                title: "Convert with `core.round_to_i32`".to_owned(),
+                edits: vec![Edit { span: span(4, 5, 5), text: "n2 = core.round_to_i32(x)\n    ".to_owned() }],
             }],
             related: vec![Related {
                 message: "`voltage` is already defined here".to_owned(),
@@ -456,10 +456,10 @@ mod tests {
         assert_eq!(
             value["fixes"],
             json!([{
-                "title": "Convert with `round_to_i32`",
+                "title": "Convert with `core.round_to_i32`",
                 "edits": [{
                     "span": { "start": { "line": 4, "column": 5 }, "end": { "line": 4, "column": 5 } },
-                    "text": "n2 = round_to_i32(x)\n    "
+                    "text": "n2 = core.round_to_i32(x)\n    "
                 }]
             }])
         );

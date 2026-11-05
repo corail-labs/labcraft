@@ -21,11 +21,12 @@ SESSION, ERROR, ORDER, FUNCTION = "session", "error", "order", "function"
 
 INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"}
 NUM_TYPES = INT_TYPES | {"f32", "f64", "c64", "c128", "duration", "timestamp"}
-PRIMITIVES = {"add": "+", "sub": "−", "mul": "×", "div": "÷", "abs": "|x|", "ge": "≥", "le": "≤", "gt": ">",
-              "lt": "<", "eq": "=", "ne": "≠", "and": "∧", "or": "∨", "not": "¬", "select": "?",
-              "with_unit": "[V]", "unitless": "[·]"}
-BOOL_OUT = {"ge", "le", "gt", "lt", "eq", "ne", "and", "or", "not", "errors.is_none"}
-KEEP_UNIT_OF_FIRST = {"add", "sub", "abs", "neg", "min", "max"}
+PRIMITIVES = {"core.add": "+", "core.sub": "−", "core.mul": "×", "core.div": "÷", "core.abs": "|x|", "core.ge": "≥",
+              "core.le": "≤", "core.gt": ">", "core.lt": "<", "core.eq": "=", "core.ne": "≠", "core.and": "∧",
+              "core.or": "∨", "core.not": "¬", "core.select": "?", "core.with_unit": "[V]", "core.unitless": "[·]"}
+BOOL_OUT = {"core.ge", "core.le", "core.gt", "core.lt", "core.eq", "core.ne", "core.and", "core.or", "core.not",
+            "errors.is_none"}
+KEEP_UNIT_OF_FIRST = {"core.add", "core.sub", "core.abs", "core.neg", "core.min", "core.max"}
 MAX_PILL = 26
 
 
@@ -454,13 +455,13 @@ class Builder:
             b = res[1]
             node.always = b.always
             node.callee_kind = "builtin"
-            if qname in PRIMITIVES and "." not in qname:
+            if qname in PRIMITIVES:
                 node.kind = "prim"
                 node.glyph = PRIMITIVES[qname]
-                if qname in ("with_unit", "unitless"):
+                if qname in ("core.with_unit", "core.unitless"):
                     u = call.bound.get("unit")
                     unit_txt = (u[0].value if u[0].kind == "unit" else u[0].text) if u else "V"
-                    node.glyph = f"[{unit_txt}]" if qname == "with_unit" else f"[{unit_txt}]"
+                    node.glyph = f"[{unit_txt}]" if qname == "core.with_unit" else f"[{unit_txt}]"
                     node.unit_arg = unit_txt
             params = [(p.name, p.default is stdlib.REQ, p.kind, Ty(NUMBER)) for p in b.params]
             outs = self.builtin_outs(qname, b, call, scope)
@@ -506,7 +507,7 @@ class Builder:
             if a0:
                 first_unit = self.ty_of(a0[0], scope).unit
         for oname in b.outs:
-            if qname in BOOL_OUT or oname == "result" and qname in ("ge", "le", "gt", "lt", "eq", "ne"):
+            if qname in BOOL_OUT or oname == "result" and qname in ("core.ge", "core.le", "core.gt", "core.lt", "core.eq", "core.ne"):
                 ty = Ty(BOOL, base="bool")
             elif oname == "err":
                 ty = Ty(ERROR, base="error")
@@ -516,14 +517,14 @@ class Builder:
                 ty = Ty(TEXT, base="string")
             elif oname == "array":
                 ty = Ty(ARRAY, elem=Ty(NUMBER))
-            elif qname == "with_unit":
+            elif qname == "core.with_unit":
                 u = call.bound.get("unit")
                 ty = Ty(NUMBER, (u[0].value if u[0].kind == "unit" else u[0].text) if u else None, "f64")
             elif qname == "dmm_driver.read_dc_volts" and oname == "volts":
                 ty = Ty(NUMBER, "V", "f64")
             elif qname in ("time.now", "time.elapsed"):
                 ty = Ty(NUMBER, "s", "duration" if qname == "time.elapsed" else "timestamp")
-            elif qname == "select":
+            elif qname == "core.select":
                 a1 = call.bound.get("if_true")
                 ty = self.ty_of(a1[0], scope) if a1 else Ty(NUMBER)
             elif qname == "array.get" and oname == "item":

@@ -122,5 +122,5 @@ limits).
   `extern.unavailable` on `err`.
 - Names and units are flagged by `fmt --check` when they are not in their one spelling (R-20), but
   are not normalized when read: `µV` and `μV` are different to `check` and `run`.
-- `unitless(230 mV, [V])` returns 0.23 (explicit unit, spec 3.3); `duration` is a quantity in seconds.
+- `core.unitless(230 mV, [V])` returns 0.23 (explicit unit, spec 3.3); `duration` is a quantity in seconds.
 - `results_log.append_csv` keeps the results in memory (reported by `run`) instead of writing a file.

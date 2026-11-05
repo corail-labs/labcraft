@@ -1,0 +1,11 @@
+{
+  "check": {
+    "exit": 0,
+    "codes": []
+  },
+  "fmt": {
+    "exit": 0,
+    "codes": [],
+    "changes": false
+  }
+}

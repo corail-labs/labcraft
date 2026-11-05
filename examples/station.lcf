@@ -1,6 +1,7 @@
 labcraft 1
 
 use array
+use core
 use results_log
 
 /// Self-test, then for each of the `dut_count` products: wait, run the steps until the first failure, report.
@@ -20,24 +21,24 @@ fn station(bench: Bench, steps: [Step], dut_count: i32 = 1, err: error = none) -
             }
             State.WaitDut => {
                 present, e2 = wait_dut(bench, timeout: 30 s, err: err)
-                s = select(present, State.RunStep, State.WaitDut)
+                s = core.select(present, State.RunStep, State.WaitDut)
                 yield (s, 0, [], tested, e2, false)
             }
             State.RunStep => {
-                i2 = add(index, 1)
-                more = lt(i2, n)
+                i2 = core.add(index, 1)
+                more = core.lt(i2, n)
                 step, e5 = array.get(steps, index, err: err)
                 r, e3 = run_step(bench, step, err: e5)
                 all = array.push(results, r)
-                go_on = and(more, r.passed)
-                s = select(go_on, State.RunStep, State.Report)
+                go_on = core.and(more, r.passed)
+                s = core.select(go_on, State.RunStep, State.Report)
                 yield (s, i2, all, tested, e3, false)
             }
             State.Report => {
                 e4 = results_log.append_csv(results, err: err)
-                t2 = add(tested, 1)
-                again = lt(t2, dut_count)
-                s = select(again, State.WaitDut, State.Stop)
+                t2 = core.add(tested, 1)
+                again = core.lt(t2, dut_count)
+                s = core.select(again, State.WaitDut, State.Stop)
                 yield (s, 0, [], t2, e4, false)
             }
             State.Stop => yield (State.Stop, index, results, tested, err, true)

@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use errors
 use scpi
 use visa
@@ -17,6 +18,6 @@ fn read_in_out(
     raw_out, dmm_out2, e5 = scpi.query_f64(dmm_out, "MEAS:VOLT:DC?", err: e4)
     #close_out: e6 = visa.close(dmm_out2, err: e5)
     err = errors.merge(e3, e6)
-    v_in = with_unit(raw_in, [V])
-    v_out = with_unit(raw_out, [V])
+    v_in = core.with_unit(raw_in, [V])
+    v_out = core.with_unit(raw_out, [V])
 }

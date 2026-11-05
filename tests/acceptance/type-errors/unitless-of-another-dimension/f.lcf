@@ -1,5 +1,7 @@
 labcraft 1
 
+use core
+
 fn f(voltage: f64[V]) -> (n: f64) {
-    n = unitless(voltage, [A])
+    n = core.unitless(voltage, [A])
 }

@@ -56,7 +56,7 @@ fn the_stored_hostile_files_give_the_codes_that_fmt_expects() {
         let found: BTreeSet<String> = files.iter().flat_map(|file| codes_of(&fs::read(file).unwrap())).collect();
         assert_eq!(found, expected, "{name}");
     }
-    assert_eq!(cases, 27);
+    assert_eq!(cases, 30);
 }
 
 #[test]

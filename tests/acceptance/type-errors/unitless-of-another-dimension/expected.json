@@ -12,18 +12,18 @@
       "file": "f.lcf",
       "span": {
         "start": {
-          "line": 4,
-          "column": 27
+          "line": 6,
+          "column": 32
         },
         "end": {
-          "line": 4,
-          "column": 30
+          "line": 6,
+          "column": 35
         }
       },
       "function": "f",
       "node": {
         "name": "n",
-        "text": "n = unitless(voltage, [A])"
+        "text": "n = core.unitless(voltage, [A])"
       },
       "wires": [
         {

@@ -1,8 +1,10 @@
 labcraft 1
 
+use core
+
 fn f() -> (x: i32) {
     x = loop carry n = 0 {
-        next n = add(n, 1)
+        next n = core.add(n, 1)
         until false
     }
 }

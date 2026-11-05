@@ -163,9 +163,9 @@ mod tests {
     #[test]
     fn a_diagnostic_reads_as_the_documentation_shows() {
         let mut diagnostic =
-            Diagnostic::new(Code::Lc3002, "cannot add `f64[V]` and `f64[A]`: different dimensions", "bench/power.lcf").with_span(at(9, 22));
+            Diagnostic::new(Code::Lc3002, "cannot add `f64[V]` and `f64[A]`: different dimensions", "bench/power.lcf").with_span(at(9, 27));
         diagnostic.function = Some("power".to_owned());
-        diagnostic.node = Some(Node { name: Some("p".to_owned()), text: "p = add(voltage, current)".to_owned() });
+        diagnostic.node = Some(Node { name: Some("p".to_owned()), text: "p = core.add(voltage, current)".to_owned() });
         diagnostic.wires = vec![
             Wire { value: Some("voltage".to_owned()), from: Some("fn.voltage".to_owned()), to: Some("p.a".to_owned()) },
             Wire { value: Some("current".to_owned()), from: Some("current.result".to_owned()), to: Some("p.b".to_owned()) },
@@ -174,8 +174,8 @@ mod tests {
         diagnostic.found = Some("f64[A]".to_owned());
         assert_eq!(
             text_of(&diagnostic),
-            "bench/power.lcf:9:22: error[LC3002]: cannot add `f64[V]` and `f64[A]`: different dimensions\n\
-             \x20 in function `power`, node `p`: p = add(voltage, current)\n\
+            "bench/power.lcf:9:27: error[LC3002]: cannot add `f64[V]` and `f64[A]`: different dimensions\n\
+             \x20 in function `power`, node `p`: p = core.add(voltage, current)\n\
              \x20 wire `voltage`: fn.voltage -> p.a\n\
              \x20 wire `current`: current.result -> p.b\n\
              \x20 expected `f64[V]`, found `f64[A]`\n"

@@ -113,37 +113,37 @@ fn t(err: error = none) -> (err: error) {
     def test_projectile_unit_slip(self):
         # a velocity added to a position: rejected, not a wrong number
         src = (ROOT / "examples" / "projectile.lcf").read_text(encoding="utf-8")
-        slip = src.replace("next x = add(x, dx)", "next x = add(x, vx)")
+        slip = src.replace("next x = core.add(x, dx)", "next x = core.add(x, vx)")
         self.assertNotEqual(src, slip)
         with tempfile.TemporaryDirectory() as td:
             lib_dir(td, {"projectile.lcf": slip})
             r = run("projectile", None, {"vx0": "10 m/s", "vy0": "10 m/s", "mass": "0.1 kg"}, folder=td)
         self.assertEqual(r["fault"]["category"], "lcf.unit_mismatch")
-        self.assertEqual(r["fault"]["line"], slip.splitlines().index("        next x = add(x, vx)") + 1)
+        self.assertEqual(r["fault"]["line"], slip.splitlines().index("        next x = core.add(x, vx)") + 1)
 
 
 class Language(unittest.TestCase):
-    HEADER = "labcraft 1\n\nuse visa\nuse dmm_driver\nuse time\nuse errors\n\n"
+    HEADER = "labcraft 1\n\nuse core\nuse visa\nuse dmm_driver\nuse time\nuse errors\n\n"
     FNS = """fn sum_scaled(readings: [f64[V]]) -> (total: f64[V], scaled: [f64[V]]) {
     total, scaled = for x in readings, carry acc = 0 V {
-        s = mul(x, 2.0)
-        next acc = add(acc, x)
+        s = core.mul(x, 2.0)
+        next acc = core.add(acc, x)
         collect s
     }
 }
 
 fn units() -> (a: f64[mV], p: f64[W], z: f64) {
-    a = add(500 mV, 0.2 V)
+    a = core.add(500 mV, 0.2 V)
     r = 10 Ω
     i = 2 A
-    v = mul(r, i)
-    p = mul(v, i)
-    q = div(v, 4 V)
+    v = core.mul(r, i)
+    p = core.mul(v, i)
+    q = core.div(v, 4 V)
     z = q
 }
 
 fn bad_units() -> (x: f64[V]) {
-    x = add(1 V, 2 A)
+    x = core.add(1 V, 2 A)
 }
 
 fn guard(resource: string, err: error = none) -> (value: f64[V], err: error) {
@@ -181,16 +181,16 @@ fn classify(n: i32) -> (label: string) {
 
 fn count_to(limit: i32) -> (n: i32) {
     n = loop carry c = 0 {
-        next c = add(c, 1)
-        done = ge(c, limit)
+        next c = core.add(c, 1)
+        done = core.ge(c, limit)
         until done
     }
 }
 
 fn spin() -> (n: i32) {
     n = loop carry c = 0 {
-        next c = add(c, 1)
-        never = lt(c, 0)
+        next c = core.add(c, 1)
+        never = core.lt(c, 0)
         until never
     }
 }
@@ -201,8 +201,8 @@ fn probe(err: error = none) -> (err: error) {
         e1 = errors.raise_if(true, io.timeout, "boom", err: e)
         e2 = time.wait(50 ms, err: e1)
         t = time.elapsed(t0)
-        done = gt(t, 1 s)
-        next n = add(n, 1)
+        done = core.gt(t, 1 s)
+        next n = core.add(n, 1)
         next e = e2
         until done
     }
@@ -215,8 +215,8 @@ fn probe_continue(err: error = none) -> (err: error) {
         e1 = errors.raise_if(true, io.timeout, "boom", err: e)
         e2 = time.wait(50 ms, err: e1)
         t = time.elapsed(t0)
-        done = gt(t, 1 s)
-        next n = add(n, 1)
+        done = core.gt(t, 1 s)
+        next n = core.add(n, 1)
         next e = e2
         until done
     }
@@ -224,8 +224,8 @@ fn probe_continue(err: error = none) -> (err: error) {
 }
 
 fn strip() -> (a: f64, b: f64) {
-    a = unitless(230 mV, [V])
-    b = unitless(230 mV, [mV])
+    a = core.unitless(230 mV, [V])
+    b = core.unitless(230 mV, [mV])
 }
 
 fn cleanup(dmm: visa.session, err: error = none) -> (err: error) {
@@ -245,7 +245,7 @@ fn forever(x: i32) -> (y: i32) {
 }
 
 fn order() -> (a: i32, b: i32) {
-    b = add(a, 1)
+    b = core.add(a, 1)
     a = 41
 }
 """
@@ -287,7 +287,7 @@ fn order() -> (a: i32, b: i32) {
         r = self.r("bad_units")
         self.assertEqual(r["fault"]["category"], "lcf.unit_mismatch")
         self.assertEqual(r["fault"]["function"], "bad_units")
-        self.assertEqual(r["fault"]["line"], 9)
+        self.assertEqual(r["fault"]["line"], 10)
 
     def test_handle(self):
         r = self.r("guard", "dmm-230V.toml", {"resource": "SIM::DMM0"})
@@ -353,7 +353,7 @@ fn order() -> (a: i32, b: i32) {
 class Syntax(unittest.TestCase):
     """New syntax of the v0 grammar: one test per feature (spec section 14)."""
 
-    HEADER = "labcraft 1\n\nuse time\nuse errors\nuse array\n\n"
+    HEADER = "labcraft 1\n\nuse core\nuse time\nuse errors\nuse array\n\n"
 
     def lib(self, files):
         td = tempfile.TemporaryDirectory()
@@ -371,16 +371,23 @@ class Syntax(unittest.TestCase):
         self.assertTrue(hits, rep["diagnostics"])
         return hits[0]
 
+    def test_own_function_named_like_core(self):
+        rep, r = self.fn("fn f(a: i32) -> (x: i32, y: i32) {\n    x = add(a, 2)\n    y = core.add(a, 2)\n}\n",
+                         args={"a": 5},
+                         **{"add.lcf": "fn add(a: i32, b: i32) -> (result: i32) {\n    result = core.mul(a, b)\n}\n"})
+        self.assertTrue(rep["ok"], rep["diagnostics"])
+        self.assertEqual(r["outputs"], {"x": 10, "y": 7})
+
     def test_unit_argument_in_brackets(self):
         _, r = self.fn("""fn u(x: f64) -> (v: f64[m/s], n: i32) {
     n = array.len([y])
-    v = with_unit(x, [m/s])
-    y = add(x, 1)
+    v = core.with_unit(x, [m/s])
+    y = core.add(x, 1)
 }
 """, args={"x": 3})
         self.assertEqual(r["outputs"]["v"], {"value": 3.0, "unit": "m/s"})
         self.assertEqual(r["outputs"]["n"], 1)  # `[x]` given to a value parameter: an array (R-5)
-        rep, _ = self.fn("fn u(x: f64) -> (v: f64[V]) {\n    v = with_unit(x, V)\n}\n")
+        rep, _ = self.fn("fn u(x: f64) -> (v: f64[V]) {\n    v = core.with_unit(x, V)\n}\n")
         self.diag(rep, "written in brackets")
 
     def test_contextual_words(self):
@@ -388,7 +395,7 @@ class Syntax(unittest.TestCase):
     e1 = errors.raise_if(true, io.timeout, "boom")
     ok = errors.is_none(e1)
     code = e1.code
-    low = max(x, -inf)
+    low = core.max(x, -inf)
 }
 """, args={"x": 2})
         self.assertTrue(rep["ok"], rep["diagnostics"])
@@ -433,12 +440,12 @@ class Syntax(unittest.TestCase):
         self.assertEqual(r["sim"]["time_ms"], 70.0)
 
     def test_two_statements_on_one_line_are_rejected(self):
-        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    x = add(a, 1) b = x\n}\n")
+        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    x = core.add(a, 1) b = x\n}\n")
         d = self.diag(rep, "share a line")
-        self.assertEqual(d["line"], 8)
-        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    b =\n        add(a, 1)\n}\n")
+        self.assertEqual(d["line"], 9)
+        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    b =\n        core.add(a, 1)\n}\n")
         self.diag(rep, "a line ending ends a statement")
-        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    b = add(a,\n            1)\n}\n")  # inside ( ): ignored
+        rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    b = core.add(a,\n            1)\n}\n")  # inside ( ): ignored
         self.assertTrue(rep["ok"], rep["diagnostics"])
 
     def test_variant_pattern_binds_several_names(self):
@@ -446,7 +453,7 @@ class Syntax(unittest.TestCase):
     p = Pair.Two(a, b)
     s = match p {
         Pair.Two(x, y) => {
-            t = add(x, y)
+            t = core.add(x, y)
             yield t
         }
         Pair.Empty => yield 0
@@ -471,8 +478,8 @@ class Syntax(unittest.TestCase):
         bad = {
             "next in a function body": "    next b = a",
             "`until` in a `for`": "    b = for x in [a] {\n        until true\n    }",
-            "`loop` without `until`": loop.format("        next n = add(n, 1)"),
-            "two `until`": loop.format("        next n = add(n, 1)\n        until true\n        until true"),
+            "`loop` without `until`": loop.format("        next n = core.add(n, 1)"),
+            "two `until`": loop.format("        next n = core.add(n, 1)\n        until true\n        until true"),
             "`next` in an arm": loop.format("        x = match a {\n            _ => {\n                next n = 1\n"
                                             "                yield true\n            }\n        }\n        until x"),
             "`for` without `in`": "    b = for carry c = 0 {\n        next c = 1\n    }",
@@ -492,7 +499,7 @@ class Syntax(unittest.TestCase):
 
     def test_layout_wire_terminals(self):
         rep, _ = self.fn("""fn w(a: i32) -> (b: i32) {
-    #inc: b = add(a, 1)
+    #inc: b = core.add(a, 1)
 }
 
 layout {
@@ -511,12 +518,12 @@ layout {
             fn, _, _, _ = lower_file(src, f.name, parse(src))
             self.assertEqual(check_fn(fn), [], f.name)
         src = (Path(EX) / "check_voltage.lcf").read_text(encoding="utf-8")
-        swapped = src.replace("    above = ge(voltage, low)\n    below = le(voltage, high)\n",
-                              "    below = le(voltage, high)\n    above = ge(voltage, low)\n")
+        swapped = src.replace("    above = core.ge(voltage, low)\n    below = core.le(voltage, high)\n",
+                              "    below = core.le(voltage, high)\n    above = core.ge(voltage, low)\n")
         self.assertNotEqual(src, swapped)
         fn, _, _, _ = lower_file(swapped, "x.lcf", parse(swapped))
         (line, msg), = check_fn(fn)
-        self.assertIn("expected `above = ge(…)`", msg)
+        self.assertIn("expected `above = core.ge(…)`", msg)
 
     def test_canonical_skipped_on_edit_time_error(self):
         from lcfpoc.canon import check_fn
@@ -528,17 +535,17 @@ layout {
             fn, _, _, _ = lower_file(src, "f.lcf", parse(src))
             return check_fn(fn)
         # a name the file does not define creates no dependency: the body is still ordered (5.2)
-        self.assertEqual(len(probs("    z = add(q, 1)\n    b = add(a, 1)\n    x = b\n")), 1)
+        self.assertEqual(len(probs("    z = core.add(q, 1)\n    b = core.add(a, 1)\n    x = b\n")), 1)
         # value defined twice: written order kept
-        self.assertEqual(probs("    z = add(a, 1)\n    z = add(a, 2)\n    b = add(a, 1)\n    x = b\n"), [])
+        self.assertEqual(probs("    z = core.add(a, 1)\n    z = core.add(a, 2)\n    b = core.add(a, 1)\n    x = b\n"), [])
         # the same for an output that is also an input, and for a label
-        self.assertEqual(probs("    x = a\n    x = add(a, 1)\n    b = add(a, 1)\n"), [])
-        self.assertEqual(probs("    #l: z = add(a, 1)\n    #l: b = add(a, 1)\n    x = b\n"), [])
+        self.assertEqual(probs("    x = a\n    x = core.add(a, 1)\n    b = core.add(a, 1)\n"), [])
+        self.assertEqual(probs("    #l: z = core.add(a, 1)\n    #l: b = core.add(a, 1)\n    x = b\n"), [])
         # cycle: written order kept
-        self.assertEqual(probs("    m = add(a, 1)\n    b = add(a, 1)\n    z = add(y, 1)\n"
-                               "    y = add(z, b)\n    x = add(m, y)\n"), [])
+        self.assertEqual(probs("    m = core.add(a, 1)\n    b = core.add(a, 1)\n    z = core.add(y, 1)\n"
+                               "    y = core.add(z, b)\n    x = core.add(m, y)\n"), [])
         # an ordinary body that reads an input is still checked
-        self.assertEqual(len(probs("    m = add(a, 2)\n    b = add(a, 1)\n    x = add(m, b)\n")), 1)
+        self.assertEqual(len(probs("    m = core.add(a, 2)\n    b = core.add(a, 1)\n    x = core.add(m, b)\n")), 1)
 
     def test_layout_items_of_panel_and_layout(self):
         head = "labcraft 1\n\nfn f(a: i32, b: i32) -> (x: i32, y: i32) {}\n\n"
@@ -604,18 +611,18 @@ layout {
             parse("labcraft 1\n\nfn f() -> (x: i32) {\n    x = \u0663\n}\n")
 
     def test_layout_fn_type_unary_minus_trailing_comment(self):
-        g = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n    x = add(a, -1)\n}\n"
+        g = "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n    x = core.add(a, -1)\n}\n"
         self.assertEqual(self.layout(g), [])
         self.assertBreaks(g.replace("-1", "- 1"), 4, "unary minus")
         t = ("labcraft 1\n\nfn f(m: fn(visa.session, err: error) -> (x: i32)) -> (x: i32) {\n"
-             "    x = add(1, 2)\n}\n")
+             "    x = core.add(1, 2)\n}\n")
         self.assertEqual(self.layout(t), [])
         self.assertBreaks(t.replace("fn(visa", "fn (visa"), 3, "no space between `fn`")
-        body = "    x = add(a, -1)\n"
+        body = "    x = core.add(a, -1)\n"
         self.assertEqual(self.layout(g.replace(body, body + "    // trailing\n")), [])
         self.assertBreaks(g.replace(body, body + "// trailing\n"), 5, "indentation")
         self.assertBreaks(g.replace(body, body + "        // trailing\n"), 5, "indentation")
-        m = ("labcraft 1\n\nfn f() -> () {\n    m = match 1 {\n        _ => {\n            q = add(1, 2)\n            yield q\n%s"
+        m = ("labcraft 1\n\nfn f() -> () {\n    m = match 1 {\n        _ => {\n            q = core.add(1, 2)\n            yield q\n%s"
              "        }\n    }\n}\n")
         self.assertEqual(self.layout(m % "            // trailing\n"), [])
         self.assertBreaks(m % "        // trailing\n", 8, "indentation")
@@ -635,7 +642,7 @@ layout {
 
     GOOD_LAYOUT = (
         "labcraft 1\n\nuse a\nuse b\n\n// note\n/// Doc.\nfn f(x: i32 = 1, y: f64[V] = 2 V) -> (z: i32) {\n"
-        "    z = add(x, 1) // end\n    m = match z {\n        true => yield 1\n    }\n}\n")
+        "    z = core.add(x, 1) // end\n    m = match z {\n        true => yield 1\n    }\n}\n")
 
     def layout(self, src):
         from lcfpoc.layout import check_layout
@@ -657,7 +664,7 @@ layout {
         self.assertBreaks(g.replace("\n", "\r\n"), 1, "CR LF")
         self.assertBreaks(g[:-1], 13, "does not end with a line feed")
         self.assertBreaks(g + "\n", 14, "more than one line feed")
-        self.assertBreaks(g.replace("add(x, 1) // end", "add(x, 1) // end "), 9, "end of the line")
+        self.assertBreaks(g.replace("core.add(x, 1) // end", "core.add(x, 1) // end "), 9, "end of the line")
 
     def test_layout_sections(self):
         g = self.GOOD_LAYOUT
@@ -665,34 +672,34 @@ layout {
         self.assertBreaks(g.replace("use b\n\n", "use b\n"), 5, "separated by one blank line")
         self.assertBreaks(g.replace("// note\n", "// note\n\n"), 8, "no blank line")
         self.assertBreaks(g.replace("use b\n\n", "use b\n\n\n"), 7, "more than one blank")
-        self.assertBreaks(g.replace("    z = add", "\n    z = add"), 9, "inside a body")
+        self.assertBreaks(g.replace("    z = core.add", "\n    z = core.add"), 9, "inside a body")
         self.assertBreaks(g.replace("use a\nuse b", "use b\nuse a"), 3, "not sorted")
         self.assertBreaks(g + "panel {}\n", 14, "one blank line")
 
     def test_layout_indentation(self):
         g = self.GOOD_LAYOUT
-        self.assertBreaks(g.replace("    z = add", "  z = add"), 9, "expected 4")
-        self.assertBreaks(g.replace("    z = add", "\tz = add"), 9, "tab")
+        self.assertBreaks(g.replace("    z = core.add", "  z = core.add"), 9, "expected 4")
+        self.assertBreaks(g.replace("    z = core.add", "\tz = core.add"), 9, "tab")
         self.assertBreaks(g.replace("        true =>", "          true =>"), 11, "expected 8")
         self.assertBreaks(g.replace("// note", "  // note"), 6, "expected 0")
 
     def test_layout_spaces(self):
         g = self.GOOD_LAYOUT
-        self.assertBreaks(g.replace("add(x, 1)", "add(x,1)"), 9, "after a comma")
-        self.assertBreaks(g.replace("add(x, 1)", "add(x , 1)"), 9, "before a comma")
+        self.assertBreaks(g.replace("core.add(x, 1)", "core.add(x,1)"), 9, "after a comma")
+        self.assertBreaks(g.replace("core.add(x, 1)", "core.add(x , 1)"), 9, "before a comma")
         self.assertBreaks(g.replace("x: i32", "x : i32"), 8, "before `:`")
         self.assertBreaks(g.replace("x: i32", "x:i32"), 8, "after `:`")
-        self.assertBreaks(g.replace("z = add", "z= add"), 9, "each side of `=`")
+        self.assertBreaks(g.replace("z = core.add", "z= core.add"), 9, "each side of `=`")
         self.assertBreaks(g.replace("-> (z", "->(z"), 8, "each side of `->`")
         self.assertBreaks(g.replace("true =>", "true=>"), 11, "each side of `=>`")
-        self.assertBreaks(g.replace("add(x, 1)", "add( x, 1)"), 9, "after `(`")
-        self.assertBreaks(g.replace("add(x, 1)", "add(x, 1 )"), 9, "before `)`")
+        self.assertBreaks(g.replace("core.add(x, 1)", "core.add( x, 1)"), 9, "after `(`")
+        self.assertBreaks(g.replace("core.add(x, 1)", "core.add(x, 1 )"), 9, "before `)`")
         self.assertBreaks(g.replace("f64[V]", "f64[ V]"), 8, "after `[`")
         self.assertBreaks(g + "type T = struct {a: i32 }\n", 14, "after `{`")
         self.assertBreaks(g + "type T = struct { a: i32}\n", 14, "before `}`")
         self.assertBreaks(g.replace("2 V", "2V"), 8, "number `2` and its unit")
-        self.assertEqual(self.layout(g.replace("add(x, 1)", "add(x, 1e3)").replace("2 V", "4.7 kΩ")), [])
-        self.assertEqual(self.layout(g.replace("add(x, 1)", 'add("a,b  :{(", 1)')), [])
+        self.assertEqual(self.layout(g.replace("core.add(x, 1)", "core.add(x, 1e3)").replace("2 V", "4.7 kΩ")), [])
+        self.assertEqual(self.layout(g.replace("core.add(x, 1)", 'core.add("a,b  :{(", 1)')), [])
 
     def test_layout_alignment_and_comments(self):
         g = self.GOOD_LAYOUT
@@ -733,7 +740,7 @@ layout {
         self.assertBreaks(wide.replace("    {\n        until", "        {\n        until"), 7, "expected 4")
         self.assertBreaks(wide.replace("carry b = 1", "carry b = 1,"), 6, "no comma after the last")
         self.assertBreaks(wide.replace("= 0,", "= 0"), 5, "separated by commas")
-        self.assertBreaks(g.replace("add(x, 1)", "add(x,\n        1)"), 9, "stays on one line")
+        self.assertBreaks(g.replace("core.add(x, 1)", "core.add(x,\n        1)"), 9, "stays on one line")
 
     HDR = "labcraft 1\n\n"
 
@@ -762,7 +769,7 @@ layout {
     def test_layout_trailing_comma_one_line(self):
         self.assertBreaks(self.HDR + "type S = struct { a: i32, b: i32, }\n", 3, "no comma before `}`")
         self.assertBreaks(self.HDR + "type E = enum { A, B, }\n", 3, "no comma before `}`")
-        self.assertBreaks(self.body("    r = add(a, b,)\n"), 4, "no comma before `)`")
+        self.assertBreaks(self.body("    r = core.add(a, b,)\n"), 4, "no comma before `)`")
         self.assertEqual(self.layout(self.HDR + "type S = struct {}\n"), [])
         self.assertBreaks(self.HDR + "type S = struct { }\n", 3, "empty braces")
 
@@ -911,7 +918,7 @@ layout {
         self.assertBreaks(b("    r = match N {\n        1 => {\n            yield 1\n        }\n    }\n"), 5,
                           "only a `yield`")
         self.assertEqual(self.layout(b("    r = match N {\n        1 => yield 1\n        _ => {\n"
-                                       "            x = add(N, 1)\n            yield x\n        }\n    }\n")), [])
+                                       "            x = core.add(N, 1)\n            yield x\n        }\n    }\n")), [])
         self.assertBreaks(b("    r = for x in a { collect x }\n"), 4, "ends with `{`")
         self.assertBreaks(b("    r = match N {\n        1 => yield 1 }\n"), 5, "`}` stands alone")
 
@@ -940,7 +947,7 @@ layout {
     def test_layout_spaces_before_brackets(self):
         b = self.body
         self.assertBreaks(b("    r = yield(a, b)\n"), 4, "`yield` and `(`")
-        self.assertEqual(self.layout(b("    r = add(a, b)\n    s = io.timeout(err)\n")), [])
+        self.assertEqual(self.layout(b("    r = core.add(a, b)\n    s = io.timeout(err)\n")), [])
         self.assertBreaks(b("    r = io.timeout (err)\n"), 4, "no space between")
         h = b("    r = handle e {\n        code -1073807339 (err) => yield 1\n        _ => yield 2\n    }\n")
         self.assertEqual(self.layout(h), [])
@@ -1056,8 +1063,8 @@ layout {
         with tempfile.TemporaryDirectory() as td:
             lib_dir(td, {"myclose.lcf": ext % "close" + "fn myclose(hnd: string) -> (err: error)\n",
                          "later.lcf": ext % "none_yet" + "fn later() -> (v: f64[V], err: error)\n",
-                         "t.lcf": "labcraft 1\n\nfn t() -> (w: f64[V], err: error) {\n    v, e = later()\n"
-                                  "    w = add(v, 1 V)\n    err = e\n}\n"})
+                         "t.lcf": "labcraft 1\n\nuse core\n\nfn t() -> (w: f64[V], err: error) {\n    v, e = later()\n"
+                                  "    w = core.add(v, 1 V)\n    err = e\n}\n"})
             msgs = [d["message"] for d in api.check(td)["diagnostics"]]
             self.assertTrue(any("differs from its native body" in m for m in msgs), msgs)
             (Path(td) / "myclose.lcf").unlink()
@@ -1099,7 +1106,7 @@ fn t(values: [f64[V]]) -> (err: error) {
 
     def test_list_shows_the_libraries_a_caller_can_use(self):
         names = {b["name"]: b for b in api.list_functions(EX, True)["builtins"]}
-        for q in ("relays.apply", "psu.set_voltage", "dmm_driver.read_dc_volts", "scpi.query_f64", "add"):
+        for q in ("relays.apply", "psu.set_voltage", "dmm_driver.read_dc_volts", "scpi.query_f64", "core.add"):
             self.assertIn(q, names)
         self.assertEqual(names["visa.close"]["signature"],
                          "always fn visa.close(session: visa.session, err: error = …) -> (err: error)")
@@ -1204,7 +1211,7 @@ fn f(t: string) -> (a: string, b: string, c: string) {
 
     def test_layout_cr(self):
         g = self.GOOD_LAYOUT
-        got = self.layout(g.replace("z = add", "z =\r add"))
+        got = self.layout(g.replace("z = core.add", "z =\r core.add"))
         self.assertTrue(any("not followed by a line feed" in m for n, m in got), got)
         self.assertFalse(any("CR LF" in m or "consecutive" in m for n, m in got), got)
         self.assertEqual([n for n, m in got if "CR" in m], [9])
@@ -1247,11 +1254,11 @@ fn f(t: string) -> (a: string, b: string, c: string) {
         with tempfile.TemporaryDirectory() as td:
             md = Path(td) / "s.md"
             md.write_text(
-                "# T\n\n```text\nlabcraft 1\n\nfn f() -> (r: i32) {\n    r = add(a,b)\n}\n```\n\n"
-                "```text\nr = add(a, b) // c\nq = mul (r, 2)\n```\n\n"
+                "# T\n\n```text\nlabcraft 1\n\nfn f() -> (r: i32) {\n    r = core.add(a,b)\n}\n```\n\n"
+                "```text\nr = core.add(a, b) // c\nq = mul (r, 2)\n```\n\n"
                 "```text\nfn g(x: i32) -> (r: i32)\n```\n\n"
                 "```text\n[f64]   // reference listing: skipped\n```\n\n"
-                "```text\nr = add(a,b) …\n```\n\n"
+                "```text\nr = core.add(a,b) …\n```\n\n"
                 "## Appendix A\n\n```text\nfn g(x:i32)\n```\n", encoding="utf-8", newline="\n")
             problems, done, skipped = check_spec_layout(md)
             self.assertEqual([n for n, m in problems], [7, 13], problems)
@@ -1267,8 +1274,10 @@ class Hostile(unittest.TestCase):
 
     GOOD = """labcraft 1
 
+use core
+
 fn ok(a: i32) -> (b: i32) {
-    b = add(a, 1)
+    b = core.add(a, 1)
 }
 """
 
@@ -1293,36 +1302,50 @@ fn ok(a: i32) -> (b: i32) {
         self.assertEqual(d["file"], "t.lcf")
 
     def test_unknown_value(self):
-        d = self.assert_reported({"t.lcf": self.GOOD.replace("add(a, 1)", "add(aa, 1)")}, "unknown value")
-        self.assertEqual(d["line"], 4)
+        d = self.assert_reported({"t.lcf": self.GOOD.replace("core.add(a, 1)", "core.add(aa, 1)")}, "unknown value")
+        self.assertEqual(d["line"], 6)
         self.assertIn("'a'", d["message"])
 
     def test_unknown_function(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("add(", "addd(")}, "unknown function")
+        self.assert_reported({"t.lcf": self.GOOD.replace("core.add(", "addd(")}, "unknown function")
+
+    def test_name_of_core_without_the_prefix(self):
+        d = self.assert_reported({"t.lcf": self.GOOD.replace("core.add(", "add(")}, "unknown function")
+        self.assertIn("did you mean 'core.add'", d["message"])
+
+    def test_core_without_use(self):
+        self.assert_reported({"t.lcf": self.GOOD.replace("use core\n\n", "")}, "'core.add': library 'core' is not imported")
+
+    def test_a_value_named_like_a_library_is_refused_only_if_imported(self):
+        src = "labcraft 1\n\n%sfn f(core: i32) -> (x: i32) {\n    x = core\n}\n"
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"f.lcf": src % ""})
+            self.assertTrue(api.check(td)["ok"], api.check(td)["diagnostics"])
+        self.assert_reported({"f.lcf": src % "use core\n\n"}, "name of a library")
 
     def test_unbound_output(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("    b = add(a, 1)\n", "")}, "is not bound")
+        self.assert_reported({"t.lcf": self.GOOD.replace("    b = core.add(a, 1)\n", "")}, "is not bound")
 
     def test_two_definitions(self):
         self.assert_reported({"ok.lcf": self.GOOD, "ok2.lcf": self.GOOD}, "defined twice")
 
     def test_value_defined_twice(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("    b = add(a, 1)", "    b = add(a, 1)\n    b = add(a, 2)")},
+        self.assert_reported({"t.lcf": self.GOOD.replace("    b = core.add(a, 1)", "    b = core.add(a, 1)\n    b = core.add(a, 2)")},
                              "defined twice")
 
     def test_cycle(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("    b = add(a, 1)", "    x = add(y, 1)\n    y = add(x, 1)\n    b = x")},
+        self.assert_reported({"t.lcf": self.GOOD.replace("    b = core.add(a, 1)", "    x = core.add(y, 1)\n    y = core.add(x, 1)\n    b = x")},
                              "cycle")
 
     def test_missing_input(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("add(a, 1)", "add(a)")}, "required input")
+        self.assert_reported({"t.lcf": self.GOOD.replace("core.add(a, 1)", "core.add(a)")}, "required input")
 
     def test_handle_without_wildcard(self):
         src = "labcraft 1\n\nfn ok(a: i32, err: error = none) -> (b: i32) {\n    b = handle err {\n        ok => yield a\n    }\n}\n"
         self.assert_reported({"t.lcf": src}, "handle without a `_` arm")
 
     def test_unit_unknown(self):
-        self.assert_reported({"t.lcf": self.GOOD.replace("add(a, 1)", "add(a, 1 qux)")}, "unknown unit")
+        self.assert_reported({"t.lcf": self.GOOD.replace("core.add(a, 1)", "core.add(a, 1 qux)")}, "unknown unit")
 
     def test_binary_and_empty_and_deep(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use scpi
 use visa
 
@@ -12,11 +13,11 @@ fn check_power(
     supply, e1 = visa.open(resource, timeout: 2 s, err: err)
     raw_v, supply2, e2 = scpi.query_f64(supply, "MEAS:VOLT?", err: e1)
     raw_i, supply3, e3 = scpi.query_f64(supply2, "MEAS:CURR?", err: e2)
-    current = with_unit(raw_i, [A])
+    current = core.with_unit(raw_i, [A])
     #close: e4 = visa.close(supply3, err: e3)
-    voltage = with_unit(raw_v, [V])
-    power = mul(voltage, current)
-    below = lt(power, limit)
+    voltage = core.with_unit(raw_v, [V])
+    power = core.mul(voltage, current)
+    below = core.lt(power, limit)
     measured = match below {
         true => yield Verdict.Pass
         false => yield Verdict.Fail

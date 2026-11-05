@@ -84,21 +84,21 @@ def _div(x, y):
     return x / y
 
 
-@builtin("add", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.add", [P("a"), P("b")], ["result"], (0.0,))
 def add(m, a, b):
     """a + b; same dimensions required, the unit of the result is that of `a`."""
     _same_dim("add", a, b)
     return (a.with_si(a.si + b.si),) if isinstance(a, Q) else (a + b,)
 
 
-@builtin("sub", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.sub", [P("a"), P("b")], ["result"], (0.0,))
 def sub(m, a, b):
     """a - b; same dimensions required."""
     _same_dim("sub", a, b)
     return (a.with_si(a.si - b.si),) if isinstance(a, Q) else (a - b,)
 
 
-@builtin("mul", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.mul", [P("a"), P("b")], ["result"], (0.0,))
 def mul(m, a, b):
     """a × b; the dimension exponents add up (Ω × A = V)."""
     _need_nums("mul", a, b)
@@ -111,7 +111,7 @@ def mul(m, a, b):
     return (a * b,)
 
 
-@builtin("div", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.div", [P("a"), P("b")], ["result"], (0.0,))
 def div(m, a, b):
     """a ÷ b; the exponents subtract (V ÷ A = Ω). Division by zero: inf or nan (IEEE)."""
     _need_nums("div", a, b)
@@ -124,19 +124,19 @@ def div(m, a, b):
     return (_div(a, b),)
 
 
-@builtin("abs", [P("x")], ["result"], (0.0,))
+@builtin("core.abs", [P("x")], ["result"], (0.0,))
 def abs_(m, x):
     """Absolute value."""
     return (x.with_si(abs(x.si)) if isinstance(x, Q) else abs(x),)
 
 
-@builtin("neg", [P("x")], ["result"], (0.0,))
+@builtin("core.neg", [P("x")], ["result"], (0.0,))
 def neg(m, x):
     """Negation."""
     return (x.with_si(-x.si) if isinstance(x, Q) else -x,)
 
 
-@builtin("sqrt", [P("x")], ["result"], (0.0,))
+@builtin("core.sqrt", [P("x")], ["result"], (0.0,))
 def sqrt(m, x):
     """Square root; the dimension exponents are halved (rejected if any is odd)."""
     if isinstance(x, Q):
@@ -146,14 +146,14 @@ def sqrt(m, x):
     return (math.sqrt(x) if x >= 0 else math.nan,)
 
 
-@builtin("min", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.min", [P("a"), P("b")], ["result"], (0.0,))
 def min_(m, a, b):
     """The smaller of the two."""
     _same_dim("min", a, b)
     return ((a if (a.si if isinstance(a, Q) else a) <= (b.si if isinstance(b, Q) else b) else b),)
 
 
-@builtin("max", [P("a"), P("b")], ["result"], (0.0,))
+@builtin("core.max", [P("a"), P("b")], ["result"], (0.0,))
 def max_(m, a, b):
     """The larger of the two."""
     _same_dim("max", a, b)
@@ -168,7 +168,7 @@ def _cmp(name, op):
         x, y = (a.si, b.si) if isinstance(a, Q) else (a, b)
         return (op(x, y),)
     f.__doc__ = f"Comparison `{name}`; identical dimensions required."
-    builtin(name, [P("a"), P("b")], ["result"], (False,))(f)
+    builtin("core." + name, [P("a"), P("b")], ["result"], (False,))(f)
 
 
 for _n, _o in (("lt", lambda x, y: x < y), ("le", lambda x, y: x <= y), ("gt", lambda x, y: x > y),
@@ -182,25 +182,25 @@ def _bool(op, x):
     return x
 
 
-@builtin("and", [P("a"), P("b")], ["result"], (False,))
+@builtin("core.and", [P("a"), P("b")], ["result"], (False,))
 def and_(m, a, b):
     """Logical AND."""
     return (_bool("and", a) and _bool("and", b),)
 
 
-@builtin("or", [P("a"), P("b")], ["result"], (False,))
+@builtin("core.or", [P("a"), P("b")], ["result"], (False,))
 def or_(m, a, b):
     """Logical OR."""
     return (_bool("or", a) or _bool("or", b),)
 
 
-@builtin("not", [P("a")], ["result"], (False,))
+@builtin("core.not", [P("a")], ["result"], (False,))
 def not_(m, a):
     """Logical NOT."""
     return (not _bool("not", a),)
 
 
-@builtin("select", [P("condition"), P("if_true"), P("if_false")], ["result"])
+@builtin("core.select", [P("condition"), P("if_true"), P("if_false")], ["result"])
 def select(m, condition, if_true, if_false):
     """`if_true` if the condition is true, otherwise `if_false`."""
     return (if_true if _bool("select", condition) else if_false,)
@@ -215,9 +215,9 @@ def _unit_of(u, who="with_unit"):
         raise Fault("lcf.unit_unknown", f"{who}: {e}") from None
 
 
-@builtin("with_unit", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
+@builtin("core.with_unit", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
 def with_unit(m, x, unit):
-    """Attaches a unit to a number: `with_unit(raw, [V])`. Rejected if `x` already has one."""
+    """Attaches a unit to a number: `core.with_unit(raw, [V])`. Rejected if `x` already has one."""
     if x is None:  # the default value of a skipped generic node, which the PoC does not type (7.2)
         x = 0.0
     if not is_num(x) or isinstance(x, Q):
@@ -226,9 +226,9 @@ def with_unit(m, x, unit):
     return (Q.of(float(x), text),)
 
 
-@builtin("unitless", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
+@builtin("core.unitless", [P("x"), P("unit", kind="unit")], ["result"], (0.0,))
 def unitless(m, x, unit):
-    """Removes the unit by expressing the number in the requested unit: `unitless(230 mV, [V])` gives 0.23."""
+    """Removes the unit by expressing the number in the requested unit: `core.unitless(230 mV, [V])` gives 0.23."""
     if x is None:  # the default value of a skipped generic node, which the PoC does not type (7.2)
         return (0.0,)
     if not isinstance(x, Q):
