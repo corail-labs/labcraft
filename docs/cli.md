@@ -119,7 +119,9 @@ dataflow rules, panel, layout, icon. It writes nothing and does not care whether
 **A library is a folder.** Its files are the `.lcf` and `.lct` files directly in it; each sub-folder
 that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read only for
 the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored. In M0a
-the name of a file is not compared with the name of its function.
+the name of a file is not compared with the name of its function. A folder given inside another one given
+is one of its sub-libraries, even one that a walk of the outer folder would not reach, such as `.hidden`: each
+file is checked once, under the outermost folder given.
 
 **Resolving `use lib`**, first match wins:
 
@@ -131,13 +133,22 @@ the name of a file is not compared with the name of its function.
    so that `check` works in any folder and in the WASM build.
 
 A library shipped with LabCraft follows only rules 1 and 4: a folder `visa` in a project replaces
-`visa` for that project, but not for `scpi`. Names are compared exactly, even on a file system that
+`visa` for that project, but not for `scpi`. A library found by rule 3 follows rules 1, 3 and 4, so it says the
+same whichever folder reads it, and its errors are reported once. A `--lib-path` gives a name to what it
+holds, even to a folder given: `check p --lib-path .` reads `p` again as a dependency when a `use p` asks for it,
+and if `p` itself says `use p`, that is a cycle (`LC2021`). A dependency whose files a folder given has all
+reached says nothing more, apart from a cycle. Names are compared exactly, even on a file system that
 ignores case: `use VISA` does not find `visa`.
 
 Names of files and folders are compared with those of the program after normalization (R-20), so
-that `use é` finds a folder whose name the file system decomposes. A dependency found by rules 3
+that `use é` finds a folder whose name the file system decomposes. A folder with no file of its own is no
+library, though its sub-folders can be: `use a` does not find it, and `use a.b` still finds `a/b`. A symbolic
+link is not followed. A dependency found by rules 3
 and 4 is read for its signatures, types and manifest only: its bodies are checked when it is itself
-the library being checked. A dependency that cannot be read is reported, since it is the cause.
+the library being checked, and so are its sub-folders, which nothing reads until a `use` names them. A
+dependency that cannot be read is reported, since it is the cause; so are its other errors, and not its
+warnings. The limits of the command line do not apply to the libraries built into the tool. A `--lib-path` that
+cannot be listed gets `LC0001` once and is skipped, and a file given there is wrong usage.
 
 **One error, one diagnostic** (scenario 2). A value whose type is unknown because of an error
 upstream takes an error type that matches everything; a call to a function whose file does not parse
@@ -323,7 +334,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
 | `LC0104` | error | `panel`, `layout` or `icon` section in a type file | R-19 |
-| `LC0105` | error | Manifest of a shipped library that cannot be read, or an `always` on something other than a native function | 1, 7.2 |
+| `LC0105` | error | Manifest of a shipped library that cannot be read or names another library, or an `always` on something other than a native function | 1, 7.2 |
 
 ### Syntax: `LC10`
 

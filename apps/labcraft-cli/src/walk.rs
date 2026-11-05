@@ -5,8 +5,8 @@
 //! A file is known by its path without links, on which a path given twice, or also reached through a folder, is one.
 
 use std::collections::HashSet;
-use std::fs;
-use std::io;
+use std::fs::{self, File};
+use std::io::{self, Read as _};
 use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
 
 use labcraft_types::{Code, Diagnostic, Limits, Report};
@@ -17,9 +17,12 @@ pub struct Bounds {
     pub levels: usize,
     /// Of files, and of folders.
     pub files: usize,
+    /// Only the files of the folder itself, for a library that a `use` asked for: its sub-folders are other libraries,
+    /// and a folder with nothing to read says nothing, since it is simply not that library.
+    pub alone: bool,
 }
 
-const BOUNDS: Bounds = Bounds { levels: 32, files: 100_000 };
+const BOUNDS: Bounds = Bounds { levels: 32, files: 100_000, alone: false };
 
 /// A file to work on, and its path in reports.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,8 +38,43 @@ pub struct Walked {
     /// In code point order of the paths, each file once.
     pub files: Vec<Found>,
     /// Files that will not be read, whose diagnostics are in `report`.
-    pub refused: Vec<String>,
+    pub refused: Vec<Refused>,
     pub report: Report,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Refused {
+    pub shown: String,
+    pub path: PathBuf,
+}
+
+/// Why a file cannot be read: its code and its message.
+pub type ReadError = (Code, String);
+
+/// Reads no more than the limit and one byte, even if the file grows meanwhile: reading it then refuses it.
+pub fn read_program(path: &Path, limits: &Limits) -> Result<Vec<u8>, ReadError> {
+    let read = || -> io::Result<Result<Vec<u8>, u64>> {
+        let file = File::open(path)?;
+        let size = file.metadata()?.len();
+        if size > limits.max_file_size {
+            return Ok(Err(size));
+        }
+        let mut bytes = Vec::new();
+        // `with_capacity` aborts when memory runs out, and `--max-file-size` can ask for 1 GiB of it.
+        bytes.try_reserve_exact(usize::try_from(size).unwrap_or(usize::MAX)).map_err(|_| io::Error::from(io::ErrorKind::OutOfMemory))?;
+        file.take(limits.max_file_size.saturating_add(1)).read_to_end(&mut bytes)?;
+        Ok(Ok(bytes))
+    };
+    match read() {
+        Ok(Ok(bytes)) => Ok(bytes),
+        Ok(Err(size)) => Err((Code::Lc0006, format!("file of {size} bytes, over the limit of {} bytes", limits.max_file_size))),
+        Err(error) => Err((Code::Lc0001, format!("cannot read this file: {}", io_text(&error)))),
+    }
+}
+
+/// The files of one folder, without its sub-folders, shown as usual.
+pub fn walk_alone(folder: &Path, current: Option<&Path>, limits: &Limits) -> Walked {
+    walk_within(std::slice::from_ref(&folder.to_path_buf()), current, limits, Bounds { alone: true, ..BOUNDS })
 }
 
 /// An error of the operating system, in English and without a path: the text of the system follows its language,
@@ -45,7 +83,7 @@ pub fn io_text(error: &io::Error) -> String {
     error.kind().to_string()
 }
 
-fn slashed(path: &Path) -> String {
+pub fn slashed(path: &Path) -> String {
     path.to_string_lossy().replace(MAIN_SEPARATOR_STR, "/")
 }
 
@@ -56,6 +94,11 @@ fn relative_to(path: &Path, current: Option<&Path>) -> Option<String> {
 
 fn is_a_link(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
+}
+
+/// `current` is without links, as `walk` makes it.
+pub fn shown_of(path: &Path, real: Option<&Path>, current: Option<&Path>) -> String {
+    shown_path(path, real, current)
 }
 
 /// With `/` on every platform, and relative to the current folder when the file is under it. A path is shown by its
@@ -139,13 +182,13 @@ fn walk_within(paths: &[PathBuf], current: Option<&Path>, limits: &Limits, bound
         } else if !metadata.is_file() {
             if said.first_time(&real) {
                 error_at(&mut walked.report, Code::Lc0001, &shown, "cannot read this path: not a regular file".to_owned());
-                walked.refused.push(shown);
+                walked.refused.push(Refused { shown, path: real });
             }
         } else if !has_program_extension(given) || !has_program_extension(&real) {
             if said.first_time(&real) {
                 let message = "a file named explicitly, and what a link points to, must have the extension `.lcf` or `.lct`".to_owned();
                 error_at(&mut walked.report, Code::Lc0008, &shown, message);
-                walked.refused.push(shown);
+                walked.refused.push(Refused { shown, path: real });
             }
         } else {
             walked.files.push(Found { shown, path: real, through_a_link: is_a_link(given) });
@@ -283,7 +326,7 @@ impl Root<'_> {
                     self.report.push(Diagnostic::new(Code::Lc0009, "symbolic link: not followed", entry_shown));
                 }
             } else if file_type.is_dir() {
-                if !name.starts_with('.') {
+                if !name.starts_with('.') && !self.bounds.alone {
                     let entry_path = entry.path();
                     sub_folders.push((self.shown_in(shown, &name, &entry_path), entry_path));
                     if sub_folders.len() > self.bounds.files.saturating_mul(2) {
@@ -325,7 +368,7 @@ impl Root<'_> {
     }
 
     /// What comes first in the order of the paths stays, and is either to read or refused.
-    fn finish(mut self, shown: &str, files: &mut Vec<Found>, refused: &mut Vec<String>) {
+    fn finish(mut self, shown: &str, files: &mut Vec<Found>, refused: &mut Vec<Refused>) {
         self.too_many_files |= keep_first(&mut self.entries, self.bounds.files);
         let too_many_bytes = self.keep_within_the_bytes();
         let left_out = [
@@ -340,7 +383,7 @@ impl Root<'_> {
                 error_at(self.report, Code::Lc0010, shown, message);
             }
         }
-        if self.entries.is_empty() && !self.failed {
+        if self.entries.is_empty() && !self.failed && !self.bounds.alone {
             error_at(self.report, Code::Lc0002, shown, "nothing to check: no `.lcf` or `.lct` file under this path".to_owned());
         }
         for entry in self.entries.drain(..) {
@@ -349,7 +392,7 @@ impl Root<'_> {
                 Some(why) => {
                     if self.said.first_time_in_a_walk(&entry.path) {
                         error_at(self.report, Code::Lc0001, &entry.shown, format!("cannot read this path: {why}"));
-                        refused.push(entry.shown);
+                        refused.push(Refused { shown: entry.shown, path: entry.path });
                     }
                 }
             }
@@ -410,6 +453,10 @@ mod tests {
         walked.files.iter().map(|file| file.shown.as_str()).collect()
     }
 
+    fn refused_files(walked: &Walked) -> Vec<&str> {
+        walked.refused.iter().map(|refused| refused.shown.as_str()).collect()
+    }
+
     fn codes(walked: &mut Walked) -> Vec<&'static str> {
         walked.report.finish();
         walked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect()
@@ -441,6 +488,19 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"b.lcf"), "{names:?}");
         assert!(names.iter().any(|name| name.ends_with("/a.lcf")), "{names:?}");
+    }
+
+    /// For a library that a `use` asks for: its sub-folders are other libraries, and an empty one is simply not it.
+    #[test]
+    fn walking_a_folder_alone_stays_in_it_and_says_nothing_when_it_holds_nothing() {
+        let folder = Folder::new("alone");
+        folder.file("a.lcf", b"").file("sub/b.lcf", b"").file("only-sub/deep/c.lcf", b"");
+        let mut walked = walk_alone(&folder.0, Some(&folder.0), &Limits::default());
+        assert_eq!(shown_files(&walked), ["a.lcf"]);
+        assert!(codes(&mut walked).is_empty());
+        let mut walked = walk_alone(&folder.0.join("only-sub"), Some(&folder.0), &Limits::default());
+        assert!(walked.files.is_empty());
+        assert!(codes(&mut walked).is_empty(), "neither LC0002 nor LC0010");
     }
 
     #[test]
@@ -543,7 +603,7 @@ mod tests {
         folder.file(".lcf", b"").file("a.LCF", b"").file("b.lcf.txt", b"").file("c.lct", b"");
         assert_eq!(shown_files(&folder.walk()), ["c.lct"]);
         let mut named = walk(&[folder.0.join("a.LCF")], Some(&folder.0), &Limits::default());
-        assert_eq!(named.refused, ["a.LCF"]);
+        assert_eq!(refused_files(&named), ["a.LCF"]);
         assert_eq!(codes(&mut named), ["LC0008"]);
     }
 
@@ -584,7 +644,7 @@ mod tests {
     }
 
     fn small(folder: &Folder, files: usize) -> Walked {
-        walk_within(std::slice::from_ref(&folder.0), Some(&folder.0), &Limits::default(), Bounds { levels: 32, files })
+        walk_within(std::slice::from_ref(&folder.0), Some(&folder.0), &Limits::default(), Bounds { levels: 32, files, alone: false })
     }
 
     #[test]
@@ -670,7 +730,7 @@ mod tests {
         std::os::unix::fs::symlink(&folder.0, folder.0.join("sub").join("loop")).unwrap();
         let paths = [folder.0.clone(), fifo.clone(), folder.0.join("sub"), fifo];
         let walked = walk(&paths, Some(&folder.0), &Limits::default());
-        assert_eq!(walked.refused, ["pipe.lcf"]);
+        assert_eq!(refused_files(&walked), ["pipe.lcf"]);
         assert_eq!(walked.report.errors(), 2, "the file, and `sub`, which holds nothing");
         assert_eq!(walked.report.warnings(), 2);
     }
@@ -685,7 +745,7 @@ mod tests {
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
         let spelled = sub.join(".").join("pipe.lcf");
         let mut walked = walk(&[folder.0.clone(), fifo, spelled], Some(&sub), &Limits::default());
-        assert_eq!(walked.refused, ["pipe.lcf"]);
+        assert_eq!(refused_files(&walked), ["pipe.lcf"]);
         assert_eq!(codes(&mut walked), ["LC0001"]);
     }
 
@@ -710,14 +770,14 @@ mod tests {
         let fifo = folder.0.join("pipe.lcf");
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
         let mut walked = folder.walk();
-        assert_eq!(walked.refused, ["pipe.lcf"]);
+        assert_eq!(refused_files(&walked), ["pipe.lcf"]);
         assert_eq!(codes(&mut walked), ["LC0001"]);
         let mut walked = walk(std::slice::from_ref(&fifo), Some(&folder.0), &Limits::default());
-        assert_eq!(walked.refused, ["pipe.lcf"]);
+        assert_eq!(refused_files(&walked), ["pipe.lcf"]);
         assert_eq!(codes(&mut walked), ["LC0001"]);
         assert!(std::process::Command::new("mkfifo").arg(folder.0.join("other.lcf")).status().unwrap().success());
         let mut walked = small(&folder, 1);
-        assert_eq!(walked.refused, ["other.lcf"]);
+        assert_eq!(refused_files(&walked), ["other.lcf"]);
         assert_eq!(codes(&mut walked), ["LC0010", "LC0001"]);
     }
 }

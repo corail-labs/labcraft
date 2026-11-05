@@ -235,6 +235,13 @@ impl Report {
         self.prune_when_full();
     }
 
+    /// The errors of `other` with their complete count, and none of its warnings: what a dependency has to say.
+    pub fn merge_errors(&mut self, other: Report) {
+        self.errors += other.errors;
+        self.diagnostics.extend(other.diagnostics.into_iter().filter(|diagnostic| diagnostic.severity == Severity::Error));
+        self.prune_when_full();
+    }
+
     fn prune_when_full(&mut self) {
         if self.diagnostics.len() > self.max_report.saturating_mul(2) {
             self.prune();
@@ -736,5 +743,22 @@ mod tests {
         assert!(a.truncated());
         assert_eq!(a.diagnostics().len(), 1);
         assert_eq!(a.diagnostics()[0].code(), Code::Lc3002);
+    }
+
+    #[test]
+    fn merging_errors_keeps_their_count_even_when_the_list_is_cut_and_leaves_warnings_out() {
+        let mut other = Report::new(0);
+        other.push(Diagnostic::new(Code::Lc1001, "m", "a.lcf"));
+        other.push(Diagnostic::new(Code::Lc0005, "m", "a.lcf"));
+        assert!(other.diagnostics().is_empty());
+        let mut report = Report::new(10);
+        report.merge_errors(other);
+        assert_eq!((report.errors(), report.warnings()), (1, 0));
+        let mut other = Report::new(10);
+        other.push(Diagnostic::new(Code::Lc1001, "m", "a.lcf"));
+        other.push(Diagnostic::new(Code::Lc0005, "m", "a.lcf"));
+        let mut report = Report::new(10);
+        report.merge_errors(other);
+        assert_eq!((report.errors(), report.warnings(), report.diagnostics().len()), (1, 0, 1));
     }
 }

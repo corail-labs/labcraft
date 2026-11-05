@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::fmt::Write as _;
 use std::io::{BufWriter, Write as _};
 
-use labcraft_types::{Diagnostic, FileEntry, FileResult, Report};
+use labcraft_types::{CheckCounts, Diagnostic, FileEntry, FileResult, Report};
 
 /// What a path or a text from a file could hide or forge on a terminal: a line feed in a file name would make a
 /// second diagnostic, an escape sequence would move the cursor. JSON has its own escapes.
@@ -108,6 +108,28 @@ pub fn fmt_text(report: &Report, files: &[FileEntry], changed: u64) -> String {
     out
 }
 
+/// The diagnostics, then the summary, which is the last line.
+pub fn check_text(report: &Report, counts: CheckCounts) -> String {
+    let mut out = String::new();
+    for diagnostic in report.diagnostics() {
+        diagnostic_text(&mut out, diagnostic);
+    }
+    let _ = write!(
+        out,
+        "check: {}, {}, {}: {}, {}",
+        counted(counts.libraries, "library", "libraries"),
+        counted(counts.functions, "function", "functions"),
+        counted(counts.types, "type", "types"),
+        counted(report.errors(), "error", "errors"),
+        counted(report.warnings(), "warning", "warnings"),
+    );
+    if report.truncated() {
+        let _ = write!(out, " ({} listed)", report.diagnostics().len());
+    }
+    out.push('\n');
+    out
+}
+
 pub fn write_text(text: &str) {
     let _ = std::io::stdout().lock().write_all(text.as_bytes());
 }
@@ -191,6 +213,16 @@ mod tests {
         for shown in ["\u{00E9}", "\u{03BC}", "\u{2027}", "\u{202F}", "\u{2065}", "\u{206A}"] {
             assert_eq!(printable(shown), shown);
         }
+    }
+
+    /// The last line of the example of `docs/cli.md`, section 4.1.
+    #[test]
+    fn the_summary_of_check_reads_as_the_documentation_shows() {
+        let mut report = Report::new(10);
+        report.push(Diagnostic::new(Code::Lc3002, "m", "a.lcf"));
+        report.finish();
+        let counts = CheckCounts { libraries: 1, functions: 14, types: 3 };
+        assert_eq!(check_text(&report, counts), "a.lcf: error[LC3002]: m\ncheck: 1 library, 14 functions, 3 types: 1 error, 0 warnings\n");
     }
 
     #[test]

@@ -178,14 +178,20 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
 ```rust
 pub trait Libraries {                       // how `use` finds a library: the caller decides
     fn find(&self, name: &str, by: Origin) -> Found;
+    fn last_panic(&self) -> Option<String>;  // where a panic happened, which only a panic hook can see
 }
-pub enum Found { Library(LibrarySource), NotFound, Unreadable(Diagnostic) }  // LC2004, or LC0001
-pub struct LibrarySource { name: String, files: Vec<SourceFile>, manifest: Option<String>,
-                           sub_libraries: Vec<LibrarySource>, origin: Origin }
+pub enum Found { Library(LibrarySource), NotFound, Unreadable(Box<Diagnostic>) }  // LC2004, or LC0001
+pub struct LibrarySource { name: String, shown: String, files: Vec<SourceFile>, manifest: Option<String>,
+                           sub_libraries: Vec<LibrarySource>, origin: Origin,
+                           report: Report,          // what its host met while gathering the files
+                           checked_elsewhere: bool }  // a dependency in a folder that a run checks anyway
 pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner,
              limits: &Limits) -> Checked;
-pub struct Checked { report: Report, files: Vec<CheckedFile>, types: TypeTable }
-pub struct CheckedFile { file: File, source_map: SourceMap, resolved: Resolved }
+pub struct Checked { report: Report, dependencies: Vec<DependencyReport>, counts: CheckCounts,
+                      files: Vec<CheckedFile>, types: TypeTable }  // `types` comes with pass 2
+pub struct CheckedFile { shown: String, file: File, source_map: SourceMap,
+                         resolved: Resolved }                      // `resolved` comes with pass 3
+pub struct DependencyReport { shown: String, report: Report }      // merged once per `shown`
 ```
 
 `Checked` is what the layers above read, so that they never resolve again: the viewer draws wires with

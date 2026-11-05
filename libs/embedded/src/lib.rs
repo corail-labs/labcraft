@@ -13,6 +13,10 @@
 )]
 #![forbid(unsafe_code)]
 
+use std::borrow::Cow;
+
+use labcraft_check::{Content, LibrarySource, Origin, SourceFile};
+
 /// A `.lcf` or `.lct` file of a library, as it is stored.
 #[derive(Debug)]
 pub struct File {
@@ -33,6 +37,18 @@ include!(concat!(env!("OUT_DIR"), "/libraries.rs"));
 /// Names are compared exactly, even on a file system that ignores case (`docs/cli.md`, section 3).
 pub fn find(name: &str) -> Option<&'static Library> {
     LIBRARIES.iter().find(|library| library.name == name)
+}
+
+/// A shipped library as `check` reads it. Its files show as `<labcraft>/visa/close.lcf` (`docs/cli.md`, section 1).
+pub fn source(name: &str) -> Option<LibrarySource> {
+    let library = find(name)?;
+    let shown = format!("<labcraft>/{}", library.name);
+    let files = library
+        .files
+        .iter()
+        .map(|file| SourceFile { shown: format!("{shown}/{}", file.name), content: Content::Bytes(Cow::Borrowed(file.bytes)) })
+        .collect();
+    Some(LibrarySource { files, manifest: Some(library.manifest.to_owned()), ..LibrarySource::new(library.name.to_owned(), shown, Origin::Shipped) })
 }
 
 #[cfg(test)]
@@ -57,6 +73,14 @@ mod tests {
             assert_eq!(embedded, on_disk, "{}", library.name);
             assert!(library.manifest.contains(&format!("name = \"{}\"", library.name)), "{}", library.name);
         }
+    }
+
+    #[test]
+    fn a_source_shows_where_its_files_come_from() {
+        let source = source("visa").unwrap();
+        assert_eq!((source.name.as_str(), source.origin), ("visa", Origin::Shipped));
+        assert!(source.files.iter().any(|file| file.shown == "<labcraft>/visa/close.lcf"));
+        assert!(source.manifest.is_some());
     }
 
     #[test]
