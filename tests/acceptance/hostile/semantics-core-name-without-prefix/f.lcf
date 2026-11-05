@@ -1,0 +1,5 @@
+labcraft 1
+
+fn f(a: i32) -> (x: i32) {
+    x = add(a, 1)
+}

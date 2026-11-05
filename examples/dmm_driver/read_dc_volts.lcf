@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use scpi
 use visa
 
@@ -9,7 +10,7 @@ fn read_dc_volts(
     err: error = none,
 ) -> (volts: f64[V], session: visa.session, err: error) {
     raw, s, e1 = scpi.query_f64(session, "MEAS:VOLT:DC?", err: err)
-    volts = with_unit(raw, [V])
+    volts = core.with_unit(raw, [V])
     session = s
     err = e1
 }

@@ -687,7 +687,7 @@ fn the_stored_hostile_cases_give_what_is_expected() {
         assert_eq!(changed, expected["changes"].as_bool().unwrap(), "{name}");
         seen += 1;
     }
-    assert_eq!(seen, 27);
+    assert_eq!(seen, 30);
 }
 
 #[test]

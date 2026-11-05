@@ -1,5 +1,7 @@
 labcraft 1
 
+use core
+
 fn f(voltage: f64[V], current: f64[A]) -> (p: f64[V]) {
-    p = add(voltage, current)
+    p = core.add(voltage, current)
 }

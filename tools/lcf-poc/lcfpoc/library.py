@@ -73,7 +73,7 @@ class Library:
 
     def name_taken(self, name, uses):
         """R-1: a value cannot have the name of a library or of a type that appears in operands."""
-        if name in stdlib.libraries() or name in uses:
+        if name in uses:
             return True
         return name in self.types and not self.is_opaque(self.types[name])
 
@@ -104,9 +104,6 @@ class Library:
         if len(path) == 1:
             if path[0] in self.functions:
                 return self.callee(self.functions[path[0]])
-            b = stdlib.BUILTINS.get(path[0])
-            if b is not None and not b.lib:
-                return "builtin", b
             return None
         q = ".".join(path)
         if path[0] in stdlib.libraries():
@@ -570,9 +567,10 @@ class Checker:
         if res is None:
             if call.path[0] not in self.lib.broken and name not in self.lib.broken \
                     and not (dep and call.path[-1] in dep.broken):
-                pool = sorted(set(self.lib.functions) | {q for q in stdlib.BUILTINS if "." not in q} |
-                              {q for q in stdlib.BUILTINS if q.split(".")[0] in self.fn.uses})
-                near = difflib.get_close_matches(name, pool, 1, 0.6)
+                pool = sorted(set(self.lib.functions) | {q for q in stdlib.BUILTINS if q.split(".")[0] in self.fn.uses})
+                core = {q.split(".")[1]: q for q in stdlib.BUILTINS if q.startswith("core.")}
+                near = difflib.get_close_matches(name, [*pool, *core], 1, 0.6)
+                near = [core.get(near[0], near[0])] if near else []
                 self.d("error", node.line, f"unknown function '{name}'" + (f" (did you mean '{near[0]}'?)" if near else ""), node)
             for a in call.args:
                 self.operand(a.op, scope, node)

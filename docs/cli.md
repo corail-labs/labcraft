@@ -119,7 +119,7 @@ dataflow rules, panel, layout, icon. It writes nothing and does not care whether
 **A library is a folder.** Its files are the `.lcf` and `.lct` files directly in it; each sub-folder
 that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read only for
 the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored. In M0a
-the name of a file is not compared with the name of its function. A folder given inside another one given
+the name of a file is not compared with the name of its function (open question Q-26 of the spec). A folder given inside another one given
 is one of its sub-libraries, even one that a walk of the outer folder would not reach, such as `.hidden`: each
 file is checked once, under the outermost folder given.
 
@@ -163,8 +163,8 @@ asks of an agent, and what a project can ask of its CI.
 ### 4.1 Human-readable form
 
 ```text
-bench/power.lcf:9:22: error[LC3002]: cannot add `f64[V]` and `f64[A]`: different dimensions
-  in function `power`, node `p`: p = add(voltage, current)
+bench/power.lcf:9:27: error[LC3002]: cannot add `f64[V]` and `f64[A]`: different dimensions
+  in function `power`, node `p`: p = core.add(voltage, current)
   wire `voltage`: fn.voltage -> p.a
   wire `current`: current.result -> p.b
   expected `f64[V]`, found `f64[A]`
@@ -204,9 +204,9 @@ When the list is cut, the summary ends with the number listed: `(1000 listed)`.
       "severity": "error",
       "message": "cannot add `f64[V]` and `f64[A]`: different dimensions",
       "file": "bench/power.lcf",
-      "span": { "start": { "line": 9, "column": 22 }, "end": { "line": 9, "column": 29 } },
+      "span": { "start": { "line": 9, "column": 27 }, "end": { "line": 9, "column": 34 } },
       "function": "power",
-      "node": { "name": "p", "text": "p = add(voltage, current)" },
+      "node": { "name": "p", "text": "p = core.add(voltage, current)" },
       "wires": [
         { "value": "voltage", "from": "fn.voltage", "to": "p.a" },
         { "value": "current", "from": "current.result", "to": "p.b" }
@@ -224,11 +224,11 @@ A fix and a related place have this form:
 {
   "fixes": [
     {
-      "title": "Convert with `round_to_i32`",
+      "title": "Convert with `core.round_to_i32`",
       "edits": [
         {
           "span": { "start": { "line": 4, "column": 5 }, "end": { "line": 4, "column": 5 } },
-          "text": "n2 = round_to_i32(x)\n    "
+          "text": "n2 = core.round_to_i32(x)\n    "
         }
       ]
     }
@@ -259,7 +259,7 @@ exist is not a file: its diagnostics stand alone.
 | `span` | no | Start and exclusive end. Lines and columns count from 1; **columns count Unicode code points** of the file as read, a byte order mark excluded, like the line width of spec 5.2. Absent when the problem concerns the file as a whole |
 | `function` | no | The function at fault |
 | `node` | no | The name of its line (spec 5.2), absent if empty, and its text in canonical form |
-| `wires` | no | The wires or terminals at fault: `value`, the name of the wire; `from` and `to`, terminals (section 4.3). Each is present when it exists: a bad unit argument has only `to` (`n = unitless(voltage, [A])`: `to` is `n.unit`) |
+| `wires` | no | The wires or terminals at fault: `value`, the name of the wire; `from` and `to`, terminals (section 4.3). Each is present when it exists: a bad unit argument has only `to` (`n = core.unitless(voltage, [A])`: `to` is `n.unit`) |
 | `expected`, `found` | no | Types as written in the language, units included. A scale that no unit name gives shows as a number (`f64[1000*m^2]`), which the language cannot read back; a type that an error upstream left unknown shows as `unknown` |
 | `fixes` | no | A fix when one exists: a `title`, and `edits` to apply to the file when the fix is mechanical |
 | `related` | no | Other places: where a name is already defined, the first of two conflicting arms |
@@ -271,7 +271,7 @@ lists at most 32 wires, fixes, edits or related places. An edit is never cut, si
 program when applied: a fix whose edits are too long or too many keeps its title alone. Paths are not
 cut: walking a folder bounds them.
 
-Fixes are suggestions and nothing applies them in M0a. `with_unit`, for example, asserts something
+A fix that calls a function of another library also adds its `use`, in its sorted place, when the file lacks it. Fixes are suggestions and nothing applies them in M0a. `core.with_unit`, for example, asserts something
 the tool cannot know, and the choice stays with the author.
 
 Diagnostics are sorted by `file` in code point order, then line, column (those with no `span` first),
@@ -352,7 +352,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
 | `LC2001` | error | Unknown value | 5.2 |
-| `LC2002` | error | Unknown function | 4 |
+| `LC2002` | error | Unknown function; for a function of `core` written without the prefix, the fix qualifies it | 4 |
 | `LC2003` | error | Unknown type | 3 |
 | `LC2004` | error | Unknown library in `use` | 4 |
 | `LC2005` | error | Library used without `use`; the fix adds it | 4 |

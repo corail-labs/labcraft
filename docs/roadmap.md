@@ -12,7 +12,7 @@ where the project stands, what the milestones are, and how the Rust code is orga
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
-| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-25 |
+| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-26 |
 | Command line ([cli.md](cli.md)) | First draft: `fmt` and `check`, reports, diagnostic codes |
 | Architecture ([architecture.md](architecture.md)) | First draft: the crates of M0a and the order of work |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-12 |

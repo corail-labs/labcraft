@@ -7,6 +7,8 @@ absurd-icon-grid
 absurd-integer
 absurd-unit-exponent
 semantics-bad-file-hides-nothing
+semantics-core-name-without-prefix
+semantics-core-without-use
 semantics-cycle
 semantics-function-defined-twice
 semantics-recursion

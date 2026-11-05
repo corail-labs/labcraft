@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use dmm_driver
 use errors
 use time
@@ -18,12 +19,12 @@ fn settle(
     value, err_out = loop carry v = 0 V, carry e = err {
         e1 = time.wait(period, err: e)
         t = time.elapsed(t0)
-        late = gt(t, timeout)
+        late = core.gt(t, timeout)
         x, _, e2 = dmm_driver.read_dc_volts(dmm, err: e1)
-        gap = sub(x, target)
-        dist = abs(gap)
-        stable = le(dist, tolerance)
-        done = or(stable, late)
+        gap = core.sub(x, target)
+        dist = core.abs(gap)
+        stable = core.le(dist, tolerance)
+        done = core.or(stable, late)
         next e = errors.raise_if(late, io.timeout, "reading not settled", err: e2)
         next v = x
         until done

@@ -1,7 +1,9 @@
 labcraft 1
 
+use core
+
 fn f() -> (x: i32) {
-    a = add(b, 1)
-    b = add(a, 1)
+    a = core.add(b, 1)
+    b = core.add(a, 1)
     x = a
 }

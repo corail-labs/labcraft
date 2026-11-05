@@ -70,7 +70,8 @@ A function call has **two views**:
 
 The view of a node is changed in the IDE and saved in the `layout` section (`view standard`,
 spec 11); an IDE preference displays everything in standard view. **Primitives** are not a special
-case: they are the `core` functions whose compact view is a circle with a glyph (3.2). The choice
+case: they are the `core` functions whose compact view is a circle with a glyph (3.2); a project's own
+`add` is an ordinary function, with no glyph. The choice
 of view changes nothing in the program: the text, its canonical form and its diffs stay the same.
 
 ### 3.1 Standard view

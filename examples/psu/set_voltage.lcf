@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use string
 use visa
 
@@ -9,7 +10,7 @@ fn set_voltage(
     voltage: f64[V],
     err: error = none,
 ) -> (source: session, err: error) {
-    volts = unitless(voltage, [V])
+    volts = core.unitless(voltage, [V])
     command = string.format("VOLT {volts:.6}", volts: volts)
     s, e1 = visa.write(source, command, err: err)
     source = s

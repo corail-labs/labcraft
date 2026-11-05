@@ -27,7 +27,7 @@ def list_functions(folder, builtins=False):
            "errors": len(lib.errors)}
     if builtins:
         out["builtins"] = [{"name": b.qname, "signature": b.signature(), "doc": b.doc,
-                            "library": b.lib or "core (always available)"} for b in stdlib.BUILTINS.values()]
+                            "library": b.lib} for b in stdlib.BUILTINS.values()]
         shipped = sorted(p for p in SHIPPED.iterdir() if p.is_dir()) if SHIPPED.is_dir() else []
         libs = {p.name: load_library(p) for p in shipped}
         libs.update({d.name: d for d in lib.loader.libs.values()} if lib.loader else {})

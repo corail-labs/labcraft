@@ -1,10 +1,12 @@
 labcraft 1
 
+use core
+
 fn apply(
     measure: fn(f64[V], err: error) -> (f64[V], error),
     x: f64[V],
     err: error = none,
 ) -> (y: f64[V], err: error) {
-    y, e1 = call(measure, x, err: err)
+    y, e1 = core.call(measure, x, err: err)
     err = e1
 }

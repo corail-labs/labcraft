@@ -45,6 +45,7 @@ The diagram is drawn from a text file, which is the format itself,
 ```text
 labcraft 1
 
+use core
 use scpi
 use visa
 
@@ -53,7 +54,7 @@ fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: e
     dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
     raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
     #close: e3 = visa.close(dmm2, err: e2)
-    voltage = with_unit(raw, [V])
+    voltage = core.with_unit(raw, [V])
     err = e3
 }
 ```

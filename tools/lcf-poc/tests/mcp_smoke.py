@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 FIRST_DRAFT = """labcraft 1
 
+use core
 use visa
 use scpi
 
@@ -20,10 +21,10 @@ use scpi
 fn check_5v(resource: string, err: error = none) -> (ok: bool, voltage: f64[V], err: error) {
     dmm, e1 = visa.open(resource, err: err)
     raw, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
-    voltage = with_unit(raw, [V])
-    above = ge(voltage, 4.75 V)
-    below = le(voltge, 5.25 V)
-    ok = and(above, below)
+    voltage = core.with_unit(raw, [V])
+    above = core.ge(voltage, 4.75 V)
+    below = core.le(voltge, 5.25 V)
+    ok = core.and(above, below)
     #close: e3 = visa.close(dmm2, err: e2)
     err = e3
 }

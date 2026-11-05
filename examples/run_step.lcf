@@ -1,5 +1,6 @@
 labcraft 1
 
+use core
 use psu
 use relays
 use results_log
@@ -13,9 +14,9 @@ fn run_step(
     _, e1 = relays.apply(bench.relays, step.route, err: err)
     _, e2 = psu.set_voltage(bench.source, step.voltage, err: e1)
     v, e3 = settle(bench.dmm, target: step.voltage, tolerance: 0.2 V, period: 50 ms, timeout: 1 s, err: e2)
-    above = ge(v, step.low)
-    below = le(v, step.high)
-    passed = and(above, below)
+    above = core.ge(v, step.low)
+    below = core.le(v, step.high)
+    passed = core.and(above, below)
     result = results_log.StepResult { name: step.name, value: v, passed: passed }
     err = e3
 }

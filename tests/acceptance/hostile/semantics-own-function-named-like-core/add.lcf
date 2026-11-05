@@ -1,0 +1,7 @@
+labcraft 1
+
+use core
+
+fn add(a: i32, b: i32) -> (result: i32) {
+    result = core.mul(a, b)
+}

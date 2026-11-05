@@ -173,7 +173,7 @@ class PathConst:
 
 
 class UnitConst:
-    """Unit passed as an argument, written in brackets: `with_unit(x, [V])` (spec R-5)."""
+    """Unit passed as an argument, written in brackets: `core.with_unit(x, [V])` (spec R-5)."""
 
     def __init__(self, text):
         self.text = text

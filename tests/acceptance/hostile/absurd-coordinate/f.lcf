@@ -1,7 +1,9 @@
 labcraft 1
 
+use core
+
 fn f() -> (x: i32) {
-    x = add(1, 1)
+    x = core.add(1, 1)
 }
 
 layout {

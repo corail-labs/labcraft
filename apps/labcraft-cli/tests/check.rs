@@ -431,7 +431,7 @@ fn expected_codes(expected: &Value) -> BTreeSet<String> {
 fn the_stored_hostile_files_give_what_check_expects_so_far() {
     let root = repository().join("tests/acceptance/hostile");
     let cases: Vec<PathBuf> = fs::read_dir(&root).unwrap().map(|entry| entry.unwrap().path()).collect();
-    assert_eq!(cases.len(), 27);
+    assert_eq!(cases.len(), 30);
     for case in cases {
         let name = case.file_name().unwrap().to_str().unwrap().to_owned();
         let expected: Value = serde_json::from_slice(&fs::read(case.join("expected.json")).unwrap()).unwrap();

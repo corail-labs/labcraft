@@ -1,6 +1,7 @@
 labcraft 1
 
 use array
+use core
 use errors
 use string
 use visa
@@ -16,13 +17,13 @@ fn check_errors(session: visa.session, err: error = none) -> (session: visa.sess
         carry seen: error = none,
         carry e = err
     {
-        i2 = add(i, 1)
-        full = ge(i2, 20)
+        i2 = core.add(i, 1)
+        full = core.ge(i2, 20)
         text, s2, e2 = visa.query(current, "SYST:ERR?", err: e)
         parts = string.split(text, ",")
         first, e3 = array.get(parts, 0, err: e2)
         code, e4 = string.to_i32(first, err: e3)
-        done = eq(code, 0)
+        done = core.eq(code, 0)
         added = match done {
             true => yield seen
             false => {
@@ -31,7 +32,7 @@ fn check_errors(session: visa.session, err: error = none) -> (session: visa.sess
                 yield all
             }
         }
-        stop = or(done, full)
+        stop = core.or(done, full)
         next current = s2
         next e = e4
         next i = i2
