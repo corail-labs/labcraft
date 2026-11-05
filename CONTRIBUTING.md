@@ -79,9 +79,10 @@ ci` runs the checks of the Rust code.
 ## Sending a change
 
 1. Every change goes through a pull request, the maintainers' too. Keep it to one topic and say
-   what you checked; the `checks` workflow must be green. GitHub requires only that one, so that a
-   broken nightly can never block `main`, but a red `fuzz` workflow also stops the merge unless a
-   maintainer decides otherwise for that pull request ([fuzz/README.md](fuzz/README.md)).
+   what you checked; the `checks` workflow must be green. GitHub requires only its job `checks`, so that a
+   broken nightly or runner can never block `main`, but a red job `windows` or a red `fuzz` workflow also
+   stops the merge unless a maintainer decides otherwise for that pull request
+   ([fuzz/README.md](fuzz/README.md)).
 2. Pull requests are squash-merged: the title becomes the commit on `main`, so give it a short
    English subject line.
 3. If an AI agent helped, say so (a `Co-Authored-By:` trailer is fine).

@@ -19,7 +19,7 @@ mod ty;
 mod unit;
 
 pub use code::{Code, Severity};
-pub use limits::{Limits, MAX_NESTING};
+pub use limits::{Limits, MAX_FILE_SIZE, MAX_NESTING};
 pub use name::{Interner, Name, normalize};
 pub use report::{
     CheckCounts, CheckDocument, CheckSummary, Diagnostic, Edit, FileEntry, FileResult, Fix, FmtDocument, FmtSummary, MAX_LIST, MAX_TEXT, Node,
