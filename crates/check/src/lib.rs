@@ -1,7 +1,7 @@
 //! L3: name resolution, signatures, type and connection checking (`docs/architecture.md`, section 5).
 //!
-//! So far, pass 1: reading the files and finding the libraries that they use. The other passes come with their steps
-//! (section 9), so a program that reads and whose libraries exist is clean for now.
+//! So far, passes 1 and 2: reading the files, finding the libraries that they use, and what each library declares. The
+//! other passes come with their steps (section 9), so bodies are not looked at for now.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -17,10 +17,13 @@
 use std::borrow::Cow;
 
 use labcraft_graph::{Decl, File, SourceMap};
-use labcraft_types::{CheckCounts, Diagnostic, Interner, Limits, Report};
+use labcraft_types::{CheckCounts, Diagnostic, Interner, Limits, Report, TypeTable};
 
+mod declare;
 mod load;
 pub mod manifest;
+
+pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
 
 /// Which rules of `docs/cli.md`, section 3, a library follows when it uses another: a library shipped with LabCraft
 /// sees only the primitives and the others that are shipped.
@@ -112,6 +115,9 @@ pub struct Checked {
     pub counts: CheckCounts,
     /// The files that read, of the folder given and its sub-libraries. Dropping one takes the stack that reading it did.
     pub files: Vec<CheckedFile>,
+    pub types: TypeTable,
+    /// What each library of the run declares, dependencies included.
+    pub libraries: Vec<DeclaredLibrary>,
 }
 
 #[derive(Debug)]
@@ -134,7 +140,9 @@ pub struct CheckedFile {
 /// It takes the stack that `format::read` does: see `format::STACK_SIZE`.
 pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits) -> Checked {
     let mut report = Report::new(limits.max_report);
-    let (loaded, dependencies) = load::load(root, libraries, names, limits, &mut report);
+    let (mut loaded, unreadable) = load::load(root, libraries, names, limits, &mut report);
+    let declared = declare::declare(&mut loaded, libraries, names, limits, &mut report);
+    let dependencies = load::dependency_reports(&mut loaded, unreadable);
     let mut counts = CheckCounts::default();
     let mut files = Vec::new();
     for library in loaded.into_iter().filter(|library| library.checked) {
@@ -148,5 +156,5 @@ pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interne
             files.push(CheckedFile { shown: file.shown, file: model.file, source_map: model.source_map });
         }
     }
-    Checked { report, dependencies, counts, files }
+    Checked { report, dependencies, counts, files, types: declared.types, libraries: declared.libraries }
 }

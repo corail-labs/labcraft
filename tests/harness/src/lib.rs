@@ -1,6 +1,6 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
 //! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`, scenario 5, through `format`, and what pass 1 of `check` can say about the stored
+//! scenario 4, through `read`, scenario 5, through `format`, and what passes 1 and 2 of `check` can say about the stored
 //! cases. The other families and the rest of each one come with their steps.
 
 /// A file of a corpus, with its path from the root of the repository.

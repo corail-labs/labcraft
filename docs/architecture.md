@@ -188,7 +188,8 @@ pub struct LibrarySource { name: String, shown: String, files: Vec<SourceFile>, 
 pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner,
              limits: &Limits) -> Checked;
 pub struct Checked { report: Report, dependencies: Vec<DependencyReport>, counts: CheckCounts,
-                      files: Vec<CheckedFile>, types: TypeTable }  // `types` comes with pass 2
+                      files: Vec<CheckedFile>, types: TypeTable,
+                      libraries: Vec<DeclaredLibrary> }            // what each library declares, by name
 pub struct CheckedFile { shown: String, file: File, source_map: SourceMap,
                          resolved: Resolved }                      // `resolved` comes with pass 3
 pub struct DependencyReport { shown: String, report: Report }      // merged once per `shown`
@@ -234,7 +235,8 @@ the template of `string.format`, the variadic `errors.merge`. `runtime` (M0b) de
 tests that each signature has a body. The bodies stay in `runtime`, as the roadmap says.
 
 **Last resort.** `check` is one call over a library, so it runs each function under `catch_unwind`: a
-panic is a bug, reported as `LC0099` on that function while the others go on. `format` is covered per file
+panic is a bug, reported as `LC0099` on that function while the others go on. Pass 2 does the same for each
+declaration, a type included; what it walks across declarations has no such net yet. `format` is covered per file
 by the app. The release profile keeps `panic = "unwind"`. WASM traps instead, so the web viewer runs
 this work in a worker that it can restart (scenario 6, point 5, in M0v).
 

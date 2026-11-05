@@ -87,7 +87,9 @@ queue<T>, ref<T>      // explicit references (D-04), never implicit
 Rust). The size of an array is a property of the value, not of its type.
 
 A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
-contain itself, directly or through other types.
+contain itself, directly or through other types: any mention counts, in an array or a function type too.
+A type cannot bear a name that the language gives to a type: the base types (3.1), `waveform`, `queue`,
+`ref` and `opaque`.
 
 **Opaque types**: a library can declare a type whose content is hidden, handled only by its
 functions: `type session = opaque`. This is the case for the session `visa.session` (the equivalent
@@ -772,7 +774,7 @@ to it.
 
 | Part | Milestone |
 |---|---|
-| Generic functions written by the user (3.5); the built-in primitives are generic from M0 | M2 |
+| Generic functions and types written by the user (3.5); the built-in primitives are generic from M0 | M2 |
 | Running external functions (4.1), except `extern rust`, which runs from M0; they are all read and checked from M0 | M8 |
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
 | `ref<T>` and its access structure (8.1, Q-19) | M2 |
@@ -1394,9 +1396,9 @@ What the grammar alone does not say:
 
 | # | Rule |
 |---|---|
-| R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of an imported library, a visible type (except an opaque type or an alias of one, 3.2), or a panel element that is neither an input nor an output. |
+| R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of a library that its file imports (`a` for `use a.b`), of a type of its library (except an opaque type or an alias of one, 3.2; the base types of 3.1 do not count, as in `time.wait(duration: duration)`), or of a panel element that is neither an input nor an output. A function or a type cannot have the name of a library that any file of its library imports (`a` for `use a.b` here too), since a type is visible in all of them: otherwise `core.Pass` in one file would depend on another file. |
 | R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12). **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
-| R-3 | **A `carry` can shadow an outer name** (`carry err = err`): in the body, the name designates the carry. |
+| R-3 | **A `carry` can shadow an outer name** (`carry err = err`): in the body, the name designates the carry. It cannot take the name of an imported library: R-1 comes first. |
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
 | R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
@@ -1406,9 +1408,9 @@ What the grammar alone does not say:
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). |
 | R-12 | **The `string.format` template is a literal**; its fields and the named arguments match exactly (5.4). |
-| R-13 | **An external function has no body and has an `err` output** (4.1). |
+| R-13 | **An external function has no body and has an output `err: error`** (4.1), with that type written as such: an alias of `error` does not do. |
 | R-14 | **An icon is valid**: grid of 32 in v0, `path` strings conforming to the SVG path syntax, `accent` token known to the theme; a shape that leaves the grid gives a warning (11.1). |
-| R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`). No parameter is named `after`. |
+| R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`). No parameter is named `after`, nor an argument of a function type. |
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. |
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error (6.1). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
