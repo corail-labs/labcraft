@@ -132,6 +132,28 @@ fn saving_again_changes_nothing_on_every_file_and_every_prefix() {
     }
 }
 
+/// The corpus is canonical and has few comments inside bodies, so this one has something to reorder and to lose,
+/// at every level.
+#[test]
+fn saving_again_loses_nothing_when_lines_move() {
+    let text = "labcraft 1\nuse b // on b\n// about use\nuse a\n// doc\nfn f(\n// above k\nk: i32, // on k\n) -> (o: i32, // on o\n) { // open\n\
+                // above z\nz = g(y) // on z\n// above y\ny = match k { // open y\n// above the arm\n_ => { // open the arm\n// above w\nw = h(v) // on w\n\
+                // above v\nv = h() // on v\n// above the yield\nyield w // on the yield\n// end of the arm\n} // after the arm\n// end of the match\n} // on y\n\
+                // above x\nx = for i in k, // on i\ncarry c = 1 // on c\n// end of the clauses\n{ // open x\n// above next\nnext c = d // on next\n\
+                // above d\nd = h() // on d\n// end of the for\n} // after x\n// above o\no = z // on o\n// end of the body\n} // after f\n\
+                // above the panel\npanel {\n// above b\nindicator o: led // on b\n// above a\ncontrol k: led // on a\n// end of the panel\n} // after the panel\n\
+                // above the layout\nlayout {\n// above t\nnode z at (2, 2) // on t\n// above u\nnode y at (1, 1) // on u\n// end of the layout\n} // after the layout\n\
+                // end of the file\n";
+    assert_saved_again_changes_nothing("every comment on a line that moves", text.as_bytes());
+    let mut names = Interner::new();
+    let result = format(text.as_bytes(), &mut names, &Limits::default());
+    let canonical = result.text.unwrap();
+    for (earlier, later) in [("y = match", "z = g(y)"), ("v = h()", "w = h(v)"), ("d = h()", "next c = d"), ("z = g(y)", "o = z")] {
+        assert!(canonical.find(earlier) < canonical.find(later), "{earlier}, {later}:\n{canonical}");
+    }
+    assert_eq!(result.report.diagnostics(), []);
+}
+
 /// Point 4: CR LF endings, and any number of them at the end of the file.
 #[test]
 fn line_endings_are_written_as_line_feeds() {
