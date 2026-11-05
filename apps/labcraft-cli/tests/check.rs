@@ -1,5 +1,5 @@
-//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Pass 1 for now: reading the files and finding the
-//! libraries they use.
+//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 and 2 for now: reading the files, finding
+//! the libraries they use, and what each library declares.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -103,6 +103,28 @@ fn the_text_ends_with_the_summary() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.starts_with("f.lcf:3:5: error[LC2004]: unknown library `nowhere`"), "{text}");
     assert!(text.ends_with("check: 1 library, 1 function, 0 types: 1 error, 0 warnings\n"), "{text}");
+}
+
+#[test]
+fn a_signature_can_name_the_types_of_a_shipped_library() {
+    let folder = Folder::new("shipped-types");
+    folder.file("f.lcf", "labcraft 1\n\nuse visa\n\nfn f(session: visa.session) -> () {}\n");
+    assert_eq!(folder.codes(&["."]), (0, vec![]));
+    folder.file("f.lcf", "labcraft 1\n\nuse visa\n\nfn f(session: visa.nowhere) -> () {}\n");
+    assert_eq!(folder.codes(&["."]), (1, vec!["LC2003".to_owned()]));
+}
+
+#[test]
+fn a_library_without_use_comes_with_its_fix_in_the_document() {
+    let folder = Folder::new("fix-of-a-use");
+    folder.file("f.lcf", "labcraft 1\n\nfn f(session: visa.session) -> () {}\n");
+    let (exit, document) = folder.json(&["."]);
+    assert_eq!(exit, 1);
+    let diagnostic = &document["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "LC2005");
+    assert_eq!(diagnostic["function"], "f");
+    assert_eq!(diagnostic["fixes"][0]["edits"][0]["text"], "\nuse visa\n");
+    assert_eq!(diagnostic["fixes"][0]["edits"][0]["span"]["start"]["line"], 2);
 }
 
 #[test]

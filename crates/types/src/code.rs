@@ -90,6 +90,7 @@ codes! {
     Lc2019 = "LC2019" Error,
     Lc2020 = "LC2020" Warning,
     Lc2021 = "LC2021" Error,
+    Lc2022 = "LC2022" Error,
     Lc2101 = "LC2101" Error,
     Lc2102 = "LC2102" Error,
     Lc2103 = "LC2103" Error,

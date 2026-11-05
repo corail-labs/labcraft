@@ -22,17 +22,19 @@ pub(crate) struct Library {
     pub(crate) checked: bool,
     pub(crate) files: Vec<LoadedFile>,
     shown: String,
-    origin: Origin,
+    pub(crate) origin: Origin,
     uses: Vec<LibraryUse>,
     /// The errors of a dependency, kept apart: several folders given can read one dependency.
-    report: Report,
-    checked_elsewhere: bool,
+    pub(crate) report: Report,
+    pub(crate) checked_elsewhere: bool,
 }
 
 pub(crate) struct LoadedFile {
     pub(crate) shown: String,
     /// `None` when the file does not read: what it declares stays unknown.
     pub(crate) model: Option<Model>,
+    /// What each of its `use` lines found, by the name of the library with `.` between segments.
+    pub(crate) imports: HashMap<String, Target>,
 }
 
 pub(crate) struct Model {
@@ -48,7 +50,7 @@ struct LibraryUse {
 }
 
 #[derive(Clone, Copy)]
-enum Target {
+pub(crate) enum Target {
     Primitive,
     Library(usize),
     Missing,
@@ -56,8 +58,8 @@ enum Target {
     Unreadable,
 }
 
-/// The libraries of a run: the folder given and its sub-libraries first, then what they use. What the dependencies have
-/// to say comes back apart from `report`.
+/// The libraries of a run: the folder given and its sub-libraries first, then what they use. What a dependency that
+/// could not be read has to say comes back apart from `report`.
 pub(crate) fn load(
     root: LibrarySource,
     libraries: &dyn Libraries,
@@ -75,13 +77,18 @@ pub(crate) fn load(
         next += 1;
     }
     loader.report_cycles();
-    let Loader { mut loaded, unreadable, .. } = loader;
+    let Loader { loaded, unreadable, .. } = loader;
+    (loaded, unreadable)
+}
+
+/// What the dependencies have to say, once the passes that read them are done.
+pub(crate) fn dependency_reports(loaded: &mut [Library], unreadable: Vec<DependencyReport>) -> Vec<DependencyReport> {
     let mut dependencies = unreadable;
     for library in loaded.iter_mut().filter(|library| !library.checked && library.report.errors() > 0) {
         let report = std::mem::replace(&mut library.report, Report::new(0));
         dependencies.push(DependencyReport { shown: library.shown.clone(), report });
     }
-    (loaded, dependencies)
+    dependencies
 }
 
 struct Loader<'a> {
@@ -181,12 +188,12 @@ impl Loader<'_> {
     fn read_file(&mut self, file: SourceFile, checked: bool, origin: Origin, budget: &mut Budget, sink: &mut Report) -> LoadedFile {
         let SourceFile { shown, content } = file;
         let Content::Bytes(bytes) = content else {
-            return LoadedFile { shown, model: None };
+            return LoadedFile { shown, model: None, imports: HashMap::new() };
         };
         let size = bytes.len() as u64;
         if budget.over || size > budget.left {
             budget.over = true;
-            return LoadedFile { shown, model: None };
+            return LoadedFile { shown, model: None, imports: HashMap::new() };
         }
         budget.left -= size;
         // What is embedded in the tool is not the user's to limit, nor to fix.
@@ -198,7 +205,7 @@ impl Loader<'_> {
             Err(payload) => {
                 let bug = self.libraries.last_panic().unwrap_or(payload);
                 say(sink, checked, Diagnostic::new(Code::Lc0099, format!("internal error, which is a bug of the tool: {bug}"), shown.as_str()));
-                return LoadedFile { shown, model: None };
+                return LoadedFile { shown, model: None, imports: HashMap::new() };
             }
         };
         report.set_file(&shown);
@@ -211,7 +218,7 @@ impl Loader<'_> {
         if let Some(model) = &model {
             judge_the_kind_of_file(&shown, model, checked, sink);
         }
-        LoadedFile { shown, model }
+        LoadedFile { shown, model, imports: HashMap::new() }
     }
 
     fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) {
@@ -245,12 +252,12 @@ impl Loader<'_> {
     fn resolve_uses(&mut self, index: usize) {
         let Some(library) = self.loaded.get_mut(index) else { return };
         let (checked, origin, checked_elsewhere) = (library.checked, library.origin, library.checked_elsewhere);
-        let files = std::mem::take(&mut library.files);
+        let mut files = std::mem::take(&mut library.files);
         let mut sink = std::mem::replace(&mut library.report, Report::new(self.limits.max_report));
         let mut uses = Vec::new();
-        for (file_index, file) in files.iter().enumerate() {
+        for (file_index, file) in files.iter_mut().enumerate() {
             let Some(model) = &file.model else { continue };
-            self.resolve_uses_of_file(file_index, &file.shown, model, (checked, origin), &mut uses, &mut sink);
+            file.imports = self.resolve_uses_of_file(file_index, &file.shown, model, (checked, origin), &mut uses, &mut sink);
         }
         if checked {
             self.report.merge(sink);
@@ -273,9 +280,10 @@ impl Loader<'_> {
         from: (bool, Origin),
         uses: &mut Vec<LibraryUse>,
         sink: &mut Report,
-    ) {
+    ) -> HashMap<String, Target> {
         let (checked, origin) = from;
         let map = &model.source_map;
+        let mut imports = HashMap::new();
         let mut seen: HashMap<String, Id> = HashMap::new();
         for line in &model.file.uses {
             let segments: Vec<Name> = line.path.segments().collect();
@@ -294,7 +302,8 @@ impl Loader<'_> {
                 continue;
             }
             seen.insert(name.clone(), line.path.id);
-            match self.target(&segments, &name, checked, origin) {
+            let target = self.target(&segments, &name, checked, origin);
+            match target {
                 Target::Library(target) => uses.push(LibraryUse { target, file: file_index, id: line.path.id }),
                 Target::Missing => {
                     let message = format!(
@@ -304,7 +313,9 @@ impl Loader<'_> {
                 }
                 Target::Primitive | Target::Unreadable => {}
             }
+            imports.insert(name, target);
         }
+        imports
     }
 
     fn joined(&self, segments: &[Name], separator: &str) -> String {
@@ -427,7 +438,7 @@ fn judge_the_kind_of_file(shown: &str, model: &Model, checked: bool, sink: &mut 
     }
 }
 
-fn at(code: Code, message: String, shown: &str, map: &SourceMap, id: Id) -> Diagnostic {
+pub(crate) fn at(code: Code, message: String, shown: &str, map: &SourceMap, id: Id) -> Diagnostic {
     let mut diagnostic = Diagnostic::new(code, message, shown);
     diagnostic.span = map.span(id);
     diagnostic
@@ -435,7 +446,7 @@ fn at(code: Code, message: String, shown: &str, map: &SourceMap, id: Id) -> Diag
 
 /// A panic is a bug, reported on what it stopped while the rest goes on (`docs/architecture.md`, section 5). WASM traps
 /// instead, and its host runs this work in a worker that it can restart.
-fn last_resort<T>(work: impl FnOnce() -> T) -> Result<T, String> {
+pub(crate) fn last_resort<T>(work: impl FnOnce() -> T) -> Result<T, String> {
     panic::catch_unwind(AssertUnwindSafe(work)).map_err(|payload| panic_text(payload.as_ref()))
 }
 
@@ -449,7 +460,7 @@ fn panic_text(payload: &(dyn Any + Send)) -> String {
 
 /// The groups of nodes that reach each other, by Tarjan's algorithm, with a stack of its own: how long a chain of
 /// libraries is depends on the program. A node alone counts only if it has an edge to itself.
-fn cycles(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+pub(crate) fn cycles(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
     #[derive(Clone, Copy, Default)]
     struct State {
         order: Option<usize>,
@@ -603,8 +614,9 @@ mod tests {
     #[test]
     fn a_file_in_the_wrong_kind_of_file_is_refused_and_still_known() {
         let ty = b"labcraft 1\n\ntype T = f64\n";
-        let extern_ = b"labcraft 1\n\nextern rust(crate: \"a\", function: \"b\")\nfn f() -> (err: error)\n";
-        let found = codes_of_files(vec![file("t.lcf", ty), file("f.lct", FUNCTION), file("e.lct", extern_), file("t.lct", ty)]);
+        let extern_ = b"labcraft 1\n\nextern rust(crate: \"a\", function: \"b\")\nfn g() -> (err: error)\n";
+        let other = b"labcraft 1\n\ntype U = f64\n";
+        let found = codes_of_files(vec![file("t.lcf", ty), file("f.lct", FUNCTION), file("e.lct", extern_), file("u.lct", other)]);
         assert_eq!(found, ["LC0103", "LC0103", "LC0103"]);
         let checked = check(library("", vec![file("t.lcf", ty), file("f.lct", FUNCTION)]), &Nothing, &mut Interner::new(), &Limits::default());
         assert_eq!((checked.counts.functions, checked.counts.types), (1, 1));

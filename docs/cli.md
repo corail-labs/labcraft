@@ -153,7 +153,8 @@ cannot be listed gets `LC0001` once and is skipped, and a file given there is wr
 **One error, one diagnostic** (scenario 2). A value whose type is unknown because of an error
 upstream takes an error type that matches everything; a call to a function whose file does not parse
 gives no further diagnostic. A file with a syntax error gives at least one diagnostic and is not
-checked further; the other files of the library are.
+checked further; the other files of the library are. A library with such a file may declare what a name
+stands for, so a type that it does not seem to have gives no `LC2003`.
 
 `--deny-warnings` makes warnings count for the status and the exit code. This is what scenario 1
 asks of an agent, and what a project can ask of its CI.
@@ -278,8 +279,8 @@ Diagnostics are sorted by `file` in code point order, then line, column (those w
 code and message, so that the same input always gives the same report. The expected results of the
 corpora ([tests/acceptance](../tests/acceptance/README.md)) compare everything except the text of
 `message` and `fixes`. A problem across files
-(`LC2013`, `LC2016`) is reported once, on the last file in path order for `LC2013` and on the first
-for `LC2016`, with the others in `related`.
+(`LC2013`, `LC2016`, `LC2017`) is reported once, on the last file in path order for `LC2013` and on the first
+for `LC2016` and `LC2017`, with the others in `related`.
 
 ### 4.3 Terminals
 
@@ -355,7 +356,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2002` | error | Unknown function; for a function of `core` written without the prefix, the fix qualifies it | 4 |
 | `LC2003` | error | Unknown type | 3 |
 | `LC2004` | error | Unknown library in `use` | 4 |
-| `LC2005` | error | Library used without `use`; the fix adds it | 4 |
+| `LC2005` | error | Library used without `use`, once per library in a file; the fix adds it | 4 |
 | `LC2006` | error | Unknown field | 3.2 |
 | `LC2007` | error | Unknown variant | 3.2 |
 | `LC2008` | error | Unknown unit | 3.3 |
@@ -364,14 +365,15 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2011` | error | Unknown label in `after:` | R-15 |
 | `LC2012` | error | Value defined twice in a body | 5.1 |
 | `LC2013` | error | Function or type defined twice in a library, or a function and a type with the same name | 4 |
-| `LC2014` | error | Value with the name of an imported library, a visible type or a live panel element | R-1 |
+| `LC2014` | error | Value with the name of a library that its file imports, of a type of its library or of a live panel element; function or type with the name of a library that any file of its library imports, on the declaration, with the `use` in `related` | R-1 |
 | `LC2015` | error | Label used twice in a function | R-17 |
 | `LC2016` | warning | Function that calls itself, directly or across files: a run stops at the limit of call depth (8.2) | 8.2 |
-| `LC2017` | error | Type that contains itself | 3.2 |
+| `LC2017` | error | Type that contains itself. A cycle of types that passes through a `use` gives only `LC2021`, since its libraries are in a cycle too | 3.2 |
 | `LC2018` | error | `next` for a name that is not a carry of the loop | R-6 |
 | `LC2019` | error | Two parameters, outputs, fields or variants with the same name | 4, 3.2 |
 | `LC2020` | warning | Library imported twice: `fmt` removes the line, unless it has a comment | 5.2 |
 | `LC2021` | error | Libraries that use each other in a cycle | 4 |
+| `LC2022` | error | Type with a name that the language gives to a type: a base type, `waveform`, `queue`, `ref`, `opaque` | 3.2 |
 
 ### Calls: `LC21`
 
@@ -409,7 +411,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3018` | error | Literal that does not fit its type: `300` for an `i8` | 3.4 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, or the wrong number of type arguments | 3.5 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
-| `LC3021` | error | Unit on a type that is not a number: `string[V]` | 3.3 | |
+| `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
 | `LC3022` | error | The same pattern twice: `_`, a variant or a `handle` category | 6.1, 7.3 | |
 
 ### Dataflow and structures: `LC40`, `LC41`
@@ -421,7 +423,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC4003` | error | Carry with no `next`, or with two | R-6 |
 | `LC4004` | error | `for parallel` with a carry | 6.2 |
 | `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
-| `LC4006` | error | Feature planned for a later milestone: generic function written by the user, `ref<T>`… | 9 |
+| `LC4006` | error | Feature planned for a later milestone: generic function or type written by the user, `ref<T>`, `queue<T>`… | 9 |
 | `LC4101` | warning | `err` output wired nowhere | 7.5 |
 | `LC4102` | warning | Concurrent access to a resource: two nodes with no dependency between them. Once per resource | 8.1 |
 | `LC4103` | warning | Panel element written by two unordered nodes | 8.1 |

@@ -223,7 +223,8 @@ impl TypeTable {
         self.types.get(id.0 as usize).map_or(0, |entry| entry.depth)
     }
 
-    fn has_error(&self, id: TyId) -> bool {
+    /// [`Ty::Error`] is somewhere inside: an error has been reported, and what this type would have been stays unknown.
+    pub fn has_error(&self, id: TyId) -> bool {
         self.types.get(id.0 as usize).is_none_or(|entry| entry.has_error)
     }
 
