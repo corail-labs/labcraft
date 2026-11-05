@@ -120,9 +120,9 @@ Decisions:
 ```rust
 pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read;  // file, source map, diagnostics
 // `Name` is an index with no order, and numbers are names too: sorting and printing need the interner.
-pub fn canonical_order(body: &Body, names: &Interner) -> Result<Vec<usize>, Unorderable>;  // 5.2, public: M0b needs it (8)
-pub fn canonicalize(file: File, map: &SourceMap, names: &Interner) -> (File, Vec<Diagnostic>);  // all the fixes of `fmt`; ids renumbered, so `map` no longer applies
-pub fn write(file: &File, names: &Interner) -> String;                     // prints what is stored
+pub fn canonical_order(body: &Body, signature: Option<&Signature>, names: &Interner) -> Result<Vec<usize>, Unorderable>;  // 5.2, public: M0b needs it (8); the signature, for the body of a function
+pub fn canonicalize(file: File, map: &SourceMap, names: &mut Interner, report: &mut Report) -> File;  // all the fixes of `fmt`; ids renumbered, so `map` no longer applies
+pub fn write(file: &File, names: &Interner, limits: &Limits) -> Result<String, TooLarge>;  // prints what is stored
 pub fn write_line(statement: &Statement, names: &Interner) -> String;      // `node.text` of a diagnostic
 pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;  // the above, for one file
 ```
@@ -144,7 +144,7 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
   map and the report of that file alone, replaced when the code stands alone.
 - **The stack.** Depth is bounded by the ceiling of `max_nesting`, and `format::STACK_SIZE` is what each
   host gives. `crates/format/tests/stack.rs` measures the bytes per level at the ceiling, for each kind of
-  nesting, covering parsing, `Clone`, `Eq` and `Drop` (`write` at step 5), and requires at most half of
+  nesting, covering parsing, `Clone`, `Eq`, `Drop`, `canonicalize` and `write`, and requires at most half of
   `STACK_SIZE`, so that it is raised before a host runs out. `labcraft-cli` and the desktop viewer run the
   work on a thread of that size.
 - **The stack in WASM** is two stacks. The linked stack is ours: `.cargo/config.toml` links `STACK_SIZE`, which
@@ -158,13 +158,19 @@ pub fn format(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Formatted;
   That build is a debug one, which takes 300 to 400 KiB at 256 levels: this keeps the release build at about
   twice what it needs, and is not a margin for the debug build.
 - **Attaching comments** happens while parsing, following 5.2. A comment inside a statement written
-  over several lines goes before the statement.
-- **`canonicalize`** does everything that `fmt` changes in the model: sorts `use` lines, orders bodies
-  by `canonical_order` (a body that cannot be ordered keeps its order, with `LC6002`), orders the items
-  of `panel` and `layout`, removes what may be removed (never with a comment attached), renumbers ids.
+  over several lines goes before the statement. A comment also gets its one spelling there (a space after
+  `//`, none at the end of the line), as a name does, so that the model does not change when `fmt` writes the
+  file. So does `after: ([x])`: without its parentheses, it is a `Bracket`.
+- **`canonicalize`** does everything else that `fmt` changes in the model: sorts `use` lines, orders bodies
+  by their canonical order (a body that cannot be ordered keeps its order, with `LC6002`), orders the items
+  of `panel` and `layout`, removes what may be removed (never with a comment attached), renumbers ids. Its
+  warnings go to a `Report`, which bounds them.
 - **`canonical_order`** uses a binary heap of ready lines: the "repeatedly emit" of 5.2 is quadratic if
-  written naively. Dependencies are read from syntax alone (5.2).
-- **`write`** owns all of the layout of 5.2, and prints bodies in their stored order.
+  written naively. Dependencies are read from syntax alone (5.2), and one walk finds them for every body: a name
+  read goes to the innermost scope that binds it, so that a file nested deep does not read its text once per level.
+- **`write`** owns all of the layout of 5.2, and prints bodies in their stored order. A form that may go on one line
+  is tried in the text and taken back if it does not fit, and each try stops at the width of a line. It stops
+  at `max_file_size`, since a text over it could not be read again (`LC6003`).
 - **Migration** of older format versions has a place here. There is only version 1 today.
 
 ## 5. `check` (L3)
@@ -310,9 +316,9 @@ exception (verified at step 1).
 | What | Where | Scenario |
 |---|---|---|
 | Unit tests: units, lexer, each rule and comment slot of 5.2 | in each crate | |
-| Maximum nesting: parse, `Drop`, `Clone`, `Eq`, write: bytes per level, with the stack of each host | `format` tests, `tests/harness` | 4 |
+| Maximum nesting: parse, `Drop`, `Clone`, `Eq`, `canonicalize`, `write`: bytes per level, with the stack of each host | `format` tests, `tests/harness` | 4 |
 | `type-errors` and stored `hostile`, compared with their reports; Truncation and Nesting | `tests/harness`, native and WASM | 2, 4 |
-| Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests | 5 |
+| Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests, `tests/harness` | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |
 | Fuzzing the parser, `check` and the round trip | `fuzz/` | 4 |

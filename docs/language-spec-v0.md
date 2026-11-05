@@ -373,6 +373,11 @@ has one text:
     function without parameters keeps `fn name() -> (` on its first line.
   - **The fields of a struct and the variants of an enum** follow the same rule: one line if it fits
     and has no comment between its braces, otherwise one item per line, each followed by a comma.
+    Inside `[ ]`, `( )` or `< >`, the items are indented one level from the line that holds the `{`,
+    the brackets adding no level, and the `}` is at the level of that line (`type T = [struct {`,
+    the items, `}]`). A line is judged as a whole: when it does not fit or has such a comment, every
+    struct and enum directly on it is split, even one that would fit, and each item is then judged
+    on its own line.
   - **A `loop` or a `for`** whose clauses (`in` clauses and carries) do not fit, or contain a
     comment, ends its line with the keyword (with `parallel` or `continue_on_error` if present),
     then puts one clause per line, indented one level and separated by commas, then `{` alone at the
@@ -905,6 +910,10 @@ layout {
 - `wire a -> b` designates the wire from node `a` to node `b`. When it is not the only one,
   `wire a.out -> b.in` names the terminals, with the output and input names of the signatures:
   `wire raw.session -> #close.session` in `check_voltage` (section 12).
+- An input or an output of the function is a terminal of its frame, not a node (visual notation,
+  section 2). A `wire` entry can name one: `wire a -> b`, with `a` an input, is the wire from the
+  frame to node `b`, and it can end at an output in the same way. A `node` entry cannot, and gets
+  the warning below.
 - Wires without a route are routed automatically.
 - **View of a node**: compact by default, standard on request (visual notation, section 3).
   `view standard` or `view compact` sets the view of a node, alone or after its position. The IDE
@@ -914,8 +923,9 @@ layout {
 - Renaming a value updates the section (IDE and CLI command). An entry that names a node that
   does not exist, for example after an agent renamed a value in the text, gives a warning at edit
   time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
-  attached to the entry. A name defined in several bodies (two arms) is ambiguous here, and gives a
-  warning: use a label.
+  attached to the entry. `fmt` keeps any entry whose names are all nodes, inputs or outputs of the
+  function, and `check` judges it, whatever its kind or direction. A name defined in several bodies
+  (two arms) is ambiguous here, and gives a warning: use a label.
 - Coordinates are integers between -1,000,000 and 1,000,000 *(range proposed)*; a value outside
   is an error at edit time.
 

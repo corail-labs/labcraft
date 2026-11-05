@@ -527,10 +527,10 @@ fn a_comment_outside_a_declaration_belongs_to_the_section_after_it_or_to_the_end
 }
 
 #[test]
-fn comments_keep_their_text_exactly() {
-    let file = file_of("labcraft 1\n//no space\n//    four spaces  \n//\n///   doc  \nfn f() -> () {}\n");
+fn comments_keep_their_text_in_their_one_spelling() {
+    let file = file_of("labcraft 1\n//no space\n//    four spaces  \n//\n//   \n///   doc  \n//\ttab\t\nfn f() -> () {}\n");
     let before = &function_of(&file).comments.before;
-    assert_eq!(before.iter().map(|comment| comment.text.as_ref()).collect::<Vec<_>>(), ["no space", "    four spaces  ", "", "   doc  "]);
+    assert_eq!(before.iter().map(|comment| comment.text.as_ref()).collect::<Vec<_>>(), [" no space", "    four spaces", "", "", "   doc", " \ttab"]);
 }
 
 fn programs() -> Vec<PathBuf> {

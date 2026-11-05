@@ -115,7 +115,7 @@ impl<'a> Parser<'a, '_> {
     }
 
     fn keep_comment(&mut self, kind: CommentKind, text: &str, line: u32) {
-        self.pending.push(Pending { comment: Comment { kind, text: text.into() }, line });
+        self.pending.push(Pending { comment: comment_of(kind, text), line });
         self.drop_raw();
     }
 
@@ -283,7 +283,7 @@ impl<'a> Parser<'a, '_> {
             && span.start.line == line
         {
             self.drop_raw();
-            return Ok(Some(Comment { kind: CommentKind::Line, text: text.into() }));
+            return Ok(Some(comment_of(CommentKind::Line, text)));
         }
         Ok(None)
     }
@@ -448,7 +448,7 @@ impl<'a> Parser<'a, '_> {
             }
             Some(Token { kind: T::Comment(comment), .. }) => {
                 self.drop_raw();
-                Some(Comment { kind: CommentKind::Line, text: comment.into() })
+                Some(comment_of(CommentKind::Line, comment))
             }
             Some(token) => return Err(not_a_header(token.span)),
         };
@@ -1124,6 +1124,10 @@ impl<'a> Parser<'a, '_> {
                 }
             }
             self.close(T::RightParen, "`,` or `)`")?;
+            // Without its parentheses, which canonical form drops, `[x]` reads as an argument does.
+            if let [OrderRef::Value(value)] = refs.as_mut_slice() {
+                as_bracket(value, self.lexer.names());
+            }
         } else if self.at(T::Hash)? {
             refs.push(OrderRef::Label(self.label_ref()?));
         } else {
@@ -1848,6 +1852,31 @@ impl<'a> Parser<'a, '_> {
             Err(self.unexpected("`rect`, `circle`, `line`, `path` or `text`"))
         }
     }
+}
+
+/// A comment in its one spelling (5.2): at least one space after `//`, or nothing when it is empty, and no space or
+/// tab at the end of the line. Everything else in a comment is its text.
+fn comment_of(kind: CommentKind, text: &str) -> Comment {
+    let text = text.trim_end_matches([' ', '\t']);
+    let text = if text.is_empty() || text.starts_with(' ') { text.into() } else { format!(" {text}").into_boxed_str() };
+    Comment { kind, text }
+}
+
+/// `[x]` and `[1]`, read as an array, in the form that an argument gives them (R-5).
+fn as_bracket(value: &mut Operand, names: &Interner) {
+    let Operand::Array(id, values) = value else {
+        return;
+    };
+    let unit = match values.as_slice() {
+        [Operand::Path(path)] if path.rest.is_empty() => {
+            UnitExpr { id: path.id, first: UnitTerm::Named { name: path.first, exponent: None }, rest: Vec::new() }
+        }
+        [Operand::Number(number, Numeral { negative: false, kind: NumeralKind::Int(digits) }, None)] if names.resolve(*digits) == "1" => {
+            UnitExpr { id: *number, first: UnitTerm::One { exponent: None }, rest: Vec::new() }
+        }
+        _ => return,
+    };
+    *value = Operand::Bracket(*id, Box::new(unit));
 }
 
 fn misplaced_documentation(span: Span) -> Box<Diagnostic> {

@@ -8,7 +8,8 @@ set -euo pipefail
 
 target=${1:?usage: run.sh TARGET SECONDS}
 seconds=${2:?usage: run.sh TARGET SECONDS}
-# Far below what was measured, about 2,000 a second on 4 cores with the deep seeds.
+# Far below what was measured, with the deep seeds: about 2,000 a second on 4 cores for `read`, about 1,400 a second
+# per process in a container for `round_trip`.
 least=$((seconds * 100))
 
 cd "$(dirname "$0")"
