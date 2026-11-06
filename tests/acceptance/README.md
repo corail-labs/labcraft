@@ -22,7 +22,8 @@ give `expected.json`:
 - `related` is compared by `file` and `span`.
 
 Every program is in canonical form and has exactly one error, so a second diagnostic is a failure
-("one error, one diagnostic"). Each code marked `S2` in `docs/cli.md` has one case.
+("one error, one diagnostic"). Each code marked `S2` in `docs/cli.md` has one case. `apps/labcraft-cli/tests/check.rs`
+runs them, through the program, and `tests/harness` with no command line, natively and in WASM.
 
 ## `hostile/`: scenario 4
 

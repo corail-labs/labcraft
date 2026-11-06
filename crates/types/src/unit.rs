@@ -125,6 +125,17 @@ impl Unit {
     /// A dimensionless number, the default.
     pub const ONE: Unit = unit([0; DIMENSIONS], ten(0), Offset::None);
 
+    /// What a `duration` converts to and from (spec 3.1).
+    pub const SECOND: Unit = unit([0, 0, 1, 0, 0, 0, 0], ten(0), Offset::None);
+
+    /// The difference of two temperatures (spec 3.3).
+    pub const KELVIN: Unit = unit([0, 0, 0, 0, 1, 0, 0], ten(0), Offset::None);
+
+    /// `°C` or `°F`, a scale with an offset.
+    pub fn is_temperature_scale(&self) -> bool {
+        self.offset != Offset::None
+    }
+
     /// A unit of the table of named units, with its prefix, in its one spelling (R-20): `V`, `mV`.
     pub fn from_name(name: &str) -> Option<Unit> {
         let exact = |name: &str| NAMED_UNITS.iter().find(|named| named.name == name);

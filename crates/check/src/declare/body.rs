@@ -1,6 +1,6 @@
 //! Pass 3 (`docs/architecture.md`, section 5): names resolved in scopes, calls bound to signatures, labels and `after:`.
-//! A function is checked against the signatures of the others, never by following a call. Types come with pass 4, and what
-//! needs them with it: a field of a value, the values of a variant, the fields of a `string.format` template.
+//! A function is checked against the signatures of the others, never by following a call. Pass 4, in `types`, reads what this
+//! one found: a field of a value, the values of a variant and the fields of a `string.format` template wait for it.
 //!
 //! It lives under `declare` since it reads a type or a function as that pass does, with its reports and its `use` lines.
 //!
@@ -19,11 +19,12 @@ use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Nod
 
 use super::{DeclaredFunction, DeclaredLibrary, DeclaredType, Pass, Scope, add_use, path_text, unit_of};
 use crate::load::{Target, at, cycles, last_resort};
-use crate::primitives::{PRIMITIVES, ParamKind, PrimitiveLibrary};
+use crate::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
 #[cfg(test)]
 mod tests;
+mod types;
 
 /// What a call binds to, made once for each function: a hostile file can hold a million parameters and a million calls.
 struct Callable {
@@ -69,27 +70,34 @@ impl Callable {
 /// The signatures of the primitives, with their names interned. Made once for a run.
 pub(super) struct Primitives {
     table: HashMap<(PrimitiveLibrary, Name), Rc<Callable>>,
+    signatures: HashMap<(PrimitiveLibrary, Name), &'static Primitive>,
     core: HashSet<Name>,
 }
 
 impl Primitives {
     pub(super) fn new(names: &mut Interner) -> Self {
         let mut table = HashMap::with_capacity(PRIMITIVES.len());
+        let mut signatures = HashMap::with_capacity(PRIMITIVES.len());
         let mut core = HashSet::new();
         for primitive in PRIMITIVES {
             let name = names.intern(primitive.name);
             let params = primitive.params.iter().map(|param| (names.intern(param.name), param.kind, param.has_default, param.variadic)).collect();
-            let callable = Callable::new(params, primitive.outputs.map(<[&str]>::len), primitive.open, Some(primitive.generics), false);
+            let callable = Callable::new(params, primitive.outputs.map(<[&str]>::len), primitive.open, Some(primitive.variables.names.len()), false);
             table.insert((primitive.library, name), Rc::new(callable));
+            signatures.insert((primitive.library, name), primitive);
             if primitive.library == PrimitiveLibrary::Core {
                 core.insert(name);
             }
         }
-        Primitives { table, core }
+        Primitives { table, signatures, core }
     }
 
     fn get(&self, library: PrimitiveLibrary, name: Name) -> Option<Rc<Callable>> {
         self.table.get(&(library, name)).cloned()
+    }
+
+    fn signature(&self, library: PrimitiveLibrary, name: Name) -> Option<&'static Primitive> {
+        self.signatures.get(&(library, name)).copied()
     }
 
     fn is_in_core(&self, name: Name) -> bool {
@@ -106,6 +114,14 @@ struct TypeFacts {
     definitions: HashMap<TyId, TyId>,
     /// The variants of an enumeration, or the fields of a struct, by the id of its type.
     members: HashMap<TyId, HashSet<Name>>,
+    /// The fields of a struct, with their types, by the id of its type.
+    fields: HashMap<TyId, HashMap<Name, TyId>>,
+    /// The values of each variant of an enumeration, by the id of its type.
+    variants: HashMap<TyId, HashMap<Name, Vec<TyId>>>,
+    /// The type of a reference to a function of a library, by that library and its name.
+    references: HashMap<(u32, Name), TyId>,
+    /// The names of a function type, by the id of that type: a call must not walk them each time, in any file of a run.
+    reference_names: HashMap<TyId, Rc<HashMap<Name, u32>>>,
 }
 
 /// What a value is, and in which body.
@@ -228,11 +244,49 @@ fn float_fits(digits: &str) -> bool {
     digits.parse::<f64>().is_ok_and(f64::is_finite)
 }
 
+/// What a diagnostic says of this line: the name of its first target, or else its label, and its text in canonical form.
+/// Cut here, not by the report: each diagnostic of a line copies it.
+fn node_of(statement: &Statement, names: &Interner) -> Node {
+    let line = targets_of(statement).iter().find_map(|target| match target {
+        Line::Name(_, name) => Some(*name),
+        Line::Skip(_) | Line::Next(..) => None,
+    });
+    let name = line.or(statement.label.map(|label| label.name)).map(|name| cut_text(names.resolve(name)).into_owned());
+    Node { name, text: cut_text(&write_line(statement, names)).into_owned() }
+}
+
 fn targets_of(statement: &Statement) -> &[Line] {
     match &statement.kind {
         StatementKind::Binding { targets, .. } => targets,
         _ => &[],
     }
+}
+
+/// What a type stands for, through the aliases, each link once: a chain of `.lct` files is as long as the program wants.
+fn definition_of(pass: &Pass<'_>, context: &mut Context<'_, '_>, start: TyId) -> TyId {
+    let declared = context.declared;
+    let mut chain = Vec::new();
+    let mut current = start;
+    let end = loop {
+        if let Some(known) = context.facts.definitions.get(&current) {
+            break *known;
+        }
+        let Ty::Named { library, name } = pass.table.get(current) else { break current };
+        let library = context.facts.libraries.get(library).and_then(|index| declared.get(*index));
+        let next = library.and_then(|library| library.types.get(name)).map(|ty| ty.definition);
+        match next {
+            Some(next) if next == current => break current,
+            Some(next) if chain.len() <= pass.types.len() => {
+                chain.push(current);
+                current = next;
+            }
+            _ => break TyId::ERROR,
+        }
+    };
+    for member in chain {
+        context.facts.definitions.insert(member, end);
+    }
+    end
 }
 
 impl<'a> Pass<'a> {
@@ -265,9 +319,16 @@ impl<'a> Pass<'a> {
                 let scope = Scope { library, file, model, generic: !signature.generics.is_empty(), function: Some(self.names.resolve(name)) };
                 let mut walker = Walker::new(self, &mut context, scope);
                 let outcome = last_resort(|| walker.function(signature, function));
-                let (done, calls) = (std::mem::take(&mut walker.resolved), std::mem::take(&mut walker.calls));
-                if let Err(payload) = outcome {
-                    self.report_a_panic(library, &file.shown, payload);
+                let (mut done, calls) = (std::mem::take(&mut walker.resolved), std::mem::take(&mut walker.calls));
+                match (outcome, function) {
+                    (Err(payload), _) => self.report_a_panic(library, &file.shown, payload),
+                    (Ok(()), Some(function)) => {
+                        let typed = last_resort(|| types::type_function(self, &mut context, scope, &mut done, name, function));
+                        if let Err(payload) = typed {
+                            self.report_a_panic(library, &file.shown, payload);
+                        }
+                    }
+                    (Ok(()), None) => {}
                 }
                 // An `extern` has no calls, and a call can reach it.
                 functions.push(FunctionCalls { name, file: &file.shown, calls, source_map: &model.source_map });
@@ -359,14 +420,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
     fn node(&mut self) -> Option<Node> {
         let statement = self.statement?;
         if self.node.is_none() {
-            let line = targets_of(statement).iter().find_map(|target| match target {
-                Line::Name(_, name) => Some(*name),
-                Line::Skip(_) | Line::Next(..) => None,
-            });
-            let name = line.or(statement.label.map(|label| label.name)).map(|name| cut_text(self.text(name)).into_owned());
-            // Cut here, not by the report: each diagnostic of this line copies it.
-            let text = cut_text(&write_line(statement, self.names())).into_owned();
-            self.node = Some(Node { name, text });
+            self.node = Some(node_of(statement, self.names()));
         }
         self.node.clone()
     }
@@ -755,31 +809,8 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
 
     // What types stand for.
 
-    /// Through the aliases, each link once: a chain of `.lct` files is as long as the program wants.
     fn definition_of(&mut self, start: TyId) -> TyId {
-        let declared = self.context.declared;
-        let mut chain = Vec::new();
-        let mut current = start;
-        let end = loop {
-            if let Some(known) = self.context.facts.definitions.get(&current) {
-                break *known;
-            }
-            let Ty::Named { library, name } = self.pass.table.get(current) else { break current };
-            let library = self.context.facts.libraries.get(library).and_then(|index| declared.get(*index));
-            let next = library.and_then(|library| library.types.get(name)).map(|ty| ty.definition);
-            match next {
-                Some(next) if next == current => break current,
-                Some(next) if chain.len() <= self.pass.types.len() => {
-                    chain.push(current);
-                    current = next;
-                }
-                _ => break TyId::ERROR,
-            }
-        };
-        for member in chain {
-            self.context.facts.definitions.insert(member, end);
-        }
-        end
+        definition_of(self.pass, self.context, start)
     }
 
     fn has_member(&mut self, definition: TyId, name: Name) -> bool {

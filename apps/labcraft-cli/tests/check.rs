@@ -1,12 +1,12 @@
-//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 to 3 for now: reading the files, finding
-//! the libraries they use, what each library declares, and the names of each body.
+//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 to 4 for now: reading the files, finding
+//! the libraries they use, what each library declares, the names of each body and its types.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 #[path = "../../../crates/format/tests/deep/mod.rs"]
 #[allow(dead_code)]
@@ -457,16 +457,60 @@ fn the_programs_of_the_repository_are_clean() {
     }
 }
 
-/// Each program of this corpus has one error, and no bad name, library or file.
+/// What the corpus compares of `related`: the file and the span (`tests/acceptance/README.md`).
+fn places(related: &Value) -> Value {
+    let list =
+        related.as_array().map_or_else(Vec::new, |list| list.iter().map(|item| json!({ "file": item["file"], "span": item["span"] })).collect());
+    Value::Array(list)
+}
+
+/// Each program of this corpus has one error, and the report says what `expected.json` says: everything but the text of
+/// `message` and `fixes`. `fix_mentions` is not a field of the report: some fix must mention that text.
 #[test]
-fn the_programs_of_scenario_2_read_with_nothing_to_say_yet() {
+fn the_programs_of_scenario_2_give_their_one_diagnostic() {
     let root = repository().join("tests/acceptance/type-errors");
     let cases: Vec<PathBuf> = fs::read_dir(&root).unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.is_dir()).collect();
     assert_eq!(cases.len(), 9);
     for case in cases {
+        let name = case.file_name().unwrap().to_str().unwrap().to_owned();
+        let expected: Value = serde_json::from_slice(&fs::read(case.join("expected.json")).unwrap()).unwrap();
         let (exit, document) = json_in(&case, &["."]);
-        assert_eq!((exit, codes_of(&document)), (0, vec![]), "{}", case.display());
+        assert_eq!(exit, 1, "{name}");
+        assert_eq!(document["schema"], expected["schema"], "{name}");
+        assert_eq!(document["status"], expected["status"], "{name}");
+        assert_eq!(document["summary"]["errors"], expected["summary"]["errors"], "{name}");
+        assert_eq!(document["summary"]["warnings"], expected["summary"]["warnings"], "{name}");
+        let (found, wanted) = (document["diagnostics"].as_array().unwrap(), expected["diagnostics"].as_array().unwrap());
+        assert_eq!(found.len(), wanted.len(), "{name}: {found:?}");
+        for (found, wanted) in found.iter().zip(wanted) {
+            for field in ["code", "severity", "file", "span", "function", "node", "wires", "expected", "found"] {
+                assert_eq!(found[field], wanted[field], "{name}: {field}");
+            }
+            assert_eq!(places(&found["related"]), places(&wanted["related"]), "{name}: related");
+            if let Some(mention) = wanted["fix_mentions"].as_str() {
+                assert!(found["fixes"].to_string().contains(mention), "{name}: no fix mentions {mention}: {}", found["fixes"]);
+            }
+        }
     }
+}
+
+/// "Each code marked `S2` in `docs/cli.md` has one case" (`tests/acceptance/README.md`).
+#[test]
+fn each_code_marked_s2_has_one_case() {
+    let root = repository();
+    let cli = fs::read_to_string(root.join("docs/cli.md")).unwrap();
+    let marked: BTreeSet<String> =
+        cli.lines().filter(|line| line.trim_end().ends_with("| S2 |")).map(|line| line.split('`').nth(1).unwrap().to_owned()).collect();
+    let mut cases = BTreeSet::new();
+    for entry in fs::read_dir(root.join("tests/acceptance/type-errors")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            let expected: Value = serde_json::from_slice(&fs::read(path.join("expected.json")).unwrap()).unwrap();
+            let code = expected["diagnostics"][0]["code"].as_str().unwrap().to_owned();
+            assert!(cases.insert(code), "{}", path.display());
+        }
+    }
+    assert_eq!(marked, cases);
 }
 
 fn expected_codes(expected: &Value) -> BTreeSet<String> {

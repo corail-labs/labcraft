@@ -59,6 +59,67 @@ impl NumberKind {
             NumberKind::C128 => "c128",
         }
     }
+
+    pub fn is_integer(self) -> bool {
+        !self.is_inexact()
+    }
+
+    /// A floating-point or complex number, which a change of scale can go to (spec 3.4).
+    pub fn is_inexact(self) -> bool {
+        matches!(self, NumberKind::F32 | NumberKind::F64 | NumberKind::C64 | NumberKind::C128)
+    }
+
+    pub fn is_complex(self) -> bool {
+        matches!(self, NumberKind::C64 | NumberKind::C128)
+    }
+
+    /// Bits of an integer, with whether it has a sign.
+    fn integer(self) -> Option<(u32, bool)> {
+        match self {
+            NumberKind::I8 => Some((8, true)),
+            NumberKind::I16 => Some((16, true)),
+            NumberKind::I32 => Some((32, true)),
+            NumberKind::I64 => Some((64, true)),
+            NumberKind::U8 => Some((8, false)),
+            NumberKind::U16 => Some((16, false)),
+            NumberKind::U32 => Some((32, false)),
+            NumberKind::U64 => Some((64, false)),
+            _ => None,
+        }
+    }
+
+    /// The closed list of implicit widening (spec 3.4): nothing can be lost. A kind does not widen to itself.
+    pub fn widens_to(self, other: NumberKind) -> bool {
+        match (self.integer(), other.integer()) {
+            (Some((bits, signed)), Some((other_bits, other_signed))) => match (signed, other_signed) {
+                (true, true) | (false, false) => bits < other_bits,
+                (false, true) => bits < other_bits,
+                (true, false) => false,
+            },
+            (Some((bits, _)), None) => other == NumberKind::F64 && bits <= 32,
+            (None, _) => matches!((self, other), (NumberKind::F32, NumberKind::F64) | (NumberKind::C64, NumberKind::C128)),
+        }
+    }
+
+    /// The smallest kind that both widen to (spec 3.4): `i32` and `f64` give `f64`, and so do `i32` and `f32`.
+    pub fn meeting(self, other: NumberKind) -> Option<NumberKind> {
+        const BY_SIZE: [NumberKind; 12] = [
+            NumberKind::I8,
+            NumberKind::U8,
+            NumberKind::I16,
+            NumberKind::U16,
+            NumberKind::I32,
+            NumberKind::U32,
+            NumberKind::I64,
+            NumberKind::U64,
+            NumberKind::F32,
+            NumberKind::F64,
+            NumberKind::C64,
+            NumberKind::C128,
+        ];
+        let reaches = |from: NumberKind, to: NumberKind| from == to || from.widens_to(to);
+        BY_SIZE.into_iter().find(|kind| reaches(self, *kind) && reaches(other, *kind))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -268,9 +329,11 @@ impl TypeWriter<'_> {
         self.out.push_str(text);
     }
 
+    /// Only what can be shown: a name of 8 MiB can be written in a million diagnostics.
     fn name(&mut self, name: Name) {
         let text = self.names.resolve(name);
-        self.out.push_str(text);
+        let shown = text.char_indices().nth(MAX_TEXT + 1).map_or(text, |(end, _)| text.get(..end).unwrap_or(text));
+        self.out.push_str(shown);
     }
 
     fn list<T>(&mut self, items: &[T], mut write: impl FnMut(&mut Self, &T)) {
@@ -414,6 +477,67 @@ mod tests {
     }
 
     #[test]
+    fn widening_is_the_closed_list_of_the_spec() {
+        use NumberKind::{C64, C128, F32, F64, I8, I16, I32, I64, U8, U16, U32, U64};
+        let all = [I8, I16, I32, I64, U8, U16, U32, U64, F32, F64, C64, C128];
+        let list = [
+            (I8, I16),
+            (I8, I32),
+            (I8, I64),
+            (I16, I32),
+            (I16, I64),
+            (I32, I64),
+            (U8, U16),
+            (U8, U32),
+            (U8, U64),
+            (U16, U32),
+            (U16, U64),
+            (U32, U64),
+            (U8, I16),
+            (U8, I32),
+            (U8, I64),
+            (U16, I32),
+            (U16, I64),
+            (U32, I64),
+            (I8, F64),
+            (I16, F64),
+            (I32, F64),
+            (U8, F64),
+            (U16, F64),
+            (U32, F64),
+            (F32, F64),
+            (C64, C128),
+        ];
+        for from in all {
+            for to in all {
+                assert_eq!(from.widens_to(to), list.contains(&(from, to)), "{from:?} to {to:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_kinds_meet_at_the_smallest_that_both_widen_to() {
+        use NumberKind::{C64, C128, F32, F64, I8, I16, I32, I64, U8, U32, U64};
+        let meetings = [
+            (I32, I32, Some(I32)),
+            (I32, F64, Some(F64)),
+            (F64, I32, Some(F64)),
+            (I32, F32, Some(F64)),
+            (I16, I32, Some(I32)),
+            (I8, U8, Some(I16)),
+            (I32, U32, Some(I64)),
+            (C64, C128, Some(C128)),
+            (I64, F64, None),
+            (U64, I8, None),
+            (F64, C64, None),
+        ];
+        for (a, b, expected) in meetings {
+            assert_eq!(a.meeting(b), expected, "{a:?} and {b:?}");
+            assert_eq!(b.meeting(a), expected, "{b:?} and {a:?}");
+        }
+    }
+
+    #[test]
     fn equal_types_are_one_id() {
         let mut f = fixture();
         let a = f.number(NumberKind::F64, "V/A");
@@ -525,6 +649,18 @@ mod tests {
         assert!(f.table.intern(Ty::Array { element: plain, dimensions: 32 }).is_ok());
         assert_eq!(f.table.intern(Ty::Array { element: plain, dimensions: 33 }), Err(TypeOutOfBounds));
         assert_eq!(f.table.intern(Ty::Array { element: plain, dimensions: 0 }), Err(TypeOutOfBounds));
+    }
+
+    #[test]
+    fn a_long_name_is_written_cut() {
+        let mut f = fixture();
+        let long = "x".repeat(MAX_TEXT * 2);
+        let name = f.names.intern(&long);
+        let root = f.root;
+        let ty = f.table.intern(Ty::Named { library: root, name }).unwrap();
+        let shown = f.table.display(ty, root, &f.names);
+        assert_eq!(shown.chars().count(), MAX_TEXT);
+        assert!(shown.ends_with('\u{2026}'));
     }
 
     #[test]

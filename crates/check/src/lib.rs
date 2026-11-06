@@ -1,7 +1,7 @@
 //! L3: name resolution, signatures, type and connection checking (`docs/architecture.md`, section 5).
 //!
-//! So far, passes 1 to 3: reading the files, finding the libraries that they use, what each library declares, and the names
-//! of each body. The other passes come with their steps (section 9), so a body is not typed for now.
+//! So far, passes 1 to 4: reading the files, finding the libraries that they use, what each library declares, the names of
+//! each body and its types. The other passes come with their steps (section 9).
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -26,7 +26,7 @@ mod primitives;
 mod resolved;
 
 pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
-pub use resolved::{Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
+pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
 
 /// Which rules of `docs/cli.md`, section 3, a library follows when it uses another: a library shipped with LabCraft
 /// sees only the primitives and the others that are shipped.

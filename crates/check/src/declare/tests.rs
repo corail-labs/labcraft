@@ -154,15 +154,29 @@ fn a_library_with_a_broken_file_says_so() {
 }
 
 #[test]
-fn an_opaque_type_stands_for_itself_and_a_plain_one_for_its_definition() {
-    let (checked, mut names) = run(source("", &[("s.lct", "type s = opaque"), ("p.lct", "type p = f64")]));
+fn an_opaque_type_stands_for_itself_an_alias_is_what_it_names_and_a_struct_is_new() {
+    let (checked, mut names) = run(source(
+        "",
+        &[
+            ("s.lct", "type s = opaque"),
+            ("p.lct", "type p = f64"),
+            ("q.lct", "type q = struct { a: f64 }"),
+            ("r.lct", "type r = q"),
+            ("o.lct", "type o = s"),
+        ],
+    ));
     let library = checked.libraries.first().unwrap();
     let opaque = library.types.get(&names.intern("s")).unwrap();
     assert_eq!(opaque.definition, opaque.ty);
     assert!(matches!(checked.types.get(opaque.ty), Ty::Named { .. }));
-    let plain = library.types.get(&names.intern("p")).unwrap();
-    assert!(matches!(checked.types.get(plain.ty), Ty::Named { .. }));
-    assert!(matches!(checked.types.get(plain.definition), Ty::Number { kind: NumberKind::F64, .. }));
+    let alias = library.types.get(&names.intern("p")).unwrap();
+    assert!(matches!(checked.types.get(alias.ty), Ty::Number { kind: NumberKind::F64, .. }));
+    assert_eq!(alias.definition, alias.ty);
+    let declared = library.types.get(&names.intern("q")).unwrap();
+    assert!(matches!(checked.types.get(declared.ty), Ty::Named { .. }));
+    assert!(matches!(checked.types.get(declared.definition), Ty::Struct(_)));
+    assert_eq!(library.types.get(&names.intern("r")).unwrap().ty, declared.ty, "an alias of a struct is that struct");
+    assert_eq!(library.types.get(&names.intern("o")).unwrap().ty, opaque.ty);
 }
 
 #[test]

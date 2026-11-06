@@ -1,5 +1,5 @@
 //! Pass 2 (`docs/architecture.md`, section 5): what each library declares, its functions and its types, with what can
-//! be wrong in a declaration alone. Pass 3, in `body`, reads the bodies with the same means; default values come with pass 4.
+//! be wrong in a declaration alone. Passes 3 and 4, in `body`, read the bodies with the same means.
 //!
 //! Walking a `TypeExpr` recurses, as far as the nesting that `format::read` let through, on the stack that it took. Going
 //! from a type to another never does, since a chain of `.lct` files is as long as the program wants.
@@ -37,9 +37,10 @@ pub struct DeclaredLibrary {
 
 #[derive(Clone, Copy, Debug)]
 pub struct DeclaredType {
-    /// What a program means by its name: an alias of an opaque type is that type (3.2).
+    /// What a program means by its name: an alias is the type it names (3.2), and only a declared `struct` or `enum`, or an
+    /// opaque type, is a type of its own.
     pub ty: TyId,
-    /// What it stands for: `ty` for an opaque type, which has nothing else to say.
+    /// What it stands for: `ty` for an opaque type or an alias, which have nothing else to say.
     pub definition: TyId,
     /// An opaque type or an alias of one, whose name a value can bear (R-1).
     pub opaque: bool,
@@ -823,7 +824,12 @@ impl<'a> Pass<'a> {
         let kind = self.kinds.get(index).copied().flatten();
         let stopped = self.depths.get(index).copied().flatten().is_none_or(|depth| depth.is_none());
         let broken = kind == Some(Kind::Unknown) || stopped || self.table.has_error(definition);
-        let ty = if broken { TyId::ERROR } else { self.named_ty(index) };
+        let ty = match &decl.ty {
+            _ if broken => TyId::ERROR,
+            TypeExpr::Struct(_) | TypeExpr::Enum(_) => self.named_ty(index),
+            // `type session = opaque` has its name as its definition, and an alias has the type that it names.
+            TypeExpr::Named(_) | TypeExpr::Array(_) | TypeExpr::Fn(_) => definition,
+        };
         Some(DeclaredType { ty, definition, opaque: matches!(kind, Some(Kind::Opaque(_))) })
     }
 
@@ -831,7 +837,7 @@ impl<'a> Pass<'a> {
         named.args.is_empty() && named.unit.is_none() && matches!(self.lookup(scope, &named.path), Lookup::Opaque)
     }
 
-    /// The type of this name, and an alias of an opaque type is that type (3.2).
+    /// The type of this name: of the opaque type at the end of a chain of aliases (3.2).
     fn named_ty(&mut self, index: usize) -> TyId {
         let root = match self.kinds.get(index).copied().flatten() {
             Some(Kind::Opaque(root)) => root,
@@ -877,9 +883,12 @@ impl<'a> Pass<'a> {
             .map(|output| DeclaredOutput { name: output.name, ty: self.signature_type(&output.ty, &scope, output.id) })
             .collect();
         if let Some(id) = external {
-            // A type with an error inside has its diagnostic, and what it would have been stays unknown.
-            let has_err = outputs.iter().any(|output| {
-                self.names.resolve(output.name) == "err" && (matches!(self.table.get(output.ty), Ty::ErrorValue) || self.table.has_error(output.ty))
+            // A type with an error inside has its diagnostic, and what it would have been stays unknown. The type is written
+            // as such (R-13): an alias of `error` does not do.
+            let has_err = signature.outputs.iter().zip(&outputs).any(|(written, output)| {
+                let as_such =
+                    matches!(&written.ty, TypeExpr::Named(named) if named.path.rest.is_empty() && self.names.resolve(named.path.first) == "error");
+                self.names.resolve(output.name) == "err" && (as_such || self.table.has_error(output.ty))
             });
             if !has_err {
                 self.error(&scope, Code::Lc4005, "an external function has an output `err: error` (R-13)".to_owned(), id);
