@@ -249,7 +249,8 @@ the order of the text.
 
 - **Selector**: terminal on the left edge, at the level of the header.
 - **One branch at a time**: a tab bar in the header lists the branches (`true`, `false`;
-  `State.Init`, `State.WaitDut` …; `_` is written `other`). The displayed branch is highlighted.
+  `State.Init`, `State.WaitDut` …; `_` is written `other`). A branch with several patterns is one
+  tab, which lists them (`1, other`). The displayed branch is highlighted.
   A bound value (`Reading.Value(v)`, `io.timeout(err)`) appears as a terminal on the inner left
   edge of that branch.
 - **`yield`**: each branch wires the same output terminals on the right edge. A terminal that a

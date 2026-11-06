@@ -371,6 +371,25 @@ class Syntax(unittest.TestCase):
         self.assertTrue(hits, rep["diagnostics"])
         return hits[0]
 
+    def test_arm_with_a_list_of_patterns(self):
+        src = ("fn f(n: i32) -> (x: string) {\n    x = match n {\n        1, _ => yield \"default\"\n"
+               "        2 => yield \"two\"\n        3..=5, 8 => yield \"many\"\n    }\n}\n")
+        for n, label in ((1, "default"), (99, "default"), (2, "two"), (4, "many"), (8, "many")):
+            rep, r = self.fn(src, args={"n": n})
+            self.assertTrue(rep["ok"], rep["diagnostics"])
+            self.assertEqual(r["outputs"]["x"], label, n)
+
+    def test_match_without_a_default(self):
+        for selector, arms in (("n: i32", "1, 2 => yield 0"), ("n: string", "\"a\", \"b\" => yield 0"), ("n: bool", "true => yield 0")):
+            rep, _ = self.fn(f"fn f({selector}) -> (x: i32) {{\n    x = match n {{\n        {arms}\n    }}\n}}\n")
+            self.diag(rep, "R-8")
+        rep, _ = self.fn("fn f(n: bool) -> (x: i32) {\n    x = match n {\n        true, false => yield 0\n    }\n}\n")
+        self.assertTrue(rep["ok"], rep["diagnostics"])
+
+    def test_pattern_that_binds_stands_alone(self):
+        rep, _ = self.fn("fn f(n: i32) -> (x: i32) {\n    x = match n {\n        R.V(v), _ => yield 0\n    }\n}\n")
+        self.assertFalse(rep["ok"])
+
     def test_own_function_named_like_core(self):
         rep, r = self.fn("fn f(a: i32) -> (x: i32, y: i32) {\n    x = add(a, 2)\n    y = core.add(a, 2)\n}\n",
                          args={"a": 5},

@@ -707,10 +707,11 @@ class Checker:
         fn(node, r)
 
     def match_arms(self, node, m):
-        if any(a.pat.kind == "wild" for a in m.arms):
+        pats = [p for a in m.arms for p in a.pats]
+        if any(p.kind == "wild" for p in pats):
             return
-        variants = [a.pat for a in m.arms if a.pat.kind == "variant"]
-        lits = [a.pat.value for a in m.arms if a.pat.kind == "lit"]
+        variants = [p for p in pats if p.kind == "variant"]
+        lits = [p.value for p in pats if p.kind == "lit"]
         if variants:
             tname = variants[0].parts[0] if len(variants[0].parts) > 1 else None
             decl = self.lib.types.get(tname)

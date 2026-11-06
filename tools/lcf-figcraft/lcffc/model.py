@@ -655,7 +655,7 @@ class Builder:
             node.sel_port.pill = fmt_const(r.sel)
         is_handle = node.frame_kind == "handle"
         for arm in r.arms:
-            title = self.arm_title(arm.pat, is_handle)
+            title = ", ".join(self.arm_title(p, is_handle) for p in arm.pats)
             ab = Body(title, node)
             ab.pattern_error = is_handle
             node.bodies.append((title, ab))

@@ -90,6 +90,13 @@ fn assert_saved_again_changes_nothing(what: &str, bytes: &[u8]) {
     assert_eq!(comments_of(bytes), comments_of(text.as_bytes()), "{what}");
 }
 
+/// A line that moves changes the ids of what it holds, up to the last pattern of a list.
+#[test]
+fn the_patterns_of_a_list_are_renumbered() {
+    let text = b"labcraft 1\n\nfn f() -> (b: i32) {\n    b = match a {\n        1, 2, _ => yield 1\n    }\n    a = g()\n}\n";
+    assert_saved_again_changes_nothing("a list of patterns", text);
+}
+
 /// The lines of a model without what `fmt` may remove, in no order: ordering them is all that `canonicalize` may do
 /// to a declaration, so it loses and invents none of them.
 fn lines_of_the_declaration(mut file: File, names: &Interner) -> Vec<String> {

@@ -836,6 +836,10 @@ impl<'a> Writer<'a> {
         self.comment_lines(&arm.comments.before, depth);
         self.indent(depth);
         self.pattern(&arm.pattern);
+        for pattern in &arm.others {
+            self.push(", ");
+            self.pattern(pattern);
+        }
         self.push(" => ");
         let yields_only = is_empty(arm.open.as_ref(), &arm.body) && arm.yields.comments.before.is_empty() && arm.yields.comments.line.is_none();
         if yields_only {

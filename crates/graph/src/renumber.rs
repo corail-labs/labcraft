@@ -265,6 +265,9 @@ impl Ids {
     fn arm(&mut self, arm: &mut Arm) {
         self.next(&mut arm.id);
         self.pattern(&mut arm.pattern);
+        for pattern in &mut arm.others {
+            self.pattern(pattern);
+        }
         self.body(&mut arm.body);
         let Yield { id, values, .. } = &mut arm.yields;
         self.next(id);

@@ -126,6 +126,15 @@ fn what_a_unit_names_reads_nothing_but_the_bracket_of_one_name() {
 }
 
 #[test]
+fn a_list_of_patterns_keeps_its_order_on_one_line() {
+    assert_body(&["a = match c {", "    _,1 , 3..=5,8 => yield 1", "}"], &["a = match c {", "    _, 1, 3..=5, 8 => yield 1", "}"]);
+    assert_body(&["a = match c {", "    2, 1 => {", "        yield 1", "    }", "}"], &["a = match c {", "    2, 1 => yield 1", "}"]);
+    // Past 100 characters, it stays on its line (5.2).
+    let long = format!("    {} => yield 1", ["State.LongVariantName"; 6].join(", "));
+    assert_body(&["a = match c {", &long, "}"], &["a = match c {", &long, "}"]);
+}
+
+#[test]
 fn a_name_that_a_sub_body_binds_is_not_read_from_outside() {
     // By a carry, even when its first value reads the name outside (R-3).
     assert_body(
@@ -138,6 +147,9 @@ fn a_name_that_a_sub_body_binds_is_not_read_from_outside() {
     // By a pattern.
     assert_body(&["a = match c {", "    R.V(z) => yield z", "}", "z = g()"], &["a = match c {", "    R.V(z) => yield z", "}", "z = g()"]);
     assert_body(&["a = handle c {", "    _(z) => yield z", "}", "z = g()"], &["a = handle c {", "    _(z) => yield z", "}", "z = g()"]);
+    // A list binds no name, and an array in it reads one.
+    assert_body(&["a = match c {", "    [z], _ => yield 1", "}", "z = g()"], &["z = g()", "a = match c {", "    [z], _ => yield 1", "}"]);
+    assert_body(&["a = match c {", "    1, [z] => yield 1", "}", "z = g()"], &["z = g()", "a = match c {", "    1, [z] => yield 1", "}"]);
     // By one of its lines, wherever it is.
     assert_body(
         &["a = match c {", "    _ => {", "        y = f(z)", "        z = g()", "        yield y", "    }", "}", "z = h()"],

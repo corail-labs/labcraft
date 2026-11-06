@@ -405,8 +405,8 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
 | `LC3008` | error | Function reference of the wrong signature | 4 | S2 |
 | `LC3009` | error | Pattern of the wrong type, such as a variant of another enumeration, or that binds another number of values than its variant holds | 6.1 | S2 |
-| `LC3010` | error | `match` on an enumeration not exhaustive | R-8 | |
-| `LC3011` | error | Overlapping literal or range patterns | R-18 | |
+| `LC3010` | error | `match` without a branch for every value: a variant, `true` or `false` missing, or no `_` on an integer or a string | R-8 | |
+| `LC3011` | error | Overlapping literal or range patterns, in one branch or in two | R-18 | |
 | `LC3012` | error | `handle` without `_` | R-10 | |
 | `LC3013` | error | Selector of the wrong type in a `match` or `handle` | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
@@ -417,7 +417,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, a `[]` whose type nothing says, or the wrong number of type arguments | 3.5 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
 | `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
-| `LC3022` | error | The same pattern twice: `_`, a variant or a `handle` category | 6.1, 7.3 | |
+| `LC3022` | error | The same pattern twice, in one branch or in two: `_`, a variant or a `handle` category | 6.1, 7.3 | |
 
 ### Dataflow and structures: `LC40`, `LC41`
 

@@ -434,7 +434,8 @@ has one text:
   - **Every other statement stays on one line**, whatever its length, struct constructions
     included; for a `match`, a `handle`, a `loop` or a `for`, that line runs up to its `{`. One node
     per line (5.1) keeps most lines short; a call with many named arguments can still go past 100
-    characters (`run_step`, section 13).
+    characters (`run_step`, section 13). The patterns of an arm stay on the line of its `=>` too, in
+    their written order.
 - **Parentheses around a single value** are dropped: `yield (a)` becomes `yield a`, `after: (e2)`
   becomes `after: e2`.
 - **Literals keep their spelling**: `4.7 kΩ` is not rewritten as `4700 Ω`, nor `1e3` as `1000`.
@@ -569,8 +570,25 @@ Selector: boolean, integer without a unit (values and ranges: `1..=5` includes 5
 be negative, `-5..=5`), string, enumeration. A variant with data binds one name per value:
 `Reading.Value(v) => …`, `Range.Between(low, high) => …`. Each branch ends with exactly one
 `yield`, last, with the same number and the same types of values (R-7). `_` stands for "all the
-others". An enumeration must be handled completely (R-8). Overlapping literal or range patterns are
-an error (R-18).
+others", wherever it is written. Every value must have a branch (R-8): an enumeration is handled
+completely, a boolean has `true` and `false`, and an integer or a string has `_`. Overlapping literal
+or range patterns are an error (R-18).
+
+A branch can list several patterns, separated by commas, on the line of its `=>`:
+
+```text
+voltage = match channel {
+    1, _ => yield 5 V
+    2 => yield 12 V
+    3..=5, 8 => yield 24 V
+}
+```
+
+`_` can be one of them, so any branch can be the default one and still say which values it was
+written for. A `match` has one `_` and names a variant once, in one branch or in two. A pattern that
+binds names stands alone in its branch: these names would have no value when another pattern of the
+branch matches. A variant that holds data binds it, so it stands alone too. An arm of a `handle` has
+one pattern (7.3).
 
 ### 6.2 For loop: `for`
 
@@ -1398,9 +1416,10 @@ number        = [ "-" ] ( INT | FLOAT | "inf" ) | "nan" ;   (* no space after th
 structure     = match_expr | for_expr | loop_expr | handle_expr ;
 
 match_expr    = "match" operand "{" { match_arm } "}" ;
-match_arm     = pattern "=>" arm_body ;
+match_arm     = ( bound_pattern | pattern { "," pattern } ) "=>" arm_body ;
+bound_pattern = path "(" IDENT { "," IDENT } ")" ;                      (* Reading.Value(v) *)
 pattern       = literal | [ "-" ] INT ".." [ "=" ] [ "-" ] INT           (* -5..=5 *)
-              | path [ "(" IDENT { "," IDENT } ")" ] | "_" ;            (* Reading.Value(v) *)
+              | path | "_" ;
 
 for_expr      = "for" [ "parallel" ] for_in { "," for_in } { "," carry } for_body ;
 for_in        = IDENT "in" ( operand | operand ".." operand ) ;
@@ -1459,7 +1478,7 @@ What the grammar alone does not say:
 | R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. In that array, `x` can name a function of the library when no value has that name, as in `[f, f]`. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
 | R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, and the first branch decides the type of each. The other branches are converted to it as on any wire (3.3, 3.4): to its unit, or widened; what cannot be converted is rejected, so the order of branches can matter. A literal that does not decide (an integer without a unit, `[]`, an array of only those) takes the type of the first branch that gives one; if none does, it takes the type its target already has, an output or a carry (`x: u8` with `x = match c { … yield 1 … yield 2 }`); without such a target, an integer is an `i32` and `[]` is an error. A branch that decides keeps its type against the target, and the wire to the target is then judged as any other. |
-| R-8 | **A `match` on an enumeration is exhaustive**, otherwise `_` is required. |
+| R-8 | **A `match` has a branch for every value.** Without `_`, an enumeration names all its variants and a boolean both `true` and `false`. An integer or a string always has `_`, even when ranges cover the whole type. `_` can share a branch with other patterns (6.1). |
 | R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). Without a variadic parameter, a positional argument can wire a parameter with a default value. A variadic parameter takes positional arguments only. |
@@ -1469,7 +1488,7 @@ What the grammar alone does not say:
 | R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`), never a literal, and only once in a call. It counts as a named argument, so a positional one cannot follow it. A variant construction has it too. No parameter is named `after`, nor an argument of a function type. |
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. A variant construction can stand alone in the same way. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. An `after:` sees a label of its own body or of a body around it, not one inside a sub-body or a neighboring arm, whose node may not run. |
-| R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error (6.1). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
+| R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error, in one branch or in two (6.1). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
 | R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
 | R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
 
