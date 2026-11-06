@@ -203,7 +203,11 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   that is expected (3.2). An array of constants alone takes the type expected.
 - **Literals**: a literal takes the number type expected where it goes: an input, an output, a carry, a field, a
   value of a variant, a default value, an element of an array, a value of an arm (R-7), a `collect` whose loop gives
-  its array to an output or a carry (6.2). So `gain: f32 = 0.5`,
+  its array to an output or a carry (6.2). A named constant (5.1) does the same at each terminal it reaches, and an
+  error is on that terminal: an array constant that does not fit is refused there as the array it is on its own line.
+  On its own line nothing is expected, so `k = []`, `k = 3000000000` and `k = core.abs` are refused there, which
+  differs from the same constant written on a terminal. Judging constants again has a budget proportional to their
+  size, far beyond any real program; past it, a constant has the type of its own line. So `gain: f32 = 0.5`,
   `v: f32[V] = 1.5 V`, `n: i32[mV] = 5 mV` and `z: c128 = 1.5` are accepted. A decimal does not become an integer:
   `n: i32 = 1.5` and `5.0 mV` for an `i32[mV]` are rejected. A literal keeps its unit and then converts as a wire
   does: `1 V` for an `f32[mV]` is `1000 mV`, and `1 V` for an `i32[mV]` is rejected. Where nothing is expected, an
@@ -362,8 +366,17 @@ dmm, e1 = visa.open(resource)
 - **A path can be an argument**: a field access (`step.voltage` reads a field of a struct), a
   variant (`State.Init`), an error category (`io.timeout`). For example
   `relays.apply(bench.relays, step.route)`. A path is not a nesting of calls.
-- **Naming a value**: `name = operand` gives a constant or an existing value a new name
-  (`next v = x`, `err = e3`). It creates no node.
+- **Naming a value**: `name = operand` gives an existing value a new name (`next v = x`, `err = e3`). It creates
+  no node.
+- **Naming a constant**: `limit = 240 V` makes a *named constant*, for a value that feeds several terminals or that
+  the user wants to place. In the diagram it is a small node without a body: its name, its value and one output
+  terminal, called `value` (visual notation, 3.1). It stays a constant: each terminal it reaches gives it a type, as
+  for a constant written on that terminal (3.4), so `limit` can go to an `f32[V]` and to an `f64[mV]`. A name given to
+  a named constant is the same constant. An array that holds only constants is a constant; an array that holds a wire
+  (`k = [s, s]`) is not: it is a node that receives its wires, which the user places too, and it has the type of its
+  wires (3.4). A constant on one terminal is simply written there, without a name. Binding an output or a carry to a
+  constant makes no node (R-4). A name for an enum value (`k = Verdict.Pass`) is placed the same way, and has one type
+  wherever it goes.
 - **Struct construction**: `r = StepResult { name: n, value: v, passed: p }`, a node. Every field is given, once.
   A field is an input of the node: a wire converts to it (3.3, 3.4), and a literal takes its type.
 - **Variant construction**: `r = Reading.Value(v)`, a node, not a nested call. A variant with
@@ -1038,9 +1051,9 @@ layout {
   corner of the node; the points after `via` are waypoints of the route.
 - Nodes are designated by their label (`#close`) if they have one, or by the name of their line
   (5.2): their first output that is neither `_` nor `next x`. A node that has no such output (all
-  its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A line
-  that creates no node (`err = e3`, 5.1, R-4) designates nothing. A node or a wire has at most one
-  entry.
+  its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A named
+  constant (5.1) is designated by its name. A line that gives a value a new name (`err = e3`, 5.1, R-4)
+  designates nothing. A node or a wire has at most one entry.
 - `wire a -> b` designates the wire from node `a` to node `b`. When it is not the only one,
   `wire a.out -> b.in` names the terminals, with the output and input names of the signatures:
   `wire raw.session -> #close.session` in `check_voltage` (section 12).
@@ -1057,7 +1070,9 @@ layout {
 - Renaming a value updates the section (IDE and CLI command). An entry that names a node that
   does not exist, for example after an agent renamed a value in the text, gives a warning at edit
   time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
-  attached to the entry. `fmt` keeps any entry whose names are all nodes, inputs or outputs of the
+  attached to the entry. `fmt` reads one file, so it keeps the name of any line whose value is more than
+  one plain name: `k = Verdict.Pass` can be placed while `k = step.low` reads a field and draws no node, and `check`
+  tells them apart. `fmt` keeps any entry whose names are all nodes, inputs or outputs of the
   function, and `check` judges it, whatever its kind or direction. A name defined in several bodies
   (two arms) is ambiguous here, and gives a warning: use a label.
 - Coordinates are integers between -1,000,000 and 1,000,000 *(range proposed)*; a value outside

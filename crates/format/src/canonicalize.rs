@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{
-    Attached, Body, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Panel, PanelDirection, PanelItem, Path, Point, Rhs, Signature,
-    SourceMap, Statement, StatementKind, Use,
+    Attached, Body, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel, PanelDirection, PanelItem, Path, Point, Rhs,
+    Signature, SourceMap, Statement, StatementKind, Use,
 };
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Report};
 
@@ -173,7 +173,8 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
     let known = match &file.decl {
         _ if !ordered => None,
         Decl::Function(function) => {
-            let mut known = nodes_of(&function.body);
+            let outputs: HashSet<Name> = function.signature.outputs.iter().map(|output| output.name).collect();
+            let mut known = nodes_of(&function.body, &outputs);
             // Terminals of the frame, not nodes: an entry that names one is for `check` to judge (spec 11).
             known.extend(function.signature.params.iter().map(|param| (param.name, false)));
             known.extend(function.signature.outputs.iter().map(|output| (output.name, false)));
@@ -243,26 +244,33 @@ fn names_what_is_known(item: &LayoutItem, known: &HashSet<(Name, bool)>) -> bool
 }
 
 /// What the `layout` section can designate, in every body of the function (spec 11): a node by its label if it
-/// has one, or else by the name of its line. Naming a value creates no node (5.1).
-fn nodes_of(body: &Body) -> HashSet<(Name, bool)> {
+/// has one, or else by the name of its line. Giving a value a new name creates no node, while a name given to a
+/// constant does (5.1). `fmt` reads one file, so it cannot tell `Verdict.Pass` from `step.low`: `check` judges those.
+fn nodes_of(body: &Body, outputs: &HashSet<Name>) -> HashSet<(Name, bool)> {
     let mut nodes = HashSet::new();
-    add_nodes(body, &mut nodes);
+    add_nodes(body, outputs, &mut nodes);
     nodes
 }
 
-fn add_nodes(body: &Body, nodes: &mut HashSet<(Name, bool)>) {
+fn add_nodes(body: &Body, outputs: &HashSet<Name>, nodes: &mut HashSet<(Name, bool)>) {
     for statement in &body.statements {
-        add_node(statement, nodes);
+        add_node(statement, outputs, nodes);
     }
 }
 
-fn add_node(statement: &Statement, nodes: &mut HashSet<(Name, bool)>) {
+fn add_node(statement: &Statement, outputs: &HashSet<Name>, nodes: &mut HashSet<(Name, bool)>) {
     let (first, value) = match &statement.kind {
         StatementKind::Binding { targets, value } => (first_name(targets), Some(value)),
         StatementKind::Call(_) => (None, None),
         StatementKind::Collect(_) | StatementKind::Until(_) => return,
     };
-    if !matches!(value, Some(Rhs::Operand(_))) {
+    // A line that binds an output, a carry or nothing is a terminal, whatever its value (R-4).
+    let no_node = match value {
+        Some(Rhs::Operand(Operand::Path(path))) if path.rest.is_empty() => true,
+        Some(Rhs::Operand(_)) => first.is_none_or(|name| outputs.contains(&name)),
+        _ => false,
+    };
+    if !no_node {
         match (statement.label, first) {
             (Some(label), _) => {
                 nodes.insert((label.name, true));
@@ -276,11 +284,11 @@ fn add_node(statement: &Statement, nodes: &mut HashSet<(Name, bool)>) {
     match value {
         Some(Rhs::Match(branching) | Rhs::Handle(branching)) => {
             for arm in &branching.arms {
-                add_nodes(&arm.body, nodes);
+                add_nodes(&arm.body, outputs, nodes);
             }
         }
-        Some(Rhs::For(structure)) => add_nodes(&structure.body, nodes),
-        Some(Rhs::Loop(structure)) => add_nodes(&structure.body, nodes),
+        Some(Rhs::For(structure)) => add_nodes(&structure.body, outputs, nodes),
+        Some(Rhs::Loop(structure)) => add_nodes(&structure.body, outputs, nodes),
         Some(Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_)) | None => {}
     }
 }

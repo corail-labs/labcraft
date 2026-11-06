@@ -305,9 +305,25 @@ enum Origin<'a> {
 struct Out<'a> {
     ty: TyId,
     label: Label,
-    /// `x = y` makes no node: it gives what `y` is.
+    /// `x = operand` gives what the operand is: a new name for a wire makes no node (5.1).
     operand: Option<&'a Operand>,
 }
+
+/// A name given to a constant (5.1).
+#[derive(Clone, Copy)]
+struct NamedConstant<'a> {
+    literal: &'a Operand,
+    /// Its type on its own line, where nothing is expected (3.4).
+    own: TyId,
+    /// What it takes to judge it once more: its size in the file.
+    cost: u64,
+    /// What it is as the exponent of `core.pow`.
+    exponent: Option<i32>,
+}
+
+/// The work that a function can spend on judging its constants again, apart from what each of them brings: as much as its size,
+/// so that a very long one can still go to a type other than its own.
+const CONSTANT_BUDGET: u64 = 1 << 20;
 
 /// What a target expects.
 #[derive(Clone, Copy)]
@@ -361,6 +377,14 @@ struct Typer<'p, 'c, 'w, 'a> {
     function: Option<&'a Function>,
     within: Within,
     origins: HashMap<Id, Origin<'a>>,
+    /// The named constants of this function, followed through other names (5.1).
+    constants: HashMap<Id, NamedConstant<'a>>,
+    /// What a constant makes for what is expected, once for each: `a2 = [a1, a1]` would double the work at each line.
+    constant_types: HashMap<(Id, TyId), TyId>,
+    /// What is left of the work allowed on constants, so that a file stays linear (3.4).
+    constant_budget: u64,
+    /// `Some` while an array constant is tried against a type: nothing is said or kept, and it tells whether anything failed.
+    trying: Option<bool>,
     statement: Option<&'a Statement>,
     /// What `statement` gives a diagnostic, made once, since a line of 16 MiB can have a million mistakes.
     node: Option<Node>,
@@ -406,6 +430,10 @@ pub(super) fn type_function<'a>(
         function,
         within: Within::Diagram,
         origins: HashMap::new(),
+        constants: HashMap::new(),
+        constant_types: HashMap::new(),
+        constant_budget: CONSTANT_BUDGET,
+        trying: None,
         statement: None,
         node: None,
         used_names: None,
@@ -430,6 +458,15 @@ fn line_name(target: &Line) -> Option<Name> {
 }
 
 /// An integer literal, when `integer_fits` said that it is one of `i64` or `u64`.
+/// Its terms, those of its groups too (its depth is limited by what reads a file).
+fn cost_of_unit(unit: &UnitExpr) -> u64 {
+    let of_term = |term: &UnitTerm| match term {
+        UnitTerm::Group(group) => cost_of_unit(group),
+        UnitTerm::Named { .. } | UnitTerm::One { .. } => 1,
+    };
+    unit.rest.iter().fold(of_term(&unit.first), |cost, (_, term)| cost.saturating_add(of_term(term)))
+}
+
 fn integer_value(negative: bool, digits: &str) -> Option<i128> {
     let digits: String = digits.chars().filter(|c| *c != '_').collect();
     let value: i128 = digits.parse().ok()?;
@@ -530,6 +567,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn say(&mut self, code: Code, message: String, id: Id, details: Details) {
+        if let Some(failed) = &mut self.trying {
+            *failed = true;
+            return;
+        }
         let mut diagnostic: Diagnostic = at(code, message, &self.scope.file.shown, &self.scope.model.source_map, id);
         diagnostic.function = self.scope.function.map(|name| cut_text(name).into_owned());
         if self.node.is_none()
@@ -553,6 +594,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     /// What decides a type first: a value, then an integer without a unit, which takes the type around it, then `[]` and a generic
     /// primitive, which need one (R-7, 4). An array goes by the element that decides most, whatever its place.
     fn rank(&mut self, operand: &Operand) -> u8 {
+        if let Some(constant) = self.named(operand).or_else(|| self.named_in_bracket(operand)) {
+            return self.rank(constant);
+        }
         match operand {
             Operand::Path(path) if self.is_generic_primitive(path) => 2,
             Operand::Number(_, Numeral { kind: NumeralKind::Int(_), .. }, None) => 1,
@@ -590,11 +634,43 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     /// Whether this value is a wire, or an array that holds one at any depth. Such an array has the type of its wires (3.4).
     fn holds_wire(&mut self, operand: &Operand) -> bool {
         match operand {
-            Operand::Path(path) => matches!(self.resolved.of(path.id), Meaning::Value(_)),
-            Operand::Bracket(id, _) => matches!(self.resolved.of(*id), Meaning::ArrayOfValue(_)),
+            Operand::Path(path) => self.named(operand).is_none() && matches!(self.resolved.of(path.id), Meaning::Value(_)),
+            Operand::Bracket(id, _) => self.bracket_holds_wire(*id),
             Operand::Array(id, values) => self.array_holds_wire(*id, values),
             Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => false,
         }
+    }
+
+    fn bracket_holds_wire(&self, id: Id) -> bool {
+        matches!(self.resolved.of(id), Meaning::ArrayOfValue(value) if !self.constants.contains_key(&value))
+    }
+
+    /// This name, if it is a named constant: a name given to a constant stays a constant, so that each terminal it reaches gives
+    /// it a type, as for a constant on a terminal (5.1, 3.4).
+    fn named_constant(&self, operand: &Operand) -> Option<NamedConstant<'a>> {
+        let Operand::Path(path) = operand else { return None };
+        if !path.rest.is_empty() {
+            return None;
+        }
+        let Meaning::Value(value) = self.resolved.of(path.id) else { return None };
+        self.constants.get(&value).copied()
+    }
+
+    fn named(&self, operand: &Operand) -> Option<&'a Operand> {
+        self.named_constant(operand).map(|constant| constant.literal)
+    }
+
+    /// What `[k]` holds as an argument, where it is a bracket and not an array (R-5).
+    fn named_in_bracket(&self, operand: &Operand) -> Option<&'a Operand> {
+        let Operand::Bracket(id, _) = operand else { return None };
+        let Meaning::ArrayOfValue(value) = self.resolved.of(*id) else { return None };
+        self.constants.get(&value).map(|constant| constant.literal)
+    }
+
+    /// Whether this is a number without a unit, under its name or not.
+    fn is_bare_number(&self, operand: &Operand) -> bool {
+        let is_bare = |operand: &Operand| matches!(operand, Operand::Number(_, _, None));
+        is_bare(operand) || self.named(operand).is_some_and(is_bare)
     }
 
     fn array_holds_wire(&mut self, id: Id, values: &[Operand]) -> bool {
@@ -623,7 +699,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     /// A literal of rows becomes the array of two dimensions that is expected (3.1). Any other literal that decides keeps its type.
     fn rows_hint(&self, operand: &Operand, hint: Option<TyId>) -> Option<TyId> {
-        hint.filter(|hint| matches!(operand, Operand::Array(..) | Operand::Bracket(..)) && self.is_array_of_rows(*hint))
+        let is_literal = |operand: &Operand| matches!(operand, Operand::Array(..) | Operand::Bracket(..));
+        let literal = is_literal(operand) || self.named(operand).is_some_and(is_literal);
+        hint.filter(|hint| literal && self.is_array_of_rows(*hint))
     }
 
     fn line_of(&self, id: Id) -> u32 {
@@ -737,7 +815,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     /// A number without a unit does not become a scale: `5` for an `f64[mV/V]` would read 5000 mV/V (3.4).
     fn fit_of(&self, operand: &Operand, found: TyId, expected: TyId) -> Fit {
-        if found != TyId::ERROR && matches!(operand, Operand::Number(_, _, None)) && self.is_scaled(expected) {
+        if found != TyId::ERROR && self.is_bare_number(operand) && self.is_scaled(expected) {
             return Fit::No;
         }
         self.fit(found, expected)
@@ -769,17 +847,122 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     // Values.
 
     fn value_of(&mut self, operand: &'a Operand, hint: Option<TyId>) -> TyId {
-        let ty = match operand {
-            Operand::Path(path) => self.path_type(path, hint),
-            Operand::Number(id, numeral, unit) => self.number_type(*id, *numeral, unit.as_deref(), hint),
-            Operand::Text(..) => self.plain(Ty::String),
-            Operand::Bool(..) => self.plain(Ty::Bool),
-            Operand::None(_) => self.plain(Ty::ErrorValue),
-            Operand::Array(id, values) => self.array_type(*id, values, hint),
-            Operand::Bracket(id, _) => self.bracket_type(*id, hint),
+        let ty = if let Some(constant) = self.named_constant(operand) {
+            self.constant_type(operand.id(), constant, hint)
+        } else {
+            match operand {
+                Operand::Path(path) => self.path_type(path, hint),
+                Operand::Number(id, numeral, unit) => self.number_type(*id, *numeral, unit.as_deref(), hint),
+                Operand::Text(..) => self.plain(Ty::String),
+                Operand::Bool(..) => self.plain(Ty::Bool),
+                Operand::None(_) => self.plain(Ty::ErrorValue),
+                Operand::Array(id, values) => self.array_type(*id, values, hint),
+                Operand::Bracket(id, _) => self.bracket_type(*id, hint),
+            }
         };
-        self.resolved.set_type(operand.id(), ty);
+        if self.trying.is_none() {
+            self.resolved.set_type(operand.id(), ty);
+        }
         ty
+    }
+
+    /// The type that a named constant takes where it goes (3.4). Where nothing is expected, or what is expected is unknown, it is
+    /// its type on its own line, which said what is wrong with it. Beyond the budget, it is that type too.
+    fn constant_type(&mut self, place: Id, constant: NamedConstant<'a>, hint: Option<TyId>) -> TyId {
+        let Some(hint) = hint.filter(|hint| *hint != TyId::ERROR) else { return constant.own };
+        match constant.literal {
+            Operand::Number(id, numeral, unit) => {
+                // A number that does not fit is said at each terminal, as far as the budget goes.
+                if let Some(known) = self.constant_types.get(&(*id, hint)).copied().filter(|known| *known != TyId::ERROR) {
+                    return known;
+                }
+                if !self.spend_on_constant(constant.cost) {
+                    return constant.own;
+                }
+                let ty = self.number_type(place, *numeral, unit.as_deref(), Some(hint));
+                self.constant_types.insert((*id, hint), ty);
+                ty
+            }
+            Operand::Array(id, values) => {
+                if constant.own == TyId::ERROR || !matches!(self.pass.table.get(hint), Ty::Array { .. }) {
+                    return constant.own;
+                }
+                if let Some(known) = self.constant_types.get(&(*id, hint)) {
+                    return *known;
+                }
+                if !self.spend_on_constant(constant.cost) {
+                    return constant.own;
+                }
+                // Tried without a word: an array that does not fit is as it is on its own line, and what it goes to says so.
+                let outer = self.trying.replace(false);
+                let tried = self.array_type(*id, values, Some(hint));
+                let failed = self.trying == Some(true);
+                self.trying = outer;
+                let ty = if failed { constant.own } else { tried };
+                self.constant_types.insert((*id, hint), ty);
+                ty
+            }
+            _ => constant.own,
+        }
+    }
+
+    fn spend_on_constant(&mut self, cost: u64) -> bool {
+        let spent = self.constant_budget >= cost;
+        if spent {
+            self.constant_budget -= cost;
+        }
+        spent
+    }
+
+    /// Its size in the file: the digits of a number, the terms of its unit, what an array holds. A name in an array counts for one,
+    /// since what it holds is paid for when it is tried, once for each type.
+    fn cost_of_constant(&self, operand: &Operand) -> u64 {
+        match operand {
+            Operand::Number(_, numeral, unit) => {
+                let digits = match numeral.kind {
+                    NumeralKind::Int(digits) | NumeralKind::Float(digits) => self.text(digits).len() as u64,
+                    NumeralKind::Inf | NumeralKind::Nan => 0,
+                };
+                1_u64.saturating_add(digits).saturating_add(unit.as_deref().map_or(0, cost_of_unit))
+            }
+            Operand::Array(_, values) => values.iter().fold(1, |cost: u64, value| cost.saturating_add(self.cost_of_constant(value))),
+            _ => 1,
+        }
+    }
+
+    /// An integer without a unit, as `core.pow` takes it.
+    fn exponent_in(&self, operand: &Operand) -> Option<i32> {
+        let Operand::Number(_, numeral, None) = operand else { return None };
+        let NumeralKind::Int(digits) = numeral.kind else { return None };
+        integer_value(numeral.negative, self.text(digits)).and_then(|value| i32::try_from(value).ok())
+    }
+
+    /// A line that gives a constant a name makes a named constant (5.1). A line that binds an output or a carry is a terminal.
+    fn name_constant(&mut self, statement: &'a Statement, targets: &[Line], operand: &'a Operand, own: TyId) {
+        let [Line::Name(id, _)] = targets else { return };
+        if matches!(self.resolved.of(*id), Meaning::Value(_)) {
+            return;
+        }
+        // Another name for a constant is that constant, and its wire starts at the same place.
+        if let Some(constant) = self.named_constant(operand) {
+            self.constants.insert(*id, constant);
+            return;
+        }
+        let is_constant = match operand {
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => true,
+            Operand::Array(array, values) => !self.array_holds_wire(*array, values),
+            Operand::Path(_) | Operand::Bracket(..) => false,
+        };
+        if !is_constant {
+            return;
+        }
+        // Known now, in the order of the lines, so that a chain of names never goes deep.
+        self.rank(operand);
+        let cost = self.cost_of_constant(operand);
+        self.constant_budget = self.constant_budget.saturating_add(cost);
+        let exponent = self.exponent_in(operand);
+        self.constants.insert(*id, NamedConstant { literal: operand, own, cost, exponent });
+        self.origins.insert(*id, Origin::Node { statement, label: Label::Text("value") });
     }
 
     fn path_type(&mut self, path: &'a Path, hint: Option<TyId>) -> TyId {
@@ -999,6 +1182,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let mut agree = true;
         for wanted in 0..=2 {
             for (value, _) in values.iter().zip(&ranks).filter(|(_, rank)| **rank == wanted) {
+                // One failure settles a try.
+                if self.trying == Some(true) {
+                    return TyId::ERROR;
+                }
                 let found = self.value_of(value, decided);
                 match decided {
                     None => decided = Some(found),
@@ -1019,7 +1206,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         match self.fit_of(value, found, expected) {
             Fit::Same => true,
             Fit::Coerce => {
-                self.resolved.add_coercion(value.id(), found, expected);
+                if self.trying.is_none() {
+                    self.resolved.add_coercion(value.id(), found, expected);
+                }
                 true
             }
             Fit::Narrow | Fit::No => {
@@ -1035,11 +1224,14 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     fn bracket_type(&mut self, id: Id, hint: Option<TyId>) -> TyId {
         // An array of one wire has the type of its wire, like any array that holds a wire, except as a row (3.1).
-        let is_wire = matches!(self.resolved.of(id), Meaning::ArrayOfValue(_));
+        let is_wire = self.bracket_holds_wire(id);
         let array = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }) && (!is_wire || self.is_array_of_rows(*hint)));
         let wanted = array.and_then(|array| self.element_of(array));
         let element = match self.resolved.of(id) {
-            Meaning::ArrayOfValue(value) => self.resolved.ty(value),
+            Meaning::ArrayOfValue(value) => match self.constants.get(&value).copied() {
+                Some(constant) => self.constant_type(id, constant, wanted),
+                None => self.resolved.ty(value),
+            },
             Meaning::ArrayOfFunction { library, name } => self.reference_to(library, name),
             Meaning::ArrayOfNumber => match wanted.filter(|wanted| self.number_of(*wanted).is_some_and(|(_, unit)| unit == Unit::ONE)) {
                 Some(wanted) => wanted,
@@ -1047,8 +1239,14 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             },
             _ => return TyId::ERROR,
         };
-        // A constant takes the type expected, as `[1, 2]` does.
-        let number = matches!(self.resolved.of(id), Meaning::ArrayOfNumber);
+        // A constant takes the type expected, as `[1, 2]` does, under its name or not.
+        let number = match self.resolved.of(id) {
+            Meaning::ArrayOfNumber => true,
+            Meaning::ArrayOfValue(value) => {
+                self.constants.get(&value).is_some_and(|constant| matches!(constant.literal, Operand::Number(_, _, None)))
+            }
+            _ => false,
+        };
         if let Some((array, wanted)) = array.zip(wanted).filter(|(_, wanted)| !number || !self.is_scaled(*wanted)) {
             match self.fit(element, wanted) {
                 Fit::Same => return array,
@@ -1175,12 +1373,14 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     /// `0` where a voltage is expected becomes `0 V`, and a wire gets a conversion on a line of its own (`docs/cli.md`, 4.2).
     fn conversion_fixes(&mut self, operand: &'a Operand, found: TyId, expected: TyId) -> Vec<Fix> {
-        let bare_literal = match operand {
+        // The fix of a named constant goes on its line, where the number is written.
+        let literal = self.named(operand).unwrap_or(operand);
+        let bare_literal = match literal {
             Operand::Number(_, numeral, None) => self.literal_text(*numeral),
             _ => None,
         };
         // A literal with a unit takes the type expected, except a decimal for an integer (3.4).
-        let is_integer = matches!(operand, Operand::Number(_, Numeral { kind: NumeralKind::Int(_), .. }, _));
+        let is_integer = matches!(literal, Operand::Number(_, Numeral { kind: NumeralKind::Int(_), .. }, _));
         if let (Some(text), Some((kind, unit)), Some((_, found_unit))) = (&bare_literal, self.number_of(expected), self.number_of(found))
             && (kind.is_inexact() || is_integer)
             && found_unit == Unit::ONE
@@ -1191,7 +1391,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             }
             let written = format!("{text} {unit}");
             let title = format!("Write `{written}`: a number without a unit has no dimension (3.4)");
-            let edits = self.scope.model.source_map.span(operand.id()).map_or_else(Vec::new, |span| vec![Edit { span, text: written }]);
+            let edits = self.scope.model.source_map.span(literal.id()).map_or_else(Vec::new, |span| vec![Edit { span, text: written }]);
             return vec![Fix { title, edits }];
         }
         // A default reads nothing of the diagram, so no node can convert it (R-21).
@@ -1291,6 +1491,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 let hint = self.target_hint(targets.first());
                 let ty = self.value_of(operand, hint);
                 self.assign(statement, targets, vec![Out { ty, label: Label::Position(0), operand: Some(operand) }]);
+                self.name_constant(statement, targets, operand, ty);
             }
             Rhs::Match(_) | Rhs::Handle(_) | Rhs::For(_) | Rhs::Loop(_) => {}
         }
@@ -1522,7 +1723,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let hint = if targets.len() == count { self.target_hint(targets.get(position)) } else { None };
             let (ty, decider) = self.decide_position(branching, position, hint);
             // A number that decides goes to the target as it would on a line of its own.
-            let operand = decider.filter(|value| matches!(value, Operand::Number(_, _, None)) && hint.is_some_and(|hint| self.is_scaled(hint)));
+            let operand = decider.filter(|value| self.is_bare_number(value) && hint.is_some_and(|hint| self.is_scaled(hint)));
             outs.push(Out { ty, label: Label::Position(u32::try_from(position).unwrap_or(u32::MAX)), operand });
         }
         self.assign(statement, targets, outs);
@@ -2173,12 +2374,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 }) {
                     return TyId::ERROR;
                 }
-                let exponent = arguments.iter().find(|(_, param)| param.name == "exponent").and_then(|(operand, _)| match operand {
-                    Operand::Number(_, numeral, None) => match numeral.kind {
-                        NumeralKind::Int(digits) => integer_value(numeral.negative, self.text(digits)).and_then(|value| i32::try_from(value).ok()),
-                        _ => None,
-                    },
-                    _ => None,
+                let exponent = arguments.iter().find(|(_, param)| param.name == "exponent").and_then(|(operand, _)| {
+                    // Read once for a named constant, which many nodes can take.
+                    self.named_constant(operand).map_or_else(|| self.exponent_in(operand), |constant| constant.exponent)
                 });
                 let Some(exponent) = exponent else {
                     self.say(

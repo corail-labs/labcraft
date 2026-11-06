@@ -95,6 +95,10 @@ muted ink). One line per terminal, named, **in signature order**.
 - **Inline constants**: a constant written as an argument (spec 5.1) is shown on its terminal
   (`timeout ◂ 2 s`, `◂ "MEAS:VOLT:DC?"`), not as a separate node. Long text is truncated (`…`),
   in full in the tooltip.
+- **Named constant** (`limit = 240 V`, spec 5.1): a small node without a body, the user places it near what it
+  feeds. It shows its name, its value and one output terminal (`limit  240 V ●`), and its wire splits like any
+  other. Dragging a wire from an inline constant to a second terminal makes one. *The exact drawing is to be judged
+  on a mock-up.* A new name for a wire (`err = e3`) still draws nothing.
 - **Unwired optional inputs**: hidden by default, with a `+2` indicator in the header; shown with
   their default value on hover or on request.
 - **Ignored output** (`_`): hollow terminal, no wire.
