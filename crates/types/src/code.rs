@@ -131,6 +131,7 @@ codes! {
     Lc4103 = "LC4103" Warning,
     Lc4104 = "LC4104" Warning,
     Lc4105 = "LC4105" Warning,
+    Lc4106 = "LC4106" Warning,
     Lc5001 = "LC5001" Error,
     Lc5002 = "LC5002" Error,
     Lc5003 = "LC5003" Warning,

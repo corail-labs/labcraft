@@ -845,3 +845,262 @@ fn a_type_nested_line_by_line_has_a_limit() {
     let found = codes(&[("f.lcf", &text)]);
     assert_eq!(found, ["LC1006"], "and what follows says nothing more");
 }
+
+fn matching(selector: &str, arms: &str) -> Vec<&'static str> {
+    judged(&format!("s: {selector}"), "y: i32", &format!("y = match s {{\n{arms}\n}}"))
+}
+
+fn handling(arms: &str) -> Vec<&'static str> {
+    judged("e: error", "y: i32", &format!("y = handle e {{\n{arms}\n}}"))
+}
+
+#[test]
+fn every_value_has_an_arm() {
+    assert_eq!(matching("bool", "true => yield 1\nfalse => yield 2"), NOTHING);
+    assert_eq!(matching("bool", "true, false => yield 1"), NOTHING);
+    assert_eq!(matching("bool", "true => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("bool", "true => yield 1"), ["LC3010"]);
+    assert_eq!(matching("bool", "false => yield 1"), ["LC3010"]);
+    assert_eq!(matching("bool", ""), ["LC3010"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Fail => yield 2"), NOTHING);
+    assert_eq!(matching("Verdict", "Verdict.Pass, Verdict.Fail => yield 1"), NOTHING);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1"), ["LC3010"]);
+    assert_eq!(matching("Reading", "Reading.Value(v) => yield 1\nReading.Overload => yield 2"), ["LC3010"]);
+    assert_eq!(matching("i32", "1 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("i32", "1, _ => yield 1"), NOTHING, "wherever it is written");
+    assert_eq!(matching("i32", "1 => yield 1"), ["LC3010"]);
+    assert_eq!(matching("u8", "0..=255 => yield 1"), ["LC3010"], "even when ranges cover the whole type");
+    assert_eq!(matching("u8", "0..=255 => yield 1\n_ => yield 2"), NOTHING, "`_` is required here, so it is not useless");
+    assert_eq!(matching("string", "\"a\" => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("string", "\"a\" => yield 1"), ["LC3010"]);
+    assert_eq!(matching("string", ""), ["LC3010"]);
+}
+
+#[test]
+fn the_message_names_a_few_missing_variants() {
+    let many = ("many.lct", "type Many = enum { A, B, C, D, E, F, G, H }");
+    let text = program("s: Many", "y: i32", "y = match s {\nMany.A => yield 1\n}");
+    let found = diagnostics(&[("f.lcf", text.as_str()), many]);
+    assert_eq!(found.len(), 1);
+    let message = found.first().map_or("", |diagnostic| diagnostic.message.as_str());
+    assert!(message.contains("`B`, `C`, `D`, `E`, `F` and 2 more"), "{message}");
+}
+
+#[test]
+fn an_alias_covers_what_its_type_covers() {
+    let extra = [
+        ("channel.lct", "type Channel = i32"),
+        ("flag.lct", "type Flag = bool"),
+        ("other.lct", "type Other = Verdict"),
+        ("t.lct", "type T = string"),
+    ];
+    let on = |selector: &str, arms: &str| judged_with(&extra, &format!("s: {selector}"), "y: i32", &format!("y = match s {{\n{arms}\n}}"));
+    assert_eq!(on("Channel", "1..=3 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(on("Channel", "1..=3 => yield 1"), ["LC3010"]);
+    assert_eq!(on("Channel", "1..=3, 2 => yield 1\n_ => yield 2"), ["LC3011"]);
+    assert_eq!(on("Channel", "3..=1 => yield 1\n_ => yield 2"), ["LC3009"]);
+    assert_eq!(on("Channel", "1 => yield 1\n1 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(on("Flag", "true => yield 1"), ["LC3010"]);
+    assert_eq!(on("T", "\"a\" => yield 1"), ["LC3010"]);
+    assert_eq!(on("Other", "Other.Pass => yield 1"), ["LC3010"]);
+    assert_eq!(on("Other", "Other.Pass => yield 1\nVerdict.Fail => yield 2"), NOTHING);
+    assert_eq!(on("Verdict", "Other.Pass => yield 1\nVerdict.Pass => yield 2\nVerdict.Fail => yield 3"), ["LC3022"], "one variant, by two names");
+}
+
+#[test]
+fn a_range_holds_a_value() {
+    assert_eq!(matching("i32", "5..=1 => yield 1\n_ => yield 2"), ["LC3009"]);
+    assert_eq!(matching("i32", "0..0 => yield 1\n_ => yield 2"), ["LC3009"]);
+    assert_eq!(matching("i32", "5..5 => yield 1\n_ => yield 2"), ["LC3009"]);
+    assert_eq!(matching("i32", "5..=5 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("i32", "5..6 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("i32", "-5..-4 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("u8", "300..=200 => yield 1\n_ => yield 2"), ["LC3018"], "and not empty as well");
+    assert_eq!(matching("u8", "400..=300 => yield 1\n_ => yield 2"), ["LC3018", "LC3018"]);
+}
+
+#[test]
+fn every_number_of_a_pattern_fits_its_selector() {
+    assert_eq!(matching("u8", "0..=255 => yield 1\n_ => yield 2"), NOTHING);
+    assert_eq!(matching("u8", "0..256 => yield 1\n_ => yield 2"), ["LC3018"], "an excluded bound too");
+    assert_eq!(matching("i8", "-128..128 => yield 1\n_ => yield 2"), ["LC3018"]);
+    assert_eq!(matching("i8", "-129..=0 => yield 1\n_ => yield 2"), ["LC3018"]);
+    let said = |arms: &str| {
+        let text = program("s: u8", "y: i32", &format!("y = match s {{\n{arms}\n_ => yield 2\n}}"));
+        diagnostics(&[("f.lcf", text.as_str())]).first().map_or(String::new(), |diagnostic| diagnostic.message.clone())
+    };
+    assert!(said("0..256 => yield 1").contains("write `..=255`"), "{}", said("0..256 => yield 1"));
+    assert!(!said("0..=256 => yield 1").contains("write"), "an included bound has no such way out");
+    assert!(!said("0..300 => yield 1").contains("write"), "and `..=299` would not fit either");
+    assert!(!said("256..300 => yield 1").contains("write"), "the first bound does not fit, whatever the last one");
+}
+
+#[test]
+fn patterns_do_not_overlap() {
+    assert_eq!(matching("i32", "1 => yield 1\n2 => yield 2\n_ => yield 3"), NOTHING);
+    assert_eq!(matching("i32", "1 => yield 1\n1 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("i32", "1, 1 => yield 1\n_ => yield 2"), ["LC3011"], "in one arm");
+    assert_eq!(matching("i32", "1_000 => yield 1\n1000 => yield 2\n_ => yield 3"), ["LC3011"], "by value");
+    assert_eq!(matching("i32", "-0 => yield 1\n0 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("i32", "1..=3 => yield 1\n3..=5 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("i32", "1..3 => yield 1\n3..=5 => yield 2\n_ => yield 3"), NOTHING, "the end is excluded");
+    assert_eq!(matching("i32", "1..=3 => yield 1\n1..=3 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("i32", "5 => yield 1\n1..=10 => yield 2\n_ => yield 3"), ["LC3011"], "whatever the order");
+    assert_eq!(matching("i32", "1..=10 => yield 1\n2 => yield 2\n9 => yield 3\n_ => yield 4"), ["LC3011", "LC3011"], "a long range stays in force");
+    assert_eq!(matching("u64", "18446744073709551615 => yield 1\n0..=18446744073709551615 => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("bool", "true, true, false => yield 1"), ["LC3011"]);
+    assert_eq!(matching("string", "\"a\" => yield 1\n\"a\" => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("string", "\"a\\n\" => yield 1\n\"a\\\\n\" => yield 2\n_ => yield 3"), NOTHING, "after their escapes");
+    assert_eq!(matching("string", "\"\\\"\" => yield 1\n\"\\\"\" => yield 2\n_ => yield 3"), ["LC3011"]);
+    assert_eq!(matching("string", "\"\u{e9}\" => yield 1\n\"e\u{301}\" => yield 2\n_ => yield 3"), NOTHING, "R-20 leaves strings alone");
+    assert_eq!(matching("u8", "300 => yield 1\n300 => yield 2\n_ => yield 3"), ["LC3018", "LC3018"], "what does not fit has its diagnostic");
+}
+
+#[test]
+fn a_pattern_is_written_once() {
+    assert_eq!(matching("i32", "_ => yield 1\n_ => yield 2"), ["LC3022"]);
+    assert_eq!(matching("i32", "1, _, _ => yield 1"), ["LC3022"]);
+    assert_eq!(matching("i32", "1, _ => yield 1\n_ => yield 2"), ["LC3022"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Pass => yield 2\nVerdict.Fail => yield 3"), ["LC3022"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass, Verdict.Pass, Verdict.Fail => yield 1"), ["LC3022"]);
+    assert_eq!(matching("Reading", "Reading.Value(v) => yield 1\nReading.Value(w) => yield 2\n_ => yield 3"), ["LC3022"]);
+    assert_eq!(handling("_ => yield 1\n_ => yield 2"), ["LC3022"]);
+    assert_eq!(handling("_(a) => yield 1\n_(b) => yield 2"), ["LC3022"]);
+    assert_eq!(handling("ok => yield 1\nok => yield 2\n_ => yield 3"), ["LC3022"]);
+    assert_eq!(handling("code 5 => yield 1\ncode 5 => yield 2\n_ => yield 3"), ["LC3022"]);
+    assert_eq!(handling("code 5 => yield 1\ncode 0_5 => yield 2\n_ => yield 3"), ["LC3022"], "by value");
+    assert_eq!(handling("code 5 => yield 1\ncode -5 => yield 2\n_ => yield 3"), NOTHING);
+    assert_eq!(handling("a.b => yield 1\na.b(x) => yield 2\n_ => yield 3"), ["LC3022"]);
+    assert_eq!(handling("a.* => yield 1\na.* => yield 2\n_ => yield 3"), ["LC3022"]);
+}
+
+#[test]
+fn a_handle_has_its_wildcard() {
+    assert_eq!(handling("_ => yield 1"), NOTHING);
+    assert_eq!(handling("ok => yield 1\na.b => yield 2\na.* => yield 3\ncode 1 => yield 4\n_(x) => yield 5"), NOTHING, "the most specific arm wins");
+    assert_eq!(handling(""), ["LC3012"]);
+    assert_eq!(handling("ok => yield 1"), ["LC3012"]);
+    assert_eq!(handling("a.* => yield 1\nok => yield 2"), ["LC3012"]);
+    assert_eq!(judged("x: i32", "y: i32", "y = handle x {\nok => yield 1\n}"), ["LC3012", "LC3013"], "whatever its selector");
+    assert_eq!(judged("x: i32", "y: i32", "y = handle x {\n_ => yield 1\n_ => yield 2\n}"), ["LC3013", "LC3022"]);
+}
+
+#[test]
+fn a_wildcard_that_catches_nothing_has_a_warning() {
+    assert_eq!(matching("bool", "true, false, _ => yield 1"), ["LC4106"]);
+    assert_eq!(matching("bool", "true => yield 1\nfalse => yield 2\n_ => yield 3"), ["LC4106"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Fail => yield 2\n_ => yield 3"), ["LC4106"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\n_, Verdict.Fail => yield 2"), ["LC4106"]);
+    assert_eq!(matching("bool", "_ => yield 1"), NOTHING);
+}
+
+#[test]
+fn the_fix_of_a_useless_wildcard_removes_it() {
+    let removed = |arms: &str| {
+        let text = format!("labcraft 1\n\n{}", program("s: bool", "y: i32", &format!("y = match s {{\n{arms}\n}}")));
+        let found = diagnostics(&[("f.lcf", text.trim_start_matches("labcraft 1\n\n"))]);
+        let fix = found.first().and_then(|diagnostic| diagnostic.fixes.first()).cloned();
+        let Some(fix) = fix else { return (String::new(), None) };
+        let [edit] = fix.edits.as_slice() else { return (fix.title, None) };
+        assert_eq!(edit.span.start.line, edit.span.end.line, "a list stays on the line of its `=>`");
+        let line = text.lines().nth(edit.span.start.line as usize - 1).unwrap_or("");
+        let cut = |column: u32| line.char_indices().nth(column as usize - 1).map_or(line.len(), |(place, _)| place);
+        (fix.title, Some(format!("{}{}", line.get(..cut(edit.span.start.column)).unwrap_or(""), line.get(cut(edit.span.end.column)..).unwrap_or(""))))
+    };
+    let kept = Some("true, false => yield 1".to_owned());
+    assert_eq!(removed("true, false, _ => yield 1"), ("Remove `_`".to_owned(), kept.clone()));
+    assert_eq!(removed("_, true, false => yield 1"), ("Remove `_`".to_owned(), kept.clone()));
+    assert_eq!(removed("true, _, false => yield 1"), ("Remove `_`".to_owned(), kept));
+    let (title, edit) = removed("_ => yield 1\ntrue => yield 2\nfalse => yield 3");
+    assert!(title.starts_with("Remove this arm"), "{title}");
+    assert_eq!(edit, None, "it can decide the type of the others (R-7), so the fix has no edit");
+}
+
+/// The code, the line and the related lines of each diagnostic of a function with these arms.
+fn places(selector: &str, arms: &str, kind: &str) -> Vec<(&'static str, u32, Vec<u32>)> {
+    let text = format!("use core\n\nfn f(s: {selector}) -> (y: i32) {{\ny = {kind} s {{\n{arms}\n}}\n}}");
+    let files = [("f.lcf", text.as_str()), ("verdict.lct", "type Verdict = enum { Pass, Fail }")];
+    diagnostics(&files)
+        .iter()
+        .map(|diagnostic| {
+            let line_of = |span: &Option<labcraft_types::Span>| span.map_or(0, |span| span.start.line);
+            (diagnostic.code().as_str(), line_of(&diagnostic.span), diagnostic.related.iter().map(|related| line_of(&related.span)).collect())
+        })
+        .collect()
+}
+
+#[test]
+fn a_repeated_pattern_is_reported_where_it_is_repeated() {
+    // The arms start on line 7, after the header that `source` adds.
+    let two = "1 => yield 1\n1 => yield 2\n_ => yield 3";
+    assert_eq!(places("i32", two, "match"), [("LC3011", 8, vec![7])]);
+    assert_eq!(places("i32", "1..=9 => yield 1\n_ => yield 2\n5 => yield 3", "match"), [("LC3011", 9, vec![7])]);
+    assert_eq!(
+        places("i32", "5 => yield 1\n_ => yield 2\n1..=9 => yield 3", "match"),
+        [("LC3011", 7, vec![9])],
+        "the one that starts inside the other"
+    );
+    assert_eq!(places("bool", "true => yield 1\ntrue => yield 2\n_ => yield 3", "match"), [("LC3011", 8, vec![7])]);
+    assert_eq!(places("string", "\"a\" => yield 1\n\"a\" => yield 2\n_ => yield 3", "match"), [("LC3011", 8, vec![7])]);
+    assert_eq!(places("i32", "_ => yield 1\n_ => yield 2", "match"), [("LC3022", 8, vec![7])]);
+    assert_eq!(places("error", "ok => yield 1\nok => yield 2\n_ => yield 3", "handle"), [("LC3022", 8, vec![7])]);
+    let variants = "Verdict.Pass => yield 1\nVerdict.Pass => yield 2\nVerdict.Fail => yield 3";
+    assert_eq!(places("Verdict", variants, "match"), [("LC3022", 8, vec![7])]);
+}
+
+#[test]
+fn what_covers_nothing_is_reported_on_what_is_at_fault() {
+    assert_eq!(places("bool", "true => yield 1\nfalse => yield 2\n_ => yield 3", "match"), [("LC4106", 9, vec![])], "on the `_`");
+    assert_eq!(places("bool", "true => yield 1", "match"), [("LC3010", 6, vec![])], "on the `match`");
+    assert_eq!(places("error", "ok => yield 1", "handle"), [("LC3012", 6, vec![])], "on the `handle`");
+    assert_eq!(places("i32", "3..=1 => yield 1\n_ => yield 2", "match"), [("LC3009", 7, vec![])]);
+}
+
+#[test]
+fn escapes_and_categories_compare_as_the_spec_says() {
+    assert_eq!(matching("string", "\"\\t\" => yield 1\n\"\t\" => yield 2\n_ => yield 3"), ["LC3011"], "an escape and the character it writes");
+    assert_eq!(matching("string", "\"\\n\" => yield 1\n\"\\r\" => yield 2\n\"\\\\\" => yield 3\n_ => yield 4"), NOTHING);
+    assert_eq!(handling("a.b => yield 1\na.b.* => yield 2\n_ => yield 3"), NOTHING, "two arms: the most specific one wins");
+    assert_eq!(handling("a.b => yield 1\na.c => yield 2\n_ => yield 3"), NOTHING);
+}
+
+#[test]
+fn a_mistaken_pattern_hides_what_depends_on_it() {
+    assert_eq!(matching("bool", "true => yield 1\n5 => yield 2"), ["LC3009"], "no `LC3010`: it may have meant `false`");
+    assert_eq!(matching("bool", "true, false, 5, _ => yield 1"), ["LC3009"], "no `LC4106`");
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nGrade.Fail => yield 2"), ["LC3009"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Nope => yield 2"), ["LC2007"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Fail(x) => yield 2\n_ => yield 3"), ["LC3009"]);
+    assert_eq!(matching("bool", "true => yield 1\ntrue => yield 2"), ["LC3011"], "a repeat may be the one that is missing");
+    assert_eq!(matching("bool", "true, true => yield 1"), ["LC3011"]);
+    assert_eq!(matching("bool", "true, true, false, _ => yield 1"), ["LC3011"], "no `LC4106`");
+    assert_eq!(matching("bool", "true, false, _, _ => yield 1"), ["LC3022"], "no `LC4106`");
+    assert_eq!(matching("Verdict", "Verdict.Pass => yield 1\nVerdict.Pass => yield 2"), ["LC3022"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass, Verdict.Pass => yield 1"), ["LC3022"]);
+    assert_eq!(matching("Verdict", "Verdict.Pass, Verdict.Pass, Verdict.Fail, _ => yield 1"), ["LC3022"], "no `LC4106`");
+    assert_eq!(matching("i32", "1, 1 => yield 1"), ["LC3010", "LC3011"], "a missing `_` depends on no other pattern");
+    assert_eq!(matching("string", "\"a\", \"a\" => yield 1"), ["LC3010", "LC3011"]);
+    assert_eq!(matching("i32", "\"a\" => yield 1"), ["LC3010", "LC3009"], "an integer has `_` whatever its patterns");
+    assert_eq!(matching("string", "1 => yield 1"), ["LC3010", "LC3009"]);
+    assert_eq!(matching("f64", "1 => yield 1\n1 => yield 2"), ["LC3013"], "an unknown selector says nothing of its arms");
+    assert_eq!(matching("f64", "_ => yield 1\n_ => yield 2"), ["LC3013", "LC3022"], "but `_` is `_`");
+    assert_eq!(matching("Nope", "1 => yield 1"), ["LC2003"]);
+}
+
+#[test]
+fn nested_arms_are_judged_with_their_own_selector() {
+    let body = "y = match a {\ntrue => {\nz = match b {\ntrue => yield 1\n}\nyield z\n}\nfalse => yield 2\n}";
+    assert_eq!(judged("a: bool, b: bool", "y: i32", body), ["LC3010"]);
+}
+
+#[test]
+fn a_long_list_of_patterns_is_judged() {
+    use std::fmt::Write;
+    let mut arms = String::new();
+    for value in 0..200_000 {
+        let _ = write!(arms, "{value}, ");
+    }
+    arms.push_str("_ => yield 1");
+    assert_eq!(matching("i32", &arms), NOTHING);
+}

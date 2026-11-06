@@ -25,6 +25,7 @@ use crate::load::at;
 use crate::primitives::{ParamKind, Primitive, PrimitiveLibrary, PrimitiveOutput, PrimitiveParam, PrimitiveTy};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
+mod coverage;
 #[cfg(test)]
 mod tests;
 
@@ -378,10 +379,10 @@ fn line_name(target: &Line) -> Option<Name> {
 }
 
 /// An integer literal, when `integer_fits` said that it is one of `i64` or `u64`.
-fn integer_value(numeral: Numeral, digits: &str) -> Option<i128> {
+fn integer_value(negative: bool, digits: &str) -> Option<i128> {
     let digits: String = digits.chars().filter(|c| *c != '_').collect();
     let value: i128 = digits.parse().ok()?;
-    Some(if numeral.negative { -value } else { value })
+    Some(if negative { -value } else { value })
 }
 
 /// Whether the type holds this integer exactly: a floating type holds what its digits can write (3.4).
@@ -766,7 +767,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if !integer_fits(numeral.negative, text) {
             return false;
         }
-        let Some(value) = integer_value(numeral, text) else { return false };
+        let Some(value) = integer_value(numeral.negative, text) else { return false };
         if fits_kind(value, kind) {
             return true;
         }
@@ -783,7 +784,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn kind_that_holds(&self, numeral: Numeral, digits: Name) -> NumberKind {
-        let value = integer_value(numeral, self.text(digits));
+        let value = integer_value(numeral.negative, self.text(digits));
         [NumberKind::I32, NumberKind::I64].into_iter().find(|kind| value.is_some_and(|value| fits_kind(value, *kind))).unwrap_or(NumberKind::U64)
     }
 
@@ -1188,14 +1189,20 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let found = self.value_of(&branching.selector, None);
         let selector = self.judge_selector(&branching.selector, found, is_handle);
         let error = self.plain(Ty::ErrorValue);
+        let mut mistaken = false;
         for arm in &branching.arms {
             for pattern in arm.patterns() {
-                self.judge_pattern(pattern, selector, is_handle, error);
+                mistaken |= !self.judge_pattern(pattern, selector, is_handle, error);
             }
+        }
+        if is_handle {
+            self.judge_handle_arms(branching);
+        } else {
+            self.judge_match_arms(branching, selector, mistaken);
         }
     }
 
-    /// The selector, or what is unknown when it cannot be one, so that its arms say nothing more.
+    /// The selector, or what is unknown when it cannot be one, so that its arms say nothing that depends on its type.
     fn judge_selector(&mut self, operand: &Operand, found: TyId, is_handle: bool) -> TyId {
         let definition = if is_handle { found } else { definition_of(self.pass, self.context, found) };
         let accepted = match self.pass.table.get(definition) {
@@ -1227,64 +1234,80 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         self.say(Code::Lc3009, message, id, Details { expected: Some(expected), found, ..Details::default() });
     }
 
-    fn judge_pattern(&mut self, pattern: &'a Pattern, selector: TyId, is_handle: bool, error: TyId) {
+    /// Whether the pattern has no diagnostic of its own, nor one that an earlier pass gave it.
+    fn judge_pattern(&mut self, pattern: &'a Pattern, selector: TyId, is_handle: bool, error: TyId) -> bool {
         match pattern {
             Pattern::Literal(operand) => {
                 let found = self.value_of(operand, Some(selector));
-                if found != TyId::ERROR && !self.pass.table.matches(found, selector) {
+                if found == TyId::ERROR {
+                    return false;
+                }
+                if !self.pass.table.matches(found, selector) {
                     let text = self.show(found);
                     self.wrong_pattern(operand.id(), selector, Some(text));
+                    return false;
                 }
+                true
             }
-            Pattern::Range { id, low, high, .. } => {
+            Pattern::Range { id, low, high, inclusive } => {
                 let kind = self.number_of(selector).map(|(kind, _)| kind).filter(|kind| kind.is_integer());
                 let Some(kind) = kind else {
                     self.wrong_pattern(*id, selector, None);
-                    return;
+                    return false;
                 };
-                for bound in [low, high] {
-                    let text = self.text(bound.digits);
-                    // A number beyond every type has its `LC1006`.
-                    if !integer_fits(bound.negative, text) {
-                        continue;
-                    }
-                    let digits: String = text.chars().filter(|c| *c != '_').collect();
-                    let value = digits.parse::<i128>().ok().map(|value| if bound.negative { -value } else { value });
-                    if value.is_some_and(|value| !fits_kind(value, kind)) {
+                // A number beyond every type has its `LC1006`.
+                let (first, end) = (self.bound_value(*low), self.bound_value(*high));
+                let mut fits = first.is_some() && end.is_some();
+                for (bound, value) in [(low, first), (high, end)] {
+                    if let Some(value) = value.filter(|value| !fits_kind(*value, kind)) {
+                        fits = false;
                         let sign = if bound.negative { "-" } else { "" };
-                        let message = format!("`{sign}{}` does not fit a value of type `{}`", cut_text(text), kind.as_str());
+                        let mut message = format!("`{sign}{}` does not fit a value of type `{}`", cut_text(self.text(bound.digits)), kind.as_str());
+                        // Every number written in a pattern fits (6.1), so `0..256` on a `u8` says how to end on its last value.
+                        if !*inclusive && std::ptr::eq(bound, high) && fits_kind(value - 1, kind) {
+                            message.push_str(&format!(": to end on the last value, write `..={}`", value - 1));
+                        }
                         self.say(Code::Lc3018, message, *id, Details { expected: Some(kind.as_str().to_owned()), ..Details::default() });
                     }
                 }
+                let Some((first, end)) = first.zip(end).filter(|_| fits) else { return false };
+                if coverage::last_of_range(first, end, *inclusive).is_none() {
+                    self.say(Code::Lc3009, "this range holds no value (6.1)".to_owned(), *id, Details::default());
+                    return false;
+                }
+                true
             }
             Pattern::Variant { path, bindings, .. } => {
-                let Meaning::Variant { ty, variant } = self.resolved.of(path.id) else { return };
+                let Meaning::Variant { ty, variant } = self.resolved.of(path.id) else { return false };
                 if !self.pass.table.matches(ty, selector) {
                     let found = self.show(ty);
                     self.wrong_pattern(path.id, selector, Some(found));
-                    return;
+                    return false;
                 }
                 let definition = definition_of(self.pass, self.context, ty);
                 let count = self.variant_values(definition, variant).map_or(0, <[TyId]>::len);
                 if count != bindings.len() {
                     let message = format!("this variant holds {count} values, and this pattern binds {}", bindings.len());
                     self.say(Code::Lc3009, message, path.id, Details::default());
-                    return;
+                    return false;
                 }
                 for (position, binding) in bindings.iter().enumerate() {
                     let ty = self.variant_values(definition, variant).and_then(|values| values.get(position)).copied().unwrap_or(TyId::ERROR);
                     self.resolved.set_type(binding.id, ty);
                 }
+                true
             }
             Pattern::Wildcard { binding, .. } => {
                 if let Some(binding) = binding {
                     self.resolved.set_type(binding.id, if is_handle { error } else { selector });
                 }
+                true
             }
             Pattern::Ok { id } => {
                 if !is_handle {
                     self.wrong_pattern(*id, selector, Some("error".to_owned()));
                 }
+                is_handle
             }
             Pattern::Category { id, binding, .. } | Pattern::Code { id, binding, .. } => {
                 if !is_handle {
@@ -1293,6 +1316,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 if let Some(binding) = binding {
                     self.resolved.set_type(binding.id, error);
                 }
+                is_handle
             }
         }
     }
@@ -1985,7 +2009,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 }
                 let exponent = arguments.iter().find(|(_, param)| param.name == "exponent").and_then(|(operand, _)| match operand {
                     Operand::Number(_, numeral, None) => match numeral.kind {
-                        NumeralKind::Int(digits) => integer_value(*numeral, self.text(digits)).and_then(|value| i32::try_from(value).ok()),
+                        NumeralKind::Int(digits) => integer_value(numeral.negative, self.text(digits)).and_then(|value| i32::try_from(value).ok()),
                         _ => None,
                     },
                     _ => None,
