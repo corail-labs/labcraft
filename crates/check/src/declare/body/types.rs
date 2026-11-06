@@ -131,6 +131,12 @@ impl<'a> Plan<'a> {
                 Rhs::Match(branching) | Rhs::Handle(branching) => {
                     self.read(&branching.selector, first, resolved);
                     for arm in &branching.arms {
+                        // An array in a pattern holds operands, which the structure judges when it opens.
+                        for pattern in arm.patterns() {
+                            if let Pattern::Literal(operand) = pattern {
+                                self.read(operand, first, resolved);
+                            }
+                        }
                         self.body(&arm.body, Some((first, last)), resolved);
                         for value in &arm.yields.values {
                             self.read(value, last, resolved);
@@ -1183,7 +1189,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let selector = self.judge_selector(&branching.selector, found, is_handle);
         let error = self.plain(Ty::ErrorValue);
         for arm in &branching.arms {
-            self.judge_pattern(&arm.pattern, selector, is_handle, error);
+            for pattern in arm.patterns() {
+                self.judge_pattern(pattern, selector, is_handle, error);
+            }
         }
     }
 

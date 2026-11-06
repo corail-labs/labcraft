@@ -453,9 +453,19 @@ pub struct Arm {
     pub id: Id,
     pub comments: Attached,
     pub pattern: Pattern,
+    /// The rest of a list in a `match`: `1, 3..=5, _`. None of them binds a name, and neither does `pattern` when
+    /// there are some (14.5).
+    pub others: Vec<Pattern>,
     pub open: Option<Comment>,
     pub body: Body,
     pub yields: Yield,
+}
+
+impl Arm {
+    /// Every pattern of the arm, in written order.
+    pub fn patterns(&self) -> impl Iterator<Item = &Pattern> {
+        std::iter::once(&self.pattern).chain(&self.others)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -276,7 +276,9 @@ impl Analysis<'_> {
 
     fn arm(&mut self, arm: &Arm) {
         let mark = self.scopes.len();
-        self.pattern(&arm.pattern);
+        for pattern in arm.patterns() {
+            self.pattern(pattern);
+        }
         self.open(&arm.body, None);
         for value in &arm.yields.values {
             self.operand(value);

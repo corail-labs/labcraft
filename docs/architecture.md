@@ -82,8 +82,8 @@ pub enum StatementKind { Binding { targets: Vec<Target>, value: Rhs }, Call(Call
                          Collect(Operand), Until(Operand) }
 pub enum Rhs { Call(Box<Call>), Match(Box<Branching>), Handle(Box<Branching>), For(Box<For>),
                Loop(Box<Loop>), Struct(Box<StructLit>), Operand(Operand) }
-pub struct Arm { id: Id, comments: Attached, pattern: Pattern, open: Option<Comment>, body: Body,
-                 yields: Yield }
+pub struct Arm { id: Id, comments: Attached, pattern: Pattern, others: Vec<Pattern>,
+                 open: Option<Comment>, body: Body, yields: Yield }
 pub enum Operand { Path(Path), Number(Id, Numeral, Option<Box<UnitExpr>>), Text(Id, Box<str>),
                    Bool(Id, bool), None(Id), Array(Id, Vec<Operand>), Bracket(Id, Box<UnitExpr>) }
 ```

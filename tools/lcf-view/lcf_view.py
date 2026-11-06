@@ -120,11 +120,12 @@ array_lit: "[" [operand ("," operand)*] "]"
 
 ?structure: match_expr | for_expr | loop_expr | handle_expr
 match_expr: "match" operand "{" match_arm* "}"
-match_arm: pattern "=>" arm_body
+match_arm: (bound_pattern | pattern ("," pattern)*) "=>" arm_body
+bound_pattern: path "(" NAME ("," NAME)* ")" -> variant_pat
 ?pattern: literal | range_pat | variant_pat | "_" -> wildcard
 range_pat: SIGNED_INT ".." "="? SIGNED_INT
 SIGNED_INT: /-?[0-9][0-9_]*/
-variant_pat: path ("(" NAME ("," NAME)* ")")?
+variant_pat: path
 for_expr: "for" PARALLEL? for_in ("," for_in)* ("," carry)* for_body
 PARALLEL: "parallel"
 for_in: NAME "in" operand (".." operand)?
@@ -451,12 +452,13 @@ class Builder:
         elif rhs.data in ("match_expr", "handle_expr"):
             self.wire(rhs.children[0], nid, scope, container)
             for arm in rhs.children[1:]:
-                pat, body = arm.children
-                arm_id = self.node(nid, self.tx(pat), "arm", compound=True)
+                *pats, body = arm.children
+                arm_id = self.node(nid, ", ".join(self.tx(pat) for pat in pats), "arm", compound=True)
                 inner = Scope(scope)
-                for c in pat.children if isinstance(pat, Tree) else []:
-                    if isinstance(c, Token) and c.type == "NAME" and pat.data in ("variant_pat", "h_category", "h_code", "h_other"):
-                        inner.names[str(c)] = ("node", self.node(arm_id, f"{c}", "reg"), None)
+                for pat in pats:
+                    for c in pat.children if isinstance(pat, Tree) else []:
+                        if isinstance(c, Token) and c.type == "NAME" and pat.data in ("variant_pat", "h_category", "h_code", "h_other"):
+                            inner.names[str(c)] = ("node", self.node(arm_id, f"{c}", "reg"), None)
                 stmts = [c for c in body.children if isinstance(c, Tree)]
                 self.block(stmts, arm_id, inner, {"loop": ctx.get("loop"), "yield_names": names})
         else:  # loop_expr, for_expr

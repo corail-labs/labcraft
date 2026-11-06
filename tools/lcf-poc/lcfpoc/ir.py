@@ -83,6 +83,11 @@ class Pattern:
 class Arm:
     pat: Pattern
     body: "Body"
+    more: tuple = ()  # the rest of a list in a `match`: `1, 3..=5, _`; none of them binds a name
+
+    @property
+    def pats(self):
+        return (self.pat, *self.more)
 
 
 @dataclass
@@ -353,9 +358,9 @@ class Lowerer:
         return Carry(str(c.children[0]), ty, self.operand(c.children[-1]))
 
     def arm(self, a, pattern_fn):
-        pat, body = a.children
+        *pats, body = a.children
         stmts = [c for c in body.children if isinstance(c, Tree)]
-        return Arm(pattern_fn(pat), self.body(stmts, line_of(body)))
+        return Arm(pattern_fn(pats[0]), self.body(stmts, line_of(body)), tuple(pattern_fn(p) for p in pats[1:]))
 
     def pattern(self, p):
         d = p.data

@@ -1382,6 +1382,7 @@ impl<'a> Parser<'a, '_> {
         let mut before = self.begin_item();
         let start = self.start()?;
         let pattern = if handle { self.handle_pattern()? } else { self.match_pattern()? };
+        let others = if handle { Vec::new() } else { self.other_patterns(&pattern, start)? };
         self.expect(T::FatArrow, "`=>`")?;
         before.append(&mut self.take_pending());
         match self.raw()?.map(|token| token.kind) {
@@ -1391,14 +1392,41 @@ impl<'a> Parser<'a, '_> {
                 before.extend(inner.into_vec());
                 let id = self.place(start);
                 let comments = Attached { before: before.into_boxed_slice(), line };
-                Ok(Arm { id, comments, pattern, open: None, body: Body::default(), yields })
+                Ok(Arm { id, comments, pattern, others, open: None, body: Body::default(), yields })
             }
-            Some(T::LeftBrace) => self.braced_arm(before, start, pattern),
+            Some(T::LeftBrace) => self.braced_arm(before, start, pattern, others),
             _ => Err(self.unexpected("`yield` or `{`: the body of an arm starts on the line of its `=>`")),
         }
     }
 
-    fn braced_arm(&mut self, mut before: Vec<Comment>, start: Position, pattern: Pattern) -> Parse<Arm> {
+    /// The rest of a list, after the first pattern of a `match` arm: `, 3..=5, _`.
+    fn other_patterns(&mut self, first: &Pattern, start: Position) -> Parse<Vec<Pattern>> {
+        let mut others = Vec::new();
+        if !self.at(T::Comma)? {
+            return Ok(others);
+        }
+        self.refuse_binding(first, start)?;
+        while self.eat(T::Comma)? {
+            let start = self.start()?;
+            let pattern = self.match_pattern()?;
+            self.refuse_binding(&pattern, start)?;
+            others.push(pattern);
+        }
+        Ok(others)
+    }
+
+    /// A name bound by one pattern of a list would have no value when another one matches.
+    fn refuse_binding(&self, pattern: &Pattern, start: Position) -> Parse<()> {
+        match pattern {
+            Pattern::Variant { bindings, .. } if !bindings.is_empty() => {
+                let message = "a pattern that binds names stands alone in its arm".to_owned();
+                Err(failure(Code::Lc1001, message, Span { start, end: self.last_end }))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn braced_arm(&mut self, mut before: Vec<Comment>, start: Position, pattern: Pattern, others: Vec<Pattern>) -> Parse<Arm> {
         self.bump();
         let mut open = self.line_comment(self.last_end.line)?;
         let mut statements = Vec::new();
@@ -1434,7 +1462,7 @@ impl<'a> Parser<'a, '_> {
         }
         let id = self.place(start);
         let comments = self.end_item(before)?;
-        Ok(Arm { id, comments, pattern, open, body: Body { statements, end }, yields })
+        Ok(Arm { id, comments, pattern, others, open, body: Body { statements, end }, yields })
     }
 
     fn yield_statement(&mut self) -> Parse<Yield> {

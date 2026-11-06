@@ -664,6 +664,27 @@ fn a_number_without_a_unit_does_not_become_a_scale() {
 }
 
 #[test]
+fn a_pattern_waits_for_the_lines_it_reads() {
+    let (before, after) = ("z = core.add(n, 1)\n", "\nz = core.add(n, 1)");
+    for arms in ["[z] => yield 1\n_ => yield 0", "1, [z], _ => yield 1"] {
+        let structure = format!("y = match n {{\n{arms}\n}}");
+        assert_eq!(judged("n: i32", "y: i32", &format!("{before}{structure}")), ["LC3009"], "{arms}");
+        assert_eq!(judged("n: i32", "y: i32", &format!("{structure}{after}")), ["LC3009"], "{arms}: the order of the lines means nothing");
+    }
+}
+
+#[test]
+fn every_pattern_of_a_list_has_the_type_of_its_selector() {
+    assert_eq!(judged("n: i32", "y: i32", "y = match n {\n1, 3..=5, _ => yield 1\n}"), NOTHING);
+    assert_eq!(judged("n: i32", "y: i32", "y = match n {\n1, \"a\", _ => yield 1\n}"), ["LC3009"]);
+    assert_eq!(judged("n: i32", "y: i32", "y = match n {\n\"a\", 1.5, _ => yield 1\n}"), ["LC3009", "LC3009"]);
+    assert_eq!(judged("t: string", "y: i32", "y = match t {\n\"a\", 1..=5 => yield 1\n_ => yield 0\n}"), ["LC3009"]);
+    assert_eq!(judged("v: Verdict", "y: i32", "y = match v {\nVerdict.Pass, Grade.Pass => yield 1\n_ => yield 0\n}"), ["LC3009"]);
+    // A variant that holds data binds it, so it has no place in a list.
+    assert_eq!(judged("r: Reading", "y: i32", "y = match r {\nReading.Value, _ => yield 1\n}"), ["LC3009"]);
+}
+
+#[test]
 fn one_mistake_in_a_power_or_a_pattern_gives_one_diagnostic() {
     assert_eq!(gives("f64", "core.pow(v, 0.5)"), ["LC3004"]);
     assert_eq!(gives("f64", "core.pow(v, 3000000000)"), ["LC3018"]);

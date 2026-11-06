@@ -651,7 +651,9 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         self.value_operand(&branching.selector);
         for arm in &branching.arms {
             let mark = self.enter();
-            self.walk_pattern(&arm.pattern);
+            for pattern in arm.patterns() {
+                self.walk_pattern(pattern);
+            }
             self.declare_lines(&arm.body);
             self.walk_statements(&arm.body);
             for value in &arm.yields.values {

@@ -487,8 +487,9 @@ class Machine:
         sel = self.eval(m.sel, env)
         if entry is not None:
             entry["in"] = {"selector": to_json(sel)}
-        for arm in m.arms:
-            binds = self.match_pattern(arm.pat, sel)
+        # `_` stands for all the others, wherever it is written (6.1): it is tried last.
+        for arm, p in sorted(((a, p) for a in m.arms for p in a.pats), key=lambda pair: pair[1].kind == "wild"):
+            binds = self.match_pattern(p, sel)
             if binds is not None:
                 break
         else:

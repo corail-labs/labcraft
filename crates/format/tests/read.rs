@@ -914,6 +914,42 @@ fn every_pattern_of_a_match_reads() {
 }
 
 #[test]
+fn an_arm_of_a_match_lists_patterns() {
+    let text = in_body("x = match a {\n1, _ => yield 1\n3..=5, 8, \"s\", State.Init, b => {\ny = 1\nyield y\n}\n2 => yield 1\n}");
+    let reading = Reading::of(&text);
+    let arms = arms_of(&reading);
+    assert_eq!(arms.len(), 3);
+    assert!(matches!(arms[0].pattern, Pattern::Literal(_)));
+    assert!(matches!(arms[0].others[..], [Pattern::Wildcard { binding: None, .. }]));
+    assert!(matches!(arms[1].pattern, Pattern::Range { .. }));
+    assert!(matches!(arms[1].others[..], [Pattern::Literal(_), Pattern::Literal(_), Pattern::Variant { .. }, Pattern::Variant { .. }]));
+    assert!(arms[2].others.is_empty());
+    let written: Vec<_> = arms[0].patterns().map(|pattern| matches!(pattern, Pattern::Wildcard { .. })).collect();
+    assert_eq!(written, [false, true], "in written order");
+    assert_eq!(arms[1].patterns().count(), 5);
+    assert_eq!(arms[2].patterns().count(), 1);
+    for bad in ["1, =>", ", 1 =>", "1,, 2 =>", "1 2 =>", "1,\n2 =>", "1\n, 2 =>"] {
+        assert!(!codes(&in_body(&format!("x = match a {{\n{bad} yield 1\n}}"))).is_empty(), "{bad}");
+    }
+}
+
+#[test]
+fn a_pattern_that_binds_names_stands_alone() {
+    assert_code(&in_body("x = match a {\nR.V(v), 1 => yield 1\n}"), Code::Lc1001);
+    assert_span(&in_body("x = match a {\nR.V(v), 1 => yield 1\n}"), (4, 1), (4, 7));
+    assert_code(&in_body("x = match a {\n1, R.V(v) => yield 1\n}"), Code::Lc1001);
+    assert_span(&in_body("x = match a {\n1, R.V(v) => yield 1\n}"), (4, 4), (4, 10));
+    assert_code(&in_body("x = match a {\n_, R.V(v, w) => yield 1\n}"), Code::Lc1001);
+}
+
+#[test]
+fn an_arm_of_a_handle_keeps_one_pattern() {
+    for bad in ["ok, _ =>", "io.timeout, visa.* =>", "_, _ =>", "code 5, _ =>"] {
+        assert_code(&in_body(&format!("x = handle a {{\n{bad} yield 1\n}}")), Code::Lc1001);
+    }
+}
+
+#[test]
 fn a_bound_that_is_no_integer_is_reported_where_it_stands() {
     assert_code(&in_body("x = match a {\n1..2.5 => yield 1\n}"), Code::Lc1001);
     assert_span(&in_body("x = match a {\n1..2.5 => yield 1\n}"), (4, 4), (4, 7));
