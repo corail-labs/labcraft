@@ -1,6 +1,6 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
 //! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`, scenario 5, through `format`, and what passes 1 and 2 of `check` can say about the stored
+//! scenario 4, through `read`, scenario 5, through `format`, and what passes 1 to 3 of `check` can say about the stored
 //! cases. The other families and the rest of each one come with their steps.
 
 /// A file of a corpus, with its path from the root of the repository.
@@ -253,6 +253,13 @@ mod tests {
                 assert!(file == copy, "{kind}");
                 let canonical = canonicalize(file, &reading.source_map, &mut names, &mut Report::new(1));
                 assert!(write(&canonical, &names, &limits).is_ok(), "{kind}");
+                // `check` walks the body too, on the same stack, after reading it.
+                let root = LibrarySource {
+                    files: vec![SourceFile { shown: "deep.lcf".to_owned(), content: Content::Bytes(Cow::Owned(text.into_bytes())) }],
+                    ..LibrarySource::new(String::new(), String::new(), Origin::Project)
+                };
+                let checked = check(root, &Shipped, &mut Interner::new(), &limits);
+                assert!(!checked.report.diagnostics().iter().any(|diagnostic| diagnostic.code() == Code::Lc0099), "{kind}");
             }
         });
     }

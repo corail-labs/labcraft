@@ -352,22 +352,22 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
-| `LC2001` | error | Unknown value | 5.2 |
+| `LC2001` | error | Unknown value, also a path `foo.bar` whose `foo` is known neither as a value nor as a library being checked or a primitive, and a type where a value is expected | 5.2 |
 | `LC2002` | error | Unknown function; for a function of `core` written without the prefix, the fix qualifies it | 4 |
 | `LC2003` | error | Unknown type | 3 |
 | `LC2004` | error | Unknown library in `use` | 4 |
-| `LC2005` | error | Library used without `use`, once per library in a file; the fix adds it | 4 |
+| `LC2005` | error | Library used without `use`, once per library in a file; the fix adds it. In a call any unknown prefix counts as a library, and elsewhere only a primitive or a library being checked | 4 |
 | `LC2006` | error | Unknown field | 3.2 |
-| `LC2007` | error | Unknown variant | 3.2 |
+| `LC2007` | error | Unknown variant, also a pattern written without its type or with an unknown one | 3.2 |
 | `LC2008` | error | Unknown unit | 3.3 |
-| `LC2009` | error | Unknown named argument | 4 |
+| `LC2009` | error | Unknown named argument, a name given to a variadic parameter, or to a value of a variant | 4, 5.4 |
 | `LC2010` | error | Unknown panel element in `ui.get` or `ui.set` | 10, R-1 |
 | `LC2011` | error | Unknown label in `after:` | R-15 |
 | `LC2012` | error | Value defined twice in a body | 5.1 |
 | `LC2013` | error | Function or type defined twice in a library, or a function and a type with the same name | 4 |
 | `LC2014` | error | Value with the name of a library that its file imports, of a type of its library or of a live panel element; function or type with the name of a library that any file of its library imports, on the declaration, with the `use` in `related` | R-1 |
 | `LC2015` | error | Label used twice in a function | R-17 |
-| `LC2016` | warning | Function that calls itself, directly or across files: a run stops at the limit of call depth (8.2) | 8.2 |
+| `LC2016` | warning | Function that calls itself, directly or across files: a run stops at the limit of call depth (8.2). Only a call counts, not a function reference | 8.2 |
 | `LC2017` | error | Type that contains itself. A cycle of types that passes through a `use` gives only `LC2021`, since its libraries are in a cycle too | 3.2 |
 | `LC2018` | error | `next` for a name that is not a carry of the loop | R-6 |
 | `LC2019` | error | Two parameters, outputs, fields or variants with the same name | 4, 3.2 |
@@ -379,11 +379,11 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
-| `LC2101` | error | Required input not wired | 4 |
+| `LC2101` | error | Required input not wired: once per call, on the first one, and not when the arguments of the call have a mistake of their own, which may be the cause | 4 |
 | `LC2102` | error | Too many arguments, or an input wired twice | 4 |
-| `LC2103` | error | Number of targets different from the number of outputs | 5.1 |
-| `LC2104` | error | Positional argument after a named one, or given to a parameter wired by name only | 4, R-11 |
-| `LC2105` | error | Invalid `after:`, or a parameter named `after` | R-15 |
+| `LC2103` | error | Number of targets different from the number of outputs. A loop that gives nothing takes one `_` | 5.1, 6.2 |
+| `LC2104` | error | Positional argument after a named one, `after:` included | 4 |
+| `LC2105` | error | Invalid `after:` (a literal, or two in a call), or a parameter named `after` | R-15 |
 | `LC2106` | error | `string.format`: template not a literal, or fields and arguments that differ | R-12 |
 | `LC2107` | error | Variadic parameter misplaced, or more than one | R-11 |
 
@@ -391,7 +391,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 
 | Code | Severity | Problem | Spec | |
 |---|---|---|---|---|
-| `LC3001` | error | Wrong type on an input | 3 | S2 |
+| `LC3001` | error | Wrong type on an input, or what is not a unit, a category or an element on a parameter of that kind | 3, R-5 | S2 |
 | `LC3002` | error | Incompatible dimensions in an operation | 3.3 | S2 |
 | `LC3003` | error | Wrong type or dimension on a function output | 3.3 | S2 |
 | `LC3004` | error | Implicit narrowing; the fix names the conversion | 3.4 | S2 |

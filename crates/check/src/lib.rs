@@ -1,7 +1,7 @@
 //! L3: name resolution, signatures, type and connection checking (`docs/architecture.md`, section 5).
 //!
-//! So far, passes 1 and 2: reading the files, finding the libraries that they use, and what each library declares. The
-//! other passes come with their steps (section 9), so bodies are not looked at for now.
+//! So far, passes 1 to 3: reading the files, finding the libraries that they use, what each library declares, and the names
+//! of each body. The other passes come with their steps (section 9), so a body is not typed for now.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -22,8 +22,11 @@ use labcraft_types::{CheckCounts, Diagnostic, Interner, Limits, Report, TypeTabl
 mod declare;
 mod load;
 pub mod manifest;
+mod primitives;
+mod resolved;
 
 pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
+pub use resolved::{Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
 
 /// Which rules of `docs/cli.md`, section 3, a library follows when it uses another: a library shipped with LabCraft
 /// sees only the primitives and the others that are shipped.
@@ -132,6 +135,8 @@ pub struct CheckedFile {
     pub shown: String,
     pub file: File,
     pub source_map: SourceMap,
+    /// What each path, call and bracket of it means.
+    pub resolved: Resolved,
 }
 
 /// Checks a folder and its sub-libraries (`docs/cli.md`, section 3). `root` includes its sub-libraries, which are
@@ -145,15 +150,15 @@ pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interne
     let dependencies = load::dependency_reports(&mut loaded, unreadable);
     let mut counts = CheckCounts::default();
     let mut files = Vec::new();
-    for library in loaded.into_iter().filter(|library| library.checked) {
+    for (library, resolved) in loaded.into_iter().zip(declared.resolved).filter(|(library, _)| library.checked) {
         counts.libraries += 1;
-        for file in library.files {
+        for (file, resolved) in library.files.into_iter().zip(resolved) {
             let Some(model) = file.model else { continue };
             match model.file.decl {
                 Decl::Function(_) | Decl::Extern(_) => counts.functions += 1,
                 Decl::Type(_) => counts.types += 1,
             }
-            files.push(CheckedFile { shown: file.shown, file: model.file, source_map: model.source_map });
+            files.push(CheckedFile { shown: file.shown, file: model.file, source_map: model.source_map, resolved });
         }
     }
     Checked { report, dependencies, counts, files, types: declared.types, libraries: declared.libraries }

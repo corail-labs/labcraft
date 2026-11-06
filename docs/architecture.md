@@ -190,19 +190,19 @@ pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interne
 pub struct Checked { report: Report, dependencies: Vec<DependencyReport>, counts: CheckCounts,
                       files: Vec<CheckedFile>, types: TypeTable,
                       libraries: Vec<DeclaredLibrary> }            // what each library declares, by name
-pub struct CheckedFile { shown: String, file: File, source_map: SourceMap,
-                         resolved: Resolved }                      // `resolved` comes with pass 3
+pub struct CheckedFile { shown: String, file: File, source_map: SourceMap, resolved: Resolved }
 pub struct DependencyReport { shown: String, report: Report }      // merged once per `shown`
 ```
 
 `Checked` is what the layers above read, so that they never resolve again: the viewer draws wires with
 their types, and M0b runs from it. `Resolved` gives, by `Id`:
 
-- what each path is (value, field, variant, category, panel element, function, unit);
+- what each path is (value, field, variant, category, panel element, function, unit), in a table that holds one
+  small `Meaning` per `Id`, since a file can hold millions of operands;
 - the kind of each `Bracket` (R-5);
 - the callee of each call, and the terminals of that call, which a signature alone does not give for
   `string.format` and variadics;
-- the type of each wire, and the coercions to show (3.3, 3.4).
+- the type of each wire, and the coercions to show (3.3, 3.4), with pass 4.
 
 `root` includes its sub-libraries, which are checked even if nothing uses them (cli.md, section 3).
 `Limits` bounds the total size of a library, since the caller hands all its files at once.
@@ -213,7 +213,10 @@ Passes, each one over all the files, so that a bad file does not hide the others
    (`LC2021`). A file that does not parse is marked, and what it declares is known as broken.
 2. **Declarations:** functions and types per library, duplicates, R-1, R-19, bad types.
 3. **Bodies:** names resolved in scopes (inputs, carries, patterns, lines), `use`, calls bound to
-   signatures, labels, `after:`.
+   signatures, labels, `after:`, the bounds of each number of a body or a default value (those of a `panel` come with
+   pass 6). Only what can be told without a type: a field of a value and
+   the values of a variant wait for pass 4, and so do the fields of a `string.format` template (`LC2106`). Only for the
+   libraries being checked: of a dependency, the others read the signatures.
 4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades.
 5. **Dataflow:** cycles, outputs bound once, carries; then the warnings of 7.5, 8.1 and 10.
 6. **Panel, layout, icon:** kinds and `default:`, references to nodes, coordinates, the icon (R-14: grid,
@@ -231,12 +234,13 @@ total work across resources, so that many resources cannot make it quadratic aga
 
 **Signatures of the primitives** (`core`, `string`, `array`, `errors`, `time`, `ui`) live here as data,
 in the form of appendix A, with a rule attached where a signature cannot say it all: the units of `mul`,
-the template of `string.format`, the variadic `errors.merge`. `runtime` (M0b) depends on `check` and
-tests that each signature has a body. The bodies stay in `runtime`, as the roadmap says.
+the template of `string.format`, the variadic `errors.merge`. A test compares this table with appendix A. Their types
+and rules join it with pass 4. `runtime` (M0b) depends on `check` and tests that each signature has a body. The bodies
+stay in `runtime`, as the roadmap says.
 
 **Last resort.** `check` is one call over a library, so it runs each function under `catch_unwind`: a
 panic is a bug, reported as `LC0099` on that function while the others go on. Pass 2 does the same for each
-declaration, a type included; what it walks across declarations has no such net yet. `format` is covered per file
+declaration, a type included, and pass 3 for each body; what pass 2 walks across declarations has no such net yet. `format` is covered per file
 by the app. The release profile keeps `panic = "unwind"`. WASM traps instead, so the web viewer runs
 this work in a worker that it can restart (scenario 6, point 5, in M0v).
 

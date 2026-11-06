@@ -1,0 +1,1388 @@
+//! Pass 3 (`docs/architecture.md`, section 5): names resolved in scopes, calls bound to signatures, labels and `after:`.
+//! A function is checked against the signatures of the others, never by following a call. Types come with pass 4, and what
+//! needs them with it: a field of a value, the values of a variant, the fields of a `string.format` template.
+//!
+//! It lives under `declare` since it reads a type or a function as that pass does, with its reports and its `use` lines.
+//!
+//! Walking a body recurses, as far as the nesting that `format::read` let through. What a body binds costs the same at any
+//! depth: a name read looks at what it means now, and leaving a body puts back what it hid.
+
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+use labcraft_format::write_line;
+use labcraft_graph::{
+    Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand, OrderRef,
+    Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
+};
+use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text};
+
+use super::{DeclaredFunction, DeclaredLibrary, DeclaredType, Pass, Scope, add_use, path_text, unit_of};
+use crate::load::{Target, at, cycles, last_resort};
+use crate::primitives::{PRIMITIVES, ParamKind, PrimitiveLibrary};
+use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
+
+#[cfg(test)]
+mod tests;
+
+/// What a call binds to, made once for each function: a hostile file can hold a million parameters and a million calls.
+struct Callable {
+    params: Vec<(Name, ParamKind)>,
+    by_name: HashMap<Name, u32>,
+    /// The parameters that a call must wire, in order.
+    required: Vec<u32>,
+    variadic: Option<u32>,
+    /// `None` when only the function it runs can say.
+    outputs: Option<usize>,
+    /// It takes more than its parameters (5.4).
+    open: bool,
+    /// How many type arguments a call can write. `None` for a generic function of the user, which has its `LC4006`.
+    generics: Option<usize>,
+    /// Its signature has an error of its own, and a call says nothing more about it.
+    faulty: bool,
+}
+
+impl Callable {
+    fn new(params: Vec<(Name, ParamKind, bool, bool)>, outputs: Option<usize>, open: bool, generics: Option<usize>, faulty: bool) -> Self {
+        let mut by_name = HashMap::with_capacity(params.len());
+        let mut required = Vec::new();
+        let mut variadic = None;
+        for (position, (name, _, has_default, is_variadic)) in params.iter().enumerate() {
+            let position = u32::try_from(position).unwrap_or(u32::MAX);
+            by_name.entry(*name).or_insert(position);
+            if *is_variadic {
+                variadic = variadic.or(Some(position));
+            } else if !has_default {
+                required.push(position);
+            }
+        }
+        let params = params.into_iter().map(|(name, kind, _, _)| (name, kind)).collect();
+        Callable { params, by_name, required, variadic, outputs, open, generics, faulty }
+    }
+
+    fn of_function(function: &DeclaredFunction) -> Self {
+        let params = function.params.iter().map(|param| (param.name, ParamKind::Value, param.has_default, param.variadic)).collect();
+        Callable::new(params, Some(function.outputs.len()), false, if function.generic { None } else { Some(0) }, function.faulty)
+    }
+}
+
+/// The signatures of the primitives, with their names interned. Made once for a run.
+pub(super) struct Primitives {
+    table: HashMap<(PrimitiveLibrary, Name), Rc<Callable>>,
+    core: HashSet<Name>,
+}
+
+impl Primitives {
+    pub(super) fn new(names: &mut Interner) -> Self {
+        let mut table = HashMap::with_capacity(PRIMITIVES.len());
+        let mut core = HashSet::new();
+        for primitive in PRIMITIVES {
+            let name = names.intern(primitive.name);
+            let params = primitive.params.iter().map(|param| (names.intern(param.name), param.kind, param.has_default, param.variadic)).collect();
+            let callable = Callable::new(params, primitive.outputs.map(<[&str]>::len), primitive.open, Some(primitive.generics), false);
+            table.insert((primitive.library, name), Rc::new(callable));
+            if primitive.library == PrimitiveLibrary::Core {
+                core.insert(name);
+            }
+        }
+        Primitives { table, core }
+    }
+
+    fn get(&self, library: PrimitiveLibrary, name: Name) -> Option<Rc<Callable>> {
+        self.table.get(&(library, name)).cloned()
+    }
+
+    fn is_in_core(&self, name: Name) -> bool {
+        self.core.contains(&name)
+    }
+}
+
+/// What a named type stands for, made once for each: an enumeration can hold a million variants and be named a million times.
+#[derive(Default)]
+struct TypeFacts {
+    /// From `Checked::libraries` by `LibraryId`.
+    libraries: HashMap<LibraryId, usize>,
+    /// Through the aliases: `type A = Verdict` stands for the `enum` of `Verdict`.
+    definitions: HashMap<TyId, TyId>,
+    /// The variants of an enumeration, or the fields of a struct, by the id of its type.
+    members: HashMap<TyId, HashSet<Name>>,
+}
+
+/// What a value is, and in which body.
+#[derive(Clone, Copy)]
+struct Value {
+    id: Id,
+    body: u32,
+    carry: bool,
+}
+
+/// What a path names, apart from a value.
+enum Named {
+    Function(Meaning, Rc<Callable>),
+    /// `Meaning::Variant`
+    Variant(Meaning),
+    /// `State.Nowhere`, with the name of the type.
+    NoVariant(String),
+    /// A library that exists, with no such function.
+    NoFunction(String),
+    /// A type where a function or a value is expected.
+    IsType,
+    /// A library that the file does not import, by the name that it would take. `known` when something says that it is
+    /// one: otherwise, the first name may be a typo in the name of a value or of a type.
+    NotImported {
+        library: String,
+        known: bool,
+    },
+    Unknown,
+    /// An error that has its own diagnostic may be the cause.
+    AlreadySaid,
+}
+
+/// A function of a checked library, for `LC2016`: the first call to each function of its library.
+struct FunctionCalls<'a> {
+    name: Name,
+    file: &'a str,
+    calls: HashMap<Name, Id>,
+    source_map: &'a labcraft_graph::SourceMap,
+}
+
+/// Where the body before this one stood.
+#[derive(Clone, Copy)]
+struct Mark {
+    body: u32,
+    values: usize,
+    labels: usize,
+}
+
+/// What pass 3 reads throughout a run.
+struct Context<'w, 'a> {
+    declared: &'w [DeclaredLibrary],
+    primitives: &'w Primitives,
+    callables: HashMap<(usize, Name), Rc<Callable>>,
+    facts: TypeFacts,
+    /// The libraries being checked, by name: what a path can be known to name, whatever the other files of the run import.
+    known_libraries: HashSet<&'a str>,
+}
+
+struct Walker<'p, 'w, 'a> {
+    pass: &'p mut Pass<'a>,
+    context: &'p mut Context<'w, 'a>,
+    scope: Scope<'a>,
+    /// What each name means now.
+    values: HashMap<Name, Value>,
+    /// What each name of the bodies open now has hidden.
+    hidden_values: Vec<(Name, Option<Value>)>,
+    labels: HashMap<Name, Id>,
+    hidden_labels: Vec<(Name, Option<Id>)>,
+    /// Every label of the function, the first one of each name: a label is unique in its function (R-17).
+    all_labels: HashMap<Name, Id>,
+    /// The output of each name: a line of the body of the function binds it (R-2).
+    outputs: HashMap<Name, Id>,
+    /// The panel elements of the function by name, and those that are neither an input nor an output.
+    elements: HashMap<Name, Id>,
+    live: HashMap<Name, Id>,
+    body: u32,
+    last_body: u32,
+    statement: Option<&'a Statement>,
+    /// What `statement` gives a diagnostic, made once, since a line of 16 MiB can have a million mistakes.
+    node: Option<Node>,
+    resolved: Resolved,
+    calls: HashMap<Name, Id>,
+    /// The first segments of the `use` lines that found nothing, which have their diagnostic: what starts with one says nothing.
+    missing: HashSet<Name>,
+}
+
+/// What a call has wired so far.
+#[derive(Default)]
+struct Wiring {
+    named: HashSet<u32>,
+    /// The names that are not parameters, for `string.format` and `core.call`.
+    free: HashSet<Name>,
+    /// It has a mistake of its own, and what seems to be missing may be its cause.
+    mistaken: bool,
+}
+
+/// What a named argument wires.
+enum Wired {
+    Param(u32),
+    Free,
+    Mistake,
+}
+
+const SIGNATURE_BODY: u32 = 0;
+const FUNCTION_BODY: u32 = 1;
+
+/// Whether an integer fits `i64` or `u64` (`LC1006`). Beyond them no type could hold it.
+fn integer_fits(negative: bool, digits: &str) -> bool {
+    let digits: String = digits.chars().filter(|c| *c != '_').collect();
+    let digits = digits.trim_start_matches('0');
+    match digits.parse::<u64>() {
+        Ok(value) => !negative || value <= 1 << 63,
+        Err(_) => digits.is_empty(),
+    }
+}
+
+/// Whether a decimal literal fits `f64`. One too small to tell from zero reads as zero.
+fn float_fits(digits: &str) -> bool {
+    let digits: String = digits.chars().filter(|c| *c != '_').collect();
+    digits.parse::<f64>().is_ok_and(f64::is_finite)
+}
+
+fn targets_of(statement: &Statement) -> &[Line] {
+    match &statement.kind {
+        StatementKind::Binding { targets, .. } => targets,
+        _ => &[],
+    }
+}
+
+impl<'a> Pass<'a> {
+    /// `resolved` is parallel to the files of each library, and holds something only for the libraries that are checked.
+    pub(super) fn check_bodies(&mut self, declared: &[DeclaredLibrary], primitives: &Primitives) -> Vec<Vec<Resolved>> {
+        let loaded = self.loaded;
+        let facts = TypeFacts { libraries: self.ids.iter().enumerate().map(|(index, id)| (*id, index)).collect(), ..TypeFacts::default() };
+        let known_libraries =
+            loaded.iter().filter(|library| library.checked && !library.name.is_empty()).map(|library| library.name.as_str()).collect();
+        let mut context = Context { declared, primitives, callables: HashMap::new(), facts, known_libraries };
+        let mut all = Vec::with_capacity(loaded.len());
+        for (library, source) in loaded.iter().enumerate() {
+            let mut resolved = Vec::with_capacity(source.files.len());
+            let mut functions = Vec::new();
+            for file in &source.files {
+                let Some(model) = file.model.as_ref().filter(|_| source.checked) else {
+                    resolved.push(Resolved::default());
+                    continue;
+                };
+                let (name, signature, function) = match &model.file.decl {
+                    Decl::Function(function) => (function.name, &function.signature, Some(function)),
+                    Decl::Extern(function) => (function.name, &function.signature, None),
+                    Decl::Type(_) => {
+                        resolved.push(Resolved::default());
+                        continue;
+                    }
+                };
+                self.begin_declaration(model);
+                self.current.not_imported = self.said.remove(file.shown.as_str()).unwrap_or_default();
+                let scope = Scope { library, file, model, generic: !signature.generics.is_empty(), function: Some(self.names.resolve(name)) };
+                let mut walker = Walker::new(self, &mut context, scope);
+                let outcome = last_resort(|| walker.function(signature, function));
+                let (done, calls) = (std::mem::take(&mut walker.resolved), std::mem::take(&mut walker.calls));
+                if let Err(payload) = outcome {
+                    self.report_a_panic(library, &file.shown, payload);
+                }
+                // An `extern` has no calls, and a call can reach it.
+                functions.push(FunctionCalls { name, file: &file.shown, calls, source_map: &model.source_map });
+                resolved.push(done);
+            }
+            self.report_recursion(library, functions);
+            all.push(resolved);
+        }
+        all
+    }
+
+    /// `LC2016`, once per cycle: on the first file in the order of the paths, with the others in `related`. Only calls within
+    /// a library count, since a cycle through a `use` has its `LC2021`.
+    fn report_recursion(&mut self, library: usize, mut functions: Vec<FunctionCalls<'a>>) {
+        functions.sort_by(|a, b| a.file.cmp(b.file));
+        // Of two functions of one name, which have their `LC2013`, a call reaches the first one.
+        let mut index: HashMap<Name, usize> = HashMap::new();
+        for (position, function) in functions.iter().enumerate() {
+            index.entry(function.name).or_insert(position);
+        }
+        let edges: Vec<Vec<usize>> =
+            functions.iter().map(|function| function.calls.keys().filter_map(|name| index.get(name).copied()).collect()).collect();
+        for component in cycles(&edges) {
+            let members: HashSet<usize> = component.iter().copied().collect();
+            let mut sorted = component;
+            sorted.sort_unstable();
+            let call_in_cycle = |function: &FunctionCalls<'_>| {
+                let mut calls: Vec<Id> = function
+                    .calls
+                    .iter()
+                    .filter(|(name, _)| index.get(*name).is_some_and(|callee| members.contains(callee)))
+                    .map(|(_, id)| *id)
+                    .collect();
+                calls.sort_unstable();
+                calls.first().copied()
+            };
+            let mut places =
+                sorted.iter().filter_map(|member| functions.get(*member)).filter_map(|function| Some((function, call_in_cycle(function)?)));
+            let Some((first, call)) = places.next() else { continue };
+            let name = self.names.resolve(first.name);
+            let message =
+                format!("the function `{name}` calls itself, directly or through other functions: a run stops at the limit of call depth (8.2)");
+            let mut diagnostic = at(Code::Lc2016, message, first.file, first.source_map, call);
+            diagnostic.function = Some(cut_text(name).into_owned());
+            diagnostic.related = places
+                .map(|(function, call)| Related {
+                    message: format!("`{}` is part of this cycle", self.names.resolve(function.name)),
+                    file: function.file.to_owned(),
+                    span: function.source_map.span(call),
+                })
+                .collect();
+            self.push(library, diagnostic);
+        }
+    }
+}
+
+impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
+    fn new(pass: &'p mut Pass<'a>, context: &'p mut Context<'w, 'a>, scope: Scope<'a>) -> Self {
+        Walker {
+            pass,
+            context,
+            scope,
+            values: HashMap::new(),
+            hidden_values: Vec::new(),
+            labels: HashMap::new(),
+            hidden_labels: Vec::new(),
+            all_labels: HashMap::new(),
+            outputs: HashMap::new(),
+            elements: HashMap::new(),
+            live: HashMap::new(),
+            body: SIGNATURE_BODY,
+            last_body: SIGNATURE_BODY,
+            statement: None,
+            node: None,
+            resolved: Resolved::new(scope.model.source_map.len()),
+            calls: HashMap::new(),
+            missing: HashSet::new(),
+        }
+    }
+
+    fn names(&self) -> &'a Interner {
+        self.pass.names
+    }
+
+    fn text(&self, name: Name) -> &'a str {
+        self.pass.names.resolve(name)
+    }
+
+    fn node(&mut self) -> Option<Node> {
+        let statement = self.statement?;
+        if self.node.is_none() {
+            let line = targets_of(statement).iter().find_map(|target| match target {
+                Line::Name(_, name) => Some(*name),
+                Line::Skip(_) | Line::Next(..) => None,
+            });
+            let name = line.or(statement.label.map(|label| label.name)).map(|name| cut_text(self.text(name)).into_owned());
+            // Cut here, not by the report: each diagnostic of this line copies it.
+            let text = cut_text(&write_line(statement, self.names())).into_owned();
+            self.node = Some(Node { name, text });
+        }
+        self.node.clone()
+    }
+
+    fn say(&mut self, code: Code, message: String, id: Id) {
+        self.say_with(code, message, id, Vec::new(), Vec::new());
+    }
+
+    fn say_with(&mut self, code: Code, message: String, id: Id, related: Vec<Related>, fixes: Vec<Fix>) {
+        let mut diagnostic: Diagnostic = at(code, message, &self.scope.file.shown, &self.scope.model.source_map, id);
+        // Cut here, not by the report: a name of 8 MiB and millions of diagnostics would copy it each time.
+        diagnostic.function = self.scope.function.map(|name| cut_text(name).into_owned());
+        diagnostic.node = self.node();
+        diagnostic.related = related;
+        diagnostic.fixes = fixes;
+        self.pass.push(self.scope.library, diagnostic);
+    }
+
+    fn here(&self, message: String, id: Id) -> Related {
+        Related { message, file: self.scope.file.shown.clone(), span: self.scope.model.source_map.span(id) }
+    }
+
+    fn own_library_is_broken(&self) -> bool {
+        self.pass.broken.get(self.scope.library).copied().unwrap_or(true)
+    }
+
+    fn read(&self, name: Name) -> Option<Value> {
+        self.values.get(&name).copied()
+    }
+
+    // Scopes.
+
+    fn enter(&mut self) -> Mark {
+        let mark = Mark { body: self.body, values: self.hidden_values.len(), labels: self.hidden_labels.len() };
+        self.last_body = self.last_body.saturating_add(1);
+        self.body = self.last_body;
+        mark
+    }
+
+    fn leave(&mut self, mark: Mark) {
+        self.body = mark.body;
+        // In reverse: a name that a body bound twice has its `LC2012`, and is bound once, but a mistake must not leave it.
+        for (name, hidden) in self.hidden_values.drain(mark.values..).rev() {
+            match hidden {
+                Some(value) => self.values.insert(name, value),
+                None => self.values.remove(&name),
+            };
+        }
+        for (name, hidden) in self.hidden_labels.drain(mark.labels..).rev() {
+            match hidden {
+                Some(id) => self.labels.insert(name, id),
+                None => self.labels.remove(&name),
+            };
+        }
+    }
+
+    /// `LC2012` when this body already has the name, and R-1 otherwise. A sub-body can hide a name from outside it.
+    fn bind(&mut self, name: Name, id: Id, carry: bool) {
+        let body = self.body;
+        if let Some(first) = self.read(name).filter(|value| value.body == body || (body == FUNCTION_BODY && value.body == SIGNATURE_BODY)) {
+            let text = self.text(name);
+            let related = vec![self.here(format!("`{text}` is first defined here"), first.id)];
+            self.say_with(Code::Lc2012, format!("`{text}` is defined twice in this body"), id, related, Vec::new());
+            return;
+        }
+        let hidden = self.values.insert(name, Value { id, body, carry });
+        self.hidden_values.push((name, hidden));
+        self.judge_the_name(name, id);
+    }
+
+    /// R-1: what a value in a body cannot be named.
+    fn judge_the_name(&mut self, name: Name, id: Id) {
+        if let Some((message, related)) = self.pass.value_name_conflict(name, &self.scope) {
+            self.say_with(Code::Lc2014, message, id, vec![related], Vec::new());
+        } else if let Some(element) = self.live.get(&name).copied() {
+            let text = self.text(name);
+            let related = vec![self.here(format!("the panel element `{text}` is declared here"), element)];
+            let message = format!(
+                "a value cannot bear the name `{text}`: this function has a panel element of that name, neither an input nor an output (R-1)"
+            );
+            self.say_with(Code::Lc2014, message, id, related, Vec::new());
+        }
+    }
+
+    /// The names of a body, before anything in it reads them: the order of lines has no meaning (5.2).
+    fn declare_lines(&mut self, body: &'a Body) {
+        let saved = (self.statement, self.node.take());
+        for statement in &body.statements {
+            self.statement = Some(statement);
+            self.node = None;
+            if let Some(label) = &statement.label {
+                self.declare_label(label.name, label.id);
+            }
+            for target in targets_of(statement) {
+                if let Line::Name(id, name) = target {
+                    self.declare_line(*name, *id);
+                }
+            }
+        }
+        (self.statement, self.node) = saved;
+    }
+
+    fn declare_label(&mut self, name: Name, id: Id) {
+        if let Some(first) = self.all_labels.get(&name).copied() {
+            let text = self.text(name);
+            let related = vec![self.here(format!("`#{text}` is first used here"), first)];
+            self.say_with(Code::Lc2015, format!("the label `#{text}` is used twice in this function"), id, related, Vec::new());
+        } else {
+            self.all_labels.insert(name, id);
+        }
+        // Even the second one: an `after:` beside it reads it, and that is no second mistake.
+        let hidden = self.labels.insert(name, id);
+        self.hidden_labels.push((name, hidden));
+    }
+
+    /// In the body of the function, the name of an output binds that output (R-2), which pass 5 counts (`LC4002`).
+    fn declare_line(&mut self, name: Name, id: Id) {
+        if self.body == FUNCTION_BODY
+            && let Some(output) = self.outputs.get(&name).copied()
+        {
+            self.resolved.set(id, Meaning::Value(output));
+            return;
+        }
+        self.bind(name, id, false);
+    }
+
+    // The function.
+
+    fn function(&mut self, signature: &'a Signature, function: Option<&'a Function>) {
+        for param in &signature.params {
+            if let Some(default) = &param.default {
+                self.judge_literal(default);
+            }
+        }
+        let Some(function) = function else { return };
+        for line in &self.scope.model.file.uses {
+            let target = self.scope.file.imports.get(&path_text(&line.path, self.names()));
+            if matches!(target, Some(Target::Missing | Target::Unreadable)) {
+                self.missing.insert(line.path.first);
+            }
+        }
+        self.declare_signature(signature);
+        let mark = self.enter();
+        self.declare_lines(&function.body);
+        self.walk_statements(&function.body);
+        self.leave(mark);
+    }
+
+    fn declare_signature(&mut self, signature: &'a Signature) {
+        let mut own: HashSet<Name> = HashSet::with_capacity(signature.params.len() + signature.outputs.len());
+        for param in &signature.params {
+            if own.insert(param.name) {
+                self.values.insert(param.name, Value { id: param.id, body: SIGNATURE_BODY, carry: false });
+            }
+        }
+        for output in &signature.outputs {
+            if self.outputs.insert(output.name, output.id).is_none() && own.insert(output.name) {
+                self.values.insert(output.name, Value { id: output.id, body: SIGNATURE_BODY, carry: false });
+            }
+        }
+        if let Some(panel) = &self.scope.model.file.panel {
+            for item in &panel.items {
+                self.elements.entry(item.name).or_insert(item.id);
+                if !own.contains(&item.name) {
+                    self.live.entry(item.name).or_insert(item.id);
+                }
+            }
+        }
+    }
+
+    fn walk_statements(&mut self, body: &'a Body) {
+        for statement in &body.statements {
+            self.walk_statement(statement);
+        }
+    }
+
+    fn walk_statement(&mut self, statement: &'a Statement) {
+        let saved = (self.statement.replace(statement), self.node.take());
+        for target in targets_of(statement) {
+            if let Line::Next(id, name) = target {
+                self.judge_next(*id, *name);
+            }
+        }
+        match &statement.kind {
+            StatementKind::Binding { targets, value } => self.walk_rhs(targets.len(), value, statement.id),
+            StatementKind::Call(call) => self.walk_call(call, None),
+            StatementKind::Collect(value) | StatementKind::Until(value) => self.value_operand(value),
+        }
+        (self.statement, self.node) = saved;
+    }
+
+    /// `LC2018`: a carry of this very loop. `next` appears only directly in a loop body (R-6).
+    fn judge_next(&mut self, id: Id, name: Name) {
+        match self.read(name) {
+            Some(value) if value.carry && value.body == self.body => self.resolved.set(id, Meaning::Value(value.id)),
+            _ => {
+                let text = self.text(name);
+                self.say(Code::Lc2018, format!("`next {text}`: `{text}` is not a carry of this loop (R-6)"), id);
+            }
+        }
+    }
+
+    fn judge_targets(&mut self, id: Id, targets: usize, outputs: usize, what: &str) {
+        if targets != outputs {
+            let plural = if outputs == 1 { "" } else { "s" };
+            self.say(Code::Lc2103, format!("{targets} targets for {what}, which gives {outputs} value{plural}"), id);
+        }
+    }
+
+    fn walk_rhs(&mut self, targets: usize, rhs: &'a Rhs, id: Id) {
+        match rhs {
+            Rhs::Call(call) => self.walk_call(call, Some((targets, id))),
+            Rhs::Match(branching) | Rhs::Handle(branching) => self.walk_branching(branching, targets, id),
+            Rhs::For(structure) => self.walk_for(structure, targets, id),
+            Rhs::Loop(structure) => self.walk_loop(structure, targets, id),
+            Rhs::Struct(literal) => {
+                self.walk_struct(literal);
+                self.judge_targets(id, targets, 1, "a struct construction");
+            }
+            Rhs::Operand(operand) => {
+                self.value_operand(operand);
+                self.judge_targets(id, targets, 1, "one value");
+            }
+        }
+    }
+
+    fn walk_branching(&mut self, branching: &'a Branching, targets: usize, id: Id) {
+        self.value_operand(&branching.selector);
+        for arm in &branching.arms {
+            let mark = self.enter();
+            self.walk_pattern(&arm.pattern);
+            self.declare_lines(&arm.body);
+            self.walk_statements(&arm.body);
+            for value in &arm.yields.values {
+                self.value_operand(value);
+            }
+            self.leave(mark);
+        }
+        // Arms that disagree have their `LC3006` (pass 4).
+        let mut counts = branching.arms.iter().map(|arm| arm.yields.values.len());
+        if let Some(first) = counts.next()
+            && counts.all(|count| count == first)
+        {
+            self.judge_targets(id, targets, first, "this structure");
+        }
+    }
+
+    fn walk_pattern(&mut self, pattern: &'a Pattern) {
+        match pattern {
+            Pattern::Literal(operand) => self.value_operand(operand),
+            Pattern::Range { id, low, high, .. } => {
+                self.judge_bound(*low, *id);
+                self.judge_bound(*high, *id);
+            }
+            Pattern::Variant { path, bindings, .. } => {
+                self.walk_variant_pattern(path);
+                for binding in bindings {
+                    self.bind(binding.name, binding.id, false);
+                }
+            }
+            Pattern::Wildcard { binding, .. } => self.bind_optional(binding.as_ref()),
+            Pattern::Ok { .. } => {}
+            Pattern::Category { path, binding, .. } => {
+                self.resolved.set(path.id, Meaning::Category);
+                self.bind_optional(binding.as_ref());
+            }
+            Pattern::Code { id, code, binding } => {
+                self.judge_bound(*code, *id);
+                self.bind_optional(binding.as_ref());
+            }
+        }
+    }
+
+    fn bind_optional(&mut self, binding: Option<&Binding>) {
+        if let Some(binding) = binding {
+            self.bind(binding.name, binding.id, false);
+        }
+    }
+
+    fn walk_variant_pattern(&mut self, path: &'a Path) {
+        match self.find_named(path) {
+            Named::Variant(meaning) => self.resolved.set(path.id, meaning),
+            Named::NoVariant(ty) => {
+                let text = path_text(path, self.names());
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: `{ty}` has no such variant"), path.id);
+            }
+            Named::NotImported { library, known: true } => self.report_not_imported(library, path.id),
+            Named::AlreadySaid => {}
+            Named::Function(..) | Named::NoFunction(_) | Named::IsType | Named::Unknown | Named::NotImported { .. } => {
+                let text = path_text(path, self.names());
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: a variant is written with its type, as in `State.Init`"), path.id);
+            }
+        }
+    }
+
+    fn walk_for(&mut self, structure: &'a For, targets: usize, id: Id) {
+        self.walk_structure(&structure.clauses, &structure.body, targets, id);
+    }
+
+    fn walk_loop(&mut self, structure: &'a Loop, targets: usize, id: Id) {
+        self.walk_structure(&structure.clauses, &structure.body, targets, id);
+    }
+
+    /// Its clauses read from outside the structure, even a name that a carry then hides (`carry err = err`, R-3).
+    fn walk_structure(&mut self, clauses: &'a [Clause], body: &'a Body, targets: usize, id: Id) {
+        for clause in clauses {
+            match &clause.kind {
+                ClauseKind::In(ForIn { source, end, .. }) => {
+                    self.value_operand(source);
+                    if let Some(end) = end {
+                        self.value_operand(end);
+                    }
+                }
+                ClauseKind::Carry(carry) => {
+                    self.value_operand(&carry.value);
+                    if let Some(ty) = &carry.ty {
+                        let ty = self.written_type(ty, carry.id);
+                        self.resolved.set(carry.id, Meaning::Type(ty));
+                    }
+                }
+            }
+        }
+        let mark = self.enter();
+        let mut carries = 0;
+        for clause in clauses {
+            match &clause.kind {
+                ClauseKind::In(clause) => self.bind(clause.name, clause.id, false),
+                ClauseKind::Carry(carry) => {
+                    carries += 1;
+                    self.bind(carry.name, carry.id, true);
+                }
+            }
+        }
+        self.declare_lines(body);
+        self.walk_statements(body);
+        self.leave(mark);
+        let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count();
+        // A loop that gives nothing still needs a target, and `_` binds nothing (6.2).
+        let gives_nothing = carries + collects == 0 && matches!(self.statement.map(targets_of), Some([Line::Skip(_)]));
+        if !gives_nothing {
+            self.judge_targets(id, targets, carries + collects, "this loop");
+        }
+    }
+
+    fn walk_struct(&mut self, literal: &'a StructLit) {
+        for field in &literal.fields {
+            self.value_operand(&field.value);
+        }
+        let scope = self.scope;
+        let lookup = self.pass.lookup(&scope, &literal.path);
+        let declared = match lookup {
+            super::Lookup::Declared(index) => self.pass.resolved.get(index).copied().flatten(),
+            super::Lookup::Unknown => {
+                let text = path_text(&literal.path, self.names());
+                self.say(Code::Lc2003, format!("unknown type `{text}`"), literal.path.id);
+                return;
+            }
+            super::Lookup::NotImported(library) => {
+                self.report_not_imported(library, literal.path.id);
+                return;
+            }
+            // A base type, or what has its diagnostic: `LC3015` comes with pass 4.
+            _ => return,
+        };
+        let Some(declared) = declared else { return };
+        self.resolved.set(literal.id, Meaning::Type(declared.ty));
+        let definition = self.definition_of(declared.definition);
+        let names = self.names();
+        let Ty::Struct(_) = self.pass.table.get(definition) else { return };
+        for field in &literal.fields {
+            if !self.has_member(definition, field.name) {
+                let (text, ty) = (names.resolve(field.name), path_text(&literal.path, names));
+                self.say(Code::Lc2006, format!("unknown field `{text}`: `{ty}` has no such field"), field.id);
+            }
+        }
+    }
+
+    /// A type written in a body says what it has to say with the line it is on.
+    fn written_type(&mut self, ty: &TypeExpr, id: Id) -> TyId {
+        self.pass.node = self.node();
+        let scope = self.scope;
+        let ty = self.pass.signature_type(ty, &scope, id);
+        self.pass.node = None;
+        ty
+    }
+
+    // What types stand for.
+
+    /// Through the aliases, each link once: a chain of `.lct` files is as long as the program wants.
+    fn definition_of(&mut self, start: TyId) -> TyId {
+        let declared = self.context.declared;
+        let mut chain = Vec::new();
+        let mut current = start;
+        let end = loop {
+            if let Some(known) = self.context.facts.definitions.get(&current) {
+                break *known;
+            }
+            let Ty::Named { library, name } = self.pass.table.get(current) else { break current };
+            let library = self.context.facts.libraries.get(library).and_then(|index| declared.get(*index));
+            let next = library.and_then(|library| library.types.get(name)).map(|ty| ty.definition);
+            match next {
+                Some(next) if next == current => break current,
+                Some(next) if chain.len() <= self.pass.types.len() => {
+                    chain.push(current);
+                    current = next;
+                }
+                _ => break TyId::ERROR,
+            }
+        };
+        for member in chain {
+            self.context.facts.definitions.insert(member, end);
+        }
+        end
+    }
+
+    fn has_member(&mut self, definition: TyId, name: Name) -> bool {
+        let table = &self.pass.table;
+        let members = self.context.facts.members.entry(definition).or_insert_with(|| match table.get(definition) {
+            Ty::Enum(variants) => variants.iter().map(|variant| variant.name).collect(),
+            Ty::Struct(fields) => fields.iter().map(|(name, _)| *name).collect(),
+            _ => HashSet::new(),
+        });
+        members.contains(&name)
+    }
+
+    // What a path names.
+
+    /// `lib.function`, `lib.Type.Variant`, or `Type.Variant` and `function` of this library.
+    fn find_named(&mut self, path: &Path) -> Named {
+        let own = self.scope.library;
+        let Some((last, head)) = path.rest.split_last() else {
+            return self.find_in(own, path.first, Named::Unknown);
+        };
+        let mut library_name = self.text(path.first).to_owned();
+        for segment in head {
+            library_name.push('.');
+            library_name.push_str(self.text(*segment));
+        }
+        let file = self.scope.file;
+        let imports = &file.imports;
+        if let Some(target) = imports.get(&library_name).copied() {
+            return self.find_in_target(target, *last, library_name);
+        }
+        if self.missing.contains(&path.first) {
+            return Named::AlreadySaid;
+        }
+        let Some((ty, library_head)) = head.split_last() else {
+            // `Reading.Value`
+            return self.find_own_variant(path.first, *last, library_name);
+        };
+        // `lib.Reading.Value`
+        let mut owner = self.text(path.first).to_owned();
+        for segment in library_head {
+            owner.push('.');
+            owner.push_str(self.text(*segment));
+        }
+        match imports.get(&owner).copied() {
+            Some(Target::Library(target)) => self.find_variant_in(target, *ty, *last, library_name),
+            Some(Target::Primitive) => Named::NoFunction(library_name),
+            Some(Target::Missing | Target::Unreadable) => Named::AlreadySaid,
+            None if self.is_known(&library_name) => Named::NotImported { library: library_name, known: true },
+            None if self.is_known(&owner) => Named::NotImported { library: owner, known: true },
+            None => Named::NotImported { library: library_name, known: false },
+        }
+    }
+
+    fn is_known(&self, library: &str) -> bool {
+        PrimitiveLibrary::from_name(library).is_some() || self.context.known_libraries.contains(library)
+    }
+
+    fn find_in_target(&mut self, target: Target, name: Name, library_name: String) -> Named {
+        match target {
+            Target::Primitive => {
+                let primitive =
+                    PrimitiveLibrary::from_name(&library_name).and_then(|library| Some((library, self.context.primitives.get(library, name)?)));
+                match primitive {
+                    Some((library, callable)) => Named::Function(Meaning::Primitive { library, name }, callable),
+                    None => Named::NoFunction(library_name),
+                }
+            }
+            Target::Library(target) => self.find_in(target, name, Named::NoFunction(library_name)),
+            Target::Missing | Target::Unreadable => Named::AlreadySaid,
+        }
+    }
+
+    fn find_in(&mut self, library: usize, name: Name, otherwise: Named) -> Named {
+        let declared = self.context.declared;
+        let Some(source) = declared.get(library) else { return Named::AlreadySaid };
+        if let Some(function) = source.functions.get(&name) {
+            let key = (library, name);
+            let callable = self.context.callables.entry(key).or_insert_with(|| Rc::new(Callable::of_function(function)));
+            let index = u32::try_from(library).unwrap_or(u32::MAX);
+            return Named::Function(Meaning::Function { library: index, name }, Rc::clone(callable));
+        }
+        if source.types.contains_key(&name) {
+            return Named::IsType;
+        }
+        if source.broken || self.pass.is_refused(library, name) { Named::AlreadySaid } else { otherwise }
+    }
+
+    fn find_own_variant(&mut self, ty: Name, variant: Name, library_name: String) -> Named {
+        let own = self.scope.library;
+        let declared = self.context.declared;
+        match declared.get(own).and_then(|source| source.types.get(&ty)).copied() {
+            Some(declared) => self.variant_of(declared, ty, variant),
+            None if self.own_library_is_broken() || self.pass.is_refused(own, ty) => Named::AlreadySaid,
+            // `g.h`, with a function `g`: the first name is known, and it is no library.
+            None if declared.get(own).is_some_and(|source| source.functions.contains_key(&ty)) => Named::Unknown,
+            None => {
+                let known = self.is_known(&library_name);
+                Named::NotImported { library: library_name, known }
+            }
+        }
+    }
+
+    fn find_variant_in(&mut self, library: usize, ty: Name, variant: Name, library_name: String) -> Named {
+        let declared = self.context.declared;
+        let Some(source) = declared.get(library) else { return Named::AlreadySaid };
+        match source.types.get(&ty).copied() {
+            Some(declared) => self.variant_of(declared, ty, variant),
+            None if source.broken || self.pass.is_refused(library, ty) => Named::AlreadySaid,
+            // `a.b.g`, with `use a`: the file does not import the sub-library that has `g`.
+            None if self.is_known(&library_name) => Named::NotImported { library: library_name, known: true },
+            None => Named::NoFunction(library_name),
+        }
+    }
+
+    fn variant_of(&mut self, declared: DeclaredType, ty: Name, variant: Name) -> Named {
+        if declared.ty == TyId::ERROR {
+            return Named::AlreadySaid;
+        }
+        let definition = self.definition_of(declared.definition);
+        if matches!(self.pass.table.get(definition), Ty::Error) {
+            return Named::AlreadySaid;
+        }
+        let is_enum = matches!(self.pass.table.get(definition), Ty::Enum(_));
+        if is_enum && self.has_member(definition, variant) {
+            return Named::Variant(Meaning::Variant { ty: declared.ty, variant });
+        }
+        Named::NoVariant(self.text(ty).to_owned())
+    }
+
+    fn report_not_imported(&mut self, library: String, id: Id) {
+        if self.pass.current.not_imported.contains(&library) {
+            return;
+        }
+        let fix = add_use(&self.pass.current.sorted_uses, &library);
+        let message = format!("the library `{library}` is used without a `use` line in this file");
+        self.pass.current.not_imported.insert(library);
+        self.say_with(Code::Lc2005, message, id, Vec::new(), vec![fix]);
+    }
+
+    // Operands.
+
+    fn value_operand(&mut self, operand: &'a Operand) {
+        match operand {
+            Operand::Path(path) => self.value_path(path),
+            Operand::Number(id, numeral, unit) => self.judge_number(*numeral, unit.as_deref(), *id),
+            Operand::Array(_, values) => {
+                for value in values {
+                    self.value_operand(value);
+                }
+            }
+            Operand::Bracket(id, unit) => self.bracket_as_value(*id, unit),
+            Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+        }
+    }
+
+    /// A value first, so a value can bear the name of a function; then a function reference, or a variant.
+    fn value_path(&mut self, path: &'a Path) {
+        if let Some(value) = self.read(path.first) {
+            self.resolved.set(path.id, Meaning::Value(value.id));
+            return;
+        }
+        let names = self.names();
+        let unknown =
+            |path: &Path| format!("unknown value `{}`: nothing in this body, its signature or its library has this name", path_text(path, names));
+        match self.find_named(path) {
+            Named::Function(meaning, _) | Named::Variant(meaning) => self.resolved.set(path.id, meaning),
+            Named::NoVariant(ty) => {
+                let text = path_text(path, names);
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: `{ty}` has no such variant"), path.id);
+            }
+            Named::NoFunction(library) => {
+                let text = path_text(path, names);
+                self.say(Code::Lc2002, format!("unknown function `{text}`: the library `{library}` has no such function"), path.id);
+            }
+            Named::IsType => {
+                let text = path_text(path, names);
+                self.say(Code::Lc2001, format!("`{text}` is a type, and a value is expected here"), path.id);
+            }
+            Named::NotImported { library, known: true } => self.report_not_imported(library, path.id),
+            Named::NotImported { library, known: false } => {
+                let message = format!("{}, unless `{library}` is a library, which this file does not import", unknown(path));
+                self.say(Code::Lc2001, message, path.id);
+            }
+            Named::Unknown => self.say(Code::Lc2001, unknown(path), path.id),
+            Named::AlreadySaid => {}
+        }
+    }
+
+    /// `[x]` is an array of one value and `[1]` of one number, for a parameter that takes a value (R-5).
+    fn bracket_as_value(&mut self, id: Id, unit: &'a UnitExpr) {
+        if unit.rest.is_empty() {
+            match &unit.first {
+                UnitTerm::Named { name, exponent: None } => {
+                    if let Some(value) = self.read(*name) {
+                        self.resolved.set(id, Meaning::ArrayOfValue(value.id));
+                        return;
+                    }
+                    match self.find_in(self.scope.library, *name, Named::Unknown) {
+                        Named::Function(Meaning::Function { library, name }, _) => self.resolved.set(id, Meaning::ArrayOfFunction { library, name }),
+                        Named::AlreadySaid => {}
+                        _ => {
+                            let text = self.text(*name);
+                            self.say(
+                                Code::Lc2001,
+                                format!("unknown value `{text}`: this parameter takes a value, so `[{text}]` is an array of one (R-5)"),
+                                id,
+                            );
+                        }
+                    }
+                    return;
+                }
+                UnitTerm::One { exponent: None } => {
+                    self.resolved.set(id, Meaning::ArrayOfNumber);
+                    return;
+                }
+                _ => {}
+            }
+        }
+        self.say(
+            Code::Lc3001,
+            "this parameter takes a value, not a unit: a unit is written in brackets only for a parameter of kind unit (R-5)".to_owned(),
+            id,
+        );
+    }
+
+    fn judge_literal(&mut self, operand: &'a Operand) {
+        match operand {
+            Operand::Number(id, numeral, unit) => self.judge_number(*numeral, unit.as_deref(), *id),
+            Operand::Array(_, values) => {
+                for value in values {
+                    self.judge_literal(value);
+                }
+            }
+            // A default is a literal: what else it holds is for pass 4 (`LC3017`).
+            Operand::Path(_) | Operand::Bracket(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+        }
+    }
+
+    fn judge_number(&mut self, numeral: Numeral, unit: Option<&'a UnitExpr>, id: Id) {
+        let names = self.names();
+        match numeral.kind {
+            NumeralKind::Int(digits) => {
+                let text = names.resolve(digits);
+                if !integer_fits(numeral.negative, text) {
+                    self.say(Code::Lc1006, "this integer is out of bounds: no type holds it, beyond `i64` and `u64`".to_owned(), id);
+                }
+            }
+            NumeralKind::Float(digits) => {
+                if !float_fits(names.resolve(digits)) {
+                    self.say(Code::Lc1006, "this number is out of bounds: it is too large for `f64`".to_owned(), id);
+                }
+            }
+            NumeralKind::Inf | NumeralKind::Nan => {}
+        }
+        if let Some(unit) = unit {
+            self.judge_unit(unit);
+        }
+    }
+
+    fn judge_bound(&mut self, bound: IntBound, id: Id) {
+        if !integer_fits(bound.negative, self.text(bound.digits)) {
+            self.say(Code::Lc1006, "this integer is out of bounds: no type holds it, beyond `i64` and `u64`".to_owned(), id);
+        }
+    }
+
+    fn judge_unit(&mut self, unit: &UnitExpr) {
+        if let Err(error) = unit_of(unit, self.names()) {
+            let message = match &error {
+                UnitError::Unknown(name) => format!("unknown unit `{name}`"),
+                _ => "this unit is out of bounds: an exponent goes beyond 127, or the scale beyond 1e300".to_owned(),
+            };
+            self.say(error.code(), message, unit.id);
+        }
+    }
+
+    // Calls.
+
+    fn walk_call(&mut self, call: &'a Call, targets: Option<(usize, Id)>) {
+        let type_args: Box<[TyId]> = call.type_args.iter().map(|ty| self.written_type(ty, call.id)).collect();
+        match self.find_named(&call.callee) {
+            Named::Function(meaning, callable) => self.bind_function(call, meaning, &callable, type_args, targets),
+            Named::Variant(meaning) => self.bind_variant(call, meaning, type_args, targets),
+            Named::NoVariant(ty) => {
+                let text = path_text(&call.callee, self.names());
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: `{ty}` has no such variant"), call.callee.id);
+                self.bind_nothing(call, type_args);
+            }
+            Named::NoFunction(library) => {
+                let text = path_text(&call.callee, self.names());
+                self.say(Code::Lc2002, format!("unknown function `{text}`: the library `{library}` has no such function"), call.callee.id);
+                self.bind_nothing(call, type_args);
+            }
+            Named::IsType => {
+                let text = path_text(&call.callee, self.names());
+                self.say(
+                    Code::Lc2002,
+                    format!("`{text}` is a type, not a function: a struct is built with `{{ }}`, and an enumeration by a variant"),
+                    call.callee.id,
+                );
+                self.bind_nothing(call, type_args);
+            }
+            Named::NotImported { library, .. } => {
+                if self.read(call.callee.first).is_some() {
+                    self.report_a_value_called(&call.callee);
+                } else {
+                    self.report_not_imported(library, call.callee.id);
+                }
+                self.bind_nothing(call, type_args);
+            }
+            Named::Unknown => {
+                if self.read(call.callee.first).is_some() {
+                    self.report_a_value_called(&call.callee);
+                } else {
+                    self.report_unknown_function(&call.callee);
+                }
+                self.bind_nothing(call, type_args);
+            }
+            Named::AlreadySaid => self.bind_nothing(call, type_args),
+        }
+    }
+
+    fn report_a_value_called(&mut self, path: &Path) {
+        let text = path_text(path, self.names());
+        self.say(Code::Lc2002, format!("unknown function `{text}`: this is a value, and a function reference runs with `core.call` (4)"), path.id);
+    }
+
+    /// For a name of `core` written without its prefix, the fix qualifies it, with the `use` that it needs (`docs/cli.md`, 4.2).
+    fn report_unknown_function(&mut self, path: &Path) {
+        let text = path_text(path, self.names());
+        let mut fixes = Vec::new();
+        if self.context.primitives.is_in_core(path.first)
+            && path.rest.is_empty()
+            && let Some(span) = self.scope.model.source_map.span(path.id)
+        {
+            let qualified = format!("core.{text}");
+            let mut edits = vec![Edit { span, text: qualified.clone() }];
+            if !self.scope.file.imports.contains_key("core") {
+                edits.extend(add_use(&self.pass.current.sorted_uses, "core").edits);
+            }
+            fixes.push(Fix { title: format!("Call `{qualified}`"), edits });
+        }
+        self.say_with(Code::Lc2002, format!("unknown function `{text}`"), path.id, Vec::new(), fixes);
+    }
+
+    /// The arguments of a call that an error left unbound still read their names. A unit in brackets says nothing, as it
+    /// may be a unit.
+    fn bind_nothing(&mut self, call: &'a Call, type_args: Box<[TyId]>) {
+        let mut after = false;
+        let mut terminals = Vec::with_capacity(call.args.len());
+        for arg in &call.args {
+            match arg {
+                Arg::After { id, refs } => {
+                    self.walk_after(*id, refs, &mut after);
+                    terminals.push(Terminal::Order);
+                }
+                Arg::Value { value, .. } => {
+                    if !matches!(value, Operand::Bracket(..)) {
+                        self.value_operand(value);
+                    }
+                    terminals.push(Terminal::Free);
+                }
+            }
+        }
+        self.resolved.add_call(call.id, ResolvedCall { callee: Meaning::None, terminals: terminals.into_boxed_slice(), type_args });
+    }
+
+    fn bind_variant(&mut self, call: &'a Call, meaning: Meaning, type_args: Box<[TyId]>, targets: Option<(usize, Id)>) {
+        self.resolved.set(call.callee.id, meaning);
+        if !call.type_args.is_empty() {
+            self.say(Code::Lc3019, "a variant takes no type argument".to_owned(), call.id);
+        }
+        let mut after = false;
+        let mut position = 0_u32;
+        let mut terminals = Vec::with_capacity(call.args.len());
+        for arg in &call.args {
+            match arg {
+                Arg::After { id, refs } => {
+                    self.walk_after(*id, refs, &mut after);
+                    terminals.push(Terminal::Order);
+                }
+                Arg::Value { id, name, value } => {
+                    if let Some(name) = name {
+                        let text = self.text(*name);
+                        self.say(Code::Lc2009, format!("unknown named argument `{text}`: the values of a variant have no name"), *id);
+                    } else if after {
+                        self.say(Code::Lc2104, "a positional argument comes before the named ones (4)".to_owned(), *id);
+                    }
+                    self.value_operand(value);
+                    terminals.push(Terminal::Param(position));
+                    position = position.saturating_add(1);
+                }
+            }
+        }
+        self.resolved.add_call(call.id, ResolvedCall { callee: meaning, terminals: terminals.into_boxed_slice(), type_args });
+        if let Some((count, id)) = targets {
+            self.judge_targets(id, count, 1, "a variant construction");
+        }
+    }
+
+    fn bind_function(&mut self, call: &'a Call, meaning: Meaning, callable: &Callable, type_args: Box<[TyId]>, targets: Option<(usize, Id)>) {
+        self.resolved.set(call.callee.id, meaning);
+        if let Meaning::Function { library, name } = meaning
+            && library as usize == self.scope.library
+        {
+            self.calls.entry(name).or_insert(call.callee.id);
+        }
+        if let Some(generics) = callable.generics
+            && !type_args.is_empty()
+            && type_args.len() != generics
+        {
+            self.say(Code::Lc3019, format!("this function takes {generics} type arguments, and has {} here", type_args.len()), call.id);
+        }
+        let terminals = self.bind_arguments(call, callable);
+        self.resolved.add_call(call.id, ResolvedCall { callee: meaning, terminals, type_args });
+        if let (Some((count, id)), Some(outputs), false) = (targets, callable.outputs, callable.faulty) {
+            self.judge_targets(id, count, outputs, "this function");
+        }
+    }
+
+    /// Positional, then named (spec 4). Parameters after a variadic one are wired by name only (R-11). One diagnostic for
+    /// what is missing, and the work stays in the arguments that the call has.
+    fn bind_arguments(&mut self, call: &'a Call, callable: &Callable) -> Box<[Terminal]> {
+        let mut terminals = Vec::with_capacity(call.args.len());
+        let mut wiring = Wiring::default();
+        let (mut next_position, mut named_seen, mut after, mut too_many) = (0_u32, false, false, false);
+        for arg in &call.args {
+            match arg {
+                Arg::After { id, refs } => {
+                    self.walk_after(*id, refs, &mut after);
+                    named_seen = true;
+                    terminals.push(Terminal::Order);
+                }
+                Arg::Value { id, name: None, value } => {
+                    if named_seen {
+                        self.say(Code::Lc2104, "a positional argument comes before the named ones (4)".to_owned(), *id);
+                        wiring.mistaken = true;
+                        self.argument_of_unknown_kind(value);
+                        terminals.push(Terminal::Free);
+                        continue;
+                    }
+                    let position = match callable.variadic {
+                        Some(variadic) if next_position >= variadic => Some(variadic),
+                        _ if (next_position as usize) < callable.params.len() => Some(next_position),
+                        _ => None,
+                    };
+                    match position {
+                        Some(position) => {
+                            next_position = next_position.saturating_add(1);
+                            self.argument(position, callable, value);
+                            terminals.push(Terminal::Param(position));
+                        }
+                        None if callable.open => {
+                            self.value_operand(value);
+                            terminals.push(Terminal::Free);
+                        }
+                        None => {
+                            if !too_many && !callable.faulty {
+                                let count = callable.params.len();
+                                self.say(Code::Lc2102, format!("too many arguments: this function has {count} inputs"), *id);
+                            }
+                            too_many = true;
+                            wiring.mistaken = true;
+                            self.argument_of_unknown_kind(value);
+                            terminals.push(Terminal::Free);
+                        }
+                    }
+                }
+                Arg::Value { id, name: Some(name), value } => {
+                    named_seen = true;
+                    match self.named_argument(*id, *name, callable, next_position, &mut wiring) {
+                        Wired::Param(position) => {
+                            self.argument(position, callable, value);
+                            terminals.push(Terminal::Param(position));
+                        }
+                        Wired::Free => {
+                            self.value_operand(value);
+                            terminals.push(Terminal::Free);
+                        }
+                        Wired::Mistake => {
+                            wiring.mistaken = true;
+                            self.argument_of_unknown_kind(value);
+                            terminals.push(Terminal::Free);
+                        }
+                    }
+                }
+            }
+        }
+        self.judge_missing(call, callable, next_position, &wiring);
+        terminals.into_boxed_slice()
+    }
+
+    /// What this name wires. An open function takes any name that its signature does not have, once each.
+    fn named_argument(&mut self, id: Id, name: Name, callable: &Callable, positional: u32, wiring: &mut Wiring) -> Wired {
+        let text = self.text(name);
+        let Some(position) = callable.by_name.get(&name).copied() else {
+            if callable.open {
+                if wiring.free.insert(name) {
+                    return Wired::Free;
+                }
+                self.say(Code::Lc2102, format!("the input `{text}` is wired twice"), id);
+                return Wired::Mistake;
+            }
+            if !callable.faulty {
+                self.say(Code::Lc2009, format!("unknown named argument `{text}`: this function has no input of that name"), id);
+            }
+            return Wired::Mistake;
+        };
+        if callable.variadic == Some(position) {
+            self.say(Code::Lc2009, format!("`{text}` is variadic, and takes positional arguments only (5.4)"), id);
+            return Wired::Mistake;
+        }
+        let by_position = callable.variadic.is_none_or(|variadic| position < variadic) && position < positional;
+        if by_position || !wiring.named.insert(position) {
+            if !callable.faulty {
+                self.say(Code::Lc2102, format!("the input `{text}` is wired twice"), id);
+            }
+            return Wired::Mistake;
+        }
+        Wired::Param(position)
+    }
+
+    /// `required` is in order, so this looks at no more than the arguments of the call, and one more.
+    fn judge_missing(&mut self, call: &Call, callable: &Callable, positional: u32, wiring: &Wiring) {
+        if callable.faulty || wiring.mistaken {
+            return;
+        }
+        let is_wired = |position: u32| {
+            wiring.named.contains(&position) || (position < positional && callable.variadic.is_none_or(|variadic| position < variadic))
+        };
+        let Some(first) = callable.required.iter().copied().find(|position| !is_wired(*position)) else { return };
+        let name = callable.params.get(first as usize).map_or("", |(name, _)| self.text(*name));
+        // Cut here: the name is not in the call, so a long one and many calls would copy it each time.
+        self.say(Code::Lc2101, format!("the required input `{}` is not wired", cut_text(name)), call.id);
+    }
+
+    /// A unit in brackets says nothing here: what it would have been stays unknown.
+    fn argument_of_unknown_kind(&mut self, value: &'a Operand) {
+        if !matches!(value, Operand::Bracket(..)) {
+            self.value_operand(value);
+        }
+    }
+
+    fn argument(&mut self, position: u32, callable: &Callable, value: &'a Operand) {
+        let kind = callable.params.get(position as usize).map_or(ParamKind::Value, |(_, kind)| *kind);
+        match kind {
+            ParamKind::Value => self.value_operand(value),
+            ParamKind::Unit => match value {
+                Operand::Bracket(id, unit) => {
+                    self.resolved.set(*id, Meaning::Unit);
+                    self.judge_unit(unit);
+                }
+                other => self.say(Code::Lc3001, "this parameter takes a unit, written in brackets: `[V]` (R-5)".to_owned(), other.id()),
+            },
+            ParamKind::Category => match value {
+                Operand::Path(path) => self.resolved.set(path.id, Meaning::Category),
+                other => self.say(Code::Lc3001, "this parameter takes an error category, such as `io.timeout`".to_owned(), other.id()),
+            },
+            ParamKind::Element => match value {
+                Operand::Path(path) => self.panel_element(path),
+                other => self.say(Code::Lc3001, "this parameter takes the name of a panel element".to_owned(), other.id()),
+            },
+        }
+    }
+
+    fn panel_element(&mut self, path: &Path) {
+        match self.elements.get(&path.first).copied().filter(|_| path.rest.is_empty()) {
+            Some(element) => self.resolved.set(path.id, Meaning::Element(element)),
+            None => {
+                let text = path_text(path, self.names());
+                self.say(Code::Lc2010, format!("unknown panel element `{text}`: the `panel` section of this function does not declare it"), path.id);
+            }
+        }
+    }
+
+    /// A value, a label, or a list of them (R-15).
+    fn walk_after(&mut self, id: Id, refs: &'a [OrderRef], after: &mut bool) {
+        if *after {
+            self.say(Code::Lc2105, "a call has one `after:`, which can take a list: `after: (x, #label)` (R-15)".to_owned(), id);
+        }
+        *after = true;
+        for order in refs {
+            match order {
+                OrderRef::Label(label) => match self.labels.get(&label.name).copied() {
+                    Some(target) => self.resolved.set(label.id, Meaning::Label(target)),
+                    None => {
+                        let text = self.text(label.name);
+                        let where_it_is =
+                            if self.all_labels.contains_key(&label.name) { ": it is in a body that this one is not inside" } else { "" };
+                        self.say(Code::Lc2011, format!("unknown label `#{text}` in `after:`{where_it_is}"), label.id);
+                    }
+                },
+                // A value comes from this file, whatever the others hold.
+                OrderRef::Value(Operand::Path(path)) => match self.read(path.first) {
+                    Some(value) => self.resolved.set(path.id, Meaning::Value(value.id)),
+                    None => {
+                        let text = path_text(path, self.names());
+                        self.say(Code::Lc2001, format!("unknown value `{text}` in `after:`"), path.id);
+                    }
+                },
+                OrderRef::Value(other) => {
+                    self.say(Code::Lc2105, "`after:` waits for a value or a label, not a literal (R-15)".to_owned(), other.id());
+                }
+            }
+        }
+    }
+}

@@ -1,5 +1,5 @@
 //! Pass 2 (`docs/architecture.md`, section 5): what each library declares, its functions and its types, with what can
-//! be wrong in a declaration alone. Bodies come with pass 3, and default values with pass 4.
+//! be wrong in a declaration alone. Pass 3, in `body`, reads the bodies with the same means; default values come with pass 4.
 //!
 //! Walking a `TypeExpr` recurses, as far as the nesting that `format::read` let through, on the stack that it took. Going
 //! from a type to another never does, since a chain of `.lct` files is as long as the program wants.
@@ -9,13 +9,16 @@ use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{Decl, EnumType, FnType, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
 use labcraft_types::{
-    Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, Limits, MAX_ARRAY_DIMENSIONS, MAX_NESTING, Name, NumberKind, Position, Related,
-    Report, Span, Ty, TyId, TypeTable, Unit, UnitError, Variant,
+    Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, Limits, MAX_ARRAY_DIMENSIONS, MAX_NESTING, Name, Node, NumberKind, Position, Related,
+    Report, Span, Ty, TyId, TypeTable, Unit, UnitError, Variant, cut_text,
 };
 
+use self::body::Primitives;
 use crate::load::{Library, LoadedFile, Model, Target, at, cycles, last_resort};
+use crate::resolved::Resolved;
 use crate::{Libraries, Origin};
 
+mod body;
 #[cfg(test)]
 mod tests;
 
@@ -48,6 +51,11 @@ pub struct DeclaredFunction {
     pub outputs: Vec<DeclaredOutput>,
     /// With an `extern` line, even one that runs from M0.
     pub external: bool,
+    /// With type variables, which come with a later milestone (`LC4006`).
+    pub generic: bool,
+    /// Its signature has an error of its own (`LC2019`, `LC2105`, `LC2107`) or its name is defined twice (`LC2013`), so a
+    /// call says nothing more about what it wires.
+    pub faulty: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -67,6 +75,8 @@ pub struct DeclaredOutput {
 pub(crate) struct Declared {
     pub(crate) types: TypeTable,
     pub(crate) libraries: Vec<DeclaredLibrary>,
+    /// Pass 3, parallel to the files of each library.
+    pub(crate) resolved: Vec<Vec<Resolved>>,
 }
 
 /// What a path in a type stands for.
@@ -174,6 +184,10 @@ struct Pass<'a> {
     /// `None` until it is resolved, or if a bug stopped it.
     resolved: Vec<Option<DeclaredType>>,
     current: CurrentFile,
+    /// What each function file has said of `LC2005` in its signature, for its body, by the file as shown.
+    said: HashMap<&'a str, HashSet<String>>,
+    /// The line of a body that a type is written on, for what that type has to say.
+    node: Option<Node>,
 }
 
 /// What the declaration of one file needs of it, made once: a file can hold millions of `use` lines and of types.
@@ -191,6 +205,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
     // Each library has its own limit, so the table only keeps the ceiling that a stack is sized from.
     let mut table = TypeTable::new(MAX_NESTING);
     let ids: Vec<LibraryId> = loaded.iter().map(|library| table.add_library(names.intern(&library.name))).collect();
+    let primitives = Primitives::new(names);
     let mut pass = Pass {
         loaded: &*loaded,
         libraries,
@@ -211,6 +226,8 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
         in_cycles: Vec::new(),
         resolved: Vec::new(),
         current: CurrentFile::default(),
+        said: HashMap::new(),
+        node: None,
     };
     pass.gather();
     pass.find_cycles();
@@ -218,6 +235,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
     pass.measure();
     pass.resolve_types();
     let declared = pass.declare_all();
+    let resolved = pass.check_bodies(&declared, &primitives);
     let Pass { table, reports, .. } = pass;
     for (library, own) in loaded.iter_mut().zip(reports) {
         if library.checked {
@@ -226,7 +244,17 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
             library.report.merge(own);
         }
     }
-    Declared { types: table, libraries: declared }
+    Declared { types: table, libraries: declared, resolved }
+}
+
+/// Of two declarations of one name, which have their `LC2013`, a call binds to the first one and says nothing about it.
+fn keep_the_first(functions: &mut HashMap<Name, DeclaredFunction>, name: Name, declared: DeclaredFunction) {
+    match functions.entry(name) {
+        Entry::Occupied(mut first) => first.get_mut().faulty = true,
+        Entry::Vacant(slot) => {
+            slot.insert(declared);
+        }
+    }
 }
 
 fn sorted_files(library: &Library) -> Vec<&LoadedFile> {
@@ -319,7 +347,9 @@ impl<'a> Pass<'a> {
 
     fn error_with(&mut self, scope: &Scope<'_>, code: Code, message: String, id: Id, related: Vec<Related>, fixes: Vec<Fix>) {
         let mut diagnostic = at(code, message, &scope.file.shown, &scope.model.source_map, id);
-        diagnostic.function = scope.function.map(str::to_owned);
+        // Cut here, not by the report: a name of 8 MiB and millions of diagnostics would copy it each time.
+        diagnostic.function = scope.function.map(|name| cut_text(name).into_owned());
+        diagnostic.node = self.node.clone();
         diagnostic.related = related;
         diagnostic.fixes = fixes;
         self.push(scope.library, diagnostic);
@@ -374,7 +404,7 @@ impl<'a> Pass<'a> {
 
     fn function_at_fault(&self, decl: &Decl) -> Option<String> {
         let (name, _, is_type) = name_of_decl(decl);
-        (!is_type).then(|| self.names.resolve(name).to_owned())
+        (!is_type).then(|| cut_text(self.names.resolve(name)).into_owned())
     }
 
     /// Once, on the last file in the order of the paths, with the others in `related` (`docs/cli.md`, section 4.2).
@@ -751,11 +781,11 @@ impl<'a> Pass<'a> {
             let outcome = last_resort(|| match &model.file.decl {
                 Decl::Function(function) => {
                     let declared = self.declare_function(function.name, &function.signature, scope, None);
-                    functions.entry(function.name).or_insert(declared);
+                    keep_the_first(&mut functions, function.name, declared);
                 }
                 Decl::Extern(function) => {
                     let declared = self.declare_function(function.name, &function.signature, scope, Some(function.id));
-                    functions.entry(function.name).or_insert(declared);
+                    keep_the_first(&mut functions, function.name, declared);
                 }
                 // No program can name it, and its mistakes are still mistakes.
                 Decl::Type(decl) => {
@@ -764,6 +794,10 @@ impl<'a> Pass<'a> {
             });
             if let Err(payload) = outcome {
                 self.report_a_panic(library, &file.shown, payload);
+            }
+            if !self.current.not_imported.is_empty() {
+                let said = std::mem::take(&mut self.current.not_imported);
+                self.said.insert(&file.shown, said);
             }
         }
         let broken = self.broken.get(library).copied().unwrap_or(true);
@@ -825,7 +859,7 @@ impl<'a> Pass<'a> {
                 generic.id,
             );
         }
-        self.judge_the_parameters(signature, &scope);
+        let faulty = self.judge_the_parameters(signature, &scope);
         self.judge_the_value_names(signature, &scope);
         let params = signature
             .params
@@ -851,7 +885,7 @@ impl<'a> Pass<'a> {
                 self.error(&scope, Code::Lc4005, "an external function has an output `err: error` (R-13)".to_owned(), id);
             }
         }
-        DeclaredFunction { params, outputs, external: external.is_some() }
+        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty }
     }
 
     fn signature_type(&mut self, expr: &TypeExpr, scope: &Scope<'_>, id: Id) -> TyId {
@@ -860,14 +894,16 @@ impl<'a> Pass<'a> {
         if measured.is_some() { ty } else { TyId::ERROR }
     }
 
-    /// `LC2019` within the parameters and within the outputs, since `err` can be both (R-2); `LC2105`; `LC2107`.
-    fn judge_the_parameters(&mut self, signature: &Signature, scope: &Scope<'_>) {
+    /// `LC2019` within the parameters and within the outputs, since `err` can be both (R-2); `LC2105`; `LC2107`. Whether any
+    /// of these has something to say.
+    fn judge_the_parameters(&mut self, signature: &Signature, scope: &Scope<'_>) -> bool {
         let params: Vec<(Name, Id)> = signature.params.iter().map(|param| (param.name, param.id)).collect();
         let outputs: Vec<(Name, Id)> = signature.outputs.iter().map(|output| (output.name, output.id)).collect();
-        self.judge_twice(&params, scope, "parameter");
-        self.judge_twice(&outputs, scope, "output");
+        let mut faulty = self.judge_twice(&params, scope, "parameter");
+        faulty |= self.judge_twice(&outputs, scope, "output");
         for (name, id) in &params {
             if self.names.resolve(*name) == "after" {
+                faulty = true;
                 self.error(scope, Code::Lc2105, "no parameter is named `after`, the order input of every call (R-15)".to_owned(), *id);
             }
         }
@@ -877,11 +913,13 @@ impl<'a> Pass<'a> {
             if misplaced {
                 let message = "a function has one variadic parameter, after all required parameters and before those with a default value (R-11)";
                 self.error(scope, Code::Lc2107, message.to_owned(), param.id);
+                faulty = true;
                 break;
             }
             variadic |= param.variadic;
             default |= param.default.is_some();
         }
+        faulty
     }
 
     /// Whether two items have one name.
@@ -915,42 +953,32 @@ impl<'a> Pass<'a> {
             if !seen.insert(name) {
                 continue;
             }
-            let text = self.names.resolve(name);
-            if let Some(use_id) = self.current.imports.get(&name).copied() {
-                let related = vec![Related {
-                    message: format!("`{text}` is imported here"),
-                    file: scope.file.shown.clone(),
-                    span: scope.model.source_map.span(use_id),
-                }];
-                self.error_with(
-                    scope,
-                    Code::Lc2014,
-                    format!("a value cannot bear the name `{text}`: this file imports a library of that name (R-1)"),
-                    id,
-                    related,
-                    Vec::new(),
-                );
-                continue;
+            if let Some((message, related)) = self.value_name_conflict(name, scope) {
+                self.error_with(scope, Code::Lc2014, message, id, vec![related], Vec::new());
             }
-            let Some(index) = self.index.get(scope.library).and_then(|index| index.get(&name)).copied() else { continue };
-            if self.kinds.get(index).copied().flatten() != Some(Kind::Plain) {
-                continue;
-            }
-            let Some(info) = self.types.get(index) else { continue };
-            let related = vec![Related {
-                message: format!("the type `{text}` is declared here"),
-                file: info.file.shown.clone(),
-                span: info.model.source_map.span(info.decl.id),
-            }];
-            self.error_with(
-                scope,
-                Code::Lc2014,
-                format!("a value cannot bear the name `{text}`: this library has a type of that name (R-1)"),
-                id,
-                related,
-                Vec::new(),
-            );
         }
+    }
+
+    /// What a value of this name is in conflict with, apart from a panel element: a `use` of this file, or a type of its
+    /// library that has something a path can name (R-1).
+    fn value_name_conflict(&self, name: Name, scope: &Scope<'_>) -> Option<(String, Related)> {
+        let text = self.names.resolve(name);
+        if let Some(use_id) = self.current.imports.get(&name).copied() {
+            let related =
+                Related { message: format!("`{text}` is imported here"), file: scope.file.shown.clone(), span: scope.model.source_map.span(use_id) };
+            return Some((format!("a value cannot bear the name `{text}`: this file imports a library of that name (R-1)"), related));
+        }
+        let index = self.index.get(scope.library)?.get(&name).copied()?;
+        if self.kinds.get(index).copied().flatten() != Some(Kind::Plain) {
+            return None;
+        }
+        let info = self.types.get(index)?;
+        let related = Related {
+            message: format!("the type `{text}` is declared here"),
+            file: info.file.shown.clone(),
+            span: info.model.source_map.span(info.decl.id),
+        };
+        Some((format!("a value cannot bear the name `{text}`: this library has a type of that name (R-1)"), related))
     }
 
     fn intern(&mut self, ty: Ty, scope: &Scope<'_>, id: Id) -> TyId {
