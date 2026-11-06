@@ -283,8 +283,11 @@ corpora ([tests/acceptance](../tests/acceptance/README.md)) compare everything e
 for `LC2016` and `LC2017`, with the others in `related`.
 
 A value that does not convert gets the code of where it goes: `LC3001` or `LC3004` on an input, `LC3003` on an
-output, `LC3006` in an arm, `LC3007` on a carry, `LC3001` as an element of an array. So a narrowing to an output is
-`LC3003`, and its fix still names the conversion. A type argument or an array makes a variable fixed, and an input against
+output, `LC3006` in an arm, `LC3007` on a carry, `LC3001` as an element of an array, `LC3015` on a field or a value of a
+construction, element of an array included, `LC3017` in a default value, whatever it builds. So a narrowing to an output is
+`LC3003`, and its fix still names the conversion. A default has no fix that adds a node, since it reads nothing of the
+diagram; its terminal is that of the parameter, `fn.gain`. A generic primitive that does not match what it goes to has
+no type to compare: `LC3008`, except in a construction or a default, which keep their code. A type argument or an array makes a variable fixed, and an input against
 it is an input like another: `LC3001` where two wires that meet would give `LC3002`.
 
 ### 4.3 Terminals
@@ -298,6 +301,7 @@ the signatures:
 | `@12.err` | Output or input of a node with no name, on line 12: a call statement without a label, or a line whose outputs are all `_` or `next x` |
 | `fn.power` | Input or output of the function: `fn` is reserved, so no node has that name |
 | `next.n`, `until`, `collect.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect` and a value of a `yield`, by position from 0 |
+| `p.x`, `r.0` | A field of a node that builds a struct or a `waveform`; a value of a node that builds a variant, by position from 0 |
 
 ### 4.4 What is stable
 
@@ -403,18 +407,18 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3005` | error | Unit argument of another dimension | 3.3 | S2 |
 | `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
-| `LC3008` | error | Function reference of the wrong signature | 4 | S2 |
+| `LC3008` | error | Function reference of the wrong signature, or a primitive that has no function type: one that takes a unit, a category or an element, `core.call`, `string.format` | 4 | S2 |
 | `LC3009` | error | Pattern that cannot apply: of the wrong type, such as a variant of another enumeration, that binds another number of values than its variant holds, or a range that holds no value | 6.1 | S2 |
 | `LC3010` | error | `match` without a branch for every value: a variant, `true` or `false` missing, or no `_` on an integer or a string. It names at most five variants. Silent on a boolean or an enumeration when one of the patterns has a diagnostic of its own, a repeated pattern included, since what it was meant to cover is unknown | R-8 | |
 | `LC3011` | error | Overlapping literal or range patterns, in one branch or in two: on the pattern that starts inside another, with that one in `related` | R-18 | |
 | `LC3012` | error | `handle` without `_` | R-10 | |
 | `LC3013` | error | Selector of the wrong type in a `match` or `handle`. With a selector of unknown type, its arms get no `LC3010`, `LC3011`, `LC4106`, nor `LC3022` on a variant; a repeated `_` and a `handle` without `_` are still reported | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
-| `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
+| `LC3015` | error | Struct, `waveform` or variant construction: a field or a value missing, given twice, in excess or of the wrong type, a narrowing and a function of the wrong signature included; `{ }` on what is neither a struct nor a `waveform`; `samples` that is not an array. What is missing is one diagnostic per node, naming at most five fields, and none when a field is unknown or given twice, which may be the cause | 3.2, 5.1 | |
 | `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
-| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument | 4, 10, R-21 | |
-| `LC3018` | error | Integer literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`) | 3.4, 6.1 | |
-| `LC3019` | error | Type variable of a generic primitive that cannot be determined, a `[]` whose type nothing says, or the wrong number of type arguments | 3.5 | |
+| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument. Every mistake in what a default builds has this code, in place of `LC3015` or `LC3019`. A parameter of unknown type says nothing of its default. A signature that is faulty as a whole (a name defined twice, `LC2019`, `LC2105`, `LC2107`), or a generic function, says nothing of any default | 4, 10, R-21 | |
+| `LC3018` | error | Literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`), a literal too large for its type by its value in the unit it goes to (`1e39` for an `f32` or a `c64`, `1e36 V` for an `f32[mV]`), in a default value too | 3.4, 6.1 | |
+| `LC3019` | error | Type variable of a generic primitive that cannot be determined, a generic primitive as a value where no function type is expected, a `[]` whose type nothing says, the wrong number of type arguments, or a `waveform` that does not hold numbers (`waveform<string>`, `samples` of `[[f64]]`) | 3.2, 3.5, 4 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
 | `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
 | `LC3022` | error | The same pattern twice, in one branch or in two: `_`, a variant, or in a `handle` `ok`, a code or a category. On the second one, with the first in `related` | 6.1, 7.3 | |

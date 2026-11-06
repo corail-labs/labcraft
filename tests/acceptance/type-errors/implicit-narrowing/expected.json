@@ -34,7 +34,7 @@
       ],
       "expected": "i32",
       "found": "f64",
-      "fix_mentions": "core.round_to_i32"
+      "fix_mentions": ["core.round_to_i32", "use core"]
     }
   ]
 }

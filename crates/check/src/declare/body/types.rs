@@ -12,20 +12,22 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use labcraft_graph::{
-    Arg, Body, Branching, Call, Clause, ClauseKind, Function, Id, Numeral, NumeralKind, Operand, Path, Pattern, Rhs, Statement, StatementKind,
-    Target as Line, UnitExpr, UnitTerm,
+    Arg, Body, Branching, Call, Clause, ClauseKind, Function, Id, Numeral, NumeralKind, Operand, Path, Pattern, Rhs, Signature, Statement,
+    StatementKind, Target as Line, UnitExpr, UnitTerm,
 };
 use labcraft_types::{
     Code, Diagnostic, Edit, Fix, FnParam, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text, parse_unit,
 };
 
 use super::super::{DeclaredFunction, Pass, Scope, add_use, path_text, unit_of};
-use super::{Context, definition_of, float_fits, integer_fits, node_of, targets_of};
+use super::{Context, definition_of, float_fits, integer_fits, node_of, targets_of, unknown_waveform_field};
 use crate::load::at;
 use crate::primitives::{ParamKind, Primitive, PrimitiveLibrary, PrimitiveOutput, PrimitiveParam, PrimitiveTy};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
+mod construction;
 mod coverage;
+mod reference;
 #[cfg(test)]
 mod tests;
 
@@ -61,11 +63,20 @@ struct Plan<'a> {
     definers: Vec<u32>,
     /// The first name of a statement whose first target has none: `_, ..., _, y = g()` can have a million targets, and a million mistakes.
     late_names: HashMap<Id, Option<Name>>,
+    /// By the id of a `collect`, the target of the loop that its array goes to.
+    collect_targets: HashMap<Id, &'a Line>,
 }
 
 impl<'a> Plan<'a> {
     fn of(function: &'a Function, resolved: &Resolved, places: usize) -> Self {
-        let mut plan = Plan { steps: Vec::new(), edges: Vec::new(), reads: Vec::new(), definers: vec![NO_STEP; places], late_names: HashMap::new() };
+        let mut plan = Plan {
+            steps: Vec::new(),
+            edges: Vec::new(),
+            reads: Vec::new(),
+            definers: vec![NO_STEP; places],
+            late_names: HashMap::new(),
+            collect_targets: HashMap::new(),
+        };
         plan.body(&function.body, None, resolved);
         let reads = std::mem::take(&mut plan.reads);
         for (value, reader) in reads {
@@ -144,9 +155,27 @@ impl<'a> Plan<'a> {
                         }
                     }
                 }
-                Rhs::For(structure) => self.structure(&structure.clauses, &structure.body, first, last, resolved),
-                Rhs::Loop(structure) => self.structure(&structure.clauses, &structure.body, first, last, resolved),
+                Rhs::For(structure) => {
+                    self.note_collects(&structure.clauses, &structure.body, targets);
+                    self.structure(&structure.clauses, &structure.body, first, last, resolved);
+                }
+                Rhs::Loop(structure) => {
+                    self.note_collects(&structure.clauses, &structure.body, targets);
+                    self.structure(&structure.clauses, &structure.body, first, last, resolved);
+                }
             },
+        }
+    }
+
+    /// Outputs, in order: the carries, then the `collect` values (6.2). Targets that do not match have their `LC2103`.
+    fn note_collects(&mut self, clauses: &'a [Clause], body: &'a Body, targets: &'a [Line]) {
+        let carries = clauses.iter().filter(|clause| matches!(clause.kind, ClauseKind::Carry(_))).count();
+        let collects = body.statements.iter().filter(|line| matches!(line.kind, StatementKind::Collect(_)));
+        if carries + collects.clone().count() != targets.len() {
+            return;
+        }
+        for (line, target) in collects.zip(targets.iter().skip(carries)) {
+            self.collect_targets.insert(line.id, target);
         }
     }
 
@@ -297,6 +326,16 @@ struct Details {
     fixes: Vec<Fix>,
 }
 
+/// What holds the value being judged, for the code of a value that is wrong by itself (`docs/cli.md`, 4.2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Within {
+    Diagram,
+    /// A node that builds a struct, a `waveform` or a variant.
+    Construction,
+    /// The default value of this parameter, whatever it builds.
+    Default(Name),
+}
+
 /// A type variable of a primitive, as a call binds it.
 #[derive(Clone, Copy, Default)]
 struct Variable<'a> {
@@ -318,7 +357,9 @@ struct Typer<'p, 'c, 'w, 'a> {
     scope: Scope<'a>,
     resolved: &'p mut Resolved,
     viewer: LibraryId,
-    function: &'a Function,
+    /// `None` for an `extern`, which has only its signature.
+    function: Option<&'a Function>,
+    within: Within,
     origins: HashMap<Id, Origin<'a>>,
     statement: Option<&'a Statement>,
     /// What `statement` gives a diagnostic, made once, since a line of 16 MiB can have a million mistakes.
@@ -330,26 +371,32 @@ struct Typer<'p, 'c, 'w, 'a> {
     late_names: HashMap<Id, Option<Name>>,
     /// By id, the rank of an array, so that the rank of a deep array costs its size and not its size by its depth.
     ranks: Vec<u8>,
+    /// By id, whether an array holds a wire, at any depth: `NO_RANK` until it is known, for the same reason.
+    wired: Vec<u8>,
+    collect_targets: HashMap<Id, &'a Line>,
 }
 
-/// Types one function, unless its signature has an error or is generic, which have their diagnostics.
+/// Types one function, or the default values of an `extern`, unless its signature has an error or is generic, which have their
+/// diagnostics.
 pub(super) fn type_function<'a>(
     pass: &mut Pass<'a>,
     context: &mut Context<'_, 'a>,
     scope: Scope<'a>,
     resolved: &mut Resolved,
     name: Name,
-    function: &'a Function,
+    signature: &'a Signature,
+    function: Option<&'a Function>,
 ) {
     let declared = context.declared;
-    let Some(signature) = declared.get(scope.library).and_then(|library| library.functions.get(&name)) else { return };
-    if signature.faulty || signature.generic {
+    let Some(declaration) = declared.get(scope.library).and_then(|library| library.functions.get(&name)) else { return };
+    if declaration.faulty || declaration.generic {
         return;
     }
     let Some(viewer) = pass.ids.get(scope.library).copied() else { return };
     let places = scope.model.source_map.len();
-    let mut plan = Plan::of(function, resolved, places);
-    let late_names = std::mem::take(&mut plan.late_names);
+    let mut plan = function.map(|function| Plan::of(function, resolved, places));
+    let late_names = plan.as_mut().map_or_else(HashMap::new, |plan| std::mem::take(&mut plan.late_names));
+    let collect_targets = plan.as_mut().map_or_else(HashMap::new, |plan| std::mem::take(&mut plan.collect_targets));
     let mut typer = Typer {
         pass,
         context,
@@ -357,6 +404,7 @@ pub(super) fn type_function<'a>(
         resolved,
         viewer,
         function,
+        within: Within::Diagram,
         origins: HashMap::new(),
         statement: None,
         node: None,
@@ -364,9 +412,12 @@ pub(super) fn type_function<'a>(
         next_suffix: HashMap::new(),
         late_names,
         ranks: vec![NO_RANK; places],
+        wired: vec![NO_RANK; places],
+        collect_targets,
     };
-    typer.signature(signature);
-    for step in plan.in_order() {
+    typer.defaults(signature, declaration);
+    typer.signature(signature, declaration);
+    for step in plan.iter().flat_map(Plan::in_order) {
         typer.step(step);
     }
 }
@@ -422,8 +473,7 @@ fn unit_text(unit: &Unit) -> String {
 }
 
 impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
-    fn signature(&mut self, declared: &DeclaredFunction) {
-        let signature = &self.function.signature;
+    fn signature(&mut self, signature: &'a Signature, declared: &DeclaredFunction) {
         for (param, declared) in signature.params.iter().zip(&declared.params) {
             let ty = if declared.variadic { self.array_of(declared.ty, param.id) } else { declared.ty };
             self.resolved.set_type(param.id, ty);
@@ -446,7 +496,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 self.type_call(call, None);
             }
             (Phase::Whole, StatementKind::Collect(value)) => {
-                let ty = self.value_of(value, None);
+                let hint = self.collect_hint(statement.id);
+                let ty = self.value_of(value, hint);
                 self.resolved.set_type(statement.id, ty);
             }
             (Phase::Whole, StatementKind::Until(value)) => self.judge_until(value),
@@ -499,10 +550,11 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         Related { message, file: self.scope.file.shown.clone(), span: self.scope.model.source_map.span(id) }
     }
 
-    /// What decides a type first: a value, then an integer without a unit, which takes the type around it, then `[]`, which needs
-    /// one (R-7). An array goes by the element that decides most, whatever its place.
+    /// What decides a type first: a value, then an integer without a unit, which takes the type around it, then `[]` and a generic
+    /// primitive, which need one (R-7, 4). An array goes by the element that decides most, whatever its place.
     fn rank(&mut self, operand: &Operand) -> u8 {
         match operand {
+            Operand::Path(path) if self.is_generic_primitive(path) => 2,
             Operand::Number(_, Numeral { kind: NumeralKind::Int(_), .. }, None) => 1,
             Operand::Bracket(_, unit) if unit.rest.is_empty() && matches!(unit.first, UnitTerm::One { exponent: None }) => 1,
             Operand::Array(id, values) => {
@@ -525,16 +577,53 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         }
     }
 
+    /// What a `collect` is expected to give, from the array that its loop gives to a target with a type. A constant takes it (3.4).
+    fn collect_hint(&mut self, id: Id) -> Option<TyId> {
+        let target = self.collect_targets.get(&id).copied()?;
+        let array = self.target_hint(Some(target))?;
+        if array == TyId::ERROR {
+            return Some(array);
+        }
+        self.element_of(array)
+    }
+
+    /// Whether this value is a wire, or an array that holds one at any depth. Such an array has the type of its wires (3.4).
+    fn holds_wire(&mut self, operand: &Operand) -> bool {
+        match operand {
+            Operand::Path(path) => matches!(self.resolved.of(path.id), Meaning::Value(_)),
+            Operand::Bracket(id, _) => matches!(self.resolved.of(*id), Meaning::ArrayOfValue(_)),
+            Operand::Array(id, values) => self.array_holds_wire(*id, values),
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => false,
+        }
+    }
+
+    fn array_holds_wire(&mut self, id: Id, values: &[Operand]) -> bool {
+        if let Some(known) = self.wired.get(id.index()).copied().filter(|known| *known != NO_RANK) {
+            return known == 1;
+        }
+        let holds = values.iter().any(|value| self.holds_wire(value));
+        if let Some(slot) = self.wired.get_mut(id.index()) {
+            *slot = u8::from(holds);
+        }
+        holds
+    }
+
+    fn is_array_of_rows(&self, ty: TyId) -> bool {
+        matches!(self.pass.table.get(ty), Ty::Array { dimensions, .. } if *dimensions >= 2)
+    }
+
+    fn is_generic_primitive(&self, path: &Path) -> bool {
+        let Meaning::Primitive { library, name } = self.resolved.of(path.id) else { return false };
+        self.context.primitives.signature(library, name).is_some_and(|primitive| !primitive.variables.names.is_empty())
+    }
+
     fn is_flexible(&mut self, operand: &Operand) -> bool {
         self.rank(operand) > 0
     }
 
     /// A literal of rows becomes the array of two dimensions that is expected (3.1). Any other literal that decides keeps its type.
     fn rows_hint(&self, operand: &Operand, hint: Option<TyId>) -> Option<TyId> {
-        hint.filter(|hint| {
-            matches!(operand, Operand::Array(..) | Operand::Bracket(..))
-                && matches!(self.pass.table.get(*hint), Ty::Array { dimensions, .. } if *dimensions >= 2)
-        })
+        hint.filter(|hint| matches!(operand, Operand::Array(..) | Operand::Bracket(..)) && self.is_array_of_rows(*hint))
     }
 
     fn line_of(&self, id: Id) -> u32 {
@@ -681,7 +770,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     fn value_of(&mut self, operand: &'a Operand, hint: Option<TyId>) -> TyId {
         let ty = match operand {
-            Operand::Path(path) => self.path_type(path),
+            Operand::Path(path) => self.path_type(path, hint),
             Operand::Number(id, numeral, unit) => self.number_type(*id, *numeral, unit.as_deref(), hint),
             Operand::Text(..) => self.plain(Ty::String),
             Operand::Bool(..) => self.plain(Ty::Bool),
@@ -693,7 +782,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         ty
     }
 
-    fn path_type(&mut self, path: &'a Path) -> TyId {
+    fn path_type(&mut self, path: &'a Path, hint: Option<TyId>) -> TyId {
         match self.resolved.of(path.id) {
             Meaning::Value(value) => {
                 let mut ty = self.resolved.ty(value);
@@ -702,11 +791,23 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 }
                 ty
             }
-            Meaning::Variant { ty, .. } => ty,
+            Meaning::Variant { ty, variant } => {
+                self.judge_bare_variant(path, ty, variant);
+                ty
+            }
             Meaning::Function { library, name } => self.reference_to(library, name),
-            // A primitive as a reference comes with what has no type yet, and anything else has its diagnostic.
+            Meaning::Primitive { library, name } => self.primitive_reference(path, library, name, hint),
+            // Anything else has its diagnostic.
             _ => TyId::ERROR,
         }
+    }
+
+    /// The type of a field of this struct. Made once for each, since a struct can have a million fields and be built a million times.
+    fn field_type(&mut self, definition: TyId, field: Name) -> Option<TyId> {
+        let table = &self.pass.table;
+        let Ty::Struct(fields) = table.get(definition) else { return None };
+        let map = self.context.facts.fields.entry(definition).or_insert_with(|| fields.iter().rev().copied().collect());
+        map.get(&field).copied()
     }
 
     fn field_of(&mut self, ty: TyId, field: Name, path: &Path) -> TyId {
@@ -714,12 +815,22 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             return ty;
         }
         let definition = definition_of(self.pass, self.context, ty);
-        let table = &self.pass.table;
-        match table.get(definition) {
+        if let Ty::Waveform(element) = self.pass.table.get(definition) {
+            let element = *element;
+            return match self.text(field) {
+                "t0" => self.plain(Ty::Timestamp),
+                "dt" => self.plain(Ty::Duration),
+                "samples" => self.array_of(element, path.id),
+                text => {
+                    self.say(Code::Lc2006, unknown_waveform_field(text), path.id, Details::default());
+                    TyId::ERROR
+                }
+            };
+        }
+        match self.pass.table.get(definition) {
             Ty::Error => TyId::ERROR,
-            Ty::Struct(fields) => {
-                let map = self.context.facts.fields.entry(definition).or_insert_with(|| fields.iter().rev().copied().collect());
-                if let Some(found) = map.get(&field).copied() {
+            Ty::Struct(_) => {
+                if let Some(found) = self.field_type(definition, field) {
                     return found;
                 }
                 let message = format!("unknown field `{}`: `{}` has no such field", self.text(field), self.show(ty));
@@ -788,45 +899,86 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         [NumberKind::I32, NumberKind::I64].into_iter().find(|kind| value.is_some_and(|value| fits_kind(value, *kind))).unwrap_or(NumberKind::U64)
     }
 
+    /// A literal too large for its type has its `LC3018`, judged by its value once in the unit that it goes to, and one too small
+    /// reads as zero (3.4). What is too large for `f64` as written has its `LC1006`.
+    fn literal_size_fits(&mut self, id: Id, numeral: Numeral, digits: Name, kind: NumberKind, unit: Unit, goes_to: Unit) -> bool {
+        let single = matches!(kind, NumberKind::F32 | NumberKind::C64);
+        if !single && !matches!(kind, NumberKind::F64 | NumberKind::C128) {
+            return true;
+        }
+        if !single && unit == goes_to {
+            return true;
+        }
+        let text = self.text(digits);
+        let written: String = text.chars().filter(|c| *c != '_').collect();
+        let value = written.parse::<f64>().unwrap_or(0.0).abs();
+        let scaled = value * unit.ratio_to(&goes_to);
+        let fits = value == 0.0 || if single { (scaled as f32).is_finite() } else { scaled.is_finite() };
+        if fits {
+            return true;
+        }
+        let sign = if numeral.negative { "-" } else { "" };
+        let expected = self.number(kind, goes_to);
+        let expected = self.show(expected);
+        let message = format!("`{sign}{}` is too large for a value of type `{expected}`", cut_text(text));
+        self.say(Code::Lc3018, message, id, Details { expected: Some(expected), ..Details::default() });
+        false
+    }
+
+    /// A literal takes the type of number expected, when it can hold it: a decimal does not become an integer (3.4).
     fn number_type(&mut self, id: Id, numeral: Numeral, unit: Option<&UnitExpr>, hint: Option<TyId>) -> TyId {
+        let is_integer = matches!(numeral.kind, NumeralKind::Int(_));
+        let expected = hint.and_then(|hint| self.number_of(hint));
         if let Some(unit) = unit {
             // A unit that is not one has its diagnostic.
             let Ok(unit) = unit_of(unit, self.pass.names) else { return TyId::ERROR };
-            if let NumeralKind::Int(digits) = numeral.kind
-                && !self.integer_literal_fits(id, numeral, digits, NumberKind::F64)
-            {
-                return TyId::ERROR;
-            }
-            return self.number(NumberKind::F64, unit);
+            let is_duration = hint.is_some_and(|hint| matches!(self.pass.table.get(hint), Ty::Duration));
+            let place = if is_duration { Some((NumberKind::F64, Unit::SECOND)) } else { expected };
+            let place = place.filter(|(_, wanted)| wanted.same_dimension(&unit));
+            let goes_to = place.map_or(unit, |(_, wanted)| wanted);
+            let kind = place.filter(|(kind, _)| is_integer || kind.is_inexact()).map_or(NumberKind::F64, |(kind, _)| kind);
+            let fits = match numeral.kind {
+                NumeralKind::Int(digits) => {
+                    self.integer_literal_fits(id, numeral, digits, kind) && self.literal_size_fits(id, numeral, digits, kind, unit, goes_to)
+                }
+                // Beyond `f64` it has its `LC1006`.
+                NumeralKind::Float(digits) => float_fits(self.text(digits)) && self.literal_size_fits(id, numeral, digits, kind, unit, goes_to),
+                NumeralKind::Inf | NumeralKind::Nan => true,
+            };
+            return if fits { self.number(kind, unit) } else { TyId::ERROR };
         }
+        // A literal without a unit has no dimension, whatever its context (3.4).
+        let wanted = expected.filter(|(_, wanted)| *wanted == Unit::ONE).map(|(kind, _)| kind);
         match numeral.kind {
             NumeralKind::Int(digits) => {
-                // A literal without a unit has no dimension, whatever its context (3.4).
-                let wanted = hint.and_then(|hint| self.number_of(hint).filter(|(_, unit)| *unit == Unit::ONE).map(|(kind, _)| (kind, hint)));
-                let (kind, ty) = match wanted {
-                    Some(wanted) => wanted,
-                    None => {
-                        // Against a type that it cannot take, the cause is that type, and not the size of the literal.
-                        let kind = if hint.is_some() { self.kind_that_holds(numeral, digits) } else { NumberKind::I32 };
-                        (kind, self.number(kind, Unit::ONE))
-                    }
-                };
-                if self.integer_literal_fits(id, numeral, digits, kind) { ty } else { TyId::ERROR }
+                // Against a type that it cannot take, the cause is that type, and not the size of the literal.
+                let kind = wanted.unwrap_or_else(|| if hint.is_some() { self.kind_that_holds(numeral, digits) } else { NumberKind::I32 });
+                if self.integer_literal_fits(id, numeral, digits, kind) { self.number(kind, Unit::ONE) } else { TyId::ERROR }
             }
             NumeralKind::Float(digits) => {
                 if !float_fits(self.text(digits)) {
                     return TyId::ERROR;
                 }
-                self.number(NumberKind::F64, Unit::ONE)
+                let kind = wanted.filter(|kind| kind.is_inexact()).unwrap_or(NumberKind::F64);
+                if self.literal_size_fits(id, numeral, digits, kind, Unit::ONE, Unit::ONE) { self.number(kind, Unit::ONE) } else { TyId::ERROR }
             }
-            NumeralKind::Inf | NumeralKind::Nan => self.number(NumberKind::F64, Unit::ONE),
+            NumeralKind::Inf | NumeralKind::Nan => {
+                let kind = wanted.filter(|kind| kind.is_inexact()).unwrap_or(NumberKind::F64);
+                self.number(kind, Unit::ONE)
+            }
         }
     }
 
     /// The first element that decides gives the type of the others, as for the arms of a `match` (R-7).
+    /// An array that holds a wire has the type of its wires, whatever it goes to, except as the rows of an array of two dimensions (3.1).
     fn array_type(&mut self, id: Id, values: &'a [Operand], hint: Option<TyId>) -> TyId {
+        let hint = match hint {
+            Some(wanted) if wanted != TyId::ERROR && !self.is_array_of_rows(wanted) && self.array_holds_wire(id, values) => None,
+            other => other,
+        };
         let hinted = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }));
-        let mut decided = hinted.and_then(|hint| self.element_of(hint));
+        // What is unknown around it says nothing of what it holds.
+        let mut decided = if hint == Some(TyId::ERROR) { hint } else { hinted.and_then(|hint| self.element_of(hint)) };
         if values.is_empty() {
             // What is unknown here has its diagnostic.
             if hint == Some(TyId::ERROR) {
@@ -840,41 +992,51 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 return self.array_of(hint, id);
             }
             let message = "the type of this `[]` is not known here: write it, as in `carry results: [f64] = []`".to_owned();
-            self.say(Code::Lc3019, message, id, Details::default());
+            self.say(self.unknown_type_code(), message, id, Details::default());
             return TyId::ERROR;
         }
         let ranks: Vec<u8> = values.iter().map(|value| self.rank(value)).collect();
+        let mut agree = true;
         for wanted in 0..=2 {
             for (value, _) in values.iter().zip(&ranks).filter(|(_, rank)| **rank == wanted) {
                 let found = self.value_of(value, decided);
                 match decided {
                     None => decided = Some(found),
-                    Some(expected) => self.judge_element(value, found, expected),
+                    Some(expected) => agree &= self.judge_element(value, found, expected),
                 }
             }
         }
         match (hinted, decided) {
             (Some(hint), _) => hint,
-            (None, Some(element)) if element != TyId::ERROR => self.array_of(element, id),
+            // Elements that disagree have their diagnostic, and what they make stays unknown.
+            (None, Some(element)) if element != TyId::ERROR && agree => self.array_of(element, id),
             (None, _) => TyId::ERROR,
         }
     }
 
-    fn judge_element(&mut self, value: &Operand, found: TyId, expected: TyId) {
+    /// Whether this element has the type of the array.
+    fn judge_element(&mut self, value: &Operand, found: TyId, expected: TyId) -> bool {
         match self.fit_of(value, found, expected) {
-            Fit::Same => {}
-            Fit::Coerce => self.resolved.add_coercion(value.id(), found, expected),
+            Fit::Same => true,
+            Fit::Coerce => {
+                self.resolved.add_coercion(value.id(), found, expected);
+                true
+            }
             Fit::Narrow | Fit::No => {
                 let (expected_text, found_text) = (self.show(expected), self.show(found));
                 let message = format!("the elements of an array have one type, `{expected_text}`, and this one is `{found_text}`");
                 let details = Details { expected: Some(expected_text), found: Some(found_text), ..Details::default() };
-                self.say(Code::Lc3001, message, value.id(), details);
+                let code = if self.within == Within::Diagram { Code::Lc3001 } else { self.construction_code() };
+                self.say(code, message, value.id(), details);
+                false
             }
         }
     }
 
     fn bracket_type(&mut self, id: Id, hint: Option<TyId>) -> TyId {
-        let array = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }));
+        // An array of one wire has the type of its wire, like any array that holds a wire, except as a row (3.1).
+        let is_wire = matches!(self.resolved.of(id), Meaning::ArrayOfValue(_));
+        let array = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }) && (!is_wire || self.is_array_of_rows(*hint)));
         let wanted = array.and_then(|array| self.element_of(array));
         let element = match self.resolved.of(id) {
             Meaning::ArrayOfValue(value) => self.resolved.ty(value),
@@ -885,7 +1047,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             },
             _ => return TyId::ERROR,
         };
-        // An array of one is an array like another: it takes the type expected as `[x, x]` does, each element converting.
+        // A constant takes the type expected, as `[1, 2]` does.
         let number = matches!(self.resolved.of(id), Meaning::ArrayOfNumber);
         if let Some((array, wanted)) = array.zip(wanted).filter(|(_, wanted)| !number || !self.is_scaled(*wanted)) {
             match self.fit(element, wanted) {
@@ -1017,8 +1179,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             Operand::Number(_, numeral, None) => self.literal_text(*numeral),
             _ => None,
         };
-        // A literal with a unit is an `f64` (3.4), so it fixes nothing else.
-        if let (Some(text), Some((NumberKind::F64, unit)), Some((_, found_unit))) = (&bare_literal, self.number_of(expected), self.number_of(found))
+        // A literal with a unit takes the type expected, except a decimal for an integer (3.4).
+        let is_integer = matches!(operand, Operand::Number(_, Numeral { kind: NumeralKind::Int(_), .. }, _));
+        if let (Some(text), Some((kind, unit)), Some((_, found_unit))) = (&bare_literal, self.number_of(expected), self.number_of(found))
+            && (kind.is_inexact() || is_integer)
             && found_unit == Unit::ONE
             && unit != Unit::ONE
         {
@@ -1029,6 +1193,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let title = format!("Write `{written}`: a number without a unit has no dimension (3.4)");
             let edits = self.scope.model.source_map.span(operand.id()).map_or_else(Vec::new, |span| vec![Edit { span, text: written }]);
             return vec![Fix { title, edits }];
+        }
+        // A default reads nothing of the diagram, so no node can convert it (R-21).
+        if matches!(self.within, Within::Default(_)) {
+            return Vec::new();
         }
         let Some((name, unit)) = self.conversion_name(found, expected) else { return Vec::new() };
         let title = format!("Convert with `{name}`");
@@ -1069,10 +1237,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if self.used_names.is_none() {
             let mut used = HashSet::new();
             let names = self.pass.names;
-            let signature = &self.function.signature;
-            used.extend(signature.params.iter().map(|param| names.resolve(param.name)));
-            used.extend(signature.outputs.iter().map(|output| names.resolve(output.name)));
-            collect_names(&self.function.body, names, &mut used);
+            if let Some(function) = self.function {
+                let signature = &function.signature;
+                used.extend(signature.params.iter().map(|param| names.resolve(param.name)));
+                used.extend(signature.outputs.iter().map(|output| names.resolve(output.name)));
+                collect_names(&function.body, names, &mut used);
+            }
             self.used_names = Some(used);
         }
         let used = self.used_names.get_or_insert_with(HashSet::new);
@@ -1113,10 +1283,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 self.assign(statement, targets, outs);
             }
             Rhs::Struct(literal) => {
-                let ty = match self.resolved.of(literal.id) {
-                    Meaning::Type(ty) => ty,
-                    _ => TyId::ERROR,
-                };
+                let hint = self.target_hint(targets.first());
+                let ty = self.construction(literal, hint);
                 self.assign(statement, targets, vec![Out { ty, label: Label::Position(0), operand: None }]);
             }
             Rhs::Operand(operand) => {
@@ -1370,12 +1538,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 if self.rank(value) != wanted {
                     continue;
                 }
-                // A value that decides keeps its type against the target (R-7).
-                let around = match decided {
-                    Some((ty, ..)) => Some(ty),
-                    None if wanted == 0 => self.rows_hint(value, hint),
-                    None => hint,
-                };
+                // A literal takes the type of the target, or of the arm that decides. A wire keeps its type (R-7).
+                let around = decided.map_or(hint, |(ty, ..)| Some(ty));
                 let found = self.value_of(value, around);
                 match decided {
                     None => decided = Some((found, arm.yields.id, value)),
@@ -1533,8 +1697,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 let primitive = self.context.primitives.signature(library, name);
                 primitive.map_or_else(Vec::new, |primitive| self.call_primitive(call, &bound, primitive, wanted))
             }
-            // The values of a variant come with what has no type yet.
-            Meaning::Variant { ty, .. } => vec![Out { ty, label: Label::Position(0), operand: None }],
+            Meaning::Variant { ty, variant } => {
+                self.variant_construction(call, &bound, ty, variant);
+                vec![Out { ty, label: Label::Position(0), operand: None }]
+            }
             _ => Vec::new(),
         }
     }

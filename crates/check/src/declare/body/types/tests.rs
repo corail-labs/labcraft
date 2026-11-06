@@ -202,7 +202,7 @@ fn a_number_without_a_unit_has_no_dimension() {
     assert_eq!(judged("", "x: f64[V]", "x = loop carry a: f64[V] = 0 {\nnext a = a\nuntil true\n}"), ["LC3007"]);
     assert_eq!(gives("f64", "1"), NOTHING, "a literal takes the number type");
     assert_eq!(gives("f32", "1"), NOTHING);
-    assert_eq!(gives("f32", "1.5"), ["LC3003"], "a decimal is an `f64`");
+    assert_eq!(gives("f32", "1.5"), NOTHING, "where a type is expected, a decimal takes it");
 }
 
 #[test]
@@ -310,10 +310,14 @@ fn an_array_goes_by_what_it_holds_and_not_by_its_first_element() {
 }
 
 #[test]
-fn an_arm_that_decides_keeps_its_type_against_the_target() {
+fn an_arm_keeps_the_type_of_its_wire_and_a_literal_takes_the_type_of_the_target() {
     let arms = |a: &str, b: &str| format!("x = match c {{\ntrue => yield {a}\nfalse => yield {b}\n}}");
-    assert_eq!(judged("c: bool", "x: [i32]", &arms("[1.5]", "[2.5]")), ["LC3003"]);
-    assert_eq!(judged("c: bool, y: [f64]", "x: [f32]", &arms("[1.5]", "y")), ["LC3003"]);
+    assert_eq!(judged("c: bool", "x: [i32]", &arms("[1.5]", "[2.5]")), ["LC3001", "LC3001"], "each constant, as on a line of its own");
+    assert_eq!(judged("c: bool", "x: [f32]", &arms("[0.5]", "[1.5]")), NOTHING);
+    assert_eq!(judged("c: bool, d: f64", "x: [f32]", &arms("[d, d]", "[d, d]")), ["LC3003"], "one diagnostic, on the wire to the target");
+    assert_eq!(judged("c: bool, d: f64[V]", "x: [f64[mV]]", &arms("[d, d]", "[d, d]")), ["LC3003"], "nothing converts in an array");
+    assert_eq!(judged("c: bool, y: [f64]", "x: [f32]", &arms("[1.5]", "y")), ["LC3006"], "the literal took `[f32]`, and the wire keeps `[f64]`");
+    assert_eq!(judged("c: bool, y: [f64]", "x: [f32]", &arms("y", "y")), ["LC3003"]);
     assert_eq!(judged("c: bool, row: [f64]", "x: [f64; 2]", &arms("[row, row]", "[row]")), NOTHING, "a literal of rows");
 }
 
@@ -451,7 +455,7 @@ fn arrays_have_one_element_type_and_no_conversion() {
     assert_eq!(gives("[f64]", "[1, 2]"), NOTHING, "a literal takes the type expected");
     assert_eq!(gives("[string]", "[1]"), ["LC3001"]);
     assert_eq!(gives("[string]", "[t]"), NOTHING);
-    assert_eq!(gives("[f64[mV]]", "[v]"), NOTHING, "each element converts as it is written");
+    assert_eq!(gives("[f64[mV]]", "[v]"), ["LC3003"], "an array that holds a wire has the type of its wires");
     assert_eq!(gives("[f32]", "xs"), ["LC3003"], "a wire of an array has no conversion");
     assert_eq!(gives("f64", "array.get(xs, 0)"), ["LC2103"]);
     assert_eq!(gives("i32", "array.len(xs)"), NOTHING);
@@ -693,10 +697,12 @@ fn one_mistake_in_a_power_or_a_pattern_gives_one_diagnostic() {
 }
 
 #[test]
-fn an_array_of_one_value_converts_as_an_array_of_two() {
+fn an_array_of_one_wire_is_judged_as_an_array_of_two() {
     let takes = [("takes.lcf", "fn takes(a: [f64]) -> (r: i32) {\n    r = 1\n}")];
-    assert_eq!(judged_with(&takes, "q: i32", "x: i32", "x = takes([q, q])"), NOTHING);
-    assert_eq!(judged_with(&takes, "q: i32", "x: i32", "x = takes([q])"), NOTHING);
+    assert_eq!(judged_with(&takes, "q: f64", "x: i32", "x = takes([q, q])"), NOTHING);
+    assert_eq!(judged_with(&takes, "q: f64", "x: i32", "x = takes([q])"), NOTHING);
+    assert_eq!(judged_with(&takes, "q: i32", "x: i32", "x = takes([q, q])"), ["LC3001"], "nothing converts in an array");
+    assert_eq!(judged_with(&takes, "q: i32", "x: i32", "x = takes([q])"), ["LC3001"]);
     assert_eq!(judged_with(&takes, "q: string", "x: i32", "x = takes([q])"), ["LC3001"]);
     assert_eq!(gives("[f64]", "array.push([1], x)"), NOTHING, "as `[1, 2]`");
 }
@@ -755,8 +761,10 @@ fn a_fix_with_a_unit_gives_what_is_expected() {
         let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
         diagnostic.fixes.iter().map(|fix| fix.title.clone()).collect::<Vec<_>>()
     };
-    assert_eq!(only_fix("", "x: i32[mV]", "    x = 0"), Vec::<String>::new(), "`0 mV` is an `f64[mV]`");
+    assert!(only_fix("", "x: i32[mV]", "    x = 0").first().unwrap().contains("0 mV"), "`0 mV` takes the type expected");
     assert!(only_fix("", "x: f64[mV]", "    x = 0").first().unwrap().contains("0 mV"));
+    assert!(only_fix("", "x: f32[V]", "    x = 1.5").first().unwrap().contains("1.5 V"));
+    assert_eq!(only_fix("", "x: i32[mV]", "    x = 0.5"), Vec::<String>::new(), "a decimal does not become an integer");
     assert_eq!(only_fix("y: f64", "x: i32[mV]", "    x = y"), Vec::<String>::new(), "`core.with_unit` gives an `f64`");
     assert_eq!(only_fix("y: f64[V]", "x: i32", "    x = y"), Vec::<String>::new(), "`core.unitless` gives an `f64`");
 }
@@ -772,8 +780,8 @@ fn fixes_on_many_lines_take_new_names_in_order() {
 #[test]
 fn a_literal_array_keeps_to_the_bound_and_to_what_is_known() {
     assert_eq!(gives("[i32]", "core.abs([1, 2])"), ["LC3001"]);
-    assert_eq!(gives("[i32]", "core.add([1], [2])"), ["LC3001", "LC3001"]);
-    assert_eq!(gives("bool", "core.lt([1], [2])"), ["LC3001", "LC3001"]);
+    assert_eq!(gives("[i32]", "core.add([1], [2])"), ["LC3001"], "what failed says nothing more of the same variable");
+    assert_eq!(gives("bool", "core.lt([1], [2])"), ["LC3001"]);
     assert_eq!(gives("f64", "core.sqrt([1, 2])"), ["LC3001"]);
     assert_eq!(gives("[string]", "array.push([1], t)"), ["LC3001"]);
     assert_eq!(gives("i32", "array.len<string>([1])"), ["LC3001"]);
@@ -808,13 +816,13 @@ fn a_duration_counts_as_seconds_wherever_it_comes_from() {
 }
 
 #[test]
-fn an_array_of_one_takes_the_type_expected() {
+fn rows_take_the_type_expected_and_a_wire_keeps_its_own() {
     let two = [("two.lcf", "fn two(a: [f64; 2]) -> (r: i32) {\n    r = 1\n}")];
     assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row, row])"), NOTHING);
     assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row])"), NOTHING);
     let ratio = [("ratio.lcf", "fn ratio(a: [f64[mV/V]]) -> (r: i32) {\n    r = 1\n}")];
-    assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a, a])"), NOTHING);
-    assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a])"), NOTHING);
+    assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a, a])"), ["LC3001"]);
+    assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a])"), ["LC3001"]);
 }
 
 #[test]
@@ -1104,3 +1112,5 @@ fn a_long_list_of_patterns_is_judged() {
     arms.push_str("_ => yield 1");
     assert_eq!(matching("i32", &arms), NOTHING);
 }
+
+mod constructions;

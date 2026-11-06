@@ -225,6 +225,13 @@ enum Wired {
     Mistake,
 }
 
+/// What a `waveform` has (3.2).
+const WAVEFORM_FIELDS: [&str; 3] = ["t0", "dt", "samples"];
+
+fn unknown_waveform_field(field: &str) -> String {
+    format!("unknown field `{}`: a `waveform` has `t0`, `dt` and `samples`", cut_text(field))
+}
+
 const SIGNATURE_BODY: u32 = 0;
 const FUNCTION_BODY: u32 = 1;
 
@@ -322,13 +329,12 @@ impl<'a> Pass<'a> {
                 let (mut done, calls) = (std::mem::take(&mut walker.resolved), std::mem::take(&mut walker.calls));
                 match (outcome, function) {
                     (Err(payload), _) => self.report_a_panic(library, &file.shown, payload),
-                    (Ok(()), Some(function)) => {
-                        let typed = last_resort(|| types::type_function(self, &mut context, scope, &mut done, name, function));
+                    (Ok(()), function) => {
+                        let typed = last_resort(|| types::type_function(self, &mut context, scope, &mut done, name, signature, function));
                         if let Err(payload) = typed {
                             self.report_a_panic(library, &file.shown, payload);
                         }
                     }
-                    (Ok(()), None) => {}
                 }
                 // An `extern` has no calls, and a call can reach it.
                 functions.push(FunctionCalls { name, file: &file.shown, calls, source_map: &model.source_map });
@@ -790,18 +796,43 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 self.report_not_imported(library, literal.path.id);
                 return;
             }
-            // A base type, or what has its diagnostic: `LC3015` comes with pass 4.
-            _ => return,
+            super::Lookup::Waveform => {
+                self.resolved.set(literal.id, Meaning::Waveform);
+                self.judge_waveform_fields(literal);
+                return;
+            }
+            super::Lookup::Base(_) | super::Lookup::Later | super::Lookup::Opaque => {
+                self.resolved.set(literal.id, Meaning::NotAStruct);
+                return;
+            }
+            // What has its diagnostic.
+            super::Lookup::AlreadySaid => return,
         };
         let Some(declared) = declared else { return };
         self.resolved.set(literal.id, Meaning::Type(declared.ty));
         let definition = self.definition_of(declared.definition);
         let names = self.names();
-        let Ty::Struct(_) = self.pass.table.get(definition) else { return };
+        match self.pass.table.get(definition) {
+            Ty::Struct(_) => {}
+            Ty::Waveform(_) => {
+                self.judge_waveform_fields(literal);
+                return;
+            }
+            _ => return,
+        }
         for field in &literal.fields {
             if !self.has_member(definition, field.name) {
                 let (text, ty) = (names.resolve(field.name), path_text(&literal.path, names));
                 self.say(Code::Lc2006, format!("unknown field `{text}`: `{ty}` has no such field"), field.id);
+            }
+        }
+    }
+
+    fn judge_waveform_fields(&mut self, literal: &StructLit) {
+        for field in &literal.fields {
+            let text = self.text(field.name);
+            if !WAVEFORM_FIELDS.contains(&text) {
+                self.say(Code::Lc2006, unknown_waveform_field(text), field.id);
             }
         }
     }

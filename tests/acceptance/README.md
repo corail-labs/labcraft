@@ -18,7 +18,7 @@ give `expected.json`:
 
 - `schema`, `status`, `summary.errors` and `summary.warnings` are compared; the other counts are not;
 - each diagnostic is compared field by field, except the text of `message` and `fixes`;
-- `fix_mentions` is not a field of the report: some fix of the diagnostic must mention that text;
+- `fix_mentions` is not a field of the report: some fix of the diagnostic must mention that text, or each of a list of texts;
 - `related` is compared by `file` and `span`.
 
 Every program is in canonical form and has exactly one error, so a second diagnostic is a failure
