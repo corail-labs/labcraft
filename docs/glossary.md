@@ -11,6 +11,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **default value** | The value of a type when nothing else gives one: `false`, `0` in the type's unit, `""`, an empty array, `none` for an error… It is what a skipped node outputs and what `ui.get` returns without a user interface (spec 7.2). |
 | **`always` node** | A node of a native function marked `always`, which runs even when its `err` input carries an error (for example `visa.close`), but not after an abort or a fault (spec 8.2). |
 | **primitive** | A `core` operation (`add`, `gt`, `select`…) whose compact view is a circle with a glyph. |
+| **named constant** | A constant with a name (`limit = 240 V`): a small node without a body that can feed several terminals, each of which gives it a type (spec 5.1). A constant used once is written on its terminal. |
 | **wire** | A connection from one output to one or more inputs. |
 | **error wire**, **error chain** | The wire that carries an `error` value from node to node; the chain that orders "set, then measure". |
 | **order wire** | A wire created by `after:`, which carries no data, only an ordering. `after:` takes a value, a label or a list of them (`after: e2`, `after: #beep`, `after: (#beep, e2)`), on any node. There is no sequence structure: order comes from data, the error wire or order wires (spec 5.3). |

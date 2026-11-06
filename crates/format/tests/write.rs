@@ -777,6 +777,37 @@ fn a_layout_entry_that_names_no_node_is_removed() {
 }
 
 #[test]
+fn a_layout_entry_can_name_a_constant() {
+    // A name given to a constant is a node that the user places (spec 5.1, 11).
+    for value in ["0.5", "240 V", "\"text\"", "true", "none", "[1, 2]", "[1]", "Verdict.Pass", "core.abs"] {
+        let text = format!("labcraft 1\n\nfn f() -> () {{\n    k = {value}\n}}\n\nlayout {{\n    node k at (1, 2)\n}}\n");
+        assert_stays(&text);
+        assert_eq!(formatted(&text).codes, [], "{value}");
+    }
+    // In a nested body too, and at the end of a wire.
+    let text = "labcraft 1\n\nfn f() -> () {\n    a = match c {\n        _ => {\n            k = 1\n            yield k\n        }\n    }\n    b = g(a)\n}\n\nlayout {\n    node k at (1, 2)\n    wire k -> b\n}\n";
+    assert_stays(text);
+    assert_eq!(formatted(text).codes, []);
+    // By its label, if it has one.
+    assert_stays("labcraft 1\n\nfn f() -> () {\n    #l: k = 1\n}\n\nlayout {\n    node #l at (1, 2)\n}\n");
+}
+
+#[test]
+fn a_constant_on_a_terminal_designates_no_node() {
+    // R-4: an output, a carry and nothing at all are not nodes, whatever their value and their label.
+    for line in ["#l: x = 1", "#l: _ = 1", "#l: k = s"] {
+        let result = formatted(&format!("labcraft 1\n\nfn f(s: i32) -> (x: i32) {{\n    {line}\n}}\n\nlayout {{\n    node #l at (1, 2)\n}}\n"));
+        assert_eq!(result.codes, [Code::Lc5004], "{line}");
+    }
+    for line in ["#l: next v = 1", "#l: next v = s"] {
+        let result = formatted(&format!(
+            "labcraft 1\n\nfn f(s: i32) -> (x: i32) {{\n    x = loop carry v = 0 {{\n        {line}\n        until true\n    }}\n}}\n\nlayout {{\n    node #l at (1, 2)\n}}\n"
+        ));
+        assert_eq!(result.codes, [Code::Lc5004], "{line}");
+    }
+}
+
+#[test]
 fn a_layout_entry_that_names_an_input_or_an_output_stays_for_check() {
     let function = "labcraft 1\n\nfn f(a: i32) -> (err: i32) {\n    b = g(a)\n    err = b\n}\n\n";
     let text = format!(

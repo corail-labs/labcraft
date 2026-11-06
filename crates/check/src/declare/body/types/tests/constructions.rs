@@ -63,7 +63,271 @@ fn a_literal_takes_the_number_type_expected() {
 fn a_literal_keeps_its_type_where_nothing_is_expected() {
     assert_eq!(judged("s: f32", "x: f32", "x = core.add(s, 0.5)"), ["LC3003"], "two number types meet");
     assert_eq!(judged("s: f32", "x: f64", "x = core.add(s, 0.5)"), NOTHING);
-    assert_eq!(judged("", "x: f32", "y = 0.5\nx = y"), ["LC3003"], "`y` has no type written");
+}
+
+#[test]
+fn a_named_constant_takes_the_type_of_each_terminal_that_it_reaches() {
+    // As a constant on a terminal does, and for each terminal apart.
+    assert_eq!(all("", "x: f32, y: f64", "k = 0.5\nx = k\ny = k"), NOTHING, "two outputs of two types");
+    assert_eq!(all("", "x: f32", "k = 0.5\nx = takes(k)"), NOTHING, "an input");
+    assert_eq!(judged("", "x: f32[V], y: f64[mV]", "k = 240 V\nx = k\ny = k"), NOTHING, "its unit converts");
+    assert_eq!(judged("", "x: f32", "a = 0.5\nb = a\nx = b"), NOTHING, "through another name");
+    assert_eq!(judged("s: f32", "x: f32", "k = 2\nx = core.div(s, k)"), NOTHING, "an integer beside a wire");
+    assert_eq!(judged("s: f32", "x: f32", "k = 0.5\nx = core.add(s, k)"), ["LC3003"], "two number types meet, as for `core.add(s, 0.5)`");
+    assert_eq!(judged("c: bool", "x: f32", "k = 0.5\nx = match c {\ntrue => yield k\nfalse => yield 1.5\n}"), NOTHING, "in an arm");
+    assert_eq!(judged("", "x: [f32]", "k = 0.5\nx = [k, k]"), NOTHING, "an array of constants");
+    assert_eq!(judged("", "x: [f32]", "k = 0.5\nx = [k]"), NOTHING, "an array of one");
+    assert_eq!(judged("", "x: [f32], y: [f64]", "k = [0.5, 1.5]\nx = k\ny = k"), NOTHING, "an array constant");
+    assert_eq!(judged("", "x: [f32], y: [f64]", "k = [0.5, 1.5]\ny = k\nx = k"), NOTHING, "in any order");
+    assert_eq!(judged("", "x: [f32]", "a = 0.5\nb = [a, a]\nx = b"), NOTHING, "an array of named constants");
+    assert_eq!(judged("", "x: [[f32]]", "a = [0.5]\nb = [a, a]\nx = b"), NOTHING, "an array of array constants");
+    assert_eq!(judged("", "x: [f64; 2]", "k = [[0.5, 1.5], [2.5, 3.5]]\nx = k"), NOTHING, "a literal of rows");
+    assert_eq!(judged("x_in: f64", "x: f64", "k = 2\nx = core.pow(x_in, k)"), NOTHING, "the exponent of `core.pow` is a constant");
+}
+
+#[test]
+fn a_named_constant_is_refused_where_its_literal_is() {
+    assert_eq!(judged("", "x: i32", "k = 1.5\nx = k"), ["LC3003"], "a decimal does not become an integer");
+    assert_eq!(judged("", "x: f64[A]", "k = 240 V\nx = k"), ["LC3003"], "another dimension");
+    assert_eq!(judged("", "x: f64[V]", "k = 240\nx = k"), ["LC3003"], "a number without a unit has no dimension");
+    assert_eq!(judged("", "x: f64[mV/V]", "k = 5\nx = k"), ["LC3003"], "and no scale");
+    assert_eq!(judged("", "x: f32", "k = 1e39\nx = k"), ["LC3018"], "too large for this terminal");
+    assert_eq!(judged("", "x: f32, y: f64", "k = 1e39\nx = k\ny = k"), ["LC3018"], "and only for this one");
+    assert_eq!(judged("", "x: string", "k = 0.5\nx = k"), ["LC3003"]);
+    assert_eq!(judged("c: bool", "x: f64[mV/V]", "k = 5\nx = match c {\ntrue => yield k\nfalse => yield k\n}"), ["LC3003"], "in an arm too");
+}
+
+#[test]
+fn an_array_constant_that_does_not_fit_is_refused_on_each_terminal() {
+    // One diagnostic for each terminal, on that terminal, whatever the order of the lines.
+    assert_eq!(judged("", "x: [i32], y: [i32]", "k = [1.5, 2.5]\nx = k\ny = k"), ["LC3003", "LC3003"]);
+    assert_eq!(judged("", "x: [f32], y: [f32]", "k = [\"a\"]\nx = k\ny = k"), ["LC3003", "LC3003"]);
+    assert_eq!(judged("", "x: i8, y: i8", "k = [1 V, 1 V]\nx = k\ny = k"), ["LC3003", "LC3003"]);
+    assert_eq!(judged("", "x: [f32]", "k = [1e39, 1.5]\nx = k"), ["LC3003"], "too large for this terminal");
+    // Its own line says only what is wrong with it, once.
+    assert_eq!(judged("", "x: [f64], y: [f64]", "k = [1 V, 1 A]\nx = k\ny = k"), ["LC3001"]);
+    assert_eq!(judged("", "x: i8", "k = [[]]\nx = k"), ["LC3019"]);
+}
+
+#[test]
+fn what_a_constant_says_on_its_own_line_is_said_once() {
+    assert_eq!(judged("", "x: i64", "k = 3000000000\nb = k\nc = b\nx = c"), ["LC3018"], "a kept difference from a constant on a terminal (3.4)");
+    assert_eq!(judged("", "x: [f32]", "k = []\nx = k"), ["LC3019"], "another one");
+    assert_eq!(judged("", "x: fn(f64) -> (f64)", "k = core.abs\nx = k"), ["LC3019"], "and the last");
+}
+
+#[test]
+fn a_named_constant_in_a_bracket_is_a_constant() {
+    let brackets = |body: &str, wanted: &str| {
+        let text = format!("use array\nuse core\n\nfn f() -> (x: {wanted}) {{\n{body}\n}}");
+        let helper = "use array\n\nfn takes(a: [f64[mV/V]]) -> (x: [f64[mV/V]]) {\n    x = a\n}";
+        codes(&[("f.lcf", &text), ("takes.lcf", helper)])
+    };
+    assert_eq!(brackets("k = 2\nx = array.push([k], 1.5)", "[f64]"), NOTHING, "it decides last, as `[2]` does");
+    assert_eq!(brackets("k = 0.5\nx = array.push([k], 1.5)", "[f64]"), NOTHING);
+    assert_eq!(brackets("k = 5\nx = takes([k])", "[f64[mV/V]]"), ["LC3001"], "no scale, as for `[5]`");
+    assert_eq!(brackets("k = 5\nx = takes([k, k])", "[f64[mV/V]]"), brackets("x = takes([5, 5])", "[f64[mV/V]]"));
+    assert_eq!(brackets("k = 5 mV/V\nx = takes([k])", "[f64[mV/V]]"), NOTHING);
+}
+
+#[test]
+fn a_named_constant_in_a_bracket_takes_the_type_expected() {
+    let helper = "fn takes(a: [f32]) -> (x: [f32]) {\n    x = a\n}";
+    let text = "fn f() -> (x: [f32]) {\n    k = 0.5\n    x = takes([k])\n}";
+    assert_eq!(codes(&[("f.lcf", text), ("takes.lcf", helper)]), NOTHING);
+}
+
+#[test]
+fn a_named_array_of_rows_decides_a_primitive_as_a_literal_does() {
+    let inputs = "c: bool, m: [f64; 2]";
+    // The wire decides first, and the literal of rows takes what it decided.
+    assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, m, [[0.5, 1.5], [2.5, 3.5]])"), NOTHING);
+    assert_eq!(judged(inputs, "x: [f64; 2]", "k = [[0.5, 1.5], [2.5, 3.5]]\nx = core.select(c, m, k)"), NOTHING);
+    // Written first, it decides, under its name or not.
+    assert_eq!(judged(inputs, "x: [f64; 2]", "k = [[0.5, 1.5], [2.5, 3.5]]\nx = core.select(c, k, m)"), ["LC3001"]);
+    assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, [[0.5, 1.5], [2.5, 3.5]], m)"), ["LC3001"]);
+}
+
+#[test]
+fn a_try_that_fails_inside_a_try_fails_it() {
+    assert_eq!(judged("", "x: [[f32]]", "a = [\"s\"]\nb = [a, a]\nx = b"), ["LC3003"]);
+}
+
+#[test]
+fn chains_of_array_constants_cost_what_they_hold() {
+    // The work is one try for each array and each type, and not one for each path through the names.
+    let mut body = String::from("a0 = [0.5, 1.5]\n");
+    for level in 1..40 {
+        body.push_str(&format!("a{level} = [a{0}, a{0}]\n", level - 1));
+    }
+    assert_eq!(judged("", &format!("x: {}f32{}", "[".repeat(25), "]".repeat(25)), &format!("{body}x = a24")), NOTHING);
+}
+
+/// `count` outputs that all read `k`, each of a type given by its position.
+fn outputs_of_many_types(count: usize) -> (String, String) {
+    let mut outputs = Vec::new();
+    let mut lines = Vec::new();
+    for kind in ["f32", "f64", "c64", "c128"] {
+        for prefix in ["p", "n", "µ", "m", "", "k", "M", "G"] {
+            if outputs.len() < count {
+                let name = format!("x{}", outputs.len());
+                outputs.push(format!("{name}: {kind}[{prefix}V]"));
+                lines.push(format!("{name} = k"));
+            }
+        }
+    }
+    (outputs.join(", "), lines.join("\n"))
+}
+
+#[test]
+fn the_work_on_a_number_counts_its_digits_and_its_unit() {
+    let (outputs, lines) = outputs_of_many_types(32);
+    assert_eq!(judged("", &outputs, &format!("k = 1 V\n{lines}")), NOTHING, "a short one goes everywhere");
+    let digits = format!("{}1", "0".repeat(100_000));
+    let found = judged("", &outputs, &format!("k = {digits} V\n{lines}"));
+    assert!(!found.is_empty() && found.iter().all(|code| *code == "LC3003"), "{found:?}");
+    let terms = "*V/V".repeat(50_000);
+    let found = judged("", &outputs, &format!("k = 1 V{terms}\n{lines}"));
+    assert!(!found.is_empty() && found.iter().all(|code| *code == "LC3003"), "{found:?}");
+    let found = judged("", &outputs, &format!("k = 1 (V{terms})\n{lines}"));
+    assert!(!found.is_empty() && found.iter().all(|code| *code == "LC3003"), "{found:?}");
+}
+
+#[test]
+fn a_number_is_not_judged_again_for_the_same_type() {
+    let digits = format!("{}1", "0".repeat(100_000));
+    let outputs: Vec<String> = (0..50).map(|index| format!("x{index}: f32")).collect();
+    let lines: Vec<String> = (0..50).map(|index| format!("x{index} = k")).collect();
+    assert_eq!(judged("", &outputs.join(", "), &format!("k = {digits}\n{}", lines.join("\n"))), NOTHING);
+}
+
+#[test]
+fn a_very_long_constant_can_still_go_to_another_type() {
+    let elements = vec!["1 V"; 500_000].join(", ");
+    assert_eq!(judged("", "x: [f32[V]]", &format!("k = [{elements}]\nx = k")), NOTHING);
+}
+
+#[test]
+fn the_exponent_of_a_named_constant_is_read() {
+    let digits = format!("{}2", "0".repeat(100));
+    assert_eq!(judged("s: f64", "x: f64", &format!("k = {digits}\nx = core.pow(s, k)")), NOTHING);
+    assert_eq!(judged("s: f64", "x: f64", "k = 2.5\nx = core.pow(s, k)"), judged("s: f64", "x: f64", "x = core.pow(s, 2.5)"));
+    assert_eq!(judged("s: f64, e: i32", "x: f64", "x = core.pow(s, e)"), ["LC3016"], "a wire is not a constant");
+}
+
+#[test]
+fn trying_an_array_constant_changes_nothing_that_a_pass_reads() {
+    use labcraft_graph::{Decl, Operand, Rhs, StatementKind};
+    for lines in ["    x = k\n    y = k\n", "    y = k\n    x = k\n"] {
+        let text = format!("fn f() -> (x: [f32[mV]], y: [f64[kV]]) {{\n    k = [1 V, 200 mV]\n{lines}}}");
+        let checked = run(&[("f.lcf", &text)]);
+        assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+        let file = checked.files.first().unwrap();
+        assert_eq!(file.resolved.coercions().len(), 1, "only `200 mV` to the `V` of its own line");
+        let Decl::Function(function) = &file.file.decl else { panic!() };
+        let values = function.body.statements.iter().find_map(|statement| match &statement.kind {
+            StatementKind::Binding { value: Rhs::Operand(Operand::Array(_, values)), .. } => Some(values),
+            _ => None,
+        });
+        let first = values.and_then(|values| values.first()).unwrap();
+        let volts = Unit::from_name("V").unwrap();
+        let own = checked.types.get(file.resolved.ty(first.id()));
+        assert!(matches!(own, Ty::Number { kind: NumberKind::F64, unit } if *unit == volts), "{own:?}");
+    }
+}
+
+#[test]
+fn the_fix_of_a_named_integer_writes_its_unit_for_an_integer() {
+    let found = only("", "x: i32[V]", "k = 240\nx = k");
+    let edit = found.fixes.first().and_then(|fix| fix.edits.first()).unwrap();
+    assert_eq!(edit.text, "240 V");
+}
+
+#[test]
+fn a_field_of_a_named_constant_is_not_that_constant() {
+    assert_eq!(judged("", "x: f64", "k = 0.5\nx = k.foo"), ["LC2006"]);
+}
+
+#[test]
+fn a_wire_from_a_named_constant_starts_at_its_node() {
+    let text = program("", "x: string", "    k = 0.5\n    b = k\n    x = b");
+    let found = diagnostics(&[("f.lcf", &text)]);
+    let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
+    let wire = diagnostic.wires.first().unwrap();
+    assert_eq!((wire.value.as_deref(), wire.from.as_deref(), wire.to.as_deref()), (Some("b"), Some("k.value"), Some("fn.x")));
+}
+
+#[test]
+fn a_number_too_large_is_said_at_the_terminal_that_it_does_not_fit() {
+    let text = program("", "x: f32, y: f64, z: f32", "    k = 1e39\n    x = k\n    y = k\n    z = k");
+    let found = diagnostics(&[("f.lcf", &text)]);
+    let lines: Vec<u32> = found.iter().map(|diagnostic| diagnostic.span.map_or(0, |span| span.start.line)).collect();
+    assert_eq!(found.iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>(), ["LC3018", "LC3018"]);
+    assert_eq!(lines, [11, 13], "`k` is on line 10, and `y` can hold it");
+}
+
+#[test]
+fn the_fix_of_a_named_number_goes_on_its_line() {
+    let text = program("", "x: f64[V]", "    k = 240\n    x = k");
+    let found = diagnostics(&[("f.lcf", &text)]);
+    let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
+    let edit = diagnostic.fixes.first().and_then(|fix| fix.edits.first()).unwrap();
+    assert_eq!(edit.text, "240 V");
+    assert_eq!(edit.span.start.line, 10, "where the number is written");
+    // One to convert a wire keeps its name, on a line of its own.
+    let text = program("", "x: i32", "    k = 1.5\n    x = k");
+    let found = diagnostics(&[("f.lcf", &text)]);
+    let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
+    let fix = diagnostic.fixes.first().unwrap();
+    assert!(fix.edits.iter().any(|edit| edit.text.contains("core.round_to_i32(k)")), "{fix:?}");
+}
+
+#[test]
+fn a_chain_of_array_constants_never_goes_deep() {
+    // Each new name would go down the whole chain for what is unknown around it.
+    let mut body = String::from("a0 = [0.5, 1.5]\n");
+    for level in 1..100_000 {
+        body.push_str(&format!("a{level} = [a{}, 1.5]\n", level - 1));
+    }
+    body.push_str("b = [a99999, a99999]\nx = 1");
+    assert!(!judged("", "x: i32", &body).is_empty(), "an array and a number disagree, and the stack of a test is enough");
+}
+
+#[test]
+fn the_work_on_constants_has_a_limit() {
+    // Beyond it, a constant keeps the type of its own line: what it goes to says so, and nothing slows down.
+    let elements = vec!["1 V"; 20_000].join(", ");
+    let mut outputs = Vec::new();
+    let mut lines = Vec::new();
+    for kind in ["f32", "f64", "c64", "c128"] {
+        for prefix in ["p", "n", "µ", "m", "", "k", "M", "G"] {
+            let name = format!("x{}", outputs.len());
+            outputs.push(format!("{name}: [{kind}[{prefix}V]]"));
+            lines.push(format!("{name} = k"));
+        }
+    }
+    let body = format!("k = [{elements}]\n{}", lines.join("\n"));
+    let found = judged("", &outputs.join(", "), &body);
+    assert!(!found.is_empty() && found.len() < outputs.len() && found.iter().all(|code| *code == "LC3003"), "{found:?}");
+}
+
+#[test]
+fn a_new_name_for_a_wire_stays_a_wire() {
+    assert_eq!(judged("s: f64", "x: f32", "k = s\nx = k"), ["LC3003"], "a wire keeps its type");
+    assert_eq!(judged("s: f64", "x: [f32]", "k = [s, s]\nx = k"), ["LC3003"], "an array that holds one");
+    assert_eq!(judged("s: f64", "x: [f32]", "k = [s]\nx = k"), ["LC3003"], "an array of one");
+    assert_eq!(judged("", "x: f64, y: f32", "x = 0.5\nk = x\ny = k"), ["LC3003"], "an output is a terminal, not a named constant");
+}
+
+#[test]
+fn array_constants_built_on_each_other_are_not_worked_out_again() {
+    // Without the memory of what each one makes, each line would double the work.
+    let mut body = String::from("a0 = [0.5, 1.5]\n");
+    for level in 1..40 {
+        body.push_str(&format!("a{level} = [a{}, a{}]\n", level - 1, level - 1));
+    }
+    body.push_str("x = 1");
+    assert_eq!(judged("", "x: i32", &body), NOTHING);
 }
 
 #[test]

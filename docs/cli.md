@@ -89,7 +89,8 @@ the same error.
 **What `fmt` changes:** line endings and the end of the file, a byte order mark (section 2 of the
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
 the text; the items of `panel` and `layout`; layout entries that name no node (`LC5004`), apart from
-those that name an input or an output of the function, which stay for `check` (spec 11).
+those that name an input or an output of the function, or a line such as `k = step.low`, which a single file
+cannot tell from a constant: they stay for `check` (spec 11).
 
 **Layout entries outside a function.** An `extern` file has no node, so `fmt` removes all of its
 entries, even those that name a parameter (`LC5004`). In a type file it removes none: the section
@@ -302,6 +303,7 @@ the signatures:
 | `fn.power` | Input or output of the function: `fn` is reserved, so no node has that name |
 | `next.n`, `until`, `collect.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect` and a value of a `yield`, by position from 0 |
 | `p.x`, `r.0` | A field of a node that builds a struct or a `waveform`; a value of a node that builds a variant, by position from 0 |
+| `limit.value` | The output of a named constant (spec 5.1) |
 
 ### 4.4 What is stable
 
@@ -418,7 +420,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
 | `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument. Every mistake in what a default builds has this code, in place of `LC3015` or `LC3019`. A parameter of unknown type says nothing of its default. A signature that is faulty as a whole (a name defined twice, `LC2019`, `LC2105`, `LC2107`), or a generic function, says nothing of any default | 4, 10, R-21 | |
 | `LC3018` | error | Literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`), a literal too large for its type by its value in the unit it goes to (`1e39` for an `f32` or a `c64`, `1e36 V` for an `f32[mV]`), in a default value too | 3.4, 6.1 | |
-| `LC3019` | error | Type variable of a generic primitive that cannot be determined, a generic primitive as a value where no function type is expected, a `[]` whose type nothing says, the wrong number of type arguments, or a `waveform` that does not hold numbers (`waveform<string>`, `samples` of `[[f64]]`) | 3.2, 3.5, 4 | |
+| `LC3019` | error | Type variable of a generic primitive that cannot be determined, a generic primitive as a value where no function type is expected, a `[]` whose type nothing says (on the line of a named constant, nothing does), the wrong number of type arguments, or a `waveform` that does not hold numbers (`waveform<string>`, `samples` of `[[f64]]`) | 3.2, 3.5, 4 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
 | `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
 | `LC3022` | error | The same pattern twice, in one branch or in two: `_`, a variant, or in a `handle` `ok`, a code or a category. On the second one, with the first in `related` | 6.1, 7.3 | |
@@ -447,7 +449,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC5001` | error | Panel element declared twice | 10 |
 | `LC5002` | error | `control` with the name of an output only, or `indicator` with the name of an input only | 10 |
 | `LC5003` | warning | Panel kind that M0 does not know (section 10); the element works without a widget | 10 |
-| `LC5004` | warning | Layout entry that names no node; `fmt` removes it, unless it names an input or an output of the function | 11 |
+| `LC5004` | warning | Layout entry that names no node; `fmt` removes it, unless it names an input or an output of the function, or a line that a single file cannot tell from a constant | 11 |
 | `LC5005` | error | Coordinate that is not an integer literal in the range (`5.0`, `1e3`, `2000000`) | 11 |
 | `LC5006` | warning | Layout entry that is ambiguous (a name defined in several bodies, or a `wire` that does not say which terminals), or a `wire` between terminals that are not connected | 11 |
 | `LC5007` | error | Two layout entries for the same node or wire | 11 |
