@@ -404,20 +404,20 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
 | `LC3008` | error | Function reference of the wrong signature | 4 | S2 |
-| `LC3009` | error | Pattern of the wrong type, such as a variant of another enumeration, or that binds another number of values than its variant holds | 6.1 | S2 |
-| `LC3010` | error | `match` without a branch for every value: a variant, `true` or `false` missing, or no `_` on an integer or a string | R-8 | |
-| `LC3011` | error | Overlapping literal or range patterns, in one branch or in two | R-18 | |
+| `LC3009` | error | Pattern that cannot apply: of the wrong type, such as a variant of another enumeration, that binds another number of values than its variant holds, or a range that holds no value | 6.1 | S2 |
+| `LC3010` | error | `match` without a branch for every value: a variant, `true` or `false` missing, or no `_` on an integer or a string. It names at most five variants. Silent on a boolean or an enumeration when one of the patterns has a diagnostic of its own, a repeated pattern included, since what it was meant to cover is unknown | R-8 | |
+| `LC3011` | error | Overlapping literal or range patterns, in one branch or in two: on the pattern that starts inside another, with that one in `related` | R-18 | |
 | `LC3012` | error | `handle` without `_` | R-10 | |
-| `LC3013` | error | Selector of the wrong type in a `match` or `handle` | 6.1, 7.3 | |
+| `LC3013` | error | Selector of the wrong type in a `match` or `handle`. With a selector of unknown type, its arms get no `LC3010`, `LC3011`, `LC4106`, nor `LC3022` on a variant; a repeated `_` and a `handle` without `_` are still reported | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
 | `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
 | `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
 | `LC3017` | error | Default value of the wrong type, for a parameter or a panel element | 4, 10 | |
-| `LC3018` | error | Integer literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32` | 3.4 | |
+| `LC3018` | error | Integer literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`) | 3.4, 6.1 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, a `[]` whose type nothing says, or the wrong number of type arguments | 3.5 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
 | `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
-| `LC3022` | error | The same pattern twice, in one branch or in two: `_`, a variant or a `handle` category | 6.1, 7.3 | |
+| `LC3022` | error | The same pattern twice, in one branch or in two: `_`, a variant, or in a `handle` `ok`, a code or a category. On the second one, with the first in `related` | 6.1, 7.3 | |
 
 ### Dataflow and structures: `LC40`, `LC41`
 
@@ -434,6 +434,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC4103` | warning | Panel element written by two unordered nodes | 8.1 |
 | `LC4104` | warning | `for parallel` body that uses a resource | 8.1 |
 | `LC4105` | warning | Two reads of the same `button`: only one sees a press | 10 |
+| `LC4106` | warning | `_` that can catch nothing, on a boolean or an enumeration whose values all have their pattern; the fix removes it from a list, and only says to remove its arm when it stands alone, since that arm can decide the type of the others (R-7). Silent when one of the patterns has a diagnostic of its own, a repeated pattern included | R-8 |
 
 ### Panel, layout, icon: `LC50`
 
