@@ -75,11 +75,18 @@ impl<'a> Typer<'_, '_, '_, 'a> {
             return false;
         }
         let (inputs, results): (Vec<TyId>, Vec<TyId>) = (params.iter().map(|param| param.ty).collect(), outputs.clone());
+        let first = inputs.first().copied();
         let mut variables: [Option<TyId>; 2] = [None; 2];
         for (param, input) in primitive.params.iter().zip(inputs) {
+            // A variadic parameter counts as an array of what it takes (section 4).
+            let input = match self.pass.table.get(input) {
+                Ty::Array { element, dimensions: 1 } if param.variadic => *element,
+                _ if param.variadic => return false,
+                _ => input,
+            };
             let fits = match param.ty {
                 PrimitiveTy::Var(index) => self.bind_variable(primitive, &mut variables, index, input),
-                PrimitiveTy::ArrayOf(index) => match self.element_of(input) {
+                PrimitiveTy::ArrayOf(index) | PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index) => match self.element_in(param.ty, input) {
                     Some(element) => self.bind_variable(primitive, &mut variables, index, element),
                     None => false,
                 },
@@ -90,7 +97,9 @@ impl<'a> Typer<'_, '_, '_, 'a> {
             }
         }
         primitive.results.iter().zip(results).all(|(result, expected)| {
-            let output = self.reference_output(primitive, *result, &variables);
+            // What is rectangular stays so, as for a node.
+            let rectangle = first.filter(|first| *result == PrimitiveOutput::Slice && self.is_array_of_rows(*first));
+            let output = rectangle.or_else(|| self.reference_output(primitive, *result, &variables));
             output.is_some_and(|output| self.pass.table.matches(output, expected))
         })
     }
@@ -127,7 +136,10 @@ impl<'a> Typer<'_, '_, '_, 'a> {
                     _ => Some(ty),
                 }
             }
-            PrimitiveOutput::Is(PrimitiveTy::ArrayOf(index)) => Some(self.plain(Ty::Array { element: variable(index)?, dimensions: 1 })),
+            PrimitiveOutput::Is(ty @ (PrimitiveTy::ArrayOf(index) | PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index))) => {
+                Some(self.array_for(ty, variable(index)?))
+            }
+            PrimitiveOutput::Slice => Some(self.array_for(PrimitiveTy::ArrayOf(0), variable(0)?)),
             PrimitiveOutput::Is(ty) => self.concrete(ty),
             PrimitiveOutput::Product | PrimitiveOutput::Quotient => {
                 let ((a_kind, a_unit), (b_kind, b_unit)) = (self.number_of(variable(0)?)?, self.number_of(variable(1)?)?);

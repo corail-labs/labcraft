@@ -85,9 +85,10 @@ queue<T>, ref<T>      // explicit references (D-04), never implicit
 
 `[f64; 2]` is a 2-dimensional array: the number after `;` counts dimensions, not elements (unlike
 Rust). The size of an array is a property of the value, not of its type. An `[f64; 2]` is rectangular: its
-rows have the same length. An `[[f64]]` is an array of `[f64]`, whose rows are free. They are two types, and
-neither converts to the other on a wire (Q-27). A literal of rows (`[row, row]`) becomes an `[f64; 2]` where
-one is expected.
+rows have the same length, and an `[f64; 3]` has one length at each of its levels. An `[[f64]]` is an array of `[f64]`, whose rows are free. They are two types, and
+neither converts to the other on a wire: `array.from_rows` and `array.to_rows` do it (appendix A). Only a constant
+becomes an `[f64; 2]` where one is expected, and its rows have one length, or it is rejected. An array that holds a
+wire keeps the type of its wires (3.4), so `[row, row]` needs `array.from_rows`, whose `err` says when rows differ.
 
 A `waveform<T>` has three fields, `t0: timestamp`, `dt: duration` and `samples: [T]`, which read like those of
 a struct (`w.samples`). It is built like one, with all three: `waveform { t0: t, dt: 1 ms, samples: s }`. `T`
@@ -199,8 +200,8 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   branches (R-7): `[1 V, 200 mV]` is an `[f64[V]]`.
 - **An array that holds a wire has the type of its wires**, at any depth, wherever it goes: two `f64[V]` wires
   for an `[f64[mV]]` are rejected, and so is an `i32` wire in `[n]` for an `[f64]`, on the wire that leaves the array.
-  So a type never reaches a wire from where its array goes. Only a literal of rows takes the array of two dimensions
-  that is expected (3.2). An array of constants alone takes the type expected.
+  So a type never reaches a wire from where its array goes, and an array of wires never becomes an `[f64; 2]` (3.2).
+  An array of constants alone takes the type expected.
 - **Literals**: a literal takes the number type expected where it goes: an input, an output, a carry, a field, a
   value of a variant, a default value, an element of an array, a value of an arm (R-7), a `collect` whose loop gives
   its array to an output or a carry (6.2). A named constant (5.1) does the same at each terminal it reaches, and an
@@ -242,6 +243,17 @@ whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the r
   reject them.
 - **A type argument or an array fixes the variable**, and an input is then judged against it like any
   other: `array.push(ints, x_f64)` with an `[i32]` is rejected, since an `f64` only narrows to an `i32`.
+- **A node of constants takes its type from what its line binds**: with no wire to give a variable its type, an
+  output or a carry that has a type gives it, as for a constant (3.4). `x, e = array.repeat(0, 100)` with an output
+  `x: [f64]` is an `[f64]`, and `y = core.select(c, 0.5, 1.5)` with an output `y: f32` an `f32`. What does not fit
+  changes nothing, and the wire that leaves the node says so. A name with no type gives nothing: in
+  `r, e = array.repeat(0, 100)`, `r` is an `[i32]`, whatever it goes to. Neither does an output whose type is computed
+  (`core.mul`, `core.div`). In a variable of `Number`, a constant keeps its unit when that unit or the one expected is a
+  scale with an offset, since adding in another scale gives another value: `core.add(20 °C, 10 °C)` for an `f64[K]` adds in
+  °C, then converts, `core.add(20 K, 10 K)` for an `f64[°C]` adds in K, and so does `array.sum` on an array of them.
+- **A wire comes before a constant**, whatever their order: `array.concat([1 mV], volts)` and
+  `array.concat(volts, [1 mV])` are both arrays of `f64[V]`. Between an array and a value, the array decides, even a
+  constant one (`array.push([1 mV], v)` is an `[f64[mV]]`).
 - A variable that stands for a unit alone (`f64[U]`) is open question Q-12, which also covers how
   to tell such a variable from a type variable.
 
@@ -592,11 +604,43 @@ of the template becomes a named input of the node.
 line = string.format("U = {u:.3 mV}, I = {i:.2}", u: voltage, i: current)
 ```
 
-- The template is a literal, checked at edit time: each field has exactly one named argument, and
-  each named argument has its field (R-12). Otherwise, an error with a suggestion.
-- `{name}`: default format of the type. `{name:.3}`: three decimals. A value with a unit is
-  displayed with its unit (`1.234 V`); `{name:.3 mV}` converts it first, dimension checked. `{{`
-  and `}}` write braces. The rest of the mini-language is to be specified (Q-18).
+- The template is written on the node: it has no terminal, and only its fields do. In a file it is a literal, so a
+  wire or a named constant there is an error. It is checked at edit time: each field has exactly one named argument,
+  and each named argument has its field (R-12). Otherwise, an error with a suggestion. A field written twice,
+  `{a} and {a:.3}`, is one terminal, and each place keeps its format.
+- A field is `{name}` or `{name:format}`, and `{{` and `}}` write braces. Its name is a name of the language (R-20)
+  other than `template` and `after`, which the node uses: `{}` and `{0}` have no terminal to name.
+- The format is `[fill align][+][#][0][width][.decimals][letter][ unit]`, each part optional:
+
+  | Part | Meaning |
+  |---|---|
+  | `fill align` | `<`, `^` or `>`, after one optional character: a space, or one that shows by itself, other than a brace (`{s:*^12}`) |
+  | `+` | Always a sign (`{x:+.2}`) |
+  | `#` | With `x`, `X`, `o` or `b`, the prefix (`{r:#06x}` is `0x00ff`) |
+  | `0` | Pads with zeros (`CH{n:02}` is `CH01`); not with an alignment |
+  | `width` | Up to 1000 |
+  | `.decimals` | Up to 100 |
+  | `letter` | `d` integer; `x`, `X`, `o`, `b` hexadecimal, octal, binary; `f` decimals; `e`, `E` scientific (`1.234e+00`); `g` general |
+  | ` unit` | The value is converted to this unit first, dimension checked (`{u:.3 mV}`), and the space may go when nothing comes before it (`{u:mV}`) |
+
+- This is the form of C++20, with a name and a unit, so habits from `printf` carry over. **One difference:** `.3`
+  with no letter counts decimals (`{x:.3}` is `1.234`, as in Rust), where C++20 and Python count significant digits;
+  `.3g` counts those. A letter wins over a unit of the same spelling: `{m:g}` is the general format, `{m: g}` grams.
+  **A second difference:** a letter before `^` starts a unit, so `{a:m^2}` is in square metres, and a value cannot be
+  centred with a letter (`{s:x^12}` is an unknown unit); `{s:*^12}` centres.
+  Refused, since they say nothing: `0` with an alignment, `#` without `x`, `X`, `o` or `b`, `+`, decimals or a unit with
+  `x`, `X`, `o` or `b`, decimals or a unit with `d`. So `%.3d` of `printf` has no equivalent. A width from a wire (`{x:w$}`) is refused too.
+- A value with a unit is displayed with its unit (`1.234 V`). A field shows any value that has a text: numbers, `string`,
+  `bool`, `bytes` (in hexadecimal), `duration`, `timestamp`, enumerations, `error`, and arrays, structs and waveforms of those. A format applies to each value
+  inside: `{values:.3 mV}` shows each element in mV, and for a waveform it applies to `samples`. An opaque type, a
+  function reference, a `queue` or a `ref` have no text, even inside a struct, and are rejected on the wire. So is a format
+  that does not suit the value: decimals, `+`, `0` or a letter on what holds no number, `d`, `x`, `X`, `o` or `b` on what is
+  not an integer without a unit, and a unit that does not convert each number inside. `{n:.3}` on an integer is `5.000`. A
+  constant on a field keeps its own type (`a: 255` is an `i32`, so `{a:x}` is accepted). The text of each type is fixed with
+  `run`, in M0b.
+- `string.format` cannot fail and has no `err` input or output. A field may be named `err`, as `"failed: {err}"`: it is
+  a field like another, so the node runs and shows the error, which is when that text is useful (7.2). It does not pass the
+  error on: that wire goes on separately.
 - Changing the template changes the terminals of the node; the IDE keeps wires by name.
 - In v0, this mechanism is reserved for standard library functions that declare it
   (`string.format`, later the inverse `string.scan`). A user function cannot declare it.
@@ -747,7 +791,7 @@ fields as a path in v0: `e.code` is rejected, and `handle` is how an error is to
 
 - A node that can fail has an `err` input (default `none`) and an `err` output.
 - **A native function** (a standard-library primitive, or an `extern` function, 4.1) whose `err`
-  input holds an error is **skipped**: the node does not run, its outputs take their default value
+  input holds an error, which excludes a field named `err` of `string.format` (5.4), is **skipped**: the node does not run, its outputs take their default value
   and the error is passed on unchanged.
 - **An output that has the name of an input passes it through** when the node is skipped or fails,
   instead of taking its default value. This is what lets a session pass through (5.3): after a
@@ -929,7 +973,7 @@ to it.
 |---|---|---|
 | `core` | arithmetic, comparisons, logic, `select`, conversions, units, `call` (function references, section 4) | M0 |
 | `string` | `concat` (variadic), `join`, `format` (5.4), `split`, number parsing (`to_f64`, `to_i32`) | M0 |
-| `array` | size, index, subarray, construction | M0 |
+| `array` | size, index (`len`, `get`, `set`), subarray (`slice`), construction (`push`, `concat`, `repeat`), rows (`from_rows`, `to_rows`), `sum` | M0 |
 | `errors` | `merge`, error creation (`make`, `raise_if`) | M0 |
 | `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`), shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17). Real instruments in M4 | M0 |
 | `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`). Written in LabCraft over `visa`, shipped in `libs/scpi` | M0 |
@@ -1554,7 +1598,7 @@ What the grammar alone does not say:
 | R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). Without a variadic parameter, a positional argument can wire a parameter with a default value. A variadic parameter takes positional arguments only. |
-| R-12 | **The `string.format` template is a literal**; its fields and the named arguments match exactly (5.4). |
+| R-12 | **The `string.format` template is a literal**, written on the node; its fields and the named arguments match exactly, and a field is `{name}` or `{name:format}` (5.4). |
 | R-13 | **An external function has no body and has an output `err: error`** (4.1), with that type written as such: an alias of `error` does not do. |
 | R-14 | **An icon is valid**: grid of 32 in v0, `path` strings conforming to the SVG path syntax, `accent` token known to the theme; a shape that leaves the grid gives a warning (11.1). |
 | R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`), never a literal, and only once in a call. It counts as a named argument, so a positional one cannot follow it. A variant construction has it too. No parameter is named `after`, nor an argument of a function type. |
@@ -1586,7 +1630,7 @@ What the grammar alone does not say:
 | Q-15 | Typed configuration loading | `config.load(path) -> (steps: [Step], err: error)`: file (TOML) to declared type, precise field errors |
 | Q-16 | Default values that flow like data | Writing rule in v0 (7.2: a verdict depends on `err`). Seen with the proof of concept (`docs/rfc/check_power.lcf`, run against `instruments/psu-timeout.toml`): when the current readback of a power check times out, the verdict is `Error`, as it should be, but the `power` output is `0 W`, a value that looks measured. Options: (a) keep default values and the writing rule; (b) propagate the absence of a value (a node that consumes the output of a skipped node is skipped in turn, and an output reads "no value"); (c) an optional type (`f64[W]?`) for outputs that may be missing. Topic for an RFC |
 | Q-17 | Spread an array into a variadic parameter? | No in v0: call the function that takes an array (`string.join`). Spread syntax possible later |
-| Q-18 | Mini-language of `string.format` fields | Close to Rust (precision, width, hexadecimal), plus the display unit; inverse reading `string.scan` |
+| Q-18 | Mini-language of `string.format` fields | Settled: the form of C++20, with a name and a display unit (5.4). Left open: the inverse reading `string.scan` |
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
 | Q-20 | Setting a panel element from the CLI or MCP | For example `--set stop_button=true@5s` in deterministic mode, and the equivalent MCP command |
 | Q-21 | Default values not covered by 7.2 | `timestamp` (the origin of the clock?), function references (a reference that fails when called?), `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?) |
@@ -1595,7 +1639,7 @@ What the grammar alone does not say:
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
 | Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range: a fault (8.2), an `error` value on `err`, or a default value? |
 | Q-26 | Name of a function and name of its file | Nothing ties them today: `math.lcf` can hold `fn scale`, and a file copied to another folder and renamed gives `LC2002`, unknown function, although the file is there. **Option A:** `fn scale` stays in the file and `check` requires the file `scale.lcf`, with one error on a renamed copy; an excerpt still says its name and the format does not change. **Option B:** no name in the file, the name of the file decides; a renamed copy works at once, but the grammar changes and an excerpt no longer says its name. Either way, names are limited by what file systems allow (`Add` and `add`, `con`, `nul`). To settle before the tag of M0a. |
-| Q-27 | From `[[f64]]` to `[f64; 2]` | `collect` and `array.push` give an `[[f64]]`, so a loop cannot build a rectangular array today; it comes from an input or from a literal of rows (`[row, row]`). To settle: a primitive that converts and fails on rows of unequal length (its name, its `error` output), and what a literal of rows of unequal length does at run time, since their lengths are not known to `check`. |
+| Q-27 | From `[[f64]]` to `[f64; 2]` | Settled: `array.from_rows` and `array.to_rows` (appendix A). A constant takes the type expected if its rows have one length; an array of wires never does, so nothing fails at run time without an `err` (3.1). |
 
 ## Appendix A. Library signatures (v0)
 
@@ -1650,7 +1694,16 @@ fn core.call(function: fn(…) -> (…), …) -> (…)
 ```text
 fn array.len<T>(array: [T]) -> (length: i32)
 fn array.get<T>(array: [T], index: i32, err: error = none) -> (item: T, err: error)
+fn array.set<T>(array: [T], index: i32, item: T,
+                err: error = none) -> (array: [T], err: error)   // not in the PoC
 fn array.push<T>(array: [T], item: T) -> (array: [T])
+fn array.concat<T>(parts: [T]...) -> (array: [T])          // 5.4; not in the PoC
+fn array.repeat<T>(item: T, count: i32,
+                   err: error = none) -> (array: [T], err: error)   // not in the PoC
+fn array.slice<T>(array: [T], start: i32 = 0, length: i32 = …,
+                  err: error = none) -> (array: [T], err: error)    // not in the PoC
+fn array.from_rows<T>(rows: [[T]], err: error = none) -> (array: [T; 2], err: error)   // not in the PoC
+fn array.to_rows<T>(array: [T; 2]) -> (rows: [[T]])        // not in the PoC
 fn array.sum<N: Number>(values: [N]) -> (sum: N)           // not in the PoC
 
 fn string.concat(parts: string...) -> (text: string)       // 5.4; not in the PoC
@@ -1675,8 +1728,16 @@ fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the ele
 fn ui.set<T>(element: kind element, value: T) -> (value: T)   // section 10; not in the PoC
 ```
 
-`array.get` fails with the category `array.index_out_of_range`, `string.to_f64` and
-`string.to_i32` with `string.parse`. Both ignore the spaces around the text: `to_f64` reads an
+`array.get`, `array.set` and `array.slice` fail with the category `array.index_out_of_range`. An error of
+`array.set` gives the array unchanged. `array.slice` goes from `start` for `length` elements: with no wire, `start`
+is 0 and `length` reaches the end, and a negative value or what goes past the end is an error, which gives an empty array. It takes
+whole rows, so that a slice of an `[f64; 2]` stays an `[f64; 2]`. `array.repeat` gives `count` copies, none at 0, and
+fails on a negative `count` with `array.negative_size`, giving an empty array. `array.from_rows` fails with `array.unequal_rows` on rows of
+different lengths, giving an empty array, and its message says which row, with both lengths; no row at all gives an
+empty array. `array.concat`, `array.push` and `array.set` on rows give an `[[f64]]`, since nothing keeps their
+lengths equal, and nothing converts between the arrays of `array.concat` (3.4). With no input, `array.concat` needs its type from
+what its line binds (3.5) or a type argument. `string.to_f64` and
+`string.to_i32` fail with `string.parse`. Both ignore the spaces around the text: `to_f64` reads an
 optional sign, digits with decimals, an exponent, or `nan` and `inf` in any case; `to_i32` reads an
 optional sign and digits, in the range of `i32`. `errors.make` produces an error of the given category and
 code; `errors.raise_if` produces an error of the given category when `condition` is true, `none`

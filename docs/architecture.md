@@ -215,7 +215,7 @@ Passes, each one over all the files, so that a bad file does not hide the others
 3. **Bodies:** names resolved in scopes (inputs, carries, patterns, lines), `use`, calls bound to
    signatures, labels, `after:`, the bounds of each number of a body or a default value (those of a `panel` come with
    pass 6). Only what can be told without a type: a field of a value and
-   the values of a variant wait for pass 4, and so do the fields of a `string.format` template (`LC2106`). Only for the
+   the values of a variant wait for pass 4, and so does a `string.format` template, whose fields ask something of their types (`LC2106`). Only for the
    libraries being checked: of a dependency, the others read the signatures.
 4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades. That order is one graph for
    the whole function, walked with a queue, since a chain of lines is as long as the file. A structure is two steps, one
