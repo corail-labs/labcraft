@@ -43,7 +43,7 @@ pub(super) fn last_of_range(low: i128, high: i128, inclusive: bool) -> Option<i1
 }
 
 /// The text of a string, as it runs: the lexer let through only the escapes that the grammar has (14.1).
-fn read_escapes(text: &str) -> Cow<'_, str> {
+pub(super) fn read_escapes(text: &str) -> Cow<'_, str> {
     if !text.contains('\\') {
         return Cow::Borrowed(text);
     }

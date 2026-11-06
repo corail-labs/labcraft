@@ -122,6 +122,8 @@ struct TypeFacts {
     references: HashMap<(u32, Name), TyId>,
     /// The names of a function type, by the id of that type: a call must not walk them each time, in any file of a run.
     reference_names: HashMap<TyId, Rc<HashMap<Name, u32>>>,
+    /// What a field of a template can make of a type, by the id of that type: a struct can have a million fields, and be shown a million times.
+    shown: HashMap<TyId, types::Shown>,
 }
 
 /// What a value is, and in which body.

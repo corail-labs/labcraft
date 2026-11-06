@@ -289,7 +289,9 @@ construction, element of an array included, `LC3017` in a default value, whateve
 `LC3003`, and its fix still names the conversion. A default has no fix that adds a node, since it reads nothing of the
 diagram; its terminal is that of the parameter, `fn.gain`. A generic primitive that does not match what it goes to has
 no type to compare: `LC3008`, except in a construction or a default, which keep their code. A type argument or an array makes a variable fixed, and an input against
-it is an input like another: `LC3001` where two wires that meet would give `LC3002`.
+it is an input like another: `LC3001` where two wires that meet would give `LC3002`. An array of wires, or a constant
+whose rows differ, gets the code of where it goes when an `[f64; 2]` is expected, and the fix names `array.from_rows` or says
+to give the rows one length. The wire on a `string.format` field gets `LC3001` for a type or a format that it cannot show.
 
 ### 4.3 Terminals
 
@@ -370,7 +372,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2005` | error | Library used without `use`, once per library in a file; the fix adds it. In a call any unknown prefix counts as a library, and elsewhere only a primitive or a library being checked | 4 |
 | `LC2006` | error | Unknown field | 3.2 |
 | `LC2007` | error | Unknown variant, also a pattern written without its type or with an unknown one | 3.2 |
-| `LC2008` | error | Unknown unit | 3.3 |
+| `LC2008` | error | Unknown unit, in a `string.format` template too, where a unit with an invisible character counts as unknown | 3.3 |
 | `LC2009` | error | Unknown named argument, a name given to a variadic parameter, or to a value of a variant | 4, 5.4 |
 | `LC2010` | error | Unknown panel element in `ui.get` or `ui.set` | 10, R-1 |
 | `LC2011` | error | Unknown label in `after:` | R-15 |
@@ -395,7 +397,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2103` | error | Number of targets different from the number of outputs. A loop that gives nothing takes one `_` | 5.1, 6.2 |
 | `LC2104` | error | Positional argument after a named one, `after:` included | 4 |
 | `LC2105` | error | Invalid `after:` (a literal, or two in a call), or a parameter named `after` | R-15 |
-| `LC2106` | error | `string.format`: template not a literal, or fields and arguments that differ | R-12 |
+| `LC2106` | error | `string.format`: template not a literal, a field or a format not written as 5.4 says, a value without a name, or fields and arguments that differ (one diagnostic per node, with up to 5 names, and none when a field is malformed) | R-12 |
 | `LC2107` | error | Variadic parameter misplaced, or more than one | R-11 |
 
 ### Types and units: `LC30`
@@ -406,7 +408,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3002` | error | Incompatible dimensions in an operation | 3.3 | S2 |
 | `LC3003` | error | Wrong type or dimension on a function output | 3.3 | S2 |
 | `LC3004` | error | Implicit narrowing on an input, or two number types with no type that both widen to; the fix names the conversion when there is one | 3.4 | S2 |
-| `LC3005` | error | Unit argument of another dimension | 3.3 | S2 |
+| `LC3005` | error | Unit argument of another dimension, or the unit of a `string.format` field that does not convert each number of its value | 3.3 | S2 |
 | `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
 | `LC3008` | error | Function reference of the wrong signature, or a primitive that has no function type: one that takes a unit, a category or an element, `core.call`, `string.format` | 4 | S2 |

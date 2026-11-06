@@ -158,6 +158,25 @@ fn is_name_char(c: char) -> bool {
     is_letter(c) || c.is_ascii_digit() || c == '_' || is_mark(c)
 }
 
+/// Whether this text is one name of the language, as the lexer would read it: not a reserved word (14.1, R-20).
+pub fn is_name(text: &str) -> bool {
+    let text = normalize(text);
+    let mut chars = text.chars();
+    chars.next().is_some_and(is_letter) && chars.all(is_name_char) && Keyword::from_text(&text).is_none()
+}
+
+/// Whether this character shows nothing: a control, or what spec 14.1 keeps out of names.
+pub fn is_invisible(c: char) -> bool {
+    c.is_control() || is_default_ignorable(c)
+}
+
+/// Whether this character can pad a value: a space, or what shows by itself, so no mark, separator, control or private use.
+pub fn is_fill(c: char) -> bool {
+    c == ' '
+        || (!is_default_ignorable(c)
+            && !matches!(c.general_category_group(), GeneralCategoryGroup::Mark | GeneralCategoryGroup::Separator | GeneralCategoryGroup::Other))
+}
+
 /// A character as a message can safely show it. Beyond ASCII it is a number: an invisible character,
 /// whose category can even be a letter (U+3164), or a control of the reading direction, would make the
 /// message itself lie.

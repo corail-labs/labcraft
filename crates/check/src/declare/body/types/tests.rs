@@ -287,7 +287,8 @@ fn two_dimensions_are_not_an_array_of_arrays() {
     assert_eq!(judged(inputs, "r: [f64; 2]", "r = for x in m {\ncollect x\n}"), ["LC3003"]);
     assert_eq!(judged(inputs, "r: [f64; 2]", "r = rows"), ["LC3003"]);
     assert_eq!(judged(inputs, "r: [[f64]]", "r = m"), ["LC3003"]);
-    assert_eq!(judged(inputs, "r: [f64; 2]", "r = [row, row]"), NOTHING);
+    assert_eq!(judged(inputs, "r: [f64; 2]", "r = [row, row]"), ["LC3003"], "an array of wires has the type of its wires (3.1)");
+    assert_eq!(judged(inputs, "r: [[f64]]", "r = [row, row]"), NOTHING);
     assert_eq!(judged(inputs, "r: [[f64]]", "r = array.push(m, row)"), NOTHING);
 }
 
@@ -318,7 +319,8 @@ fn an_arm_keeps_the_type_of_its_wire_and_a_literal_takes_the_type_of_the_target(
     assert_eq!(judged("c: bool, d: f64[V]", "x: [f64[mV]]", &arms("[d, d]", "[d, d]")), ["LC3003"], "nothing converts in an array");
     assert_eq!(judged("c: bool, y: [f64]", "x: [f32]", &arms("[1.5]", "y")), ["LC3006"], "the literal took `[f32]`, and the wire keeps `[f64]`");
     assert_eq!(judged("c: bool, y: [f64]", "x: [f32]", &arms("y", "y")), ["LC3003"]);
-    assert_eq!(judged("c: bool, row: [f64]", "x: [f64; 2]", &arms("[row, row]", "[row]")), NOTHING, "a literal of rows");
+    assert_eq!(judged("c: bool, row: [f64]", "x: [f64; 2]", &arms("[row, row]", "[row]")), ["LC3003"], "wires, as anywhere (3.1)");
+    assert_eq!(judged("c: bool", "x: [f64; 2]", &arms("[[0.5, 1.5]]", "[[2.5, 3.5]]")), NOTHING, "constants take it");
 }
 
 #[test]
@@ -326,7 +328,7 @@ fn a_literal_of_rows_meets_an_array_of_two_dimensions() {
     let inputs = "c: bool, m: [f64; 2], r: [f64]";
     assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, m, [[1.0]])"), NOTHING);
     assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, m, [[1]])"), NOTHING);
-    assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, m, [r])"), NOTHING);
+    assert_eq!(judged(inputs, "x: [f64; 2]", "x = core.select(c, m, [r])"), ["LC3001"], "a wire keeps its type (3.1)");
     assert_eq!(judged(inputs, "x: bool", "x = core.eq(m, [[1.0]])"), NOTHING);
 }
 
@@ -818,8 +820,9 @@ fn a_duration_counts_as_seconds_wherever_it_comes_from() {
 #[test]
 fn rows_take_the_type_expected_and_a_wire_keeps_its_own() {
     let two = [("two.lcf", "fn two(a: [f64; 2]) -> (r: i32) {\n    r = 1\n}")];
-    assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row, row])"), NOTHING);
-    assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row])"), NOTHING);
+    assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row, row])"), ["LC3001"]);
+    assert_eq!(judged_with(&two, "row: [f64]", "x: i32", "x = two([row])"), ["LC3001"]);
+    assert_eq!(judged_with(&two, "", "x: i32", "x = two([[1.5, 2.5], [3.5, 4.5]])"), NOTHING);
     let ratio = [("ratio.lcf", "fn ratio(a: [f64[mV/V]]) -> (r: i32) {\n    r = 1\n}")];
     assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a, a])"), ["LC3001"]);
     assert_eq!(judged_with(&ratio, "a: f64", "x: i32", "x = ratio([a])"), ["LC3001"]);
@@ -1113,4 +1116,6 @@ fn a_long_list_of_patterns_is_judged() {
     assert_eq!(matching("i32", &arms), NOTHING);
 }
 
+mod arrays;
 mod constructions;
+mod fields;

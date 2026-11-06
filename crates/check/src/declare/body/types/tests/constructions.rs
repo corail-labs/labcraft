@@ -354,9 +354,9 @@ fn an_array_that_holds_a_wire_has_the_type_of_its_wires() {
     assert_eq!(judged(inputs, "x: [f32]", "x = [0.5, 1.5]"), NOTHING, "only constants");
     assert_eq!(judged(inputs, "x: [f32]", "x = [s, 0.5]"), NOTHING, "the constant takes the type of the wire");
     assert_eq!(judged(inputs, "x: [f32]", "x = [0.5, s]"), ["LC3003"], "the first element decides");
-    assert_eq!(judged(inputs, "x: [f64; 2]", "x = [row, row]"), NOTHING, "rows");
-    assert_eq!(judged(inputs, "x: [f64; 2]", "x = [row]"), NOTHING, "a row");
-    assert_eq!(judged(inputs, "x: bool", "x = core.eq(m, [row])"), NOTHING);
+    assert_eq!(judged(inputs, "x: [f64; 2]", "x = [row, row]"), ["LC3003"], "rows");
+    assert_eq!(judged(inputs, "x: [f64; 2]", "x = [row]"), ["LC3003"], "a row");
+    assert_eq!(judged(inputs, "x: bool", "x = core.eq(m, [row])"), ["LC3001"]);
     assert_eq!(all(inputs, "l: List", "l = List { items: [d, d] }"), ["LC3015"], "a field");
     assert_eq!(all(inputs, "x: [f64]", "y = [n]\nx = y"), ["LC3003"], "a name changes nothing");
     assert_eq!(judged_with(&[("h.lcf", "fn h(a: [f64]) -> () {}")], "n: i32", "", "h([n])"), ["LC3001"], "an input");

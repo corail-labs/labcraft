@@ -27,7 +27,7 @@ mod write;
 
 pub use canonicalize::{Formatted, canonicalize, format};
 pub use decode::decode;
-pub use lexer::{Keyword, Lexer, Token, TokenKind};
+pub use lexer::{Keyword, Lexer, Token, TokenKind, is_fill, is_invisible, is_name};
 pub use order::{Unorderable, canonical_order};
 pub use read::{Read, STACK_SIZE, read};
 pub use write::{TooLarge, write, write_line};

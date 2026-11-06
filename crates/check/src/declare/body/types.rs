@@ -28,8 +28,11 @@ use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 mod construction;
 mod coverage;
 mod reference;
+mod template;
 #[cfg(test)]
 mod tests;
+
+pub(super) use template::Shown;
 
 const NO_STEP: u32 = u32::MAX;
 const NO_RANK: u8 = u8::MAX;
@@ -398,6 +401,13 @@ struct Typer<'p, 'c, 'w, 'a> {
     /// By id, whether an array holds a wire, at any depth: `NO_RANK` until it is known, for the same reason.
     wired: Vec<u8>,
     collect_targets: HashMap<Id, &'a Line>,
+    /// What the line of the call being typed binds, so that a generic node of constants can take its type from there (3.5).
+    call_targets: Option<&'a [Line]>,
+    /// How many levels below this one a constant of rows was looked at already: so that a deep one costs its size and not its size
+    /// by its depth. An array of rectangles has levels that its own look does not reach, and those look for themselves.
+    rows_covered: u8,
+    /// Whether a constant has one length at each level, by its id and a number of dimensions: a line can use it a thousand times.
+    rectangular: HashMap<(Id, u8), bool>,
 }
 
 /// Types one function, or the default values of an `extern`, unless its signature has an error or is generic, which have their
@@ -442,6 +452,9 @@ pub(super) fn type_function<'a>(
         ranks: vec![NO_RANK; places],
         wired: vec![NO_RANK; places],
         collect_targets,
+        call_targets: None,
+        rows_covered: 0,
+        rectangular: HashMap::new(),
     };
     typer.defaults(signature, declaration);
     typer.signature(signature, declaration);
@@ -490,6 +503,23 @@ fn fits_kind(value: i128, kind: NumberKind) -> bool {
         NumberKind::F64 | NumberKind::C128 => return digits <= f64::MANTISSA_DIGITS,
     };
     value >= low && value <= high
+}
+
+/// The type variable that this form of a parameter or an output holds.
+fn variable_of(form: PrimitiveTy) -> Option<usize> {
+    match form {
+        PrimitiveTy::Var(index) | PrimitiveTy::ArrayOf(index) | PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index) => Some(index),
+        _ => None,
+    }
+}
+
+/// What a message calls this form of a parameter.
+fn array_form(form: PrimitiveTy) -> &'static str {
+    match form {
+        PrimitiveTy::Rows(_) => "an array of rows, of type `[[T]]`",
+        PrimitiveTy::Rectangle(_) => "an array of two dimensions, of type `[T; 2]`",
+        _ => "an array",
+    }
 }
 
 /// Complex numbers have no order (3.5).
@@ -697,11 +727,95 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         self.rank(operand) > 0
     }
 
-    /// A literal of rows becomes the array of two dimensions that is expected (3.1). Any other literal that decides keeps its type.
-    fn rows_hint(&self, operand: &Operand, hint: Option<TyId>) -> Option<TyId> {
+    /// A constant of rows becomes the array of two dimensions that is expected (3.1). Any other literal that decides keeps its type,
+    /// and an array of wires has the type of its wires.
+    fn rows_hint(&mut self, operand: &Operand, hint: Option<TyId>) -> Option<TyId> {
         let is_literal = |operand: &Operand| matches!(operand, Operand::Array(..) | Operand::Bracket(..));
         let literal = is_literal(operand) || self.named(operand).is_some_and(is_literal);
-        hint.filter(|hint| literal && self.is_array_of_rows(*hint))
+        if !literal || self.holds_wire(operand) {
+            return None;
+        }
+        hint.filter(|hint| self.is_array_of_rows(*hint))
+    }
+
+    /// Whether a constant has one length at each of the levels of this type (3.1). A named constant in it counts once for each level,
+    /// since `a2 = [a1, a1]` would otherwise double the work at each line.
+    fn is_rectangular(&mut self, id: Id, values: &[Operand], ty: TyId) -> bool {
+        let Ty::Array { dimensions, .. } = self.pass.table.get(ty) else { return true };
+        let dimensions = *dimensions;
+        if let Some(known) = self.rectangular.get(&(id, dimensions)) {
+            return *known;
+        }
+        let mut lengths = vec![None; usize::from(dimensions)];
+        let mut seen = HashSet::new();
+        let agree = self.levels_agree(values, 1, &mut lengths, &mut seen);
+        self.rectangular.insert((id, dimensions), agree);
+        agree
+    }
+
+    fn levels_agree(&self, values: &[Operand], level: usize, lengths: &mut [Option<usize>], seen: &mut HashSet<(Id, usize)>) -> bool {
+        if level >= lengths.len() {
+            return true;
+        }
+        for value in values {
+            // In an array, `[x]` is an array: it stays a `Bracket` only as an argument.
+            let Operand::Array(id, inner) = self.named(value).unwrap_or(value) else { continue };
+            let Some(known) = lengths.get_mut(level) else { continue };
+            if known.is_some_and(|known| known != inner.len()) {
+                return false;
+            }
+            *known = Some(inner.len());
+            if seen.insert((*id, level)) && !self.levels_agree(inner, level + 1, lengths, seen) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// The same array with free rows at each level: `[[f64]]` for `[f64; 2]`.
+    fn free_rows(&mut self, ty: TyId) -> TyId {
+        let Ty::Array { element, dimensions } = self.pass.table.get(ty) else { return ty };
+        let (mut free, dimensions) = (*element, *dimensions);
+        for _ in 0..dimensions {
+            free = self.plain(Ty::Array { element: free, dimensions: 1 });
+        }
+        free
+    }
+
+    /// What a message adds when a constant is refused as an array of two dimensions for its rows.
+    fn unequal_rows_note(&mut self, operand: Option<&Operand>, expected: TyId) -> &'static str {
+        let literal = operand.map(|operand| self.named(operand).unwrap_or(operand));
+        match literal {
+            Some(Operand::Array(id, rows)) if self.is_array_of_rows(expected) && !self.is_rectangular(*id, rows, expected) => {
+                ": the rows of this constant have different lengths (3.1)"
+            }
+            _ => "",
+        }
+    }
+
+    /// `[[T]]` where `[T; 2]` is expected, or the reverse: a node converts, and only it can say that rows differ (3.1).
+    fn rows_fix(&mut self, operand: Option<&Operand>, found: TyId, expected: TyId) -> Option<Fix> {
+        let (&Ty::Array { element: found_element, dimensions: found_dimensions }, &Ty::Array { element, dimensions }) =
+            (self.pass.table.get(found), self.pass.table.get(expected))
+        else {
+            return None;
+        };
+        let is_row_of = |typer: &Self, row: TyId, item: TyId| {
+            let table = &typer.pass.table;
+            matches!(table.get(row), Ty::Array { element, dimensions: 1 } if table.matches(*element, item))
+        };
+        let title = match (found_dimensions, dimensions) {
+            (1, 2) if is_row_of(self, found_element, element) => {
+                if !self.unequal_rows_note(operand, expected).is_empty() {
+                    "Give the rows of this constant one length (3.1)"
+                } else {
+                    "Convert with `array.from_rows`, whose `err` says when rows differ (3.1)"
+                }
+            }
+            (2, 1) if is_row_of(self, element, found_element) => "Convert with `array.to_rows` (3.1)",
+            _ => return None,
+        };
+        Some(Fix { title: title.to_owned(), edits: Vec::new() })
     }
 
     fn line_of(&self, id: Id) -> u32 {
@@ -895,7 +1009,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 }
                 // Tried without a word: an array that does not fit is as it is on its own line, and what it goes to says so.
                 let outer = self.trying.replace(false);
+                // What is kept for this type does not depend on what holds it.
+                let outer_rows = std::mem::replace(&mut self.rows_covered, 0);
                 let tried = self.array_type(*id, values, Some(hint));
+                self.rows_covered = outer_rows;
                 let failed = self.trying == Some(true);
                 self.trying = outer;
                 let ty = if failed { constant.own } else { tried };
@@ -1153,12 +1270,27 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     /// The first element that decides gives the type of the others, as for the arms of a `match` (R-7).
-    /// An array that holds a wire has the type of its wires, whatever it goes to, except as the rows of an array of two dimensions (3.1).
+    /// An array that holds a wire has the type of its wires, whatever it goes to. A constant of rows that differ stays free rows, and
+    /// what it goes to says so (3.1).
     fn array_type(&mut self, id: Id, values: &'a [Operand], hint: Option<TyId>) -> TyId {
+        let rows = hint.filter(|wanted| self.is_array_of_rows(*wanted));
+        let covered = self.rows_covered;
+        let levels = match rows.map(|rows| self.pass.table.get(rows)) {
+            Some(Ty::Array { dimensions, .. }) => *dimensions,
+            _ => 1,
+        };
         let hint = match hint {
-            Some(wanted) if wanted != TyId::ERROR && !self.is_array_of_rows(wanted) && self.array_holds_wire(id, values) => None,
+            Some(wanted) if wanted != TyId::ERROR && self.array_holds_wire(id, values) => None,
+            Some(wanted) if rows.is_some() && covered == 0 && !self.is_rectangular(id, values, wanted) => Some(self.free_rows(wanted)),
             other => other,
         };
+        self.rows_covered = if covered > 0 { covered - 1 } else { levels - 1 };
+        let ty = self.array_with_hint(id, values, hint);
+        self.rows_covered = covered;
+        ty
+    }
+
+    fn array_with_hint(&mut self, id: Id, values: &'a [Operand], hint: Option<TyId>) -> TyId {
         let hinted = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }));
         // What is unknown around it says nothing of what it holds.
         let mut decided = if hint == Some(TyId::ERROR) { hint } else { hinted.and_then(|hint| self.element_of(hint)) };
@@ -1223,9 +1355,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn bracket_type(&mut self, id: Id, hint: Option<TyId>) -> TyId {
-        // An array of one wire has the type of its wire, like any array that holds a wire, except as a row (3.1).
+        // An array of one wire has the type of its wire, like any array that holds a wire (3.1).
         let is_wire = self.bracket_holds_wire(id);
-        let array = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }) && (!is_wire || self.is_array_of_rows(*hint)));
+        let array = hint.filter(|hint| matches!(self.pass.table.get(*hint), Ty::Array { .. }) && !is_wire);
         let wanted = array.and_then(|array| self.element_of(array));
         let element = match self.resolved.of(id) {
             Meaning::ArrayOfValue(value) => match self.constants.get(&value).copied() {
@@ -1251,7 +1383,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             match self.fit(element, wanted) {
                 Fit::Same => return array,
                 Fit::Coerce => {
-                    self.resolved.add_coercion(id, element, wanted);
+                    if self.trying.is_none() {
+                        self.resolved.add_coercion(id, element, wanted);
+                    }
                     return array;
                 }
                 Fit::Narrow | Fit::No => {}
@@ -1284,7 +1418,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 let message = match code {
                     Code::Lc3004 => format!("`{found_text}` does not convert to `{expected_text}` without a node: nothing is lost silently (3.4)"),
                     Code::Lc3008 => format!("this function does not match the type expected, `{expected_text}`: a reference matches exactly (4)"),
-                    _ => format!("the input `{}` expects `{expected_text}`, and this is `{found_text}`", cut_text(param)),
+                    _ => {
+                        let note = self.unequal_rows_note(Some(operand), expected);
+                        format!("the input `{}` expects `{expected_text}`, and this is `{found_text}`{note}", cut_text(param))
+                    }
                 };
                 let fixes = self.conversion_fixes(operand, found, expected);
                 let wires = vec![self.wire_of(operand, self.input_terminal(param))];
@@ -1308,13 +1445,17 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 let (code, to, value, message) = match bound {
                     Bound::Output(name) => {
                         let text = self.text(name);
-                        let message = format!("the output `{}` has the type `{expected_text}`, and this is `{found_text}`", cut_text(text));
+                        let note = self.unequal_rows_note(out.operand, expected);
+                        let message = format!("the output `{}` has the type `{expected_text}`, and this is `{found_text}`{note}", cut_text(text));
                         (Code::Lc3003, format!("fn.{}", cut_text(text)), Some(cut_text(text).into_owned()), message)
                     }
                     Bound::Carry(name) => {
                         let text = self.text(name);
-                        let message =
-                            format!("`{}` has the type `{expected_text}`, and `next` gives `{found_text}`: a carry keeps its type", cut_text(text));
+                        let note = self.unequal_rows_note(out.operand, expected);
+                        let message = format!(
+                            "`{}` has the type `{expected_text}`, and `next` gives `{found_text}`: a carry keeps its type{note}",
+                            cut_text(text)
+                        );
                         (Code::Lc3007, format!("next.{}", cut_text(text)), None, message)
                     }
                 };
@@ -1334,6 +1475,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn bound_fixes(&mut self, bound: Bound, out: &Out<'a>, expected: TyId) -> Vec<Fix> {
+        if let Some(fix) = self.rows_fix(out.operand, out.ty, expected) {
+            return vec![fix];
+        }
         if let Bound::Carry(name) = bound {
             let found = self.show(out.ty);
             return vec![Fix {
@@ -1373,6 +1517,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     /// `0` where a voltage is expected becomes `0 V`, and a wire gets a conversion on a line of its own (`docs/cli.md`, 4.2).
     fn conversion_fixes(&mut self, operand: &'a Operand, found: TyId, expected: TyId) -> Vec<Fix> {
+        if let Some(fix) = self.rows_fix(Some(operand), found, expected) {
+            return vec![fix];
+        }
         // The fix of a named constant goes on its line, where the number is written.
         let literal = self.named(operand).unwrap_or(operand);
         let bare_literal = match literal {
@@ -1479,7 +1626,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     fn binding(&mut self, statement: &'a Statement, targets: &'a [Line], value: &'a Rhs) {
         match value {
             Rhs::Call(call) => {
+                self.call_targets = Some(targets);
                 let outs = self.type_call(call, Some(targets.len()));
+                self.call_targets = None;
                 self.assign(statement, targets, outs);
             }
             Rhs::Struct(literal) => {
@@ -1929,11 +2078,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if primitive.library == PrimitiveLibrary::Core && primitive.name == "call" {
             return self.call_reference(call, bound, wanted);
         }
-        // The panel and the fields of a template come with what has no type yet.
+        // The panel comes with what has no type yet.
         if primitive.library == PrimitiveLibrary::Ui {
             return Vec::new();
         }
         if primitive.library == PrimitiveLibrary::String && primitive.name == "format" {
+            self.format_node(call, bound);
             let ty = self.plain(Ty::String);
             return vec![Out { ty, label: Label::Text("text"), operand: None }];
         }
@@ -1965,6 +2115,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 };
             }
         }
+        self.follow_targets(primitive, &arguments, &mut variables);
+        self.judge_no_argument(call, primitive, &arguments, &variables);
         self.bind_arrays(primitive, &arguments, &mut variables);
         let (kelvin, conversions) = self.bind_scalars(primitive, &arguments, &mut variables);
         self.check_concrete(&arguments);
@@ -1981,6 +2133,89 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             primitive.results.iter().map(|result| self.result_of(*result, call, bound, primitive, &arguments, &variables, kelvin)).collect();
         let labels = primitive.outputs.unwrap_or(&[]);
         results.into_iter().zip(labels).map(|(ty, label)| Out { ty, label: Label::Text(label), operand: None }).collect()
+    }
+
+    /// A generic node of constants has no wire to take its type from: it takes it from what its line binds, when that has a type,
+    /// as a constant does (3.5). A constant that does not fit changes nothing, and the wire that leaves the node says so.
+    fn follow_targets(&mut self, primitive: &'static Primitive, arguments: &[PrimitiveArgument<'a>], variables: &mut [Variable<'a>; 2]) {
+        let Some(targets) = self.call_targets.filter(|targets| targets.len() == primitive.results.len()) else { return };
+        for (result, target) in primitive.results.iter().zip(targets) {
+            let form = match result {
+                PrimitiveOutput::Is(form @ (PrimitiveTy::Var(_) | PrimitiveTy::ArrayOf(_) | PrimitiveTy::Rows(_) | PrimitiveTy::Rectangle(_))) => {
+                    *form
+                }
+                PrimitiveOutput::Slice => PrimitiveTy::ArrayOf(0),
+                _ => continue,
+            };
+            let Some(index) = variable_of(form) else { continue };
+            if variables.get(index).is_none_or(|variable| variable.ty.is_some() || variable.failed) {
+                continue;
+            }
+            let Some(hint) = self.target_hint(Some(target)).filter(|hint| *hint != TyId::ERROR) else { continue };
+            let element = if matches!(form, PrimitiveTy::Var(_)) { Some(hint) } else { self.element_in(form, hint) };
+            let Some(mut element) = element else { continue };
+            if primitive.variables.numbers {
+                let Some(number) = self.as_number(element) else { continue };
+                element = number;
+            }
+            if is_ordered(primitive) && self.number_of(element).is_some_and(|(kind, _)| kind.is_complex()) {
+                continue;
+            }
+            let own: Vec<PrimitiveArgument<'a>> = arguments.iter().filter(|(_, param)| variable_of(param.ty) == Some(index)).copied().collect();
+            if own.iter().any(|(operand, _)| self.holds_wire(operand)) {
+                continue;
+            }
+            let outer = self.trying.replace(false);
+            let mut fits = true;
+            for (operand, param) in &own {
+                if primitive.variables.numbers && self.leaves_its_temperature_scale(operand, param.ty, element) {
+                    fits = false;
+                }
+                let expected = if matches!(param.ty, PrimitiveTy::Var(_)) { element } else { self.array_for(param.ty, element) };
+                let found = self.value_of(operand, Some(expected));
+                fits &= found != TyId::ERROR && matches!(self.fit_of(operand, found, expected), Fit::Same | Fit::Coerce);
+            }
+            fits &= self.trying == Some(false);
+            self.trying = outer;
+            if fits && let Some(variable) = variables.get_mut(index) {
+                *variable = Variable { ty: Some(element), fixed: true, first: None, failed: false };
+            }
+        }
+    }
+
+    /// An operator gives another value in another scale of temperature, so a constant keeps the scale it is written in (3.3, 3.5). That
+    /// scale is the one of its own line: with what is expected, an array has the type expected already. Called during a try.
+    fn leaves_its_temperature_scale(&mut self, operand: &'a Operand, form: PrimitiveTy, element: TyId) -> bool {
+        let own = self.value_of(operand, None);
+        // What it cannot be on its own, such as a large integer without an `f64`, it can be where it goes.
+        self.trying = Some(false);
+        let number = if matches!(form, PrimitiveTy::Var(_)) { Some(own) } else { self.element_in(form, own) };
+        let written = number.and_then(|number| self.number_of(number)).map(|(_, unit)| unit);
+        let wanted = self.number_of(element).map(|(_, unit)| unit);
+        match (written, wanted) {
+            (Some(written), Some(wanted)) => written != wanted && (written.is_temperature_scale() || wanted.is_temperature_scale()),
+            _ => false,
+        }
+    }
+
+    /// `LC3019`: nothing says what `array.concat()` holds.
+    fn judge_no_argument(&mut self, call: &Call, primitive: &'static Primitive, arguments: &[PrimitiveArgument<'a>], variables: &[Variable<'a>; 2]) {
+        let is_variadic = primitive.params.iter().any(|param| param.variadic);
+        let generic = !primitive.variables.names.is_empty();
+        if !arguments.is_empty() || !is_variadic || !generic || variables.first().is_none_or(|variable| variable.ty.is_some()) {
+            return;
+        }
+        // A number of targets that differs has its `LC2103`.
+        if self.call_targets.is_some_and(|targets| targets.len() != primitive.results.len()) {
+            return;
+        }
+        // What it goes to has its diagnostic.
+        if self.call_targets.and_then(<[Line]>::first).and_then(|target| self.target_hint(Some(target))) == Some(TyId::ERROR) {
+            return;
+        }
+        let name = primitive.name;
+        let message = format!("nothing says what this `{name}` holds: wire an input, or write its type (3.5)");
+        self.say(self.unknown_type_code(), message, call.id, Details::default());
     }
 
     /// `LC3019`: a type argument keeps to the bound of its variable (3.5), and to what an order needs.
@@ -2015,7 +2250,14 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             PrimitiveTy::Timestamp => self.plain(Ty::Timestamp),
             PrimitiveTy::Duration => self.plain(Ty::Duration),
             PrimitiveTy::Error => self.plain(Ty::ErrorValue),
-            PrimitiveTy::Var(_) | PrimitiveTy::ArrayOf(_) | PrimitiveTy::Function | PrimitiveTy::None => return None,
+            PrimitiveTy::Var(_)
+            | PrimitiveTy::ArrayOf(_)
+            | PrimitiveTy::Rows(_)
+            | PrimitiveTy::Rectangle(_)
+            | PrimitiveTy::Function
+            | PrimitiveTy::None => {
+                return None;
+            }
         })
     }
 
@@ -2027,10 +2269,67 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         self.say(Code::Lc3001, message, operand.id(), details);
     }
 
+    /// What this form of a parameter holds, in a type that has that form.
+    fn element_in(&mut self, form: PrimitiveTy, ty: TyId) -> Option<TyId> {
+        let (element, dimensions) = match self.pass.table.get(ty) {
+            Ty::Array { element, dimensions } => (*element, *dimensions),
+            _ => return None,
+        };
+        match form {
+            PrimitiveTy::ArrayOf(_) => self.element_of(ty),
+            PrimitiveTy::Rectangle(_) => (dimensions == 2).then_some(element),
+            PrimitiveTy::Rows(_) if dimensions == 1 => match self.pass.table.get(element) {
+                Ty::Array { element, dimensions: 1 } => Some(*element),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// What an argument holds. A constant of rows of one length becomes the array of two dimensions that is expected (3.1).
+    fn element_of_argument(&mut self, form: PrimitiveTy, operand: &'a Operand, found: TyId) -> Option<TyId> {
+        if let Some(element) = self.element_in(form, found) {
+            return Some(element);
+        }
+        if !matches!(form, PrimitiveTy::Rectangle(_)) || self.holds_wire(operand) {
+            return None;
+        }
+        let literal = self.named(operand).unwrap_or(operand);
+        let element = self.element_in(PrimitiveTy::Rows(0), found)?;
+        let expected = self.array_for(form, element);
+        let rectangular = match literal {
+            Operand::Array(id, rows) => self.is_rectangular(*id, rows, expected),
+            // One row has one length.
+            Operand::Bracket(..) => true,
+            _ => false,
+        };
+        if !rectangular {
+            return None;
+        }
+        self.value_of(operand, Some(expected));
+        Some(element)
+    }
+
+    /// The type of this form of a parameter, for what it holds.
+    fn array_for(&mut self, form: PrimitiveTy, element: TyId) -> TyId {
+        match form {
+            PrimitiveTy::Rectangle(_) => self.plain(Ty::Array { element, dimensions: 2 }),
+            PrimitiveTy::Rows(_) => {
+                let row = self.plain(Ty::Array { element, dimensions: 1 });
+                self.plain(Ty::Array { element: row, dimensions: 1 })
+            }
+            _ => self.plain(Ty::Array { element, dimensions: 1 }),
+        }
+    }
+
     /// An array decides its variable, and what is in an array has no conversion.
     fn bind_arrays(&mut self, primitive: &'static Primitive, arguments: &[PrimitiveArgument<'a>], variables: &mut [Variable<'a>; 2]) {
-        for (operand, param) in arguments {
-            let PrimitiveTy::ArrayOf(index) = param.ty else { continue };
+        // A wire before a constant, wherever they are: only a constant takes a type (3.4).
+        let holds_wire: Vec<bool> = arguments.iter().map(|(operand, _)| self.holds_wire(operand)).collect();
+        let wires = arguments.iter().zip(&holds_wire).filter(|(_, wire)| **wire);
+        let constants = arguments.iter().zip(&holds_wire).filter(|(_, wire)| !**wire);
+        for ((operand, param), _) in wires.chain(constants) {
+            let (PrimitiveTy::ArrayOf(index) | PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index)) = param.ty else { continue };
             if self.is_flexible(operand) {
                 continue;
             }
@@ -2040,19 +2339,19 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 self.value_of(operand, Some(TyId::ERROR));
                 continue;
             }
-            let hint = variable.ty.map(|element| self.plain(Ty::Array { element, dimensions: 1 }));
+            let hint = variable.ty.map(|element| self.array_for(param.ty, element));
             let found = self.value_of(operand, hint);
             let mut slot = variable;
             if found == TyId::ERROR {
                 slot.failed = true;
-            } else if let Some(element) = self.element_of(found) {
+            } else if let Some(element) = self.element_of_argument(param.ty, operand, found) {
                 if primitive.variables.numbers && self.as_number(element).is_none() && element != TyId::ERROR {
                     self.not_a_number(operand, param.name, found, "an array of numbers");
                     slot.failed = true;
                 } else if let Some(known) = variable.ty {
                     let value = if primitive.variables.numbers { self.as_number(element).unwrap_or(element) } else { element };
                     if !self.pass.table.matches(known, value) {
-                        let expected = self.plain(Ty::Array { element: known, dimensions: 1 });
+                        let expected = self.array_for(param.ty, known);
                         self.judge_input(operand, found, expected, param.name);
                         slot.failed = true;
                     }
@@ -2062,7 +2361,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                     slot.first = Some((*operand, param.name));
                 }
             } else {
-                self.not_a_number(operand, param.name, found, "an array");
+                self.not_a_number(operand, param.name, found, array_form(param.ty));
                 slot.failed = true;
             }
             if let Some(place) = variables.get_mut(index) {
@@ -2200,7 +2499,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         for ((operand, param), _) in in_order {
             let (index, in_array) = match param.ty {
                 PrimitiveTy::Var(index) => (index, false),
-                PrimitiveTy::ArrayOf(index) => (index, true),
+                PrimitiveTy::ArrayOf(index) | PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index) => (index, true),
                 _ => continue,
             };
             let Some(mut variable) = variables.get(index).copied() else { continue };
@@ -2208,7 +2507,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let other = variables.get(1 - index.min(1)).and_then(|other| other.ty).filter(|_| numbers && !in_array);
             let other_kind = other.and_then(|other| self.number_of(other)).map(|(kind, _)| kind);
             let hint = match (variable.ty, other_kind) {
-                (Some(known), _) if in_array => Some(self.plain(Ty::Array { element: known, dimensions: 1 })),
+                (Some(known), _) if in_array => Some(self.array_for(param.ty, known)),
                 (Some(known), _) => Some(known),
                 (None, Some(kind)) => Some(self.number(kind, Unit::ONE)),
                 // What failed has its diagnostic, and a second `[]` would only repeat it.
@@ -2220,9 +2519,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 variable.failed = true;
             } else if in_array {
                 match variable.ty {
-                    None => match self.element_of(found) {
+                    None => match self.element_of_argument(param.ty, operand, found) {
                         None => {
-                            self.not_a_number(operand, param.name, found, "an array");
+                            self.not_a_number(operand, param.name, found, array_form(param.ty));
                             variable.failed = true;
                         }
                         Some(element) if numbers && element != TyId::ERROR && self.as_number(element).is_none() => {
@@ -2235,7 +2534,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                         }
                     },
                     Some(known) => {
-                        let expected = self.plain(Ty::Array { element: known, dimensions: 1 });
+                        let expected = self.array_for(param.ty, known);
                         if !self.pass.table.matches(found, expected) {
                             self.judge_input(operand, found, expected, param.name);
                             variable.failed = true;
@@ -2332,6 +2631,19 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             PrimitiveOutput::Is(PrimitiveTy::ArrayOf(index)) => {
                 let Some(element) = variable(index) else { return TyId::ERROR };
                 self.array_of(element, call.id)
+            }
+            PrimitiveOutput::Is(form @ (PrimitiveTy::Rows(index) | PrimitiveTy::Rectangle(index))) => {
+                let Some(element) = variable(index) else { return TyId::ERROR };
+                self.array_for(form, element)
+            }
+            PrimitiveOutput::Slice => {
+                let Some(element) = variable(0) else { return TyId::ERROR };
+                // Whole rows go, so that what is rectangular stays so.
+                let input = arguments.iter().find(|(_, param)| param.name == "array").map(|(operand, _)| self.resolved.ty(operand.id()));
+                match input.filter(|input| self.is_array_of_rows(*input)) {
+                    Some(rectangle) => rectangle,
+                    None => self.array_of(element, call.id),
+                }
             }
             PrimitiveOutput::Is(ty) => self.concrete(ty).unwrap_or(TyId::ERROR),
             PrimitiveOutput::WithUnit => match self.unit_argument(call, bound, primitive) {

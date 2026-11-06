@@ -67,6 +67,10 @@ pub(crate) enum PrimitiveTy {
     Var(usize),
     /// An array of it.
     ArrayOf(usize),
+    /// An array of arrays of it, whose rows are free: `[[T]]`.
+    Rows(usize),
+    /// An array of two dimensions of it, which is rectangular: `[T; 2]`.
+    Rectangle(usize),
     /// `fn(…) -> (…)`
     Function,
     /// A parameter of a kind other than `Value`, which shows that kind in place of a type.
@@ -87,6 +91,8 @@ pub(crate) enum PrimitiveOutput {
     Power,
     /// `f64[unit]`
     WithUnit,
+    /// `[T]`, and what is rectangular stays so, since it loses whole rows.
+    Slice,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -165,8 +171,8 @@ const fn f(
 }
 
 use PrimitiveLibrary::{Array, Core, Errors, String as Strings, Time, Ui};
-use PrimitiveOutput::{Is, Power, Product, Quotient, Root, WithUnit};
-use PrimitiveTy::{ArrayOf, Bool, Duration, Error, F32, F64, Function, I32, Text, Texts, Timestamp, Var};
+use PrimitiveOutput::{Is, Power, Product, Quotient, Root, Slice, WithUnit};
+use PrimitiveTy::{ArrayOf, Bool, Duration, Error, F32, F64, Function, I32, Rectangle, Rows, Text, Texts, Timestamp, Var};
 
 const V0: PrimitiveTy = Var(0);
 
@@ -175,6 +181,8 @@ const TWO_BOOLS: &[PrimitiveParam] = &[value("a", Bool), value("b", Bool)];
 const ONE_VALUE: &[PrimitiveParam] = &[value("x", V0)];
 const ONE_F64: &[PrimitiveParam] = &[value("x", F64)];
 const RESULT: &[&str] = &["result"];
+const ARRAY: &[&str] = &["array"];
+const ARRAY_ERR: &[&str] = &["array", "err"];
 const ERR: &[&str] = &["err"];
 const VALUE_ERR: &[&str] = &["value", "err"];
 const TEXT_ERR: &[PrimitiveParam] = &[value("text", Text), default("err", Error)];
@@ -222,7 +230,27 @@ pub(crate) const PRIMITIVES: &[Primitive] = &[
     },
     f(Array, "len", T, &[value("array", ArrayOf(0))], &["length"], GIVES_I32),
     f(Array, "get", T, &[value("array", ArrayOf(0)), value("index", I32), default("err", Error)], &["item", "err"], &[Is(V0), Is(Error)]),
-    f(Array, "push", T, &[value("array", ArrayOf(0)), value("item", V0)], &["array"], &[Is(ArrayOf(0))]),
+    f(
+        Array,
+        "set",
+        T,
+        &[value("array", ArrayOf(0)), value("index", I32), value("item", V0), default("err", Error)],
+        ARRAY_ERR,
+        &[Is(ArrayOf(0)), Is(Error)],
+    ),
+    f(Array, "push", T, &[value("array", ArrayOf(0)), value("item", V0)], ARRAY, &[Is(ArrayOf(0))]),
+    f(Array, "concat", T, &[variadic("parts", ArrayOf(0))], ARRAY, &[Is(ArrayOf(0))]),
+    f(Array, "repeat", T, &[value("item", V0), value("count", I32), default("err", Error)], ARRAY_ERR, &[Is(ArrayOf(0)), Is(Error)]),
+    f(
+        Array,
+        "slice",
+        T,
+        &[value("array", ArrayOf(0)), default("start", I32), default("length", I32), default("err", Error)],
+        ARRAY_ERR,
+        &[Slice, Is(Error)],
+    ),
+    f(Array, "from_rows", T, &[value("rows", Rows(0)), default("err", Error)], ARRAY_ERR, &[Is(Rectangle(0)), Is(Error)]),
+    f(Array, "to_rows", T, &[value("array", Rectangle(0))], &["rows"], &[Is(Rows(0))]),
     f(Array, "sum", N, &[value("values", ArrayOf(0))], &["sum"], GIVES_V0),
     f(Strings, "concat", NO_VARIABLE, &[variadic("parts", Text)], &["text"], GIVES_TEXT),
     f(Strings, "join", NO_VARIABLE, &[value("parts", Texts)], &["text"], GIVES_TEXT),
@@ -370,6 +398,8 @@ mod tests {
             Error => "error".to_owned(),
             Var(index) => variable(index),
             ArrayOf(index) => format!("[{}]", variable(index)),
+            Rows(index) => format!("[[{}]]", variable(index)),
+            Rectangle(index) => format!("[{}; 2]", variable(index)),
             Function => "fn(…) -> (…)".to_owned(),
             PrimitiveTy::None => String::new(),
         }
@@ -383,6 +413,7 @@ mod tests {
             Root => "√N".to_owned(),
             Power => "N^exponent".to_owned(),
             WithUnit => "f64[unit]".to_owned(),
+            Slice => "[T]".to_owned(),
         }
     }
 
