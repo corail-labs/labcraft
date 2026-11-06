@@ -10,10 +10,8 @@ use labcraft_graph::{Decl, File, Id, SourceMap};
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, normalize};
 
 use crate::manifest::Manifest;
+use crate::primitives::PrimitiveLibrary;
 use crate::{Content, DependencyReport, Found, Libraries, LibrarySource, Origin, SourceFile};
-
-/// The primitives of the language, which a `use` always finds and nothing replaces (`docs/cli.md`, section 3).
-const PRIMITIVES: [&str; 6] = ["core", "string", "array", "errors", "time", "ui"];
 
 pub(crate) struct Library {
     /// With its segments separated by `.`: empty for the folder given.
@@ -326,7 +324,7 @@ impl Loader<'_> {
     /// The rules of `docs/cli.md`, section 3, in order: the first match wins. Only what is in the folder given sees the
     /// other folders in it, so a dependency says the same whoever reads it.
     fn target(&mut self, segments: &[Name], name: &str, checked: bool, origin: Origin) -> Target {
-        if PRIMITIVES.contains(&name) {
+        if PrimitiveLibrary::from_name(name).is_some() {
             return Target::Primitive;
         }
         if checked && let Some(index) = self.project.get(&self.joined(segments, "/")) {
@@ -643,7 +641,7 @@ mod tests {
 
     #[test]
     fn the_primitives_are_found_and_cannot_be_replaced() {
-        for name in PRIMITIVES {
+        for name in ["core", "string", "array", "errors", "time", "ui"] {
             assert_eq!(codes_of_files(vec![file("f.lcf", &uses(&[name]))]), Vec::<&str>::new(), "{name}");
         }
         let asked = std::cell::Cell::new(false);

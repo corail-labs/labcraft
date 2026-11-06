@@ -2,7 +2,7 @@
 //! harness of the corpora read the same ones (`tests/acceptance/README.md`, family Nesting).
 
 pub fn in_body(statements: &str) -> String {
-    format!("labcraft 1\nfn f() -> () {{\n{statements}\n}}\n")
+    format!("labcraft 1\nfn f(a: bool) -> () {{\n{statements}\n}}\n")
 }
 
 pub fn nested(depth: usize, open: &str, innermost: &str, close: &str) -> String {

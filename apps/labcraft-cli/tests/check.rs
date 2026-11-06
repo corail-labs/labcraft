@@ -1,5 +1,5 @@
-//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 and 2 for now: reading the files, finding
-//! the libraries they use, and what each library declares.
+//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 to 3 for now: reading the files, finding
+//! the libraries they use, what each library declares, and the names of each body.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -79,6 +79,31 @@ fn repository() -> PathBuf {
 fn uses(lines: &[&str]) -> String {
     let lines: String = lines.iter().map(|name| format!("use {name}\n")).collect();
     format!("labcraft 1\n\n{lines}\nfn f() -> () {{}}\n")
+}
+
+/// A mistake in a body, as an agent reads it: its place, its function, its node and its fix.
+#[test]
+fn a_name_in_a_body_comes_with_its_function_its_node_and_its_fix() {
+    let folder = Folder::new("body");
+    folder.file("f.lcf", "labcraft 1\n\nfn f(a: i32) -> (x: i32) {\n    x = add(a, 1)\n}\n");
+    let (exit, document) = folder.json(&["."]);
+    assert_eq!(exit, 1);
+    let diagnostic = &document["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "LC2002");
+    assert_eq!(diagnostic["span"]["start"], serde_json::json!({ "line": 4, "column": 9 }));
+    assert_eq!(diagnostic["function"], "f");
+    assert_eq!(diagnostic["node"], serde_json::json!({ "name": "x", "text": "x = add(a, 1)" }));
+    assert_eq!(diagnostic["fixes"][0]["edits"][0]["text"], "core.add");
+    assert_eq!(diagnostic["fixes"][0]["edits"][1]["text"], "\nuse core\n");
+}
+
+/// A warning does not change the exit code, unless it is asked to (`docs/cli.md`, section 3).
+#[test]
+fn a_function_that_calls_itself_is_a_warning() {
+    let folder = Folder::new("recursion");
+    folder.file("f.lcf", "labcraft 1\n\nfn f(n: i32) -> (x: i32) {\n    x = f(n)\n}\n");
+    assert_eq!(folder.codes(&["."]), (0, vec!["LC2016".to_owned()]));
+    assert_eq!(folder.codes(&["--deny-warnings", "."]), (1, vec!["LC2016".to_owned()]));
 }
 
 #[test]
