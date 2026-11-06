@@ -44,13 +44,14 @@ fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {
     diagnostics(files).iter().map(|diagnostic| diagnostic.code().as_str()).collect()
 }
 
-/// `text` is the whole of the function file `f.lcf`, beside the type `Reading`, the type `Point` and the function `g`.
+/// `text` is the whole of the function file `f.lcf`, beside the type `Reading`, the type `Point` and the functions `g` and `takes`.
 fn in_file(text: &str) -> Vec<&'static str> {
     codes(&[
         ("f.lcf", text),
         ("reading.lct", "type Reading = enum { Value(f64), Overload }"),
         ("point.lct", "type Point = struct { x: f64, y: f64 }"),
         ("g.lcf", "fn g(a: i32, b: i32 = 0, err: error = none) -> (r: i32, err: error) {\n    r = a\n    err = err\n}"),
+        ("takes.lcf", "fn takes(a: [i32]) -> (r: i32) {\n    r = 1\n}"),
     ])
 }
 
@@ -182,11 +183,11 @@ fn a_value_can_bear_the_name_of_a_function_and_hides_it_in_an_argument() {
 
 #[test]
 fn a_function_reference_is_a_path_and_a_primitive_can_be_one() {
-    assert_eq!(in_file("fn f() -> (x: i32) {\n    x = g\n}"), NOTHING);
-    assert_eq!(in_file("use core\n\nfn f() -> (x: i32) {\n    x = core.add\n}"), NOTHING);
-    assert_eq!(in_file("use core\n\nfn f() -> (x: i32) {\n    x = core.nowhere\n}"), ["LC2002"]);
-    assert_eq!(in_file("fn f() -> (x: i32) {\n    x = core.add\n}"), ["LC2005"], "`core` is known to be a library");
-    assert_eq!(in_file("fn f() -> (x: i32) {\n    x = stpe.low\n}"), ["LC2001"], "a typo in a value is not told to add a `use`");
+    assert_eq!(in_file("fn f() -> () {\n    x = g\n}"), NOTHING);
+    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.add\n}"), NOTHING);
+    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.nowhere\n}"), ["LC2002"]);
+    assert_eq!(in_file("fn f() -> () {\n    x = core.add\n}"), ["LC2005"], "`core` is known to be a library");
+    assert_eq!(in_file("fn f() -> () {\n    x = stpe.low\n}"), ["LC2001"], "a typo in a value is not told to add a `use`");
 }
 
 #[test]
@@ -458,7 +459,7 @@ fn what_a_path_names_does_not_depend_on_another_file() {
 #[test]
 fn a_function_of_another_library_binds_to_its_signature() {
     let run_on = |line: &str| {
-        let mut root = source("", &[("f.lcf", &format!("use lib\n\nfn f() -> (x: i32) {{\n    x = {line}\n}}"))]);
+        let mut root = source("", &[("f.lcf", &format!("use lib\n\nfn f() -> () {{\n    x = {line}\n}}"))]);
         root.sub_libraries.push(source("lib", &[("lib/g.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"), ("lib/t.lct", "type T = enum { A }")]));
         let mut report = run(root).0.report;
         report.finish();
@@ -496,13 +497,13 @@ fn a_unit_argument_is_in_brackets() {
 
 #[test]
 fn elsewhere_a_bracket_is_an_array_of_one_value() {
-    assert_eq!(in_body("x, _ = g([p])"), NOTHING);
-    assert_eq!(in_body("x, _ = g([1])"), NOTHING);
-    assert_eq!(in_body("x, _ = g([nowhere])"), ["LC2001"]);
-    assert_eq!(in_body("x, _ = g([V/s])"), ["LC3001"]);
-    assert_eq!(in_body("x, _ = g([g])"), NOTHING, "an array of one function, as `[g, g]` is an array of two");
-    assert_eq!(in_body("x, _ = g([Reading])"), ["LC2001"]);
-    assert_eq!(in_body("x, _ = g([p, nowhere])"), ["LC2001"], "an array of values reads them");
+    assert_eq!(in_body("x = takes([p])"), NOTHING);
+    assert_eq!(in_body("x = takes([1])"), NOTHING);
+    assert_eq!(in_body("x = takes([nowhere])"), ["LC2001"]);
+    assert_eq!(in_body("x = takes([V/s])"), ["LC3001"]);
+    assert_eq!(in_body("x = core.eq([g], [g, g])"), NOTHING, "an array of one function, as `[g, g]` is an array of two");
+    assert_eq!(in_body("x = takes([Reading])"), ["LC2001"]);
+    assert_eq!(in_body("x = takes([p, nowhere])"), ["LC2001"], "an array of values reads them");
     assert_eq!(in_body("x = [nowhere]"), ["LC2001"], "as anything but an argument");
 }
 
@@ -514,7 +515,7 @@ fn an_open_function_reads_its_named_arguments_as_values_and_each_once() {
     assert_eq!(format("a: [nowhere]"), ["LC2001"]);
     assert_eq!(format("a: [m/s]"), ["LC3001"]);
     assert_eq!(format("a: n, a: n"), ["LC2102"]);
-    assert_eq!(in_file("use core\n\nfn f(h: i32) -> (x: i32) {\n    x = core.call(h, a: 1, a: 2)\n}"), ["LC2102"]);
+    assert_eq!(in_file("use core\n\nfn f(h: fn(a: i32) -> (i32)) -> (x: i32) {\n    x = core.call(h, a: 1, a: 2)\n}"), ["LC2102"]);
 }
 
 #[test]
@@ -576,7 +577,11 @@ fn a_structure_gives_as_many_values_as_it_has_targets() {
     assert_eq!(in_body("a, b = match p {\n1 => yield (1, 2)\n_ => yield (3, 4)\n}"), NOTHING);
     assert_eq!(in_body("a = match p {\n1 => yield (1, 2)\n_ => yield (3, 4)\n}"), ["LC2103"]);
     assert_eq!(in_body("a, b, c = handle err {\n_ => yield (3, 4)\n}"), ["LC2103"]);
-    assert_eq!(in_body("a = match p {\n1 => yield 1\n_ => yield (3, 4)\n}"), NOTHING, "arms that disagree have `LC3006`");
+    assert_eq!(
+        in_body("a = match p {\n1 => yield 1\n_ => yield (3, 4)\n}"),
+        ["LC3006"],
+        "not `LC2103`: arms that disagree say nothing of the targets"
+    );
     assert_eq!(in_body("a, b = loop carry c = 1 {\nnext c = 1\ncollect c\nuntil true\n}"), NOTHING, "the carries, then the collects");
     assert_eq!(in_body("a = loop carry c = 1 {\nnext c = 1\ncollect c\nuntil true\n}"), ["LC2103"]);
     assert_eq!(in_body("a, b = for i in 0..3 {\ncollect i\n}"), ["LC2103"]);
@@ -598,10 +603,11 @@ fn a_number_has_bounds_and_its_unit_is_known() {
     assert_eq!(in_body("x = 1e999"), ["LC1006"]);
     assert_eq!(in_body("x = 1e308"), NOTHING);
     assert_eq!(in_body("x = 1e-999"), NOTHING, "too small to tell from zero");
-    assert_eq!(in_body("x = 18_446_744_073_709_551_615"), NOTHING, "the largest `u64`");
-    assert_eq!(in_body("x = 18_446_744_073_709_551_616"), ["LC1006"]);
-    assert_eq!(in_body("x = -9223372036854775808"), NOTHING, "the smallest `i64`");
-    assert_eq!(in_body("x = -9223372036854775809"), ["LC1006"]);
+    let wide = |ty: &str, number: &str| in_file(&format!("fn f() -> (x: {ty}) {{\n    x = {number}\n}}"));
+    assert_eq!(wide("u64", "18_446_744_073_709_551_615"), NOTHING, "the largest `u64`");
+    assert_eq!(wide("u64", "18_446_744_073_709_551_616"), ["LC1006"]);
+    assert_eq!(wide("i64", "-9223372036854775808"), NOTHING, "the smallest `i64`");
+    assert_eq!(wide("i64", "-9223372036854775809"), ["LC1006"]);
     assert_eq!(in_body("x = 000000000000000000000000000000000000000"), NOTHING);
     assert_eq!(in_body("x = 3 Vx"), ["LC2008"]);
     assert_eq!(in_body("x = 3 m^999"), ["LC1006"]);
@@ -659,7 +665,7 @@ fn only_a_cycle_is_recursion() {
         codes(&[("f.lcf", "fn f() -> () {\n    g()\n    g()\n}"), ("g.lcf", "fn g() -> () {\n    h()\n}"), ("h.lcf", "fn h() -> () {}")]),
         NOTHING
     );
-    assert_eq!(codes(&[("f.lcf", "fn f() -> (x: i32) {\n    x = f\n}")]), NOTHING, "a reference is no call");
+    assert_eq!(codes(&[("f.lcf", "fn f() -> () {\n    x = f\n}")]), NOTHING, "a reference is no call");
 }
 
 #[test]

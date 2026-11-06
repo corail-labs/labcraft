@@ -1,5 +1,5 @@
-//! What pass 3 found out about a file, by `Id`, so that the layers above never resolve again (`docs/architecture.md`,
-//! section 5). The types of wires and the coercions join it with pass 4.
+//! What passes 3 and 4 found out about a file, by `Id`, so that the layers above never resolve again
+//! (`docs/architecture.md`, section 5).
 
 use labcraft_graph::Id;
 use labcraft_types::{Name, TyId};
@@ -73,16 +73,27 @@ pub enum Terminal {
     Order,
 }
 
+/// A conversion on a wire, which the IDE shows (spec 3.3, 3.4): `mV` to `V`, `i32` to `f64`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Coercion {
+    /// The operand, or the target when a value is bound to what expects another type.
+    pub at: Id,
+    pub from: TyId,
+    pub to: TyId,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Resolved {
     meanings: Vec<Meaning>,
     calls: Vec<ResolvedCall>,
+    types: Vec<TyId>,
+    coercions: Vec<Coercion>,
 }
 
 impl Resolved {
     /// `places` is the length of the source map of the file.
     pub(crate) fn new(places: usize) -> Self {
-        Resolved { meanings: vec![Meaning::None; places], calls: Vec::new() }
+        Resolved { meanings: vec![Meaning::None; places], calls: Vec::new(), types: vec![TyId::ERROR; places], coercions: Vec::new() }
     }
 
     pub(crate) fn set(&mut self, id: Id, meaning: Meaning) {
@@ -105,6 +116,26 @@ impl Resolved {
     #[cfg(test)]
     pub(crate) fn all(&self) -> &[Meaning] {
         &self.meanings
+    }
+
+    pub(crate) fn set_type(&mut self, id: Id, ty: TyId) {
+        if let Some(slot) = self.types.get_mut(id.index()) {
+            *slot = ty;
+        }
+    }
+
+    pub(crate) fn add_coercion(&mut self, at: Id, from: TyId, to: TyId) {
+        self.coercions.push(Coercion { at, from, to });
+    }
+
+    /// The type of what this id defines or reads: a value, a target, an operand. [`TyId::ERROR`] for what has none, or
+    /// what an error left unknown.
+    pub fn ty(&self, id: Id) -> TyId {
+        self.types.get(id.index()).copied().unwrap_or(TyId::ERROR)
+    }
+
+    pub fn coercions(&self) -> &[Coercion] {
+        &self.coercions
     }
 
     /// The call at this id.

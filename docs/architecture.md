@@ -202,7 +202,7 @@ their types, and M0b runs from it. `Resolved` gives, by `Id`:
 - the kind of each `Bracket` (R-5);
 - the callee of each call, and the terminals of that call, which a signature alone does not give for
   `string.format` and variadics;
-- the type of each wire, and the coercions to show (3.3, 3.4), with pass 4.
+- the type of each wire, and the coercions to show (3.3, 3.4).
 
 `root` includes its sub-libraries, which are checked even if nothing uses them (cli.md, section 3).
 `Limits` bounds the total size of a library, since the caller hands all its files at once.
@@ -217,7 +217,9 @@ Passes, each one over all the files, so that a bad file does not hide the others
    pass 6). Only what can be told without a type: a field of a value and
    the values of a variant wait for pass 4, and so do the fields of a `string.format` template (`LC2106`). Only for the
    libraries being checked: of a dependency, the others read the signatures.
-4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades.
+4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades. That order is one graph for
+   the whole function, walked with a queue, since a chain of lines is as long as the file. A structure is two steps, one
+   before its body and one after. What is left in a cycle stays unknown, and pass 5 says why.
 5. **Dataflow:** cycles, outputs bound once, carries; then the warnings of 7.5, 8.1 and 10.
 6. **Panel, layout, icon:** kinds and `default:`, references to nodes, coordinates, the icon (R-14: grid,
    a validator of the SVG path syntax, a table of `accent` tokens).
@@ -234,8 +236,8 @@ total work across resources, so that many resources cannot make it quadratic aga
 
 **Signatures of the primitives** (`core`, `string`, `array`, `errors`, `time`, `ui`) live here as data,
 in the form of appendix A, with a rule attached where a signature cannot say it all: the units of `mul`,
-the template of `string.format`, the variadic `errors.merge`. A test compares this table with appendix A. Their types
-and rules join it with pass 4. `runtime` (M0b) depends on `check` and tests that each signature has a body. The bodies
+the template of `string.format`, the variadic `errors.merge`. A test compares this table with appendix A, types included.
+`runtime` (M0b) depends on `check` and tests that each signature has a body. The bodies
 stay in `runtime`, as the roadmap says.
 
 **Last resort.** `check` is one call over a library, so it runs each function under `catch_unwind`: a

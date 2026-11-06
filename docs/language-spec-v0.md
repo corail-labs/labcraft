@@ -84,13 +84,23 @@ queue<T>, ref<T>      // explicit references (D-04), never implicit
 ```
 
 `[f64; 2]` is a 2-dimensional array: the number after `;` counts dimensions, not elements (unlike
-Rust). The size of an array is a property of the value, not of its type.
+Rust). The size of an array is a property of the value, not of its type. An `[f64; 2]` is rectangular: its
+rows have the same length. An `[[f64]]` is an array of `[f64]`, whose rows are free. They are two types, and
+neither converts to the other on a wire (Q-27). A literal of rows (`[row, row]`) becomes an `[f64; 2]` where
+one is expected.
 
 A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
 contain itself, directly or through other types: any mention counts, in an array or a function type too.
 A type cannot bear a name that the language gives to a type: the base types (3.1), `waveform`, `queue`,
-`ref` and `opaque`. An alias of an enumeration names its variants: with `type A = Verdict`, `A.Pass` is
-`Verdict.Pass`.
+`ref` and `opaque`.
+
+**An alias is another name.** With `type Volts = f64[V]`, `type Readings = [f64[V]]` or `type A = Verdict`,
+the two names are one type everywhere, and conversions (3.3, 3.4) apply through the name: an `f64[mV]` is
+accepted where a `Volts` is expected. An alias of an enumeration names its variants: `A.Pass` is
+`Verdict.Pass`. Only a declared `struct` or `enum` makes a new type, known by its library and its name:
+`type Verdict = enum { Pass, Fail }` and `type Grade = enum { Pass, Fail }` are two types, and a declared
+struct is not a struct written in place with the same fields. A number that must not mix with other
+numbers is a `struct` with one field.
 
 **Opaque types**: a library can declare a type whose content is hidden, handled only by its
 functions: `type session = opaque`. This is the case for the session `visa.session` (the equivalent
@@ -161,13 +171,35 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
 
 ### 3.4 Numeric conversions (D-05)
 
-- **Implicit widening**, shown in the IDE (coercion point): `i16` to `i32`, integers of up to 32
-  bits to `f64`, `f32` to `f64`.
+- **Implicit widening**, shown in the IDE (coercion point), only where nothing can be lost, and this
+  list is closed: a signed integer to a larger signed one; an unsigned integer to a larger unsigned
+  one or to a strictly larger signed one (`u16` to `i32`); integers of up to 32 bits to `f64`; `f32`
+  to `f64`; `c64` to `c128`.
 - **Explicit narrowing** by a node: `core.to_i32(x)`, `core.round_to_i32(x)`, `core.to_f32(x)`.
-- Cases that lose precision without changing size (`i64` and `u64` to `f64`) are explicit (Q-4).
-- **Literals**: an integer literal takes the type its context requires (`i32` if none); a decimal
-  literal is `f64`; a literal with a unit is an `f64` with that unit (`0 V` is `f64[V]`). A decimal too
-  large for `f64` is an error, and one too small to tell from zero reads as zero (`1e-999`).
+- Anything else is explicit: `i64` and `u64` to `f64`, which can lose precision without changing size
+  (Q-4), a signed integer to an unsigned one, an integer to `f32`, a real number to a complex one.
+- **Two number types that meet** in one operation (`core.add(n, 0.5)`) give the smallest type that both
+  widen to: `i32` and `f64` give `f64`, and so do `i32` and `f32`. Without one (`i64` and `f64`), the
+  second is rejected.
+- **A change of scale on an integer is rejected**, since it would lose what it cannot hold: `i32[mV]` to
+  `i32[V]`. To a floating-point type it is accepted: `i32[mV]` to `f64[V]`.
+- **`core.div`, `core.sqrt` and `core.pow` on integers give an `f64`**: `core.div(3, 2)` is `1.5`, and x/0
+  is `inf` or `nan`. `core.add`, `core.sub` and `core.mul` stay integers. An `i64` or a `u64`, which does
+  not widen to `f64`, is rejected there.
+- **A conversion applies to a number on a wire**, never inside an array or a struct: `[f32]` to `[f64]` is
+  rejected. In an array literal, the first element that decides gives the type of the others, as for
+  branches (R-7): `[1 V, 200 mV]` is an `[f64[V]]`.
+- **Literals**: an integer literal takes the number type its context requires (`i32` if none); a decimal
+  literal is `f64`; a literal with a unit is an `f64` with that unit (`0 V` is `f64[V]`). A literal
+  without a unit has no dimension, whatever its context: `core.ge(voltage, 0)` is rejected, and
+  `core.ge(voltage, 0 V)` says what it means. A unit with no dimension but a scale asks the same: `5` for an
+  `f64[mV/V]` would read 5000 mV/V, so it is rejected, decimals included, and `5 mV/V` says what it means. A
+  wire without a unit still converts, since its type is written where it is declared. Between two operands that do not share a type variable, an
+  integer literal takes the number type of the other: `core.div(x_f32, 2)` is an `f32`. An integer literal
+  keeps its value in its type or is rejected: `300` for an `i8`, `16777217` for an `f32`,
+  `9007199254740993` for an `f64` or with a unit. A decimal rounds to the nearest: `9007199254740993.0` is
+  accepted. A decimal too large for `f64` is an error, and one too small to tell from zero reads as zero
+  (`1e-999`).
 
 ### 3.5 Generics
 
@@ -179,8 +211,13 @@ Generics replace what LabVIEW does with hand-written polymorphic VIs. A type var
 whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the result is an
 `f64[V]`.
 
-- **The v0 bound is `Number`**: integers, floats and complex numbers, with any unit. A variable
-  without a bound stands for any type (`core.select`, appendix A).
+- **The v0 bound is `Number`**: integers, floats and complex numbers, with any unit. A `duration`
+  counts as an `f64[s]`: `core.add` of two durations is an `f64[s]`. A variable without a bound stands
+  for any type (`core.select`, appendix A).
+- **Complex numbers have no order**: `core.lt`, `core.le`, `core.gt`, `core.ge`, `core.min` and `core.max`
+  reject them.
+- **A type argument or an array fixes the variable**, and an input is then judged against it like any
+  other: `array.push(ints, x_f64)` with an `[i32]` is rejected, since an `f64` only narrows to an `i32`.
 - A variable that stands for a unit alone (`f64[U]`) is open question Q-12, which also covers how
   to tell such a variable from a type variable.
 
@@ -225,6 +262,12 @@ fn check_voltage(
   for its parameters. No anonymous functions or closures in v0. This is the typed equivalent
   of LabVIEW's *Call By Reference*, and what makes it possible to write `settle` or `retry` once
   for all measurements.
+- **A reference matches a function type exactly**: the same inputs and outputs, in number and in type, with
+  no conversion, since no node would hold it. A default value does not shorten a signature, and a
+  variadic parameter counts as an array (`parts: string...` is `fn([string])`). A generic primitive takes
+  its variables from the type expected (`core.abs` for `fn(f64[V]) -> (f64[V])`), and a parameter of kind
+  unit, category or element has no function type. `core.call` wires every input of the type, in order or by
+  the names that the type gives, since a function type has no default values.
 
 ### 4.1 External functions
 
@@ -522,7 +565,7 @@ verdict = match in_range {
 }
 ```
 
-Selector: boolean, integer (values and ranges: `1..=5` includes 5, `0..5` excludes it; bounds can
+Selector: boolean, integer without a unit (values and ranges: `1..=5` includes 5, `0..5` excludes it; bounds can
 be negative, `-5..=5`), string, enumeration. A variant with data binds one name per value:
 `Reading.Value(v) => …`, `Range.Between(low, high) => …`. Each branch ends with exactly one
 `yield`, last, with the same number and the same types of values (R-7). `_` stands for "all the
@@ -539,13 +582,19 @@ total, scaled = for x in readings, carry acc = 0 V {
 }
 ```
 
-- `for x in array`: one iteration per element (LabVIEW's auto-indexing). `for i in 0..n`: `i`
-  goes from 0 to n − 1.
+- `for x in array`: one iteration per element (LabVIEW's auto-indexing), one level at a time: `x` is an
+  `[f64]` for an `[f64; 2]`. `collect` adds a level: a `collect` of `[f64]` gives an `[[f64]]`, which is not
+  an `[f64; 2]`. `for i in 0..n`: `i` goes from 0 to n − 1; its bounds are integers without a unit, and `i`
+  is the smallest type that both widen to.
 - **Several `in` clauses** (`for x in values, i in 0..n`), of any kind, advance together and stop
   at the shortest. This is also how an iteration counter is written. The `in` clauses come before
   the carries, and a `for` has at least one.
 - `carry name = initial value`: a carry (LabVIEW's shift register). `next name = …` sets the value
   for the next iteration; the final value is an output of the loop.
+- **The type of a carry** is on its line alone: the type written there, or else that of its initial value.
+  `carry n = 0` is an `i32`, whatever the body computes. `next` is converted to it as on any wire (3.3,
+  3.4), and what cannot be converted is rejected: `next n = core.add(n, 0.5)` asks for
+  `carry n: f64 = 0`. `[]` needs a written type.
 - **The clauses read from outside the loop**, even a name that a carry then hides (R-3). One clause does
   not see another: `for r in rows, c in r` and `carry b = a` after `carry a = 0` are rejected.
 - `collect value`: builds an array of the values of each iteration, as output.
@@ -607,7 +656,8 @@ An `error` value is either `none`, or an error with:
 | `origin` | node, function and chain of callers |
 | `others` | merged errors (7.4) |
 
-Categories are hierarchical. A library declares its own in its manifest.
+Categories are hierarchical. A library declares its own in its manifest. A program does not read these
+fields as a path in v0: `e.code` is rejected, and `handle` is how an error is told apart (7.3).
 
 ### 7.2 Automatic propagation
 
@@ -1403,12 +1453,12 @@ What the grammar alone does not say:
 | # | Rule |
 |---|---|
 | R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of a library that its file imports (`a` for `use a.b`), of a type of its library (except an opaque type or an alias of one, 3.2; the base types of 3.1 do not count, as in `time.wait(duration: duration)`), or of a panel element that is neither an input nor an output. A function or a type cannot have the name of a library that any file of its library imports (`a` for `use a.b` here too), since a type is visible in all of them: otherwise `core.Pass` in one file would depend on another file. A value can have the name of a function: as an operand the name designates the value, and in a call the function. In a path, the longest library imported comes first: with `use a.T`, `a.T.V` is `V` in that library, even if `a` has a type `T`. |
-| R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12). **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
+| R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12), with the type of its signature. **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
 | R-3 | **A sub-body can hide an outer name**: a carry (`carry err = err`), an `in` clause, a pattern or a line of an arm or a loop body. In that body, the name designates what it binds there, and outside it the outer name. None of these can take a name that R-1 refuses. In the body of the function nothing is hidden: a line with the name of an output binds that output (R-2), and a line with the name of an input alone is a value defined twice. |
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
 | R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. In that array, `x` can name a function of the library when no value has that name, as in `[f, f]`. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
-| R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, same types; a value with a unit needs the same dimension, and the other branches are converted to the unit of the first branch. |
+| R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, and the first branch decides the type of each. The other branches are converted to it as on any wire (3.3, 3.4): to its unit, or widened; what cannot be converted is rejected, so the order of branches can matter. A literal that does not decide (an integer without a unit, `[]`, an array of only those) takes the type of the first branch that gives one; if none does, it takes the type its target already has, an output or a carry (`x: u8` with `x = match c { … yield 1 … yield 2 }`); without such a target, an integer is an `i32` and `[]` is an error. A branch that decides keeps its type against the target, and the wire to the target is then judged as any other. |
 | R-8 | **A `match` on an enumeration is exhaustive**, otherwise `_` is required. |
 | R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
@@ -1451,8 +1501,9 @@ What the grammar alone does not say:
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
-| Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range, integer division by zero: a fault (8.2), an `error` value on `err`, or a default value? |
+| Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range: a fault (8.2), an `error` value on `err`, or a default value? |
 | Q-26 | Name of a function and name of its file | Nothing ties them today: `math.lcf` can hold `fn scale`, and a file copied to another folder and renamed gives `LC2002`, unknown function, although the file is there. **Option A:** `fn scale` stays in the file and `check` requires the file `scale.lcf`, with one error on a renamed copy; an excerpt still says its name and the format does not change. **Option B:** no name in the file, the name of the file decides; a renamed copy works at once, but the grammar changes and an excerpt no longer says its name. Either way, names are limited by what file systems allow (`Add` and `add`, `con`, `nul`). To settle before the tag of M0a. |
+| Q-27 | From `[[f64]]` to `[f64; 2]` | `collect` and `array.push` give an `[[f64]]`, so a loop cannot build a rectangular array today; it comes from an input or from a literal of rows (`[row, row]`). To settle: a primitive that converts and fails on rows of unequal length (its name, its `error` output), and what a literal of rows of unequal length does at run time, since their lengths are not known to `check`. |
 
 ## Appendix A. Library signatures (v0)
 
@@ -1474,15 +1525,15 @@ declarations without a body. Conventions:
 fn core.add<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a` (3.3)
 fn core.sub<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a`
 fn core.mul<A: Number, B: Number>(a: A, b: B) -> (result: A·B)  // exponents add
-fn core.div<A: Number, B: Number>(a: A, b: B) -> (result: A/B)  // exponents subtract; x/0: inf or nan
+fn core.div<A: Number, B: Number>(a: A, b: B) -> (result: A/B)  // exponents subtract; integers give f64 (3.4); x/0: inf or nan
 fn core.abs<N: Number>(x: N) -> (result: N)
 fn core.neg<N: Number>(x: N) -> (result: N)
-fn core.sqrt<N: Number>(x: N) -> (result: √N)                   // exponents halved; rejected if odd
-fn core.pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; not in the PoC
+fn core.sqrt<N: Number>(x: N) -> (result: √N)                   // exponents halved; rejected if odd; integers give f64
+fn core.pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; integers give f64; not in the PoC
 fn core.min<N: Number>(a: N, b: N) -> (result: N)               // same dimension
 fn core.max<N: Number>(a: N, b: N) -> (result: N)               // same dimension
 
-fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge
+fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge; no complex numbers
 fn core.eq<T>(a: T, b: T) -> (result: bool)                     // same for ne
 fn core.and(a: bool, b: bool) -> (result: bool)                 // same for or
 fn core.not(a: bool) -> (result: bool)

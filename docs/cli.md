@@ -282,6 +282,11 @@ corpora ([tests/acceptance](../tests/acceptance/README.md)) compare everything e
 (`LC2013`, `LC2016`, `LC2017`) is reported once, on the last file in path order for `LC2013` and on the first
 for `LC2016` and `LC2017`, with the others in `related`.
 
+A value that does not convert gets the code of where it goes: `LC3001` or `LC3004` on an input, `LC3003` on an
+output, `LC3006` in an arm, `LC3007` on a carry, `LC3001` as an element of an array. So a narrowing to an output is
+`LC3003`, and its fix still names the conversion. A type argument or an array makes a variable fixed, and an input against
+it is an input like another: `LC3001` where two wires that meet would give `LC3002`.
+
 ### 4.3 Terminals
 
 A terminal is written like the `wire` entries of the `layout` section (spec 11), with the names of
@@ -394,12 +399,12 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3001` | error | Wrong type on an input, or what is not a unit, a category or an element on a parameter of that kind | 3, R-5 | S2 |
 | `LC3002` | error | Incompatible dimensions in an operation | 3.3 | S2 |
 | `LC3003` | error | Wrong type or dimension on a function output | 3.3 | S2 |
-| `LC3004` | error | Implicit narrowing; the fix names the conversion | 3.4 | S2 |
+| `LC3004` | error | Implicit narrowing on an input, or two number types with no type that both widen to; the fix names the conversion when there is one | 3.4 | S2 |
 | `LC3005` | error | Unit argument of another dimension | 3.3 | S2 |
 | `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
-| `LC3007` | error | Carry whose type changes at `next` | 6.2 | S2 |
+| `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
 | `LC3008` | error | Function reference of the wrong signature | 4 | S2 |
-| `LC3009` | error | Pattern of the wrong type, such as a variant of another enumeration | 6.1 | S2 |
+| `LC3009` | error | Pattern of the wrong type, such as a variant of another enumeration, or that binds another number of values than its variant holds | 6.1 | S2 |
 | `LC3010` | error | `match` on an enumeration not exhaustive | R-8 | |
 | `LC3011` | error | Overlapping literal or range patterns | R-18 | |
 | `LC3012` | error | `handle` without `_` | R-10 | |
@@ -408,8 +413,8 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
 | `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
 | `LC3017` | error | Default value of the wrong type, for a parameter or a panel element | 4, 10 | |
-| `LC3018` | error | Literal that does not fit its type: `300` for an `i8` | 3.4 | |
-| `LC3019` | error | Type variable of a generic primitive that cannot be determined, or the wrong number of type arguments | 3.5 | |
+| `LC3018` | error | Integer literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32` | 3.4 | |
+| `LC3019` | error | Type variable of a generic primitive that cannot be determined, a `[]` whose type nothing says, or the wrong number of type arguments | 3.5 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
 | `LC3021` | error | Unit on a type that is not a number: `string[V]`, `duration[s]`, a declared type, even an alias of a number | 3.3 | |
 | `LC3022` | error | The same pattern twice: `_`, a variant or a `handle` category | 6.1, 7.3 | |

@@ -16,19 +16,21 @@ fn main() {
     }
     writeln!(out, "pub static PROGRAMS: &[Embedded] = &[{}];", embedded(&root, &programs)).unwrap();
 
-    let hostile = root.join("tests/acceptance/hostile");
-    println!("cargo::rerun-if-changed={}", hostile.display());
-    let mut cases: Vec<PathBuf> = fs::read_dir(&hostile).unwrap().map(|entry| entry.unwrap().path()).collect();
-    cases.sort();
-    writeln!(out, "pub static HOSTILE: &[Case] = &[").unwrap();
-    for case in cases {
-        let mut files = Vec::new();
-        walk(&case, &mut files);
-        let name = case.file_name().unwrap().to_str().unwrap();
-        let expected = case.join("expected.json");
-        writeln!(out, "Case {{ name: {name:?}, files: &[{}], expected: include_str!({expected:?}) }},", embedded(&root, &files)).unwrap();
+    for (name, folder) in [("HOSTILE", "tests/acceptance/hostile"), ("TYPE_ERRORS", "tests/acceptance/type-errors")] {
+        let corpus = root.join(folder);
+        println!("cargo::rerun-if-changed={}", corpus.display());
+        let mut cases: Vec<PathBuf> = fs::read_dir(&corpus).unwrap().map(|entry| entry.unwrap().path()).collect();
+        cases.sort();
+        writeln!(out, "pub static {name}: &[Case] = &[").unwrap();
+        for case in cases {
+            let mut files = Vec::new();
+            walk(&case, &mut files);
+            let name = case.file_name().unwrap().to_str().unwrap();
+            let expected = case.join("expected.json");
+            writeln!(out, "Case {{ name: {name:?}, files: &[{}], expected: include_str!({expected:?}) }},", embedded(&root, &files)).unwrap();
+        }
+        writeln!(out, "];").unwrap();
     }
-    writeln!(out, "];").unwrap();
 
     fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("corpus.rs"), out).unwrap();
 }

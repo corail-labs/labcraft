@@ -1,7 +1,7 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
 //! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`, scenario 5, through `format`, and what passes 1 to 3 of `check` can say about the stored
-//! cases. The other families and the rest of each one come with their steps.
+//! scenario 4, through `read`, scenario 5, through `format`, the corpus of scenario 2, and what passes 1 to 4 of `check` can
+//! say about the stored cases. The other families and the rest of each one come with their steps.
 
 /// A file of a corpus, with its path from the root of the repository.
 pub struct Embedded {
@@ -9,7 +9,7 @@ pub struct Embedded {
     pub bytes: &'static [u8],
 }
 
-/// A stored case of `tests/acceptance/hostile`, and its `expected.json`.
+/// A stored case of `tests/acceptance/hostile` or `tests/acceptance/type-errors`, and its `expected.json`.
 pub struct Case {
     pub name: &'static str,
     pub files: &'static [Embedded],
@@ -34,7 +34,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::deep::{DEEP, Generator};
-    use super::{Embedded, HOSTILE, PROGRAMS};
+    use super::{Embedded, HOSTILE, PROGRAMS, TYPE_ERRORS};
 
     /// In WASM the stack is the one that `.cargo/config.toml` links.
     #[cfg(target_arch = "wasm32")]
@@ -145,6 +145,42 @@ mod tests {
             assert!(found.is_subset(&codes), "{}: {found:?} is not in {codes:?}", case.name);
             if !later().contains(&case.name) {
                 assert_eq!(found, codes, "{}", case.name);
+            }
+        }
+    }
+
+    /// What the corpus compares of `related`: the file and the span (`tests/acceptance/README.md`).
+    fn places(related: &serde_json::Value) -> Vec<serde_json::Value> {
+        related
+            .as_array()
+            .map_or_else(Vec::new, |list| list.iter().map(|item| serde_json::json!({ "file": item["file"], "span": item["span"] })).collect())
+    }
+
+    /// Scenario 2: each program gives its one diagnostic, as the program does, here with no command line.
+    #[test]
+    fn the_programs_of_scenario_2_give_their_one_diagnostic() {
+        assert_eq!(TYPE_ERRORS.len(), 9);
+        for case in TYPE_ERRORS {
+            let expected: serde_json::Value = serde_json::from_str(case.expected).unwrap();
+            let mut names = Interner::new();
+            let root = project(&format!("tests/acceptance/type-errors/{}/", case.name), case.files);
+            let mut checked = check(root, &Shipped, &mut names, &Limits::default());
+            checked.report.finish();
+            let document = serde_json::to_value(checked.report.check_document(checked.counts, false)).unwrap();
+            assert_eq!(document["schema"], expected["schema"], "{}", case.name);
+            assert_eq!(document["status"], expected["status"], "{}", case.name);
+            assert_eq!(document["summary"]["errors"], expected["summary"]["errors"], "{}", case.name);
+            assert_eq!(document["summary"]["warnings"], expected["summary"]["warnings"], "{}", case.name);
+            let (found, wanted) = (document["diagnostics"].as_array().unwrap(), expected["diagnostics"].as_array().unwrap());
+            assert_eq!(found.len(), wanted.len(), "{}: {found:?}", case.name);
+            for (found, wanted) in found.iter().zip(wanted) {
+                for field in ["code", "severity", "file", "span", "function", "node", "wires", "expected", "found"] {
+                    assert_eq!(found[field], wanted[field], "{}: {field}", case.name);
+                }
+                assert_eq!(places(&found["related"]), places(&wanted["related"]), "{}: related", case.name);
+                if let Some(mention) = wanted["fix_mentions"].as_str() {
+                    assert!(found["fixes"].to_string().contains(mention), "{}: no fix mentions {mention}", case.name);
+                }
             }
         }
     }
