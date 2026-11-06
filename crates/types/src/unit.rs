@@ -213,6 +213,11 @@ impl Unit {
         None
     }
 
+    /// How many of `to` one of this unit is worth, offsets aside: what a literal holds once it is in `to` (spec 3.4).
+    pub fn ratio_to(&self, to: &Unit) -> f64 {
+        self.scale_value() / to.scale_value()
+    }
+
     /// The scale as a number. The powers of ten are set apart first, since multiplying primes one at
     /// a time would round: `GV/V` cubed must be `1e27`, not `9.999999999999999e26`. They then join what
     /// is left through its decimal text, which is correctly rounded, on every target. `scale_in_bounds`

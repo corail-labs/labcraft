@@ -1102,6 +1102,11 @@ impl<'a> Pass<'a> {
                 if self.refuse_a_unit(named, scope) {
                     return TyId::ERROR;
                 }
+                // An alias already is what it names, and a type with an error has its diagnostic.
+                if !self.table.has_error(element) && !matches!(self.table.get(element), Ty::Number { .. }) {
+                    self.error(scope, Code::Lc3019, "a `waveform` holds numbers, as in `waveform<f64[V]>` (3.2)".to_owned(), id);
+                    return TyId::ERROR;
+                }
                 self.intern(Ty::Waveform(element), scope, id)
             }
             Lookup::Base(base) => {

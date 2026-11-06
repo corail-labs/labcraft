@@ -50,6 +50,7 @@ fn in_file(text: &str) -> Vec<&'static str> {
         ("f.lcf", text),
         ("reading.lct", "type Reading = enum { Value(f64), Overload }"),
         ("point.lct", "type Point = struct { x: f64, y: f64 }"),
+        ("bag.lct", "type Bag = enum { Ints([i32]), Takers([fn([i32]) -> (i32)]) }"),
         ("g.lcf", "fn g(a: i32, b: i32 = 0, err: error = none) -> (r: i32, err: error) {\n    r = a\n    err = err\n}"),
         ("takes.lcf", "fn takes(a: [i32]) -> (r: i32) {\n    r = 1\n}"),
     ])
@@ -184,7 +185,7 @@ fn a_value_can_bear_the_name_of_a_function_and_hides_it_in_an_argument() {
 #[test]
 fn a_function_reference_is_a_path_and_a_primitive_can_be_one() {
     assert_eq!(in_file("fn f() -> () {\n    x = g\n}"), NOTHING);
-    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.add\n}"), NOTHING);
+    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.not\n}"), NOTHING);
     assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.nowhere\n}"), ["LC2002"]);
     assert_eq!(in_file("fn f() -> () {\n    x = core.add\n}"), ["LC2005"], "`core` is known to be a library");
     assert_eq!(in_file("fn f() -> () {\n    x = stpe.low\n}"), ["LC2001"], "a typo in a value is not told to add a `use`");
@@ -255,11 +256,12 @@ fn a_default_value_is_a_constant() {
         "a: Reading = Reading.Value(0.5)",
         "a: Point = Point { x: 1.0, y: 2.0 }",
         "a: fn(f64, f64) -> (bool) = core.lt",
-        "a: fn(f64, f64) -> (bool) = g",
+        "a: fn(i32, i32, error) -> (i32, error) = g",
         "a: [Reading] = [Reading.Overload]",
-        "a: [fn(f64, f64) -> (bool)] = [g, core.lt]",
-        "a: Reading = Reading.Value([1])",
-        "a: Reading = Reading.Value([g])",
+        "a: [fn([i32]) -> (i32)] = [takes, takes]",
+        "a: [fn(f64, f64) -> (bool)] = [core.lt, core.gt]",
+        "a: Bag = Bag.Ints([1])",
+        "a: Bag = Bag.Takers([takes])",
     ] {
         assert_eq!(with_default(constant), NOTHING, "{constant}");
     }

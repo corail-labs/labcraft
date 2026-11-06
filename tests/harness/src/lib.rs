@@ -178,7 +178,9 @@ mod tests {
                     assert_eq!(found[field], wanted[field], "{}: {field}", case.name);
                 }
                 assert_eq!(places(&found["related"]), places(&wanted["related"]), "{}: related", case.name);
-                if let Some(mention) = wanted["fix_mentions"].as_str() {
+                for mention in
+                    wanted["fix_mentions"].as_array().into_iter().flatten().chain(Some(&wanted["fix_mentions"])).filter_map(|text| text.as_str())
+                {
                     assert!(found["fixes"].to_string().contains(mention), "{}: no fix mentions {mention}", case.name);
                 }
             }

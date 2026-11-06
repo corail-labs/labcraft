@@ -465,7 +465,7 @@ fn places(related: &Value) -> Value {
 }
 
 /// Each program of this corpus has one error, and the report says what `expected.json` says: everything but the text of
-/// `message` and `fixes`. `fix_mentions` is not a field of the report: some fix must mention that text.
+/// `message` and `fixes`. `fix_mentions` is not a field of the report: some fix must mention that text, or each of these texts.
 #[test]
 fn the_programs_of_scenario_2_give_their_one_diagnostic() {
     let root = repository().join("tests/acceptance/type-errors");
@@ -487,7 +487,9 @@ fn the_programs_of_scenario_2_give_their_one_diagnostic() {
                 assert_eq!(found[field], wanted[field], "{name}: {field}");
             }
             assert_eq!(places(&found["related"]), places(&wanted["related"]), "{name}: related");
-            if let Some(mention) = wanted["fix_mentions"].as_str() {
+            for mention in
+                wanted["fix_mentions"].as_array().into_iter().flatten().chain(Some(&wanted["fix_mentions"])).filter_map(|text| text.as_str())
+            {
                 assert!(found["fixes"].to_string().contains(mention), "{name}: no fix mentions {mention}: {}", found["fixes"]);
             }
         }

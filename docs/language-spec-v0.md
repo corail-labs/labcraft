@@ -89,6 +89,14 @@ rows have the same length. An `[[f64]]` is an array of `[f64]`, whose rows are f
 neither converts to the other on a wire (Q-27). A literal of rows (`[row, row]`) becomes an `[f64; 2]` where
 one is expected.
 
+A `waveform<T>` has three fields, `t0: timestamp`, `dt: duration` and `samples: [T]`, which read like those of
+a struct (`w.samples`). It is built like one, with all three: `waveform { t0: t, dt: 1 ms, samples: s }`. `T`
+comes from `samples`; a literal there, such as `[]`, takes it from what the waveform goes to, and if nothing says
+it, it is an error. `T` is a number with any unit, not a `duration`: `waveform<string>` and `samples` of
+`[[f64]]` are rejected. As for any array (3.4), nothing converts between `waveform<f64[V]>` and
+`waveform<f64[mV]>`. With `type Trace = waveform<f64[V]>`, `Trace { … }` builds that type, so its `samples` are
+judged against `[f64[V]]`.
+
 A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
 contain itself, directly or through other types: any mention counts, in an array or a function type too.
 A type cannot bear a name that the language gives to a type: the base types (3.1), `waveform`, `queue`,
@@ -189,8 +197,19 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
 - **A conversion applies to a number on a wire**, never inside an array or a struct: `[f32]` to `[f64]` is
   rejected. In an array literal, the first element that decides gives the type of the others, as for
   branches (R-7): `[1 V, 200 mV]` is an `[f64[V]]`.
-- **Literals**: an integer literal takes the number type its context requires (`i32` if none); a decimal
-  literal is `f64`; a literal with a unit is an `f64` with that unit (`0 V` is `f64[V]`). A literal
+- **An array that holds a wire has the type of its wires**, at any depth, wherever it goes: two `f64[V]` wires
+  for an `[f64[mV]]` are rejected, and so is an `i32` wire in `[n]` for an `[f64]`, on the wire that leaves the array.
+  So a type never reaches a wire from where its array goes. Only a literal of rows takes the array of two dimensions
+  that is expected (3.2). An array of constants alone takes the type expected.
+- **Literals**: a literal takes the number type expected where it goes: an input, an output, a carry, a field, a
+  value of a variant, a default value, an element of an array, a value of an arm (R-7), a `collect` whose loop gives
+  its array to an output or a carry (6.2). So `gain: f32 = 0.5`,
+  `v: f32[V] = 1.5 V`, `n: i32[mV] = 5 mV` and `z: c128 = 1.5` are accepted. A decimal does not become an integer:
+  `n: i32 = 1.5` and `5.0 mV` for an `i32[mV]` are rejected. A literal keeps its unit and then converts as a wire
+  does: `1 V` for an `f32[mV]` is `1000 mV`, and `1 V` for an `i32[mV]` is rejected. Where nothing is expected, an
+  integer is an `i32`, a decimal an `f64`, and a literal with a unit an `f64` with that unit (`0 V` is `f64[V]`). Two
+  wires that meet expect nothing of each other: `core.add(x_f32, 0.5)` is an `f64`. A type argument or an array that
+  fixes a variable (3.5) does: `array.push(floats, 0.5)` with an `[f32]` takes it. A literal
   without a unit has no dimension, whatever its context: `core.ge(voltage, 0)` is rejected, and
   `core.ge(voltage, 0 V)` says what it means. A unit with no dimension but a scale asks the same: `5` for an
   `f64[mV/V]` would read 5000 mV/V, so it is rejected, decimals included, and `5 mV/V` says what it means. A
@@ -198,8 +217,9 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   integer literal takes the number type of the other: `core.div(x_f32, 2)` is an `f32`. An integer literal
   keeps its value in its type or is rejected: `300` for an `i8`, `16777217` for an `f32`,
   `9007199254740993` for an `f64` or with a unit. A decimal rounds to the nearest: `9007199254740993.0` is
-  accepted. A decimal too large for `f64` is an error, and one too small to tell from zero reads as zero
-  (`1e-999`).
+  accepted. A literal too large for its type is an error, by its value in the unit it goes to: `1e39` for an `f32` or
+  a `c64`, `1e36 V` for an `f32[mV]`, while `1e39 mV` for an `f32[V]` is accepted. One too small to tell from zero reads
+  as zero (`1e-999`, or `1e-50` for an `f32`).
 
 ### 3.5 Generics
 
@@ -267,8 +287,13 @@ fn check_voltage(
 - **A reference matches a function type exactly**: the same inputs and outputs, in number and in type, with
   no conversion, since no node would hold it. A default value does not shorten a signature, and a
   variadic parameter counts as an array (`parts: string...` is `fn([string])`). A generic primitive takes
-  its variables from the type expected (`core.abs` for `fn(f64[V]) -> (f64[V])`), and a parameter of kind
-  unit, category or element has no function type. `core.call` wires every input of the type, in order or by
+  its variables from the type expected (`core.abs` for `fn(f64[V]) -> (f64[V])`), and it is rejected where no
+  function type is expected, `core.call(core.abs, x)` included. Beside a wire it takes the type of that wire, in any
+  order: `core.select(c, core.lt, f)`. Its result follows the rules of its node:
+  `core.mul` for `fn(f64[V], f64[A]) -> (f64[W])`, `core.sub` for `fn(f64[°C], f64[°C]) -> (f64[K])`. `core.pow`
+  needs a number without a unit, since the unit of its result depends on a constant exponent. A parameter of kind
+  unit, category or element has no function type, and neither have `core.call` and `string.format`, which take
+  more than their parameters. `core.call` wires every input of the type, in order or by
   the names that the type gives, since a function type has no default values.
 
 A function with every kind of default value:
@@ -339,9 +364,11 @@ dmm, e1 = visa.open(resource)
   `relays.apply(bench.relays, step.route)`. A path is not a nesting of calls.
 - **Naming a value**: `name = operand` gives a constant or an existing value a new name
   (`next v = x`, `err = e3`). It creates no node.
-- **Struct construction**: `r = StepResult { name: n, value: v, passed: p }`, a node.
+- **Struct construction**: `r = StepResult { name: n, value: v, passed: p }`, a node. Every field is given, once.
+  A field is an input of the node: a wire converts to it (3.3, 3.4), and a literal takes its type.
 - **Variant construction**: `r = Reading.Value(v)`, a node, not a nested call. A variant with
-  several values takes one argument per value.
+  several values takes one argument per value. Its values have no default: `Reading.Value` and `Reading.Value()`
+  are rejected for a variant that holds some. `Reading.Overload` and `Reading.Overload()` are the same.
 - **Label**: a node can be given a label (`#close:`), useful when its outputs carry nothing of
   interest: `#close: e9 = visa.close(dmm, err: e8)`. A label is unique in its function (R-17);
   `after:` (5.3) and the `layout` section (11) designate the node by it.
@@ -639,7 +666,9 @@ total, scaled = for x in readings, carry acc = 0 V {
   `carry n: f64 = 0`. `[]` needs a written type.
 - **The clauses read from outside the loop**, even a name that a carry then hides (R-3). One clause does
   not see another: `for r in rows, c in r` and `carry b = a` after `carry a = 0` are rejected.
-- `collect value`: builds an array of the values of each iteration, as output.
+- `collect value`: builds an array of the values of each iteration, as output. A constant takes the element type of the
+  output or the carry that the array goes to (3.4); a wire keeps its type, so an `i32` wire is an `[i32]`, which an output
+  `[f64]` rejects.
 - **Where they go**: `next`, `collect` and `until` appear only directly in a loop body, not in a
   function body and not inside an arm of a `match` or `handle` of the body (R-6). Each carry has
   exactly one `next`. A `loop` has exactly one `until`; a `for` has none.
@@ -1505,7 +1534,7 @@ What the grammar alone does not say:
 | R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
 | R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. In that array, `x` can name a function of the library when no value has that name, as in `[f, f]`. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
 | R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield` (grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
-| R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, and the first branch decides the type of each. The other branches are converted to it as on any wire (3.3, 3.4): to its unit, or widened; what cannot be converted is rejected, so the order of branches can matter. A literal that does not decide (an integer without a unit, `[]`, an array of only those) takes the type of the first branch that gives one; if none does, it takes the type its target already has, an output or a carry (`x: u8` with `x = match c { … yield 1 … yield 2 }`); without such a target, an integer is an `i32` and `[]` is an error. A branch that decides keeps its type against the target, and the wire to the target is then judged as any other. |
+| R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, and the first branch decides the type of each. The other branches are converted to it as on any wire (3.3, 3.4): to its unit, or widened; what cannot be converted is rejected, so the order of branches can matter. A literal takes the number type of its target, an output or a carry, as on a line of its own (3.4): `gain: f32` with `gain = match c { … yield 0.5 … yield 1.5 }`. After a branch that decides, it takes the type of that branch. A literal that does not decide (an integer without a unit, `[]`, an array of only those) comes after the values that do, so it takes the type of the first branch that gives one; if none does, it takes the type of its target (`x: u8` with `x = match c { … yield 1 … yield 2 }`); without such a target, an integer is an `i32` and `[]` is an error. A wire keeps its type against the target, and so does an array that holds one (3.4), and the wire to the target is then judged as any other. |
 | R-8 | **A `match` has a branch for every value.** Without `_`, an enumeration names all its variants and a boolean both `true` and `false`. An integer or a string always has `_`, even when ranges cover the whole type. `_` can share a branch with other patterns (6.1). A `_` that can catch nothing, with every variant named or both `true` and `false`, gives a warning. |
 | R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
@@ -1519,7 +1548,7 @@ What the grammar alone does not say:
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error, in one branch or in two (6.1). Numbers compare by value (`1_000` and `1000`, `-0` and `0`), and strings by their text once escapes are read, with no normalization (R-20). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
 | R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
 | R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
-| R-21 | **The default value of a parameter is a constant** (section 4): a literal; a variant, with its values if it holds some (`Reading.Value(0 V)`); a struct construction with every field given (`Limits { low: 220 V, high: 240 V }`); or the name of a function, of a library or of the primitives (`core.lt`), which matches the type of the parameter as any reference does (section 4). A value inside a variant, a field or an array is an operand (R-9), so it is a literal, a variant without values or the name of a function: a default that would put a struct or a variant with values inside another cannot be written. A default reads nothing of the diagram: a value, a call of a function, `after:` or a type argument is rejected. |
+| R-21 | **The default value of a parameter is a constant** (section 4): a literal; a variant, with its values if it holds some (`Reading.Value(0 V)`); a struct construction with every field given (`Limits { low: 220 V, high: 240 V }`); or the name of a function, of a library or of the primitives (`core.lt`), which matches the type of the parameter as any reference does (section 4). A value inside a variant, a field or an array is an operand (R-9), so it is a literal, a variant without values or the name of a function: a default that would put a struct or a variant with values inside another cannot be written. A default reads nothing of the diagram: a value, a call of a function, `after:` or a type argument is rejected. It has the type of its parameter, with the conversions of a wire (3.3, 3.4): `v: f64[V] = 200 mV`, `t: duration = 5 s`. No constant is a `timestamp`, so a `waveform` cannot be a default. |
 
 ## 15. Open questions
 

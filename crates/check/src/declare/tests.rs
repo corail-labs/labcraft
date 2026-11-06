@@ -468,15 +468,17 @@ fn at_the_limit(wrapper: &str, max: u32) -> Vec<&'static str> {
 
 #[test]
 fn every_kind_of_type_counts_for_one_level_and_the_limit_is_the_option() {
-    for wrapper in ["[B]", "struct { a: B }", "enum { A(B) }", "fn(B) -> ()", "fn() -> (B)", "waveform<B>"] {
+    // `B` is an array here, which a `waveform` does not hold (3.2): the option still counts it first.
+    for wrapper in ["[B]", "struct { a: B }", "enum { A(B) }", "fn(B) -> ()", "fn() -> (B)"] {
         let text = format!("type A = {wrapper}");
         assert_eq!(at_the_limit(&text, 2), NOTHING, "{wrapper}: two levels");
     }
     let text = |wrapper: &str| format!("type A = {wrapper}");
     // What the parser counts by itself is `LC0007`, so each case goes over only through `B`: one level in the file.
-    for wrapper in ["[B]", "struct { a: B }", "enum { A(B) }", "fn(B) -> ()", "waveform<B>"] {
+    for wrapper in ["[B]", "struct { a: B }", "enum { A(B) }", "fn(B) -> ()"] {
         assert_eq!(at_the_limit(&text(wrapper), 1), ["LC1006"], "{wrapper}: over the option");
     }
+    assert_eq!(at_the_limit(&text("waveform<B>"), 1), ["LC1006", "LC3019"], "over the option, and an array in a waveform");
 }
 
 #[test]

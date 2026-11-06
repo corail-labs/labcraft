@@ -45,6 +45,10 @@ pub enum Meaning {
     ArrayOfNumber,
     /// What a struct construction builds, or the type written on a carry.
     Type(TyId),
+    /// `waveform { … }`: its type comes from its `samples` or from what it goes to (3.2).
+    Waveform,
+    /// A construction on a type of the language that is not a struct, such as `f64 { … }`, for pass 4 to say (`LC3015`).
+    NotAStruct,
     /// `after: #close`, by the id of the label of that node.
     Label(Id),
     /// See [`Resolved::call`].
