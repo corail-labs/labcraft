@@ -57,6 +57,24 @@ fn assert_body_stays(lines: &[&str]) {
 // Order of the lines.
 
 #[test]
+fn a_default_value_is_written_like_the_statement_it_could_be() {
+    assert_stays("labcraft 1\n\nfn f(a: M = M.Fast, b: R = R.Value(0 V), c: L = L { low: 1 V }, d: F = core.lt) -> () {}\n");
+    assert_canonical(
+        "labcraft 1\n\nfn f(a:M=M . Fast,b:R=R.Value( 0V ,),c:L=L{low:1 V,},) -> () {}\n",
+        "labcraft 1\n\nfn f(a: M = M.Fast, b: R = R.Value(0 V), c: L = L { low: 1 V }) -> () {}\n",
+    );
+}
+
+#[test]
+fn a_default_value_stays_whole_on_the_line_of_its_parameter() {
+    let long = "a_field_with_a_long_name: 1000 V, another_field_with_a_long_name: 2000 V, a_third_field_with_a_long_name: 3000 V";
+    let text = format!("labcraft 1\n\nfn f(\n    limits: Limits = Limits {{ {long} }},\n    b: f64,\n) -> () {{}}\n");
+    assert_stays(&text);
+    let across = format!("labcraft 1\n\nfn f(limits: Limits = Limits {{\n{}\n}}, b: f64) -> () {{}}\n", long.replace(", ", ",\n"));
+    assert_canonical(&across, &text);
+}
+
+#[test]
 fn ordinary_lines_go_by_name_once_their_inputs_are_there() {
     assert_body(&["b = g()", "a = f()"], &["a = f()", "b = g()"]);
     assert_body(&["a = f(b)", "b = g()"], &["b = g()", "a = f(b)"]);

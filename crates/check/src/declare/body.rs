@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use labcraft_format::write_line;
 use labcraft_graph::{
-    Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand, OrderRef,
-    Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
+    Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Constant, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand,
+    OrderRef, Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
 };
 use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text};
 
@@ -550,18 +550,19 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
     // The function.
 
     fn function(&mut self, signature: &'a Signature, function: Option<&'a Function>) {
-        for param in &signature.params {
-            if let Some(default) = &param.default {
-                self.judge_literal(default);
-            }
-        }
-        let Some(function) = function else { return };
         for line in &self.scope.model.file.uses {
             let target = self.scope.file.imports.get(&path_text(&line.path, self.names()));
             if matches!(target, Some(Target::Missing | Target::Unreadable)) {
                 self.missing.insert(line.path.first);
             }
         }
+        // Before the values of the signature are known, since a default reads none of them.
+        for param in &signature.params {
+            if let Some(default) = &param.default {
+                self.judge_constant(default);
+            }
+        }
+        let Some(function) = function else { return };
         self.declare_signature(signature);
         let mark = self.enter();
         self.declare_lines(&function.body);
@@ -771,6 +772,11 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         for field in &literal.fields {
             self.value_operand(&field.value);
         }
+        self.struct_type(literal);
+    }
+
+    /// What a struct construction builds, and the names of its fields.
+    fn struct_type(&mut self, literal: &'a StructLit) {
         let scope = self.scope;
         let lookup = self.pass.lookup(&scope, &literal.path);
         let declared = match lookup {
@@ -1038,17 +1044,131 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         );
     }
 
-    fn judge_literal(&mut self, operand: &'a Operand) {
+    // Default values: their form and their names (R-21). Their types are for pass 4.
+
+    fn judge_constant(&mut self, constant: &'a Constant) {
+        match constant {
+            Constant::Operand(operand) => self.constant_operand(operand),
+            Constant::Call(call) => self.constant_call(call),
+            Constant::Struct(literal) => {
+                for field in &literal.fields {
+                    self.constant_operand(&field.value);
+                }
+                self.struct_type(literal);
+            }
+        }
+    }
+
+    fn not_a_constant(&mut self, id: Id, what: &str) {
+        self.say(Code::Lc3017, format!("{what}: a default value is a constant, which reads nothing of the diagram (R-21)"), id);
+    }
+
+    fn constant_operand(&mut self, operand: &'a Operand) {
         match operand {
+            Operand::Path(path) => self.constant_path(path),
             Operand::Number(id, numeral, unit) => self.judge_number(*numeral, unit.as_deref(), *id),
             Operand::Array(_, values) => {
                 for value in values {
-                    self.judge_literal(value);
+                    self.constant_operand(value);
                 }
             }
-            // A default is a literal: what else it holds is for pass 4 (`LC3017`).
-            Operand::Path(_) | Operand::Bracket(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Bracket(id, unit) => self.constant_bracket(*id, unit),
+            Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
         }
+    }
+
+    /// `[1]` and `[f]` are arrays of one, for a value of a variant (R-5). Nothing else in brackets is a constant.
+    fn constant_bracket(&mut self, id: Id, unit: &UnitExpr) {
+        if unit.rest.is_empty() {
+            match &unit.first {
+                UnitTerm::One { exponent: None } => {
+                    self.resolved.set(id, Meaning::ArrayOfNumber);
+                    return;
+                }
+                UnitTerm::Named { name, exponent: None } => match self.find_in(self.scope.library, *name, Named::Unknown) {
+                    Named::Function(Meaning::Function { library, name }, _) => {
+                        self.resolved.set(id, Meaning::ArrayOfFunction { library, name });
+                        return;
+                    }
+                    Named::AlreadySaid => return,
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        self.not_a_constant(id, "this names neither a number nor a function of this library");
+    }
+
+    fn constant_path(&mut self, path: &'a Path) {
+        let names = self.names();
+        match self.find_named(path) {
+            Named::Function(meaning, _) | Named::Variant(meaning) => self.resolved.set(path.id, meaning),
+            Named::NoVariant(ty) => {
+                let text = path_text(path, names);
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: `{ty}` has no such variant"), path.id);
+            }
+            Named::NoFunction(library) => {
+                let text = path_text(path, names);
+                self.say(Code::Lc2002, format!("unknown function `{text}`: the library `{library}` has no such function"), path.id);
+            }
+            Named::NotImported { library, known: true } => self.report_not_imported(library, path.id),
+            Named::AlreadySaid => {}
+            Named::IsType => {
+                let text = path_text(path, names);
+                self.not_a_constant(path.id, &format!("`{text}` is a type"));
+            }
+            Named::Unknown | Named::NotImported { .. } => {
+                let text = path_text(path, names);
+                self.not_a_constant(path.id, &format!("`{text}` is neither a variant nor a function"));
+            }
+        }
+    }
+
+    /// A variant with its values. What it holds says nothing if the call is the mistake.
+    fn constant_call(&mut self, call: &'a Call) {
+        let names = self.names();
+        let meaning = match self.find_named(&call.callee) {
+            Named::Variant(meaning) => meaning,
+            Named::NoVariant(ty) => {
+                let text = path_text(&call.callee, names);
+                self.say(Code::Lc2007, format!("unknown variant `{text}`: `{ty}` has no such variant"), call.callee.id);
+                return;
+            }
+            Named::NotImported { library, known: true } => {
+                self.report_not_imported(library, call.callee.id);
+                return;
+            }
+            Named::AlreadySaid => return,
+            Named::Function(..) | Named::NoFunction(_) | Named::IsType | Named::Unknown | Named::NotImported { .. } => {
+                let text = path_text(&call.callee, names);
+                self.not_a_constant(call.id, &format!("`{text}(…)` is a call"));
+                return;
+            }
+        };
+        self.resolved.set(call.callee.id, meaning);
+        if !call.type_args.is_empty() {
+            self.not_a_constant(call.id, "a variant takes no type argument");
+        }
+        let mut position = 0_u32;
+        let mut terminals = Vec::with_capacity(call.args.len());
+        for arg in &call.args {
+            match arg {
+                Arg::After { id, .. } => {
+                    self.not_a_constant(*id, "`after:` orders the nodes of a diagram");
+                    terminals.push(Terminal::Order);
+                }
+                Arg::Value { id, name, value } => {
+                    if let Some(name) = name {
+                        let text = self.text(*name);
+                        self.say(Code::Lc2009, format!("unknown named argument `{text}`: the values of a variant have no name"), *id);
+                    }
+                    self.constant_operand(value);
+                    terminals.push(Terminal::Param(position));
+                    position = position.saturating_add(1);
+                }
+            }
+        }
+        self.resolved.add_call(call.id, ResolvedCall { callee: meaning, terminals: terminals.into_boxed_slice(), type_args: Box::default() });
     }
 
     fn judge_number(&mut self, numeral: Numeral, unit: Option<&'a UnitExpr>, id: Id) {

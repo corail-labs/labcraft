@@ -335,6 +335,10 @@ class Scope:
         return out
 
 
+def _is_literal(op):
+    return op.kind == "const" or (op.kind == "array" and all(_is_literal(item) for item in op.items))
+
+
 def callee_params(c):
     """[(name, required, kind)] of a callee (user function or primitive)."""
     if isinstance(c, FnIR):
@@ -366,8 +370,8 @@ class Checker:
             self.d("error", fn.line, f"output '{n}' declared twice")
         for p in fn.params:
             self.check_type(p.type, fn.line)
-            if p.default is not None and p.default.kind not in ("const", "array"):
-                self.d("error", p.default.line or fn.line, f"the default value of '{p.name}' must be a literal")
+            if p.default is not None and not _is_literal(p.default):
+                self.d("error", p.default.line or fn.line, f"this proof of concept runs only a literal as the default value of '{p.name}'")
         for _, ty, _ in fn.outputs:
             self.check_type(ty, fn.line)
         for n in names + outs:

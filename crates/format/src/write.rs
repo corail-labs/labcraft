@@ -13,10 +13,10 @@
 //! It recurses on the model: the nesting limit bounds it (`crates/format/tests/stack.rs`).
 
 use labcraft_graph::{
-    Arg, Arm, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Decl, EnumType, Exponent, Extern, Field,
-    File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef,
-    Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature, Statement,
-    StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
+    Arg, Arm, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType, Exponent, Extern,
+    Field, File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem, LayoutKind, Loop, NamedType,
+    NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature,
+    Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
 };
 use labcraft_types::{Interner, Limits, Name};
 
@@ -356,7 +356,11 @@ impl<'a> Writer<'a> {
         self.type_expr(&param.ty, 1, flat);
         if let Some(default) = &param.default {
             self.push(" = ");
-            self.operand(default);
+            match default {
+                Constant::Operand(operand) => self.operand(operand),
+                Constant::Call(call) => self.call(call),
+                Constant::Struct(literal) => self.struct_literal(literal),
+            }
         }
         if param.variadic {
             self.push("...");

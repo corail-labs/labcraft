@@ -242,6 +242,69 @@ fn a_struct_construction_names_a_type_and_its_fields() {
     assert_eq!(in_file("fn f() -> (x: Point, y: i32) {\n    x, y = Point { x: 1.0, y: 2.0 }\n}"), ["LC2103"]);
 }
 
+/// A parameter of `f` with this type and this default, beside `Reading`, `Point`, `g` and `takes`.
+fn with_default(param: &str) -> Vec<&'static str> {
+    in_file(&format!("use core\n\nfn f(y: f64, {param}) -> () {{}}"))
+}
+
+#[test]
+fn a_default_value_is_a_constant() {
+    for constant in [
+        "a: f64 = 1.5",
+        "a: Reading = Reading.Overload",
+        "a: Reading = Reading.Value(0.5)",
+        "a: Point = Point { x: 1.0, y: 2.0 }",
+        "a: fn(f64, f64) -> (bool) = core.lt",
+        "a: fn(f64, f64) -> (bool) = g",
+        "a: [Reading] = [Reading.Overload]",
+        "a: [fn(f64, f64) -> (bool)] = [g, core.lt]",
+        "a: Reading = Reading.Value([1])",
+        "a: Reading = Reading.Value([g])",
+    ] {
+        assert_eq!(with_default(constant), NOTHING, "{constant}");
+    }
+    for (not_constant, why) in [
+        ("a: f64 = y", "a value of the diagram"),
+        ("a: f64 = y.z", "a field of a value"),
+        ("a: f64 = nowhere", "nothing"),
+        ("a: f64 = Point", "a type"),
+        ("a: i32 = g(1)", "a call of a function"),
+        ("a: f64 = core.abs(1.0)", "a call of a primitive"),
+        ("a: f64 = Point(1.0)", "a type called"),
+        ("a: [f64] = [y]", "a value in an array"),
+        ("a: Point = Point { x: y, y: 2.0 }", "a value in a field"),
+        ("a: Reading = Reading.Value(y)", "a value in a variant"),
+        ("a: Reading = Reading.Value(1.0, after: y)", "an order"),
+        ("a: Reading = Reading.Value<f64>(1.0)", "a type argument"),
+        ("a: Reading = Reading.Value([y])", "a value in brackets"),
+        ("a: Reading = Reading.Value([V])", "a unit in brackets"),
+        ("a: Reading = Reading.Value([m/s])", "a compound unit"),
+    ] {
+        assert_eq!(with_default(not_constant), ["LC3017"], "{why}");
+    }
+}
+
+#[test]
+fn a_default_value_names_what_a_body_would_name() {
+    assert_eq!(with_default("a: Reading = Reading.Nowhere"), ["LC2007"]);
+    assert_eq!(with_default("a: Reading = Reading.Nowhere(1.0)"), ["LC2007"]);
+    assert_eq!(with_default("a: fn(f64, f64) -> (bool) = core.nowhere"), ["LC2002"]);
+    assert_eq!(with_default("a: Nowhere = Nowhere { x: 1.0 }"), ["LC2003", "LC2003"]);
+    assert_eq!(with_default("a: Point = Point { x: 1.0, z: 2.0 }"), ["LC2006"]);
+    assert_eq!(with_default("a: Reading = Reading.Value(value: 1.0)"), ["LC2009"]);
+    assert_eq!(in_file("fn f(a: fn(f64, f64) -> (bool) = core.lt) -> () {}"), ["LC2005"], "a primitive needs its `use`");
+    assert_eq!(in_file("use nowhere\n\nfn f(a: Reading = nowhere.Reading.Value) -> () {}"), ["LC2004"], "already said");
+}
+
+#[test]
+fn a_default_value_keeps_the_bounds_of_its_numbers() {
+    let beyond = "99999999999999999999999";
+    assert_eq!(with_default("a: f64 = 1e999"), ["LC1006"]);
+    assert_eq!(with_default(&format!("a: Reading = Reading.Value({beyond})")), ["LC1006"]);
+    assert_eq!(with_default("a: Point = Point { x: 1e999, y: 1 nowhere }"), ["LC1006", "LC2008"]);
+    assert_eq!(with_default("a: Reading = Reading.Value(1 nowhere)"), ["LC2008"]);
+}
+
 #[test]
 fn an_unknown_function_and_a_library_without_use() {
     assert_eq!(in_body("x = nowhere(p)"), ["LC2002"]);
