@@ -4,7 +4,7 @@
 //! It recurses on the model, as `Clone` and `Eq` do: the nesting limit bounds it.
 
 use crate::{
-    Arg, Arm, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Decl, FieldInit, File, FnArg, For, ForIn, Generic, Icon, IconItem,
+    Arg, Arm, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Constant, Decl, FieldInit, File, FnArg, For, ForIn, Generic, Icon, IconItem,
     IconShape, Id, Label, Layout, LayoutItem, LayoutKind, Loop, NodeRef, Operand, OrderRef, Panel, Path, Pattern, Point, Rhs, Signature, Statement,
     StatementKind, StructLit, Target, TerminalRef, TypeExpr, UnitExpr, UnitTerm, Yield,
 };
@@ -72,8 +72,11 @@ impl Ids {
         for param in &mut signature.params {
             self.next(&mut param.id);
             self.type_expr(&mut param.ty);
-            if let Some(default) = &mut param.default {
-                self.operand(default);
+            match &mut param.default {
+                Some(Constant::Operand(operand)) => self.operand(operand),
+                Some(Constant::Call(call)) => self.call(call),
+                Some(Constant::Struct(literal)) => self.struct_literal(literal),
+                None => {}
             }
         }
         for output in &mut signature.outputs {
@@ -234,16 +237,18 @@ impl Ids {
                 self.clauses(clauses);
                 self.body(body);
             }
-            Rhs::Struct(literal) => {
-                let StructLit { id, path, fields } = &mut **literal;
-                self.next(id);
-                self.path(path);
-                for FieldInit { id, value, .. } in fields {
-                    self.next(id);
-                    self.operand(value);
-                }
-            }
+            Rhs::Struct(literal) => self.struct_literal(literal),
             Rhs::Operand(operand) => self.operand(operand),
+        }
+    }
+
+    fn struct_literal(&mut self, literal: &mut StructLit) {
+        let StructLit { id, path, fields } = literal;
+        self.next(id);
+        self.path(path);
+        for FieldInit { id, value, .. } in fields {
+            self.next(id);
+            self.operand(value);
         }
     }
 

@@ -92,6 +92,12 @@ fn assert_saved_again_changes_nothing(what: &str, bytes: &[u8]) {
 
 /// A line that moves changes the ids of what it holds, up to the last pattern of a list.
 #[test]
+fn the_default_values_are_renumbered() {
+    let text = "labcraft 1\nuse b\nuse a\nuse a\nfn f(m: M = M.Fast, r: R = R.Value(0 V, [1]), l: L = L { low: 1 V, high: [2] }, n: [R] = [R.None]) -> () {}\n";
+    assert_saved_again_changes_nothing("every form of a default value", text.as_bytes());
+}
+
+#[test]
 fn the_patterns_of_a_list_are_renumbered() {
     let text = b"labcraft 1\n\nfn f() -> (b: i32) {\n    b = match a {\n        1, 2, _ => yield 1\n    }\n    a = g()\n}\n";
     assert_saved_again_changes_nothing("a list of patterns", text);

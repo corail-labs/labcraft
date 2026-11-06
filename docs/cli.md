@@ -349,7 +349,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC1001` | error | Syntax error; the message lists what was expected | 14 |
 | `LC1002` | error | Unexpected end of file (truncated file) | 14 |
 | `LC1003` | error | Unterminated string or unknown escape | 14.1 |
-| `LC1004` | error | Call where a value is expected, nested call above all; the fix names the intermediate value | R-9, 5.1 |
+| `LC1004` | error | Call where a value is expected, nested call above all; the fix names the intermediate value, except in a default value, which has no line before it | R-9, 5.1, R-21 |
 | `LC1005` | error | Reserved word where a name is expected | 14.1 |
 | `LC1006` | error | Number or type out of bounds: `1e999`, an integer beyond `i64` and `u64`, a unit exponent or scale out of bounds (±127, 1e300), an array of 0 or more than 32 dimensions, a type nested beyond `--max-nesting`, through its lines or its files *(bounds proposed)* | 3, scenario 4 |
 
@@ -412,7 +412,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
 | `LC3015` | error | Struct or variant construction: field or value missing, or of the wrong type | 5.1 | |
 | `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
-| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element | 4, 10 | |
+| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument | 4, 10, R-21 | |
 | `LC3018` | error | Integer literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`) | 3.4, 6.1 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, a `[]` whose type nothing says, or the wrong number of type arguments | 3.5 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |

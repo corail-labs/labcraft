@@ -14,11 +14,11 @@
 //! recursive step. Tokens are read one at a time, since a file of 16 MiB can hold 8 million of them.
 
 use labcraft_graph::{
-    Arg, Arm, ArrayType, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Decl, EnumType, Exponent, Extern,
-    Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout, LayoutItem,
-    LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern,
-    Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr, UnitOp,
-    UnitTerm, Use, VariantDecl, View, Yield,
+    Arg, Arm, ArrayType, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType,
+    Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout,
+    LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path,
+    Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr,
+    UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
 };
 use labcraft_types::{Code, Diagnostic, Fix, Interner, Limits, Name, Position, Report, Span};
 
@@ -67,6 +67,8 @@ struct Parser<'a, 'b> {
     pending: Vec<Pending>,
     free: u32,
     atomic: u32,
+    /// In a default value, where a call inside a value has no line before it to move to (R-21).
+    in_default: bool,
     depth: u32,
     max_depth: u32,
     map: SourceMap,
@@ -81,6 +83,7 @@ pub(crate) fn parse_file(text: &str, names: &mut Interner, report: &mut Report, 
         pending: Vec::new(),
         free: 0,
         atomic: 0,
+        in_default: false,
         depth: 0,
         max_depth: limits.max_nesting(),
         map: SourceMap::default(),
@@ -652,12 +655,33 @@ impl<'a> Parser<'a, '_> {
         let mut default = None;
         let mut variadic = false;
         if self.eat(T::Equals)? {
-            default = Some(self.literal("a literal: a default value is written directly")?);
+            default = Some(self.constant()?);
         } else if self.eat(T::Ellipsis)? {
             variadic = true;
         }
         let id = self.place(start);
         Ok(Param { id, comments: Attached::default(), name, ty, default, variadic })
+    }
+
+    /// `constant`: a path, a call and a struct construction read as in a statement, and `check` says which are constants (R-21).
+    fn constant(&mut self) -> Parse<Constant> {
+        self.in_default = true;
+        let constant = self.constant_inside();
+        self.in_default = false;
+        constant
+    }
+
+    fn constant_inside(&mut self) -> Parse<Constant> {
+        let start = self.start()?;
+        if !matches!(self.peek_kind()?, Some(T::Name(_))) {
+            return Ok(Constant::Operand(self.operand()?));
+        }
+        let path = self.path("a constant")?;
+        match self.peek_kind()? {
+            Some(T::LeftParen | T::Less) => Ok(Constant::Call(Box::new(self.call(path, start)?))),
+            Some(T::LeftBrace) => Ok(Constant::Struct(Box::new(self.struct_literal(path, start)?))),
+            _ => Ok(Constant::Operand(Operand::Path(path))),
+        }
     }
 
     fn output(&mut self) -> Parse<Output> {
@@ -1000,6 +1024,12 @@ impl<'a> Parser<'a, '_> {
         let names: &Interner = self.lexer.names();
         let segments: Vec<&str> = path.segments().map(|name| names.resolve(name)).collect();
         let callee = segments.join(".");
+        if self.in_default {
+            let message = format!("`{callee}(…)` is a call inside a default value: no struct or variant with values stands inside another (R-21)");
+            let mut diagnostic = Diagnostic::new(Code::Lc1004, message, "");
+            diagnostic.span = Some(span);
+            return Box::new(diagnostic);
+        }
         let value = format!("{}_value", segments.last().copied().unwrap_or("result"));
         let mut diagnostic =
             Diagnostic::new(Code::Lc1004, format!("`{callee}(…)` is a call inside a value: each node has a line of its own (R-9)"), "");

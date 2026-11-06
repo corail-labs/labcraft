@@ -236,6 +236,8 @@ fn check_voltage(
 ```
 
 - An input without a default value is **required**: a call that does not wire it is rejected.
+- **The default value of a parameter is a constant**, written without reading the diagram or calling
+  anything (R-21): a literal, a variant with its values, a struct construction, the name of a function.
 - Outputs are named. An output left unwired by the caller is allowed; an unwired `err` output
   gives a warning (7.5).
 - Call: `name(arguments)`, positional then named (`check_voltage(r, high: 250 V)`).
@@ -268,6 +270,22 @@ fn check_voltage(
   its variables from the type expected (`core.abs` for `fn(f64[V]) -> (f64[V])`), and a parameter of kind
   unit, category or element has no function type. `core.call` wires every input of the type, in order or by
   the names that the type gives, since a function type has no default values.
+
+A function with every kind of default value:
+
+```text
+labcraft 1
+
+use core
+
+fn sweep(
+    mode: Mode = Mode.Fast,
+    start: Reading = Reading.Value(0 V),
+    limits: Limits = Limits { low: 220 V, high: 240 V },
+    compare: fn(f64, f64) -> (bool) = core.lt,
+    steps: [i32] = [1, 2, 5],
+) -> () {}
+```
 
 ### 4.1 External functions
 
@@ -419,7 +437,8 @@ has one text:
     on its own line (`check_voltage`, section 12). If that line still does not fit, or the outputs
     contain a comment, the outputs are split the same way: `) -> (` ends the line, one output per
     line followed by a comma, then `) {`. Outputs are split only when the parameters are; a
-    function without parameters keeps `fn name() -> (` on its first line.
+    function without parameters keeps `fn name() -> (` on its first line. A default value is
+    never split, whatever its length: a struct construction in it stays on one line.
   - **The fields of a struct and the variants of an enum** follow the same rule: one line if it fits
     and has no comment between its braces, otherwise one item per line, each followed by a comma.
     Inside `[ ]`, `( )` or `< >`, the items are indented one level from the line that holds the `{`,
@@ -1361,7 +1380,9 @@ fn_sig        = "fn" IDENT [ generics ]
 generics      = "<" generic { "," generic } ">" ;
 generic       = IDENT [ ":" path ] ;     (* T: Number; T is a whole type, unit included (3.5).
                                             A variable for a unit alone, f64[U]: Q-12 *)
-param         = IDENT ":" type_expr ( [ "=" literal ] | "..." ) ;   (* "..." : variadic (5.4) *)
+param         = IDENT ":" type_expr ( [ "=" constant ] | "..." ) ;  (* "..." : variadic (5.4) *)
+constant      = call | struct_lit | operand ;           (* a default value; which of them are
+                                                            constants is for R-21 *)
 output        = IDENT ":" type_expr ;
 ```
 
@@ -1498,6 +1519,7 @@ What the grammar alone does not say:
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error, in one branch or in two (6.1). Numbers compare by value (`1_000` and `1000`, `-0` and `0`), and strings by their text once escapes are read, with no normalization (R-20). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
 | R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
 | R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
+| R-21 | **The default value of a parameter is a constant** (section 4): a literal; a variant, with its values if it holds some (`Reading.Value(0 V)`); a struct construction with every field given (`Limits { low: 220 V, high: 240 V }`); or the name of a function, of a library or of the primitives (`core.lt`), which matches the type of the parameter as any reference does (section 4). A value inside a variant, a field or an array is an operand (R-9), so it is a literal, a variant without values or the name of a function: a default that would put a struct or a variant with values inside another cannot be written. A default reads nothing of the diagram: a value, a call of a function, `after:` or a type argument is rejected. |
 
 ## 15. Open questions
 

@@ -128,6 +128,16 @@ fn on_an_extern_declaration() {
 }
 
 #[test]
+fn inside_a_default_value_a_comment_goes_above_its_parameter() {
+    let file = file_of(
+        "labcraft 1\nfn f(\n    a: L = L { // one\n        low: 1 V, // two\n    },\n    b: R = R.Value( // three\n        0 V,\n    ),\n) -> () {}\n",
+    );
+    let signature = &function_of(&file).signature;
+    assert_attached(&signature.params[0].comments, &["one", "two"], None);
+    assert_attached(&signature.params[1].comments, &["three"], None);
+}
+
+#[test]
 fn before_the_parameters_a_comment_goes_before_the_declaration() {
     let file = file_of("labcraft 1\n// a\nfn // b\nf< // c\nT // d\n> // e\n(z: f64) -> () {}\n");
     let function = function_of(&file);

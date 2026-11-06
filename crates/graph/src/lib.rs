@@ -185,8 +185,18 @@ pub struct Param {
     pub comments: Attached,
     pub name: Name,
     pub ty: TypeExpr,
-    pub default: Option<Operand>,
+    pub default: Option<Constant>,
     pub variadic: bool,
+}
+
+/// What follows the `=` of a parameter (spec, R-21). The grammar reads a path or a call, and `check` says whether it is a
+/// constant: `Mode.Fast` or `core.lt` is one, and `y` or `g(1)` is not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Constant {
+    Operand(Operand),
+    /// A variant with its values: `Reading.Value(0 V)`.
+    Call(Box<Call>),
+    Struct(Box<StructLit>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

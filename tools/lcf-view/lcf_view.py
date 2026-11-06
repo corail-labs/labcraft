@@ -70,7 +70,7 @@ extern_decl: "extern" NAME "(" [arg ("," arg)*] ")" _fn_sig
 _fn_sig: "fn" NAME generics? "(" [param ("," param)* ","?] ")" "->" "(" [output ("," output)* ","?] ")"
 generics: "<" generic ("," generic)* ">"
 generic: NAME (":" path)?
-param: NAME ":" type_expr ("=" literal)?
+param: NAME ":" type_expr ("=" _constant)?
      | NAME ":" type_expr "..." -> variadic_param
 output: NAME ":" type_expr
 
@@ -110,6 +110,7 @@ _order_ref: operand | label_ref
 label_ref: "#" NAME
 unit_arg.2: "[" unit_expr "]"
 ?operand: path | literal
+_constant: call | struct_lit | operand
 struct_lit: path "{" field_init ("," field_init)* ","? "}"
 field_init: NAME ":" operand
 

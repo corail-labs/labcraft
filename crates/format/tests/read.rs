@@ -5,8 +5,8 @@ mod deep;
 use deep::{DEEP, deep_array_type, deep_loop, in_body, nested};
 use labcraft_format::{Read, STACK_SIZE, read};
 use labcraft_graph::{
-    Arg, Decl, File, Function, LayoutKind, Numeral, NumeralKind, Operand, OrderRef, Pattern, Rhs, Statement, StatementKind, Target, TypeExpr, UnitOp,
-    UnitTerm,
+    Arg, Constant, Decl, File, Function, LayoutKind, Numeral, NumeralKind, Operand, OrderRef, Pattern, Rhs, Statement, StatementKind, Target,
+    TypeExpr, UnitOp, UnitTerm,
 };
 use labcraft_types::{Code, Interner, Limits, Position, Span};
 
@@ -788,14 +788,37 @@ fn types_of_every_form_read() {
 }
 
 #[test]
-fn a_parameter_has_a_literal_for_a_default_and_may_be_variadic() {
+fn a_parameter_has_a_constant_for_a_default_and_may_be_variadic() {
     let reading = Reading::of("labcraft 1\nfn f(a: f64[V] = 1 mV, b: string..., c: [i32] = []) -> () {}\n");
     let params = &reading.function().signature.params;
-    assert!(matches!(params[0].default, Some(Operand::Number(_, _, Some(_)))));
+    assert!(matches!(params[0].default, Some(Constant::Operand(Operand::Number(_, _, Some(_))))));
     assert!(params[1].variadic && params[1].default.is_none());
-    assert!(matches!(&params[2].default, Some(Operand::Array(_, values)) if values.is_empty()));
-    for bad in ["a: f64 = b", "a: f64 = b.c", "a: f64 = 1...", "a: f64... = 1"] {
+    assert!(matches!(&params[2].default, Some(Constant::Operand(Operand::Array(_, values))) if values.is_empty()));
+    for bad in ["a: f64 = 1...", "a: f64 = b...", "a: f64... = 1", "a: f64 =", "a: E = E.A x", "a: L = L {}", "a: L = L { b }"] {
         assert_code(&format!("labcraft 1\nfn f({bad}) -> () {{}}\n"), Code::Lc1001);
+    }
+}
+
+#[test]
+fn a_default_reads_a_path_a_call_or_a_struct_as_a_statement_does() {
+    let reading = Reading::of(
+        "labcraft 1\nfn f(a: M = M.Fast, b: R = R.Value(0 V), c: L = L { low: 1 V, high: 2 V }, d: F = core.lt, e: R = g<f64>(1, after: x)) -> () {}\n",
+    );
+    let params = &reading.function().signature.params;
+    assert!(matches!(&params[0].default, Some(Constant::Operand(Operand::Path(path))) if path.rest.len() == 1));
+    assert!(matches!(&params[1].default, Some(Constant::Call(call)) if call.args.len() == 1));
+    assert!(matches!(&params[2].default, Some(Constant::Struct(literal)) if literal.fields.len() == 2));
+    assert!(matches!(&params[3].default, Some(Constant::Operand(Operand::Path(_)))));
+    assert!(matches!(&params[4].default, Some(Constant::Call(call)) if call.type_args.len() == 1 && call.args.len() == 2), "for `check` to refuse");
+    for reserved in ["a: f64 = match", "a: f64 = use", "a: R = fn.x"] {
+        assert_code(&format!("labcraft 1\nfn f({reserved}) -> () {{}}\n"), Code::Lc1005);
+    }
+    for nested in ["a: L = L { b: g(1) }", "a: R = R.Value(g(1))", "a: R = R.Value(g<f64>(1))", "a: [R] = [g(1)]"] {
+        let text = format!("labcraft 1\nfn f({nested}) -> () {{}}\n");
+        assert_code(&text, Code::Lc1004);
+        let mut names = Interner::new();
+        let result = read(text.as_bytes(), &mut names, &Limits::default());
+        assert!(result.report.diagnostics().iter().all(|diagnostic| diagnostic.fixes.is_empty()), "{nested}: no line before it to move to");
     }
 }
 

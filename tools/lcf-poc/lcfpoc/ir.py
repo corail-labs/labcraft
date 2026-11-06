@@ -272,7 +272,13 @@ class Lowerer:
 
     def param(self, t):
         name, ty = str(t.children[0]), t.children[1]
-        default = self.operand(t.children[2]) if len(t.children) > 2 and t.children[2] is not None else None
+        default = None
+        if len(t.children) > 2 and t.children[2] is not None:
+            d = t.children[2]
+            if d.data in ("call", "struct_lit"):  # R-21, which this proof of concept reads and does not run
+                default = Operand("constructed", line=line_of(d), text=self.text(d))
+            else:
+                default = self.operand(d)
         return Param(name, ty, self.text(ty), default)
 
     # Blocks -----------------------------------------------------------------------------
