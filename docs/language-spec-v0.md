@@ -850,7 +850,10 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
 
 ### 7.5 An error never handled
 
-- **At edit time**: warning if an `err` output is wired nowhere.
+- **At edit time**: warning if an `err` output is wired nowhere: `_` on it, a name that nothing reads,
+  a name given to it (`e2 = e`) that nothing reads, or a call written alone (5.1). An order wire
+  (`after: e`) is a wire. Only an output named `err` of a call counts, not any value of type `error`;
+  what a `match`, a `handle` or a loop gives is not judged, since clearing an error there is written on purpose.
 - **At run time**: when the top-level function returns an error on its `err` output, the run ends
   with a failure status and the error is reported (CLI, MCP, IDE). Never a dialog box.
 
@@ -890,12 +893,33 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   never corrupts a message; it leaves the order between calls undetermined.
 - **Warning at edit time** when two nodes receive the same resource with no dependency path between
   them (data, error wire or `after:`), for example two branches that set the same instrument:
-  "concurrent access to `dmm`: order by the error wire or `after:`". Two nodes in different arms of a
-  `match` or `handle` never run together and do not count; `bench.dmm` and `bench.source` are
-  different resources, and `bench` overlaps both. A library declares in its
-  manifest which of its opaque types are resources, as it marks its `always` functions there. Same
-  warning for a panel element written by two unordered nodes, and for a `for parallel` body that
-  uses a resource.
+  "concurrent access to `dmm`: order by the error wire or `after:`", once per resource. Two nodes in
+  different arms of a `match` or `handle` never run together and do not count; `bench.dmm` and
+  `bench.source` are different resources, and `bench` overlaps both. A library declares in its
+  manifest which of its opaque types are resources, as it marks its `always` functions there; a struct,
+  a variant or an array that holds one is a resource too. An opaque type of a project is none before
+  the manifests of user libraries (section 9).
+- **`check` assumes nothing about what a node does.** It reads signatures, so any node that calls a
+  function and receives a resource counts, even one that only seems to read: `query` can change the
+  state of an instrument. A primitive or a construction only moves a value, and does not count. So the
+  warning says that an order is missing, and not that it matters: two independent reads get it too.
+- **What continues a resource.** A new name (`e = d`), a carry (`carry c = d`) and what a structure
+  gives of it are the same resource. So is an output of the type of a resource that the node received,
+  whatever the name of that output: a session wire that enters a node and leaves it is one connection.
+  A node that received two gives both. What a primitive gives continues what it received. A session
+  that really is another one only costs a warning, which an order removes. `check` cannot see two sessions
+  opened on one instrument, whose address is known at run time, and it says that an order exists, not
+  that it is the right one. A construction is a new value (`Bench { dmm: d }`, `Held.One(d)`), and a
+  function continues only the type it received: an output of a struct type from a session, or a session
+  from a struct or an array (`s = get(bench)`), starts a new resource. A conflict through these is not
+  found. What a `next` gives counts for what the loop gives, not for what the body reads of the carry.
+- **Same warning for a panel element** written by two unordered nodes. A read is no write.
+- **Warnings about dataflow wait for the errors of their function**, signature included, since a wire
+  with a mistake in its name reads nothing, and that would look like a wire missing.
+- **Same warning for a `for parallel` body** that uses a resource from outside, or writes a panel
+  element, once per loop. A resource born in the body is its own, since each iteration has one, and so
+  is the element of an `in` clause, for that loop only: it stays what the array holds for the other
+  warnings, so two loops on one array have no order between them, and a loop around that one shares the array.
 - **Deterministic mode does not show races**, since it fixes an order (D-12). Hence a check at edit
   time rather than at run time.
 - **`ref<T>` is not read then written in two nodes**, which would open a race between the two: it
@@ -1059,7 +1083,9 @@ Two kinds of element hold a boolean that the user presses:
   is the element that stops several loops: each one reads it;
 - a **`button`** is latching: a press stays true until its first read, then returns to false, so
   that it is not missed between two iterations. Only one read sees a press: two `ui.get` of the
-  same button give a warning at edit time ("only one of these reads sees a press: use a switch").
+  same button give a warning at edit time ("only one of these reads sees a press: use a switch"),
+  once per button. Two reads in different arms of a `match` or `handle` never run together and do
+  not count.
 
 When a press takes effect (on press, on release, while pressed), which LabVIEW's mechanical actions
 also distinguish, is left to M3, with a real panel.

@@ -37,7 +37,7 @@ fn run(root: LibrarySource) -> (Checked, Interner) {
 fn diagnostics(files: &[(&str, &str)]) -> Vec<Diagnostic> {
     let mut report = run(source("", files)).0.report;
     report.finish();
-    report.diagnostics().to_vec()
+    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code())).cloned().collect()
 }
 
 fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {
@@ -464,7 +464,15 @@ fn a_sub_library_is_named_by_its_path_and_its_types_and_variants_too() {
     root.sub_libraries.push(a);
     let mut report = run(root).0.report;
     report.finish();
-    assert_eq!(report.diagnostics().iter().map(|d| d.code().as_str()).collect::<Vec<_>>(), NOTHING);
+    assert_eq!(
+        report
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .map(|d| d.code().as_str())
+            .collect::<Vec<_>>(),
+        NOTHING
+    );
 }
 
 /// The folder given has `lib`, with a type `T`, and `lib/sub`, with a function `g`.
@@ -475,7 +483,7 @@ fn with_library(text: &str) -> Vec<Diagnostic> {
     root.sub_libraries.push(lib);
     let mut report = run(root).0.report;
     report.finish();
-    report.diagnostics().to_vec()
+    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code())).cloned().collect()
 }
 
 #[test]
@@ -514,7 +522,12 @@ fn what_a_path_names_does_not_depend_on_another_file() {
     let run_with = |files: &[(&str, &str)]| {
         let mut report = check(source("", files), &Dep, &mut Interner::new(), &Limits::default()).report;
         report.finish();
-        report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>()
+        report
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .map(|diagnostic| diagnostic.code().as_str())
+            .collect::<Vec<_>>()
     };
     let reads = ("f.lcf", "fn f() -> (x: i32) {\n    x = dep.g\n}");
     assert_eq!(run_with(&[reads]), ["LC2001"]);
@@ -528,7 +541,12 @@ fn a_function_of_another_library_binds_to_its_signature() {
         root.sub_libraries.push(source("lib", &[("lib/g.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"), ("lib/t.lct", "type T = enum { A }")]));
         let mut report = run(root).0.report;
         report.finish();
-        report.diagnostics().iter().map(|d| d.code().as_str()).collect::<Vec<_>>()
+        report
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .map(|d| d.code().as_str())
+            .collect::<Vec<_>>()
     };
     assert_eq!(run_on("lib.g(1)"), NOTHING);
     assert_eq!(run_on("lib.g()"), ["LC2101"]);

@@ -34,7 +34,12 @@ fn run(root: LibrarySource) -> (Checked, Interner) {
 fn codes_of(root: LibrarySource) -> Vec<&'static str> {
     let mut report = run(root).0.report;
     report.finish();
-    report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect()
+    report
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+        .map(|diagnostic| diagnostic.code().as_str())
+        .collect()
 }
 
 /// A folder of its own for each case, with one sub-library `lib`, which declares a type and an opaque type.
@@ -463,7 +468,12 @@ fn at_the_limit(wrapper: &str, max: u32) -> Vec<&'static str> {
     let root = source("", &[("a.lct", wrapper), ("b.lct", "type B = [f64]")]);
     let mut report = check(root, &Nothing, &mut names, &limits).report;
     report.finish();
-    report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect()
+    report
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+        .map(|diagnostic| diagnostic.code().as_str())
+        .collect()
 }
 
 #[test]
@@ -606,7 +616,7 @@ fn what_comes_with_a_later_milestone() {
 
 #[test]
 fn signatures_are_what_the_passes_above_read() {
-    let (checked, mut names) = run(source("", &[("f.lcf", "fn f(a: f64[V], b: i32, c: string..., d: i32 = 1) -> (e: bool) {}")]));
+    let (checked, mut names) = run(source("", &[("f.lcf", "fn f(a: f64[V], b: i32, c: string..., d: i32 = 1) -> (e: bool) {\n    e = true\n}")]));
     assert_eq!(checked.report.errors(), 0);
     let declared = checked.libraries.first().unwrap().functions.get(&names.intern("f")).unwrap();
     let params: Vec<(bool, bool)> = declared.params.iter().map(|param| (param.has_default, param.variadic)).collect();

@@ -2,4 +2,3 @@
 # Until then each one gives only part of what it expects. Remove a line when its step arrives.
 absurd-coordinate
 absurd-icon-grid
-semantics-cycle
