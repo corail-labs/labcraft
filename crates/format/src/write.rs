@@ -41,7 +41,7 @@ pub fn write_line(statement: &Statement, names: &Interner) -> String {
     writer.out
 }
 
-/// The text of a reference of the `layout` section: `#close`, `raw.session`.
+/// The text of a reference of the `layout` section: `#close`, `mean.b`.
 pub(crate) fn reference_text(node: NodeRef, terminal: Option<Name>, names: &Interner) -> String {
     let mut text = String::new();
     if node.is_label {

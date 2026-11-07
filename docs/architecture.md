@@ -224,7 +224,9 @@ Passes, each one over all the files, so that a bad file does not hide the others
    is never read are compared when the walk ends. So no wire of the diagram depends on the type of an element that its wires decide.
 5. **Dataflow:** cycles, outputs bound once, carries; then the warnings of 7.5, 8.1 and 10.
 6. **Panel, layout, icon:** kinds that M0 does not know, elements declared twice or of the wrong direction, references to nodes, coordinates, the icon (R-14: grid,
-   a validator of the SVG path syntax, a table of `accent` tokens).
+   a validator of the SVG path syntax, a table of `accent` tokens). A `wire` entry is matched against the wires of the function, one per frame (spec 11): each
+   value read, with the input it reaches, and for a value from outside a structure, one more wire per edge it crosses. The entries of a function wait for its
+   errors, as the warnings of pass 5 do: a name with a mistake reads nothing. In `declare/body/sections.rs`, the icon in `sections/icon.rs`.
 
 Types across files (`.lct` chains, `LC2017`) and calls between functions (`LC2016`) are walked with an
 explicit stack. A function is checked against the signatures of the others, never by following a call.

@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{
-    Attached, Body, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel, PanelDirection, PanelItem, Path, Point, Rhs,
-    Signature, SourceMap, Statement, StatementKind, Use,
+    Attached, Body, Clause, ClauseKind, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel, PanelDirection, PanelItem,
+    Path, Point, Rhs, Signature, SourceMap, Statement, StatementKind, Target, Use,
 };
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Report};
 
@@ -174,13 +174,16 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
         _ if !ordered => None,
         Decl::Function(function) => {
             let outputs: HashSet<Name> = function.signature.outputs.iter().map(|output| output.name).collect();
-            let mut known = nodes_of(&function.body, &outputs);
+            let mut nodes = nodes_of(&function.body, &outputs);
             // Terminals of the frame, not nodes: an entry that names one is for `check` to judge (spec 11).
-            known.extend(function.signature.params.iter().map(|param| (param.name, false)));
-            known.extend(function.signature.outputs.iter().map(|output| (output.name, false)));
-            Some(known)
+            let frame = function.signature.params.iter().map(|param| param.name).chain(function.signature.outputs.iter().map(|output| output.name));
+            nodes.extend(frame.map(|name| (name, false)));
+            // A wire starts at the value it carries, or at a label (spec 11): any name that the function binds.
+            let mut starts = nodes.clone();
+            add_values(&function.body, &mut starts);
+            Some(Known { nodes, starts })
         }
-        Decl::Extern(_) => Some(HashSet::new()),
+        Decl::Extern(_) => Some(Known::default()),
         // A section in a type file is the business of `check` (`LC0104`).
         Decl::Type(_) => None,
     };
@@ -235,11 +238,65 @@ fn report_stale_entry(item: &LayoutItem, map: &SourceMap, names: &Interner, repo
     report.push(diagnostic);
 }
 
-fn names_what_is_known(item: &LayoutItem, known: &HashSet<(Name, bool)>) -> bool {
-    let is_known = |node: &NodeRef| known.contains(&(node.name, node.is_label));
+/// What a layout entry can name, by name and whether it is a label.
+#[derive(Default)]
+struct Known {
+    /// The nodes, the inputs and the outputs: what a `node` entry names, and where a wire ends.
+    nodes: HashSet<(Name, bool)>,
+    /// Those, and every value and label of the function: where a wire starts.
+    starts: HashSet<(Name, bool)>,
+}
+
+fn names_what_is_known(item: &LayoutItem, known: &Known) -> bool {
+    let is = |set: &HashSet<(Name, bool)>, node: &NodeRef| set.contains(&(node.name, node.is_label));
     match &item.kind {
-        LayoutKind::Node { node, .. } => is_known(node),
-        LayoutKind::Wire { from, to, .. } => is_known(&from.node) && is_known(&to.node),
+        LayoutKind::Node { node, .. } => is(&known.nodes, node),
+        // A wire starts at the value it carries, never at a terminal (`raw.session`): one file is enough to see it.
+        LayoutKind::Wire { from, to, .. } => from.terminal.is_none() && is(&known.starts, &from.node) && is(&known.nodes, &to.node),
+    }
+}
+
+/// Every name that a body binds, in every body of the function: lines, labels, carries, `in` clauses, patterns.
+fn add_values(body: &Body, values: &mut HashSet<(Name, bool)>) {
+    for statement in &body.statements {
+        if let Some(label) = &statement.label {
+            values.insert((label.name, true));
+        }
+        let StatementKind::Binding { targets, value } = &statement.kind else { continue };
+        for target in targets.iter() {
+            if let Target::Name(_, name) = target {
+                values.insert((*name, false));
+            }
+        }
+        match value {
+            Rhs::Match(branching) | Rhs::Handle(branching) => {
+                for arm in &branching.arms {
+                    for pattern in arm.patterns() {
+                        values.extend(pattern.bindings().iter().map(|binding| (binding.name, false)));
+                    }
+                    add_values(&arm.body, values);
+                }
+            }
+            Rhs::For(structure) => {
+                add_clauses(&structure.clauses, values);
+                add_values(&structure.body, values);
+            }
+            Rhs::Loop(structure) => {
+                add_clauses(&structure.clauses, values);
+                add_values(&structure.body, values);
+            }
+            Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => {}
+        }
+    }
+}
+
+fn add_clauses(clauses: &[Clause], values: &mut HashSet<(Name, bool)>) {
+    for clause in clauses {
+        let name = match &clause.kind {
+            ClauseKind::In(clause) => clause.name,
+            ClauseKind::Carry(carry) => carry.name,
+        };
+        values.insert((name, false));
     }
 }
 
@@ -316,8 +373,9 @@ fn plain_coordinate(numeral: &mut Numeral, names: &mut Interner) {
     }
 }
 
-/// Its value, if it is in the range, whatever the zeros and underscores around its digits.
-fn coordinate_value(text: &str) -> Option<u32> {
+/// The value of the digits of a coordinate (`INT`, spec 14.1), if it is in the range of spec 11, whatever the zeros and
+/// underscores around them. `check` refuses any other coordinate (`LC5005`).
+pub fn coordinate_value(text: &str) -> Option<u32> {
     let mut value: u32 = 0;
     for byte in text.bytes().filter(|byte| *byte != b'_') {
         let digit = u32::from(byte.checked_sub(b'0')?);

@@ -37,7 +37,7 @@ fn codes_of(root: LibrarySource) -> Vec<&'static str> {
     report
         .diagnostics()
         .iter()
-        .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+        .filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code()))
         .map(|diagnostic| diagnostic.code().as_str())
         .collect()
 }
@@ -471,7 +471,7 @@ fn at_the_limit(wrapper: &str, max: u32) -> Vec<&'static str> {
     report
         .diagnostics()
         .iter()
-        .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+        .filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code()))
         .map(|diagnostic| diagnostic.code().as_str())
         .collect()
 }

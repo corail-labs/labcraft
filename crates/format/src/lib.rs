@@ -25,7 +25,7 @@ mod parser;
 mod read;
 mod write;
 
-pub use canonicalize::{Formatted, canonicalize, format};
+pub use canonicalize::{Formatted, canonicalize, coordinate_value, format};
 pub use decode::decode;
 pub use lexer::{Keyword, Lexer, Token, TokenKind, is_fill, is_invisible, is_name};
 pub use order::{Unorderable, canonical_order};

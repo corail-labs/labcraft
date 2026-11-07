@@ -493,9 +493,9 @@ fn a_panel_leaves_the_diagram_as_it_was() {
     assert_eq!(both, ["LC3015", "LC3017"], "after a wire that blames the default");
 }
 
-/// It has `LC5001` (step 9). Which item counts would depend on their order, which `fmt` changes, so neither says anything.
+/// It has `LC5001` (pass 6). Which item counts would depend on their order, which `fmt` changes, so neither says anything here.
 #[test]
-fn a_name_given_twice_says_nothing_yet() {
+fn a_name_given_twice_says_nothing_of_its_type() {
     assert_eq!(judged("v: f64", "", "_ = ui.set(a, v)", "indicator a: numeric\nindicator a: led"), NOTHING);
     assert_eq!(judged("", "", NO_BODY, "indicator a: numeric(default: 1)\nindicator a: led(default: 1)"), NOTHING);
     assert_eq!(judged("v: i32", "", "", "control v: numeric\ncontrol v: button(default: 1)"), NOTHING);

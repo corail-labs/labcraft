@@ -33,7 +33,7 @@ fn run(files: &[(&str, &str)]) -> Checked {
 fn diagnostics(files: &[(&str, &str)]) -> Vec<Diagnostic> {
     let mut report = run(files).report;
     report.finish();
-    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code())).cloned().collect()
+    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code())).cloned().collect()
 }
 
 fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {

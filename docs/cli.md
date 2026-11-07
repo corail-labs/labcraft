@@ -88,9 +88,11 @@ the same error.
 
 **What `fmt` changes:** line endings and the end of the file, a byte order mark (section 2 of the
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
-the text; the items of `panel` and `layout`; layout entries that name no node (`LC5004`), apart from
-those that name an input or an output of the function, or a line such as `k = step.low`, which a single file
-cannot tell from a constant: they stay for `check` (spec 11).
+the text; the items of `panel` and `layout`; layout entries that name nothing (`LC5004`): a `node` entry
+on no node, a `wire` entry that starts at no name that the function binds or label, or at a terminal
+(`raw.session`), or ends at no node.
+An entry that names an input or an output of the function, or a line such as `k = step.low`, which a single
+file cannot tell from a constant, stays for `check` (spec 11).
 
 **Layout entries outside a function.** An `extern` file has no node, so `fmt` removes all of its
 entries, even those that name a parameter (`LC5004`). In a type file it removes none: the section
@@ -452,12 +454,12 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC5001` | error | Panel element declared twice | 10 |
 | `LC5002` | error | `control` with the name of an output only, or `indicator` with the name of an input only | 10 |
 | `LC5003` | warning | Panel kind that M0 does not know (section 10); the element works without a widget | 10 |
-| `LC5004` | warning | Layout entry that names no node; `fmt` removes it, unless it names an input or an output of the function, or a line that a single file cannot tell from a constant | 11 |
+| `LC5004` | warning | Layout entry that names nothing: a `node` entry on no node (an input, an output, a line such as `k = step.low`), a `wire` entry that starts at no value or label, ends at no node or output, names an input that the node does not have, or starts with a terminal (`raw.session`). Every entry of an `extern`. `fmt` removes those that a single file can tell (spec 11) | 11 |
 | `LC5005` | error | Coordinate that is not an integer literal in the range (`5.0`, `1e3`, `2000000`) | 11 |
-| `LC5006` | warning | Layout entry that is ambiguous (a name defined in several bodies, or a `wire` that does not say which terminals), or a `wire` between terminals that are not connected | 11 |
-| `LC5007` | error | Two layout entries for the same node or wire | 11 |
-| `LC5008` | error | Invalid icon: grid, `path` syntax, unknown `accent` token | R-14 |
-| `LC5009` | warning | Icon shape that leaves the grid | R-14 |
+| `LC5006` | warning | Layout entry that is ambiguous (a `node` entry on a name defined in several bodies, a `wire` entry that matches several wires: naming the input settles it), or a `wire` entry whose value and node exist with no wire between them | 11 |
+| `LC5007` | error | Two layout entries for the same node or wire, `node x at (…)` and `node x view standard` included | 11 |
+| `LC5008` | error | Invalid icon: a grid not written `32`, `path` syntax, a radius or a size not above zero, `inf` or `nan`, an `accent` token that is not in the visual notation, section 8 | R-14 |
+| `LC5009` | warning | Icon shape that leaves the grid: what it draws goes below 0 or above 32, a text by its point `at` (11.1) | R-14 |
 | `LC5010` | error | Panel element that does not say its type (not an input or an output, a kind that holds several types, no `default:`) and that a `ui.get` reads, or that no `ui.set` writes, when the function has no other mistake, which may be a `ui.set` that nothing could bind. Not for a kind that M0 does not know, which has only `LC5003`, nor on an `extern`, which has no diagram | 10 |
 | `LC5011` | error | Panel kind that does not show the type of the input or the output of its name: a wire that it refuses is `LC3001`, a `default:` `LC3017` | 10 |
 | `LC5012` | error | `default:` on an input or an output, whether or not its signature has a default, or given twice | 10 |

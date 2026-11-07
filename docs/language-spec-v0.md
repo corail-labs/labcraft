@@ -1167,13 +1167,46 @@ layout {
   its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A named
   constant (5.1) is designated by its name. A line that gives a value a new name (`err = e3`, 5.1, R-4)
   designates nothing. A node or a wire has at most one entry.
-- `wire a -> b` designates the wire from node `a` to node `b`. When it is not the only one,
-  `wire a.out -> b.in` names the terminals, with the output and input names of the signatures:
-  `wire raw.session -> #close.session` in `check_voltage` (section 12).
+- `wire a -> b` designates a wire by **the value it carries**, `a`, the name that the diagram writes on
+  the wire, and **the node it goes to**, `b`, designated as above: `wire dmm2 -> #close` and
+  `wire e2 -> #close` in `check_voltage` (section 12), `wire count -> mean` for
+  `mean = core.div(total, count)`. A value is any name that a body binds: an input, a line, a carry, an
+  `in` clause, a pattern; `x = y` gives the wire of `y` a second name. An order wire starts at its value,
+  or at the label that `after:` names: `wire #settle -> second`. A node whose output has no name
+  starts its wire at its label, which the IDE adds to keep a route: `wire #inc -> n.k` for
+  `#inc: next k = core.add(k, 1)`. The start has no terminal: `wire raw.session -> …` names no wire.
+- When `a` goes to `b` by several wires, `b.in` names the input: the name of a parameter of its
+  signature (`wire x -> sq.b` for `sq = core.mul(x, x)`), a field of a construction, `after` for an order
+  wire. On a structure, an input is named by its carry or its `in` clause, or by the name of the outer
+  value that crosses its edge: `wire k -> total.sum` and `wire k -> total.k` for
+  `total = for v in values, carry sum = k { … }` with `k` read inside. These names never meet, since a
+  carry or a clause with the name of an outer value hides it (R-3). Some inputs have no name: the
+  selector of a `match` or a `handle`, a value of a variant, an element of an array, and inside,
+  `until`, `collect` and `yield`. With several wires, an entry without a terminal designates the one
+  that reaches an input without a name. `wire stop -> n` is the
+  part inside, from the notch to `until`, and `wire stop -> n.stop` the part outside, for
+  `n = loop … { … until stop }`. The outputs of a structure need no name: each is a value of its own
+  (`total`, `count`).
+- **A value that is also the selector** enters the structure by the selector, which serves as its
+  notch: `match c { … }` with `c` read in an arm draws one wire of `c` outside. `wire c -> y.c` gives
+  it a notch of its own, as the developer draws it; without that entry, it goes by the selector. An
+  agent, which never writes this section, gets the path by the selector.
+- **A wire that enters a structure has one entry per frame**, each with its own route: outside, from
+  the value to the structure that holds its reader (`wire k -> flight_time` in `projectile`), and
+  inside, from the notch on the edge to the node that reads it (`wire k -> ks`). Inside, the value
+  keeps its name. Several readers inside share the outer part. From inside, a wire to `next`, `until`,
+  `collect` or `yield` ends at the structure itself, `next x` at its input `x`.
 - An input or an output of the function is a terminal of its frame, not a node (visual notation,
-  section 2). A `wire` entry can name one: `wire a -> b`, with `a` an input, is the wire from the
-  frame to node `b`, and it can end at an output in the same way. A `node` entry cannot, and gets
-  the warning below.
+  section 2). An input is a value, so a `wire` entry can start there, and it can end at an output:
+  `wire e3 -> err`. A name that is both a node and an output designates the one that the value goes
+  to. A `node` entry cannot name an input or an output, and gets the warning below.
+- An entry designates the wires that match it. None is a warning: `LC5004` when a name designates
+  nothing (no such value, node or input), `LC5006` when both exist and no wire joins them. Several
+  are a warning too (`LC5006`), and naming the input settles it, except in three cases that keep an
+  automatic route in v0: a value that is the selector and is also yielded as it is by an arm, one
+  value yielded by two arms, and `next s = s0` when `s0` also gives `s` its first value. One value
+  that reaches a node twice through inputs without a name (`[x, x]`, a variadic parameter) counts as
+  one wire. Two entries for one wire are an error (`LC5007`).
 - Wires without a route are routed automatically.
 - **View of a node**: compact by default, standard on request (visual notation, section 3).
   `view standard` or `view compact` sets the view of a node, alone or after its position. The IDE
@@ -1185,9 +1218,11 @@ layout {
   time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
   attached to the entry. `fmt` reads one file, so it keeps the name of any line whose value is more than
   one plain name: `k = Verdict.Pass` can be placed while `k = step.low` reads a field and draws no node, and `check`
-  tells them apart. `fmt` keeps any entry whose names are all nodes, inputs or outputs of the
-  function, and `check` judges it, whatever its kind or direction. A name defined in several bodies
-  (two arms) is ambiguous here, and gives a warning: use a label.
+  tells them apart. `fmt` keeps a `node` entry that names a node, an input or an output of the
+  function, and a `wire` entry that starts at a name that the function binds or a label, with no
+  terminal, and ends at a node, an input or an output; `check` judges it, whatever its kind or direction. A name defined in
+  several bodies (two arms) is ambiguous for a `node` entry, and gives a warning: use a label. For a
+  `wire` entry, only the bodies where a wire joins it to `b` count.
 - Coordinates are integers between -1,000,000 and 1,000,000 *(range proposed)*; a value outside
   is an error at edit time.
 
@@ -1207,13 +1242,19 @@ icon 32 {
 ```
 
 - **Grid**: `icon 32` gives the size of the grid, 32 × 32 in v0, origin at the top left, y pointing
-  down, like the canvas.
+  down, like the canvas. It is written `32`, as the header is written `1`.
 - **Shapes**: `rect` (two corners, optional radius), `circle` (center, radius), `line`, `path` (SVG
   path syntax: `M L H V C S Q T A Z`, absolute or relative), `text` (`at`: middle of the baseline).
-  Fixed stroke width chosen by the IDE; `fill` fills the shape.
+  Fixed stroke width chosen by the IDE; `fill` fills the shape. Numbers are decimals without a unit;
+  a radius or a size is above zero. The radius of a `rect` larger than half a side is reduced to it,
+  as in SVG.
+- **Leaving the grid** is a warning: what a shape draws, stroke aside, goes below 0 or above 32. A
+  curve or an arc counts by what it draws, not by its control points; a circle by its center and
+  radius; a text by its point `at` alone, since the IDE chooses the font.
 - **Color**: monochrome, the ink color of the theme and of the node state (skipped, failed).
   `accent` gives a shape an accent color, designated by a theme token (`accent wire.error`), never
-  by a value.
+  by a value: a token of the visual notation, section 8, whose parts are names (`frame.fill.1` is not
+  one).
 - **No script, no link, no image**: the notation can neither run nor load anything. An icon coming
   from a third-party package can be drawn safely. The IDE imports and exports SVG (commands
   `icon.import`, `icon.export`) for drawing in a drawing program.
@@ -1637,7 +1678,7 @@ layout_section = "layout" "{" { layout_item } "}" ;
 layout_item    = "node" node_ref ( "at" point [ view ] | view )
                | "wire" terminal_ref "->" terminal_ref [ "via" point { point } ] ;
 view           = "view" ( "standard" | "compact" ) ;
-terminal_ref   = node_ref [ "." IDENT ] ;                (* wire raw.session -> #close.session *)
+terminal_ref   = node_ref [ "." IDENT ] ;                (* wire x -> sq.b; a start has no "." (11) *)
 node_ref       = IDENT | "#" IDENT ;
 point          = "(" number "," number ")" ;
 
@@ -1669,7 +1710,7 @@ What the grammar alone does not say:
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). Without a variadic parameter, a positional argument can wire a parameter with a default value. A variadic parameter takes positional arguments only. |
 | R-12 | **The `string.format` template is a literal**, written on the node; its fields and the named arguments match exactly, and a field is `{name}` or `{name:format}` (5.4). |
 | R-13 | **An external function has no body and has an output `err: error`** (4.1), with that type written as such: an alias of `error` does not do. |
-| R-14 | **An icon is valid**: grid of 32 in v0, `path` strings conforming to the SVG path syntax, `accent` token known to the theme; a shape that leaves the grid gives a warning (11.1). |
+| R-14 | **An icon is valid**: grid written `32` in v0, `path` strings conforming to the SVG path syntax, numbers without a unit, a radius or a size above zero, `accent` token of the visual notation (section 8); a shape that leaves the grid gives a warning (11.1). |
 | R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`), never a literal, and only once in a call. It counts as a named argument, so a positional one cannot follow it. A variant construction has it too. No parameter is named `after`, nor an argument of a function type. |
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. A variant construction can stand alone in the same way. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. An `after:` sees a label of its own body or of a body around it, not one inside a sub-body or a neighboring arm, whose node may not run. |

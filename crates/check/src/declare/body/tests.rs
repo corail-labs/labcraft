@@ -37,7 +37,7 @@ fn run(root: LibrarySource) -> (Checked, Interner) {
 fn diagnostics(files: &[(&str, &str)]) -> Vec<Diagnostic> {
     let mut report = run(source("", files)).0.report;
     report.finish();
-    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code())).cloned().collect()
+    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code())).cloned().collect()
 }
 
 fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {
@@ -468,7 +468,7 @@ fn a_sub_library_is_named_by_its_path_and_its_types_and_variants_too() {
         report
             .diagnostics()
             .iter()
-            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code()))
             .map(|d| d.code().as_str())
             .collect::<Vec<_>>(),
         NOTHING
@@ -483,7 +483,7 @@ fn with_library(text: &str) -> Vec<Diagnostic> {
     root.sub_libraries.push(lib);
     let mut report = run(root).0.report;
     report.finish();
-    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code())).cloned().collect()
+    report.diagnostics().iter().filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code())).cloned().collect()
 }
 
 #[test]
@@ -525,7 +525,7 @@ fn what_a_path_names_does_not_depend_on_another_file() {
         report
             .diagnostics()
             .iter()
-            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code()))
             .map(|diagnostic| diagnostic.code().as_str())
             .collect::<Vec<_>>()
     };
@@ -544,7 +544,7 @@ fn a_function_of_another_library_binds_to_its_signature() {
         report
             .diagnostics()
             .iter()
-            .filter(|diagnostic| !crate::declare::body::flow::only_this_pass(diagnostic.code()))
+            .filter(|diagnostic| !crate::declare::body::later_pass(diagnostic.code()))
             .map(|d| d.code().as_str())
             .collect::<Vec<_>>()
     };
