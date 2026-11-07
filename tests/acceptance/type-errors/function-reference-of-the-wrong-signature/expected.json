@@ -31,7 +31,8 @@
         }
       ],
       "expected": "fn(f64[V], err: error) -> (f64[V], error)",
-      "found": "fn(f64[V]) -> (f64[V])"
+      "found": "fn(f64[V]) -> (f64[V])",
+      "fix_mentions": ["`scale`", "bind each output"]
     }
   ]
 }

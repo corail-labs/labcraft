@@ -123,6 +123,17 @@ fault). Minimum content:
 it at the first attempt, for all the cases but one at most *(proposed)*. By hand, through the CLI,
 before the M0a tag.
 
+**Agent half, run (2026-11-07)** with [`tests/acceptance/agent/run.sh`](../tests/acceptance/agent/run.sh):
+one fresh Claude Code session per case (2.1.319, `claude-opus-5-5`), on a copy of the case outside the
+repository, given the files and the human-readable diagnostic, with the file tools only: it cannot run
+`check`, so its first fix is the one judged. A case is fixed when `check --deny-warnings` then reports
+nothing. A first run gave 8 of 9: the agent gave `scale` the `err` input and output of the type
+expected without binding the output (`LC4002`), and `LC3008` had no fix. It now has one, which says to
+give the function the signature expected and to bind each output. A second run of all the cases gave
+9 of 9. Each fix changes what the diagnostic points to; in `incompatible-dimensions`, where nothing
+tells what the function is for, the agent multiplied, with an output in `f64[V*A]`. The transcripts of
+both runs are attached to the pull request of this run.
+
 **Proof of concept today.** Partial. Unknown names, cycles, missing inputs and a `handle` without
 `_` are found by `check`, with file, line and node. Types and units are found only at run time
 (faults `lcf.type_error`, `lcf.unit_mismatch`), without a column, a wire or a stable code, and

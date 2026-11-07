@@ -1456,7 +1456,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                         format!("the input `{}` expects `{expected_text}`, and this is `{found_text}`{note}", cut_text(param))
                     }
                 };
-                let fixes = self.conversion_fixes(operand, found, expected);
+                let fixes = match code {
+                    Code::Lc3008 => self.signature_fixes(operand),
+                    _ => self.conversion_fixes(operand, found, expected),
+                };
                 let wires = vec![self.wire_of(operand, self.input_terminal(param))];
                 let details = Details { wires, expected: Some(expected_text), found: Some(found_text), fixes, ..Details::default() };
                 self.say(code, message, operand.id(), details);
@@ -1546,6 +1549,23 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             NumberKind::F32 => Some(("core.to_f32", None)),
             _ => None,
         }
+    }
+
+    /// A reference to a function of this library: its signature is the developer's to change, and each output it gains has to be
+    /// bound (R-2). A function of another library, an external function (its declaration is the native contract, 4.1), a primitive
+    /// or a wire is left alone. What the fix asks comes first, since a title is cut and the type is in `expected`.
+    fn signature_fixes(&self, operand: &'a Operand) -> Vec<Fix> {
+        let Operand::Path(path) = operand else { return Vec::new() };
+        let Meaning::Function { library, name } = self.resolved.of(path.id) else { return Vec::new() };
+        if library as usize != self.scope.library {
+            return Vec::new();
+        }
+        let declared = self.context.declared.get(library as usize).and_then(|source| source.functions.get(&name));
+        if declared.is_none_or(|function| function.external) {
+            return Vec::new();
+        }
+        let title = format!("Give `{}` the signature expected, and bind each output in its body (R-2)", cut_text(self.text(name)));
+        vec![Fix { title, edits: Vec::new() }]
     }
 
     /// `0` where a voltage is expected becomes `0 V`, and a wire gets a conversion on a line of its own (`docs/cli.md`, 4.2).

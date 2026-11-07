@@ -501,6 +501,34 @@ fn a_reference_matches_exactly() {
 }
 
 #[test]
+fn a_reference_of_this_library_has_a_fix() {
+    let apply = "use core\n\nfn apply(h: fn(f64[V], err: error) -> (f64[V], error), x: f64[V], err: error = none) -> (y: f64[V], err: error) {\n    y, err = core.call(h, x, err: err)\n}";
+    let fixes = |inputs: &str, body: &str| {
+        let text = program(inputs, "y: f64[V], err: error", body);
+        let scale = "fn scale(x: f64[V]) -> (y: f64[V]) {\n    y = x\n}";
+        let found = diagnostics(&[("f.lcf", &text), ("apply.lcf", apply), ("scale.lcf", scale)]);
+        let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
+        assert_eq!(diagnostic.code().as_str(), "LC3008");
+        diagnostic.fixes.iter().map(|fix| fix.title.clone()).collect::<Vec<_>>()
+    };
+    let own = fixes("v: f64[V]", "y, err = apply(scale, v)");
+    let [title] = own.as_slice() else { panic!("{own:?}") };
+    assert!(title.contains("`scale`") && title.contains("bind each output"), "{title}");
+    assert_eq!(fixes("v: f64[V], h: fn(f64[V]) -> (f64[V])", "y, err = apply(h, v)"), Vec::<String>::new(), "a wire has no signature to change");
+    assert_eq!(fixes("v: f64[V]", "y, err = apply(core.abs, v)"), Vec::<String>::new(), "neither has a primitive");
+    let text = program("v: f64[V]", "y: f64[V], err: error", "y, err = apply(scale, v)");
+    let external = "extern rust(crate: \"c\", function: \"s\")
+fn scale(x: f64[V], gain: f64, err: error = none) -> (y: f64[V], err: error)";
+    let found = diagnostics(&[("f.lcf", &text), ("apply.lcf", apply), ("scale.lcf", external)]);
+    let [diagnostic] = found.as_slice() else { panic!("{found:?}") };
+    assert_eq!(
+        (diagnostic.code().as_str(), diagnostic.fixes.len()),
+        ("LC3008", 0),
+        "an external function has no body, and its declaration is the native contract"
+    );
+}
+
+#[test]
 fn core_call_wires_what_the_type_says() {
     let h = "h: fn(f64[V], gain: f64) -> (f64[V], error), v: f64[V]";
     let run = |body: &str| judged(h, "y: f64[V], err: error", body);
