@@ -494,13 +494,13 @@ fn a_file_that_cannot_be_replaced_is_lc6003() {
 fn a_file_over_the_limit_is_lc0006_and_stays() {
     let folder = Folder::new("over");
     let large = folder.sized("large.lcf", 100 * MIB);
-    let just_over = folder.sized("just_over.lcf", 16 * MIB + 1);
+    let just_over = folder.sized("just_over.lcf", 4 * MIB + 1);
     let (exit, document) = folder.json(&["."]);
     assert_eq!(exit, 1);
     assert_eq!(codes(&document), set(&["LC0006"]));
     assert_eq!(document["summary"]["errors"], 2);
     assert_eq!(fs::metadata(large).unwrap().len(), 100 * MIB);
-    assert_eq!(fs::metadata(just_over).unwrap().len(), 16 * MIB + 1);
+    assert_eq!(fs::metadata(just_over).unwrap().len(), 4 * MIB + 1);
 }
 
 #[test]
@@ -508,7 +508,7 @@ fn a_file_at_the_limit_is_read() {
     let folder = Folder::new("at-limit");
     let head = "labcraft 1\n\n// ";
     let tail = "\nfn f() -> () {}\n";
-    let comment = "x".repeat(16 * MIB as usize - head.len() - tail.len());
+    let comment = "x".repeat(4 * MIB as usize - head.len() - tail.len());
     folder.file("a.lcf", format!("{head}{comment}{tail}"));
     let (exit, document) = folder.json(&["--check", "."]);
     assert_eq!(codes(&document), set(&[]));
@@ -528,25 +528,30 @@ fn the_limit_of_size_is_an_option() {
     assert_eq!(codes(&document), set(&["LC0006"]));
 }
 
+/// Over the default limit, so read with a larger one.
 #[test]
 fn a_line_of_10_mb_is_read() {
     let folder = Folder::new("long-line");
     folder.file("a.lcf", format!("labcraft 1\n\n// {}\nfn f() -> () {{}}\n", "x".repeat(10_000_000)));
-    assert_eq!(folder.json(&["--check", "."]).0, 0);
+    let (exit, document) = folder.json(&["--check", "."]);
+    assert_eq!((exit, codes(&document)), (1, set(&["LC0006"])));
+    assert_eq!(folder.json(&["--check", "--max-file-size", &(16 * MIB).to_string(), "."]).0, 0);
 }
 
+/// Under the limit only without indentation, so its canonical form is over it.
 #[test]
 fn a_function_of_300000_nodes_ends_normally() {
     let folder = Folder::new("many-nodes");
-    let mut body = String::from("labcraft 1\n\nfn f() -> () {\n");
+    let mut body = String::from("labcraft 1\nfn f()->(){\n");
     for index in 0..300_000 {
-        body.push_str(&format!("    a{index:06} = 1\n"));
+        body.push_str(&format!("a{index}=1\n"));
     }
     body.push_str("}\n");
-    assert!(body.len() < 16 * MIB as usize);
-    folder.file("a.lcf", &body);
-    let (exit, document) = folder.json(&["--check", "."]);
-    assert_eq!((exit, codes(&document)), (0, set(&[])));
+    assert!(body.len() < 4 * MIB as usize);
+    let path = folder.file("a.lcf", &body);
+    let (exit, document) = folder.json(&["."]);
+    assert_eq!((exit, codes(&document)), (1, set(&["LC6003"])));
+    assert_eq!(fs::read_to_string(path).unwrap(), body);
 }
 
 /// Short lines deep down, whose canonical form is hundreds of times their size. On a small limit, since the

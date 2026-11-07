@@ -39,8 +39,8 @@ apps/labcraft-cli ──> check ──> format ──> graph ──> types
 What everything needs, with no knowledge of files.
 
 - `Name`: an identifier or unit name, always normalized (R-20): `Interner::intern` is the only way to
-  make one. It is an interned `u32` from an `Interner` the caller owns: a file of 16 MiB can hold
-  8 million occurrences of a name, and a pointer per occurrence would threaten the memory bound.
+  make one. It is an interned `u32` from an `Interner` the caller owns: a file of 4 MiB can hold
+  2 million occurrences of a name, and a pointer per occurrence would threaten the memory bound.
 - `Unit`: 7 exponents in `i8`, a scale (exponents of 2, 3 and 5, which every unit of the table is exact
   in, so that equal units are equal whatever the order of the operations, on every target) and an
   offset for `°C` and `°F` (3.3). The table of named units and prefixes; multiply,
@@ -57,7 +57,7 @@ What everything needs, with no knowledge of files.
 - `Diagnostic`, `Span`, `Code`, `Severity`, `Report`: the schema of cli.md, section 4, with `serde`.
   `Code` is an enumeration; each variant gives its text and its severity. `cargo xtask codes` checks
   that it equals the tables of cli.md, section 5. `Report` holds at most twice `--max-report`
-  diagnostics while they arrive, with complete counts, since a file of 16 MiB can hold millions of
+  diagnostics while they arrive, with complete counts, since a file of 4 MiB can hold millions of
   errors; which ones it keeps does not depend on when it prunes. The app calls `finish` last, once all
   folders and `LC0009`, `LC0010` are merged.
 - `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
@@ -314,6 +314,7 @@ character boundary, and these crates hold little numerical code.
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` |
 | `codes` | `Code` equals the tables of cli.md, section 5 |
+| `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
@@ -349,6 +350,7 @@ exception (verified at step 1).
 | Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests, `tests/harness` | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |
+| Time and memory of `fmt` and `check`, in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
 | Fuzzing the parser, `check` and the round trip | `fuzz/` | 4 |
 
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the

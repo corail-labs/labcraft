@@ -13,7 +13,9 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
+labcraft-check = { path = "../crates/check" }
 labcraft-format = { path = "../crates/format" }
+labcraft-libs = { path = "../libs/embedded" }
 labcraft-types = { path = "../crates/types" }
 libfuzzer-sys = "0.4"
 
@@ -27,6 +29,13 @@ bench = false
 [[bin]]
 name = "round_trip"
 path = "fuzz_targets/round_trip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "check"
+path = "fuzz_targets/check.rs"
 test = false
 doc = false
 bench = false

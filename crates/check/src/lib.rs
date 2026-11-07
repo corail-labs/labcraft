@@ -121,6 +121,9 @@ pub struct Checked {
     pub types: TypeTable,
     /// What each library of the run declares, dependencies included.
     pub libraries: Vec<DeclaredLibrary>,
+    /// A budget of work or a limit made a pass say less than it would have: past them, what is said can depend on the order of
+    /// the lines and entries, which `fmt` changes. Nothing that a user sees; the fuzzing of `check` reads it.
+    pub cut_short: bool,
 }
 
 #[derive(Debug)]
@@ -161,5 +164,5 @@ pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interne
             files.push(CheckedFile { shown: file.shown, file: model.file, source_map: model.source_map, resolved });
         }
     }
-    Checked { report, dependencies, counts, files, types: declared.types, libraries: declared.libraries }
+    Checked { report, dependencies, counts, files, types: declared.types, libraries: declared.libraries, cut_short: declared.cut_short }
 }

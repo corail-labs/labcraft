@@ -194,19 +194,36 @@ impl Diagnostic {
 }
 
 /// The diagnostics of a run and their counts, which stay complete when the list is cut. After each
-/// push or merge, it holds at most twice `max_report` diagnostics: a file of 16 MiB can hold millions
+/// push or merge, it holds at most twice `max_report` diagnostics: a file of 4 MiB can hold millions
 /// of errors, and keeping them all until the end would break the memory bound of scenario 4.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Report {
     max_report: usize,
     diagnostics: Vec<Diagnostic>,
     errors: u64,
     warnings: u64,
+    /// Once a cut has kept `max_report` diagnostics, the last of them: one that comes after it in the order of the cut
+    /// can never be listed, so it is only counted. Millions of errors then cost no sorting.
+    last_kept: Option<Box<Diagnostic>>,
+}
+
+/// What the report says, whatever it remembers to go faster.
+impl PartialEq for Report {
+    fn eq(&self, other: &Self) -> bool {
+        (self.max_report, &self.diagnostics, self.errors, self.warnings) == (other.max_report, &other.diagnostics, other.errors, other.warnings)
+    }
+}
+
+impl Eq for Report {}
+
+/// The order in which a cut keeps diagnostics.
+fn keep_order(a: &Diagnostic, b: &Diagnostic) -> std::cmp::Ordering {
+    a.keep_key().cmp(&b.keep_key()).then_with(|| a.cmp(b))
 }
 
 impl Report {
     pub fn new(max_report: usize) -> Self {
-        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0 }
+        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0, last_kept: None }
     }
 
     /// Every diagnostic enters here, so its long texts and lists are always bounded.
@@ -216,14 +233,19 @@ impl Report {
             Severity::Error => self.errors += 1,
             Severity::Warning => self.warnings += 1,
         }
+        if self.last_kept.as_ref().is_some_and(|last| keep_order(&diagnostic, last).is_ge()) {
+            return;
+        }
         self.diagnostics.push(diagnostic);
         self.prune_when_full();
     }
 
     /// Names the file of the diagnostics that have none yet: a crate that reads bytes does not know
-    /// where they came from. So the report of one file is made first, and merged once named.
+    /// where they came from. So the report of one file is made first, and merged once named. Only on a report whose
+    /// diagnostics have no file yet: a cut has already chosen by file, so naming some of them could not give back the
+    /// choice of a cut at the end.
     pub fn set_file(&mut self, file: &str) {
-        for diagnostic in self.diagnostics.iter_mut().filter(|diagnostic| diagnostic.file.is_empty()) {
+        for diagnostic in self.diagnostics.iter_mut().chain(self.last_kept.as_deref_mut()).filter(|diagnostic| diagnostic.file.is_empty()) {
             diagnostic.file = file.to_owned();
         }
     }
@@ -251,8 +273,11 @@ impl Report {
     /// Keeps the diagnostics that the final report lists: which ones does not depend on when this
     /// runs, so the cost is amortized over the pushes and the result is that of a cut at the end.
     fn prune(&mut self) {
-        self.diagnostics.sort_by(|a, b| a.keep_key().cmp(&b.keep_key()).then_with(|| a.cmp(b)));
+        self.diagnostics.sort_by(keep_order);
         self.diagnostics.truncate(self.max_report);
+        if self.max_report > 0 && self.diagnostics.len() == self.max_report {
+            self.last_kept = self.diagnostics.last().cloned().map(Box::new);
+        }
     }
 
     /// The list in its final form: at most `max_report` diagnostics, errors before warnings, in the
@@ -719,6 +744,30 @@ mod tests {
         pruned.finish();
         assert_eq!(kept.diagnostics(), pruned.diagnostics());
         assert_eq!((kept.errors(), kept.warnings()), (pruned.errors(), pruned.warnings()));
+    }
+
+    /// What a cut report drops at once is compared with what it kept, which `set_file` names too.
+    #[test]
+    fn a_report_cut_then_named_gives_the_same_report_as_keeping_everything() {
+        let mut kept = Report::new(usize::MAX);
+        let mut pruned = Report::new(10);
+        let unnamed = many(5_000).map(|item| Diagnostic { file: String::new(), ..item });
+        for item in unnamed {
+            kept.push(item.clone());
+            pruned.push(item);
+        }
+        kept.set_file("m.lcf");
+        pruned.set_file("m.lcf");
+        // Before and after the named file, in the order of a cut.
+        for item in many(5_000).chain([diagnostic(Code::Lc3002, "a.lcf", at(1, 1), "m"), diagnostic(Code::Lc3002, "m.lcf", at(1, 1), "a")]) {
+            kept.push(item.clone());
+            pruned.push(item);
+        }
+        kept.max_report = 10;
+        kept.finish();
+        pruned.finish();
+        assert_eq!(kept.diagnostics(), pruned.diagnostics());
+        assert_eq!(kept, pruned);
     }
 
     #[test]
