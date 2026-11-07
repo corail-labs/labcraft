@@ -330,6 +330,47 @@ fn a_library_of_a_lib_path_is_its_folder_alone() {
     assert_eq!(empty.codes(&["p", "--lib-path", "libs"]), (1, vec!["LC2004".to_owned()]), "`a` holds no file of its own");
 }
 
+/// The signature of a function of another library is not the developer's to change from here: `LC3008` has no fix (`docs/cli.md`).
+#[test]
+fn a_reference_to_another_library_has_no_fix() {
+    let apply = "labcraft 1
+
+use core
+
+fn apply(h: fn(f64[V], err: error) -> (f64[V], error), x: f64[V], err: error = none) -> (y: f64[V], err: error) {
+    y, err = core.call(h, x, err: err)
+}
+";
+    let scale = "labcraft 1
+
+fn scale(x: f64[V]) -> (y: f64[V]) {
+    y = x
+}
+";
+    let f = |scale: &str| {
+        format!(
+            "labcraft 1
+
+use m
+
+fn f(x: f64[V], err: error = none) -> (y: f64[V], err: error) {{
+    y, err = apply({scale}, x, err: err)
+}}
+"
+        )
+    };
+    let folder = Folder::new("reference");
+    folder.file("p/apply.lcf", apply).file("p/f.lcf", f("m.scale")).file("libs/m/scale.lcf", scale);
+    let (exit, document) = folder.json(&["p", "--lib-path", "libs"]);
+    assert_eq!((exit, codes_of(&document)), (1, vec!["LC3008".to_owned()]));
+    assert_eq!(document["diagnostics"][0]["fixes"], Value::Null, "another library");
+    folder.file("p/scale.lcf", scale).file("p/f.lcf", f("scale"));
+    let (exit, document) = folder.json(&["p", "--lib-path", "libs"]);
+    assert_eq!((exit, codes_of(&document)), (1, vec!["LC3008".to_owned()]));
+    let title = document["diagnostics"][0]["fixes"][0]["title"].as_str().unwrap_or_default();
+    assert!(title.contains("`scale`") && title.contains("bind each output"), "this library: {title}");
+}
+
 #[test]
 fn a_dependency_is_read_for_its_errors_not_its_warnings() {
     let folder = Folder::new("dependency");

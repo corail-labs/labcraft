@@ -414,7 +414,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC3005` | error | Unit argument of another dimension, or the unit of a `string.format` field that does not convert each number of its value | 3.3 | S2 |
 | `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
-| `LC3008` | error | Function reference of the wrong signature, or a primitive that has no function type: one that takes a unit, a category or an element, `core.call`, `string.format` | 4 | S2 |
+| `LC3008` | error | Function reference of the wrong signature, or a primitive that has no function type: one that takes a unit, a category or an element, `core.call`, `string.format`. When the input receives a function of its own library by its name, not an `extern` one, the fix says to give that function the signature expected and to bind each output | 4, R-2 | S2 |
 | `LC3009` | error | Pattern that cannot apply: of the wrong type, such as a variant of another enumeration, that binds another number of values than its variant holds, or a range that holds no value | 6.1 | S2 |
 | `LC3010` | error | `match` without a branch for every value: a variant, `true` or `false` missing, or no `_` on an integer or a string. It names at most five variants. Silent on a boolean or an enumeration when one of the patterns has a diagnostic of its own, a repeated pattern included, since what it was meant to cover is unknown | R-8 | |
 | `LC3011` | error | Overlapping literal or range patterns, in one branch or in two: on the pattern that starts inside another, with that one in `related` | R-18 | |

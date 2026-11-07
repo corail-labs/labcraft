@@ -25,6 +25,9 @@ Every program is in canonical form and has exactly one error, so a second diagno
 ("one error, one diagnostic"). Each code marked `S2` in `docs/cli.md` has one case. `apps/labcraft-cli/tests/check.rs`
 runs them, through the program, and `tests/harness` with no command line, natively and in WASM.
 
+[`agent/run.sh`](agent/run.sh) plays the agent half of scenario 2 on these cases, by hand: it needs Claude Code
+and is not part of the `checks` workflow.
+
 ## `hostile/`: scenario 4
 
 One folder per case; these files are stored byte for byte (`.gitattributes`). `expected.json` gives,
