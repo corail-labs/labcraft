@@ -96,9 +96,19 @@ muted ink). One line per terminal, named, **in signature order**.
   (`timeout ◂ 2 s`, `◂ "MEAS:VOLT:DC?"`), not as a separate node. Long text is truncated (`…`),
   in full in the tooltip.
 - **Named constant** (`limit = 240 V`, spec 5.1): a small node without a body, the user places it near what it
-  feeds. It shows its name, its value and one output terminal (`limit  240 V ●`), and its wire splits like any
-  other. Dragging a wire from an inline constant to a second terminal makes one. *The exact drawing is to be judged
-  on a mock-up.* A new name for a wire (`err = e3`) still draws nothing.
+  feeds. It shows its name, its value in a pill and one output terminal (`limit  240 V ●`), and its wire splits like any
+  other. Dragging a wire from an inline constant to a second terminal makes one. A new name for a wire (`err = e3`) still
+  draws nothing.
+- **Constant construction** (`k = Limits { low: 220 V, high: 240 V }`, or a variant with values): when every field is a
+  constant and the values fit in a tooltip, it is drawn folded by default, as a small node (`k  Limits {…} ●`). Each node can be
+  unfolded into its block; the file does not change, and an exported image shows the block.
+- **Nodes of `ui`** (`ui.set`, `ui.get`, spec 10): the element is written on the face of the node (`set live_voltage`), with no
+  terminal for it, since it is no wire. An element named like an input or an output of the function is also that terminal of the
+  function, and selecting an element selects its nodes and terminals. The default of an input has one field in the inspector,
+  shared with the pill on its terminal, since it belongs to the signature.
+- **`led` on a panel** (spec 10): until the developer chooses, grey when off and one accent colour, neither green nor red, when
+  on, with the name of the variant on an enumeration. No default gives a colour a meaning: colours by position would make a
+  `Fail` green.
 - **Unwired optional inputs**: hidden by default, with a `+2` indicator in the header; shown with
   their default value on hover or on request.
 - **Ignored output** (`_`): hollow terminal, no wire.

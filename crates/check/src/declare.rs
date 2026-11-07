@@ -189,6 +189,8 @@ struct Pass<'a> {
     said: HashMap<&'a str, HashSet<String>>,
     /// The line of a body that a type is written on, for what that type has to say.
     node: Option<Node>,
+    /// How many errors its library had when the function being read began: a mistake in it can be a `ui.set` that nothing could bind.
+    function_errors: u64,
 }
 
 /// What the declaration of one file needs of it, made once: a file can hold millions of `use` lines and of types.
@@ -229,6 +231,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
         current: CurrentFile::default(),
         said: HashMap::new(),
         node: None,
+        function_errors: 0,
     };
     pass.gather();
     pass.find_cycles();

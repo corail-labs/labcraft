@@ -169,7 +169,7 @@ fn a_value_cannot_bear_the_name_of_a_library_a_type_or_a_live_element() {
         ["LC2014"],
         "neither an input nor an output"
     );
-    assert_eq!(in_file("fn f(stop: i32) -> (x: i32) {\n    x = stop\n}\n\npanel {\n    control stop: button\n}"), NOTHING);
+    assert_eq!(in_file("fn f(stop: bool) -> (x: bool) {\n    x = stop\n}\n\npanel {\n    control stop: button\n}"), NOTHING);
     assert_eq!(
         codes(&[("f.lcf", "fn f() -> (x: i32) {\n    session = 1\n    x = session\n}"), ("s.lct", "type session = opaque")]),
         NOTHING,

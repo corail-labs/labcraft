@@ -994,7 +994,46 @@ The section lists the elements and their kind: `control resource: text_box`,
 `indicator verdict: led`, `indicator voltage: numeric(format: "0.000")`. Their placement on the
 panel will go in the `layout` section; its syntax comes with M3 (section 9). In M0 the kinds are
 `button`, `switch`, `numeric`, `text_box`, `led` and `chart`; another kind gives a warning, and only
-`default:` is checked among the arguments.
+`default:` is checked among the arguments. How an element looks (colours, scales) is the choice of the developer: those
+arguments come with M3, and `check` never judges them.
+
+**The type of an element.** An element has one type, which the first of these gives:
+
+1. The input or the output of its name; of both, a `control` the input and an `indicator` the output.
+2. Its kind, when that kind holds one type: `bool` for a `button` or a `switch`, `string` for a `text_box`.
+3. Its `default:`, with its own type (3.4).
+
+A wire written to such an element converts to that type as on a terminal (3.3, 3.4): `default: 1 V` says volts, and wires of
+`f64[V]` and `f64[mV]` both go there. With `default: 0.5`, a wire that has a unit is an error on the default, and `0.5 V` says what
+is meant; with `default: 0`, so is a wire of `f32` or `f64`, and `0.0` says what is meant. `ui.get` and `ui.set` give the type of the
+element.
+
+**An element that the diagram reads says its type** in one of these three ways: a `ui.get` on any other is an error on the element,
+since a value is read before anything is written. So an accumulator, which reads an element and writes back what it computes, has a
+`default:`.
+
+An element that the diagram never reads takes its type from what its `ui.set` nodes write, and each of them gives what it was given.
+The diagram has no order, so none comes first: wires of different types are an error on the element, `f64[V]` and `f64[mV]` included,
+since nothing says which unit it shows. The developer converts one of them, or gives a `default:`. A constant takes the type of the
+wires, as on a terminal (3.4, 3.5); with no wire, constants have their own type and must agree. With no `ui.set`, it is an error on the
+element. A kind that M0 does not know takes any type, and with none of these its type stays unknown, with only the warning about the
+kind. A type written on a call, `ui.get<T>`, is checked against a type that the element says, and does not give it one. On an element
+that its wires give a type to, it is the type of that value, as on a generic primitive (3.5).
+
+Each kind shows these types. A kind that does not show the type of the input or the output of its name is an error on the
+element; a wire that it refuses is an error on that wire, and a `default:` an error on the default.
+
+| Kind | Shows |
+|---|---|
+| `numeric` | a number, with or without a unit, a complex number, a `duration` |
+| `text_box` | a `string` |
+| `button`, `switch` | a `bool` |
+| `led` | a `bool` or an enumeration, by the name of the variant |
+| `chart` | a number, which it adds to its history, an array of numbers (`[f64]`, `[f64; 2]`, not `[[f64]]`), a `waveform` |
+
+**One element, one name.** An element holds its whole value, whatever its type: `ui.set(limits, value)` writes the struct, and
+`ui.set(limits.high, x)` is refused. A field is read after `ui.get`, as on any wire. An array or a struct goes through the same rules. Two values that live apart are two
+elements, and what arranges them on the panel (tabs, groups) goes in the `layout` section, with no effect on the program.
 
 **At the call terminals.** An element that has the name of an input of the function is a control:
 its value is read once, at the start of the call, like any input. An element that has the name of
@@ -1067,8 +1106,12 @@ in the loop.
 **Without a user interface.** The panel state exists as soon as the function runs, displayed or
 not: called as a subfunction, by the CLI, by MCP or by an agent. `ui.get` then returns the default
 value of the element, or the one a command set during execution (an agent "presses" Stop). The
-default value of an element is that of its type (7.2), unless the panel item gives one:
-`control threshold: numeric(default: 0.5)`. Writes by `ui.set` are recorded in the run trace. In
+default value of an element is that of its type (7.2), unless its input has one in the signature, or the panel item gives one:
+`control threshold: numeric(default: 0.5)`, a constant that an argument can hold (a number, a text, a boolean, a variant without
+values, an array of those), written once. Only an element that exists
+only live has a `default:`. An input has its default in its signature, or none: `default:` on one is an error, or it would be
+optional on the panel and required for who calls the function. An output has none, since a value shown before it is produced
+would read as a result. Writes by `ui.set` are recorded in the run trace. In
 deterministic mode, values set by a command are dated on the simulated clock: a test replays
 exactly the press of Stop at 5 s (command syntax: Q-20).
 
@@ -1724,8 +1767,8 @@ fn errors.raise_if(condition: bool, category: kind category, message: string = "
                    err: error = none) -> (err: error)
 fn errors.merge(errs: error...) -> (err: error)            // 7.4; the PoC takes up to six
 
-fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the element; not in the PoC
-fn ui.set<T>(element: kind element, value: T) -> (value: T)   // section 10; not in the PoC
+fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the element, section 10; not in the PoC
+fn ui.set<T>(element: kind element, value: T) -> (value: T)   // same; never read, T: what this node is given; not in the PoC
 ```
 
 `array.get`, `array.set` and `array.slice` fail with the category `array.index_out_of_range`. An error of

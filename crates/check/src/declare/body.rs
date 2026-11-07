@@ -13,7 +13,7 @@ use std::rc::Rc;
 use labcraft_format::write_line;
 use labcraft_graph::{
     Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Constant, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand,
-    OrderRef, Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
+    OrderRef, PanelDirection, Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
 };
 use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text};
 
@@ -325,6 +325,7 @@ impl<'a> Pass<'a> {
                 };
                 self.begin_declaration(model);
                 self.current.not_imported = self.said.remove(file.shown.as_str()).unwrap_or_default();
+                self.function_errors = self.reports.get(library).map_or(0, labcraft_types::Report::errors);
                 let scope = Scope { library, file, model, generic: !signature.generics.is_empty(), function: Some(self.names.resolve(name)) };
                 let mut walker = Walker::new(self, &mut context, scope);
                 let outcome = last_resort(|| walker.function(signature, function));
@@ -570,12 +571,63 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 self.judge_constant(default);
             }
         }
+        self.panel_defaults(signature);
         let Some(function) = function else { return };
         self.declare_signature(signature);
         let mark = self.enter();
         self.declare_lines(&function.body);
         self.walk_statements(&function.body);
         self.leave(mark);
+    }
+
+    /// A `default:` is for an element that exists only live: an input has its default in the signature, with the one field that the
+    /// IDE shows for both, and an output shows nothing before it is produced (10). Like the default of a parameter, it is a constant.
+    fn panel_defaults(&mut self, signature: &'a Signature) {
+        let Some(panel) = &self.scope.model.file.panel else { return };
+        let inputs: HashMap<Name, bool> = signature.params.iter().map(|param| (param.name, param.default.is_some())).collect();
+        let outputs: HashSet<Name> = signature.outputs.iter().map(|output| output.name).collect();
+        // A name given twice has its `LC5001`, and which item counts would depend on their order, which `fmt` changes.
+        let twice = types::panel::names_given_twice(&panel.items);
+        for item in panel.items.iter().filter(|item| !twice.contains(&item.name)) {
+            let mut given = false;
+            for arg in item.args.iter().flatten() {
+                let Arg::Value { id, name: Some(name), value } = arg else { continue };
+                if self.text(*name) != "default" {
+                    continue;
+                }
+                let element = cut_text(self.text(item.name)).into_owned();
+                // Of an input and an output of one name, an indicator shows the output (10).
+                let shows_output = outputs.contains(&item.name) && (item.direction == PanelDirection::Indicator || !inputs.contains_key(&item.name));
+                if given {
+                    self.say(Code::Lc5012, format!("`{element}` is given two `default:`"), *id);
+                } else if shows_output {
+                    let why = "a value shown before the output is produced would read as a result";
+                    self.say(Code::Lc5012, format!("`{element}` is an output, so it has no `default:`: {why} (10)"), *id);
+                } else if let Some(has_one) = inputs.get(&item.name) {
+                    let why = if *has_one {
+                        "it already has one in the signature of the function"
+                    } else {
+                        "its default belongs to the signature, or an input would be optional here and required for who calls the function"
+                    };
+                    self.say(Code::Lc5012, format!("`{element}` is an input, so a `default:` cannot go here: {why} (10)"), *id);
+                } else {
+                    self.panel_constant(value);
+                }
+                given = true;
+            }
+        }
+    }
+
+    /// What a `default:` holds (10).
+    fn panel_constant(&mut self, value: &'a Operand) {
+        self.constant_operand(value);
+        if types::panel::refused_constant(value, &self.resolved) {
+            self.say(
+                Code::Lc3017,
+                "a `default:` holds a number, a text, a boolean, a variant without values, or an array of those (10)".to_owned(),
+                value.id(),
+            );
+        }
     }
 
     fn declare_signature(&mut self, signature: &'a Signature) {

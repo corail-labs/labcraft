@@ -1119,3 +1119,4 @@ fn a_long_list_of_patterns_is_judged() {
 mod arrays;
 mod constructions;
 mod fields;
+mod panel;

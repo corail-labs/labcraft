@@ -213,15 +213,17 @@ Passes, each one over all the files, so that a bad file does not hide the others
    (`LC2021`). A file that does not parse is marked, and what it declares is known as broken.
 2. **Declarations:** functions and types per library, duplicates, R-1, R-19, bad types.
 3. **Bodies:** names resolved in scopes (inputs, carries, patterns, lines), `use`, calls bound to
-   signatures, labels, `after:`, the bounds of each number of a body or a default value (those of a `panel` come with
-   pass 6). Only what can be told without a type: a field of a value and
+   signatures, labels, `after:`, the bounds of each number of a body, a default value or a `default:` (the rest of a `panel`
+   comes with pass 6), `LC5012`. Only what can be told without a type: a field of a value and
    the values of a variant wait for pass 4, and so does a `string.format` template, whose fields ask something of their types (`LC2106`). Only for the
    libraries being checked: of a dependency, the others read the signatures.
 4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades. That order is one graph for
    the whole function, walked with a queue, since a chain of lines is as long as the file. A structure is two steps, one
-   before its body and one after. What is left in a cycle stays unknown, and pass 5 says why.
+   before its body and one after. What is left in a cycle stays unknown, and pass 5 says why. A panel element adds nothing to that
+   order (spec 10): one that is read says its type before the walk, by its name, its kind or its `default:`, and the wires of one that
+   is never read are compared when the walk ends. So no wire of the diagram depends on the type of an element that its wires decide.
 5. **Dataflow:** cycles, outputs bound once, carries; then the warnings of 7.5, 8.1 and 10.
-6. **Panel, layout, icon:** kinds and `default:`, references to nodes, coordinates, the icon (R-14: grid,
+6. **Panel, layout, icon:** kinds that M0 does not know, elements declared twice or of the wrong direction, references to nodes, coordinates, the icon (R-14: grid,
    a validator of the SVG path syntax, a table of `accent` tokens).
 
 Types across files (`.lct` chains, `LC2017`) and calls between functions (`LC2016`) are walked with an

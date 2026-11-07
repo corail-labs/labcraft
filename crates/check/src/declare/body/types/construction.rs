@@ -18,28 +18,29 @@ const MISSING_SHOWN: usize = 5;
 impl<'a> Typer<'_, '_, '_, 'a> {
     /// In a default every mistake is one of that default (`docs/cli.md`, 4.2).
     pub(super) fn construction_code(&self) -> Code {
-        if matches!(self.within, Within::Default(_)) { Code::Lc3017 } else { Code::Lc3015 }
+        if matches!(self.within, Within::Default(_) | Within::Panel(_)) { Code::Lc3017 } else { Code::Lc3015 }
     }
 
     /// What nothing says the type of, inside a default, is a mistake of that default.
     pub(super) fn unknown_type_code(&self) -> Code {
-        if matches!(self.within, Within::Default(_)) { Code::Lc3017 } else { Code::Lc3019 }
+        if matches!(self.within, Within::Default(_) | Within::Panel(_)) { Code::Lc3017 } else { Code::Lc3019 }
     }
 
     fn piece_terminal(&self, piece: &str) -> String {
         match self.within {
             Within::Default(name) => format!("fn.{}", cut_text(self.text(name))),
+            Within::Panel(name) => format!("panel.{}", cut_text(self.text(name))),
             Within::Diagram | Within::Construction => self.input_terminal(piece),
         }
     }
 
     /// A field or a value against what the type says of it.
-    fn check_piece(&mut self, operand: &'a Operand, expected: TyId, piece: &str) {
+    pub(super) fn check_piece(&mut self, operand: &'a Operand, expected: TyId, piece: &str) {
         let found = self.value_of(operand, Some(expected));
         self.judge_piece(operand, found, expected, piece);
     }
 
-    fn judge_piece(&mut self, operand: &'a Operand, found: TyId, expected: TyId, piece: &str) {
+    pub(super) fn judge_piece(&mut self, operand: &'a Operand, found: TyId, expected: TyId, piece: &str) {
         match self.fit_of(operand, found, expected) {
             Fit::Same => {}
             Fit::Coerce => self.resolved.add_coercion(operand.id(), found, expected),
