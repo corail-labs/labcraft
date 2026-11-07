@@ -715,10 +715,10 @@ fn with_nodes(section: &str) -> String {
 fn items_of_a_layout_go_by_kind_then_by_the_text_of_their_references() {
     assert_canonical(
         &with_nodes(
-            "layout {\nwire b.x -> #l.y\nwire b -> c\nwire b -> #m\nnode e at (1,2)\nnode c view compact\nnode b at ( 1 , 2 ) view standard\nnode #m at (3,4)\nnode #l at (3,4)\n}\n",
+            "layout {\nwire b -> #l.y\nwire b -> c\nwire b -> #m\nnode e at (1,2)\nnode c view compact\nnode b at ( 1 , 2 ) view standard\nnode #m at (3,4)\nnode #l at (3,4)\n}\n",
         ),
         &with_nodes(
-            "layout {\n    node #l at (3, 4)\n    node #m at (3, 4)\n    node b at (1, 2) view standard\n    node c view compact\n    node e at (1, 2)\n    wire b -> #m\n    wire b -> c\n    wire b.x -> #l.y\n}\n",
+            "layout {\n    node #l at (3, 4)\n    node #m at (3, 4)\n    node b at (1, 2) view standard\n    node c view compact\n    node e at (1, 2)\n    wire b -> #l.y\n    wire b -> #m\n    wire b -> c\n}\n",
         ),
     );
     // Ties keep the written order, and so do the points after `via`.
@@ -769,6 +769,8 @@ fn a_layout_entry_that_names_no_node_is_removed() {
         "wire b -> z",
         "wire z -> b",
         "wire z.x -> b.y via (1, 1)",
+        // A wire starts at the value it carries, never at a terminal (spec 11).
+        "wire b.x -> b",
     ] {
         let result = formatted(&entry(stale));
         assert_eq!(result.text, with_nodes("").trim_end_matches('\n').to_owned() + "\n", "{stale}");
@@ -811,7 +813,7 @@ fn a_constant_on_a_terminal_designates_no_node() {
 fn a_layout_entry_that_names_an_input_or_an_output_stays_for_check() {
     let function = "labcraft 1\n\nfn f(a: i32) -> (err: i32) {\n    b = g(a)\n    err = b\n}\n\n";
     let text = format!(
-        "{function}layout {{\n    node a at (1, 2)\n    node err at (1, 2)\n    wire a -> b via (1, 1)\n    wire a -> err\n    wire a.a -> b.x\n    wire b -> a\n    wire b -> err\n    wire err -> b\n}}\n"
+        "{function}layout {{\n    node a at (1, 2)\n    node err at (1, 2)\n    wire a -> b via (1, 1)\n    wire a -> b.x\n    wire a -> err\n    wire b -> a\n    wire b -> err\n    wire err -> b\n}}\n"
     );
     assert_eq!(formatted(&text).text, text);
     assert_eq!(formatted(&text).codes, []);
@@ -819,6 +821,23 @@ fn a_layout_entry_that_names_an_input_or_an_output_stays_for_check() {
     for stale in ["wire a -> z", "wire z -> err", "node #a at (1, 2)", "wire #a -> b"] {
         let result = formatted(&format!("{function}layout {{\n    {stale}\n}}\n"));
         assert_eq!(result.text, function.trim_end_matches('\n').to_owned() + "\n", "{stale}");
+        assert_eq!(result.codes, [Code::Lc5004], "{stale}");
+    }
+}
+
+#[test]
+fn a_wire_starts_at_the_value_it_carries() {
+    // Any name that the function binds, not only the name of a node (spec 11): a second output, a carry, a clause, a pattern, a label.
+    let function = "labcraft 1\n\nfn f(v: [f64]) -> () {\n    #l: total, count = for x in v, carry s = 0.0 {\n        next s = core.add(s, x)\n    }\n    \
+                    m = handle count {\n        _(y) => yield y\n    }\n    mean = core.div(total, m)\n}\n\n";
+    for start in ["count", "s", "x", "y", "#l", "m", "v"] {
+        let text = format!("{function}layout {{\n    wire {start} -> mean\n}}\n");
+        assert_eq!(formatted(&text).text, text, "{start}");
+        assert_eq!(formatted(&text).codes, [], "{start}");
+    }
+    // A value is no node: it does not end a wire, nor does a `node` entry name it.
+    for stale in ["wire mean -> count", "node count at (1, 2)", "wire z -> mean"] {
+        let result = formatted(&format!("{function}layout {{\n    {stale}\n}}\n"));
         assert_eq!(result.codes, [Code::Lc5004], "{stale}");
     }
 }

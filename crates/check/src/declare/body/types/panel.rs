@@ -29,6 +29,11 @@ enum Kind {
     Chart,
 }
 
+/// Whether M0 knows this kind (`LC5003` otherwise).
+pub(in crate::declare) fn known_kind(text: &str) -> bool {
+    Kind::of(text).is_some()
+}
+
 impl Kind {
     fn of(text: &str) -> Option<Self> {
         match text {

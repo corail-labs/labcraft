@@ -1,7 +1,7 @@
 //! L3: name resolution, signatures, type and connection checking (`docs/architecture.md`, section 5).
 //!
-//! So far, passes 1 to 4: reading the files, finding the libraries that they use, what each library declares, the names of
-//! each body and its types. The other passes come with their steps (section 9).
+//! Passes 1 to 6: reading the files, finding the libraries that they use, what each library declares, the names of each body,
+//! its types, its dataflow, and the `panel`, `layout` and `icon` sections.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,

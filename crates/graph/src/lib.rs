@@ -525,6 +525,17 @@ pub enum Pattern {
     },
 }
 
+impl Pattern {
+    /// The names that it binds: `v` in `Reading.Value(v)`, `err` in `_(err)` or `io.timeout(err)`.
+    pub fn bindings(&self) -> &[Binding] {
+        match self {
+            Pattern::Variant { bindings, .. } => bindings,
+            Pattern::Wildcard { binding, .. } | Pattern::Category { binding, .. } | Pattern::Code { binding, .. } => binding.as_slice(),
+            Pattern::Literal(_) | Pattern::Range { .. } | Pattern::Ok { .. } => &[],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IntBound {
     pub negative: bool,
@@ -649,7 +660,7 @@ pub struct NodeRef {
     pub name: Name,
 }
 
-/// `raw` or `raw.session`.
+/// `count` or `mean.b`. A wire starts at a value, with no terminal (spec 11): `check` says so of `raw.session`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TerminalRef {
     pub id: Id,

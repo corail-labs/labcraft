@@ -218,7 +218,9 @@ A structure is a **frame** with, as header, the keyword of the text (`loop conti
 the order of the text.
 
 - **Outer values** used inside (spec 6): the wire crosses the edge; a notch marks the crossing.
-  No terminal to wire.
+  No terminal to wire. A value that is also the selector of a `match` or a `handle` enters by the
+  selector, which serves as its notch: one wire outside, not two side by side. The developer can still
+  give it a notch of its own, which the `layout` section keeps (spec 11).
 - **Nesting**: frames contain each other; the background darkens by one step per level (token
   `frame.fill.n`).
 
@@ -343,3 +345,4 @@ reference to another editor's palette (D-23).
 | N-11 | An icon shared by several functions of a library | Copied into each file in v0; later, a library icon referenced by its name |
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | Lighten the nesting backgrounds rather than darken the wires |
+| N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |

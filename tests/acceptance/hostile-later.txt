@@ -1,4 +1,2 @@
 # The stored cases of `hostile/` whose codes come with later steps of `docs/architecture.md`, section 9.
 # Until then each one gives only part of what it expects. Remove a line when its step arrives.
-absurd-coordinate
-absurd-icon-grid

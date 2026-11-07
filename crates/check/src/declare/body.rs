@@ -23,8 +23,15 @@ use crate::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
 pub(super) mod flow;
+pub(super) mod sections;
 #[cfg(test)]
 mod tests;
+
+/// What only passes 5 and 6 say: the programs that test the passes before them are written for what those judge.
+#[cfg(test)]
+pub(in crate::declare) fn later_pass(code: Code) -> bool {
+    flow::only_this_pass(code) || sections::only_this_pass(code)
+}
 mod types;
 
 /// What a call binds to, made once for each function: a hostile file can hold a million parameters and a million calls.
@@ -351,8 +358,14 @@ impl<'a> Pass<'a> {
                         let typed = last_resort(|| types::type_function(self, &mut context, scope, &mut done, name, signature, function));
                         if let Err(payload) = typed {
                             self.report_a_panic(library, &file.shown, payload);
-                        } else if let Some(function) = function {
-                            let judged = last_resort(|| flow::judge_function(self, &mut context, scope, &done, name, signature, function));
+                        } else {
+                            if let Some(function) = function {
+                                let judged = last_resort(|| flow::judge_function(self, &mut context, scope, &done, name, signature, function));
+                                if let Err(payload) = judged {
+                                    self.report_a_panic(library, &file.shown, payload);
+                                }
+                            }
+                            let judged = last_resort(|| sections::judge_sections(self, &context, scope, &done, name, signature, function));
                             if let Err(payload) = judged {
                                 self.report_a_panic(library, &file.shown, payload);
                             }
