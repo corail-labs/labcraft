@@ -25,7 +25,7 @@ pub struct Limits {
 impl Default for Limits {
     /// The defaults proposed by `docs/cli.md`, section 1, and `docs/architecture.md`, section 2.
     fn default() -> Self {
-        Limits { max_file_size: 16 * MIB, max_library_size: 1024 * MIB, max_report: 1000, max_nesting: 256 }
+        Limits { max_file_size: 4 * MIB, max_library_size: 1024 * MIB, max_report: 1000, max_nesting: 256 }
     }
 }
 
@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn the_defaults_are_those_of_the_command_line() {
         let limits = Limits::default();
-        assert_eq!(limits.max_file_size, 16 * 1024 * 1024);
+        assert_eq!(limits.max_file_size, 4 * 1024 * 1024);
         assert_eq!(limits.max_nesting(), 256);
         assert_eq!(limits.max_report, 1000);
     }

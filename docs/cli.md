@@ -37,7 +37,7 @@ diagnostics of the others.
 |---|---|
 | `--json` | One JSON document on stdout (section 4), nothing else |
 | `--max-report N` | Diagnostics listed, default 1,000 *(proposed)*. Beyond it, errors are kept before warnings and `truncated` is true; the counts stay complete |
-| `--max-file-size BYTES` | Default 16 MiB *(proposed, scenario 4)*, for a file and for what `fmt` would write, at most 1 GiB *(proposed)*: reading takes many times the size of a file, and running out of memory ends the process. A larger value is wrong usage |
+| `--max-file-size BYTES` | Default 4 MiB *(proposed, scenario 4)*, for a file and for what `fmt` would write, at most 1 GiB *(proposed)*: reading takes many times the size of a file, and running out of memory ends the process. A larger value is wrong usage. At the default, `fmt` and `check` of any file stay within the bounds of scenario 4; a function of 20,000 nodes, the most that a diagram draws, takes about 1.5 MiB with its `layout` |
 | `--max-nesting N` | Depth of nested structures, parentheses of units, types and array literals, with one counter (spec 14.1), default 256, at most 1,024 *(proposed, scenario 4)*: a stack is sized from it. A larger value is wrong usage. The WASM hosts stop at 256, so a file nested deeper reads only here ([architecture](architecture.md), section 4) |
 | `--` | What follows is a path, even if it starts with `-` |
 
@@ -82,7 +82,7 @@ file**, so its result depends only on the bytes of the file.
 A file that cannot be read or parsed gets its diagnostics and stays unchanged, whatever the option.
 
 **A canonical form over `--max-file-size`** gets the error `LC6003`, and the file stays unchanged, whatever the
-option. Indentation grows with nesting, so 16 MiB of short lines nested 256 levels deep would take over 4 GiB, and a
+option. Indentation grows with nesting, so 4 MiB of short lines nested 256 levels deep would take over 1 GiB, and a
 text over the limit could not be read again. **A file that cannot be replaced**, such as a read-only one, gets
 the same error.
 

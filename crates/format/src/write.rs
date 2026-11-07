@@ -6,7 +6,7 @@
 //! that a file nested deep does not measure its text once per level. A line is judged as a whole: when it does not
 //! fit, every struct and enum directly on it is split, and each of their items is then judged on its own line.
 //!
-//! **Size.** Indentation makes the text of a deep file far larger than the file: 16 MiB of short lines at the
+//! **Size.** Indentation makes the text of a deep file far larger than the file: 4 MiB of short lines at the
 //! ceiling of nesting would take over 4 GiB. A text over `Limits::max_file_size` could not be read again, so it
 //! is refused as soon as it passes that size (`LC6003`, `docs/cli.md`, section 2).
 //!

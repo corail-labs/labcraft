@@ -15,12 +15,13 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci        fmt --check, layers, licences, libs, codes, clippy -D warnings, tests, wasm; stops at the first failure
+  ci        fmt --check, layers, licences, libs, codes, clippy -D warnings, tests, bounds, wasm; stops at the first failure
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
-  wasm     format and check build for wasm32-unknown-unknown, and the harness passes there
+  bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
+  wasm      format and check build for wasm32-unknown-unknown, and the harness passes there
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
 
@@ -40,6 +41,7 @@ fn main() -> ExitCode {
         Some("libs") => check_libs(),
         Some("codes") => check_codes(),
         Some("wasm") => wasm(),
+        Some("bounds") => bounds(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
@@ -63,7 +65,26 @@ fn ci() -> Result<(), String> {
     check_codes()?;
     run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
     run(&["test", "--locked", "--workspace"])?;
+    bounds()?;
     wasm()
+}
+
+/// Scenario 4, point 3, in release: the crates of the workspace are not optimized in tests (`tests/harness/tests/bounds.rs`).
+fn bounds() -> Result<(), String> {
+    run(&[
+        "test",
+        "--locked",
+        "--release",
+        "--package",
+        "labcraft-harness",
+        "--test",
+        "bounds",
+        "--",
+        "--ignored",
+        "--exact",
+        "every_case_stays_within_the_bounds",
+        "--nocapture",
+    ])
 }
 
 fn check_layers() -> Result<(), String> {

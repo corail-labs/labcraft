@@ -78,6 +78,7 @@ pub(crate) struct Declared {
     pub(crate) libraries: Vec<DeclaredLibrary>,
     /// Pass 3, parallel to the files of each library.
     pub(crate) resolved: Vec<Vec<Resolved>>,
+    pub(crate) cut_short: bool,
 }
 
 /// What a path in a type stands for.
@@ -191,6 +192,8 @@ struct Pass<'a> {
     node: Option<Node>,
     /// How many errors its library had when the function being read began: a mistake in it can be a `ui.set` that nothing could bind.
     function_errors: u64,
+    /// A budget of work or a limit made a pass say less (`Checked::cut_short`).
+    cut_short: bool,
 }
 
 /// What the declaration of one file needs of it, made once: a file can hold millions of `use` lines and of types.
@@ -232,6 +235,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
         said: HashMap::new(),
         node: None,
         function_errors: 0,
+        cut_short: false,
     };
     pass.gather();
     pass.find_cycles();
@@ -240,7 +244,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
     pass.resolve_types();
     let declared = pass.declare_all();
     let resolved = pass.check_bodies(&declared, &primitives);
-    let Pass { table, reports, .. } = pass;
+    let Pass { table, reports, cut_short, .. } = pass;
     for (library, own) in loaded.iter_mut().zip(reports) {
         if library.checked {
             report.merge(own);
@@ -248,7 +252,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
             library.report.merge(own);
         }
     }
-    Declared { types: table, libraries: declared, resolved }
+    Declared { types: table, libraries: declared, resolved, cut_short }
 }
 
 /// Of two declarations of one name, which have their `LC2013`, a call binds to the first one and says nothing about it.

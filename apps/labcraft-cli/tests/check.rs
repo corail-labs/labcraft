@@ -263,6 +263,15 @@ fn the_limits_of_a_file_are_those_of_fmt() {
     assert_eq!(at_the_ceiling.codes(&["--max-nesting", "1024", "."]), (0, vec![]), "{kind}");
 }
 
+/// The Size family: under the limit only without indentation.
+#[test]
+fn a_function_of_300000_nodes_is_checked() {
+    let folder = Folder::new("many-nodes");
+    let lines: String = (0..300_000).map(|index| format!("a{index}=1\n")).collect();
+    folder.file("a.lcf", format!("labcraft 1\nfn f()->(){{\n{lines}}}\n"));
+    assert_eq!(folder.codes(&["."]), (0, vec![]));
+}
+
 #[test]
 fn a_use_finds_the_first_match_of_the_rules() {
     let folder = Folder::new("rules");

@@ -452,11 +452,18 @@ struct Ref {
     own: u32,
 }
 
-/// `found` stays short and without repeats: an array of millions of wires can name one session.
-fn push_ref(found: &mut Vec<Ref>, reference: Ref) {
-    if found.len() < MAX_REFS && !found.contains(&reference) {
-        found.push(reference);
+/// `found` stays short and without repeats: an array of millions of wires can name one session. True when `reference` is left
+/// out for want of room, which says less (`Checked::cut_short`).
+#[must_use]
+fn push_ref(found: &mut Vec<Ref>, reference: Ref) -> bool {
+    if found.contains(&reference) {
+        return false;
     }
+    if found.len() < MAX_REFS {
+        found.push(reference);
+        return false;
+    }
+    true
 }
 
 #[derive(Clone, Copy)]
@@ -482,6 +489,8 @@ struct Root {
 /// Which resources each value continues.
 #[derive(Default)]
 struct Resources {
+    /// Some value had more than `MAX_REFS` resources.
+    cut_short: bool,
     roots: Vec<Root>,
     /// The parts of a resource: `paths[n - 1]` is part `n`, and 0 is the whole of it.
     paths: Vec<(u32, Name, u32)>,
@@ -536,7 +545,7 @@ impl Resources {
     fn add_refs(&mut self, value: Id, refs: &[Ref]) {
         let known = self.values.entry(value).or_default();
         for found in refs {
-            push_ref(known, *found);
+            self.cut_short |= push_ref(known, *found);
         }
     }
 
@@ -859,7 +868,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                     for field in &path.rest {
                         part = resources.part(part, *field);
                     }
-                    push_ref(found, Ref { path: part, ..reference });
+                    resources.cut_short |= push_ref(found, Ref { path: part, ..reference });
                 }
             }
             Operand::Array(_, values) => {
@@ -872,7 +881,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                     && let Some(refs) = resources.values.get(&value)
                 {
                     for reference in refs {
-                        push_ref(found, *reference);
+                        resources.cut_short |= push_ref(found, *reference);
                     }
                 }
             }
@@ -897,7 +906,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                 {
                     let known = resources.next_refs.entry(carry).or_default();
                     for reference in refs {
-                        push_ref(known, *reference);
+                        resources.cut_short |= push_ref(known, *reference);
                     }
                 }
                 return;
@@ -946,8 +955,8 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
             }
             let of_type = by_type.entry(self.resolved.ty(value.id())).or_default();
             for reference in refs {
-                push_ref(of_type, reference);
-                push_ref(&mut all, reference);
+                resources.cut_short |= push_ref(of_type, reference);
+                resources.cut_short |= push_ref(&mut all, reference);
                 if is_function {
                     if let Some(root) = resources.roots.get_mut(reference.root as usize) {
                         let access = Access { path: reference.path, step: index };
@@ -1065,15 +1074,17 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
             ClauseKind::Carry(carry) => Some(carry),
             ClauseKind::In(_) => None,
         });
+        let mut cut_short = false;
         let carry_refs: Vec<Vec<Ref>> = carries
             .map(|carry| {
                 let mut refs = resources.values.get(&carry.id).cloned().unwrap_or_default();
                 for reference in resources.next_refs.get(&carry.id).into_iter().flatten() {
-                    push_ref(&mut refs, *reference);
+                    cut_short |= push_ref(&mut refs, *reference);
                 }
                 refs
             })
             .collect();
+        resources.cut_short |= cut_short;
         let collects = body.statements.iter().filter_map(|line| match &line.kind {
             StatementKind::Collect(value) => Some(value),
             _ => None,
@@ -1129,6 +1140,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                 StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => {}
             }
         }
+        self.pass.cut_short |= resources.cut_short;
         resources
     }
 
@@ -1181,6 +1193,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                 let cost = u64::from(walks) + 1;
                 if self.work < cost {
                     self.work = 0;
+                    self.pass.cut_short = true;
                     return found;
                 }
                 self.work -= cost;
@@ -1189,6 +1202,8 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                     continue;
                 }
                 let reached = reaching.contains(&standing.reached) || Self::reaches(order, known.step, access.step, seen, epoch, &mut self.work);
+                // Out of work, `reaches` says yes, which hides a warning.
+                self.pass.cut_short |= self.work == 0;
                 if !reached {
                     let shown = if resources.depth(known.path) >= resources.depth(access.path) { known.path } else { access.path };
                     if warned.insert(shown) {
@@ -1281,6 +1296,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
             }
             let cost = u64::from(self.graph.parallels.get(line.parallel as usize).map_or(0, |place| place.depth)) + 1;
             if self.work < cost {
+                self.pass.cut_short = true;
                 break;
             }
             self.work -= cost;
@@ -1338,6 +1354,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                 for first in sorted.iter().take(position) {
                     let cost = u64::from(self.graph.arm_depth(*first) + self.graph.arm_depth(*second)) + 1;
                     if self.work < cost {
+                        self.pass.cut_short = true;
                         return;
                     }
                     self.work -= cost;

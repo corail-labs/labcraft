@@ -950,7 +950,7 @@ fn the_indentation_of_a_deep_file_cannot_make_a_huge_text() {
             let close = "yield a\n}\n}\n".repeat(depth - 1);
             let lines = "c=1\n".repeat(100_000);
             let input = format!("labcraft 1\nfn f()->(){{\n{open}a=match b{{\n_=>{{\n{lines}yield a\n}}\n}}\n{close}}}\n");
-            assert!(input.len() < 16 * 1024 * 1024);
+            assert!(input.len() < 4 * 1024 * 1024);
             let mut names = Interner::new();
             let result = format(input.as_bytes(), &mut names, &Limits::default());
             assert_eq!(result.text, None);

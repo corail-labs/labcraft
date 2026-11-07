@@ -42,7 +42,7 @@ options of check:
 options of both:
   --json                 one JSON document on stdout, nothing else
   --max-report N         diagnostics listed, default 1000; the counts stay complete
-  --max-file-size BYTES  limit of a file and of what is written, default 16 MiB, at most 1 GiB
+  --max-file-size BYTES  limit of a file and of what is written, default 4 MiB, at most 1 GiB
   --max-nesting N        depth of nested structures, default 256, at most 1024
   --                     what follows is a path, even if it starts with -
 ";

@@ -79,6 +79,7 @@ pub(super) fn judge_sections<'a>(
                 }
                 let limit = scope.model.source_map.len().saturating_mul(WIRES_PER_PLACE).max(MIN_WIRES);
                 let wires = Wires::of(function, signature, resolved, context, &mentioned, limit);
+                sections.pass.cut_short |= wires.overflow;
                 sections.layout(layout, &wires);
             }
             Some(_) => {}
@@ -287,6 +288,7 @@ impl<'a> Sections<'_, 'a> {
                 let cost = u64::try_from(list.len()).unwrap_or(u64::MAX).saturating_add(1);
                 if cost > *work {
                     *work = 0;
+                    self.pass.cut_short = true;
                     return None;
                 }
                 *work -= cost;

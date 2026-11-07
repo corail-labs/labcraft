@@ -37,8 +37,9 @@ These families are too large or cannot be stored, so the test harness generates 
 | Family | Cases | Expected |
 |---|---|---|
 | Truncation | Every prefix, byte by byte, of every file of `examples/` and `libs/` | Exit 0 or 1; `fmt` leaves a file it cannot parse unchanged |
-| Size | A file of 100 MB, one just over the limit, a line of 10 MB | `LC0006` when over the limit |
-| Size | A function of 300,000 nodes under the limit, a library of 100,000 files | Ends within the bounds of scenario 4 |
+| Size | A file of 100 MB, one just over the limit, a line of 10 MB | `LC0006` when over the limit; the line reads under `--max-file-size` 16 MiB |
+| Size | A function of 300,000 nodes under the limit, written without indentation, a library of 100,000 files | Ends normally; `fmt` gives `LC6003`, since its canonical form is over the limit |
+| Size | Files built to cost the most just under the limit, the stored cases, the family Nesting | Within the bounds of scenario 4, measured by `cargo xtask bounds` |
 | Size | A library of 100,001 files | `LC0010` |
 | Size | Short lines nested deep, whose canonical form is over the limit | `LC6003` |
 | Nesting | 100,000 nested `match`, `loop` or `handle`, parentheses in a unit, nested array types | `LC0007` |

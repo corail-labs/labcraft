@@ -1058,6 +1058,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let spent = self.constant_budget >= cost;
         if spent {
             self.constant_budget -= cost;
+        } else {
+            self.pass.cut_short = true;
         }
         spent
     }

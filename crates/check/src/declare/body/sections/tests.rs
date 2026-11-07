@@ -392,3 +392,67 @@ fn the_icon_of_an_extern_is_judged_too() {
     let function = "extern rust(crate: \"c\", function: \"f\")\nfn f(a: f64) -> (err: error)";
     assert_eq!(with(function, "icon 16 {}"), ["LC5008"]);
 }
+
+// The limits: past them, nothing more is said of the wires.
+
+/// Deep in nested loops, on the stack of a host: the test thread is too small for 200 levels in debug.
+fn on_a_large_stack<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new().stack_size(labcraft_format::STACK_SIZE).spawn(work).unwrap().join().unwrap()
+}
+
+/// Each of `count` values is read under `depth` loops and has an entry, and a last entry names a value that does not go to
+/// its node.
+fn values_under_loops(count: usize, depth: usize) -> String {
+    let values: String = (0..count).map(|index| format!("    v{index} = 1\n")).collect();
+    let open: String = (0..depth).map(|level| format!("    _ = for i{level} in [1] {{\n")).collect();
+    let reads: String = (0..count).map(|index| format!("    b{index} = core.add(v{index}, 1)\n")).collect();
+    let close = "    }\n".repeat(depth);
+    let entries: String = (0..count).map(|index| format!("    wire v{index} -> b{index}\n")).collect();
+    format!("fn f() -> () {{\n{values}{open}{reads}{close}}}\n\nlayout {{\n{entries}    wire v0 -> b1\n}}")
+}
+
+#[test]
+fn past_the_limit_of_wires_nothing_is_said_of_them() {
+    let pass_6 = |text: String| codes(&text).into_iter().filter(|code| code.starts_with("LC5")).collect::<Vec<_>>();
+    // Each value crosses each loop on its way: about 201 wires for one read, far more than the file has places, so the limit is
+    // 2^18 wires, between 1,298 and 1,306 values.
+    assert_eq!(on_a_large_stack(move || pass_6(values_under_loops(1_290, 200))), ["LC5006"]);
+    assert_eq!(on_a_large_stack(move || pass_6(values_under_loops(1_310, 200))), NOTHING);
+}
+
+/// `x` and `y` in each of `arms` arms, an entry from `x` to `y`, then one that names a value that does not go to its node.
+fn names_in_many_arms(arms: usize) -> String {
+    let arms: String = (0..arms)
+        .map(|arm| format!("        {arm} => {{\n            x = 1\n            y = core.add(x, 1)\n            yield y\n        }}\n"))
+        .collect();
+    format!(
+        "fn f(n: i32) -> (r: i32, z: i32) {{\n    w = 2\n    z = core.add(n, 1)\n    r = match n {{\n{arms}        _ => yield 0\n    }}\n}}\n\nlayout {{\n    wire x -> y\n    wire w -> z\n}}"
+    )
+}
+
+#[test]
+fn past_the_budget_of_comparisons_nothing_more_is_said() {
+    let pass_6 = |text: String| codes(&text).into_iter().filter(|code| code.starts_with("LC5")).collect::<Vec<_>>();
+    // `wire x -> y` is ambiguous, and `w` does not go to `z`.
+    assert_eq!(pass_6(names_in_many_arms(3)), ["LC5006", "LC5006"]);
+    // Each `x` is compared with each `y`: 4,096 squared is the budget, 2^24, which the first entry spends, so the second says
+    // nothing either.
+    assert_eq!(pass_6(names_in_many_arms(4_090)), ["LC5006", "LC5006"]);
+    assert_eq!(pass_6(names_in_many_arms(4_100)), NOTHING);
+}
+
+/// Whether `check` says that a budget or a limit made it say less, which the fuzzing of `check` reads.
+fn cut_short(text: &str) -> bool {
+    let text = format!("labcraft 1\n\nuse core\n\n{text}\n");
+    let file = SourceFile { shown: "f.lcf".to_owned(), content: Content::Bytes(Cow::Owned(text.into_bytes())) };
+    let source = LibrarySource { files: vec![file], ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+    check(source, &Nothing, &mut Interner::new(), &Limits::default()).cut_short
+}
+
+#[test]
+fn a_limit_reached_is_known() {
+    assert!(!cut_short(&names_in_many_arms(4_090)));
+    assert!(cut_short(&names_in_many_arms(4_100)));
+    assert!(!on_a_large_stack(|| cut_short(&values_under_loops(1_290, 200))));
+    assert!(on_a_large_stack(|| cut_short(&values_under_loops(1_310, 200))));
+}

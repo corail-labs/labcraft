@@ -26,7 +26,7 @@ The caller names the change and the documents. In general:
 ## What to look for
 
 1. **Wrong behaviour** against the contract: wrong results, wrong codes, wrong line or column. Work cases out by hand.
-2. **Hostile input (scenario 4).** A file is an ordinary input, and the bounds are 16 MiB, 2 s and 512 MB. Look for anything that can panic or overflow, release builds wrapping included, and for what is quadratic or unbounded:
+2. **Hostile input (scenario 4).** A file is an ordinary input, and the bounds are 4 MiB, 2 s and 512 MB (`cargo xtask bounds`). Look for anything that can panic or overflow, release builds wrapping included, and for what is quadratic or unbounded:
    - memory that grows per token, per name or per diagnostic;
    - a text of the file copied into a report without a cut;
    - a type or a list that is small in memory and huge once written;
