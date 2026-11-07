@@ -14,7 +14,7 @@ impl<'a> Typer<'_, '_, '_, 'a> {
     fn reference_code(&self) -> Code {
         match self.within {
             Within::Diagram => Code::Lc3008,
-            Within::Construction | Within::Default(_) => self.construction_code(),
+            Within::Construction | Within::Default(_) | Within::Panel(_) => self.construction_code(),
         }
     }
 

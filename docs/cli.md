@@ -287,7 +287,7 @@ A value that does not convert gets the code of where it goes: `LC3001` or `LC300
 output, `LC3006` in an arm, `LC3007` on a carry, `LC3001` as an element of an array, `LC3015` on a field or a value of a
 construction, element of an array included, `LC3017` in a default value, whatever it builds. So a narrowing to an output is
 `LC3003`, and its fix still names the conversion. A default has no fix that adds a node, since it reads nothing of the
-diagram; its terminal is that of the parameter, `fn.gain`. A generic primitive that does not match what it goes to has
+diagram; its terminal is that of the parameter, `fn.gain`, or of the panel element, `panel.gain`. A generic primitive that does not match what it goes to has
 no type to compare: `LC3008`, except in a construction or a default, which keep their code. A type argument or an array makes a variable fixed, and an input against
 it is an input like another: `LC3001` where two wires that meet would give `LC3002`. An array of wires, or a constant
 whose rows differ, gets the code of where it goes when an `[f64; 2]` is expected, and the fix names `array.from_rows` or says
@@ -306,6 +306,7 @@ the signatures:
 | `next.n`, `until`, `collect.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect` and a value of a `yield`, by position from 0 |
 | `p.x`, `r.0` | A field of a node that builds a struct or a `waveform`; a value of a node that builds a variant, by position from 0 |
 | `limit.value` | The output of a named constant (spec 5.1) |
+| `panel.gain` | A panel element, for its `default:`: a `panel` is a section, and no node has that name |
 
 ### 4.4 What is stable
 
@@ -457,6 +458,10 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC5007` | error | Two layout entries for the same node or wire | 11 |
 | `LC5008` | error | Invalid icon: grid, `path` syntax, unknown `accent` token | R-14 |
 | `LC5009` | warning | Icon shape that leaves the grid | R-14 |
+| `LC5010` | error | Panel element that does not say its type (not an input or an output, a kind that holds several types, no `default:`) and that a `ui.get` reads, or that no `ui.set` writes, when the function has no other mistake, which may be a `ui.set` that nothing could bind. Not for a kind that M0 does not know, which has only `LC5003`, nor on an `extern`, which has no diagram | 10 |
+| `LC5011` | error | Panel kind that does not show the type of the input or the output of its name: a wire that it refuses is `LC3001`, a `default:` `LC3017` | 10 |
+| `LC5012` | error | `default:` on an input or an output, whether or not its signature has a default, or given twice | 10 |
+| `LC5013` | error | Panel element that receives wires or constants of different types, `f64[V]` and `f64[mV]` included. On the element, naming at most five values. Not when its name, its kind or its `default:` gives the type, where each one goes to that type as on a terminal | 10 |
 
 ### `fmt`: `LC60`
 

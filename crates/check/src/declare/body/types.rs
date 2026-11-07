@@ -16,7 +16,7 @@ use labcraft_graph::{
     StatementKind, Target as Line, UnitExpr, UnitTerm,
 };
 use labcraft_types::{
-    Code, Diagnostic, Edit, Fix, FnParam, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text, parse_unit,
+    Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text, parse_unit,
 };
 
 use super::super::{DeclaredFunction, Pass, Scope, add_use, path_text, unit_of};
@@ -27,6 +27,7 @@ use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
 mod construction;
 mod coverage;
+pub(super) mod panel;
 mod reference;
 mod template;
 #[cfg(test)]
@@ -68,10 +69,14 @@ struct Plan<'a> {
     late_names: HashMap<Id, Option<Name>>,
     /// By the id of a `collect`, the target of the loop that its array goes to.
     collect_targets: HashMap<Id, &'a Line>,
+    /// The panel elements that a `ui.get` reads and that a `ui.set` writes, wherever those nodes are (spec 10).
+    elements_read: HashSet<Id>,
+    elements_written: HashSet<Id>,
+    names: &'a Interner,
 }
 
 impl<'a> Plan<'a> {
-    fn of(function: &'a Function, resolved: &Resolved, places: usize) -> Self {
+    fn of(function: &'a Function, resolved: &Resolved, places: usize, names: &'a Interner) -> Self {
         let mut plan = Plan {
             steps: Vec::new(),
             edges: Vec::new(),
@@ -79,6 +84,9 @@ impl<'a> Plan<'a> {
             definers: vec![NO_STEP; places],
             late_names: HashMap::new(),
             collect_targets: HashMap::new(),
+            elements_read: HashSet::new(),
+            elements_written: HashSet::new(),
+            names,
         };
         plan.body(&function.body, None, resolved);
         let reads = std::mem::take(&mut plan.reads);
@@ -109,6 +117,18 @@ impl<'a> Plan<'a> {
             StatementKind::Binding { value, .. } => Some(value),
             _ => None,
         };
+        let call = match &statement.kind {
+            StatementKind::Call(call) => Some(&**call),
+            StatementKind::Binding { value: Rhs::Call(call), .. } => Some(&**call),
+            _ => None,
+        };
+        if let Some(node) = call.and_then(|call| panel::ui_node(call, resolved, self.names)) {
+            if node.is_set {
+                self.elements_written.insert(node.element);
+            } else {
+                self.elements_read.insert(node.element);
+            }
+        }
         let is_structure = matches!(value, Some(Rhs::Match(_) | Rhs::Handle(_) | Rhs::For(_) | Rhs::Loop(_)));
         let first = self.add(statement, if is_structure { Phase::Open } else { Phase::Whole });
         let last = if is_structure { self.add(statement, Phase::Close) } else { first };
@@ -353,6 +373,8 @@ enum Within {
     Construction,
     /// The default value of this parameter, whatever it builds.
     Default(Name),
+    /// The `default:` of this panel element.
+    Panel(Name),
 }
 
 /// A type variable of a primitive, as a call binds it.
@@ -401,6 +423,9 @@ struct Typer<'p, 'c, 'w, 'a> {
     /// By id, whether an array holds a wire, at any depth: `NO_RANK` until it is known, for the same reason.
     wired: Vec<u8>,
     collect_targets: HashMap<Id, &'a Line>,
+    /// The elements of the panel, by the id of the item, with the order of the section (spec 10).
+    elements: HashMap<Id, panel::Element<'a>>,
+    element_order: Vec<Id>,
     /// What the line of the call being typed binds, so that a generic node of constants can take its type from there (3.5).
     call_targets: Option<&'a [Line]>,
     /// How many levels below this one a constant of rows was looked at already: so that a deep one costs its size and not its size
@@ -428,9 +453,11 @@ pub(super) fn type_function<'a>(
     }
     let Some(viewer) = pass.ids.get(scope.library).copied() else { return };
     let places = scope.model.source_map.len();
-    let mut plan = function.map(|function| Plan::of(function, resolved, places));
+    let mut plan = function.map(|function| Plan::of(function, resolved, places, pass.names));
     let late_names = plan.as_mut().map_or_else(HashMap::new, |plan| std::mem::take(&mut plan.late_names));
     let collect_targets = plan.as_mut().map_or_else(HashMap::new, |plan| std::mem::take(&mut plan.collect_targets));
+    let elements_read = plan.as_mut().map_or_else(HashSet::new, |plan| std::mem::take(&mut plan.elements_read));
+    let elements_written = plan.as_mut().map_or_else(HashSet::new, |plan| std::mem::take(&mut plan.elements_written));
     let mut typer = Typer {
         pass,
         context,
@@ -452,15 +479,19 @@ pub(super) fn type_function<'a>(
         ranks: vec![NO_RANK; places],
         wired: vec![NO_RANK; places],
         collect_targets,
+        elements: HashMap::new(),
+        element_order: Vec::new(),
         call_targets: None,
         rows_covered: 0,
         rectangular: HashMap::new(),
     };
     typer.defaults(signature, declaration);
     typer.signature(signature, declaration);
+    typer.open_panel(signature, &elements_read);
     for step in plan.iter().flat_map(Plan::in_order) {
         typer.step(step);
     }
+    typer.close_panel(&elements_written);
 }
 
 fn line_name(target: &Line) -> Option<Name> {
@@ -1542,7 +1573,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             return vec![Fix { title, edits }];
         }
         // A default reads nothing of the diagram, so no node can convert it (R-21).
-        if matches!(self.within, Within::Default(_)) {
+        if matches!(self.within, Within::Default(_) | Within::Panel(_)) {
             return Vec::new();
         }
         let Some((name, unit)) = self.conversion_name(found, expected) else { return Vec::new() };
@@ -2078,9 +2109,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if primitive.library == PrimitiveLibrary::Core && primitive.name == "call" {
             return self.call_reference(call, bound, wanted);
         }
-        // The panel comes with what has no type yet.
         if primitive.library == PrimitiveLibrary::Ui {
-            return Vec::new();
+            return self.ui_call(call);
         }
         if primitive.library == PrimitiveLibrary::String && primitive.name == "format" {
             self.format_node(call, bound);

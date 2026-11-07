@@ -97,6 +97,25 @@ fn a_name_in_a_body_comes_with_its_function_its_node_and_its_fix() {
     assert_eq!(diagnostic["fixes"][0]["edits"][1]["text"], "\nuse core\n");
 }
 
+/// The panel of the spec, with the libraries it uses: what a run of `monitor` reads and writes has its types (section 10).
+#[test]
+fn the_panel_of_the_spec_has_no_mistake() {
+    let spec = fs::read_to_string(repository().join("docs/language-spec-v0.md")).unwrap().replace("\r\n", "\n");
+    let block = spec.split("```text\n").find(|block| block.contains("fn monitor(")).unwrap();
+    let text = block.split("```").next().unwrap();
+    let folder = Folder::new("monitor");
+    folder.file("monitor.lcf", text);
+    let (exit, document) = folder.json(&["."]);
+    assert_eq!(codes_of(&document), Vec::<String>::new(), "{document}");
+    assert_eq!(exit, 0);
+
+    let wrong = text.replace("shown = ui.set(live_voltage, volts)", "shown = ui.set(live_voltage, \"text\")");
+    folder.file("monitor.lcf", &wrong);
+    let (exit, document) = folder.json(&["."]);
+    assert_eq!(codes_of(&document), ["LC3001"], "{document}");
+    assert_eq!(exit, 1);
+}
+
 /// A warning does not change the exit code, unless it is asked to (`docs/cli.md`, section 3).
 #[test]
 fn a_function_that_calls_itself_is_a_warning() {
