@@ -1,5 +1,5 @@
-//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3). Passes 1 to 4 for now: reading the files, finding
-//! the libraries they use, what each library declares, the names of each body and its types.
+//! `labcraft-cli check` as a user runs it (`docs/cli.md`, section 3): reading the files, finding the libraries they use,
+//! what each library declares, the names of each body and its types, its dataflow, and its panel, layout and icon.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -590,7 +590,7 @@ fn expected_codes(expected: &Value) -> BTreeSet<String> {
 
 /// The half of `expected.json` for `check`, run from inside each folder, as the corpus says.
 #[test]
-fn the_stored_hostile_files_give_what_check_expects_so_far() {
+fn the_stored_hostile_files_give_what_check_expects() {
     let root = repository().join("tests/acceptance/hostile");
     let cases: Vec<PathBuf> = fs::read_dir(&root).unwrap().map(|entry| entry.unwrap().path()).collect();
     assert_eq!(cases.len(), 30);

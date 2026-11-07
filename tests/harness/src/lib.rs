@@ -1,7 +1,7 @@
 //! Runs the acceptance corpora against `format` and `check`, natively and in WASM, with no command
-//! line (`docs/architecture.md`, section 8). So far: the families Encoding, Truncation and Nesting of
-//! scenario 4, through `read`, scenario 5, through `format`, the corpus of scenario 2, and what passes 1 to 4 of `check` can
-//! say about the stored cases. The other families and the rest of each one come with their steps.
+//! line (`docs/architecture.md`, section 8): the families Truncation and Nesting of scenario 4, through
+//! `read`, scenario 5, through `format`, the corpus of scenario 2, and what `format` and `check` say about
+//! the stored cases of scenario 4. The families that need files run through the program, in `apps/labcraft-cli/tests`.
 
 /// A file of a corpus, with its path from the root of the repository.
 pub struct Embedded {
@@ -134,9 +134,9 @@ mod tests {
         checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect()
     }
 
-    /// The half of `expected.json` for `check`, as far as the passes that exist can tell.
+    /// The half of `expected.json` for `check`.
     #[test]
-    fn the_stored_hostile_files_give_what_check_expects_so_far() {
+    fn the_stored_hostile_files_give_what_check_expects() {
         for case in HOSTILE {
             let expected: serde_json::Value = serde_json::from_str(case.expected).unwrap();
             let expected = &expected["check"];

@@ -8,14 +8,18 @@ cross-platform.
 
 ## Where the project is
 
-LabCraft has **just started its first milestone in Rust**, and nothing is usable in Rust yet. The
-repository holds the language and file format specification, the decisions behind it, example
+LabCraft has **implemented M0a, the first part of its first milestone in Rust**: `labcraft-cli`
+reads, checks and writes programs, but does not run them yet. The repository holds the language and file format specification, the decisions behind it, example
 programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
 concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
 
-Code contributions in Rust open at the end of milestone M0a, when programs can be read, checked and
-written back: from there, the interpreter (M0b) and the diagram viewer (M0v) can move forward in
-parallel. Until then, the most useful help is feedback on the language.
+Code contributions in Rust open in stages. With the tag of milestone M0a, which waits for a long
+fuzzing run, they open on what exists: bugs and improvements of `fmt` and `check`, cases for the
+corpora of `tests/acceptance/`, other platforms, the WASM build. The interpreter (M0b) and the
+diagram viewer (M0v) open each when its specification and its section of
+[docs/architecture.md](docs/architecture.md) are written, so that a contribution has a contract to
+meet; [docs/roadmap.md](docs/roadmap.md) lists what is still to write. Until the tag, the most
+useful help is feedback on the language.
 
 ## How to help now
 
@@ -52,8 +56,8 @@ python -m unittest discover tools/lcf-poc/tests
 python tools/lcf-poc/tests/mcp_smoke.py
 ```
 
-The `checks` workflow runs the same commands on every pull request. The tests include the corpora of
-`tests/acceptance/`, which say what `check` and `fmt` must report once they exist in Rust.
+The `checks` workflow runs the same commands on every pull request, with `cargo xtask ci` (below).
+The tests include the corpora of `tests/acceptance/`, which say what `check` and `fmt` must report.
 
 The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/lcf_view.py`
 (Lark): a change to one goes in the other. `.lcf` and `.lct` files use LF line endings.

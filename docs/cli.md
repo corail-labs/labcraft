@@ -1,6 +1,6 @@
 # Command line: `fmt` and `check`
 
-*Last updated: 2026-11-04. Status: first draft, for milestone M0a. `run`, `diagram` and `mcp` come
+*Last updated: 2026-11-08. Status: implemented for milestone M0a. `run`, `diagram` and `mcp` come
 with the specifications of M0b and M0v ([roadmap](roadmap.md)).*
 
 This document is the contract of `labcraft-cli fmt` and `labcraft-cli check`: their arguments, exit
