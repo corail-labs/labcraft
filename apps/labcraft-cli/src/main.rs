@@ -27,8 +27,8 @@ usage: labcraft-cli <command>
 commands:
   fmt [--check] [--json] [options] PATH...    write each file in canonical form
   check [--json] [options] FOLDER...          read each library, find what it uses, and check what it
-                                              declares and the names in each body; types, dataflow and
-                                              the rest of `docs/cli.md`, section 3, are not checked yet
+                                              declares, each body, its types and its dataflow; the rest
+                                              of `docs/cli.md`, section 3, is not checked yet
   version                                     print the version
   --help                                      print this text
 

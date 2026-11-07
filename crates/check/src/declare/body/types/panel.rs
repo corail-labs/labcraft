@@ -84,14 +84,14 @@ pub(super) struct Element<'a> {
 }
 
 /// What a node of `ui` holds.
-pub(super) struct UiNode<'a> {
-    pub(super) element: Id,
-    pub(super) value: Option<&'a Operand>,
-    pub(super) is_set: bool,
+pub(in crate::declare) struct UiNode<'a> {
+    pub(in crate::declare) element: Id,
+    pub(in crate::declare) value: Option<&'a Operand>,
+    pub(in crate::declare) is_set: bool,
 }
 
 /// The node of `ui` that this call is, when it names a known element.
-pub(super) fn ui_node<'a>(call: &'a Call, resolved: &Resolved, names: &Interner) -> Option<UiNode<'a>> {
+pub(in crate::declare) fn ui_node<'a>(call: &'a Call, resolved: &Resolved, names: &Interner) -> Option<UiNode<'a>> {
     let bound = resolved.call(call.id)?;
     let Meaning::Primitive { library: PrimitiveLibrary::Ui, name } = bound.callee else { return None };
     let mut element = None;

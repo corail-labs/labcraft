@@ -230,11 +230,17 @@ Types across files (`.lct` chains, `LC2017`) and calls between functions (`LC201
 explicit stack. A function is checked against the signatures of the others, never by following a call.
 
 **Concurrent access (8.1)** gives one warning per resource, not one per pair. Sort the nodes that receive
-the resource in a topological order; all of them are ordered if and only if each one reaches the next.
-Only consecutive pairs are tested, and a path between them can only pass through nodes between them in
-that order, so the searches of one resource cover disjoint windows: linear in total. Two nodes in
-different arms of a `match` or `handle` never run together and do not count (8.1). A budget caps the
-total work across resources, so that many resources cannot make it quadratic again.
+the resource in a topological order, and compare each with those that still stand before it. A path between
+two nodes can only pass through nodes between them in that order, so in the plain case, where each node takes
+the place of the one before, the searches of one resource cover disjoint windows: linear in total. A node takes
+the place of what it reaches only if it is the same part and every arm that holds the node also holds the other, since
+"does not count" does not carry over: two nodes in different arms of a `match` or `handle` never run together (8.1), and
+`bench.dmm` and `bench.source` are apart, while `bench` overlaps both. So what stands in an arm does not hide what stands
+before the structure, and a part does not hide the whole. What stays is not searched again: what reaches the last node it
+reached reaches this one, when that node reaches this one. A budget caps the total work across resources, so that many resources cannot make it
+quadratic again: beyond it, a warning less. A value follows at most sixteen resources, for the same reason, and
+beyond that the written order chooses which. Pass 5 has its own graph, in `declare/body/flow.rs`, since an order
+wire counts there and not for types. Its warnings wait for the errors of the function, one of which can be their cause.
 
 **Signatures of the primitives** (`core`, `string`, `array`, `errors`, `time`, `ui`) live here as data,
 in the form of appendix A, with a rule attached where a signature cannot say it all: the units of `mul`,

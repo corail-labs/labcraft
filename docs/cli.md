@@ -432,17 +432,17 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
-| `LC4001` | error | Cycle: a value can be fed back only through a carry | 5.2 |
-| `LC4002` | error | Function output not bound, or bound twice | R-2 |
-| `LC4003` | error | Carry with no `next`, or with two | R-6 |
-| `LC4004` | error | `for parallel` with a carry | 6.2 |
+| `LC4001` | error | Cycle: a value can be fed back only through a carry. An order wire counts. Once per cycle, on its first written line, naming at most five values; what only waits for a cycle has nothing more to say | 5.2 |
+| `LC4002` | error | Function output not bound (on its declaration), or bound twice (on the second written line, once per output) | R-2 |
+| `LC4003` | error | Carry with no `next` (on its declaration), or with two (on the second one). Not on a loop where a `next` names no carry, which has its `LC2018`, nor on a `for parallel`, which has its `LC4004` | R-6 |
+| `LC4004` | error | `for parallel` with a carry, once per loop | 6.2 |
 | `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
 | `LC4006` | error | Feature planned for a later milestone: generic function or type written by the user, `ref<T>`, `queue<T>`… | 9 |
-| `LC4101` | warning | `err` output wired nowhere | 7.5 |
-| `LC4102` | warning | Concurrent access to a resource: two nodes with no dependency between them. Once per resource | 8.1 |
-| `LC4103` | warning | Panel element written by two unordered nodes | 8.1 |
-| `LC4104` | warning | `for parallel` body that uses a resource | 8.1 |
-| `LC4105` | warning | Two reads of the same `button`: only one sees a press | 10 |
+| `LC4101` | warning | `err` output of a call wired nowhere: `_`, a name that nothing reads, or a call alone. An order wire is a wire | 7.5 |
+| `LC4102` | warning | Concurrent access to a resource: two function calls that receive it, with no dependency between them. Once per resource, on the second node, with the first in `related` | 8.1 |
+| `LC4103` | warning | Panel element written by two unordered nodes, once per element | 8.1 |
+| `LC4104` | warning | `for parallel` body that uses a resource from outside, or writes a panel element, once per loop | 8.1 |
+| `LC4105` | warning | Two reads of the same `button`, not in different arms: only one sees a press. Once per element | 10 |
 | `LC4106` | warning | `_` that can catch nothing, on a boolean or an enumeration whose values all have their pattern; the fix removes it from a list, and only says to remove its arm when it stands alone, since that arm can decide the type of the others (R-7). Silent when one of the patterns has a diagnostic of its own, a repeated pattern included | R-8 |
 
 ### Panel, layout, icon: `LC50`

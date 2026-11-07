@@ -15,13 +15,14 @@ use labcraft_graph::{
     Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Constant, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand,
     OrderRef, PanelDirection, Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
 };
-use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text};
+use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text, normalize};
 
 use super::{DeclaredFunction, DeclaredLibrary, DeclaredType, Pass, Scope, add_use, path_text, unit_of};
 use crate::load::{Target, at, cycles, last_resort};
 use crate::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 
+pub(super) mod flow;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -124,6 +125,10 @@ struct TypeFacts {
     reference_names: HashMap<TyId, Rc<HashMap<Name, u32>>>,
     /// What a field of a template can make of a type, by the id of that type: a struct can have a million fields, and be shown a million times.
     shown: HashMap<TyId, types::Shown>,
+    /// The types that a manifest declares as resources (8.1).
+    resources: HashSet<TyId>,
+    /// Whether a type holds one, once for each: a struct can have a million fields, and be read a million times.
+    holds: HashMap<TyId, bool>,
 }
 
 /// What a value is, and in which body.
@@ -302,7 +307,17 @@ impl<'a> Pass<'a> {
     /// `resolved` is parallel to the files of each library, and holds something only for the libraries that are checked.
     pub(super) fn check_bodies(&mut self, declared: &[DeclaredLibrary], primitives: &Primitives) -> Vec<Vec<Resolved>> {
         let loaded = self.loaded;
-        let facts = TypeFacts { libraries: self.ids.iter().enumerate().map(|(index, id)| (*id, index)).collect(), ..TypeFacts::default() };
+        let mut resources = HashSet::new();
+        for (library, source) in loaded.iter().enumerate() {
+            let Some(types) = declared.get(library).map(|library| &library.types) else { continue };
+            for (name, ty) in types {
+                let text = self.names.resolve(*name);
+                if ty.opaque && source.resources.iter().any(|resource| normalize(resource).as_ref() == text) {
+                    resources.insert(ty.ty);
+                }
+            }
+        }
+        let facts = TypeFacts { libraries: self.ids.iter().enumerate().map(|(index, id)| (*id, index)).collect(), resources, ..TypeFacts::default() };
         let known_libraries =
             loaded.iter().filter(|library| library.checked && !library.name.is_empty()).map(|library| library.name.as_str()).collect();
         let mut context = Context { declared, primitives, callables: HashMap::new(), facts, known_libraries };
@@ -336,6 +351,11 @@ impl<'a> Pass<'a> {
                         let typed = last_resort(|| types::type_function(self, &mut context, scope, &mut done, name, signature, function));
                         if let Err(payload) = typed {
                             self.report_a_panic(library, &file.shown, payload);
+                        } else if let Some(function) = function {
+                            let judged = last_resort(|| flow::judge_function(self, &mut context, scope, &done, name, signature, function));
+                            if let Err(payload) = judged {
+                                self.report_a_panic(library, &file.shown, payload);
+                            }
                         }
                     }
                 }

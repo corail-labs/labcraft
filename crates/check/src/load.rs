@@ -6,12 +6,17 @@ use std::collections::{HashMap, HashSet};
 use std::panic::{self, AssertUnwindSafe};
 
 use labcraft_format::{Read, read};
-use labcraft_graph::{Decl, File, Id, SourceMap};
+use labcraft_graph::{Decl, File, Id, SourceMap, TypeExpr};
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, normalize};
 
 use crate::manifest::Manifest;
 use crate::primitives::PrimitiveLibrary;
 use crate::{Content, DependencyReport, Found, Libraries, LibrarySource, Origin, SourceFile};
+
+/// `type session = opaque` (3.2).
+fn is_opaque(ty: &TypeExpr, names: &Interner) -> bool {
+    matches!(ty, TypeExpr::Named(named) if named.path.rest.is_empty() && named.args.is_empty() && names.resolve(named.path.first) == "opaque")
+}
 
 pub(crate) struct Library {
     /// With its segments separated by `.`: empty for the folder given.
@@ -25,6 +30,8 @@ pub(crate) struct Library {
     /// The errors of a dependency, kept apart: several folders given can read one dependency.
     pub(crate) report: Report,
     pub(crate) checked_elsewhere: bool,
+    /// What its manifest declares as resources (8.1). Only a shipped library has one before M2.
+    pub(crate) resources: Vec<String>,
 }
 
 pub(crate) struct LoadedFile {
@@ -158,12 +165,23 @@ impl Loader<'_> {
             None
         } else {
             let files: Vec<LoadedFile> = files.into_iter().map(|file| self.read_file(file, checked, origin, budget, &mut sink)).collect();
+            let mut resources = Vec::new();
             if origin == Origin::Shipped
                 && let Some(text) = manifest
             {
-                self.read_manifest(&text, &shown, &name, &files, &mut sink);
+                resources = self.read_manifest(&text, &shown, &name, &files, &mut sink);
             }
-            Some(Library { name, checked, files, shown, origin, uses: Vec::new(), report: Report::new(self.limits.max_report), checked_elsewhere })
+            Some(Library {
+                name,
+                checked,
+                files,
+                shown,
+                origin,
+                uses: Vec::new(),
+                report: Report::new(self.limits.max_report),
+                checked_elsewhere,
+                resources,
+            })
         };
         match (checked, library) {
             (true, library) => {
@@ -219,11 +237,15 @@ impl Loader<'_> {
         LoadedFile { shown, model, imports: HashMap::new() }
     }
 
-    fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) {
+    /// What it declares as resources.
+    fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) -> Vec<String> {
         let path = format!("{shown}/labcraft.toml");
         let manifest = match Manifest::parse(text) {
             Ok(manifest) => manifest,
-            Err(why) => return sink.push(Diagnostic::new(Code::Lc0105, format!("cannot read this manifest: {why}"), path)),
+            Err(why) => {
+                sink.push(Diagnostic::new(Code::Lc0105, format!("cannot read this manifest: {why}"), path));
+                return Vec::new();
+            }
         };
         if manifest.name != name {
             let message = format!("this manifest names the library `{}`, whose name is `{name}`", manifest.name);
@@ -231,7 +253,7 @@ impl Loader<'_> {
         }
         // A file that did not read has its own diagnostic, and may hold the native function named here.
         if files.iter().any(|file| file.model.is_none()) {
-            return;
+            return manifest.resources;
         }
         let native: HashSet<&str> = files
             .iter()
@@ -244,6 +266,18 @@ impl Loader<'_> {
             let message = format!("`always` can only mark a native function of this library, and `{always}` is none (spec 7.2)");
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
+        let opaque: HashSet<&str> = files
+            .iter()
+            .filter_map(|file| match &file.model.as_ref()?.file.decl {
+                Decl::Type(declared) if is_opaque(&declared.ty, self.names) => Some(self.names.resolve(declared.name)),
+                _ => None,
+            })
+            .collect();
+        for resource in manifest.resources.iter().filter(|resource| !opaque.contains(normalize(resource).as_ref())) {
+            let message = format!("`resources` can only name an opaque type of this library, and `{resource}` is none (spec 8.1)");
+            sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
+        }
+        manifest.resources
     }
 
     /// The files of a library are set aside meanwhile, since what their `use` lines find joins the list of libraries.
@@ -834,6 +868,25 @@ mod tests {
             Found::Library(shipped_with_manifest(&text, vec![file("<labcraft>/dep/close.lcf", extern_), file("<labcraft>/dep/open.lcf", FUNCTION)]))
         });
         codes(library("", vec![file("f.lcf", &uses(&["dep"]))]), &libraries, &Limits::default())
+    }
+
+    #[test]
+    fn resources_names_an_opaque_type_of_the_library() {
+        let codes_with = |resources: &str| {
+            let text = format!("name = \"dep\"\nversion = \"1\"\nresources = [{resources}]\n");
+            let libraries = Answering(move |_: &str, _| {
+                let files = vec![
+                    file("<labcraft>/dep/open.lcf", FUNCTION),
+                    file("<labcraft>/dep/link.lct", b"labcraft 1\n\ntype link = opaque\n"),
+                    file("<labcraft>/dep/other.lct", b"labcraft 1\n\ntype other = struct { x: f64 }\n"),
+                ];
+                Found::Library(shipped_with_manifest(&text, files))
+            });
+            codes(library("", vec![file("f.lcf", &uses(&["dep"]))]), &libraries, &Limits::default())
+        };
+        assert_eq!(codes_with("\"link\""), Vec::<&str>::new());
+        assert_eq!(codes_with("\"lnik\""), ["LC0105"], "a typo would silence the warnings of 8.1");
+        assert_eq!(codes_with("\"other\""), ["LC0105"], "a struct is not opaque");
     }
 
     #[test]
