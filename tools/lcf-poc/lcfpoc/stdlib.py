@@ -278,7 +278,7 @@ def time_now(m):
 @builtin("time.wait", [P("duration"), P("err", None)], ["err"])
 def time_wait(m, duration, err=None):
     """Waits: advances the simulated clock without sleeping."""
-    m.world.clock += max(_seconds(duration, "time.wait"), 0.0)
+    m.world.wait(max(_seconds(duration, "time.wait"), 0.0))
     return (None,)
 
 
@@ -400,8 +400,25 @@ VISA = "labcraft-visa"
 
 def _live(s):
     if not isinstance(s, Session) or not s.is_open:
-        raise LcFail("visa.invalid_session", "session missing or closed")
+        raise LcFail("visa.invalid_session", "session missing or closed", -1073807346)
     return s
+
+
+def _send(m, s, command):
+    """libs/visa/simulation.md, section 4: an answer not read yet is discarded by the next command (-410)."""
+    if s.buffer:
+        s.buffer.clear()
+        s.instrument.push_error((-410, "Query INTERRUPTED"))
+    resp = s.instrument.execute(command)
+    if resp is not None:
+        s.buffer.append(resp)
+
+
+def _receive(m, s, what):
+    if not s.buffer:
+        m.world.wait(s.timeout_s)
+        raise LcFail("io.timeout", f"{s.resource}: no answer {what} within {s.timeout_s:g} s", -1073807339)
+    return s.buffer.pop(0)
 
 
 @native(VISA, "visa.open", [P("resource", type="string"), P("timeout", Q(2.0, parse_unit("s")[0], "s", 1.0)), P("err", None)],
@@ -423,9 +440,7 @@ def visa_close(m, session, err=None):
 def visa_write(m, session, command, err=None):
     """Sends a command; any response waits for a `visa.read`."""
     s = _live(session)
-    resp = s.instrument.execute(command, s.timeout_s)
-    if resp is not None:
-        s.buffer.append(resp)
+    _send(m, s, command)
     return (s, None)
 
 
@@ -433,10 +448,7 @@ def visa_write(m, session, command, err=None):
 def visa_read(m, session, err=None):
     """Reads the pending response; `io.timeout` if there is none."""
     s = _live(session)
-    if not s.buffer:
-        m.world.clock += s.timeout_s
-        raise LcFail("io.timeout", f"{s.resource}: nothing to read", -1073807339)
-    return (s.buffer.pop(0), s, None)
+    return (_receive(m, s, "to read"), s, None)
 
 
 @native(VISA, "visa.query", [P("session"), P("command", type="string"), P("err", None)], ["text", "session", "err"],
@@ -444,11 +456,8 @@ def visa_read(m, session, err=None):
 def visa_query(m, session, command, err=None):
     """Writes, then reads."""
     s = _live(session)
-    resp = s.instrument.execute(command, s.timeout_s)
-    if resp is None:
-        m.world.clock += s.timeout_s
-        raise LcFail("io.timeout", f"{s.resource}: '{command}' is not a query", -1073807339)
-    return (resp, s, None)
+    _send(m, s, command)
+    return (_receive(m, s, f"to '{command}'"), s, None)
 
 
 # results_log (crate of the example, section 13) ------------------------------------------------

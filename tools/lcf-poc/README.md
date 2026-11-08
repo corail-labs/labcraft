@@ -18,7 +18,7 @@ A library is a folder (`examples/`), one function per `.lcf` file, one type per 
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py list examples --builtins
 python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc
-python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml \
+python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml \
     --arg resource=SIM::DMM0 --trace
 ```
 
@@ -66,9 +66,10 @@ max_iterations)`, with the same parameters and the same reports as the CLI. Rela
 from the client's working directory. `python tools/lcf-poc/tests/mcp_smoke.py` plays an agent's loop
 (write, check, read the error, fix, run) through a real stdio MCP client.
 
-## Simulated instruments (`instruments/*.toml`)
+## Simulated instruments (`libs/visa/sim/*.toml`)
 
-The format is documented at the top of `lcfpoc/sim.py`. One `[[instrument]]` table per instrument:
+The format is that of [libs/visa/simulation.md](../../libs/visa/simulation.md), which the proof of
+concept follows, noise generator included. One `[[visa.instrument]]` table per instrument:
 `SIM::…` resource name, `*IDN?` response (`idn`), simulated time per command (`latency_ms`),
 writes accepted with no effect (`accept`), fixed SCPI responses (`commands`), measured quantities
 (`measure`) with value, noise and seed, **settling time** (`initial` to `value` over `settle_ms`,
@@ -87,6 +88,8 @@ settable quantities (`set`, for example `VOLT 5`), a quantity that follows anoth
 | `dmm-timeout.toml` | the measurement never answers (`io.timeout`) |
 | `dmm-scpi-error.toml` | non-empty SCPI error queue |
 | `bench.toml` | multimeter, source, relays and product (for `station`) |
+| `no-instrument.toml` | no instrument (scenario 1) |
+| `two-dmm.toml`, `two-dmm-timeout.toml` | two multimeters, and the same with the first one hung (scenario 3) |
 
 ## Tests
 

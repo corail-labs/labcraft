@@ -40,8 +40,8 @@ async def main():
     params = StdioServerParameters(command=sys.executable, args=[str(ROOT / "tools/lcf-poc/mcp_server.py")])
     with tempfile.TemporaryDirectory() as td:
         sim = Path(td) / "dmm-5v.toml"
-        sim.write_text('[[instrument]]\nresource = "SIM::DMM0"\n[instrument.measure]\n"MEAS:VOLT:DC?" = "v"\n'
-                       '[instrument.quantity.v]\nvalue = 5.02\nnoise = 0.01\nseed = 3\n', encoding="utf-8")
+        sim.write_text('[[visa.instrument]]\nresource = "SIM::DMM0"\n[visa.instrument.measure]\n"MEAS:VOLT:DC?" = "v"\n'
+                       '[visa.instrument.quantity.v]\nvalue = 5.02\nnoise = 0.01\nseed = 3\n', encoding="utf-8")
         async with stdio_client(params) as (r, w), ClientSession(r, w) as s:
             await s.initialize()
             tools = [t.name for t in (await s.list_tools()).tools]

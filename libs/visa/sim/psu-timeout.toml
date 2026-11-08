@@ -1,17 +1,17 @@
 # Simulated power supply whose current readback never answers: injected failure (io.timeout).
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::PSU0"
 idn = "SIM,PSU,0,1.0"
 
-[instrument.measure]
+[visa.instrument.measure]
 "MEAS:VOLT?" = "voltage"
 "MEAS:CURR?" = "current"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 value = 5.02
 
-[instrument.quantity.current]
+[visa.instrument.quantity.current]
 value = 0.30
 
-[instrument.faults]
+[visa.instrument.faults]
 timeout = ["MEAS:CURR?"]

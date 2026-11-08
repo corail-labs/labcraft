@@ -1,40 +1,40 @@
 # Complete bench for `station`: multimeter, programmable source, relay matrix.
 # The multimeter reads the source voltage (the physical wiring is simulated by `source`).
 # The product (DUT) is present for 1.5 simulated seconds, then removed.
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::DMM0"
 idn = "SIM,DMM,0,1.0"
 latency_ms = 5
 
-[instrument.measure]
+[visa.instrument.measure]
 "MEAS:VOLT:DC?" = "voltage"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 source = "SIM::PSU0.voltage"
 noise = 0.05
 seed = 7
 
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::PSU0"
 idn = "SIM,PSU,0,1.0"
 latency_ms = 5
 
-[instrument.set]
+[visa.instrument.set]
 "VOLT" = "voltage"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 value = 0.0
 settle_ms = 300
 
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::RELAY0"
 idn = "SIM,RELAYS,0,1.0"
 accept = ["ROUT:CLOS"]
 
-[instrument.measure]
+[visa.instrument.measure]
 "DUT:PRES?" = "dut"
 
-[instrument.quantity.dut]
+[visa.instrument.quantity.dut]
 initial = 1.0
 value = 0.0
 start_ms = 1500

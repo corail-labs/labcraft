@@ -320,7 +320,10 @@ the signatures:
 From the M0a tag:
 
 - **Codes.** A code keeps its meaning forever. A code that is no longer used stays reserved, and is
-  never given another meaning. Its severity can change only with a release note.
+  never given another meaning. Its severity can change only with a release note. A code of the form
+  `library:code` (`visa:S001`) belongs to that library, which writes its meaning with its format
+  ([libs/visa/simulation.md](../libs/visa/simulation.md), section 7) and keeps it by the same rule; how
+  a library gives its diagnostics to the tool is written with the architecture of M0b.
 - **Schema.** `labcraft-check/1`, as in the other Craft apps. Adding a field does not change it, and
   a reader ignores fields it does not know. Removing or redefining a field raises the version.
 - **Human-readable form.** Its first line, as described above. The rest can change.
@@ -535,7 +538,7 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 
 | Option | Meaning |
 |---|---|
-| `--sim FILE` | The simulation file that defines the `SIM::` resources of the run (M0b, step 3). A path is data: a file that does not exist or cannot be read gives `LC0001`, one that does not read as a simulation file a code of the family `LC82`, each with `refused`, not exit 2. Without it, no resource exists, and `visa.open` returns an error |
+| `--sim FILE` | The simulation file of the bench: TOML, one table per library that simulates, by its name (in M0 only `visa`, whose format is [libs/visa/simulation.md](../libs/visa/simulation.md)). `run` reads the file, gives each library its table, and each library judges its part and reports its problems with its own codes (`visa:S001`…). A path is data: a file that does not exist or cannot be read gives `LC0001`, one over `--max-file-size` `LC0006`, one nested deeper than `--max-nesting` `LC0007`, one that is not TOML `LC8109`, a key at its top level that no library claims `LC8110`, each with `refused`, not exit 2. Without it, no resource exists, and `visa.open` returns an error |
 | `--args FILE` | The values of inputs, as one JSON object, the `args` of MCP (6.3). A path is data, as for `--sim`; the file is bounded by `--max-file-size` |
 | `--arg NAME=VALUE` | The value of an input of the function (6.3), which replaces the one of `--args` for that input. An input with a default may be left out |
 | `--set ELEMENT=VALUE@TIME` | Sets a panel element of the function at a time of the run (6.4) |
@@ -560,6 +563,10 @@ of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `
 twice that for a complex number, 16 for a `timestamp`), and the bytes of a `string` in UTF-8 and of
 `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
 and the limit stops it. A value counts once while some wire holds it, however many share it (D-11).
+
+**The clock of a run** counts whole nanoseconds from 0, and ends at 2^62 ns, about 146 years *(proposed)*: a wait or
+a timeout that would take it further ends the run with the fault `LC8007`, in deterministic mode and in real
+time, rather than wrapping around.
 
 **At one time on the clock**, a run does in this order: the `--set` settings of that time, then the
 timeout if it is reached, which aborts before the nodes ready at that time run, then those nodes, which
@@ -668,8 +675,9 @@ terminal stops a run with Ctrl-C.
 ### 6.6 Codes of `run`
 
 These codes join the tables of section 5 when they are implemented, as `cargo xtask codes` requires. The
-family `LC80` is for faults, `LC81` for arguments and panel settings, and `LC82` is kept for simulation
-files (M0b, step 3).
+family `LC80` is for faults, `LC81` for arguments, panel settings and the simulation file as a whole. What a
+library finds in its own part of the simulation file has a code of that library, not of the tool: a library
+ships its own format, and the tool does not read it.
 
 | Code | Severity | When |
 |---|---|---|
@@ -679,6 +687,7 @@ files (M0b, step 3).
 | `LC8004` | error | Fault: a bug of the runtime, caught. Gives where |
 | `LC8005` | error | Fault: the memory limit of the run is reached, at the node that would pass it |
 | `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
+| `LC8007` | error | Fault: the clock of the run would pass 2^62 ns, about 146 years: a wait or a timeout that long, or one that is not finite |
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
 | `LC8103` | error | An input with no default has no `--arg` |
@@ -687,6 +696,8 @@ files (M0b, step 3).
 | `LC8106` | error | A value is out of the range of its type (`300` for a `u8`, `1e999`), or an integer is not exact |
 | `LC8107` | error | An input whose type holds an opaque type or a function reference, which an argument cannot give; it replaces `LC8103` for such an input |
 | `LC8108` | error | A `--set` names no panel element of the function, an element that is an input or an output, or one whose type is not settled, or sets a `button` to `false` |
+| `LC8109` | error | The simulation file does not read as TOML (syntax, encoding, a key given twice, an integer that does not fit in 64 bits) |
+| `LC8110` | error | A key at the top level of the simulation file names no library that simulates; fix: the nearest name |
 
 Which other failures are faults rather than `error` values is Q-25; their codes come with its answer.
 
@@ -699,7 +710,7 @@ with the escapes of section 4.1, so that the answer of an instrument cannot driv
 ```text
 check_voltage: ok, 0 ms simulated, 2 ms real
   verdict = Verdict.Pass
-  voltage = 230.03 V
+  voltage = 230.071217 V
   err     = none
 sessions: 1 opened, 0 open
 trace: .labcraft/runs/check_voltage.trace.jsonl, 41 events

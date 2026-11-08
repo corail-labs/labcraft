@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools" / "lcf-poc"))
 from lcfpoc import api  # noqa: E402
 
-EX, INS = str(ROOT / "examples"), ROOT / "instruments"
+EX, INS = str(ROOT / "examples"), ROOT / "libs" / "visa" / "sim"
 SETTLE = {"dmm": "SIM::DMM0", "target": "230 V", "tolerance": "0.2 V", "period": "50 ms", "timeout": "1 s"}
 
 
@@ -1378,6 +1378,163 @@ fn ok(a: i32) -> (b: i32) {
 
     def test_missing_folder(self):
         self.assertFalse(api.check("/nonexistent/folder")["ok"])
+
+
+I = '[[visa.instrument]]\nresource = "SIM::DMM0"\n'
+Q = I + '[visa.instrument.measure]\n"V?" = "v"\n[visa.instrument.quantity.v]\n'
+I_ERR = I + '[visa.instrument.faults]\nerror_queue = [[-100, \'say "no"\']]\n'
+
+
+class Simulation(unittest.TestCase):
+    """The format of libs/visa/simulation.md."""
+
+    def test_clock_in_nanoseconds(self):
+        # Worked out by hand: 10 commands of 5 ms end at 50 ms exactly, when the quantity reaches 1.
+        from lcfpoc.sim import World
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "ramp.toml"
+            path.write_text(Q.replace('resource = "SIM::DMM0"', 'resource = "SIM::DMM0"\nlatency_ms = 5')
+                            + "initial = 0\nvalue = 1\nstart_ms = 50\n", encoding="utf-8")
+            inst = World.load(str(path)).instruments["SIM::DMM0"]
+            answers = [inst.execute("V?") for _ in range(10)]
+            self.assertEqual(answers[8], "0.000000")
+            self.assertEqual(answers[9], "1.000000")
+
+    def test_noise_generator(self):
+        # Expected values worked out from the text of section 3 by an independent Node script
+        # (BigInt for SplitMix64), not by this proof of concept: seed 1, first read, value 230, noise 0.05.
+        from lcfpoc.sim import SplitMix64
+        self.assertEqual(SplitMix64(1).gauss(), 1.4243480905156507)
+        r = run("check_voltage", "dmm-230V.toml", {"resource": "SIM::DMM0"})
+        self.assertEqual(r["sim"]["commands"][0]["response"], "230.071217")
+
+    def test_no_instrument(self):
+        r = run("check_voltage", "no-instrument.toml", {"resource": "SIM::DMM0"})
+        self.assertEqual(r["error"]["category"], "visa.resource_not_found")
+        self.assertEqual(r["outputs"]["verdict"], "Verdict.Error")
+
+    def test_two_dmm_timeout(self):
+        r = run("check_voltage", "two-dmm-timeout.toml", {"resource": "SIM::DMM0"})
+        self.assertEqual(r["error"]["category"], "io.timeout")
+        r = run("check_voltage", "two-dmm-timeout.toml", {"resource": "SIM::DMM1", "low": "11 V", "high": "13 V"})
+        self.assertEqual(r["outputs"]["verdict"], "Verdict.Pass")
+
+    def test_refused_files(self):
+        # name: (text of the file, the code its message must give: libs/visa/simulation.md, section 7)
+        cases = {
+            "old format": ('[[instrument]]\nresource = "SIM::DMM0"\n', "LC8110"),
+            "unknown library": ('[[modbus.device]]\naddress = 1\n', "LC8110"),
+            "not TOML": ("[[visa.instrument\n", "LC8109"),
+            "integer over 64 bits": (I + "latency_ms = " + "9" * 400 + "\n", "LC8109"),
+            "nested too deep": ("x = " + "[" * 100_000 + "]" * 100_000 + "\n", "LC0007"),
+            "unknown key": (I + "latency = 5\n", "visa:S001"),
+            "unknown quantity key": (I + "[visa.instrument.quantity.v]\nnoize = 1\n", "visa:S001"),
+            "value as text": (Q + 'value = "230"\n', "visa:S002"),
+            "accept not text": (I + "accept = [5]\n", "visa:S002"),
+            "not SIM": ('[[visa.instrument]]\nresource = "GPIB::1"\n', "visa:S003"),
+            "noise without seed": (Q + "value = 1\nnoise = 0.1\n", "visa:S003"),
+            "resource twice": (I + I, "visa:S004"),
+            "negative settle": (Q + "value = 1\nsettle_ms = -1\n", "visa:S005"),
+            "nan": (Q + "value = nan\n", "visa:S005"),
+            "noise below 0": (Q + "value = 1\nnoise = -1\nseed = 1\n", "visa:S005"),
+            "unknown quantity": (I + '[visa.instrument.measure]\n"V?" = "w"\n', "visa:S006"),
+            "set on a source": (Q + 'source = "SIM::DMM0.w"\n[visa.instrument.quantity.w]\nvalue = 1\n'
+                                '[visa.instrument.set]\n"VOLT" = "v"\n', "visa:S006"),
+            "source and value": (Q + 'source = "SIM::DMM0.w"\nvalue = 1\n[visa.instrument.quantity.w]\nvalue = 2\n',
+                                 "visa:S007"),
+            "source loop": (Q + 'source = "SIM::DMM0.w"\n[visa.instrument.quantity.w]\nsource = "SIM::DMM0.v"\n',
+                            "visa:S007"),
+            "control character": (I + 'idn = "a\\u0085b"\n', "visa:S008"),
+            "bad error entry": (I + "[visa.instrument.faults]\nerror_queue = [5]\n", "visa:S009"),
+            "queue over 32": (I + "[visa.instrument.faults]\nerror_queue = [" + ", ".join(['[1, "e"]'] * 33) + "]\n",
+                              "visa:S010"),
+            "commands not a query": (I + '[visa.instrument.commands]\n"X" = "1"\n', "visa:S011"),
+            "measure not a query": (I + '[visa.instrument.measure]\n"MEAS" = "v"\n[visa.instrument.quantity.v]\n',
+                                    "visa:S011"),
+            "reserved command": (I + '[visa.instrument.commands]\n"*IDN?" = "1"\n', "visa:S011"),
+            "timeout not a query": (I + '[visa.instrument.faults]\ntimeout = ["VOLT 5"]\n', "visa:S011"),
+        }
+        with tempfile.TemporaryDirectory() as td:
+            for name, (text, code) in cases.items():
+                path = Path(td) / "bench.toml"
+                path.write_text(text, encoding="utf-8")
+                r = api.run(EX, "check_voltage", str(path), {"resource": "SIM::DMM0"})
+                self.assertEqual(r["fault"]["category"], "lcf.bad_simulation", name)
+                self.assertIn(code + ":", r["fault"]["message"], name)
+
+    def instrument(self, text):
+        from lcfpoc.sim import World
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "bench.toml"
+            path.write_text(text, encoding="utf-8")
+            return World.load(str(path)).instruments["SIM::DMM0"]
+
+    def test_answers(self):
+        # Each expected answer follows from section 4 by reading it, not from a run of the proof of concept.
+        inst = self.instrument(Q + "value = 1\n[visa.instrument.set]\n\"VOLT\" = \"v\"\n"
+                               "[[visa.instrument]]\nresource = \"SIM::REL0\"\naccept = [\"ROUT\"]\n")
+        self.assertEqual(inst.execute("V?\r\n"), "1.000000")       # the termination is removed
+        self.assertIsNone(inst.execute("V?\t"))                     # another control character stays
+        inst.execute("VOLT 2")
+        self.assertEqual(inst.execute("V?"), "2.000000")
+        inst.execute("VOLT x")
+        inst.execute("VOLT 1e200")
+        inst.execute("VOLT \u0665")                                 # an Arabic digit is not a SCPI number
+        self.assertEqual(inst.execute("V?"), "2.000000")
+        self.assertEqual([inst.execute("SYST:ERR?") for _ in range(4)],
+                         ['-113,"Undefined header"', '-224,"Illegal parameter value"', '-222,"Data out of range"',
+                          '-224,"Illegal parameter value"'])
+        relays = inst.world.instruments["SIM::REL0"]
+        relays.execute("ROUT:CLOS 1")
+        self.assertIsNone(relays.execute("ROUT?"))                   # accept is for writes only
+        self.assertEqual(relays.execute("SYST:ERR?"), '-113,"Undefined header"')
+        for _ in range(40):
+            relays.execute("NOPE")
+        errors = [relays.execute("SYST:ERR?") for _ in range(33)]
+        self.assertEqual(errors[31], '-350,"Queue overflow"')
+        self.assertEqual(errors[32], '0,"No error"')
+
+    def test_quotes_in_an_error_are_doubled(self):
+        inst = self.instrument(I_ERR)
+        self.assertEqual(inst.execute("SYST:ERR?"), '-100,"say ""no"""')
+
+    def test_ramp(self):
+        # Worked out by hand: from 0 to 1 over 100 ms, read every 25 ms: 0.25, 0.5, 0.75, then 1, all exact.
+        inst = self.instrument(Q.replace('resource = "SIM::DMM0"', 'resource = "SIM::DMM0"\nlatency_ms = 25')
+                               + "initial = 0\nvalue = 1\nsettle_ms = 100\n")
+        self.assertEqual([inst.execute("V?") for _ in range(5)],
+                         ["0.250000", "0.500000", "0.750000", "1.000000", "1.000000"])
+
+    def test_clock_end(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"t.lcf": """labcraft 1
+
+use time
+
+fn t(err: error = none) -> (err: error) {
+    e1 = time.wait(1e300 s, err: err)
+    err = e1
+}
+"""})
+            self.assertEqual(run("t", None, {}, folder=td)["fault"]["category"], "LC8007")
+
+    def test_unread_answer_is_interrupted(self):
+        with tempfile.TemporaryDirectory() as td:
+            lib_dir(td, {"t.lcf": """labcraft 1
+
+use visa
+
+fn t(err: error = none) -> (text: string, err: error) {
+    s, e1 = visa.open("SIM::DMM0", err: err)
+    s2, e2 = visa.write(s, "*IDN?", err: e1)
+    s3, e3 = visa.write(s2, "*IDN?", err: e2)
+    text, s4, e4 = visa.query(s3, "SYST:ERR?", err: e3)
+    e5 = visa.close(s4, err: e4)
+    err = e5
+}
+"""})
+            r = run("t", "dmm-230V.toml", {}, folder=td)
+            self.assertEqual(r["outputs"]["text"], '-410,"Query INTERRUPTED"', r)
 
 
 if __name__ == "__main__":
