@@ -313,8 +313,8 @@ Milestone M0v. Three ways in, read-only, all drawn by the same `diagram` crate f
 [visual notation](visual-notation.md): the `labcraft` desktop app opens a library folder and
 watches its files; `labcraft-web` opens the bundled examples or a library folder dropped on the
 page, with the libraries of `libs/` bundled so that calls resolve; `labcraft-cli diagram --svg`
-writes the SVG of a function, for tests and for agents ([cli.md](cli.md), section 7; *with M0b*, an
-MCP tool returns the same SVG, D-18). The canvas paints only the shapes that `diagram` computes, so the canvas and the SVG
+writes the SVG of a function, for tests and for agents ([cli.md](cli.md), section 7; the command `diagram.svg` returns the same SVG
+through MCP, D-18: registered with M0b, enabled with the `diagram` crate; commands.md, section 6.5). The canvas paints only the shapes that `diagram` computes, so the canvas and the SVG
 agree.
 
 **Expected:**

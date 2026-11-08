@@ -69,7 +69,7 @@ icon 32 { … } // optional: icon of the compact view (section 11.1)
 | `c64` `c128` | complex |
 | `string` | UTF-8 |
 | `bytes` | binary data (instrument responses, frames) |
-| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2) |
+| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2). A `duration` is a whole number of nanoseconds, as the clock of a run is: from an `f64[s]`, the value is multiplied by 10^9 as an `f64`, then rounded to the nearest integer, ties to even (as `libs/visa/simulation.md` does for its times), and a value that is not finite or does not fit is Q-25 |
 | `error` | see section 7 |
 
 ### 3.2 Composite types
@@ -136,7 +136,13 @@ signatures still say what the session designates.
   `°C` `°F`. The prefixes are `p` `n` `µ` `m` `k` `M` `G`, on every name but `kg`, `min`, `h`, `°C`
   and `°F`. `V/A` and `Ω` are the same unit.
 - **Same dimension, different units**: implicit conversion, shown as a coercion (`mV` to `V`). It
-  is lossless in dimension; the scale factor is applied in floating point. The result of an
+  is lossless in dimension; the scale factor is applied in floating point, by one operation where it can, so
+  that every implementation gives the same bits. A value is held in the unit of its type. It goes to a unit
+  whose scale is *n* times larger by one division by *n* (`9 mV` to `V` is 9 ÷ 1000, so 0.009), and to one *n*
+  times smaller by one multiplication by *n*, *n* an integer; otherwise it is multiplied by the numerator of
+  the ratio of the two scales, then divided by its denominator. Each integer is taken as the nearest `f64`, which
+  is exact up to 2^53 and for every power of ten up to 10^22. A temperature with an offset (`°C`, `°F`) first loses
+  the offset of its unit, then changes scale as above, then gets the offset of the target, each in one operation. The result of an
   operation takes the unit of its first operand: `core.add(1 V, 200 mV)` is `1.2 V`, `core.add(200 mV, 1 V)`
   is `1200 mV`.
 - **Different dimensions**: error at edit time (`core.add(voltage, current)` is rejected).
@@ -166,7 +172,7 @@ the operations that made them. Ω = kg·m²·s⁻³·A⁻², A = A¹.
 | `core.pow` | constant integer exponent | V² |
 
 Everything is computed at compile time; at run time units no longer exist (zero cost), only scale
-conversions add a multiplication. A physical error is detected at edit time:
+conversions add an operation (above). A physical error is detected at edit time:
 an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I gives V.
 
 **Limits in v0:**
@@ -1762,7 +1768,7 @@ What the grammar alone does not say:
 | # | Question | Direction |
 |---|---|---|
 | Q-1 | File extensions | **Settled (2026-11-01): `.lcf` / `.lct`.** `.lct` is free in practice. `.lcf` already exists in niches: ArchiCAD libraries, CodeWarrior linker command files (NXP), Anritsu VectorStar network analyzer calibration kits. Conflict accepted: a LabCraft file is recognized by its first line, `labcraft 1` |
-| Q-2 | `duration` distinct from `f64[s]`? | Yes for readability, implicit conversion between the two |
+| Q-2 | `duration` distinct from `f64[s]`? | Yes for readability, implicit conversion between the two. **Settled in part (2026-11-08):** a whole number of nanoseconds, rounded to the nearest from an `f64[s]`, ties to even (3.1) |
 | Q-3 | Temperatures and offset units | Rule 3.3; check the case of averaging temperatures |
 | Q-4 | `i64` to `f64` | Explicit, since precision can be lost |
 | Q-5 | Allow nesting `core.add(core.mul(a, b), c)`? | **Settled (2026-10-30): no in v0.** One node per line; can be added later without breaking files |

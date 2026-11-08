@@ -225,6 +225,9 @@ Three levels, a common shape for dataflow compilers:
 
 The dataflow IR is versioned and documented: third-party tools and agents can inspect it.
 
+**Written (2026-11-08):** [ir.md](ir.md) documents the dataflow IR, with a version number; a command that prints it
+for tools and agents is left for later (ir.md, section 10).
+
 ## D-10 — Execution strategy
 
 **Status:** accepted on 2026-10-31.
@@ -242,6 +245,11 @@ primitives (arrays, signal, analysis). A good interpreter with native primitives
 most needs before the native compiler.
 
 **Rule:** the same set of equivalence tests runs on all backends. A difference is a bug.
+
+**Staging (2026-11-08, owner's decision):** in M0 the interpreter runs the dataflow IR ([ir.md](ir.md)), where the
+trace, the viewer and the debugger speak in nodes and wires; the linear IR comes with Cranelift (M7), and the
+interpreter may move to it then. The corpus of runs (`tests/acceptance/runs/`, [architecture](architecture.md),
+section 10.11) is the set of equivalence tests of the rule above. A precision of when, not a change.
 
 ## D-11 — Memory management of values
 
@@ -268,6 +276,10 @@ By-value semantics requires copies; avoiding them is what makes performance.
 - Determinism: a reproducible execution mode (fixed order, simulated clock) for tests and agents.
 - Plan from the design stage for two other modes, even if they come later: timed real-time loops
   (D-24) and PLC-style cyclic execution (D-26).
+
+**Staging (2026-11-08, owner's decision):** in M0 one thread runs the diagram, and blocking native calls run on a
+pool of threads, their end coming back to the scheduler as an event ([architecture](architecture.md), section 10.4).
+Blocks of compute nodes on a thread pool come when a program needs them. A precision of when, not a change.
 
 ## D-13 — Panel at run time
 

@@ -63,7 +63,8 @@ The tests include the corpora of `tests/acceptance/`, which say what `check` and
 An expected value in a test or a corpus never comes from the output of the program under test: work it
 out by hand or with another tool, and say how.
 
-The proof of concept stays the executable reference for running a program until the interpreter of M0b.
+The proof of concept stays the executable reference for running a program until the interpreter of M0b passes the
+corpus of runs (`docs/architecture.md`, section 10.11).
 It no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
 `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept check
 above that fails only because it lags behind a rule is dropped, in the pull request that brings the rule.
