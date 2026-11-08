@@ -54,6 +54,7 @@ keywords! {
     Until = "until",
     Yield = "yield",
     Handle = "handle",
+    Events = "events",
     Panel = "panel",
     Layout = "layout",
     Icon = "icon",
@@ -503,7 +504,25 @@ mod tests {
         for keyword in Keyword::ALL {
             assert_eq!(tokens(keyword.as_str()), [format!("kw:{}", keyword.as_str())]);
         }
-        assert_eq!(Keyword::ALL.len(), 26);
+        assert_eq!(Keyword::ALL.len(), 27);
+    }
+
+    /// The list of spec 14.1, which `tools/lcf-view/lcf_view.py` copies too.
+    #[test]
+    fn the_reserved_words_are_those_of_the_spec() {
+        const SPEC: &str = include_str!("../../../docs/language-spec-v0.md");
+        let start = SPEC.find("Reserved words, everywhere: `").map(|at| at + "Reserved words, everywhere: `".len());
+        let list = start.and_then(|start| SPEC.get(start..)).and_then(|rest| rest.split_once('`')).map(|(list, _)| list);
+        let mut spec: Vec<&str> = list.unwrap_or_default().split_whitespace().collect();
+        let mut ours: Vec<&str> = Keyword::ALL.iter().map(|keyword| keyword.as_str()).collect();
+        spec.sort_unstable();
+        ours.sort_unstable();
+        assert_eq!(spec, ours);
+        const VIEW: &str = include_str!("../../../tools/lcf-view/lcf_view.py");
+        for keyword in ours {
+            let written = [format!(" {keyword} "), format!("\"{keyword} "), format!(" {keyword}\"")];
+            assert!(written.iter().any(|text| VIEW.contains(text.as_str())), "{keyword} in lcf_view.py");
+        }
     }
 
     #[test]

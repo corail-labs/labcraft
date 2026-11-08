@@ -122,7 +122,7 @@ fn language_type(text: &str) -> Option<Lookup> {
         "duration" => Some(Lookup::Base(Ty::Duration)),
         "error" => Some(Lookup::Base(Ty::ErrorValue)),
         "waveform" => Some(Lookup::Waveform),
-        "queue" | "ref" => Some(Lookup::Later),
+        "queue" | "ref" | "event" | "notifier" => Some(Lookup::Later),
         "opaque" => Some(Lookup::Opaque),
         _ => None,
     }
@@ -574,7 +574,8 @@ impl<'a> Pass<'a> {
         let target_key = case_key(&target);
         let file_free = taken.files.get(&target_key).copied().unwrap_or(0) <= usize::from(target_key == case_key(shown_name));
         // A declaration of the other kind with this very name would keep its `LC2013` after the rename.
-        if file_free && exact(text) <= 1 {
+        // Nor would a name that the language gives to a type lose its `LC2022`.
+        if file_free && exact(text) <= 1 && !(is_type && language_type(text).is_some()) {
             diagnostic.fixes.push(Fix { title: format!("rename the file to `{target}`"), edits: Vec::new() });
         }
         if diagnostic.fixes.is_empty() {

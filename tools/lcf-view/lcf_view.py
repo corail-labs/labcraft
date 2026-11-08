@@ -25,7 +25,7 @@ from lark.exceptions import LarkError
 # priority over array_lit), the checker turns it back into an array for a value parameter (R-5);
 # UNIT_NAME also covers the IDENT of a unit variable (unit_term).
 RESERVED = ("labcraft use fn extern type struct enum match for parallel loop continue_on_error carry next "
-            "collect until yield handle panel layout icon true false none nan inf").split()
+            "collect until yield handle events panel layout icon true false none nan inf").split()
 
 # Spec 14.1: Default_Ignorable_Code_Point, from DerivedCoreProperties.txt (Unicode 17 and 18). None of
 # these is a letter or a mark, whatever its category. Same table as `crates/format/src/lexer.rs`.
