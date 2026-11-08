@@ -341,7 +341,10 @@ Rejected: generating real, independent C# code (see D-10).
 Taken directly from the SolidCraft model:
 
 - Command registry: each action has an identifier, a description, a parameter schema.
-- `labcraft-cli`: `run`, `check`, `eval`, `mcp`.
+- `labcraft-cli`: `run`, `check`, `eval`, `mcp`. `run` runs a function of a program, as `cargo run`
+  does; a script of commands, which `solidcraft-cli run` runs, is `labcraft-cli script`
+  (*proposed*). A precision, not a change: the list above never said what `run` runs. Owner's
+  decision, 2026-11-08.
 - MCP server: headless (internal session) or connected to the open IDE through a local control
   channel with a token, so that the human can watch the agent work.
 - MCP tools: create and edit the graph, validate, run, read probes and traces, drive the simulated

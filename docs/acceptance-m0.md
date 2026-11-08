@@ -25,7 +25,8 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
   [cli.md](cli.md) gives their schema for `fmt` and `check`; the rest belongs to the specifications
   of M0b and M0v.
 - **Status and exit code.** Every run reports one of the statuses of spec 8.2: `ok`, `error`,
-  `aborted`, `fault`. Exit codes of the CLI ([cli.md](cli.md)): 0 `ok`; 1 `error`, or an error (not
+  `aborted`, `fault`. A program that `check` refuses, or a bad argument, does not run: its report has
+  the status `refused` ([commands.md](commands.md), section 7). Exit codes of the CLI ([cli.md](cli.md)): 0 `ok`; 1 `error` or `refused`, or an error (not
   a warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, malformed
   `--arg`); 3 `aborted`; 4 `fault`. `fmt` exits 1 on a file it cannot read or parse, and leaves
   it unchanged. `diagram` writes the SVG of every drawable function (6.3), type errors marked,
@@ -54,7 +55,8 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 ## Scenario 1: an agent writes the PASS/FAIL program
 
 **Setup.** An empty library folder outside the repository, the `visa` and `scpi` libraries, the
-simulated multimeters `dmm-230V.toml` and `dmm-250V.toml`, and an MCP agent started in that folder
+simulated multimeters `dmm-230V.toml` and `dmm-250V.toml`, shipped with `visa`
+(`<labcraft>/visa/sim/`, which `project_describe` lists), and an MCP agent started in that folder
 and connected to `labcraft-cli mcp`. The agent has the MCP tools and the skills shipped with
 LabCraft (`skills/`), not the repository: `examples/` already contains the answer. The
 instructions of the M0b MCP server must not point to it (those of the proof of concept do).
@@ -73,7 +75,7 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
 3. The program never returns PASS when the measurement did not take place: with a simulation file
    that defines no instrument (`no-instrument.toml`, *new*), the run reports the error and the
    verdict is not PASS (writing rule of 7.2).
-4. No session is left open, whatever the outcome (`open_sessions` empty in all three runs).
+4. No session is left open, whatever the outcome (`sessions.open` empty in all three runs).
 5. No human message after the prompt; at most 20 calls to the MCP tools *(proposed)*.
 6. Five independent sessions; at least four succeed *(proposed)*.
 
@@ -172,7 +174,7 @@ section 10). Outputs: the mean of each branch and the merged error (`errors.merg
    multimeter never answers: its loop stops
    on the error (6.3) and its session is closed. Branch B makes its N measurements and its mean is
    valid. The function's `err` holds the `io.timeout` error of A, the status is `error`, and
-   `open_sessions` is empty.
+   `sessions.open` is empty.
 4. **Stop, the stop the program plans for.** During the loops, a command sets `stop_switch`
    (section 10, syntax Q-20); in deterministic mode it is dated on the simulated clock. Both loops
    end their iteration and exit, and the `visa.close` nodes run through ordinary dataflow. The
