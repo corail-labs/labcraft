@@ -87,7 +87,7 @@ pub(crate) struct Declared {
 enum Lookup {
     Base(Ty),
     Waveform,
-    /// `queue` and `ref`, for a later milestone (`LC4006`).
+    /// `queue`, `ref`, `event`, `notifier`, `map` and `set`, for a later milestone (`LC4006`).
     Later,
     /// A contextual word, which means something only as the whole of a `type` declaration.
     Opaque,
@@ -122,7 +122,7 @@ fn language_type(text: &str) -> Option<Lookup> {
         "duration" => Some(Lookup::Base(Ty::Duration)),
         "error" => Some(Lookup::Base(Ty::ErrorValue)),
         "waveform" => Some(Lookup::Waveform),
-        "queue" | "ref" | "event" | "notifier" => Some(Lookup::Later),
+        "queue" | "ref" | "event" | "notifier" | "map" | "set" => Some(Lookup::Later),
         "opaque" => Some(Lookup::Opaque),
         _ => None,
     }

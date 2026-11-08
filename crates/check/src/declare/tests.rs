@@ -94,7 +94,7 @@ fn a_type_cannot_bear_a_name_of_the_language() {
 }
 
 /// The base types of spec 3.1, then the others that the language reads as types.
-const LANGUAGE_TYPES: [&str; 24] = [
+const LANGUAGE_TYPES: [&str; 26] = [
     "bool",
     "i8",
     "i16",
@@ -118,6 +118,8 @@ const LANGUAGE_TYPES: [&str; 24] = [
     "ref",
     "event",
     "notifier",
+    "map",
+    "set",
     "opaque",
 ];
 
@@ -354,9 +356,36 @@ fn an_alias_of_what_is_unknown_says_nothing_more() {
     assert_eq!(codes(&[("s.lct", "type s = nowhere"), ("f.lcf", "fn f(s: s) -> () {}")]), ["LC2003"]);
 }
 
+/// The names that `LC2022` refuses beyond the base types, as `docs/cli.md` lists them.
+#[test]
+fn the_names_refused_to_types_are_those_of_the_documents() {
+    const CLI: &str = include_str!("../../../../docs/cli.md");
+    let row = CLI.lines().find(|line| line.starts_with("| `LC2022` |")).unwrap_or_default();
+    let listed: Vec<&str> = row.split('`').skip(3).step_by(2).collect();
+    for name in &listed {
+        assert!(language_type(name).is_some(), "{name}");
+        assert!(LANGUAGE_TYPES.contains(name), "{name}");
+    }
+    for name in LANGUAGE_TYPES {
+        let base = matches!(language_type(name), Some(Lookup::Base(_)));
+        assert!(base || listed.contains(&name), "{name} is not in the row of LC2022");
+    }
+}
+
+#[test]
+fn a_value_or_a_function_named_map_or_set_is_a_name() {
+    let set = "fn set(map: [f64], value: f64) -> (y: [f64], err: error) {\n    y, err = array.set(map, 0, value)\n}";
+    let files = [
+        ("set.lcf", format!("use array\n\n{set}")),
+        ("map.lcf", "fn map(a: [f64]) -> (y: [f64], err: error) {\n    y, err = set(a, 1.0)\n}".to_owned()),
+    ];
+    let files: Vec<(&str, &str)> = files.iter().map(|(shown, text)| (*shown, text.as_str())).collect();
+    assert_eq!(codes(&files), NOTHING);
+}
+
 #[test]
 fn a_type_kept_for_a_later_milestone() {
-    for name in ["queue", "ref", "event", "notifier"] {
+    for name in ["queue", "ref", "event", "notifier", "map", "set"] {
         assert_eq!(function(&format!("(a: {name}) -> ()")), ["LC4006"], "{name}");
     }
 }

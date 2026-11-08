@@ -13,7 +13,7 @@ are, and how the Rust code is organized.
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
-| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-27 |
+| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-28 |
 | Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a |
 | Architecture ([architecture.md](architecture.md)) | The crates of M0a as implemented, and the order of work |
 | Rust code (`crates/`, `apps/labcraft-cli`, `libs/embedded`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build |
@@ -51,7 +51,7 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | **M0b** | Run, agents | The interpreter with its scheduler: what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; the agent and the human edit the same program. Target: 60 frames/s while editing 1,000 nodes |
-| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, generic functions, manifests of user libraries and their dependencies |
+| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, `map<K, V>` and `set<T>` (Q-28), generic functions, manifests of user libraries and their dependencies |
 | M3 | Panel | Controls and indicators, graphs, live update, properties |
 | M4 | Real instruments | Transports of the `visa` library: TCP/IP, serial, USBTMC, HiSLIP; binding to an installed VISA; more of the `scpi` library |
 | M5 | Debugger | Probes, breakpoints, single-stepping, execution animation, value history |

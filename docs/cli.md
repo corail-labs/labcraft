@@ -391,7 +391,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2019` | error | Two parameters, outputs, fields or variants with the same name | 4, 3.2 |
 | `LC2020` | warning | Library imported twice: `fmt` removes the line, unless it has a comment | 5.2 |
 | `LC2021` | error | Libraries that use each other in a cycle | 4 |
-| `LC2022` | error | Type with a name that the language gives to a type: a base type, `waveform`, `queue`, `ref`, `event`, `notifier`, `opaque` | 3.2 |
+| `LC2022` | error | Type with a name that the language gives to a type: a base type, `waveform`, `queue`, `ref`, `event`, `notifier`, `map`, `set`, `opaque` | 3.2 |
 | `LC2023` | error | File whose name is not that of what it declares, case included (`gain.lcf` holding `fn scale`). The fixes rename the function or the type as the file, when the name of the file is a name, or the file as the declaration, each only when that name is free in the library, case aside: neither leads to `LC2013`, `LC2014`, `LC2022`, `LC2024` or `LC2025`. With neither, the fix says to give them a name of their own, or to delete a copy. A copy of a declaration in a file of another name has this code alone, not `LC2013`, and a call binds to the one in its own file | R-22 |
 | `LC2024` | error | Two functions, or two types, of one library, or two folders side by side, whose names differ only by their case or their spelling (`Scale` and `scale`). Once, on the last one in the order of the paths, with the others in `related` | R-22 |
 | `LC2025` | error | Function, type or folder with a name that Windows keeps for a device: `con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, whatever their case and their extension: Git for Windows refuses such a file. Such a declaration has no `LC2023` | R-22 |
@@ -444,7 +444,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC4003` | error | Carry with no `next` (on its declaration), or with two (on the second one). Not on a loop where a `next` names no carry, which has its `LC2018`, nor on a `for parallel`, which has its `LC4004` | R-6 |
 | `LC4004` | error | `for parallel` with a carry, once per loop | 6.2 |
 | `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
-| `LC4006` | error | Feature planned for a later milestone: generic function or type written by the user, `ref<T>`, `queue<T>`, `event`, `notifier`… | 9 |
+| `LC4006` | error | Feature planned for a later milestone: generic function or type written by the user, `ref<T>`, `queue<T>`, `event`, `notifier`, `map`, `set`… | 9 |
 | `LC4101` | warning | `err` output of a call wired nowhere: `_`, a name that nothing reads, or a call alone. An order wire is a wire | 7.5 |
 | `LC4102` | warning | Concurrent access to a resource: two function calls that receive it, with no dependency between them. Once per resource, on the second node, with the first in `related` | 8.1 |
 | `LC4103` | warning | Panel element written by two unordered nodes, once per element | 8.1 |

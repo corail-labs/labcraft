@@ -82,6 +82,7 @@ enum { Pass, Fail }                            // enumeration
 enum { Value(f64[V]), Overload }               // tagged union
 waveform<f64[V]>      // t0, dt, samples
 queue<T>, ref<T>      // explicit references (D-04), never implicit
+map<K, V>, set<T>     // dictionary and set, M2 (Q-28)
 ```
 
 `[f64; 2]` is a 2-dimensional array: the number after `;` counts dimensions, not elements (unlike
@@ -102,7 +103,7 @@ judged against `[f64[V]]`.
 A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
 contain itself, directly or through other types: any mention counts, in an array or a function type too.
 A type cannot bear a name that the language gives to a type: the base types (3.1), `waveform`, `queue`,
-`ref`, `event` and `notifier`, kept for the structures of M2 (6.4), and `opaque`.
+`ref`, `event`, `notifier`, `map` and `set`, kept for M2 (6.4), and `opaque`.
 
 **An alias is another name.** With `type Volts = f64[V]`, `type Readings = [f64[V]]` or `type A = Verdict`,
 the two names are one type everywhere, and conversions (3.3, 3.4) apply through the name: an `f64[mV]` is
@@ -768,6 +769,7 @@ itself.
 |---|---|---|
 | `events` | event structure (panel, user, timeouts) | M2 |
 | queues, notifiers | communication between loops | M2 |
+| `map<K, V>`, `set<T>` | dictionary and set, with their primitives (Q-28) | M2 |
 | `timed loop` | real-time timed loop | D-24 |
 | `cyclic task` | PLC-style cyclic execution | D-26 |
 
@@ -990,7 +992,7 @@ to it.
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
 | `ref<T>` and its access structure (8.1, Q-19) | M2 |
 | Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
-| Structures planned outside v0: events, queues, timed loops, cyclic tasks (6.4) | M2 and later |
+| Structures planned outside v0: events, queues, notifiers, maps and sets, timed loops, cyclic tasks (6.4) | M2 and later |
 
 **Libraries.**
 
@@ -1764,6 +1766,7 @@ What the grammar alone does not say:
 | Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range: a fault (8.2), an `error` value on `err`, or a default value? |
 | Q-26 | Name of a function and name of its file | **Settled (2026-11-08): the file bears the name of what it declares (R-22).** Option A of this question: the declaration keeps its name in the file and the format does not change; a renamed copy has one error, `LC2023`, with two fixes, since only the user knows which name was meant. Option B, the name of the file alone, was set aside: an excerpt or a diff would no longer say its name, and a file renamed outside the editor would silently break every call. A type is named exactly as a function is (`Verdict.lct`): no rule turns `StepResult` into `step_result`. Names that file systems would confuse or refuse are errors on every system (`LC2024`, `LC2025`) |
 | Q-27 | From `[[f64]]` to `[f64; 2]` | Settled: `array.from_rows` and `array.to_rows` (appendix A). A constant takes the type expected if its rows have one length; an array of wires never does, so nothing fails at run time without an `err` (3.1). |
+| Q-28 | Dictionary and set | Names settled (2026-11-08): `map<K, V>` and `set<T>`, refused to types until M2 (3.2), the names of LabVIEW, Rust, Java, Go and C++ rather than `dict`. To write for M2, with the generics: the types a key can have (an `f64`? a unit?); an order of iteration that is deterministic (order of insertion, or sorted keys); `get` of a missing key, with an error category as for `array.get`; the cost of a copy on a wire (D-11); how a map is drawn and how a literal is written |
 
 ## Appendix A. Library signatures (v0)
 
