@@ -4,12 +4,12 @@
 use super::*;
 
 const PEOPLE: &[(&str, &str)] = &[
-    ("gain.lct", "type Gain = struct { a: f32, n: i32, compare: fn(f64, f64) -> (bool) }"),
-    ("seven.lct", "type Seven = struct { a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32 }"),
-    ("volts.lct", "type Volts = f64[V]"),
-    ("trace.lct", "type Trace = waveform<f64[V]>"),
-    ("compare.lct", "type Compare = fn(f64, f64) -> (bool)"),
-    ("list.lct", "type List = struct { items: [f32] }"),
+    ("Gain.lct", "type Gain = struct { a: f32, n: i32, compare: fn(f64, f64) -> (bool) }"),
+    ("Seven.lct", "type Seven = struct { a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32 }"),
+    ("Volts.lct", "type Volts = f64[V]"),
+    ("Trace.lct", "type Trace = waveform<f64[V]>"),
+    ("Compare.lct", "type Compare = fn(f64, f64) -> (bool)"),
+    ("List.lct", "type List = struct { items: [f32] }"),
     ("takes.lcf", "use core\n\nfn takes(g: f32, compare: fn(f64, f64) -> (bool) = core.lt) -> (r: f32) {\n    r = g\n}"),
 ];
 
@@ -21,8 +21,8 @@ fn only(inputs: &str, outputs: &str, body: &str) -> Diagnostic {
     let text = program(inputs, outputs, body);
     let mut files = vec![
         ("f.lcf", text.as_str()),
-        ("reading.lct", "type Reading = enum { Value(f64[V]), Pair(i32, string), Overload }"),
-        ("point.lct", "type Point = struct { x: f64[m], label: string }"),
+        ("Reading.lct", "type Reading = enum { Value(f64[V]), Pair(i32, string), Overload }"),
+        ("Point.lct", "type Point = struct { x: f64[m], label: string }"),
     ];
     files.extend_from_slice(PEOPLE);
     let found = diagnostics(&files);
@@ -779,7 +779,7 @@ fn an_extern_has_its_defaults_judged() {
     let declared = |param: &str| {
         codes(&[
             ("h.lcf", format!("extern rust(crate: \"a\", function: \"h\")\nfn h({param}) -> (err: error)").as_str()),
-            ("volts.lct", "type Volts = f64[V]"),
+            ("Volts.lct", "type Volts = f64[V]"),
         ])
     };
     assert_eq!(declared("gain: f32 = 0.5"), NOTHING);

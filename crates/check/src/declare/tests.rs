@@ -45,7 +45,7 @@ fn codes_of(root: LibrarySource) -> Vec<&'static str> {
 /// A folder of its own for each case, with one sub-library `lib`, which declares a type and an opaque type.
 fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {
     let mut root = source("", files);
-    root.sub_libraries.push(source("lib", &[("lib/t.lct", "type T = f64"), ("lib/o.lct", "type session = opaque")]));
+    root.sub_libraries.push(source("lib", &[("lib/T.lct", "type T = f64"), ("lib/session.lct", "type session = opaque")]));
     codes_of(root)
 }
 
@@ -54,29 +54,43 @@ fn function(signature: &str) -> Vec<&'static str> {
 }
 
 fn type_of(expression: &str) -> Vec<&'static str> {
-    codes(&[("t.lct", &format!("type T = {expression}"))])
+    codes(&[("T.lct", &format!("type T = {expression}"))])
 }
 
 const NOTHING: [&str; 0] = [];
+
+/// The diagnostics of one code, in the order of the report.
+fn only(report: &Report, code: Code) -> Vec<Diagnostic> {
+    report.diagnostics().iter().filter(|diagnostic| diagnostic.code() == code).cloned().collect()
+}
 
 #[test]
 fn a_name_defined_twice_is_reported_once_on_the_last_file() {
     let root = source("", &[("a.lcf", "fn f() -> () {}"), ("b.lcf", "fn f() -> () {}"), ("c.lct", "type f = f64")]);
     let mut report = run(root).0.report;
     report.finish();
-    let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
-    assert_eq!(diagnostic.code(), Code::Lc2013);
+    let [diagnostic] = only(&report, Code::Lc2013).try_into().unwrap_or_else(|all| panic!("{all:?}"));
     assert_eq!(diagnostic.file, "c.lct");
     let related: Vec<&str> = diagnostic.related.iter().map(|related| related.file.as_str()).collect();
     assert_eq!(related, ["a.lcf", "b.lcf"]);
+    assert_eq!(only(&report, Code::Lc2023).len(), 3, "no file bears the name of what it declares");
+    // A function and a type of one name, each in its own file, and a copy of the function under another name.
+    let root = source("", &[("f.lcf", "fn f() -> () {}"), ("a.lcf", "fn f() -> () {}"), ("f.lct", "type f = f64")]);
+    let mut report = run(root).0.report;
+    report.finish();
+    let [twice] = only(&report, Code::Lc2013).try_into().unwrap_or_else(|all| panic!("{all:?}"));
+    assert_eq!((twice.file.as_str(), twice.related.len()), ("f.lct", 1), "the copy is not one of them");
+    let [copy] = only(&report, Code::Lc2023).try_into().unwrap_or_else(|all| panic!("{all:?}"));
+    assert_eq!(copy.file, "a.lcf");
 }
 
 #[test]
 fn a_type_cannot_bear_a_name_of_the_language() {
     for name in LANGUAGE_TYPES {
-        assert_eq!(codes(&[("t.lct", &format!("type {name} = i32"))]), ["LC2022"], "{name}");
+        let shown = format!("{name}.lct");
+        assert_eq!(codes(&[(&shown, &format!("type {name} = i32"))]), ["LC2022"], "{name}");
     }
-    assert_eq!(codes(&[("t.lct", "type Number = i32")]), NOTHING);
+    assert_eq!(codes(&[("Number.lct", "type Number = i32")]), NOTHING);
 }
 
 /// The base types of spec 3.1, then the others that the language reads as types.
@@ -108,13 +122,13 @@ const LANGUAGE_TYPES: [&str; 22] = [
 #[test]
 fn a_refused_type_says_nothing_more_wherever_it_is_named() {
     for name in LANGUAGE_TYPES {
-        let files = [("t.lct", format!("type {name} = i32")), ("f.lcf", format!("fn f(a: {name}) -> () {{}}"))];
-        let files: Vec<(&str, &str)> = files.iter().map(|(shown, text)| (*shown, text.as_str())).collect();
+        let files = [(format!("{name}.lct"), format!("type {name} = i32")), ("f.lcf".to_owned(), format!("fn f(a: {name}) -> () {{}}"))];
+        let files: Vec<(&str, &str)> = files.iter().map(|(shown, text)| (shown.as_str(), text.as_str())).collect();
         assert_eq!(codes(&files), ["LC2022"], "{name}");
     }
-    assert_eq!(codes(&[("t.lct", "type string = i32"), ("f.lcf", "fn f(string: string) -> () {}")]), ["LC2022"], "as a value too");
+    assert_eq!(codes(&[("string.lct", "type string = i32"), ("f.lcf", "fn f(string: string) -> () {}")]), ["LC2022"], "as a value too");
     let mut root = source("", &[("f.lcf", "use dep\n\nfn f(a: dep.string) -> () {}")]);
-    root.sub_libraries.push(source("dep", &[("dep/t.lct", "type string = i32")]));
+    root.sub_libraries.push(source("dep", &[("dep/string.lct", "type string = i32")]));
     assert_eq!(codes_of(root), ["LC2022"], "through a library");
 }
 
@@ -127,27 +141,27 @@ fn a_type_with_an_error_inside_is_the_error_type_by_its_name() {
         (declared.ty == TyId::ERROR, checked.types.has_error(library.functions.get(&names.intern("f")).unwrap().params.first().unwrap().ty))
     };
     let param = ("f.lcf", "fn f(a: U) -> () {}");
-    assert_eq!(error_of(&[("u.lct", "type U = Nowhere"), param], "U"), (true, true));
-    assert_eq!(error_of(&[("u.lct", "type U = [Nowhere]"), param], "U"), (true, true));
-    assert_eq!(error_of(&[("u.lct", "type U = struct { a: V }"), ("v.lct", "type V = Nowhere"), param], "U"), (true, true), "through another type");
-    assert_eq!(error_of(&[("u.lct", "type U = V"), ("v.lct", "type V = U"), param], "U"), (true, true), "a cycle");
-    assert_eq!(error_of(&[("u.lct", "type U = [V]"), ("v.lct", "type V = f64"), param], "U"), (false, false), "and nothing else");
+    assert_eq!(error_of(&[("U.lct", "type U = Nowhere"), param], "U"), (true, true));
+    assert_eq!(error_of(&[("U.lct", "type U = [Nowhere]"), param], "U"), (true, true));
+    assert_eq!(error_of(&[("U.lct", "type U = struct { a: V }"), ("V.lct", "type V = Nowhere"), param], "U"), (true, true), "through another type");
+    assert_eq!(error_of(&[("U.lct", "type U = V"), ("V.lct", "type V = U"), param], "U"), (true, true), "a cycle");
+    assert_eq!(error_of(&[("U.lct", "type U = [V]"), ("V.lct", "type V = f64"), param], "U"), (false, false), "and nothing else");
     for expression in ["struct { a: f64, a: i32 }", "enum { A, A }", "fn(a: f64, a: i32) -> ()", "fn(after: f64) -> ()", "[f64; 33]", "ref<f64>"] {
         let text = format!("type U = {expression}");
         assert_eq!(error_of(&[("u.lct", &text), param], "U"), (true, true), "{expression}");
     }
-    assert_eq!(error_of(&[("u.lct", "type U<T> = [T]"), param], "U"), (true, true), "a generic type");
+    assert_eq!(error_of(&[("U.lct", "type U<T> = [T]"), param], "U"), (true, true), "a generic type");
 }
 
 #[test]
 fn a_variable_of_a_generic_type_is_no_mention() {
-    assert_eq!(codes(&[("a.lct", "type A<B> = [B]"), ("b.lct", "type B = A<f64>")]), ["LC4006"]);
-    assert_eq!(codes(&[("a.lct", "type A<A> = [A]")]), ["LC4006"]);
+    assert_eq!(codes(&[("A.lct", "type A<B> = [B]"), ("B.lct", "type B = A<f64>")]), ["LC4006"]);
+    assert_eq!(codes(&[("A.lct", "type A<A> = [A]")]), ["LC4006"]);
 }
 
 #[test]
 fn a_path_from_a_refused_name_says_nothing_more() {
-    assert_eq!(codes(&[("a.lct", "type bool = f64"), ("u.lct", "type U = bool.Pass")]), ["LC2022"]);
+    assert_eq!(codes(&[("bool.lct", "type bool = f64"), ("U.lct", "type U = bool.Pass")]), ["LC2022"]);
 }
 
 #[test]
@@ -199,23 +213,24 @@ fn the_first_declaration_of_a_name_in_the_order_of_the_paths_stays() {
 
 #[test]
 fn a_mistake_in_a_type_that_no_program_can_name_is_still_reported() {
-    assert_eq!(codes(&[("t.lct", "type string = Nowhere")]), ["LC2022", "LC2003"]);
-    assert_eq!(codes(&[("a.lct", "type T = f64"), ("b.lct", "type T = Nowhere")]), ["LC2013", "LC2003"]);
+    assert_eq!(codes(&[("string.lct", "type string = Nowhere")]), ["LC2022", "LC2003"]);
+    assert_eq!(codes(&[("a.lct", "type T = f64"), ("b.lct", "type T = Nowhere")]), ["LC2023", "LC2013", "LC2023", "LC2003"]);
+    assert_eq!(codes(&[("T.lct", "type T = f64"), ("b.lct", "type T = Nowhere")]), ["LC2023", "LC2003"], "a copy is no second definition");
 }
 
 #[test]
 fn a_cycle_of_types_across_libraries_is_the_cycle_of_the_libraries() {
     let mut root = source("", &[("f.lcf", "fn f() -> () {}")]);
-    root.sub_libraries.push(source("a", &[("a/x.lct", "use b\n\ntype X = b.Y")]));
-    root.sub_libraries.push(source("b", &[("b/y.lct", "use a\n\ntype Y = a.X")]));
+    root.sub_libraries.push(source("a", &[("a/X.lct", "use b\n\ntype X = b.Y")]));
+    root.sub_libraries.push(source("b", &[("b/Y.lct", "use a\n\ntype Y = a.X")]));
     assert_eq!(codes_of(root), ["LC2021"]);
     let mut root = source("", &[("f.lcf", "fn f() -> () {}")]);
-    root.sub_libraries.push(source("a", &[("a/x.lct", "use b\n\ntype X = X")]));
-    root.sub_libraries.push(source("b", &[("b/y.lct", "type Y = f64")]));
+    root.sub_libraries.push(source("a", &[("a/X.lct", "use b\n\ntype X = X")]));
+    root.sub_libraries.push(source("b", &[("b/Y.lct", "type Y = f64")]));
     assert_eq!(codes_of(root), ["LC2017"], "a cycle in a library that is in no cycle of libraries");
     let mut root = source("", &[("f.lcf", "fn f() -> () {}")]);
-    root.sub_libraries.push(source("a", &[("a/x.lct", "type T = [T]"), ("a/u.lct", "use b\n\ntype U = f64")]));
-    root.sub_libraries.push(source("b", &[("b/y.lct", "use a\n\ntype Y = f64")]));
+    root.sub_libraries.push(source("a", &[("a/T.lct", "type T = [T]"), ("a/U.lct", "use b\n\ntype U = f64")]));
+    root.sub_libraries.push(source("b", &[("b/Y.lct", "use a\n\ntype Y = f64")]));
     let mut found = codes_of(root);
     found.sort_unstable();
     assert_eq!(found, ["LC2017", "LC2021"], "two mistakes: this cycle of types does not pass through a `use`");
@@ -232,7 +247,7 @@ fn an_error_on_an_alias_of_an_opaque_type_says_nothing_more() {
 
 #[test]
 fn what_is_not_a_library_is_not_called_one() {
-    assert_eq!(codes(&[("v.lct", "type V = enum { Pass }"), ("f.lcf", "fn f(a: V.Pass) -> () {}")]), ["LC2003"]);
+    assert_eq!(codes(&[("V.lct", "type V = enum { Pass }"), ("f.lcf", "fn f(a: V.Pass) -> () {}")]), ["LC2003"]);
 }
 
 #[test]
@@ -261,7 +276,7 @@ fn places_of_what_is_reported() {
 
 #[test]
 fn a_cycle_names_the_place_of_each_of_its_members() {
-    let mut report = run(source("", &[("a.lct", "type A = B"), ("b.lct", "\ntype B = A")])).0.report;
+    let mut report = run(source("", &[("A.lct", "type A = B"), ("B.lct", "\ntype B = A")])).0.report;
     report.finish();
     let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
     assert_eq!(diagnostic.related.first().and_then(|related| related.span).map(|span| span.start.line), Some(4));
@@ -270,31 +285,31 @@ fn a_cycle_names_the_place_of_each_of_its_members() {
 #[test]
 fn a_library_without_use_is_one_mistake_in_a_file() {
     let mut root = source("", &[("f.lcf", "fn f(a: lib.T, b: lib.T, c: other.T) -> () {}"), ("g.lcf", "fn g(a: lib.T) -> () {}")]);
-    root.sub_libraries.push(source("lib", &[("lib/t.lct", "type T = f64")]));
+    root.sub_libraries.push(source("lib", &[("lib/T.lct", "type T = f64")]));
     assert_eq!(codes_of(root), ["LC2005", "LC2005", "LC2005"], "`lib` and `other` in one file, `lib` in another");
 }
 
 #[test]
 fn a_function_or_a_type_cannot_bear_the_name_of_an_imported_library() {
-    assert_eq!(codes(&[("f.lcf", "use core\n\nfn core() -> () {}")]), ["LC2014"]);
-    assert_eq!(codes(&[("t.lct", "use core\n\ntype core = i32")]), ["LC2014"]);
-    assert_eq!(codes(&[("f.lcf", "use lib\n\nfn lib() -> () {}")]), ["LC2014"]);
+    assert_eq!(codes(&[("core.lcf", "use core\n\nfn core() -> () {}")]), ["LC2014"]);
+    assert_eq!(codes(&[("core.lct", "use core\n\ntype core = i32")]), ["LC2014"]);
+    assert_eq!(codes(&[("lib.lcf", "use lib\n\nfn lib() -> () {}")]), ["LC2014"]);
 }
 
 #[test]
 fn the_name_of_a_library_is_refused_across_the_files_of_a_library() {
-    let root = source("", &[("run.lcf", "use core\n\nfn run() -> () {}"), ("state.lct", "type core = enum { Pass, Fail }")]);
+    let root = source("", &[("run.lcf", "use core\n\nfn run() -> () {}"), ("core.lct", "type core = enum { Pass, Fail }")]);
     let mut report = run(root).0.report;
     report.finish();
     let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
     assert_eq!(diagnostic.code(), Code::Lc2014);
-    assert_eq!(diagnostic.file, "state.lct", "it is on the declaration");
+    assert_eq!(diagnostic.file, "core.lct", "it is on the declaration");
     assert_eq!(diagnostic.related.first().map(|related| related.file.as_str()), Some("run.lcf"), "with a link to the `use`");
 }
 
 #[test]
 fn a_name_of_a_library_that_nothing_imports_is_free() {
-    assert_eq!(codes(&[("f.lcf", "fn core(string: i32) -> (visa: i32) {}"), ("t.lct", "type time = i32")]), NOTHING);
+    assert_eq!(codes(&[("core.lcf", "fn core(string: i32) -> (visa: i32) {}"), ("time.lct", "type time = i32")]), NOTHING);
 }
 
 #[test]
@@ -320,15 +335,15 @@ fn the_first_segment_of_a_library_is_what_a_value_cannot_bear() {
 
 #[test]
 fn a_value_cannot_bear_the_name_of_a_plain_type_of_its_library() {
-    assert_eq!(codes(&[("v.lct", "type Verdict = enum { Pass }"), ("f.lcf", "fn f(Verdict: Verdict) -> () {}")]), ["LC2014"]);
-    assert_eq!(codes(&[("v.lct", "type V = f64"), ("f.lcf", "fn f() -> (V: V) {}")]), ["LC2014"]);
+    assert_eq!(codes(&[("Verdict.lct", "type Verdict = enum { Pass }"), ("f.lcf", "fn f(Verdict: Verdict) -> () {}")]), ["LC2014"]);
+    assert_eq!(codes(&[("V.lct", "type V = f64"), ("f.lcf", "fn f() -> (V: V) {}")]), ["LC2014"]);
 }
 
 #[test]
 fn a_value_can_bear_a_base_type_or_an_opaque_type() {
     assert_eq!(function("(duration: duration, error: error, i32: i32) -> (timestamp: timestamp)"), NOTHING);
-    assert_eq!(codes(&[("s.lct", "type session = opaque"), ("f.lcf", "fn f(session: session) -> () {}")]), NOTHING);
-    assert_eq!(codes(&[("s.lct", "type a = b"), ("b.lct", "type b = opaque"), ("f.lcf", "fn f(a: a, b: b) -> () {}")]), NOTHING);
+    assert_eq!(codes(&[("session.lct", "type session = opaque"), ("f.lcf", "fn f(session: session) -> () {}")]), NOTHING);
+    assert_eq!(codes(&[("a.lct", "type a = b"), ("b.lct", "type b = opaque"), ("f.lcf", "fn f(a: a, b: b) -> () {}")]), NOTHING);
     assert_eq!(codes(&[("s.lct", "use lib\n\ntype s = lib.session"), ("f.lcf", "fn f(s: s) -> () {}")]), NOTHING);
 }
 
@@ -352,7 +367,7 @@ fn a_type_that_does_not_exist() {
 fn a_type_that_may_be_in_a_broken_file_says_nothing() {
     assert_eq!(codes(&[("bad.lcf", "fn ("), ("f.lcf", "fn f(a: Nowhere) -> () {}")]), ["LC1001"]);
     let mut root = source("", &[("f.lcf", "use lib\n\nfn f(a: lib.Nowhere) -> () {}")]);
-    root.sub_libraries.push(source("lib", &[("lib/bad.lct", "type T =")]));
+    root.sub_libraries.push(source("lib", &[("lib/T.lct", "type T =")]));
     assert_eq!(codes_of(root), ["LC1002"]);
 }
 
@@ -363,7 +378,7 @@ fn a_type_of_a_library_that_does_not_exist_says_nothing_more() {
 
 fn the_fix(text: &str) -> Fix {
     let mut root = source("", &[("f.lcf", text)]);
-    root.sub_libraries.push(source("lib", &[("lib/t.lct", "type T = f64")]));
+    root.sub_libraries.push(source("lib", &[("lib/T.lct", "type T = f64")]));
     let report = run(root).0.report;
     let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
     assert_eq!(diagnostic.code(), Code::Lc2005);
@@ -392,7 +407,7 @@ fn units() {
 
 #[test]
 fn a_unit_is_the_one_that_parse_unit_reads() {
-    let root = source("", &[("t.lct", "type A = f64[kg*m/s^2/(A*mV)]")]);
+    let root = source("", &[("A.lct", "type A = f64[kg*m/s^2/(A*mV)]")]);
     let (checked, mut names) = run(root);
     let library = checked.libraries.first().unwrap();
     let declared = library.types.get(&names.intern("A")).unwrap();
@@ -405,7 +420,7 @@ fn a_unit_on_what_is_not_a_number() {
     for ty in ["string[V]", "bool[V]", "duration[s]", "error[V]", "waveform<f64>[V]"] {
         assert_eq!(function(&format!("(a: {ty}) -> ()")), ["LC3021"], "{ty}");
     }
-    assert_eq!(codes(&[("v.lct", "type W = f64"), ("f.lcf", "fn f(a: W[V]) -> () {}")]), ["LC3021"]);
+    assert_eq!(codes(&[("W.lct", "type W = f64"), ("f.lcf", "fn f(a: W[V]) -> () {}")]), ["LC3021"]);
     assert_eq!(function("(a: string[nowhere]) -> ()"), ["LC3021"], "one mistake");
 }
 
@@ -415,7 +430,7 @@ fn type_arguments() {
     assert_eq!(function("(a: waveform) -> ()"), ["LC3019"]);
     assert_eq!(function("(a: waveform<f64, f64>) -> ()"), ["LC3019"]);
     assert_eq!(function("(a: f64<i32>) -> ()"), ["LC3019"]);
-    assert_eq!(codes(&[("v.lct", "type W = f64"), ("f.lcf", "fn f(a: W<i32>) -> () {}")]), ["LC3019"]);
+    assert_eq!(codes(&[("W.lct", "type W = f64"), ("f.lcf", "fn f(a: W<i32>) -> () {}")]), ["LC3019"]);
     assert_eq!(function("(a: waveform<Nowhere>) -> ()"), ["LC2003"]);
 }
 
@@ -436,18 +451,18 @@ fn a_type_that_contains_itself() {
 
 #[test]
 fn a_cycle_is_one_error_on_its_first_file() {
-    let root = source("", &[("a.lct", "type A = B"), ("b.lct", "type B = C"), ("c.lct", "type C = [A]"), ("d.lct", "type D = A")]);
+    let root = source("", &[("A.lct", "type A = B"), ("B.lct", "type B = C"), ("C.lct", "type C = [A]"), ("D.lct", "type D = A")]);
     let mut report = run(root).0.report;
     report.finish();
     let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
     assert_eq!(diagnostic.code(), Code::Lc2017);
-    assert_eq!(diagnostic.file, "a.lct");
+    assert_eq!(diagnostic.file, "A.lct");
     assert_eq!(diagnostic.related.len(), 2);
 }
 
 fn with_chain(length: usize, last: &str) -> Vec<&'static str> {
-    let mut files = vec![("a0.lct".to_owned(), "type A0 = f64".to_owned())];
-    files.extend((1..length).map(|n| (format!("a{n}.lct"), format!("type A{n} = [A{}]", n - 1))));
+    let mut files = vec![("A0.lct".to_owned(), "type A0 = f64".to_owned())];
+    files.extend((1..length).map(|n| (format!("A{n}.lct"), format!("type A{n} = [A{}]", n - 1))));
     let mut files: Vec<(&str, &str)> = files.iter().map(|(shown, text)| (shown.as_str(), text.as_str())).collect();
     files.push(("f.lcf", last));
     codes_of(source("", &files))
@@ -465,7 +480,7 @@ fn nesting_counts_through_the_lines_of_a_chain() {
 fn at_the_limit(wrapper: &str, max: u32) -> Vec<&'static str> {
     let mut names = Interner::new();
     let limits = Limits::default().with_max_nesting(max).unwrap();
-    let root = source("", &[("a.lct", wrapper), ("b.lct", "type B = [f64]")]);
+    let root = source("", &[("A.lct", wrapper), ("B.lct", "type B = [f64]")]);
     let mut report = check(root, &Nothing, &mut names, &limits).report;
     report.finish();
     report
@@ -509,7 +524,7 @@ impl Libraries for ShippedDeep {
         if name != "deep" {
             return Found::NotFound;
         }
-        let mut library = source("deep", &[("deep/a.lct", "type A = [[f64]]"), ("deep/b.lct", "type B = [A]")]);
+        let mut library = source("deep", &[("deep/A.lct", "type A = [[f64]]"), ("deep/B.lct", "type B = [A]")]);
         library.origin = Origin::Shipped;
         Found::Library(library)
     }
@@ -536,8 +551,8 @@ fn the_chain_of_a_dependency_is_its_own_cycle() {
 
 #[test]
 fn a_long_chain_of_aliases_takes_no_stack() {
-    let mut files = vec![("t0.lct".to_owned(), "type T0 = opaque".to_owned())];
-    files.extend((1..20_000).map(|n| (format!("t{n}.lct"), format!("type T{n} = T{}", n - 1))));
+    let mut files = vec![("T0.lct".to_owned(), "type T0 = opaque".to_owned())];
+    files.extend((1..20_000).map(|n| (format!("T{n}.lct"), format!("type T{n} = T{}", n - 1))));
     let files: Vec<(&str, &str)> = files.iter().map(|(shown, text)| (shown.as_str(), text.as_str())).collect();
     let (checked, mut names) = run(source("", &files));
     assert_eq!(checked.report.errors(), 0);
@@ -549,8 +564,8 @@ fn a_long_chain_of_aliases_takes_no_stack() {
 
 #[test]
 fn an_alias_of_an_opaque_type_of_another_library_is_that_type() {
-    let mut root = source("", &[("t.lct", "use lib\n\ntype mine = lib.session"), ("p.lct", "type plain = f64")]);
-    root.sub_libraries.push(source("lib", &[("lib/o.lct", "type session = opaque")]));
+    let mut root = source("", &[("mine.lct", "use lib\n\ntype mine = lib.session"), ("plain.lct", "type plain = f64")]);
+    root.sub_libraries.push(source("lib", &[("lib/session.lct", "type session = opaque")]));
     let (checked, mut names) = run(root);
     assert_eq!(checked.report.errors(), 0);
     let find = |library: &str| checked.libraries.iter().find(|declared| declared.name == library).unwrap();
@@ -597,7 +612,7 @@ fn an_external_function_has_an_err_output() {
     assert_eq!(external("err: Nowhere"), ["LC2003"], "what is unknown stays one mistake");
     assert_eq!(external("err: [Nowhere]"), ["LC2003"], "at any depth");
     assert_eq!(
-        codes(&[("e.lct", "type E = error"), ("f.lcf", "extern python(module: \"m\", function: \"f\")\nfn f() -> (err: E)")]),
+        codes(&[("E.lct", "type E = error"), ("f.lcf", "extern python(module: \"m\", function: \"f\")\nfn f() -> (err: E)")]),
         ["LC4005"],
         "written as such"
     );
@@ -609,7 +624,7 @@ fn an_external_function_has_an_err_output() {
 fn what_comes_with_a_later_milestone() {
     assert_eq!(function("<T: Number>(a: T) -> (b: T)"), ["LC4006"]);
     assert_eq!(function("<T>(a: T[V]) -> ()"), ["LC4006"]);
-    assert_eq!(codes(&[("t.lct", "type Box<T> = struct { value: T }")]), ["LC4006"]);
+    assert_eq!(codes(&[("Box.lct", "type Box<T> = struct { value: T }")]), ["LC4006"]);
     assert_eq!(function("(a: ref<f64>) -> ()"), ["LC4006"]);
     assert_eq!(function("(a: queue<f64>) -> ()"), ["LC4006"]);
 }
@@ -639,7 +654,7 @@ impl Libraries for OneDependency<'_> {
         if name != "dep" {
             return Found::NotFound;
         }
-        let mut library = source("dep", &[("dep/t.lct", self.0)]);
+        let mut library = source("dep", &[("dep/T.lct", self.0)]);
         library.checked_elsewhere = self.1;
         Found::Library(library)
     }
@@ -662,4 +677,97 @@ fn a_dependency_checked_elsewhere_says_nothing_more() {
     let checked = check(root, &OneDependency("type T = Nowhere", true), &mut names, &Limits::default());
     assert_eq!(checked.report.errors(), 0);
     assert!(checked.dependencies.is_empty());
+}
+
+#[test]
+fn a_file_bears_the_name_of_what_it_declares() {
+    assert_eq!(codes(&[("scale.lcf", "fn scale() -> () {}"), ("Verdict.lct", "type Verdict = enum { Pass, Fail }")]), NOTHING);
+    let root = source("", &[("gain.lcf", "fn scale() -> () {}")]);
+    let mut report = run(root).0.report;
+    report.finish();
+    let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
+    assert_eq!(diagnostic.code(), Code::Lc2023);
+    assert_eq!(diagnostic.function.as_deref(), Some("scale"));
+    let titles: Vec<&str> = diagnostic.fixes.iter().map(|fix| fix.title.as_str()).collect();
+    assert_eq!(titles, ["rename the function to `gain`", "rename the file to `scale.lcf`"], "either name may be the one meant");
+    assert_eq!(codes(&[("verdict.lct", "type Verdict = f64")]), ["LC2023"], "the case counts");
+    assert_eq!(codes(&[("cafe\u{301}.lcf", "fn caf\u{E9}() -> () {}")]), NOTHING, "the spelling does not (R-20)");
+    let root = source("", &[("my-scale.lcf", "fn scale() -> () {}")]);
+    let report = run(root).0.report;
+    let titles: Vec<&str> = report.diagnostics().iter().flat_map(|diagnostic| &diagnostic.fixes).map(|fix| fix.title.as_str()).collect();
+    assert_eq!(titles, ["rename the file to `scale.lcf`"], "a file name that is no name gives one fix");
+}
+
+/// The titles of the fixes of the one `LC2023` of these files.
+fn fixes_of_the_misnamed(files: &[(&str, &str)]) -> Vec<String> {
+    let report = run(source("", files)).0.report;
+    let misnamed: Vec<&Diagnostic> = report.diagnostics().iter().filter(|diagnostic| diagnostic.code() == Code::Lc2023).collect();
+    let [diagnostic] = misnamed.as_slice() else { panic!("{:?}", report.diagnostics()) };
+    diagnostic.fixes.iter().map(|fix| fix.title.clone()).collect()
+}
+
+#[test]
+fn a_fix_never_names_what_is_taken() {
+    let copy = [("scale.lcf", "fn scale() -> () {}"), ("scale - Copy.lcf", "fn scale() -> () {}")];
+    assert_eq!(fixes_of_the_misnamed(&copy), ["give this function and its file a name of their own, or delete the file if it is a copy"]);
+    let other_case = [("scale.lcf", "fn scale() -> () {}"), ("a.lcf", "fn Scale() -> () {}")];
+    assert_eq!(fixes_of_the_misnamed(&other_case), ["rename the function to `a`"], "`Scale.lcf` is `scale.lcf` on Windows");
+    assert_eq!(fixes_of_the_misnamed(&[("con.lcf", "fn scale() -> () {}")]), ["rename the file to `scale.lcf`"], "never to `LC2025`");
+    let type_x = [("x.lcf", "fn scale() -> () {}"), ("x.lct", "type x = f64")];
+    assert_eq!(fixes_of_the_misnamed(&type_x), ["rename the file to `scale.lcf`"], "never to `LC2013`");
+    assert_eq!(fixes_of_the_misnamed(&[("verdict.lct", "type Verdict = f64")]), ["rename the type to `verdict`", "rename the file to `Verdict.lct`"]);
+    assert_eq!(fixes_of_the_misnamed(&[("f64.lct", "type Foo = f64")]), ["rename the file to `Foo.lct`"], "never to `LC2022`");
+    let imported = [("time.lcf", "fn scale() -> () {}"), ("g.lcf", "use time\n\nfn g() -> () {}")];
+    assert_eq!(fixes_of_the_misnamed(&imported), ["rename the file to `scale.lcf`"], "never to `LC2014`");
+    let kinds = [("scale.lct", "type scale = f64"), ("x.lcf", "fn scale() -> () {}")];
+    assert_eq!(fixes_of_the_misnamed(&kinds), ["rename the function to `x`"], "the file name would keep its `LC2013`");
+    let other_kind = [("x.lcf", "fn scale() -> () {}"), ("X.lct", "type X = f64")];
+    assert_eq!(fixes_of_the_misnamed(&other_kind), ["rename the function to `x`", "rename the file to `scale.lcf`"], "`fn x` beside `type X`");
+}
+
+#[test]
+fn the_message_names_the_file_as_it_is() {
+    let report = run(source("", &[("g.lct", "fn f() -> () {}")])).0.report;
+    let messages: Vec<&str> = report.diagnostics().iter().map(|diagnostic| diagnostic.message.as_str()).collect();
+    assert!(messages.iter().any(|message| message.starts_with("the file `g.lct` declares the function `f`")), "{messages:?}");
+    assert_eq!(fixes_of_the_misnamed(&[("g.lct", "fn f() -> () {}")]), ["rename the function to `g`", "rename the file to `f.lcf`"]);
+}
+
+#[test]
+fn a_function_and_a_type_of_one_name_are_no_copies_of_each_other() {
+    let files = [("scale.lct", "type scale = f64"), ("x.lcf", "fn scale() -> () {}"), ("f.lcf", "fn f() -> () {\n    scale()\n}")];
+    let mut found = codes(&files);
+    found.sort_unstable();
+    assert_eq!(found, ["LC2013", "LC2023"]);
+}
+
+#[test]
+fn a_copy_under_another_name_leaves_the_original_as_it_is() {
+    let files = [("scale.lcf", "fn scale(x: f64) -> (y: f64) {\n    y = x\n}"), ("gain.lcf", "fn scale() -> () {}")];
+    let files = [files[0], files[1], ("f.lcf", "fn f() -> (y: f64) {\n    y = scale(1.0)\n}")];
+    let mut report = run(source("", &files)).0.report;
+    report.finish();
+    let found: Vec<(&str, &str)> = report.diagnostics().iter().map(|diagnostic| (diagnostic.code().as_str(), diagnostic.file.as_str())).collect();
+    assert_eq!(found, [("LC2023", "gain.lcf")], "no `LC2013`, and the call binds to `scale.lcf`");
+}
+
+#[test]
+fn two_names_of_one_kind_differ_by_more_than_their_case() {
+    let root = source("", &[("Scale.lcf", "fn Scale() -> () {}"), ("scale.lcf", "fn scale() -> () {}"), ("SCALE.lcf", "fn SCALE() -> () {}")]);
+    let mut report = run(root).0.report;
+    report.finish();
+    let [diagnostic] = report.diagnostics() else { panic!("{:?}", report.diagnostics()) };
+    assert_eq!((diagnostic.code(), diagnostic.file.as_str()), (Code::Lc2024, "scale.lcf"), "once, on the last file");
+    let related: Vec<&str> = diagnostic.related.iter().map(|related| related.file.as_str()).collect();
+    assert_eq!(related, ["SCALE.lcf", "Scale.lcf"]);
+    assert_eq!(codes(&[("Step.lct", "type Step = f64"), ("STEP.lct", "type STEP = f64")]), ["LC2024"], "types too");
+    assert_eq!(codes(&[("step.lcf", "fn step() -> () {}"), ("Step.lct", "type Step = f64")]), NOTHING, "a function and a type do not meet");
+}
+
+#[test]
+fn windows_keeps_some_names_for_its_devices() {
+    assert_eq!(codes(&[("con.lcf", "fn con() -> () {}")]), ["LC2025"]);
+    assert_eq!(codes(&[("Nul.lct", "type Nul = f64")]), ["LC2025"]);
+    assert_eq!(codes(&[("f.lcf", "fn lpt1() -> () {}")]), ["LC2025"], "and no `LC2023`, whose fix would name such a file");
+    assert_eq!(codes(&[("console.lcf", "fn console() -> () {}"), ("com10.lcf", "fn com10() -> () {}")]), NOTHING);
 }

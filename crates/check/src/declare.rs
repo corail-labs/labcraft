@@ -7,6 +7,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
+use labcraft_format::is_name;
 use labcraft_graph::{Decl, EnumType, FnType, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
 use labcraft_types::{
     Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, Limits, MAX_ARRAY_DIMENSIONS, MAX_NESTING, Name, Node, NumberKind, Position, Related,
@@ -14,6 +15,7 @@ use labcraft_types::{
 };
 
 use self::body::Primitives;
+use crate::file_name::{case_key, file_name, kept_by_windows, stem};
 use crate::load::{Library, LoadedFile, Model, Target, at, cycles, last_resort};
 use crate::resolved::Resolved;
 use crate::{Libraries, Origin};
@@ -170,6 +172,9 @@ struct Pass<'a> {
     index: Vec<HashMap<Name, usize>>,
     /// The names that a type of each library bears against `LC2022`: that mistake has its diagnostic.
     refused: Vec<HashSet<Name>>,
+    /// The names that a file of each library declares under its own name (R-22): another file that declares one of
+    /// them is a copy that has its `LC2023`, not a second definition.
+    named: Vec<HashSet<(Name, bool)>>,
     /// A file that does not read may declare what a name stands for.
     broken: Vec<bool>,
     imports: Vec<Imports<'a>>,
@@ -223,6 +228,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
         types: Vec::new(),
         index: Vec::new(),
         refused: Vec::new(),
+        named: Vec::new(),
         broken: Vec::new(),
         imports: Vec::new(),
         mentions: Vec::new(),
@@ -256,8 +262,10 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
 }
 
 /// Of two declarations of one name, which have their `LC2013`, a call binds to the first one and says nothing about it.
-fn keep_the_first(functions: &mut HashMap<Name, DeclaredFunction>, name: Name, declared: DeclaredFunction) {
+/// A copy in a file of another name (`copy`) has its `LC2023` instead, and leaves the first one as it is.
+fn keep_the_first(functions: &mut HashMap<Name, DeclaredFunction>, name: Name, declared: DeclaredFunction, copy: bool) {
     match functions.entry(name) {
+        Entry::Occupied(_) if copy => {}
         Entry::Occupied(mut first) => first.get_mut().faulty = true,
         Entry::Vacant(slot) => {
             slot.insert(declared);
@@ -265,10 +273,28 @@ fn keep_the_first(functions: &mut HashMap<Name, DeclaredFunction>, name: Name, d
     }
 }
 
-fn sorted_files(library: &Library) -> Vec<&LoadedFile> {
-    let mut files: Vec<&LoadedFile> = library.files.iter().collect();
-    files.sort_by(|a, b| a.shown.cmp(&b.shown));
-    files
+/// What the files of a library already take: by `case_key`, their names, extension included, and the names they declare,
+/// by kind; and the names they declare as they are, which a declaration of the other kind cannot bear (`LC2013`).
+#[derive(Default)]
+struct Taken {
+    files: HashMap<String, usize>,
+    declared: HashMap<(bool, String), usize>,
+    exact: HashMap<String, usize>,
+}
+
+/// Whether the file bears the name of what it declares (R-22).
+fn well_named(file: &LoadedFile, model: &Model, names: &Interner) -> bool {
+    let (name, _, _) = name_of_decl(&model.file.decl);
+    stem(&file.shown) == names.resolve(name)
+}
+
+/// In the order of the paths, but the files that bear the name of what they declare first: a call binds to one of them
+/// rather than to a copy under another name.
+fn sorted_files<'a>(library: &'a Library, names: &Interner) -> Vec<&'a LoadedFile> {
+    let mut files: Vec<(bool, &LoadedFile)> =
+        library.files.iter().map(|file| (file.model.as_ref().is_some_and(|model| !well_named(file, model, names)), file)).collect();
+    files.sort_by(|(a_copy, a), (b_copy, b)| a_copy.cmp(b_copy).then_with(|| a.shown.cmp(&b.shown)));
+    files.into_iter().map(|(_, file)| file).collect()
 }
 
 /// Its name, where it is, and whether it is a type.
@@ -372,11 +398,20 @@ impl<'a> Pass<'a> {
             let mut broken = false;
             let mut places: HashMap<Name, Vec<(&'a LoadedFile, &'a Model)>> = HashMap::new();
             let mut order = Vec::new();
-            for file in sorted_files(source) {
+            let mut named = HashSet::new();
+            let mut taken = Taken::default();
+            for file in sorted_files(source, names) {
+                *taken.files.entry(case_key(file_name(&file.shown))).or_default() += 1;
                 let Some(model) = &file.model else {
                     broken = true;
                     continue;
                 };
+                let (declared, _, is_type) = name_of_decl(&model.file.decl);
+                *taken.declared.entry((is_type, case_key(names.resolve(declared)))).or_default() += 1;
+                *taken.exact.entry(names.resolve(declared).to_owned()).or_default() += 1;
+                if well_named(file, model, names) {
+                    named.insert((declared, is_type));
+                }
                 for line in &model.file.uses {
                     imports.entry(names.resolve(line.path.first)).or_insert((file, line.path.id));
                 }
@@ -391,11 +426,28 @@ impl<'a> Pass<'a> {
             self.imports.push(imports);
             let mut index = HashMap::new();
             let mut refused = HashSet::new();
+            let mut by_case: HashMap<(bool, String), Vec<(&'a LoadedFile, &'a Model)>> = HashMap::new();
+            let mut case_order = Vec::new();
             for name in order {
                 let list = places.remove(&name).unwrap_or_default();
-                self.report_defined_twice(library, name, &list);
+                // A copy of a declaration that has its own file, of the same kind, has its `LC2023`, which says it all.
+                let twice: Vec<_> = list
+                    .iter()
+                    .copied()
+                    .filter(|(file, model)| well_named(file, model, names) || !named.contains(&(name, name_of_decl(&model.file.decl).2)))
+                    .collect();
+                self.report_defined_twice(library, name, &twice);
+                for is_type in [false, true] {
+                    let Some(&(file, model)) = list.iter().find(|(_, model)| name_of_decl(&model.file.decl).2 == is_type) else { continue };
+                    let key = (is_type, case_key(names.resolve(name)));
+                    let entry = by_case.entry(key.clone()).or_default();
+                    if entry.is_empty() {
+                        case_order.push(key);
+                    }
+                    entry.push((file, model));
+                }
                 for (file, model) in list {
-                    self.judge_the_name(library, file, model);
+                    self.judge_the_name(library, file, model, &taken);
                     let Decl::Type(decl) = &model.file.decl else { continue };
                     if language_type(names.resolve(name)).is_some() {
                         refused.insert(name);
@@ -405,9 +457,43 @@ impl<'a> Pass<'a> {
                     }
                 }
             }
+            for key in case_order {
+                let list = by_case.remove(&key).unwrap_or_default();
+                self.report_same_but_case(library, &list);
+            }
             self.index.push(index);
             self.refused.push(refused);
+            self.named.push(named);
         }
+    }
+
+    /// Two names of one kind that only their case tells apart (R-22): once, on the last file in the order of the
+    /// paths, with the others in `related`, as for `LC2013`.
+    fn report_same_but_case(&mut self, library: usize, list: &[(&LoadedFile, &Model)]) {
+        let mut list = list.to_vec();
+        list.sort_by(|(a, _), (b, _)| a.shown.cmp(&b.shown));
+        let Some(((last, model), others)) = list.split_last() else { return };
+        if others.is_empty() {
+            return;
+        }
+        let (name, id, is_type) = name_of_decl(&model.file.decl);
+        let text = self.names.resolve(name);
+        let kind = if is_type { "type" } else { "function" };
+        let message = format!(
+            "`{text}` differs from another {kind} of this library only by its case: their files cannot be side by side on \
+             Windows or macOS (R-22)"
+        );
+        let mut diagnostic = at(Code::Lc2024, message, &last.shown, &model.source_map, id);
+        diagnostic.function = self.function_at_fault(&model.file.decl);
+        diagnostic.related = others
+            .iter()
+            .map(|(file, model)| {
+                let (name, id, _) = name_of_decl(&model.file.decl);
+                let other = self.names.resolve(name);
+                Related { message: format!("`{other}` is declared here"), file: file.shown.clone(), span: model.source_map.span(id) }
+            })
+            .collect();
+        self.push(library, diagnostic);
     }
 
     fn function_at_fault(&self, decl: &Decl) -> Option<String> {
@@ -436,21 +522,65 @@ impl<'a> Pass<'a> {
     }
 
     /// `LC2022`, or `LC2014` against what any file of the library imports: a type is visible in all of them (R-1).
-    fn judge_the_name(&mut self, library: usize, file: &'a LoadedFile, model: &'a Model) {
+    fn judge_the_name(&mut self, library: usize, file: &'a LoadedFile, model: &'a Model, taken: &Taken) {
         let (name, id, is_type) = name_of_decl(&model.file.decl);
         let text = self.names.resolve(name);
+        let kind = if is_type { "type" } else { "function" };
+        if kept_by_windows(text) {
+            let message =
+                format!("Windows keeps `{text}` for a device: Git for Windows refuses a file of that name, so a {kind} cannot bear it (R-22)");
+            let mut diagnostic = at(Code::Lc2025, message, &file.shown, &model.source_map, id);
+            diagnostic.function = self.function_at_fault(&model.file.decl);
+            self.push(library, diagnostic);
+        } else if !well_named(file, model, self.names) {
+            self.report_misnamed(library, file, model, taken);
+        }
         if is_type && language_type(text).is_some() {
             let message = format!("`{text}` is a name that the language gives to a type, so a type cannot bear it");
             self.push(library, at(Code::Lc2022, message, &file.shown, &model.source_map, id));
             return;
         }
         let Some((imported_by, use_id)) = self.imports.get(library).and_then(|imports| imports.get(text)).copied() else { return };
-        let kind = if is_type { "type" } else { "function" };
         let message = format!("a {kind} cannot bear the name `{text}`: this library imports a library of that name (R-1)");
         let mut diagnostic = at(Code::Lc2014, message, &file.shown, &model.source_map, id);
         diagnostic.function = self.function_at_fault(&model.file.decl);
         diagnostic.related =
             vec![Related { message: format!("`{text}` is imported here"), file: imported_by.shown.clone(), span: span_of(imported_by, use_id) }];
+        self.push(library, diagnostic);
+    }
+
+    /// A file that declares something of another name: copied or renamed outside the editor, which keeps the two together.
+    /// Which of the two names was meant, only the user knows, so both fixes are offered, each when its name is free: a fix
+    /// never leads to another error of R-22, nor to `LC2013`.
+    fn report_misnamed(&mut self, library: usize, file: &LoadedFile, model: &Model, taken: &Taken) {
+        let (name, id, is_type) = name_of_decl(&model.file.decl);
+        let text = self.names.resolve(name);
+        let (kind, extension) = if is_type { ("type", "lct") } else { ("function", "lcf") };
+        let stem = stem(&file.shown);
+        let shown_name = file_name(&file.shown);
+        let message = format!("the file `{}` declares the {kind} `{text}`: a file bears the name of what it declares (R-22)", cut_text(shown_name));
+        let mut diagnostic = at(Code::Lc2023, message, &file.shown, &model.source_map, id);
+        diagnostic.function = self.function_at_fault(&model.file.decl);
+        // This declaration counts once in what is taken, under its own name, and so does this file.
+        let own = case_key(text);
+        let same_kind = |key: &str| taken.declared.get(&(is_type, key.to_owned())).copied().unwrap_or(0) > usize::from(key == own);
+        let exact = |name: &str| taken.exact.get(name).copied().unwrap_or(0);
+        let imported = self.imports.get(library).is_some_and(|imports| imports.contains_key(stem.as_ref()));
+        let refused = (is_type && language_type(&stem).is_some()) || imported || kept_by_windows(&stem);
+        if is_name(&stem) && !refused && !same_kind(&case_key(&stem)) && exact(&stem) == 0 {
+            diagnostic.fixes.push(Fix { title: format!("rename the {kind} to `{stem}`"), edits: Vec::new() });
+        }
+        let target = format!("{text}.{extension}");
+        let target_key = case_key(&target);
+        let file_free = taken.files.get(&target_key).copied().unwrap_or(0) <= usize::from(target_key == case_key(shown_name));
+        // A declaration of the other kind with this very name would keep its `LC2013` after the rename.
+        if file_free && exact(text) <= 1 {
+            diagnostic.fixes.push(Fix { title: format!("rename the file to `{target}`"), edits: Vec::new() });
+        }
+        if diagnostic.fixes.is_empty() {
+            let title = format!("give this {kind} and its file a name of their own, or delete the file if it is a copy");
+            diagnostic.fixes.push(Fix { title, edits: Vec::new() });
+        }
         self.push(library, diagnostic);
     }
 
@@ -770,13 +900,15 @@ impl<'a> Pass<'a> {
         loaded.iter().zip(ids).enumerate().map(|(library, (source, id))| self.declare_library(library, source, id)).collect()
     }
 
-    /// Of two declarations of one name, the first one in the order of the paths is the one that stays.
+    /// Of two declarations of one name, the first one in the order of `sorted_files` is the one that stays.
     fn declare_library(&mut self, library: usize, source: &'a Library, id: LibraryId) -> DeclaredLibrary {
         let mut types = HashMap::new();
         let mut functions = HashMap::new();
-        for file in sorted_files(source) {
+        for file in sorted_files(source, self.names) {
             let Some(model) = &file.model else { continue };
             let scope = Scope { library, file, model, generic: false, function: None };
+            let declared_name = name_of_decl(&model.file.decl).0;
+            let copy = !well_named(file, model, self.names) && self.named.get(library).is_some_and(|named| named.contains(&(declared_name, false)));
             if let Decl::Type(decl) = &model.file.decl
                 && let Some(index) = self.index_of(library, decl)
             {
@@ -789,11 +921,11 @@ impl<'a> Pass<'a> {
             let outcome = last_resort(|| match &model.file.decl {
                 Decl::Function(function) => {
                     let declared = self.declare_function(function.name, &function.signature, scope, None);
-                    keep_the_first(&mut functions, function.name, declared);
+                    keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 Decl::Extern(function) => {
                     let declared = self.declare_function(function.name, &function.signature, scope, Some(function.id));
-                    keep_the_first(&mut functions, function.name, declared);
+                    keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 // No program can name it, and its mistakes are still mistakes.
                 Decl::Type(decl) => {

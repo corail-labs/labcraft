@@ -5,9 +5,9 @@ use labcraft_types::{Diagnostic, NumberKind, Ty, Unit, parse_unit};
 use super::{NOTHING, codes, diagnostics, run};
 
 const TYPES: [(&str, &str); 3] = [
-    ("verdict.lct", "type Verdict = enum { Pass, Fail }"),
-    ("limits.lct", "type Limits = struct { low: f64[V], high: f64[V] }"),
-    ("reading.lct", "type Reading = enum { Value(f64[V]), Overload }"),
+    ("Verdict.lct", "type Verdict = enum { Pass, Fail }"),
+    ("Limits.lct", "type Limits = struct { low: f64[V], high: f64[V] }"),
+    ("Reading.lct", "type Reading = enum { Value(f64[V]), Overload }"),
 ];
 
 /// A function with these inputs and outputs, this body and these lines of `panel`.
@@ -358,10 +358,10 @@ fn an_alias_says_what_it_names() {
         let text = program(inputs, "", "", panel);
         codes(&[
             ("f.lcf", text.as_str()),
-            ("volts.lct", "type Volts = f64[V]"),
-            ("a.lct", "type A = enum { X, Y }"),
-            ("b.lct", "type B = A"),
-            ("m.lct", "type M = [Volts]"),
+            ("Volts.lct", "type Volts = f64[V]"),
+            ("A.lct", "type A = enum { X, Y }"),
+            ("B.lct", "type B = A"),
+            ("M.lct", "type M = [Volts]"),
         ])
     };
     assert_eq!(of("v: Volts", "control v: numeric"), NOTHING);
@@ -474,7 +474,7 @@ fn a_cycle_of_the_diagram_is_not_a_mistake_of_the_element() {
 
 #[test]
 fn a_panel_leaves_the_diagram_as_it_was() {
-    let point = ("point.lct", "type Point = struct { x: f64[m], label: string }");
+    let point = ("Point.lct", "type Point = struct { x: f64[m], label: string }");
     let bad = "p = Point { x: 1 m, x: 2 m, label: \"a\" }\nq = p";
     for panel in [
         "control s: button(default: true)",

@@ -77,8 +77,18 @@ fn repository() -> PathBuf {
 }
 
 fn uses(lines: &[&str]) -> String {
-    let lines: String = lines.iter().map(|name| format!("use {name}\n")).collect();
-    format!("labcraft 1\n\n{lines}\nfn f() -> () {{}}\n")
+    uses_in("f", lines)
+}
+
+/// The function `name`, which uses these libraries.
+fn uses_in(name: &str, libraries: &[&str]) -> String {
+    let lines: String = libraries.iter().map(|library| format!("use {library}\n")).collect();
+    format!("labcraft 1\n\n{lines}\nfn {name}() -> () {{}}\n")
+}
+
+/// A function of the given name, for the file of that name (R-22).
+fn function(name: &str) -> String {
+    format!("labcraft 1\n\nfn {name}() -> () {{}}\n")
 }
 
 /// A mistake in a body, as an agent reads it: its place, its function, its node and its fix.
@@ -128,7 +138,7 @@ fn a_function_that_calls_itself_is_a_warning() {
 #[test]
 fn a_clean_folder_gives_the_document_of_the_documentation() {
     let folder = Folder::new("clean");
-    folder.file("f.lcf", FUNCTION).file("t.lct", "labcraft 1\n\ntype T = f64\n").file("sub/g.lcf", FUNCTION);
+    folder.file("f.lcf", FUNCTION).file("T.lct", "labcraft 1\n\ntype T = f64\n").file("sub/g.lcf", function("g"));
     let (exit, document) = folder.json(&["."]);
     assert_eq!(exit, 0);
     assert_eq!(document["schema"], "labcraft-check/1");
@@ -256,10 +266,10 @@ fn the_limits_of_a_file_are_those_of_fmt() {
     assert_eq!(folder.codes(&["--max-file-size", "50", "."]), (1, vec!["LC0006".to_owned()]));
     let (kind, generate) = deep::DEEP[0];
     let folder = Folder::new("nesting");
-    folder.file("deep.lcf", generate(100_000));
+    folder.file("f.lcf", generate(100_000));
     assert_eq!(folder.codes(&["."]), (1, vec!["LC0007".to_owned()]), "{kind}");
     let at_the_ceiling = Folder::new("ceiling");
-    at_the_ceiling.file("deep.lcf", generate(1024));
+    at_the_ceiling.file("f.lcf", generate(1024));
     assert_eq!(at_the_ceiling.codes(&["--max-nesting", "1024", "."]), (0, vec![]), "{kind}");
 }
 
@@ -268,7 +278,7 @@ fn the_limits_of_a_file_are_those_of_fmt() {
 fn a_function_of_300000_nodes_is_checked() {
     let folder = Folder::new("many-nodes");
     let lines: String = (0..300_000).map(|index| format!("a{index}=1\n")).collect();
-    folder.file("a.lcf", format!("labcraft 1\nfn f()->(){{\n{lines}}}\n"));
+    folder.file("f.lcf", format!("labcraft 1\nfn f()->(){{\n{lines}}}\n"));
     assert_eq!(folder.codes(&["."]), (0, vec![]));
 }
 
@@ -278,8 +288,8 @@ fn a_use_finds_the_first_match_of_the_rules() {
     let project = folder.0.join("project");
     folder
         .file("project/f.lcf", uses(&["here", "there", "scpi", "visa", "time"]))
-        .file("project/here/g.lcf", FUNCTION)
-        .file("first/there/g.lcf", FUNCTION)
+        .file("project/here/g.lcf", function("g"))
+        .file("first/there/g.lcf", function("g"))
         .file("second/there/g.lcf", "x");
     let (exit, document) = json_in(&project, &[".", "--lib-path", "../first", "--lib-path", "../second"]);
     assert_eq!((exit, codes_of(&document)), (0, vec![]));
@@ -294,7 +304,7 @@ fn a_use_finds_the_first_match_of_the_rules() {
 #[test]
 fn a_folder_of_a_project_replaces_a_shipped_library_for_that_project_alone() {
     let folder = Folder::new("replace");
-    folder.file("f.lcf", uses(&["scpi", "visa"])).file("visa/open.lcf", uses(&["scpi"]));
+    folder.file("f.lcf", uses(&["scpi", "visa"])).file("visa/open.lcf", uses_in("open", &["scpi"]));
     assert_eq!(folder.codes(&["."]), (0, vec![]));
 }
 
@@ -306,7 +316,7 @@ fn a_name_under_a_lib_path_is_normalized_and_two_spellings_give_the_same_one_eve
     let both = Folder::new("spellings-both");
     both.file("p/f.lcf", "labcraft 1\n\nuse caf\u{E9}\n\nfn f() -> () {}\n")
         .file("libs/cafe\u{301}/g.lcf", "x")
-        .file("libs/caf\u{E9}/g.lcf", FUNCTION);
+        .file("libs/caf\u{E9}/g.lcf", function("g"));
     let found = both.codes(&["p", "--lib-path", "libs"]);
     if fs::read_dir(both.0.join("libs")).unwrap().count() == 2 {
         assert_eq!(found, (1, vec!["LC0101".to_owned()]), "`e` sorts before `\u{E9}`");
@@ -316,17 +326,21 @@ fn a_name_under_a_lib_path_is_normalized_and_two_spellings_give_the_same_one_eve
 #[test]
 fn names_of_libraries_are_compared_exactly_even_where_files_ignore_case() {
     let folder = Folder::new("case");
-    folder.file("p/f.lcf", uses(&["VISA", "Lib"])).file("elsewhere/lib/g.lcf", FUNCTION);
+    folder.file("p/f.lcf", uses(&["VISA", "Lib"])).file("elsewhere/lib/g.lcf", function("g"));
     assert_eq!(folder.codes(&["p", "--lib-path", "elsewhere"]), (1, vec!["LC2004".to_owned(), "LC2004".to_owned()]));
 }
 
 #[test]
 fn a_library_of_a_lib_path_is_its_folder_alone() {
     let folder = Folder::new("alone");
-    folder.file("p/f.lcf", uses(&["a", "a.b"])).file("libs/a/g.lcf", FUNCTION).file("libs/a/b/h.lcf", FUNCTION).file("libs/a/bad/not-read.lcf", "x");
+    folder
+        .file("p/f.lcf", uses(&["a", "a.b"]))
+        .file("libs/a/g.lcf", function("g"))
+        .file("libs/a/b/h.lcf", function("h"))
+        .file("libs/a/bad/not-read.lcf", "x");
     assert_eq!(folder.codes(&["p", "--lib-path", "libs"]), (0, vec![]), "a sub-folder that nothing uses is not read");
     let empty = Folder::new("alone-empty");
-    empty.file("p/f.lcf", uses(&["a"])).file("libs/a/b/h.lcf", FUNCTION);
+    empty.file("p/f.lcf", uses(&["a"])).file("libs/a/b/h.lcf", function("h"));
     assert_eq!(empty.codes(&["p", "--lib-path", "libs"]), (1, vec!["LC2004".to_owned()]), "`a` holds no file of its own");
 }
 
@@ -376,7 +390,7 @@ fn a_dependency_is_read_for_its_errors_not_its_warnings() {
     let folder = Folder::new("dependency");
     folder
         .file("p/f.lcf", uses(&["warned", "broken"]))
-        .file("libs/warned/g.lcf", uses(&["time", "time"]))
+        .file("libs/warned/g.lcf", uses_in("g", &["time", "time"]))
         .file("libs/broken/g.lcf", "labcraft 1\n\nfn a( {\n");
     let (exit, document) = folder.json(&["p", "--lib-path", "libs"]);
     assert_eq!((exit, codes_of(&document)), (1, vec!["LC1001".to_owned()]));
@@ -423,7 +437,7 @@ fn a_dependency_says_its_errors_once_whoever_reads_it() {
 #[test]
 fn a_dependency_says_the_same_whoever_reads_it() {
     let folder = Folder::new("same");
-    folder.file("p/f.lcf", uses(&["d"])).file("p/e/g.lcf", FUNCTION).file("q/f.lcf", uses(&["d"])).file("libs/d/g.lcf", uses(&["e"]));
+    folder.file("p/f.lcf", uses(&["d"])).file("p/e/g.lcf", function("g")).file("q/f.lcf", uses(&["d"])).file("libs/d/g.lcf", uses_in("g", &["e"]));
     let one = (1, vec!["LC2004".to_owned()]);
     assert_eq!(folder.codes(&["p", "--lib-path", "libs"]), one, "a dependency does not see the folder given");
     assert_eq!(folder.codes(&["q", "--lib-path", "libs"]), one);
@@ -453,7 +467,7 @@ fn two_folders_given_that_use_each_other_through_a_lib_path_are_one_cycle() {
 #[test]
 fn a_library_that_uses_itself_through_a_lib_path_under_the_folder_given_is_a_cycle() {
     let folder = Folder::new("self-under-root");
-    folder.file("g.lcf", uses(&["lib"])).file("sub/lib/a.lcf", uses(&["lib"]));
+    folder.file("g.lcf", uses_in("g", &["lib"])).file("sub/lib/a.lcf", uses_in("a", &["lib"]));
     assert_eq!(folder.codes(&[".", "--lib-path", "sub"]), (1, vec!["LC2021".to_owned()]));
 }
 
@@ -510,9 +524,9 @@ fn libraries_in_a_cycle_are_reported_once() {
 #[test]
 fn a_type_in_a_function_file_and_the_reverse_are_refused() {
     let folder = Folder::new("kinds");
-    folder.file("t.lcf", "labcraft 1\n\ntype T = f64\n").file("f.lct", FUNCTION).file("s.lct", "labcraft 1\n\ntype S = f64\n\npanel {\n}\n");
+    folder.file("T.lcf", "labcraft 1\n\ntype T = f64\n").file("f.lct", FUNCTION).file("s.lct", "labcraft 1\n\ntype S = f64\n\npanel {\n}\n");
     let (exit, found) = folder.codes(&["."]);
-    assert_eq!((exit, found), (1, vec!["LC0103".to_owned(), "LC0104".to_owned(), "LC0103".to_owned()]));
+    assert_eq!((exit, found), (1, vec!["LC0103".to_owned(), "LC0103".to_owned(), "LC2023".to_owned(), "LC0104".to_owned()]));
 }
 
 /// The libraries shipped with LabCraft and the programs of the repository must stay clean under `check`.
