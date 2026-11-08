@@ -79,6 +79,7 @@ version = "0.0.0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
+ "labcraft-graph",
  "labcraft-libs",
  "labcraft-types",
  "libfuzzer-sys",
