@@ -74,8 +74,8 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   grow with the project or the run (diagnostics, files, functions, resources and the commands each one
   received, events of an inline trace) has its own bound, given with the command, and says `truncated`
   when it is reached; values are cut as section 5 says. If the result would still pass 4 MiB, what helps
-  the reader least gives way first, until it fits: the events of an inline trace, then the commands seen by
-  instruments, then the diagnostics (warnings before errors), then the values of the outputs, each shown
+  the reader least gives way first, until it fits: the SVGs of `diagram.svg` (6.5), then the events of an
+  inline trace, then the commands seen by instruments, then the diagnostics (warnings before errors), then the values of the outputs, each shown
   as `{ "$cut": true }`. Each list shortened says `truncated`, and the result carries `"truncated": true`
   at its top level. The status, the run id, the error, the fault and the counts are never cut. MCP sends a
   result twice ([mcp.md](mcp.md), section 3), so a reply on the wire stays under about three times the
@@ -321,7 +321,7 @@ change only the state of the viewer, which the session holds.
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives, and its report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote (D-18) |
+| `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives when it fits, and its report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote (D-18). An SVG that does not fit in the bound of a result (section 2) is `{ "$cut": true }`, and the result says `truncated`: an agent can ask for one function at a time, or use `labcraft-cli diagram`, which writes files and has no such bound |
 | `view.open` | `folder` (a library folder, as the `FOLDER` of `check`), *`lib_path`* | The functions of the folder, each with its file and whether it is drawable, and the report of `check` (`labcraft-check/1`). The viewer shows it in place of the folder open before, and watches its files |
 | `view.show_function` | `function` (a function of the open folder, named as the `FUNCTION` of `diagram`, cli.md 7) | Draws it in the viewer, as its file gives it (cli.md 7.1); returns its entry of `diagrams` in `labcraft-diagram/1` (function, file, drawn, nodes, codes). An unknown function is an error of the command |
 | `view.set_standard_view` | `on` (boolean) | The preference of the IDE that shows every node in standard view (notation 3), kept with the preferences; returns the value it had. Changes no file |

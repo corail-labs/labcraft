@@ -822,7 +822,7 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
   - each mark of a diagnostic carries `data-code` (`LC3002`), so that the place of a diagnostic in the
     image can be found;
   - each value of a run (7.3) is a `<g data-value="raw">`, named after its wire, and its `<title>` holds
-    the whole value, as its tooltip does (notation 6.1).
+    the value, as its tooltip does (notation 6.1).
 
   A name or a text in an attribute or a `<title>` is cut at 200 code points and ends with `…`, as in a
   report (4.2), so that a long name repeated on every node cannot make the SVG huge; two names that
@@ -877,7 +877,8 @@ as in a cut trace, and the banner says that the trace was cut. *Proposed figures
 - **Only frame 0 gives values**, the call of the function drawn: the events of the other frames are
   not decoded beyond what tells their frame, within the limits above.
 - **An event that fits nothing in the drawing** is ignored: an event of frame 0 that names a node or a
-  wire that the function drawn does not have, a value of another type than its wire, an iteration whose
+  wire that the function drawn does not have, a value of another type than its wire or longer than the 64 KiB
+  that a run writes (commands.md, section 5), an iteration whose
   levels are not the loops around the node, or a value already given for that node and iteration, an
   iteration number from 2^63 on; an event that names a frame that no `call` opened. Iterations may come in any order (`for parallel`,
   `--schedule-seed`). A trace that matches its files never holds such an event. `LC7104` counts them and
@@ -886,7 +887,8 @@ as in a cut trace, and the banner says that the trace was cut. *Proposed figures
 - **Bounded resources.** Reading a trace at these limits takes at most 5 s and 512 MB on a CI runner
   *(proposed)*, measured by `cargo xtask bounds`, whatever the numbers it holds: memory follows the
   values of frame 0 that it keeps, not the size of the file, and a hostile iteration number allocates
-  nothing. The viewer draws the function at once,
+  nothing. What it keeps, the index of the values included, is bounded too: past 256 MiB *(proposed)*,
+  reading stops there, with `LC7103` ([architecture.md](architecture.md), section 11.2). The viewer draws the function at once,
   without values, reads the trace beside the drawing, and shows the values once it is read; the canvas
   stays responsive meanwhile (scenario 6, point 5). A trace replaced while it is read (a new run) is read
   again from its start.
