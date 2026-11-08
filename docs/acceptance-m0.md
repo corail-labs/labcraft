@@ -324,11 +324,13 @@ agree.
 3. **Live, in the desktop app.** When an agent rewrites the file, the drawing is updated less than
    200 ms after the file is saved *(proposed)*, measured in CI by a headless harness (file change
    to new drawing); the viewport (zoom and position) is kept. The nodes that the change does not
-   touch keep their place as far as the placement rules allow (a goal, to be made precise with
-   them). A function is **drawable** when its file parses, its names resolve and it has no
-   cycle; everything else, type errors included, is drawn with the marks of the notation. A
-   function that is not drawable keeps its last drawing with its diagnostics, or shows only its
-   diagnostics if it never was drawable.
+   touch keep their place as far as the placement rules allow (visual notation, 2.1): the drawing
+   depends on the file and what it uses, not on the previous drawing, the nodes glide to their new
+   place, and CI reports how many nodes a neutral node added on a wire moves, on each example. A
+   function is **drawable** when its file parses, its names resolve and it has no cycle; everything
+   else, type errors included, is drawn with the marks of the notation. A function that is not
+   drawable keeps its last drawing with its diagnostics, or shows only its diagnostics if it never
+   was drawable.
 4. **Large diagrams.** A generated function of 1,000 nodes and 2,000 wires is placed and routed in
    less than 1 s *(proposed)*, measured in CI, and pans and zooms at 60 frames/s on a reference
    machine, checked by hand before the M0v tag.
@@ -347,9 +349,8 @@ agree.
 
 **Write first:**
 
-- In the visual notation: the compact view (short labels and icons, N-10, N-11; primitives,
-  section 3.2); the rules of automatic placement (main error chain on a straight axis, N-7) and of
-  wire routing, with the stability goal of point 3; how values per iteration show on a wire.
+- In the visual notation: how values per iteration show on a wire. The compact view (3.2), automatic
+  placement (2.1) and wire routing (2.2) are written.
 - For the snapshots: the font and its metrics (a fixed font, attributed, named in the SVG), the
   view of `match` and `handle` (tabs or unfolded, N-2, N-9) and the theme they use.
 - The architecture of the `diagram` and `editor` crates: what `diagram` computes, what the
@@ -370,4 +371,4 @@ are ordinary tests, not acceptance scenarios.
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; two-multimeter simulation files; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
-| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
