@@ -30,8 +30,8 @@ Still to write, besides what the acceptance scenarios list under "write first"
   stop; the architecture of the M0b crates. Written: the command catalog v0
   ([commands.md](commands.md)), the MCP specification ([mcp.md](mcp.md)), and the CLI specification of
   `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6);
-- **before M0v**: in the visual notation, the values on the wires and the snapshot font and theme
-  (the compact view, automatic placement and wire routing are written), and the architecture of the
+- **before M0v**: in the visual notation, the snapshot font and theme (the compact view, automatic
+  placement, wire routing and the values on the wires are written), and the architecture of the
   `diagram` and `editor` crates (in [architecture.md](architecture.md),
   like that of the M0b crates). The egui canvas with 1,000 nodes and
   2,000 wires at 60 frames/s is not a separate prototype: it is a target of M0v.

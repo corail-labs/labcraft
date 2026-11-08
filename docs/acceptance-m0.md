@@ -334,7 +334,7 @@ agree.
 4. **Large diagrams.** A generated function of 1,000 nodes and 2,000 wires is placed and routed in
    less than 1 s *(proposed)*, measured in CI, and pans and zooms at 60 frames/s on a reference
    machine, checked by hand before the M0v tag.
-5. **Never a crash.** A hostile file gives a diagnostic and the viewer stays responsive
+5. **Never a crash.** A hostile file or run trace gives a diagnostic and the viewer stays responsive
    (scenario 4).
 6. **Read-only.** Files are opened read-only: a test opens every example in the viewer and checks
    that no file changed. Editing is M1.
@@ -349,10 +349,12 @@ agree.
 
 **Write first:**
 
-- In the visual notation: how values per iteration show on a wire. The compact view (3.2), automatic
-  placement (2.1) and wire routing (2.2) are written.
-- For the snapshots: the font and its metrics (a fixed font, attributed, named in the SVG), the
-  view of `match` and `handle` (tabs or unfolded, N-2, N-9) and the theme they use.
+- In the visual notation: nothing left. The compact view (3.2), automatic placement (2.1), wire
+  routing (2.2) and the values of a run on the wires (6.1) are written.
+- For the snapshots: the font and its metrics (a fixed font, attributed, named in the SVG) and the
+  theme they use.
+- The limits of M0v for scenario 4, files and run traces (a trace can reach 256 MiB, commands.md,
+  section 8): bounds, families of the corpus, diagnostic codes. They show `match` and `handle` unfolded, like every exported image (notation 5.2).
 - The architecture of the `diagram` and `editor` crates: what `diagram` computes, what the
   `editor` canvas draws (D-27).
 
@@ -371,4 +373,4 @@ are ordinary tests, not acceptance scenarios.
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; two-multimeter simulation files; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
-| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Font and theme of the snapshots; `diagram` and `editor` architecture |

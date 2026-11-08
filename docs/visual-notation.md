@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1) and wire routing (2.2) are written for M0v.*
+*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2) and the values of a run (6.1) are written for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -67,8 +67,9 @@ are the nodes that a `layout` section does not place (spec 11).
 
 - **One drawing per file.** Placement and routing depend only on the file, on what it uses from other
   files (the signatures, type declarations, icons and bands of what it calls), on the fixed font of the
-  notation, and on the view state: the view of each node, tabs or unfolded branches and the branch
-  shown, folded or unfolded constructions, optional inputs shown (3, 5.2, N-2). With the same
+  notation, and on the view state: the view of each node, tabs or unfolded branches, folded or
+  unfolded constructions, optional inputs shown, the branch shown in tabs (by default that of the run,
+  6.1), which changes nothing around its frame, as large as its largest branch (5.2). With the same
   view state, the same file gives the same drawing on screen, when it is opened again, in an export and
   in the snapshots of CI (scenario 6 of `acceptance-m0.md`). Nothing comes from a previous drawing, from
   the size of the window or from the order in which files were read.
@@ -416,7 +417,8 @@ chain crosses the frame in a straight line (2.1).
 - **Selector**: terminal on the left edge, at the level of the header. The selector of a `handle`,
   which is an error, enters on the bottom line instead, which is the axis when the `handle` is on the
   error chain (2.1).
-- **One branch at a time**: a tab bar in the header lists the branches (`true`, `false`;
+- **One branch at a time**: the frame is as large as its largest branch, so that showing another
+  branch moves nothing around it. A tab bar in the header lists the branches (`true`, `false`;
   `State.Init`, `State.WaitDut` …; `_` is written `other`). A branch with several patterns is one
   tab, which lists them (`1, other`). The displayed branch is highlighted.
   A bound value (`Reading.Value(v)`, `io.timeout(err)`) appears as a terminal on the inner left
@@ -425,9 +427,11 @@ chain crosses the frame in a straight line (2.1).
   branch does not wire is impossible (the text forbids it), so there is nothing to flag here.
 - **Unfolded view**: all branches stacked vertically, each with its title. This is how exported
   images and printouts are rendered, and an editor mode. The last branch in the text sits at the
-  bottom, on the axis of the error chain; the others are stacked above it, each with its own straight error chain, joined to
-  the error output of the frame. Where the output wire starts when each
-  branch produces the value, and how to draw an outer value used in several branches: N-9.
+  bottom, on the axis of the error chain; the others are stacked above it, each with its own straight
+  error chain, joined to the error output of the frame. The output of each branch joins a vertical
+  bus along the inner right edge, which leads to the output terminal; an outer value read by several
+  branches enters by its notch, then a vertical bus along the inner left edge (N-9). After a run, the
+  branches that the run did not take are muted (6.1).
 - **`handle`**: same frame, edge in error style; the tabs are the categories (`ok`,
   `dmm.overload`, `visa.*`, a code, `other`).
 
@@ -439,11 +443,86 @@ rendered from a run trace
 
 | State | Rendering |
 |---|---|
-| Value of a wire (probe) | bubble attached to the wire: `230.06 V`, `Verdict.Pass`, `[3 elements]` |
+| Value of a wire (probe) | bubble attached to the wire: `230.1 V`, `Verdict.Pass`, `[3 elements]` (6.1) |
 | Skipped node (error on input) | hatched body, muted ink |
 | Node that produced an error | `wire.error` outline, category in a badge (`io.timeout`) |
 | Running node | `node.active` outline |
 | Loop | iteration counter in the header (`× 6`) |
+
+### 6.1 Values of a run on the wires
+
+The viewer of M0v shows the values of the last run of the function it draws, read from the trace that
+the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
+
+- **Every wire shows its value** once the run has ended, in a bubble next to the name of the wire at
+  its start. Order wires carry no value. The whole value is in the tooltip, which says when the trace
+  cut the value (`$len`, `$cut`). An error wire that carries no error shows nothing, so that the eye
+  goes to the errors; one that carries an error shows its category, as the node that produced it does.
+- **Short forms.**
+  - A float with 4 significant digits, zeros after the decimal point dropped, then its unit
+    (`230.1 V`, `0.5 s`, `12350 Hz`); an exponent when the magnitude is below 0.001 or from 1,000,000
+    on (`1.2e-6 A`); `0` as `0`; `nan`, `inf`, `-inf` as they are. An integer in full, with its unit
+    (`42`, `1250000`, `-3 mV`). A complex number as `1.5+2i`, with its unit. A `duration` with its unit
+    (`2 s`), a `timestamp` as its time of day in UTC (`14:02:31.250Z`).
+  - A string in quotes, whole up to 12 characters, beyond that 11 followed by `…`, counted as in 3.2;
+    a line break is written `↵`. `bytes` by their length (`[16 bytes]`).
+  - `true` or `false`; a variant (`Verdict.Pass`), with `(…)` when it holds data
+    (`Reading.Value(…)`).
+  - An array by its length (`[1 element]`, `[3 elements]`), by its sizes when it has more than one
+    dimension (`[3×4]`), or `[… elements]` when the trace cut it without its length; a waveform by its
+    samples (`[1000 samples]`); a struct as `{…}`.
+  - A session by its resource (`SIM::DMM0`), and `SIM::DMM0 (closed)` once closed; another opaque
+    value, a `ref` or a `queue` by its type (`⟨queue⟩`); a function reference by its name (`ƒ scale`).
+  - Every name or text that comes from the trace (a resource, a category, a file or node name in a
+    banner) is cut like a string.
+- **Bubbles never move the drawing.** They are drawn over it, after placement and routing, which
+  ignore them (2.1): opening a trace or hiding the values changes no position.
+- **A button hides the values** and shows them again. It is a state of the view, never written to the
+  file.
+- **Where a value comes from**, in the frame of the function drawn (frame 0):
+  - an input of the function: the `in` of the `call` event of frame 0;
+  - a value that a node binds: the `out` of its `ran` event, under the name of the wire;
+  - a node that did not produce its results, because it was skipped (`skipped` event) or because its
+    own error output carries a new error: no value on the outputs that it fills with defaults, which
+    would read like results (spec 7.2). The error it passes on shows, and so does a value that it
+    passes through unchanged (a session);
+  - the current value of a carry (`v`): its initial value at the first iteration, then the `next v` of
+    the iteration before;
+  - the element of a `for x in` (`x`): the element of the array at that iteration, and no value when
+    the trace cut the array before it; the index of a `for i in a..b`: `a` plus the iteration;
+  - a value bound by a branch (`Reading.Value(v)`, `io.timeout(err)`): taken from the selector of the
+    `match` or `handle`.
+- **Loops.** A wire inside a loop has one value per iteration (the `iter` of the trace). The frame of
+  the loop gets an iteration selector next to its counter (`× 6`), on the last iteration by default;
+  the bubbles inside show the chosen iteration, and stepping it forward or back shows the values
+  change. A loop that made no iteration shows `× 0` and no iteration selector. Each nested loop has
+  its own iteration selector: when an outer one moves, the inner ones go to the last iteration of
+  their loop in that outer iteration. In a `for parallel`, the last iteration is the one with the
+  highest index. Hovering a wire inside a loop shows its values over the iterations of its own loop,
+  within the iterations chosen outside: a small curve for a number, a list otherwise, cut after its
+  first 1,000 values with a note.
+- **`match` and `handle`.** The branch shown by default is the one that the run took, at the chosen
+  iterations (the `arm` event of the trace); without a trace, or when the branch of the trace no longer
+  exists, the first (N-2). A tab that the developer picks then wins until an iteration selector moves
+  or another trace arrives. A branch that the run did not take, in a tab or in the unfolded view, is
+  muted and carries no values.
+- **A run that did not end well.** A wire with no value in the trace (a node that never ran, after a
+  `fault`, an `aborted` run or a cut trace) shows nothing, and a banner gives the status that the
+  `end` event gives ("aborted", "fault"), or says that the trace was cut, or that it has no end (the
+  run did not finish writing it). With a cut trace, the last iteration shown is the last one traced,
+  and the banner says so.
+- **A trace that no longer matches.** The first line of the trace gives the SHA-256 of every file the
+  run read. The viewer compares only the files that it resolved itself to draw the function; one that
+  has changed or is gone mutes every value, and a banner names it, with the time when the trace was
+  written (the time of its file): "`check_voltage.lcf` has changed since this run (14:02)", or "and 2
+  other files" when there are more. Nothing is hidden, and nothing looks current that is not.
+- **The trace is an input like a file.** Reading it is bounded and never crashes the viewer: a line
+  that does not read ends the values there, as a cut trace would, and a first line that does not read
+  gives a diagnostic and no values. The limits of M0v for traces belong with those for files
+  (scenario 4).
+- **Called functions.** The viewer shows the values of the function it draws, when that function is
+  the one that was run. Opening a called function to see the values of one of its calls belongs to the
+  debugger (M5).
 
 ## 7. Zoom and density
 
@@ -454,7 +533,7 @@ zoom:
 | Zoom | Shown |
 |---|---|
 | ≥ 75% | everything |
-| 40 to 75% | no terminal names, no long inline constants |
+| 40 to 75% | no terminal names, no long inline constants; the values of a run (6.1) only on hover |
 | < 40% | shapes, wires, structure titles; nodes as plain rectangles |
 
 ## 8. Theme tokens
@@ -488,14 +567,14 @@ reference to another editor's palette (D-23).
 | # | Question | Lead |
 |---|---|---|
 | N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough; to revisit on real diagrams |
-| N-2 | Branch displayed by default for a `match` | The first; the editor remembers the last one viewed (editor state, not saved in the file) |
+| N-2 | Branch displayed by default for a `match` | **Settled (2026-11-08):** the one that the last run took, at the chosen iterations, when a trace is shown (6.1); otherwise the first; a tab that the developer picks wins until an iteration selector moves or another trace arrives. The editor remembers the last one viewed (editor state, not saved in the file) |
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
 | N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom (3.2), so a block that grows moves its bottom line, and the error chain, down: from 32 to 40 when it goes from two lines to three. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
 | N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, which does not yet keep the line straight through a `match`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
-| N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | Current `lcf-figcraft` rendering: the output starts from the first branch, the others have a terminal of the same name on the right edge; an outer value passes a notch, then a small vertical bus. To judge on `station` |
+| N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | **Settled (2026-11-08):** the output of each branch joins a vertical bus along the inner right edge of the frame, which leads to the output terminal, so that the drawing says that every branch gives the value; an outer value read by several branches enters by its notch, then a vertical bus along the inner left edge; one bus per value, in the order of the outputs, the error output on the bottom line like the frame's (5.2) |
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
 | N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon |
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
