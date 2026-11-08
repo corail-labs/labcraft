@@ -1,0 +1,53 @@
+labcraft 1
+
+use core
+use errors
+use scpi
+use time
+use ui
+use visa
+
+/// Two benches measured side by side, each with its own multimeter: `count` readings spaced by
+/// `period`, fewer if `stop_switch` is turned on. The waits of the two loops overlap.
+fn two_benches(
+    resource_a: string = "SIM::DMM0",
+    resource_b: string = "SIM::DMM1",
+    count: f64 = 10.0,
+    period: duration = 100 ms,
+) -> (mean_a: f64, mean_b: f64, err: error) {
+    dmm_a, ea = visa.open(resource_a, timeout: 500 ms)
+    dmm_b, eb = visa.open(resource_b, timeout: 500 ms)
+    n_a, sum_a, err_a = loop carry n = 0.0, carry s = 0.0, carry e = ea {
+        m = core.add(n, 1.0)
+        full = core.ge(m, count)
+        x, _, e1 = scpi.query_f64(dmm_a, "MEAS:VOLT:DC?", err: e)
+        e2 = time.wait(period, err: e1)
+        stop = ui.get(stop_switch, after: e2)
+        halt = core.or(full, stop)
+        next e = e2
+        next n = m
+        next s = core.add(s, x)
+        until halt
+    }
+    ca = visa.close(dmm_a, err: err_a)
+    mean_a = core.div(sum_a, n_a)
+    n_b, sum_b, err_b = loop carry n = 0.0, carry s = 0.0, carry e = eb {
+        m = core.add(n, 1.0)
+        full = core.ge(m, count)
+        x, _, e1 = scpi.query_f64(dmm_b, "MEAS:VOLT:DC?", err: e)
+        e2 = time.wait(period, err: e1)
+        stop = ui.get(stop_switch, after: e2)
+        halt = core.or(full, stop)
+        next e = e2
+        next n = m
+        next s = core.add(s, x)
+        until halt
+    }
+    cb = visa.close(dmm_b, err: err_b)
+    err = errors.merge(ca, cb)
+    mean_b = core.div(sum_b, n_b)
+}
+
+panel {
+    control stop_switch: switch
+}

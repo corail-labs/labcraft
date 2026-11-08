@@ -106,6 +106,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a) |
 | [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (draft for M0b) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (draft for M0b) |
+| [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; draft for M0b) |
 | [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (draft for M0b) |
 | [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |

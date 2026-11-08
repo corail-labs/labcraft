@@ -35,7 +35,7 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   ([commands.md](commands.md), section 6.2). When the IDE exists, the same server will
   attach to it through a local control channel protected by a token, so that the human watches the agent
   work (D-18); the tools stay the same.
-- **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its sessions are released.
+- **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released.
 
 ## 2. Tools
 
@@ -133,8 +133,8 @@ The server reads hostile requests as `check` reads hostile files (scenario 4, fa
 | `list_functions` with `builtins` | `functions_list`, signatures written as the language writes them | The agent reads what it will write |
 | Instructions point to the spec and `examples/` | They point to `guide_read` | Scenario 1: the agent does not see the answer |
 | Instruments found by reading the TOML | `simulation_describe` | The agent learns the resource names without the repository |
-| `run` returns `ok`, `error` and `fault`, with the simulated time, the sessions left open and the commands exchanged | `labcraft-run/1`: the four statuses of spec 8.2 and `refused`; the same facts, with the sessions opened and leaked, and the commands dated per instrument | Scenarios 1 and 3 read these; the fields of the proof of concept are kept, under the names of the report |
-| No abort, no panel | `run_abort`, `run_set_element`, runs that outlast a call | Scenario 3 |
+| `run` returns its own report: a status (`ok`, `error`, `refused`, `aborted`, `fault`), the simulated time, the sessions left open and the commands exchanged | `labcraft-run/1`: the four statuses of spec 8.2 and `refused`; the same facts, with the resources opened and leaked, and the commands dated per instrument | Scenarios 1 and 3 read these; the fields of the proof of concept are kept, under the names of the report |
+| Panel settings (`set`) and an abort by `timeout`, given when the run starts | `run_abort`, `run_set_element`, runs that outlast a call | Scenario 3 |
 | The trace inline only | Also a file, `labcraft-trace/1`, that the viewer reads and `run_trace` reads in pages, filtered by node | Scenario 6, point 7; an agent debugs without a file tool |
 
 ## 8. Scenario 1, call by call

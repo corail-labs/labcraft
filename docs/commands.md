@@ -136,7 +136,7 @@ runs a program and reads its result. Otherwise it returns
 {
   "schema": "labcraft-run/1", "status": "running", "run": "r3", "function": "two_benches",
   "mode": "real_time", "outputs": [], "clock": { "real_ms": 30000 },
-  "sessions": { "opened": 2, "open": [], "leaked": [] },
+  "resources": { "opened": 2, "open": [], "leaked": [] },
   "loops": [ { "function": "two_benches", "node": "mean_a", "iteration": 4 } ],
   "check": {
     "summary": { "libraries": 1, "functions": 2, "types": 0, "errors": 0, "warnings": 0, "truncated": false },
@@ -210,7 +210,7 @@ were merged, at most 32 *(proposed)*, then `others_more` gives how many are left
   `"30 s"`, `"500 ms"`.
 - **Order.** Objects and lists keep the order of the program: inputs and outputs in the order of the
   signature, the values of a node in the order of its outputs, the types of a frame in the order of the
-  lines, sessions in the order they were opened, loops outermost first. Resources are in code point order
+  lines, resources in the order they were opened, loops outermost first. Resources are in code point order
   of their names (section 7). So two runs of one program write the same text, apart from the clock of real
   time.
 - **A value too large for a report** is cut in the report, never in the program *(proposed figures)*:
@@ -339,7 +339,7 @@ prints. One example, then the fields.
     { "name": "err", "type": "error", "value": null }
   ],
   "clock": { "simulated_ms": 0.0, "real_ms": 2 },
-  "sessions": { "opened": 1, "open": [], "leaked": [] },
+  "resources": { "opened": 1, "open": [], "leaked": [] },
   "instruments": [
     { "resource": "SIM::DMM0", "commands": [ { "t_ms": 0.0, "sent": "MEAS:VOLT:DC?", "answer": "230.071217" } ] }
   ],
@@ -358,10 +358,10 @@ prints. One example, then the fields.
 | `outputs` | yes | The outputs of the function, in the order of its signature, each with its type and its value (section 5); `[]` when it did not finish (`aborted`, `fault`, `refused`) |
 | `error` | no | When `status` is `error`: the error on the `err` output, as in section 5, repeated here so that it is found without looking for the output |
 | `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `file`, `span`, `function`, `node`, and the iteration of each loop around it |
-| `abort` | no | When `status` is `aborted`: `by` (`request`, `timeout`, `interrupt`), `at_ms` on the clock of the run, `loops` (as below, when the abort came), and `warning`: the instruments are in an unknown state |
+| `abort` | no | When `status` is `aborted`: `by` (`request`, `timeout`, `interrupt`), `at_ms` on the clock of the run, `loops` (as below, when the abort came), and `warning`: the instruments are in an unknown state. When a native call was in progress, the run ends after `at_ms`: when that call ends, or when the grace period ends if it is abandoned (spec 8.2); `clock` says when |
 | `loops` | no | When `status` is `running`: each loop going, outermost first, with its `function`, its `node` (section 8) and its `iteration`, from 0 |
 | `clock` | yes | `simulated_ms` in deterministic mode; `real_ms` always |
-| `sessions` | yes | `opened`: how many the run opened; `open`: those still open at its end, each with its resource and where it was opened, which scenario 1 wants empty; `leaked`: those an abort could not close (spec 8.2) |
+| `resources` | yes | The resources the run opened (spec 8.1: a session of `visa`, or any opaque type a library declares as one). `opened`: how many; `open`: those still open at its end, each with its type (`visa.session`), what it designates (`SIM::DMM0`) and where it was opened, which scenario 1 wants empty; `leaked`: those an abort could not release (spec 8.2) |
 | `instruments` | no | With a simulation: per resource, in code point order of the resource names so that two seeds give the same list, the commands it received in order, dated, with their answers, each text cut as a string is (section 5). At most 64 resources and 1,000 commands per resource in the report *(proposed)*, then `truncated`; the bound of a result (section 2) can shorten it further |
 | `panel` | no | Each setting of `set` or `run.set_element`, in the order applied: `element`, `value`, `at_ms` on the clock of the run, `by` (`set`, `run.set_element`), and `applied` (`false` for a setting after the end of the run) |
 | `check` | yes | The `check` made before the run: its `summary`, which counts everything found in the folder, and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2): those of what the run can reach, and the errors found elsewhere in the folder, which do not refuse the run but are listed, so that the counts and the list agree |

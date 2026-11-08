@@ -384,6 +384,7 @@ class Checker:
                                          f"{base.signature()}")
             return
         both = set(names) & set(outs)
+        self.live_only = {it.name for it in fn.panel} - set(names) - set(outs)
         self.labels = {}
         scope = Scope(names)
         self.block(fn.body, scope, kind="fn", top_outputs=(outs, both))
@@ -439,6 +440,9 @@ class Checker:
                 self.d("error", node.line, f"'{name}' is already an input of the function", node)
             if self.lib.name_taken(name, self.fn.uses):
                 self.d("error", node.line, f"a value cannot have the name of a library or a type: '{name}' (R-1)", node)
+            if name in self.live_only:
+                self.d("error", node.line, f"a value cannot have the name of a panel element that exists only live: "
+                                           f"'{name}' (R-1)", node)
         if kind == "fn":
             for o in outs:
                 n = sum(1 for name, _ in own_list if name == o)
@@ -446,6 +450,9 @@ class Checker:
                     self.d("error", self.fn.line, f"output '{o}' is not bound (add '{o} = …')")
                 elif n > 1:
                     self.d("error", self.fn.line, f"output '{o}' bound {n} times")
+        for name in sorted(set(bind) & self.live_only):  # carries, `in` clauses, pattern names (R-3)
+            self.d("error", body.line, f"a value cannot have the name of a panel element that exists only live: "
+                                       f"'{name}' (R-1)")
         labels = {"#" + n.label for n in body.nodes if n.label}
         scope = Scope(set(seen) | set(bind) | labels | (set(outs) - both if kind == "fn" else set()), parent)
         if kind == "fn":  # R-2: a bound output can be read back
@@ -543,6 +550,13 @@ class Checker:
             return
         if kind == "unit":
             self.d("error", op.line, f"a unit argument is written in brackets: `[{op.text}]` (R-5)", node)
+            return
+        if kind == "element":  # names a panel element of this function, even one named like an input (R-1)
+            names = [it.name for it in self.fn.panel]
+            if op.kind != "ref" or len(op.parts) != 1 or op.parts[0] not in names:
+                near = difflib.get_close_matches(op.text, names, 1)
+                self.d("error", op.line or node.line, f"'{op.text}' is not an element of the panel of '{self.fn.name}'"
+                       + (f" (did you mean '{near[0]}'?)" if near else f" (elements: {', '.join(names) or 'none'})"), node)
             return
         if op.kind != "ref":
             return

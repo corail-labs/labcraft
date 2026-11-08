@@ -288,6 +288,21 @@ def time_elapsed(m, since):
     return (Q(m.world.clock - _seconds(since, "time.elapsed"), parse_unit("s")[0], "s", 1.0),)
 
 
+# ui (spec 10) ---------------------------------------------------------------------------------
+
+@builtin("ui.get", [P("element", kind="element")], ["value"])
+def ui_get(m, element):
+    """Reads a panel element of this call: a `switch` keeps its value, a `button` press is seen by one read."""
+    return (m.panel_get(element),)
+
+
+@builtin("ui.set", [P("element", kind="element"), P("value")], ["value"])
+def ui_set(m, element, value):
+    """Writes a panel element of this call and returns the value, to order what follows (`after:`)."""
+    m.panel_put(element, value)
+    return (value,)
+
+
 # errors ------------------------------------------------------------------------------------
 
 @builtin("errors.raise_if", [P("condition"), P("category", kind="category"), P("message", ""), P("err", None)], ["err"])

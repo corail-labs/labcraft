@@ -431,8 +431,9 @@ class Syntax(unittest.TestCase):
 }
 """)
         self.assertTrue(rep["ok"], rep["diagnostics"])
-        self.assertAlmostEqual(r["outputs"]["t"]["value"], 0.07)
-        self.assertAlmostEqual(r["outputs"]["t2"]["value"], 0.07)
+        # the two waits are independent: they overlap (spec 8), so both reads see 50 ms
+        self.assertAlmostEqual(r["outputs"]["t"]["value"], 0.05)
+        self.assertAlmostEqual(r["outputs"]["t2"]["value"], 0.05)
         rep, _ = self.fn("fn a() -> (t: f64[s]) {\n    t = time.now(after: #nope)\n}\n")
         self.diag(rep, "unknown label '#nope'")
 
@@ -456,7 +457,7 @@ class Syntax(unittest.TestCase):
 """)
         self.assertEqual(rep["errors"], 0, rep["diagnostics"])
         self.diag(rep, "`err` output of 'time.wait' is not wired")  # 7.5 applies (R-16)
-        self.assertEqual(r["sim"]["time_ms"], 70.0)
+        self.assertEqual(r["sim"]["time_ms"], 50.0)  # independent waits overlap (spec 8)
 
     def test_two_statements_on_one_line_are_rejected(self):
         rep, _ = self.fn("fn o(a: i32) -> (b: i32) {\n    x = core.add(a, 1) b = x\n}\n")
@@ -1535,6 +1536,382 @@ fn t(err: error = none) -> (text: string, err: error) {
 """})
             r = run("t", "dmm-230V.toml", {}, folder=td)
             self.assertEqual(r["outputs"]["text"], '-410,"Query INTERRUPTED"', r)
+
+
+class Scheduler(unittest.TestCase):
+    """Scenario 3 of acceptance-m0.md and spec 8: parallel branches, the simulated clock, Stop, Abort, faults.
+    Expected times are worked out by hand from the program and the simulation file, as each comment says."""
+
+    HEADER = "labcraft 1\n\nuse core\nuse errors\nuse scpi\nuse time\nuse ui\nuse visa\n\n"
+    BENCH = "two_benches"
+
+    def lib(self, files):
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        lib_dir(td.name, {k: (self.HEADER + v if k.endswith(".lcf") else v) for k, v in files.items()})
+        return td.name
+
+    def bench(self, sim="two-dmm.toml", **kw):
+        return run(self.BENCH, sim, {}, **kw)
+
+    @staticmethod
+    def measures(r, resource):
+        return [c for c in r["sim"]["commands"] if c["resource"] == resource and c["cmd"] == "MEAS:VOLT:DC?"]
+
+    def test_order_between_branches_does_not_matter(self):
+        # Point 1: over 20 seeds, the outputs and the commands each instrument sees are the same.
+        base = self.bench()
+        per = lambda r: {res: [(c["cmd"], c["response"]) for c in r["sim"]["commands"] if c["resource"] == res]
+                         for res in ("SIM::DMM0", "SIM::DMM1")}
+        interleavings = set()
+        for seed in range(20):
+            r = self.bench(schedule_seed=seed)
+            self.assertEqual(r["outputs"], base["outputs"], seed)
+            self.assertEqual(per(r), per(base), seed)
+            interleavings.add(tuple(c["resource"] for c in r["sim"]["commands"]))
+        self.assertGreater(len(interleavings), 1)  # the seed does change the order between the instruments
+
+    def test_canonical_order_between_branches(self):
+        # Without a seed, at each time the loop of A (written first, canonical position 2) runs before
+        # that of B (position 5): the instruments are served alternately, DMM0 first.
+        r = self.bench()
+        order = [c["resource"][-1] for c in r["sim"]["commands"]]
+        self.assertEqual(order, ["0", "1"] * 10)
+
+    def test_waits_overlap(self):
+        # Point 2: 10 iterations of 100 ms in each branch, without latency: 1 s, not 2 s.
+        r = self.bench()
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(r["sim"]["time_ns"], 1_000_000_000)
+        for res in ("SIM::DMM0", "SIM::DMM1"):
+            self.assertEqual(len(self.measures(r, res)), 10)
+        # the mean of B is the mean of what its instrument answered
+        answers = [float(c["response"]) for c in self.measures(r, "SIM::DMM1")]
+        self.assertAlmostEqual(r["outputs"]["mean_b"], sum(answers) / 10)
+
+    def test_waits_overlap_in_real_time(self):
+        # Point 2 in real time: two loops of 10 x 100 ms end in less than 1.5 s, best of three runs.
+        import time as _time
+        best = None
+        for _ in range(3):
+            t0 = _time.perf_counter()
+            r = self.bench(real_time=True)
+            best = min(best or 99, _time.perf_counter() - t0)
+            self.assertEqual(r["status"], "ok", r)
+        self.assertLess(best, 1.5)
+        self.assertGreaterEqual(best, 1.0)
+
+    def test_error_in_one_branch_does_not_stop_the_other(self):
+        # Point 3: DMM0 never answers; its query times out at 500 ms (the timeout of `visa.open`),
+        # its loop stops on the error and its session is closed; B makes its 10 measurements, until 1 s.
+        r = self.bench("two-dmm-timeout.toml")
+        self.assertEqual(r["status"], "error", r)
+        self.assertEqual(r["error"]["category"], "io.timeout")
+        self.assertIn("two_benches.lcf:23", r["error"]["origin"][-1])
+        self.assertEqual(len(self.measures(r, "SIM::DMM1")), 10)
+        answers = [float(c["response"]) for c in self.measures(r, "SIM::DMM1")]
+        self.assertAlmostEqual(r["outputs"]["mean_b"], sum(answers) / 10)
+        self.assertEqual(r["sim"]["time_ns"], 1_000_000_000)
+        self.assertEqual(r["sim"]["open_sessions"], [])
+
+    def test_stop(self):
+        # Point 4: `stop_switch` turned on at 450 ms; each loop reads it after its wait, at 100, 200… ms:
+        # the read at 500 ms sees it, so 5 measurements each, and the run ends at 500 ms, status ok.
+        r = self.bench(settings=[{"element": "stop_switch", "value": "true", "at": "450ms"}])
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(r["sim"]["time_ns"], 500_000_000)
+        for res in ("SIM::DMM0", "SIM::DMM1"):
+            self.assertEqual(len(self.measures(r, res)), 5)
+        self.assertEqual(r["sim"]["open_sessions"], [])
+        self.assertEqual(r["panel"], [{"element": "stop_switch", "value": True, "at_ms": 450.0, "by": "set",
+                                       "applied": True}])
+        # at 0 s: the first reads, at 100 ms, see it; a setting at the time of a read is seen by that read
+        for at, n, end in (("0s", 1, 100), ("300 ms", 3, 300), ("5 s", 10, 1000)):
+            r = self.bench(settings=[{"element": "stop_switch", "value": True, "at": at}])
+            self.assertEqual(len(self.measures(r, "SIM::DMM0")), n, at)
+            self.assertEqual(r["sim"]["time_ns"], end * 1_000_000, at)
+            self.assertEqual(r["panel"][0]["applied"], at != "5 s")  # after the end of the run: never applied
+
+    def test_abort_by_timeout(self):
+        # Point 5: at 450 ms both loops wait in their 5th iteration (number 4, from 0); the waits end at once,
+        # no node starts, the sessions are released, no output.
+        r = self.bench(timeout="450 ms")
+        self.assertEqual(r["status"], "aborted", r)
+        self.assertEqual(r["outputs"], {})
+        a = r["abort"]
+        self.assertEqual((a["by"], a["at_ms"], r["sim"]["time_ns"]), ("timeout", 450.0, 450_000_000))
+        self.assertEqual([(lp["line"], lp["iteration"]) for lp in a["loops"]], [(20, 4), (34, 4)])
+        self.assertIn("unknown state", a["warning"])
+        self.assertEqual(sorted(r["sim"]["released"]), ["SIM::DMM0", "SIM::DMM1"])
+        self.assertEqual(r["sim"]["open_sessions"], [])
+        self.assertEqual(len(self.measures(r, "SIM::DMM0")), 5)
+
+    def test_timeout_and_setting_at_the_same_time(self):
+        # cli.md 6.2: at one time, the settings, then the timeout, then the nodes. At 500 ms the reads of the
+        # 5th iteration would see the Stop, but the timeout of 500 ms aborts first.
+        r = self.bench(timeout="500ms", settings=[{"element": "stop_switch", "value": True, "at": "500ms"}])
+        self.assertEqual(r["status"], "aborted", r)
+        self.assertTrue(r["panel"][0]["applied"])
+        self.assertEqual([lp["iteration"] for lp in r["abort"]["loops"]], [4, 4])
+
+    def test_abort_during_a_native_call(self):
+        # A query that is never answered waits for the timeout of its session. Aborted at 450 ms, it ends
+        # at its timeout of 1 s, within the grace period of 5 s; with a timeout of 10 s, it is still
+        # running when the grace period ends, at 450 ms + 5 s: abandoned then, its session reported as leaked.
+        folder = self.lib({"slow.lcf": """fn slow(t: duration) -> (err: error) {
+    d, e1 = visa.open("SIM::DMM0", timeout: t)
+    x, _, e2 = scpi.query_f64(d, "MEAS:VOLT:DC?", err: e1)
+    err = visa.close(d, err: e2)
+}
+"""})
+        r = run("slow", "two-dmm-timeout.toml", {"t": "1 s"}, folder=folder, timeout="450 ms")
+        self.assertEqual(r["status"], "aborted", r)
+        self.assertEqual((r["abort"]["at_ms"], r["sim"]["time_ns"]), (450.0, 1_000_000_000))
+        self.assertEqual(r["sim"]["released"], ["SIM::DMM0"])
+        self.assertNotIn("leaked", r["sim"])
+        r = run("slow", "two-dmm-timeout.toml", {"t": "10 s"}, folder=folder, timeout="450 ms")
+        self.assertEqual(r["sim"]["time_ns"], 5_450_000_000)
+        self.assertEqual(r["sim"]["leaked"], ["SIM::DMM0"])
+        self.assertEqual(r["sim"]["open_sessions"], ["SIM::DMM0"])
+
+    def test_fault_ends_the_run(self):
+        # Point 6: an iteration limit of 3 is reached when the 4th iteration starts, at 300 ms, in the loop
+        # of A first (it comes first in the global order).
+        r = self.bench(max_iter=3)
+        self.assertEqual(r["status"], "fault", r)
+        self.assertEqual((r["fault"]["code"], r["fault"]["line"]), ("LC8001", 20))
+        self.assertEqual(r["outputs"], {})
+        self.assertEqual(r["sim"]["time_ns"], 300_000_000)
+        self.assertEqual(sorted(r["sim"]["released"]), ["SIM::DMM0", "SIM::DMM1"])
+
+    READS = """fn reads() -> (seen: [bool]) {
+    n, seen = loop carry n = 0 {
+        e = time.wait(10 ms)
+        v = ui.get(b, after: e)
+        m = core.add(n, 1)
+        done = core.ge(m, 3)
+        next n = m
+        collect v
+        until done
+    }
+}
+
+panel {
+    control b: KIND
+}
+"""
+
+    def test_button_and_switch(self):
+        # Reads at 10, 20 and 30 ms. A press at 15 ms: a button is seen by the read at 20 ms only, then is
+        # false again (latching, spec 10); a switch stays on.
+        for kind, want in (("button", [False, True, False]), ("switch", [False, True, True])):
+            folder = self.lib({"reads.lcf": self.READS.replace("KIND", kind)})
+            self.assertTrue(api.check(folder)["ok"], api.check(folder)["diagnostics"])
+            r = run("reads", None, {}, folder=folder, settings=[{"element": "b", "value": True, "at": "15 ms"}])
+            self.assertEqual(r["outputs"]["seen"], want, kind)
+        # without a setting, the default of the element: false
+        r = run("reads", None, {}, folder=folder)
+        self.assertEqual(r["outputs"]["seen"], [False, False, False])
+
+    def test_settings_refused(self):
+        folder = self.lib({"f.lcf": """fn f(level: f64) -> (shown: f64) {
+    shown = ui.get(level)
+}
+
+panel {
+    control level: numeric
+    control b: button
+    indicator shown: numeric
+}
+"""})
+        cases = [({"element": "nope", "value": 1, "at": "0s"}, "LC8108"),
+                 ({"element": "level", "value": 1, "at": "0s"}, "LC8108"),   # an input: given with --arg
+                 ({"element": "shown", "value": 1, "at": "0s"}, "LC8108"),   # an output: the function writes it
+                 ({"element": "b", "value": False, "at": "0s"}, "LC8108"),   # a button set to false (Q-30)
+                 ({"element": "b", "value": "yes", "at": "0s"}, "LC8104"),
+                 ({"element": "b", "value": True, "at": "5"}, "seconds are not assumed")]
+        for s, needle in cases:
+            r = run("f", None, {"level": 1}, folder=folder, settings=[s])
+            self.assertEqual(r["status"], "refused", s)
+            self.assertIn(needle, r["fault"]["message"], s)
+        rep = api.check(self.lib({"g.lcf": "fn g() -> (v: bool) {\n    v = ui.get(nope)\n}\n\npanel {\n    control b: switch\n}\n"}))
+        self.assertTrue(any("not an element of the panel" in d["message"] for d in rep["diagnostics"]), rep)
+
+    def test_panel_belongs_to_its_call(self):
+        # The caller's `s` is set; the subfunction reads its own `s`, at its default (spec 8.2, 10).
+        # `ui.set` writes an element and gives the value, which a read after it sees.
+        folder = self.lib({
+            "inner.lcf": "fn inner() -> (v: bool) {\n    v = ui.get(s)\n}\n\npanel {\n    control s: switch\n}\n",
+            "outer.lcf": """fn outer() -> (mine: bool, theirs: bool, back: f64) {
+    shown = ui.set(level, 2.5)
+    back = ui.get(level, after: shown)
+    mine = ui.get(s)
+    theirs = inner()
+}
+
+panel {
+    control s: switch
+    control level: numeric
+}
+"""})
+        self.assertTrue(api.check(folder)["ok"], api.check(folder)["diagnostics"])
+        r = run("outer", None, {}, folder=folder, settings=[{"element": "s", "value": True, "at": "0s"}])
+        self.assertEqual(r["outputs"], {"mine": True, "theirs": False, "back": 2.5}, r)
+
+    LATENCY = """[[visa.instrument]]
+resource = "SIM::A"
+latency_ms = 10
+[visa.instrument.measure]
+"V?" = "v"
+[visa.instrument.quantity.v]
+value = 1
+[[visa.instrument]]
+resource = "SIM::B"
+latency_ms = 10
+[visa.instrument.measure]
+"V?" = "v"
+[visa.instrument.quantity.v]
+value = 2
+"""
+
+    def test_one_command_at_a_time_per_instrument(self):
+        # Two branches query at the same time, each command taking 10 ms: on two instruments they overlap
+        # (10 ms); on one instrument through two sessions, the second waits for the first (20 ms).
+        folder = self.lib({"two.lcf": """fn two(ra: string, rb: string) -> (err: error) {
+    a, e1 = visa.open(ra)
+    b, e2 = visa.open(rb)
+    x, _, e3 = scpi.query_f64(a, "V?", err: e1)
+    y, _, e4 = scpi.query_f64(b, "V?", err: e2)
+    ca = visa.close(a, err: e3)
+    cb = visa.close(b, err: e4)
+    err = errors.merge(ca, cb)
+}
+""", "lat.toml": self.LATENCY})
+        sim = str(Path(folder) / "lat.toml")
+        r = api.run(folder, "two", sim, {"ra": "SIM::A", "rb": "SIM::B"})
+        self.assertEqual((r["status"], r["sim"]["time_ns"]), ("ok", 10_000_000), r)
+        r = api.run(folder, "two", sim, {"ra": "SIM::A", "rb": "SIM::A"})
+        self.assertEqual((r["status"], r["sim"]["time_ns"]), ("ok", 20_000_000), r)
+
+    def test_visa_locks_its_session(self):
+        # DMM0 never answers; a read waits the 100 ms timeout of its session. Two queries on one session:
+        # `visa` keeps each call atomic on its session (libs/visa/README.md), so the second starts when the
+        # first has timed out, and the run ends at 200 ms. On two sessions, the two reads wait together:
+        # 100 ms (a read that waits does not hold the instrument, simulation.md section 4).
+        src = """fn same(t: duration, two: bool) -> (err: error) {
+    d, e1 = visa.open("SIM::DMM0", timeout: t)
+    d2, e5 = visa.open("SIM::DMM0", timeout: t)
+    other = core.select(two, d2, d)
+    x, _, e2 = scpi.query_f64(d, "MEAS:VOLT:DC?", err: e1)
+    y, _, e3 = scpi.query_f64(other, "MEAS:VOLT:DC?", err: e5)
+    e4 = errors.merge(e2, e3)
+    c1 = visa.close(d, err: e4)
+    err = visa.close(d2, err: c1)
+}
+"""
+        folder = self.lib({"same.lcf": src})
+        for two, want in ((False, 200_000_000), (True, 100_000_000)):
+            r = run("same", "two-dmm-timeout.toml", {"t": "100 ms", "two": two}, folder=folder)
+            self.assertEqual((r["status"], r["error"]["category"]), ("error", "io.timeout"), r)
+            self.assertEqual(r["sim"]["time_ns"], want, two)
+
+    def test_fault_waits_for_a_call_in_progress(self):
+        # A fault stops the run like an abort (spec 8.2). Branch A queries DMM0, which never answers within
+        # the 3 s timeout of its session; branch B reaches an iteration limit of 5 at 500 ms. The query is
+        # still running: it ends at 3 s, within the grace period, before the session is released.
+        folder = self.lib({"f.lcf": """fn f() -> (err: error) {
+    d, e1 = visa.open("SIM::DMM0", timeout: 3 s)
+    x, _, e2 = scpi.query_f64(d, "MEAS:VOLT:DC?", err: e1)
+    c = visa.close(d, err: e2)
+    n = loop carry k = 0 {
+        e = time.wait(100 ms)
+        m = core.add(k, 1, after: e)
+        done = core.ge(m, 100)
+        next k = m
+        until done
+    }
+    err = c
+}
+"""})
+        r = run("f", "two-dmm-timeout.toml", {}, folder=folder, max_iter=5)
+        self.assertEqual((r["status"], r["fault"]["code"]), ("fault", "LC8001"), r)
+        self.assertEqual(r["sim"]["time_ns"], 3_000_000_000)
+        self.assertEqual(r["sim"]["released"], ["SIM::DMM0"])
+        self.assertNotIn("leaked", r["sim"])
+
+    def test_waiting_calls_take_the_session_in_the_global_order(self):
+        # `alpha` (first by name, so first in canonical order) holds the session for the 100 ms timeout of
+        # DMM0; `beta` and `zeta` wait for it, and take it at 100 ms in the global order, beta first, though
+        # `zeta` is written before `beta` (libs/visa/README.md, spec 8). Both answer at once.
+        folder = self.lib({"w.lcf": """fn w() -> (err: error) {
+    d, e0 = visa.open("SIM::DMM0", timeout: 100 ms)
+    alpha, _, e1 = visa.query(d, "MEAS:VOLT:DC?", err: e0)
+    zeta, _, e3 = visa.query(d, "*IDN?", err: e0)
+    beta, _, e2 = visa.query(d, "SYST:ERR?", err: e0)
+    e4 = errors.merge(e1, e2, e3)
+    err = visa.close(d, err: e4)
+}
+"""})
+        r = run("w", "two-dmm-timeout.toml", {}, folder=folder)
+        self.assertEqual([(c["cmd"], c["t_ms"]) for c in r["sim"]["commands"]],
+                         [("MEAS:VOLT:DC?", 0.0), ("SYST:ERR?", 100.0), ("*IDN?", 100.0)], r)
+
+    def test_element_is_not_a_wire(self):
+        # The first argument of `ui.get` and `ui.set` names a panel element, even one named like an output
+        # (R-1): it waits for no wire of that name. `shown` is written at 0, not after the 100 ms wait.
+        folder = self.lib({"f.lcf": """fn f() -> (level: f64, t: f64[s], back: f64) {
+    e = time.wait(100 ms)
+    level = core.add(1.0, 1.0, after: e)
+    shown = ui.set(level, 5.0)
+    t = time.now(after: shown)
+    back = ui.get(level, after: shown)
+}
+
+panel {
+    indicator level: numeric
+}
+"""})
+        rep = api.check(folder)
+        self.assertTrue(rep["ok"], rep["diagnostics"])
+        r = run("f", None, {}, folder=folder)
+        self.assertEqual((r["outputs"]["t"]["value"], r["outputs"]["back"], r["outputs"]["level"]), (0.0, 5.0, 2.0), r)
+        # an element that exists only live cannot share its name with a value (R-1)
+        rep = api.check(self.lib({"g.lcf": "fn g() -> (v: bool) {\n    stop = ui.get(stop)\n    v = stop\n}\n\n"
+                                          "panel {\n    control stop: switch\n}\n"}))
+        msgs = [d["message"] for d in rep["diagnostics"]]
+        self.assertTrue(any("exists only live" in m for m in msgs), msgs)
+        self.assertFalse(any("cycle" in m for m in msgs), msgs)
+        # nor a carry or the name of an `in` clause (R-3)
+        rep = api.check(self.lib({"h.lcf": "fn h(xs: [f64]) -> (n: f64, ys: [f64]) {\n"
+                                          "    n = loop carry stop = 0.0 {\n        next stop = core.add(stop, 1.0)\n"
+                                          "        until true\n    }\n    ys = for halt in xs {\n        collect halt\n    }\n}\n\n"
+                                          "panel {\n    control stop: switch\n    control halt: switch\n}\n"}))
+        msgs = [d["message"] for d in rep["diagnostics"] if "exists only live" in d["message"]]
+        self.assertEqual(len(msgs), 2, rep["diagnostics"])
+
+    def test_settings_of_another_form_are_refused(self):
+        for bad in (["stop_switch=true@0s"], [None], [{"element": ["x"], "value": 1, "at": "0s"}], "abc"):
+            r = self.bench(settings=bad)
+            self.assertEqual((r["status"], r["fault"]["category"]), ("refused", "lcf.bad_argument"), (bad, r))
+        folder = self.lib({"c.lcf": "fn c() -> (v: f64) {\n    v = 1.0\n}\n\npanel {\n    control trend: chart\n}\n"})
+        r = run("c", None, {}, folder=folder, settings=[{"element": "trend", "value": "[1]", "at": "0s"}])
+        self.assertEqual(r["status"], "refused", r)
+        self.assertIn("LC8108", r["fault"]["message"])
+
+    def test_for_parallel_overlaps(self):
+        # `for parallel`: the three iterations wait 10 ms together; a `for` waits 10 ms per iteration.
+        body = """    ts = for{P} i in 0..3 {
+        e = time.wait(10 ms)
+        t = time.now(after: e)
+        collect t
+    }
+}
+"""
+        for par, want in ((" parallel", [0.01, 0.01, 0.01]), ("", [0.01, 0.02, 0.03])):
+            folder = self.lib({"p.lcf": "fn p() -> (ts: [f64[s]]) {\n" + body.replace("{P}", par)})
+            r = run("p", None, {}, folder=folder)
+            self.assertEqual(r["status"], "ok", r)
+            self.assertEqual([round(t["value"], 9) for t in r["outputs"]["ts"]], want, par)
 
 
 if __name__ == "__main__":

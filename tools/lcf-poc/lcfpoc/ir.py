@@ -7,6 +7,7 @@ from typing import Any, Optional
 from lark import Token, Tree
 from lark.exceptions import LarkError
 
+from . import stdlib
 from .values import UnitError, Q, parse_unit
 
 SPECIAL = {"true": True, "false": False, "none": None, "nan": float("nan"), "inf": float("inf")}
@@ -175,6 +176,16 @@ class FnIR:
     extern: Any = None  # (interface, {argument: value}) of an `extern` declaration (4.1); no body
     lib: Any = None
     native: Any = None  # what runs an `extern` declaration: its signature, and the native body
+    panel: list = field(default_factory=list)  # PanelItem of the `panel` section (spec 10)
+
+
+@dataclass
+class PanelItem:
+    io: str  # control | indicator
+    name: str
+    kind: str  # button, switch, numeric, text_box, led, chart…
+    default: Optional[Operand]  # `default:` of the item, a constant
+    line: int = 0
 
 
 @dataclass
@@ -420,6 +431,21 @@ class Lowerer:
         self.compute_free(body, set())
         return fir
 
+    def panel(self, tree):
+        """Items of the `panel` section: control or indicator, name, kind, and the `default:` argument if any."""
+        sec = next((c for c in tree.children if isinstance(c, Tree) and c.data == "panel_section"), None)
+        items = []
+        for it in (sec.children if sec is not None else []):
+            if not (isinstance(it, Tree) and it.data == "panel_item"):
+                continue
+            toks = [c for c in it.children if isinstance(c, Token)]
+            default = None
+            for a in it.children:
+                if isinstance(a, Tree) and a.data == "arg" and len(a.children) == 2 and str(a.children[0]) == "default":
+                    default = self.arg_value(a.children[1])
+            items.append(PanelItem(str(toks[0]), str(toks[1]), str(toks[2]), default, line_of(it)))
+        return items
+
     # Free variables --------------------------------------------------------------------
 
     def refs(self, op):
@@ -444,9 +470,18 @@ class Lowerer:
 
     def rhs_free(self, r):
         if isinstance(r, Call):
-            s = set()
+            # an argument of kind element names a panel element, not a wire (R-1): it is no dependency
+            b = stdlib.BUILTINS.get(".".join(r.path))
+            params = b.params if b is not None else []
+            element = {p.name for p in params if p.kind == "element"}
+            s, i = set(), 0
             for a in r.args:
-                s |= self.refs(a.op)
+                name = a.name
+                if name is None:
+                    name = params[i].name if i < len(params) else None
+                    i += 1
+                if name not in element:
+                    s |= self.refs(a.op)
             return s
         if isinstance(r, StructLit):
             return set().union(*[self.refs(o) for _, o in r.fields]) if r.fields else set()
@@ -487,6 +522,7 @@ def lower_file(src, file, tree):
     if decl.data in ("fn_decl", "extern_decl"):
         fir = lw.function(decl, uses, file, doc)
         fir.src = src
+        fir.panel = lw.panel(tree)
         return fir, None, uses_lines, version
     kids = [c for c in decl.children if c is not None]
     name = str(kids[0])

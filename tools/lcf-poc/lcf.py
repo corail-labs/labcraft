@@ -6,6 +6,8 @@
     python tools/lcf-poc/lcf.py list examples
     python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml \\
         --arg resource=SIM::DMM0 [--trace]
+    python tools/lcf-poc/lcf.py run examples two_benches --sim libs/visa/sim/two-dmm.toml \\
+        --set stop_switch=true@450ms [--schedule-seed N] [--timeout 300ms] [--real-time]
 """
 import argparse
 import json
@@ -40,6 +42,12 @@ def main(argv=None):
     r.add_argument("--arg", action="append", default=[], metavar="name=value")
     r.add_argument("--trace", action="store_true", help="execution order and wire values")
     r.add_argument("--max-iterations", type=int, default=10_000, help="iteration limit per loop")
+    r.add_argument("--set", action="append", default=[], metavar="ELEMENT=VALUE@TIME",
+                   help="set a panel element of the function at a time of the run (cli.md 6.4)")
+    r.add_argument("--schedule-seed", type=int, metavar="N",
+                   help="draw the order among the nodes ready at the same time from N (deterministic mode)")
+    r.add_argument("--timeout", metavar="DURATION", help="abort the run after DURATION on its clock")
+    r.add_argument("--real-time", action="store_true", help="real time instead of the simulated clock")
     a = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if a.cmd == "check":
@@ -67,9 +75,24 @@ def main(argv=None):
             print(f"--arg expects name=value, got '{item}'", file=sys.stderr)
             return 2
         args[name.strip()] = value
-    rep = api.run(a.folder, a.function, a.sim, args, a.trace, max_iter=a.max_iterations)
+    settings = []
+    for item in a.set:
+        head, at_sign, at = item.rpartition("@")  # the time is after the last `@` (cli.md 6.4)
+        name, eq, value = head.partition("=")
+        if not at_sign or not eq:
+            print(f"--set expects ELEMENT=VALUE@TIME, got '{item}'", file=sys.stderr)
+            return 2
+        settings.append({"element": name.strip(), "value": value, "at": at})
+    if a.schedule_seed is not None and (a.real_time or not 0 <= a.schedule_seed < 2 ** 64):
+        print("--schedule-seed: an integer from 0 to 2^64-1, in deterministic mode only", file=sys.stderr)
+        return 2
+    rep = api.run(a.folder, a.function, a.sim, args, a.trace, settings, max_iter=a.max_iterations,
+                  schedule_seed=a.schedule_seed, timeout=a.timeout, real_time=a.real_time)
     print(json.dumps(rep, ensure_ascii=False, indent=2))
-    return 0 if rep["ok"] else 1
+    return EXIT.get(rep.get("status"), 1)
+
+
+EXIT = {"ok": 0, "error": 1, "refused": 1, "aborted": 3, "fault": 4}  # cli.md, section 6
 
 
 def fmt_check(paths, spec=None):

@@ -217,6 +217,7 @@ class Instrument:
         self.world = world
         self.idn = text(cfg.get("idn", f"SIM,{self.resource},0,1.0"), f"{where}: idn")
         self.latency = ms_to_ns(number(cfg, "latency_ms", where, 0.0))
+        self.busy_until = 0  # end of the command in progress, on the clock of the run
         self.commands = {}
         for c, answer in table(cfg, "commands", where).items():
             self.commands[command_key(c, f"{where}: commands", query=True)] = text(answer, f"{where}: commands '{c}'")
@@ -257,7 +258,10 @@ class Instrument:
         """Executes a command (section 4). Returns its answer, or None: a write, or a query never answered.
         Consumes the latency; the caller waits for the timeout when it reads no answer."""
         w = self.world
+        if self.busy_until > w.clock_ns:  # one command at a time, whichever session sends it (section 4)
+            w.clock_ns = self.busy_until
         w.advance(self.latency)
+        self.busy_until = w.clock_ns
         c = command_text(cmd)
         response = None
         if c in self.timeouts:

@@ -75,7 +75,7 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
 3. The program never returns PASS when the measurement did not take place: with a simulation file
    that defines no instrument (`no-instrument.toml`, shipped with `visa`), the run reports the error and the
    verdict is not PASS (writing rule of 7.2).
-4. No session is left open, whatever the outcome (`sessions.open` empty in all three runs).
+4. No session is left open, whatever the outcome (`resources.open` empty in all three runs).
 5. No human message after the prompt; at most 20 calls to the MCP tools *(proposed)*.
 6. Five independent sessions; at least four succeed *(proposed)*.
 
@@ -174,7 +174,7 @@ section 10). Outputs: the mean of each branch and the merged error (`errors.merg
    multimeter never answers: its loop stops
    on the error (6.3) and its session is closed. Branch B makes its N measurements and its mean is
    valid. The function's `err` holds the `io.timeout` error of A, the status is `error`, and
-   `sessions.open` is empty.
+   `resources.open` is empty.
 4. **Stop, the stop the program plans for.** During the loops, a command sets `stop_switch`
    (section 10, syntax Q-20); in deterministic mode it is dated on the simulated clock. Both loops
    end their iteration and exit, and the `visa.close` nodes run through ordinary dataflow. The
@@ -193,10 +193,9 @@ section 10). Outputs: the mean of each branch and the merged error (`errors.merg
 6. **Fault.** With an iteration limit given to the run, smaller than N, the run ends like an
    abort, with the `fault` status, a code, and the loop where the limit was reached.
 
-**Proof of concept today.** Point 3 in part (test `test_resource_absent_close_still_runs`: `always`
-close after an error). The proof of concept runs on a single thread and adds up the waits of
-parallel branches instead of overlapping them; it has no seed for the scheduler, no `ui.*`, no
-abort, and does not have `two_benches`.
+**Proof of concept today** (2026-11-08). Points 1 to 6 in deterministic mode, and point 2 in real
+time, with `two_benches` in `examples/` (class `Scheduler` of its tests): its scheduler is the
+feasibility prototype. Point 5 by Ctrl-C or an MCP `abort`, in real time, comes with M0b.
 
 **Write first:**
 
@@ -204,11 +203,14 @@ abort, and does not have `two_benches`.
   and the discrete-event simulated clock (8).
 - Done (2026-11-08): how the CLI and MCP set a panel element (Q-20): `--set` and `set`
   ([cli.md](cli.md), section 6.4), `run.set_element` ([commands.md](commands.md), section 6.4).
-- `ui.get` in the proof of concept.
+- Done (2026-11-08): `ui.get` and `ui.set` in the proof of concept.
 - Done (2026-11-08): the simulation files `two-dmm.toml` and `two-dmm-timeout.toml`, in `libs/visa/sim/`
   ([libs/visa/simulation.md](../libs/visa/simulation.md)).
-- The feasibility prototype (a scheduler with two parallel loops and a clean stop) answers
-  points 2, 4 and 5 before M0b starts.
+- Done (2026-11-08): the feasibility prototype, a scheduler with parallel loops and a clean stop: the
+  scheduler of the proof of concept. Points 1 to 6 hold as written. It made two rules clear: what a call
+  guarantees on its resource is up to its library, and `visa` says what it guarantees on its sessions
+  (spec 8.1, [libs/visa/README.md](../libs/visa/README.md)); the grace period of an abort counts on the
+  clock of the run (spec 8.2).
 
 **For M2 (moved from M0):** two loops communicate through a queue; when the producer stops, the
 consumer stops cleanly, without losing an element already queued and without waiting forever.
@@ -371,7 +373,7 @@ are ordinary tests, not acceptance scenarios.
 |---|---|---|---|---|---|
 | 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | |
 | 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
-| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; scheduler prototype |
+| 3. Parallel, clean stop | M0b | Points 1–6 | | Points 1–6 in deterministic mode, 2 in real time | |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
 | 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | `diagram` and `editor` architecture |
