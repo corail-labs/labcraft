@@ -1547,8 +1547,9 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`: a `layout` item;
 - `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item.
 
-**New words.** A structure or a declaration that comes later takes a contextual word wherever its place
-allows one, so that a program of `labcraft 1` keeps its names: for example `timed loop` or `cyclic task`
+**New words.** From the first release of LabCraft, a version published with its program, a structure or
+a declaration that comes later takes a contextual word wherever its place allows one, so that a program
+of `labcraft 1` keeps its names: for example `timed loop` or `cyclic task`
 (6.4), a test function marked `test fn`, a `break` alone on its line (Q-22), the locked access to a
 `ref<T>` (Q-19). A word
 reserved everywhere, or a name refused to types (3.2), comes only with a new version of the format
@@ -1556,7 +1557,10 @@ reserved everywhere, or a name refused to types (3.2), comes only with a new ver
 primitive library added after `core`, `string`, `array`, `errors`, `time` and `ui` (appendix A), such
 as the queues of M2, gives way to a folder of the project of that name, as a library shipped with
 LabCraft does (`docs/cli.md`, section 3): a project keeps its own `queue` library, and renames it only
-to use the new one.
+to use the new one. Until that release, no program of `labcraft 1` exists outside this repository: a
+change that breaks one is allowed, says so in its pull request, and migrates the files of the repository
+in the same pull request. The words reserved and the names refused before it are chosen so that later
+milestones break as little as they can.
 
 **Line endings** end a statement, an arm, a `use`, and a `panel`, `layout` or `icon` item. They are
 ignored inside `( )` and `[ ]`, inside the braces of a `struct` or `enum` type or of a struct

@@ -90,6 +90,10 @@ ci` runs the checks of the Rust code.
 2. Pull requests are squash-merged: the title becomes the commit on `main`, so give it a short
    English subject line.
 3. If an AI agent helped, say so (a `Co-Authored-By:` trailer is fine).
+4. A change that makes a valid program invalid, or changes what it means (a reserved word, a rule of
+   `check` or `fmt`, a type rule), says so in a line of its description that starts with
+   `Changes the language:`, and migrates the files of the repository in the same pull request. Until
+   the first release this is allowed; afterwards it follows spec 14.1, new words.
 
 ## Licence
 
