@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2) and the values of a run (6.1) are written for M0v.*
+*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are written for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -46,8 +46,8 @@ Craft family:
 5. **Its own identity (D-23).** A notation designed from the LabCraft spec and from the general
    conventions of schematics and node editors. No palette, icon or shape borrowed from NI. Every
    proposed shape is justified by a construct of the text, never by "as in such and such tool".
-6. **Theme tokens.** No hard-coded color: tokens (`wire.error`, `node.fill`…) defined by the
-   `craft-ui` theme, light and dark (Craft convention).
+6. **Theme tokens.** No hard-coded color: tokens (`wire.error`, `node.fill`…) whose values are
+   LabCraft's own, light and dark (section 8; Craft convention).
 
 ## 2. The canvas
 
@@ -66,8 +66,8 @@ A function without a `layout` section, which is what an agent writes, is placed 
 are the nodes that a `layout` section does not place (spec 11).
 
 - **One drawing per file.** Placement and routing depend only on the file, on what it uses from other
-  files (the signatures, type declarations, icons and bands of what it calls), on the fixed font of the
-  notation, and on the view state: the view of each node, tabs or unfolded branches, folded or
+  files (the signatures, type declarations, icons and bands of what it calls), on the font of the
+  notation (2.3), and on the view state: the view of each node, tabs or unfolded branches, folded or
   unfolded constructions, optional inputs shown, the branch shown in tabs (by default that of the run,
   6.1), which changes nothing around its frame, as large as its largest branch (5.2). With the same
   view state, the same file gives the same drawing on screen, when it is opened again, in an export and
@@ -149,6 +149,58 @@ are the nodes that a `layout` section does not place (spec 11).
 - A terminal can sit on any side of its node, and the routing leaves it in that direction, so that
   sides chosen later (N-15) need no other routing. The terminals of a circle are off the grid of 8 (3.2), and the wire reaches them with a short
   segment.
+
+### 2.3 Font and text metrics
+
+Every text of the diagram, on the canvas and in the SVG, is set in one monospaced font: **Hack**,
+version 3.003, Regular (MIT and Bitstream Vera licences, attributed). The font belongs to the notation,
+not to the preferences: placement depends on the width of the texts (2.1), so that every screen, every
+export and the snapshots of CI draw the same thing. A monospaced font tells `l`, `I` and `1`, or `O`
+and `0`, apart in names, and keeps a value as wide when an iteration selector changes it (6.1). The
+developer chooses the zoom, and the font of the other panels of the IDE.
+
+- **Three sizes.** 12 units: the label in the center of a block, the names of terminals, the titles of
+  structures and of the function. 11 units: the names of wires, inline constants, the values of a run
+  (6.1), badges, tabs, legends and banners. 9 units: the text of the band (3.2). A title stands out by
+  its place and its color, never by its weight: there is one face.
+- **Cells.** Every length of text in the notation is counted in cells: its width, and the limits at
+  which a text is cut (3.2, 6.1). A grapheme (Unicode, UAX #29) takes one cell, or two when its first
+  code point is East Asian Wide or Fullwidth (UAX #11) or when it is an emoji (`Emoji_Presentation`, or
+  followed by U+FE0F); `©`, `™` or `▶`, which Hack draws, take one cell:
+  a library name in Japanese is cut after 5 characters and `…`, not after 11. The Unicode version is
+  the one with which names are read (spec 14.1).
+- **Width.** Every character of Hack has the same advance, 1233/2048 of the size: 7.22 units at 12,
+  6.62 at 11, 5.42 at 9. A text is as wide as its cells times that advance. No kerning, no ligatures.
+  A character that Hack lacks (a name in Japanese, an emoji in a string) is drawn by a fallback font,
+  scaled down when needed to fit inside its cells on the canvas, so that it never runs past them.
+  A text keeps 4 units on its left and on its right between itself and the edge of its box (block,
+  band, pill, badge, tab, bubble).
+- **Direction.** Every text is put in display order with the Unicode bidirectional algorithm
+  (UAX #9), on its own and with a left-to-right base direction, so that a name in Hebrew or Arabic
+  reads in its order. A text is cut first, in its logical order (11 cells and `…` at its logical end,
+  which then shows on the right), and reordered after. The `diagram` crate computes the display order,
+  and the canvas draws it as it is, without reordering it again. The SVG writes the text in its logical
+  order, isolated, with a left-to-right base (`direction: ltr; unicode-bidi: isolate`): the browser
+  applies the same algorithm, reaches the same order and joins Arabic letters. A bidirectional control
+  character of those that `LC0005` names (U+202A to U+202E, U+2066 to U+2069) never acts: it is shown
+  as its code, `⟨U+202E⟩`, in the token `mark.invalid`, so that no text can hide how it reads (spec 2,
+  Encoding). The marks U+061C, U+200E and U+200F act as in any right-to-left text. Letters joined as
+  Arabic needs depend on the text engine of the canvas.
+- **Height.** A line of text is 2384/2048 of the size (ascent 1901 and descent 483, in units of 2048).
+  A text that sits on a line, such as the name of a terminal, has the middle of its capitals on that
+  line (capital height 1493/2048); a text in a box (band, pill, badge, tab, bubble, each line of a
+  label) has the middle of its capitals at the middle of its line in the box.
+- **Where the numbers live.** These metrics and the counting of cells live in one crate, with the
+  SHA-256 of the font file that they come from, low enough for `check` to judge the text of an icon
+  (spec 11.1) and for `diagram` to place. A test reads the font that the canvas draws with and checks
+  them, so that another version of the font is a reviewed change of the drawing. Which crate holds them,
+  and which supplies the file, is part of the architecture of `diagram` and `editor`.
+- **In the SVG**, the font is named once, on the root element:
+  `font-family="Hack, DejaVu Sans Mono, Menlo, monospace"`. DejaVu Sans Mono and Menlo come from the
+  same Bitstream Vera design and have the same advance. Another font draws texts slightly narrower or
+  wider, and so can a fallback glyph, which the SVG cannot scale: a text can then run a little past
+  its box in that SVG; the positions do not change. The
+  SVG does not embed the font.
 
 ## 3. Nodes
 
@@ -239,7 +291,7 @@ A compact node is a **block** whose center says what the function does: its icon
 When the function comes from another library, a **band** above the block says which.
 
 - **Band**: the name of the library of the function (`visa`, `scpi`, `dmm_driver`, `results_log`), whole
-  up to 12 characters, beyond that cut to 11 followed by `…`, in the token `band.text` on `band.fill`, neutral by default,
+  up to 12 cells, beyond that cut to 11 followed by `…` (cells, 2.3), in the token `band.text` on `band.fill`, neutral by default,
   with a contrast of at least 4.5:1 in both themes. The band is 12 units high and as wide as the block,
   which widens to hold it. A call to a function of `core`, or of the library that holds the diagram, has
   no band. A folder of the project is a library like any other (spec 4), so a call from the root to
@@ -250,18 +302,18 @@ When the function comes from another library, a **band** above the block says wh
   `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
   no band. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
-- **Block**: at least 40 × 40 units. Its width holds the label or the band, rounded up to the grid.
+- **Block**: at least 40 × 40 units. Its width holds the label or the band, with their margins
+  (2.3), rounded up to the grid.
   Its height is the larger of 40 and 16 units per line of terminals (below), plus 8 for each pair of
   neighbouring lines that both carry an inline constant: 40 for one or two lines, then 48, 64, 80.
 - **Center**: the function's icon (`icon` section, spec 11.1), alone, drawn 28 × 28 units; otherwise a
-  short label: the last segment of the name (`visa.open` → `open`). A label of more than 8 characters
+  short label: the last segment of the name (`visa.open` → `open`). A label of more than 8 cells
   that holds an underscore is written on **two lines**, cut at an underscore, which is not drawn. The
   cut is the one whose longer line is the shortest, the first one on a tie, and never one that leaves
   a line empty: `query_f64` → `query` / `f64`, `bench_selftest` → `bench` / `selftest`,
   `read_dc_volts` → `read_dc` / `volts`, `count_to_fixed` → `count` / `to_fixed`. When no cut is allowed (`abcdefgh_`), the label stays on
-  one line. A line of more than 12 characters is cut to 11 followed by `…`. Here and in the band,
-  characters are code points, and a cut falls between two graphemes, before the one that would pass
-  the limit. The author does not declare a label: the icon is there for that. The qualified
+  one line. A line of more than 12 cells is cut to 11 followed by `…`. Here and in the band, a cut falls
+  between two graphemes, before the one that would pass the limit, and `…` takes one cell. The author does not declare a label: the icon is there for that. The qualified
   name (`visa.open`) is in the tooltip, and in the `<title>` of the node in an exported SVG.
 - **Unnamed terminals**: inputs on the left, outputs on the right by default (3.1, N-15), on the
   **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
@@ -274,7 +326,7 @@ When the function comes from another library, a **band** above the block says wh
   node in a straight line.
 - **What the compact view never hides**: the `always` badge (reduced to `▴` at the bottom center,
   clear of the `err` terminal, drawn over the icon if they meet), the inline constants (abbreviated to
-  8 characters), the label (`#close:`), the `after:` terminal (on the left of the band; with no band, on
+  8 cells, 2.3), the label (`#close:`), the `after:` terminal (on the left of the band; with no band, on
   the top edge of the block, 8 units from its left corner), the conversion marks and the run-time state
   (6). Otherwise the diagram would lie about the execution.
 - **Unwired optional inputs** are hidden, with no `+n` indicator: the tooltip lists them with their
@@ -464,7 +516,7 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
     on (`1.2e-6 A`); `0` as `0`; `nan`, `inf`, `-inf` as they are. An integer in full, with its unit
     (`42`, `1250000`, `-3 mV`). A complex number as `1.5+2i`, with its unit. A `duration` with its unit
     (`2 s`), a `timestamp` as its time of day in UTC (`14:02:31.250Z`).
-  - A string in quotes, whole up to 12 characters, beyond that 11 followed by `…`, counted as in 3.2;
+  - A string in quotes, whole up to 12 cells, beyond that 11 followed by `…`, counted as in 3.2;
     a line break is written `↵`. `bytes` by their length (`[16 bytes]`).
   - `true` or `false`; a variant (`Verdict.Pass`), with `(…)` when it holds data
     (`Reading.Value(…)`).
@@ -544,23 +596,81 @@ zoom:
 real diagrams (`tools/lcf-figcraft`): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
 `coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
-compact view, 3.2). Contrast of at least 4.5:1 between each
-wire and `canvas.fill`, in both themes. The values are chosen with the `craft-ui` theme, with no
-reference to another editor's palette (D-23).
+compact view, 3.2). Their values are LabCraft's own, in a light theme and a dark theme (the table
+below), with no reference to another editor's palette (D-23). Whatever library draws the panels of the
+IDE, the diagram takes its colors from this table.
 
+- **Contrast of at least 4.5:1, in both themes**, checked by a test of CI on the table: every wire and
+  mark token, and every text token (`node.title`, `ink.muted`, `ink.faint`, `pill.text`), against
+  `canvas.fill` and each `frame.fill`; and every text on its own fill: `node.title`, `ink.muted` and
+  `ink.faint` on `node.fill`, `pill.text` on `pill.fill`, `badge.text` on `badge.fill`, `band.text` on
+  `band.fill`, `node.title` on `tab.fill`, and the texts of a value bubble (`node.title`, `ink.muted`,
+  `wire.error`, `mark.invalid`) on `probe.fill`.
+- **Outlines of at least 3:1**, checked by the same test: `node.stroke`, `frame.stroke`, `pill.stroke`
+  and `node.active` against `canvas.fill` and each `frame.fill`, in both themes. A node, a pill or a
+  structure is told from its background by its outline, at every level. The dividers inside a node or
+  a frame (`node.divider`, `frame.divider`) are decoration and stay outside the rule.
 - **"Muted" does not exempt from contrast.** `wire.order` is told apart by its pattern (thin
-  dotted), not by a pale color: a light gray falls below 4.5:1.
-- **Contrast is also checked on the structure backgrounds** (`frame.fill.1..4`), not only on
-  `canvas.fill`: a wire at the limit on the canvas falls below it inside a nested frame.
-- **Provisional values of the light theme**, those of the board
-  (`design/visual-notation-v0.figcraft`), contrast on `canvas.fill` `#F7F7F5`: `wire.data`
-  `#3D4148` (9.6:1), `wire.resource` `#1D6FB8` (4.8:1), `wire.error` `#C2410C` (4.8:1),
-  `wire.order` `#6A7078` (4.7:1), `mark.invalid` `#DC2626` (4.5:1). A first attempt at `#D9480F`
-  for the error (4.0:1) and `#9AA0A6` for the order (2.5:1) failed. On `frame.fill.1` `#EEF0F2`,
-  `wire.error` drops to 4.5:1, and **from `frame.fill.2` on, the error and order wires fall
-  below** (4.1, then 3.8 and 3.5 at levels 3 and 4, measured by
-  `tools/lcf-figcraft/build_notation.py`); open question N-13. The values of `frame.fill.3`,
-  `frame.fill.4` and of the dark theme in `design/notation.figcraft` are provisional.
+  dotted), not by a pale color: a light gray falls below 4.5:1. In the light theme, `ink.faint` has the
+  value of `ink.muted`: secondary text stands out by its size and place, since a paler gray fell to
+  2.2:1.
+- **Nesting backgrounds** (N-13). Every wire keeps 4.5:1 down to `frame.fill.4`. In the light theme,
+  the backgrounds are closer to `canvas.fill`, and `wire.resource`, `wire.error`, `wire.order`,
+  `mark.coercion`, `mark.invalid` and `ink.muted` are a little darker than before; in the dark theme,
+  the backgrounds are closer to one another. Lightening the backgrounds alone did not work: to keep the
+  former error color at 4.5:1, no background could be darker than `frame.fill.1`, and the four levels
+  looked alike. Whether neighbouring levels stay easy to tell apart is tried on the mock-ups.
+- **In the SVG**, every color is a CSS variable named after its token, with hyphens for dots
+  (`wire.error` gives `--wire-error`, `frame.fill.1` gives `--frame-fill-1`), and a shape names it for
+  each property it paints (`style="stroke: var(--wire-error)"`, `style="fill: var(--node-fill)"`). One
+  `<style>` element gives the light values, and the dark ones under
+  `@media (prefers-color-scheme: dark)`; the background, in `canvas.fill`, is always painted. An SVG shows the theme of whoever looks at it, and an agent reads
+  what each stroke is. `diagram --svg` can force one theme for an image (`--theme light` or
+  `--theme dark`). The snapshots of CI use this table.
+- **The developer's colors.** The developer may change the colors of their screen, and the IDE warns
+  when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
+- **Where the values come from.** The light values of the first list of tokens come from the board
+  `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
+  from `tools/lcf-figcraft/build_notation.py`; `band.fill` and `band.text` are new. Changed on
+  2026-11-08 for the two rules above: in the light theme, `frame.fill.1..4`, `wire.resource`,
+  `wire.error`, `wire.order`, `mark.coercion`, `mark.invalid`, `ink.muted`, `ink.faint` (now that of
+  `ink.muted`), `node.stroke`, `frame.stroke` and `pill.stroke`; in the dark theme, `frame.fill.1..4`,
+  `mark.invalid`, `ink.faint`, `pill.stroke` and `probe.fill`. They are tried again on mock-ups before
+  the code of M0v.
+
+| Token | Light | Dark |
+|---|---|---|
+| `canvas.fill` | `#F7F7F5` | `#16181C` |
+| `canvas.grid` | `#E6E6E2` | `#23262B` |
+| `node.fill` | `#FFFFFF` | `#20242A` |
+| `node.stroke` | `#777D88` | `#7B8390` |
+| `node.title` | `#1F2328` | `#ECEFF3` |
+| `node.active` | `#15803D` | `#4ADE80` |
+| `node.divider` | `#E1E3E6` | `#343A43` |
+| `frame.fill.1` | `#F0F1F3` | `#1C1F24` |
+| `frame.fill.2` | `#E9EBEE` | `#22262C` |
+| `frame.fill.3` | `#E2E5E9` | `#282D34` |
+| `frame.fill.4` | `#DBDFE4` | `#2E343C` |
+| `frame.stroke` | `#777D88` | `#7B8390` |
+| `frame.divider` | `#C9CDD2` | `#434A55` |
+| `wire.data` | `#3D4148` | `#C5CBD3` |
+| `wire.resource` | `#1A63A4` | `#5BA8F0` |
+| `wire.error` | `#AD3A0B` | `#FF8F5E` |
+| `wire.order` | `#5C6168` | `#A3ABB6` |
+| `mark.coercion` | `#752FEC` | `#B197FC` |
+| `mark.invalid` | `#BD1E1E` | `#FF6E6E` |
+| `coercion.fill` | `#F1EAFE` | `#2E2646` |
+| `ink.muted` | `#5D6168` | `#A3ABB6` |
+| `ink.faint` | `#5D6168` | `#979EAA` |
+| `pill.fill` | `#F0F1F3` | `#2B3038` |
+| `pill.stroke` | `#777D88` | `#7B8390` |
+| `pill.text` | `#3D4148` | `#C5CBD3` |
+| `probe.fill` | `#FFF7D6` | `#3A3419` |
+| `badge.fill` | `#1F2328` | `#ECEFF3` |
+| `badge.text` | `#FFFFFF` | `#16181C` |
+| `tab.fill` | `#E1E4E8` | `#2B3038` |
+| `band.fill` | `#E1E4E8` | `#2B3038` |
+| `band.text` | `#1F2328` | `#ECEFF3` |
 
 ## 9. Open questions
 
@@ -578,6 +688,6 @@ reference to another editor's palette (D-23).
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
 | N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon |
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
-| N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | Lighten the nesting backgrounds rather than darken the wires |
+| N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
 | N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2) |

@@ -471,7 +471,7 @@ section 3), not a diagnostic.
 | `LC5006` | warning | Layout entry that is ambiguous (a `node` entry on a name defined in several bodies, a `wire` entry that matches several wires: naming the input settles it), or a `wire` entry whose value and node exist with no wire between them | 11 |
 | `LC5007` | error | Two layout entries for the same node or wire, `node x at (…)` and `node x view standard` included | 11 |
 | `LC5008` | error | Invalid icon: a grid not written `32`, `path` syntax, a radius or a size not above zero, `inf` or `nan`, an `accent` token that is not in the visual notation, section 8 | R-14 |
-| `LC5009` | warning | Icon shape that leaves the grid: what it draws goes below 0 or above 32, a text by its point `at` (11.1) | R-14 |
+| `LC5009` | warning | Icon shape that leaves the grid: what it draws goes below 0 or above 32, a text by its box in the font of the notation (11.1) | R-14 |
 | `LC5010` | error | Panel element that does not say its type (not an input or an output, a kind that holds several types, no `default:`) and that a `ui.get` reads, or that no `ui.set` writes, when the function has no other mistake, which may be a `ui.set` that nothing could bind. Not for a kind that M0 does not know, which has only `LC5003`, nor on an `extern`, which has no diagram | 10 |
 | `LC5011` | error | Panel kind that does not show the type of the input or the output of its name: a wire that it refuses is `LC3001`, a `default:` `LC3017` | 10 |
 | `LC5012` | error | `default:` on an input or an output, whether or not its signature has a default, or given twice | 10 |

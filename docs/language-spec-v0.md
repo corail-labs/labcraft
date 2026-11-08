@@ -1252,13 +1252,16 @@ icon 32 {
 - **Grid**: `icon 32` gives the size of the grid, 32 × 32 in v0, origin at the top left, y pointing
   down, like the canvas. It is written `32`, as the header is written `1`.
 - **Shapes**: `rect` (two corners, optional radius), `circle` (center, radius), `line`, `path` (SVG
-  path syntax: `M L H V C S Q T A Z`, absolute or relative), `text` (`at`: middle of the baseline).
+  path syntax: `M L H V C S Q T A Z`, absolute or relative), `text` (`at`: middle of the baseline), set in the font of the visual notation, Hack, at its `size`
+  (notation 2.3), 10 when it is not written.
   Fixed stroke width chosen by the IDE; `fill` fills the shape. Numbers are decimals without a unit;
   a radius or a size is above zero. The radius of a `rect` larger than half a side is reduced to it,
   as in SVG.
 - **Leaving the grid** is a warning: what a shape draws, stroke aside, goes below 0 or above 32. A
   curve or an arc counts by what it draws, not by its control points; a circle by its center and
-  radius; a text by its point `at` alone, since the IDE chooses the font.
+  radius; a text by its box: as wide as its cells (notation 2.3) times 1233/2048 of its `size`,
+  centered on `at`, from 1493/2048 of its `size` above the baseline (the top of the capitals) to
+  483/2048 below it.
 - **Color**: monochrome, the ink color of the theme and of the node state (skipped, failed).
   `accent` gives a shape an accent color, designated by a theme token (`accent wire.error`), never
   by a value: a token of the visual notation, section 8, whose parts are names (`frame.fill.1` is not

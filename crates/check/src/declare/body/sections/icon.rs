@@ -1,6 +1,7 @@
 //! The `icon` section (spec 11.1, R-14): a grid written `32`, numbers that are finite, a radius or a size above zero, `path` strings in
 //! the SVG path syntax, `accent` tokens of the theme (`LC5008`), and shapes that stay in the grid (`LC5009`). What a shape draws counts,
-//! stroke aside: a curve or an arc by its real extent, not by its control points, and a text by its point `at`, since the IDE chooses the font.
+//! stroke aside: a curve or an arc by its real extent, not by its control points, and a text by its point `at`. Spec 11.1 now judges
+//! a text by its box in the font of the notation: this code follows with M0v.
 
 use labcraft_graph::{Icon, IconItem, IconShape, Numeral, NumeralKind, Point};
 use labcraft_types::{Code, cut_text};

@@ -380,7 +380,8 @@ fn a_shape_that_leaves_the_grid_is_a_warning() {
     for item in ["rect (-1, 0) (10, 10)", "circle (16, 16) 17", "line (0, 0) (33, 1)", "path \"M7 5 A9 9 0 0 1 25 5\"", "text \"V\" at (40, 4)"] {
         assert_eq!(icon(item), ["LC5009"], "{item}");
     }
-    // A text counts by its point: the IDE chooses the font. A path that comes back where it started draws nothing.
+    // A text counts by its point until M0v, when spec 11.1 judges its box in the font of the notation.
+    // A path that comes back where it started draws nothing.
     assert_eq!(icon("text \"a long label\" at (16, 16) size 30"), NOTHING);
     assert_eq!(icon("path \"M40 40 Z\""), NOTHING);
     assert_eq!(icon("path \"M40 40 L40 40\""), NOTHING);
