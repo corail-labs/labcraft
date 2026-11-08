@@ -102,7 +102,7 @@ judged against `[f64[V]]`.
 A named type is defined in its own `.lct` file (`type Verdict = enum { Pass, Fail }`). A type cannot
 contain itself, directly or through other types: any mention counts, in an array or a function type too.
 A type cannot bear a name that the language gives to a type: the base types (3.1), `waveform`, `queue`,
-`ref` and `opaque`.
+`ref`, `event` and `notifier`, kept for the structures of M2 (6.4), and `opaque`.
 
 **An alias is another name.** With `type Volts = f64[V]`, `type Readings = [f64[V]]` or `type A = Verdict`,
 the two names are one type everywhere, and conversions (3.3, 3.4) apply through the name: an `f64[mV]` is
@@ -1528,7 +1528,8 @@ alone, or `a` followed by U+FE0F or U+034F, is a syntax error (`LC1001`). Such a
 nothing, so a name could otherwise hold text that no reader sees. Strings and comments may hold them.
 
 Reserved words, everywhere: `labcraft use fn extern type struct enum match for parallel loop
-continue_on_error carry next collect until yield handle panel layout icon true false none nan inf`.
+continue_on_error carry next collect until yield handle events panel layout icon true false none nan inf`.
+`events` is reserved for the event structure of M2 (6.4), whose syntax is still open (Q-11).
 `panel`, `layout` and `icon` only start a section, but stay reserved.
 
 A reserved word where a name is expected is `LC1005`, including as a target (`next = 1`) or the name of
@@ -1545,6 +1546,17 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `control`, `indicator`: a `panel` item;
 - `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`: a `layout` item;
 - `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item.
+
+**New words.** A structure or a declaration that comes later takes a contextual word wherever its place
+allows one, so that a program of `labcraft 1` keeps its names: for example `timed loop` or `cyclic task`
+(6.4), a test function marked `test fn`, a `break` alone on its line (Q-22), the locked access to a
+`ref<T>` (Q-19). A word
+reserved everywhere, or a name refused to types (3.2), comes only with a new version of the format
+(`labcraft 2`) and its automatic migration, which renames what bears it in the files migrated. A
+primitive library added after `core`, `string`, `array`, `errors`, `time` and `ui` (appendix A), such
+as the queues of M2, gives way to a folder of the project of that name, as a library shipped with
+LabCraft does (`docs/cli.md`, section 3): a project keeps its own `queue` library, and renames it only
+to use the new one.
 
 **Line endings** end a statement, an arm, a `use`, and a `panel`, `layout` or `icon` item. They are
 ignored inside `( )` and `[ ]`, inside the braces of a `struct` or `enum` type or of a struct

@@ -94,7 +94,7 @@ fn a_type_cannot_bear_a_name_of_the_language() {
 }
 
 /// The base types of spec 3.1, then the others that the language reads as types.
-const LANGUAGE_TYPES: [&str; 22] = [
+const LANGUAGE_TYPES: [&str; 24] = [
     "bool",
     "i8",
     "i16",
@@ -116,6 +116,8 @@ const LANGUAGE_TYPES: [&str; 22] = [
     "waveform",
     "queue",
     "ref",
+    "event",
+    "notifier",
     "opaque",
 ];
 
@@ -350,6 +352,13 @@ fn a_value_can_bear_a_base_type_or_an_opaque_type() {
 #[test]
 fn an_alias_of_what_is_unknown_says_nothing_more() {
     assert_eq!(codes(&[("s.lct", "type s = nowhere"), ("f.lcf", "fn f(s: s) -> () {}")]), ["LC2003"]);
+}
+
+#[test]
+fn a_type_kept_for_a_later_milestone() {
+    for name in ["queue", "ref", "event", "notifier"] {
+        assert_eq!(function(&format!("(a: {name}) -> ()")), ["LC4006"], "{name}");
+    }
 }
 
 #[test]
@@ -717,6 +726,7 @@ fn a_fix_never_names_what_is_taken() {
     assert_eq!(fixes_of_the_misnamed(&type_x), ["rename the file to `scale.lcf`"], "never to `LC2013`");
     assert_eq!(fixes_of_the_misnamed(&[("verdict.lct", "type Verdict = f64")]), ["rename the type to `verdict`", "rename the file to `Verdict.lct`"]);
     assert_eq!(fixes_of_the_misnamed(&[("f64.lct", "type Foo = f64")]), ["rename the file to `Foo.lct`"], "never to `LC2022`");
+    assert_eq!(fixes_of_the_misnamed(&[("S.lct", "type event = f64")]), ["rename the type to `S`"], "nor keeping it");
     let imported = [("time.lcf", "fn scale() -> () {}"), ("g.lcf", "use time\n\nfn g() -> () {}")];
     assert_eq!(fixes_of_the_misnamed(&imported), ["rename the file to `scale.lcf`"], "never to `LC2014`");
     let kinds = [("scale.lct", "type scale = f64"), ("x.lcf", "fn scale() -> () {}")];

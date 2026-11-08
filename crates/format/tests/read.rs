@@ -350,6 +350,8 @@ fn a_reserved_word_used_as_a_name_is_lc1005() {
         "collect = 1",
         "until = 1",
         "yield = 1",
+        "events = 1",
+        "x = add(events)",
         "x = f([V/none])",
         "x = f(true: 1)",
         "x = f(none: 1)",
@@ -360,6 +362,15 @@ fn a_reserved_word_used_as_a_name_is_lc1005() {
         "x = 5 V/none",
     ] {
         assert_code(&in_body(statement), Code::Lc1005);
+    }
+}
+
+/// Spec 14.1, new words: what a later milestone may use takes a contextual word, so it stays a name today.
+#[test]
+fn the_words_of_later_milestones_are_names() {
+    for word in ["test", "timed", "cyclic", "task", "global", "break", "event", "notifier"] {
+        assert_reads(&in_body(&format!("{word} = add({word}, {word}.{word})")));
+        assert_reads(&format!("labcraft 1\nfn {word}({word}: f64) -> () {{}}\n"));
     }
 }
 
