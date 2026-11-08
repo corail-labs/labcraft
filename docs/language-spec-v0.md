@@ -1529,6 +1529,12 @@ neither a `letter` nor a `mark`, whatever its category, so no name or unit name 
 alone, or `a` followed by U+FE0F or U+034F, is a syntax error (`LC1001`). Such a character shows as
 nothing, so a name could otherwise hold text that no reader sees. Strings and comments may hold them.
 
+**Version of Unicode.** Names are read with Unicode 18.0: what a `letter` and a `mark` are, the property
+`Default_Ignorable_Code_Point` and the normalization of R-20. The comparison of names without their case
+(R-22) follows the standard library of Rust that the tool is built with, Unicode 17.0 today. A character
+assigned after these versions can be read otherwise by an older tool; one assigned before cannot, since
+Unicode keeps the normalization and the category of an assigned character.
+
 Reserved words, everywhere: `labcraft use fn extern type struct enum match for parallel loop
 continue_on_error carry next collect until yield handle events panel layout icon true false none nan inf`.
 `events` is reserved for the event structure of M2 (6.4), whose syntax is still open (Q-11).
