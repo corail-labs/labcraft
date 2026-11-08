@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2) is written for M0v.*
+*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1) and wire routing (2.2) are written for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -53,11 +53,101 @@ Craft family:
 
 - The flow goes **left to right**: inputs on the left of a node, outputs on the right.
 - **The function is a frame**, like a structure: its inputs are terminals on the left edge, its
-  outputs on the right edge, in signature order. An optional input shows its default value next to
+  outputs on the right edge, in signature order, except `err`, which is always at the bottom of each
+  edge (2.1). An optional input shows its default value next to
   its terminal (`low ◂ 220 V`). The `///` documentation is the tooltip of the title.
 - Orthogonal wires, rounded corners (radius 6). Grid of 8 units.
 - Canvas units: 1 unit = 1 logical pixel at 100% zoom, origin at the top left;
   `node x at (40, 80)` places the top-left corner of the node (spec 11).
+
+### 2.1 Automatic placement
+
+A function without a `layout` section, which is what an agent writes, is placed automatically, and so
+are the nodes that a `layout` section does not place (spec 11).
+
+- **One drawing per file.** Placement and routing depend only on the file, on what it uses from other
+  files (the signatures, type declarations, icons and bands of what it calls), on the fixed font of the
+  notation, and on the view state: the view of each node, tabs or unfolded branches and the branch
+  shown, folded or unfolded constructions, optional inputs shown (3, 5.2, N-2). With the same
+  view state, the same file gives the same drawing on screen, when it is opened again, in an export and
+  in the snapshots of CI (scenario 6 of `acceptance-m0.md`). Nothing comes from a previous drawing, from
+  the size of the window or from the order in which files were read.
+- **Stable by construction.** Every choice rests on what changes little: the dependencies, the order of
+  the signature and the names, through the canonical order of lines (spec 5.2), which keeps the written
+  order only for ties (call statements without a label, lines whose outputs are all `_`, `collect`
+  lines, the arms of a `match`, a body that cannot be ordered). No choice is random. A small
+  change moves what depends on it, as far as the rules below allow. For each example and each data wire
+  between two nodes, CI inserts a neutral node on the wire (`core.select(true, v, v)`, which passes the
+  value on unchanged), compares the drawing with the drawing before, and reports how many other nodes
+  change place. M0v reports the figure; the threshold is set before the M0v tag, on measures of the
+  viewer itself.
+- **Columns.** The flow goes left to right: a node stands in the column after the last of the nodes
+  that feed it, and a node fed only by the inputs of the function in the first column. Nodes with no
+  input (a named constant, `time.now()`) are left out of that count; each one then stands in the column
+  just before its leftmost reader, and when that reader is in the first column, a column opens before
+  it. A node with no input and no reader stands in the last column.
+- **The main error chain on one straight line** (N-7). The main chain is the chain of nodes joined by
+  their error pass-through pairs (3.1) that starts at the `err` input of the function and goes through
+  the most nodes; on a tie, the one that reaches the `err` output, then the first in the canonical order
+  of lines. A function with no `err` input starts it at the first node, in that order, whose error input
+  is not wired. The chain runs along the bottom of the nodes it crosses. Every other node goes above it,
+  stacked in its column, in the order that keeps crossings low, ties broken by the canonical order of
+  lines. Below the axis, apart from the lower edge of the nodes on the chain, there are only error wires
+  that leave the main chain (`e2` in `check_voltage` leaves it at `query` and joins `handle e2`). A
+  function with no error pair at all (`projectile`) has no axis: its nodes stack upward from the bottom
+  of the frame, by the same rules.
+- **Error pairs of structures.** A `loop` or a `for` with an error register has the two boxes of the
+  register as its pair. A `match` or a `handle` whose arms take an outer error and yield an error output
+  has a pair too: that error, entering by its notch or as the selector of a `handle`, on the bottom line
+  of the left edge, and that output. With two error registers or two error outputs, the first in the
+  text makes the pair. Inside a body, the chain starts at the inner side of the pair (the register box,
+  the notch, the value bound by the arm) and ends at `next` of the register or at the error that the arm
+  yields.
+- **Through structures.** A structure on the chain is placed so that its error input and output sit on
+  the axis around it, and the chain inside goes on along the same line: one straight line through every
+  level of nesting. Structures grow upward, and their error lines line up. A structure off the main
+  chain keeps its own chain straight along its own bottom.
+- **A partial `layout` section.** The nodes it places never move. A node that it does not place goes into
+  free space between what it connects: right of what feeds it, left of what it feeds, above the error
+  chain if there is one. The other unplaced nodes move apart only as far as needed. With no position in
+  the file, this gives the placement above. What the file writes always wins: around a position or a
+  `via` that it gives, the rules that say "never" hold as far as they can. The axis of the chain goes
+  through the first node of the chain, placed or not, and a node of the chain that the file does not
+  place goes on the axis.
+- **When the file changes**, in the live viewer, the nodes glide from their old place to the new one in
+  about 150 ms *(proposed)*, so that one sees what moved. There is no glide when the system asks for
+  reduced motion. The drawing at the end is always the one computed from the file. The update time of
+  scenario 6 runs to the new drawing; the glide comes after it. A node is followed across the change by
+  the body that holds it (the function, an arm, a loop body) and the name that designates it in the
+  `layout` section (spec 11: its label or the name of its line); a node with no name, by its rank among
+  the nodes with no name of its body, in the canonical order. A node whose name changed appears in its
+  new place.
+- When the developer moves a node (M1), its position is written in the `layout` section, and it no
+  longer moves.
+
+### 2.2 Wire routing
+
+- A wire never crosses a node, a label, a pill, a band or a wire name, and it enters a structure only
+  through its terminals and its notches (section 5).
+- A wire whose two ends are at the same height is straight. Between neighbouring columns, it otherwise
+  has a single vertical segment, in the channel between them. A wire that skips columns, other than an
+  error wire, runs on a horizontal track above the nodes it passes over (`low` and `high` in
+  `check_voltage`), with one vertical segment at each end; a secondary error wire does the same below
+  the chain.
+- Two wires never share a segment: parallel wires are 8 units apart.
+- The order of preference is the fewest crossings, then the shortest length, then the fewest bends.
+  Ties are broken by the order of the signature and by the names, as for placement. These are
+  preferences that a fixed procedure follows as well as it can, not an exact optimum, which large
+  diagrams could not afford (scenario 6, point 4).
+- A value that feeds several inputs runs as one trunk, with a junction point at each split (section 4).
+- Every wire that is not an error wire (data, session, order, function) stays above the main error
+  chain and never crosses it. An error wire that leaves the main chain runs below it, and crosses it
+  once, in the channel before the node it reaches.
+- Order wires are routed like the others.
+- The waypoints that a `via` gives (spec 11) are kept, and the routing joins them.
+- A terminal can sit on any side of its node, and the routing leaves it in that direction, so that
+  sides chosen later (N-15) need no other routing. The terminals of a circle are off the grid of 8 (3.2), and the wire reaches them with a short
+  segment.
 
 ## 3. Nodes
 
@@ -97,8 +187,10 @@ terminals (N-15).
   or error type share a line, so that the wire crosses the node in a straight line. Pairs are made
   by name first (an input `to` with the output `to`), then in signature order among the terminals of
   that type that are left. A pair that would cross one made before it, in signature order, is not
-  kept: its two terminals are placed like the others. Since `err` is by convention the last input
-  and the last output, the error chain runs along the bottom of the nodes.
+  kept: its two terminals are placed like the others. The `err` pair is always on the bottom line,
+  even when `err` is not last in the signature (it is last by convention): lines are made as if `err`
+  were last in both lists, so the error chain runs along the bottom of the nodes. A function with an
+  error output and no error input (`errors.merge`) has its error output alone on the bottom line.
 - **The other terminals**: the pairs fix their lines, in signature order. Before the first pair,
   between two pairs and after the last, the inputs and the outputs that lie there in their own
   lists fill lines side by side, in signature order; when one side has more, the rest take lines of
@@ -221,7 +313,7 @@ left of the terminal, outside the circle (`◂ 0.5` in front of `>`).
 
 **Terminals of a circle**: on its edge. One input at the middle of the left side, two at 8 units
 above and below the middle, three at 10 above, at the middle and 10 below; the output at the middle
-of the right side. They are not on the grid of 8: the routing of the wires (N-7) joins them.
+of the right side. They are not on the grid of 8: the routing of the wires (2.2) joins them.
 
 ### 3.3 Field access, structs, variants
 
@@ -273,7 +365,8 @@ terminal; a long wire repeats its name halfway.
 
 A structure is a **frame** with, as header, the keyword of the text (`loop continue_on_error`,
 `for x in readings`, `match state`, `handle e6`). Its outputs are terminals on the right edge, in
-the order of the text.
+the order of the text, except its error output, which is always on the bottom line, so that the error
+chain crosses the frame in a straight line (2.1).
 
 - **Outer values** used inside (spec 6): the wire crosses the edge; a notch marks the crossing.
   No terminal to wire. A value that is also the selector of a `match` or a `handle` enters by the
@@ -287,9 +380,8 @@ the order of the text.
 ```text
         ┌─ loop ───────────────────────────────┐
  0 V ──┤↻├ v ─────── …               … ── next v ┤↻├───── value
-        │                                      │
- err ──┤↻├ e ───›─── …               … ─›─ next e ┤↻├───›── err_out
         │                             until ◆  │
+ err ──┤↻├ e ───›─── …               … ─›─ next e ┤↻├───›── err_out
         └──────────────────────────────────────┘
 ```
 
@@ -312,16 +404,18 @@ the order of the text.
 - **`collect`**: `[ ]` terminal on the right edge; the outgoing wire is an array.
 - **`for x in array`**: `]▸` terminal on the left edge (the array enters, the element leaves);
   `for i in 0..n`: `0..n` terminal on the left edge.
-- **`until`**: `until` terminal at the bottom right, inside the frame; it is a `bool`, so a
-  diamond.
-- **Error register**: box in error style; it is a reminder that the loop stops when it contains
+- **`until`**: `until` terminal on the right, inside the frame, just above the error register, so
+  that the error chain keeps the bottom line (2.1); it is a `bool`, so a diamond.
+- **Error register**: box in error style, on the bottom line of the frame; it is a reminder that the loop stops when it contains
   an error (spec 6.3). **`continue_on_error`**: badge in the header, since it changes this default
   behavior.
 - **`for parallel`**: header `for parallel`, double-line frame.
 
 ### 5.2 `match` and `handle`
 
-- **Selector**: terminal on the left edge, at the level of the header.
+- **Selector**: terminal on the left edge, at the level of the header. The selector of a `handle`,
+  which is an error, enters on the bottom line instead, which is the axis when the `handle` is on the
+  error chain (2.1).
 - **One branch at a time**: a tab bar in the header lists the branches (`true`, `false`;
   `State.Init`, `State.WaitDut` …; `_` is written `other`). A branch with several patterns is one
   tab, which lists them (`1, other`). The displayed branch is highlighted.
@@ -330,7 +424,9 @@ the order of the text.
 - **`yield`**: each branch wires the same output terminals on the right edge. A terminal that a
   branch does not wire is impossible (the text forbids it), so there is nothing to flag here.
 - **Unfolded view**: all branches stacked vertically, each with its title. This is how exported
-  images and printouts are rendered, and an editor mode. Where the output wire starts when each
+  images and printouts are rendered, and an editor mode. The last branch in the text sits at the
+  bottom, on the axis of the error chain; the others are stacked above it, each with its own straight error chain, joined to
+  the error output of the frame. Where the output wire starts when each
   branch produces the value, and how to draw an outer value used in several branches: N-9.
 - **`handle`**: same frame, edge in error style; the tabs are the categories (`ok`,
   `dmm.overload`, `visa.*`, a code, `other`).
@@ -396,8 +492,8 @@ reference to another editor's palette (D-23).
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
-| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom (3.2), so a block that grows moves its bottom line, and the error chain, down: from 32 to 40 when it goes from two lines to three |
-| N-7 | Does automatic layout keep the error chain straight? | **Yes.** The main error chain occupies a horizontal line, at the bottom of the nodes it crosses; columns follow the order of dependencies. Tested on `check_voltage` and `settle` (`tools/lcf-figcraft`) |
+| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom (3.2), so a block that grows moves its bottom line, and the error chain, down: from 32 to 40 when it goes from two lines to three. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
+| N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, which does not yet keep the line straight through a `match`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | Current `lcf-figcraft` rendering: the output starts from the first branch, the others have a terminal of the same name on the right edge; an outer value passes a notch, then a small vertical bus. To judge on `station` |
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
@@ -405,4 +501,4 @@ reference to another editor's palette (D-23).
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | Lighten the nesting backgrounds rather than darken the wires |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
-| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires (N-7) leaves by any side from M0v on |
+| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2) |
