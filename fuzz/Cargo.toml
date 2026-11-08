@@ -15,6 +15,7 @@ cargo-fuzz = true
 [dependencies]
 labcraft-check = { path = "../crates/check" }
 labcraft-format = { path = "../crates/format" }
+labcraft-graph = { path = "../crates/graph" }
 labcraft-libs = { path = "../libs/embedded" }
 labcraft-types = { path = "../crates/types" }
 libfuzzer-sys = "0.4"
