@@ -507,6 +507,14 @@ mod tests {
         assert_eq!(Keyword::ALL.len(), 27);
     }
 
+    /// Spec 14.1, version of Unicode: an update of the crate that moves it changes the spec in the same pull request.
+    #[test]
+    fn letters_and_marks_are_those_of_the_unicode_of_the_spec() {
+        const SPEC: &str = include_str!("../../../docs/language-spec-v0.md");
+        let (major, minor, _) = unicode_properties::UNICODE_VERSION;
+        assert!(SPEC.contains(&format!("Names are read with Unicode {major}.{minor}:")), "Unicode {major}.{minor}");
+    }
+
     /// The list of spec 14.1, which `tools/lcf-view/lcf_view.py` copies too.
     #[test]
     fn the_reserved_words_are_those_of_the_spec() {

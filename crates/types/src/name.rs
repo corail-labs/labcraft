@@ -58,6 +58,14 @@ impl Interner {
 mod tests {
     use super::*;
 
+    /// Spec 14.1, version of Unicode: an update of the crate that moves it changes the spec in the same pull request.
+    #[test]
+    fn names_are_normalized_with_the_unicode_of_the_spec() {
+        const SPEC: &str = include_str!("../../../docs/language-spec-v0.md");
+        let (major, minor, _) = unicode_normalization::UNICODE_VERSION;
+        assert!(SPEC.contains(&format!("Names are read with Unicode {major}.{minor}:")), "Unicode {major}.{minor}");
+    }
+
     #[test]
     fn the_same_text_is_the_same_name() {
         let mut names = Interner::new();
