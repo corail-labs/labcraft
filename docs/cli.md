@@ -1,9 +1,10 @@
-# Command line: `fmt` and `check`
+# Command line: `fmt`, `check` and `run`
 
-*Last updated: 2026-11-08. Status: implemented for milestone M0a. `run`, `diagram` and `mcp` come
-with the specifications of M0b and M0v ([roadmap](roadmap.md)).*
+*Last updated: 2026-11-08. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
+M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` comes with the specification of M0v
+([roadmap](roadmap.md)).*
 
-This document is the contract of `labcraft-cli fmt` and `labcraft-cli check`: their arguments, exit
+This document is the contract of `labcraft-cli fmt`, `labcraft-cli check` and `labcraft-cli run`: their arguments, exit
 codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
 so they are part of the interface and are tested (acceptance scenarios
 [2, 4 and 5](acceptance-m0.md)). Values marked *proposed* are starting points.
@@ -19,13 +20,14 @@ The Python proof of concept (`tools/lcf-poc`) does not implement this document.
 ```text
 labcraft-cli fmt   [--check] [--json] [options] PATH...
 labcraft-cli check [--json] [--deny-warnings] [--lib-path DIR]... [options] FOLDER...
+labcraft-cli run   [--json] [run options] [options] FOLDER FUNCTION
 labcraft-cli version
 labcraft-cli --help
 ```
 
 | Exit code | Meaning |
 |---|---|
-| 0 | No error. Warnings do not change the code, unless `--deny-warnings` is given |
+| 0 | No error. Warnings do not change the code, unless `--deny-warnings` is given. For `run`, an error outside what the run reaches does not count (section 6.1) |
 | 1 | An error was found: a diagnostic of severity `error`, or a file that is not canonical under `fmt --check` |
 | 2 | Wrong usage: unknown option, no path, a file given to `check`. A plain message on stderr, nothing on stdout, nothing read or written |
 
@@ -480,7 +482,237 @@ section 3), not a diagnostic.
 | `LC6002` | warning | Body left in written order: a cycle, or a value or a label defined twice | 5.2 |
 | `LC6003` | error | Canonical form could not be written: over `--max-file-size`, or the file system refused it, as for a read-only file. The file is unchanged | section 2 above |
 
-## 6. Left for later
+## 6. `run`
+
+*Status: draft for milestone M0b, nothing implemented.*
+
+Runs one function of a library, against simulated instruments, and reports what it did. It is the
+command line of `run.start` ([commands.md](commands.md), section 6.4): the same parameters, the same
+report (`labcraft-run/1`, commands.md, section 7) and the same trace (`labcraft-trace/1`, section 8).
+
+```text
+labcraft-cli run [--json] [--deny-warnings] [--lib-path DIR]... [--sim FILE]
+                 [--args FILE] [--arg NAME=VALUE]... [--set ELEMENT=VALUE@TIME]...
+                 [--real-time] [--schedule-seed N] [--timeout DURATION]
+                 [--max-iterations N] [--max-nodes N] [--max-call-depth N] [--max-memory BYTES]
+                 [--max-real-time DURATION] [--trace FILE | --no-trace] [options] FOLDER FUNCTION
+```
+
+`FOLDER` is the root of the project, as for `check`, and `FUNCTION` is named from it: `check_voltage`,
+`dmm_driver.measure`. `[options]` are those of section 1. Paths given to options are relative to the
+current folder, as for `check`.
+
+### 6.1 What it does
+
+1. **Checks** `FOLDER`, as `check` would with the same options, and also the bodies of every function
+   the run can reach, in every library: what the function calls, what those call, and the functions
+   named as references (spec 4), including those of a dependency found by `--lib-path`, whose bodies
+   `check` alone does not read (section 3). A run executes them, so they are judged first. An error in
+   what the run can reach, its types included, or under `--deny-warnings` a warning in a file of `FOLDER`
+   that the run can reach, refuses the run: status `refused`, exit 1, and nothing reaches an instrument
+   (scenario 2, *with M0b*). An error
+   elsewhere in `FOLDER` does not refuse the run: it is counted in the summary of the report, as
+   everything `check` found, and the exit code follows the run, not that error. A warning in a shipped
+   library or a dependency of `--lib-path` never refuses a run, as `check` reports none (section 3):
+   the user cannot fix it there.
+2. **Reads the arguments and the panel settings** against the signature and the panel of the
+   function (6.3, 6.4), and the simulation file. This is done even when step 1 refuses, as long as the
+   signature could be read, so that one report gives every problem. A problem is a diagnostic with a
+   code (6.6), and the status is `refused`.
+3. **Runs** the function, in deterministic mode unless `--real-time` is given (spec 8), and ends in one
+   of the statuses of spec 8.2: `ok`, `error`, `aborted`, `fault`.
+4. **Reports**: the human-readable form (6.7), or `labcraft-run/1` with `--json`. The report is written
+   once, at the end; nothing else goes to stdout. The run id of a command-line run is `r1`.
+
+Exit codes (section 1): 0 `ok`; 1 `error` or `refused`; 2 wrong usage; 3 `aborted`; 4 `fault`.
+
+**The diagnostics of a run** (`LC81`, the simulation file) join those of `check` in `check.diagnostics`
+and count in `check.summary`. Each has a file: the file of the function for an input, an argument or an
+element, located at its name in the signature or the panel (at the signature for an unknown input); the
+simulation file for its own problems; `FOLDER` itself, with no position, for an unknown `FUNCTION`.
+
+### 6.2 Options
+
+| Option | Meaning |
+|---|---|
+| `--sim FILE` | The simulation file that defines the `SIM::` resources of the run (M0b, step 3). A path is data: a file that does not exist or cannot be read gives `LC0001`, one that does not read as a simulation file a code of the family `LC82`, each with `refused`, not exit 2. Without it, no resource exists, and `visa.open` returns an error |
+| `--args FILE` | The values of inputs, as one JSON object, the `args` of MCP (6.3). A path is data, as for `--sim`; the file is bounded by `--max-file-size` |
+| `--arg NAME=VALUE` | The value of an input of the function (6.3), which replaces the one of `--args` for that input. An input with a default may be left out |
+| `--set ELEMENT=VALUE@TIME` | Sets a panel element of the function at a time of the run (6.4) |
+| `--real-time` | Real time instead of deterministic mode. In real time, iterations and nodes are not limited unless a `--max-` option is given (spec 8.2) |
+| `--schedule-seed N` | Deterministic mode only. The order among the nodes ready at the same time is drawn from `N` (an integer from 0 to 2^64−1) instead of the canonical order of spec 8 (scenario 3, point 1). The noise of simulated instruments does not depend on it: it belongs to each simulated quantity (spec 8) |
+| `--timeout DURATION` | Aborts the run after `DURATION` on its clock: simulated in deterministic mode, real otherwise (spec 8.2, `abort.by` = `timeout`). A finite duration above 0, as for `--max-real-time` |
+| `--max-iterations N` | Iterations of each `loop`, counted again each time the loop starts. Default 10,000 in deterministic mode, none in real time *(proposed, scenario 4)*. A `for` ends with its array and does not count here, only in `--max-nodes`. Reached: fault `LC8001` |
+| `--max-nodes N` | Nodes run in all, a skipped node (spec 7.2) and the node of a call included. Default 1,000,000 in deterministic mode, none in real time *(proposed)*. Reached: fault `LC8002` |
+| `--max-call-depth N` | Depth of calls, always limited. Default 1,024, at most 4,096 *(proposed)*: a stack is sized from it. Reached: fault `LC8003` |
+| `--max-memory BYTES` | The logical size of the values the run holds at once, default 1 GiB, at least 1 MiB *(proposed)*. Reached: fault `LC8005`, at the node that would pass it |
+| `--max-real-time DURATION` | Deterministic mode only: the real time the run may take, default 10 min *(proposed)*, since `--timeout` there counts simulated time, which a long computation does not advance. Reached: fault `LC8006`, at the node that was running. The only limit whose outcome depends on the speed of the machine, and the fault says so. With `--real-time`, `--timeout` counts real time already |
+| `--trace FILE` | Writes the trace to `FILE` instead of `.labcraft/runs/` (commands.md, section 8). A `FILE` that ends in `.lcf`, `.lct`, `.toml` or `.json`, in any case (`main.LCF`), or that exists and does not start with the first line of a trace, is wrong usage, so that a typo cannot replace a program or a file of arguments |
+| `--no-trace` | Writes no trace |
+
+The `N` of the `--max-` options is an integer from 1 to 2^63−1, and `none` removes the default of
+`--max-iterations` and `--max-nodes`; `--schedule-seed` has its own range, above.
+
+**The logical size of a value** is counted the same on every platform, whatever the memory of the
+process: 16 bytes for each value, and inside it for each element of an array, each field of a struct and
+each value of a variant, so that an empty string or an empty array still costs something; plus the bytes
+of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `i64` or a `duration`,
+twice that for a complex number, 16 for a `timestamp`), and the bytes of a `string` in UTF-8 and of
+`bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
+and the limit stops it. A value counts once while some wire holds it, however many share it (D-11).
+
+**At one time on the clock**, a run does in this order: the `--set` settings of that time, then the
+timeout if it is reached, which aborts before the nodes ready at that time run, then those nodes, which
+can each end the run with a fault. So a timeout and a setting at the same time are exact (scenario 3,
+point 5).
+
+**Durations** on the command line are written as the language writes them, and the space before the unit
+may be left out, since a shell splits on it: `--timeout 30s`, `--timeout "30 s"`, `@500ms`. A number with
+no unit (`--timeout 30`) is wrong usage, and the message gives the form to write: seconds are not assumed.
+A duration that is not finite, or below 0 (`@-1s`, `inf s`), is wrong usage.
+
+**What is wrong usage** (exit 2, nothing run, nothing written) is what can be seen without reading the
+program: an unknown option, a missing `FOLDER` or `FUNCTION` or one more positional argument, a
+`FUNCTION` that is not names joined by `.`, an input or an element that is not a name (spec 14.1: a
+reserved word such as `next` is none), an `--arg` with no `=`, the
+same input given twice by `--arg`, an option that takes one value given twice, `--max-real-time` with `--real-time`, a `--set` with no `@TIME` or a time as
+above, a `--schedule-seed` with `--real-time`, a number out of the range of its option, `--trace` with
+`--no-trace`. What needs the program to be judged (an unknown function or input, a value that does not
+convert) is a diagnostic, and the status `refused`: a value is data, as a path is (section 1).
+
+**Ctrl-C before the run starts**, during the check, ends with the status `aborted`, at 0 ms, nothing run.
+
+`run` is not part of the WASM build of M0 (D-22; [acceptance-m0.md](acceptance-m0.md), common conditions),
+so its limits are those of the native process.
+
+### 6.3 Arguments
+
+A `VALUE` takes the form that a value has in JSON (commands.md, section 5), read against the type of its
+input, with two more freedoms: what JSON writes as a string may be written without its quotes, and the
+space before a unit may be left out.
+
+**`--args FILE`** holds a JSON object whose keys are input names and whose values take the JSON form
+exactly, as the `args` of `run.start` do: `{"resource": "SIM::DMM0", "limits": {"low": "220 V", "high":
+"240 V"}}`. No shell quoting is involved, so this is the form for structs and arrays in a script or on
+Windows. An `--arg` replaces the value of the file for its input. A diagnostic about a value of the file is
+located in the file, at its key; a file that is not a JSON object, or gives a key twice, gets `LC8104`.
+
+| Input | Example |
+|---|---|
+| `string` | `--arg resource=SIM::DMM0`: the text after `=`, as it is, always; never read as JSON |
+| a number with a unit | `--arg low="220 V"`, `--arg low=220V`, `--arg low=0.22kV` |
+| a `duration` | `--arg settle=100ms`, `--arg settle="0.1 s"`; a number alone is refused, as for a unit |
+| a number without a unit, `bool` | `--arg n=10`, `--arg gain=0.5`, `--arg verbose=true` |
+| an enumeration | `--arg mode=Fast` or `--arg mode=Mode.Fast`; a variant with values in JSON: `--arg r='{"Reading.Value": ["230 V"]}'` |
+| an array, a struct | JSON: `--arg limits='{"low": "220 V", "high": "240 V"}'`, `--arg points='["1 V", "2 V"]'`, `--arg xs='[1, 2]'` |
+| `error` | `none` (or `null`) only: a run cannot be started with an error on its input |
+
+A value is converted **as a literal of the language is** (spec 3.4, literals): it takes the number type of
+its input, so `0.5` reaches an `f32` and `10` a `u8`, and `[1, 2]` an `[f64]`; a unit converts as a wire
+does, so `0.22kV` reaches an `f64[V]` as 220 V. A number with no unit is refused for a type with a unit or
+a `duration`, since the unit is what the run cannot guess. An integer type takes an integer written
+without `.` or exponent (`10`, not `10.0` or `1e1`), and an `i64` or a `u64` beyond ±(2^53−1) as a string
+of digits, as section 5 of commands.md writes it; `10.0` for an `i32` gets `LC8104`. Only a whole value may
+leave out its quotes: inside JSON (`'[a, b]'`), a string is quoted. A JSON value nests at most `--max-nesting` levels, like a
+file.
+
+An input whose type holds an opaque type (`visa.session`, a struct with a session in it) or a function
+reference cannot be given: a function that takes one is called by another function, which the run
+starts. It gets `LC8107` whether it has a default or not.
+
+**Quoting.** The examples are written for a POSIX shell and PowerShell 7. Windows PowerShell 5.1 drops the
+double quotes inside an argument, so `'{"low": "220 V"}'` arrives as several broken arguments. `--args FILE`
+works in every shell; writing the inner quotes as `\"` works in PowerShell 5.1 only, and breaks in
+PowerShell 7, so a script that must run in both uses `--args`.
+
+### 6.4 Panel elements: `--set` (Q-20)
+
+`--set ELEMENT=VALUE@TIME` changes a panel element of the function at `TIME` on the clock of the run,
+counted from its start: simulated in deterministic mode, so that a run replays exactly (scenario 3,
+point 4), real otherwise. The time is after the last `@`, so a value may hold one (`--set
+note=a@b@0s`); `@0s` sets it before the first node runs.
+
+- **Which elements.** Any element of the panel of the function that is run (spec 10) and that is not an
+  input or an output of it: panel elements belong to their call (spec 8.2), and a subfunction's are out of
+  reach (Q-24). An element with the name of an input is set with `--arg`, since it is read once, at the
+  start; one with the name of an output is written by the function. An element whose type `check` could
+  not settle cannot be set. Each of these gets `LC8108`.
+- **What a setting does**, as a user's action on the panel would: a `switch` keeps the value until
+  something changes it again; a `button` set to `true` is a press, which stays true until its first
+  read (spec 10). A `button` set to `false` gets `LC8108` in M0: what it does depends on the mode of the
+  button, and the modes of a button are still open (spec, Q-30). Any other element holds the value
+  until the diagram or another setting changes it. The value converts as an argument does (6.3), to the
+  type of the element.
+- **When it is seen.** Before the nodes ready at that time run, so the reads made at `TIME` see it
+  (spec 8, and 6.2 above). Two settings at the same time apply in the order given. A setting after the
+  end of the run never applies, and the report says so.
+- **In the report**, `panel` lists each setting with its time, its value, how it came (`set` or
+  `run.set_element`) and whether it applied (commands.md, section 7).
+
+MCP takes the same settings in `run.start`, as `set: [{ "element": "stop_switch", "value": true,
+"at": "5 s" }]`, and in real time also sets an element while the run goes, with `run.set_element`
+(commands.md, section 6.4). The command line has no way to set an element live in M0b: a human at a
+terminal stops a run with Ctrl-C.
+
+### 6.5 Stopping
+
+- **Ctrl-C** aborts the run (spec 8.2, `abort.by` = `interrupt`): no node starts any more, waits end,
+  native calls end or reach their timeout within the grace period (5 s, *proposed*), then the
+  resources are released and the report is written, with exit 3. A second Ctrl-C ends the grace period
+  at once: the calls still going are abandoned and their sessions reported as leaked. The report is
+  still written.
+- **`--timeout`** aborts the same way, `abort.by` = `timeout`.
+- **A limit** (`--max-…`) ends the run with a fault (exit 4), at the node and the iteration where it was
+  reached.
+
+### 6.6 Codes of `run`
+
+These codes join the tables of section 5 when they are implemented, as `cargo xtask codes` requires. The
+family `LC80` is for faults, `LC81` for arguments and panel settings, and `LC82` is kept for simulation
+files (M0b, step 3).
+
+| Code | Severity | When |
+|---|---|---|
+| `LC8001` | error | Fault: the iteration limit of a `loop` is reached. Gives the loop and the iteration |
+| `LC8002` | error | Fault: the limit of nodes run is reached |
+| `LC8003` | error | Fault: the call depth limit is reached. Gives the chain of calls, shortened |
+| `LC8004` | error | Fault: a bug of the runtime, caught. Gives where |
+| `LC8005` | error | Fault: the memory limit of the run is reached, at the node that would pass it |
+| `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
+| `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
+| `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
+| `LC8103` | error | An input with no default has no `--arg` |
+| `LC8104` | error | A value does not read as its type, or as JSON where JSON is needed, or nests too deep; an `--args` file that is not a JSON object, or that gives a key twice |
+| `LC8105` | error | A value has no unit, or a unit of another dimension, for a type with a unit or a `duration` |
+| `LC8106` | error | A value is out of the range of its type (`300` for a `u8`, `1e999`), or an integer is not exact |
+| `LC8107` | error | An input whose type holds an opaque type or a function reference, which an argument cannot give; it replaces `LC8103` for such an input |
+| `LC8108` | error | A `--set` names no panel element of the function, an element that is an input or an output, or one whose type is not settled, or sets a `button` to `false` |
+
+Which other failures are faults rather than `error` values is Q-25; their codes come with its answer.
+
+### 6.7 Human-readable form
+
+Without `--json`, the outputs one per line, then what a reader checks first: the sessions, the error, the
+trace. Values are written as the language writes constants, cut as commands.md, section 5 cuts them, and
+with the escapes of section 4.1, so that the answer of an instrument cannot drive a terminal.
+
+```text
+check_voltage: ok, 0 ms simulated, 2 ms real
+  verdict = Verdict.Pass
+  voltage = 230.03 V
+  err     = none
+sessions: 1 opened, 0 open
+trace: .labcraft/runs/check_voltage.trace.jsonl, 41 events
+```
+
+A `refused` run gives the diagnostics in the form of section 4.1, then `check_voltage: refused`. An
+`error` gives the error with its category, its message and where it came from (spec 7.1); a `fault`,
+the first line of a diagnostic (`file:line:column: error[LC8001]: fault: …`); an `aborted` run, how and
+when it was aborted, where each loop was, and the warning that the instruments are in an unknown state.
+While a run goes on, a terminal on stderr shows the clock and where each loop is, once a second; never
+with `--json` or when stderr is not a terminal.
+
+## 7. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,
@@ -488,3 +720,7 @@ giving `check` a file or a selection of functions, `--json-out FILE` (as in `sol
 shell's `>` can re-encode the output), a `--target web` for the error on external functions
 (spec 4.1), and an `--exclude` for folders such as `target/` and `node_modules`, which are walked like any
 other: a folder over the bounds of section 1 gives `LC0010` even if it holds no program.
+
+For `run`, besides what [commands.md](commands.md), section 9 lists: setting a panel element live from
+the command line (the first Ctrl-C as a press of a Stop switch, the second as an abort), arguments from a
+JSON file read from stdin (`--args -`).
