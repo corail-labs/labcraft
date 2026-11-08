@@ -39,7 +39,7 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
 
 ## 2. Tools
 
-- **One tool per command** of [commands.md](commands.md), section 6. The name of the tool is the id of
+- **One tool per command** of [commands.md](commands.md), section 6, once it is no longer `planned`. The name of the tool is the id of
   the command with `_` for `.`: `run_start`, `file_write`. Dots would be clearer, but the names of tools
   given to a model through the Claude API, among others, allow only letters, digits, `_` and `-`.
 - **Description and schema** come from the registry: the `summary` and `description` of the command are
@@ -50,7 +50,9 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   `openWorldHint`, since it reaches instruments; every other hint is false.
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
-- **Eighteen tools in M0b**, few enough for each to be read. When the catalog grows (the commands of the
+- **Eighteen tools in M0b**, few enough for each to be read; nineteen when `diagram.svg` is enabled, with the
+  `diagram` crate of M0v. The `view.*` commands serve a session that has a viewer, and reach an agent when the
+  server is attached to the open IDE (D-18). When the catalog grows (the commands of the
   viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through
   `commands_list`, `commands_describe` and a `commands_execute`, as SolidCraft does *(proposed)*.
 

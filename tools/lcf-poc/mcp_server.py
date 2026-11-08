@@ -21,8 +21,9 @@ mcp = FastMCP(
         ".lcf files (one function per file) and .lct files (one type per file). Working loop: "
         "list_functions (with builtins=true) to learn the primitives, write the file, `check` "
         "until zero errors, `run` against a simulated instrument (a .toml file from the libs/visa/sim/ folder), "
-        "read `outputs`, `error` and `fault`, fix. `trace=true` gives the execution order and the value "
-        "of each wire. Spec: docs/language-spec-v0.md; examples: examples/."
+        "read `status`, `outputs`, `error` and `fault`, fix. `trace=true` gives the execution order and the value "
+        "of each wire; `set` sets a panel element at a time of the run, `timeout` aborts it. "
+        "Spec: docs/language-spec-v0.md; examples: examples/."
     ),
 )
 

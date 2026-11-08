@@ -1,10 +1,11 @@
-# Architecture: M0a
+# Architecture
 
-*Last updated: 2026-11-08. Status: implemented for M0a (section 9). M0b and M0v add their sections
-when their milestones are prepared.*
+*Last updated: 2026-11-08. Status: implemented for M0a (sections 1 to 9); a draft for M0b (section 10), and the
+section of M0v to come (11).*
 
-How the Rust code of M0a is arranged: the crates `types`, `graph`, `format` and `check`, the app
-`labcraft-cli`, and `xtask`. It is written for whoever implements them, person or agent. The contract
+How the Rust code is arranged. Sections 1 to 9: M0a, the crates `types`, `graph`, `format` and `check`, the app
+`labcraft-cli`, and `xtask`. Section 10: M0b, the crates `ir`, `runtime`, `engine` and `mcp`, and the native crate of
+`visa`. It is written for whoever implements them, person or agent. The contract
 to meet is elsewhere: [spec](language-spec-v0.md), [command line](cli.md),
 [acceptance scenarios 2, 4, 5](acceptance-m0.md), [corpora](../tests/acceptance/README.md). The layers
 are in the [roadmap](roadmap.md). The code sketches below show shapes, not final signatures.
@@ -17,8 +18,9 @@ rewritten (section 7).
 
 ## 1. Principles
 
-- **Only `labcraft-cli` touches the file system.** `format` and `check` take bytes and return values.
-  That is what makes them run in WASM (D-22), in the viewer and in tests with no setup.
+- **Only an app touches the file system.** `format` and `check` take bytes and return values, and `engine`
+  reaches files through what the app gives it (section 10.8). That is what makes them run in WASM (D-22), in the
+  viewer and in tests with no setup.
 - **A diagnostic is a value, and failure is a diagnostic.** No function of these crates fails with
   anything else on bad input. A hostile file is an ordinary input.
 - **Everything is bounded on purpose.** Depth, size, the number of files and the length of the report
@@ -33,6 +35,8 @@ rewritten (section 7).
 apps/labcraft-cli ──> check ──> format ──> graph ──> types
        └──────> libs/embedded (the declarations of libs/)
 ```
+
+M0b adds `ir`, `runtime`, `engine` and `mcp` above `check` (section 10).
 
 ## 2. `types` (L0)
 
@@ -63,7 +67,7 @@ What everything needs, with no knowledge of files.
 - `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
   `max_nesting` has a hard ceiling (cli.md, section 1), lower in WASM: a stack is sized from it (section 4).
 
-Run-time values come with M0b.
+Run-time values are in `runtime` (section 10.3).
 
 ## 3. `graph` (L1)
 
@@ -113,7 +117,7 @@ Decisions:
   `canonicalize(read(f))` compared with `canonicalize(read(write(canonicalize(read(f)))))`.
 - **Layout is separate data** (D-07): `Layout` refers to nodes by name or label, as the file does.
 - The graph as edges (which output feeds which input) is not stored here. Names are the wires, and
-  `check` builds what it needs. Bodies stay trees of statements until the `ir` crate of M0b.
+  `check` builds what it needs. Bodies stay trees of statements until the `ir` crate of M0b ([ir.md](ir.md)).
 
 ## 4. `format` (L2)
 
@@ -273,8 +277,8 @@ crates, where WASM reaches it.
   walk reads.
 - **The work** runs on a thread of `format::STACK_SIZE`. A panic on one file is a bug, reported as `LC0099` on
   that file while the others go on; a hook keeps it out of stderr, which is for wrong usage alone.
-- `fmt` and `check` become engine commands when `engine` arrives (M0b, D-18), and the last resort moves
-  to `Session::execute`, as in the Craft apps. Until then the app calls the library functions directly;
+- `fmt` and `check` become engine commands when `engine` arrives (M0b, D-18, section 10.8), and the last resort
+  moves to `Session::execute`, as in the Craft apps. Until then the app calls the library functions directly;
   nothing here should make that move hard.
 
 ## 7. `xtask` and the workspace
@@ -312,10 +316,11 @@ character boundary, and these crates hold little numerical code.
 | `ci` | Everything below but `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
-| `libs` | No crate of `crates/` depends on `libs/` |
-| `codes` | `Code` equals the tables of cli.md, section 5 |
+| `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
+| `codes` | `Code` equals the tables of cli.md, section 5; from M0b, the codes of each native library equal the table of its document (section 10.6) |
+| `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
-| `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run |
+| `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, `ir`, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
@@ -363,8 +368,8 @@ The workflow `checks` also has a job `windows`, which runs the tests of `labcraf
 walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and
 a red one stops the merge in the same way.
 
-The proof of concept remains the reference for what the examples do until M0b replaces it; it does not
-judge types, where the corpus decides.
+The proof of concept remains the reference for what the examples do until the Rust `run` passes the corpus of runs
+(section 10.11); it does not judge types, where the corpus decides.
 
 ## 9. Order of work
 
@@ -386,3 +391,267 @@ Each step ends with something testable, and can be one or a few pull requests. A
 
 Rust contributions have been open since the tag of M0a for its crates, and for those of M0b and M0v once their
 sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
+
+## 10. M0b: running and agents
+
+*Status: draft, nothing implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+`mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
+contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
+[command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
+[simulation](../libs/visa/simulation.md), [acceptance scenarios 1, 3, 4](acceptance-m0.md). The scheduler was tried
+first in the proof of concept (scenario 3): what it taught is written here.
+
+```text
+apps/labcraft-cli ──> mcp ──> engine ──> runtime ──> ir ──> check ──> format ──> graph ──> types
+       │                                    │                                      trace ──┘
+       ├──> libs/visa (labcraft-visa) ──────┤
+       ├──> examples/results_log ───────────┘
+       └──> libs/embedded
+```
+
+| Layer | Crate | In M0b |
+|---|---|---|
+| L1 | `trace` | The events of `labcraft-trace/1`, the JSON form of values with its bounded writer (commands.md 5), the bounded reader of the trace; shared with M0v (section 11) |
+| L4 | `ir` | The dataflow IR: [ir.md](ir.md) |
+| L5 | `runtime` | Values, the scheduler, the interpreter, the primitives, the interface of a native library, the report of a run |
+| L6 | `engine` | The session, the registry of commands, runs as tasks |
+| L6 | `labcraft-visa`, `labcraft-results-log` | The native crates of the libraries `visa` and `results_log` |
+| L7 | `mcp` | The MCP server over stdio, made from the registry |
+
+**A native crate lives beside the declarations it gives bodies to**: `labcraft-visa` in `libs/visa/`,
+`labcraft-results-log` in `examples/results_log/`. A library is its `.lcf` files and, when it has native functions,
+its crate (spec 4.1: a Rust crate linked into the application). Each depends on `runtime` and below, and no crate of
+`crates/` depends on it (`cargo xtask libs`): the apps and the test harness link them and give them to the session.
+`xtask layers` places them at L6, beside `engine`, which does not see them.
+
+### 10.1 What `check` gives a run
+
+`check` was built to judge files; a run also needs what it found, in a form that lowering can read. Before `ir`, a
+step of work (10.11, step 0) gives `check` an interface for runs:
+
+- **The bodies of every library the run reaches**, those of `scpi` and of a `--lib-path` folder included. `check`
+  reads them for their signatures today; for a run, it resolves and types them as it does the folder given (cli.md
+  6.1 already requires a run to judge them).
+- **What the manifests say** (`always`, `resources`, categories), the **defaults** of inputs and outputs (spec 7.2),
+  and the **table of primitive signatures**, public, which `runtime` tests its bodies against.
+- **The canonical order of every body**, in one walk: `format::canonical_order` called body by body is not linear
+  in a file of many bodies, so the order comes with what `check` already walks.
+
+### 10.2 `ir` (L4)
+
+[ir.md](ir.md) defines it: a program as regions of nodes, the nodes of the diagram, each region reading only its
+arguments, every node with its origin and its canonical position, every value typed. `ir::lower` takes the `Checked`
+of a run, `ir::verify` checks the invariants, `ir::print` gives the text form that snapshot tests compare. Lowering
+walks calls and bodies with explicit work lists, and a structure nested as deep as `max_nesting` allows is in the
+stack test of section 4. It is written to last: the interpreter, the trace, the debugger (M5) and the linear IR (M7)
+build on it.
+
+### 10.3 Values
+
+A run-time value is one enum, `runtime::Value`: booleans, the integers, floats and complex numbers of 3.1, `string`,
+`bytes`, arrays, structs, variants, `error`, a `duration` in whole nanoseconds (spec 3.1, Q-2), a `timestamp`, a
+function reference, and a **handle** for an opaque type (the library that made it and its number there). Arrays,
+strings, structs and variants are behind an `Arc`, and a change works on a copy only when the value is shared
+(`Arc::make_mut`): values never change once made (5.1, D-11), and a wire read by ten nodes is not copied ten times.
+
+- **A number is kept in the unit of its type** (3.3), and converted on a wire as spec 3.3 says, one rounding where the
+  ratio of the two units allows it, so that the interpreter, the WASM build and Cranelift give the same bits (D-10).
+- **The logical size** of cli.md 6.2 is counted as values are made, not by asking the allocator, so a limit gives the
+  same fault on every platform. A value counts once while some wire holds it. Each node that runs or waits, and each
+  frame, counts too (cli.md 6.2), so that a `for parallel` over millions of elements reaches the limit as a fault
+  rather than exhausting the memory of the process.
+- **Operations are defined bit for bit**: the primitives of `core` use operations that IEEE 754 rounds correctly, and
+  those it does not (`core.pow` with an integer exponent, for one) are written as a fixed sequence of such operations,
+  rather than a function of the platform's library.
+
+### 10.4 The scheduler
+
+What the prototype showed (scenario 3, the proof of concept): every point of spec 8 falls out of one design.
+
+- **Each node that runs is a task**, and a structure is a task that starts the nodes of its region as their inputs
+  arrive and waits for them. A task keeps its own context: the frames of its calls, the iterations of its loops, its
+  **position** (spec 8: the positions of what contains it, each loop adding its iteration), kept as a link to the
+  position of what contains it plus one index, so that a task costs the same at any depth. **Readiness is counted,
+  not searched**: a node knows how many of its inputs are still missing, and the producer of a value decrements the
+  count of each node that reads it. The prototype searched the pending lines of a body each time a node ended,
+  which is quadratic in the size of a body.
+- **Ready tasks** are kept by position in a binary heap: the first runs. With a schedule seed, they are kept in a plain
+  list, one is drawn, then swapped with the last, so a draw costs one step; the first version of the prototype rebuilt a
+  heap on each draw, which was quadratic.
+- **Time.** A task that takes time sleeps until a time on the clock of the run, in a heap of wake-ups. When no task is
+  ready, the clock jumps to the next wake-up in deterministic mode, or the scheduler waits until then in real time. At
+  one time, the settings of `--set` apply first, then the timeout, then the tasks (cli.md 6.2).
+- **One thread runs the diagram.** The scheduler and the nodes it runs share one thread: the interpreter is cheap, and
+  a single thread keeps the order of spec 8 a fact of the code rather than of locks. What can block is a **native
+  call** (a VISA read, later a file): in real time it runs on a thread of a pool of the runtime, and its end comes back
+  to the scheduler as an event on a channel, so a call that waits for an instrument does not stop the other loops
+  (D-12). In deterministic mode a simulated call does not block: it does its work at once and says how long it took,
+  and its task sleeps that long, so the waits of parallel branches overlap and the run replays exactly. The two modes
+  share all the code but the clock and where a native call runs.
+- **Running compute nodes on several threads**, D-12's blocks on a thread pool, comes when a program needs it (M2 or
+  later). Nothing above stops it: the order of spec 8 binds deterministic mode, and a real-time run may run ready
+  nodes side by side.
+- **Calls are iterative.** A call is a frame on the heap, not a call of the interpreter on the stack: the depth limit
+  (`LC8003`) is a count, and a deep recursion of the program cannot overflow the process. Every thread that runs a
+  command or a run (the thread of a run, the thread of the session, the threads of the MCP server) has the stack of
+  `format::STACK_SIZE`, like the other work of the app.
+- **Stopping** (spec 8.2). Stop is the program's own: the scheduler does nothing special. An abort or a fault winds down
+  the same way: no task starts; waits end at once; a native call in progress ends within the grace period, on the clock
+  of the run, or is abandoned when the period ends and its resource reported as leaked; then each resource the run
+  opened is released by its library. The prototype first had faults release resources while a call still used them:
+  both paths now go through one function, and so will these.
+- **A panic** of a primitive or of a native body, on the thread of the run or on a thread of the pool, is caught there
+  and ends the run with the fault `LC8004`, released as any fault is; the session goes on.
+- **Two clocks.** The app gives the runtime a `runtime::Clock`: the clock of the run, simulated or real, and the real
+  time that `--max-real-time` bounds in deterministic mode. The runtime never calls `Instant::now` itself, which
+  `clippy.toml` refuses and which traps in WASM.
+
+### 10.5 The interpreter and the primitives
+
+A frame holds the values of a region instance and the state of the panel of its call (spec 10: a `switch` holds, a
+`button` is seen by one read). A node runs by its kind (ir.md, section 4), skips by its `Skip` (ir.md, section 5), and
+checks the limits of cli.md 6.2 as it goes: iterations of a loop, nodes run, depth, memory, the real time of a
+deterministic run. A limit reached is a fault at that node.
+
+The primitives (`core`, `string`, `array`, `errors`, `time`, `ui`) have their bodies here, by the names of `check`'s
+table of signatures; a test requires a body for every signature, and no body without one. A primitive that takes
+simulated time (`time.wait`) is a native call of the runtime's own.
+
+### 10.6 Native libraries
+
+The runtime defines what a library with native functions gives it:
+
+```rust
+pub trait NativeLibrary: Send + Sync {
+    fn name(&self) -> &str;                                              // "visa": as its manifest says
+    fn codes(&self) -> &[LibraryCode];                                   // `visa:S001`…, for `xtask codes`
+    fn simulate(&self, section: &SpannedTable, limits: &Limits) -> Result<Box<dyn Simulation>, Report>;
+    fn start_run(&self, simulation: Option<Box<dyn Simulation>>) -> Box<dyn LibraryRun>;   // what one run holds
+}
+pub trait LibraryRun: Send {                                             // its sessions, its instruments, for one run
+    fn call(&mut self, function: &str, inputs: &[Value]) -> Option<Box<dyn NativeCall>>;  // an `extern rust` body
+    fn describe(&self, handle: Handle) -> HandleInfo;                    // what it designates, whether it is open
+    fn release(&mut self, handle: Handle);                               // after an abort or a fault
+}
+pub trait NativeCall: Send {
+    fn step(&mut self, cx: &mut CallContext) -> Step;                    // called again after each wait
+}
+pub enum Step { Done(Vec<Value>), Sleep(Duration), Exclusive(Key), Release(Key),
+                Blocking(Box<dyn FnOnce() -> Vec<Value> + Send>) }
+```
+
+- **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
+  the run, and `describe` and `release` read them there.
+- **A call is a small state machine.** It returns `Sleep` to wait on the clock of the run (the latency of a simulated
+  instrument, a read that waits for its timeout), `Exclusive` to wait for a key and `Release` to give one back, in
+  the middle of a call if it must (an instrument is free once its latency has passed, while the session waits for
+  the answer: simulation.md 4), `Blocking` for work that blocks in real time and runs on the pool, and `Done` with its
+  outputs; the keys it still holds are given back then. The scheduler calls `step` again after each wait, so a
+  call can wait in its middle, as an instrument that is busy makes it (simulation.md 4).
+- **A library owns what it guarantees** (spec 8.1): `visa` keeps each of its calls atomic on its session, and each
+  instrument handling one command at a time, through keys that the runtime lends (`Exclusive`). A key is a lock in
+  real time, and in deterministic mode a queue of the scheduler that gives it in the global order of spec 8, so that a
+  replay is exact. The runtime locks nothing on its own.
+- **The simulation file** is split by the tool (cli.md 6.2): each library gets its table, with the spans of its keys,
+  so that a diagnostic points at its key (simulation.md 7), and judges it with its own codes. `cargo xtask codes` also
+  checks that the codes of each library equal the table of its document.
+- **Resources** are what the manifest declares (`resources = ["session"]`). The runtime counts what was opened, what
+  stays open and what leaked, for the report (`resources`, commands.md 7), which shows each by what `describe` gives;
+  and it calls `release` on what a run leaves open after an abort or a fault.
+
+`labcraft-visa` holds the sessions, the `SIM::` backend of [simulation.md](../libs/visa/simulation.md) (the clock in
+whole nanoseconds, the noise generator, the error queue, the faults), and its fuzz target for simulation files. Real
+instruments come with M4. `labcraft-results-log` keeps the results it is given, as the proof of concept does.
+
+### 10.7 The trace and the report
+
+The runtime writes the trace (`labcraft-trace/1`, commands.md 8) as it runs, to a sink the caller gives, and the values
+of its report (`labcraft-run/1`, commands.md 7), both through the crate `trace` (L1): the events, and the JSON form of
+values with its bounds (commands.md 5), so that the report, the trace and the reader of M0v cut a value the same way.
+The runtime turns its `Value` into that form; `trace` never sees `runtime`. Neither the trace nor the report knows
+where it is written: `engine` and the app decide.
+
+### 10.8 `engine` (L6)
+
+As in the Craft apps: a **session** and a **registry** of commands (D-18).
+
+- **The registry** holds each command as the data of commands.md 1: id, label, summary, description, schema of its
+  parameters, result, errors, effects, `long`, `planned`. `Session::execute(id, params)` is the only way in: the CLI,
+  the MCP server and later the IDE call it. A panic in a command is caught there and returned as `internal`, the last
+  resort that the app holds in M0a (section 6). `cargo xtask commands` checks the registry against the tables of
+  commands.md 6.
+- **The session** holds the root of the project, the interner, the libraries (shipped, embedded, and those of
+  `--lib-path`), the native libraries the app gave it, its last `check` (checked at start, then again only for the
+  library a change touched: commands.md 6.2), and its runs.
+- **Runs** are long commands (commands.md 4): `run.start` starts one on a thread of its own and returns its report, or
+  `running` after `wait`; one run at a time per session; the last 16 reports are kept. **A caller waits on the run, not
+  in the session**: `run.wait`, and `run.start` until its `wait`, block the thread of their caller on the run's own
+  channel, so the session goes on answering, and `run.abort` reaches the run while another caller waits for it. `run.abort`, `run.set_element`
+  (real time only) and Ctrl-C reach the scheduler through a channel.
+- **Files** are reached through `engine::Workspace`, which the app implements: the disk with atomic writes for the CLI,
+  memory for tests. So principle 1 holds: only an app touches the file system.
+- **The state of the viewer** (the folder open, the function shown, the view state that the file does not hold, the
+  preference of the standard view, the trace shown) is held by the session too, and the `view.*` commands change it;
+  the app reads it each frame, as in the Craft apps. M0v writes that part (`engine::view`, section 11).
+- **`engine` builds for `wasm32-unknown-unknown`** without runs, whose commands are not enabled there: the web viewer
+  runs a session in a worker and sends it commands as an id and parameters in JSON, so the boundary of the worker is
+  that of the commands, and a trap restarts the worker with a new session. On the desktop, the session runs on a
+  thread of `format::STACK_SIZE`, and the interface sends it commands through a channel.
+- `fmt` and `check` become the commands `file.format` and `library.check`, and `labcraft-cli` calls them like the
+  others. `diagram.svg` and the `view.*` commands are registered as `planned` until M0v brings them (commands.md
+  6.5), and the MCP server exposes each one once it is enabled.
+
+### 10.9 `mcp` (L7)
+
+The MCP server of [mcp.md](mcp.md): JSON-RPC over stdio, one tool per enabled command, named from its id (`run.start`
+gives `run_start`), its schema from the registry, a command error returned with `isError`. Written by hand over
+`serde_json`, without an async runtime: a thread reads requests, bounded as mcp.md 5 says (size, nesting, a queue of 16);
+requests run in order on another thread, while `ping`, `run_status`, `run_set_element` and `run_abort` answer at once
+from the reading thread, so an agent can always stop what it started; progress and cancellation are notifications
+on the same stdout, written one whole line at a time. `labcraft-cli mcp` starts it on a session of its own (D-18),
+headless in M0b. The instructions it gives point to `guide.read`.
+
+### 10.10 `labcraft-cli`
+
+It gains `run` (cli.md 6) and `mcp`, both through `engine`. It implements `Workspace` and the real `Clock`, gives the
+session the native crates it links (`labcraft-visa`, `labcraft-results-log`), and turns Ctrl-C into an abort, a second
+one into the end of the grace period (cli.md 6.5), through the `ctrlc` crate. `run` is not in the WASM build of M0
+(D-22); the deterministic part of `runtime` still builds for `wasm32-unknown-unknown`, which `cargo xtask wasm`
+checks, for the web simulation of M10.
+
+### 10.11 Tests and the order of work
+
+| What | Where | Scenario |
+|---|---|---|
+| The IR of every file of `examples/`, `libs/`, `docs/rfc/`, against snapshots; `ir::verify` after every lowering | `ir` tests | |
+| One lowering test per construct of the language, and per row of ir.md, section 4 | `ir` tests | |
+| A body for every primitive signature, and no other | `runtime` tests | |
+| **The corpus of runs**: each case a program, a simulation file, arguments and settings, and the expected report | `tests/acceptance/runs/` | 1, 3, 4 |
+| The MCP loop of scenario 1, scripted, through a real stdio client | `apps/labcraft-cli/tests` | 1 |
+| Limits of a run: each fault of cli.md 6.6 reached, hostile simulation files, programs built to cost the most | `tests/acceptance/runs/`, `xtask bounds` | 4 |
+| Fuzzing simulation files, and runs of fuzzed programs under small limits: no crash, every outcome a report | `fuzz/` | 4 |
+
+**The corpus of runs is the reference of `run`**, as the corpus of `type-errors` is for `check`. A case holds what a run
+needs and the parts of `labcraft-run/1` it asserts: status, outputs, clock, resources, abort, panel, the commands each
+instrument saw. Its expected values are worked out by hand, as the tests of the proof of concept are, and each says how.
+The proof of concept runs the corpus too, through a small runner, until the Rust `run` passes all of it: then
+`tools/lcf-poc` is retired, and the corpus stays.
+
+Each step of work ends with something testable:
+
+0. **`check` for runs:** the interface of 10.1.
+1. **`trace`**, with M0v: the events, the JSON form of values and its bounds, the writer and the reader.
+2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`.
+3. **Values and primitives** in `runtime`, with their test of signatures.
+4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
+   codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`.
+5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the
+   report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner.
+6. **`engine`:** the session, the registry and the commands of commands.md 6, the kept `check`, runs as tasks; `cargo
+   xtask commands`. `fmt` and `check` move behind it.
+7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.
+8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2.
+9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.
+10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.
+
+Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).

@@ -23,6 +23,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **enum** | A type whose value is one of a list of named variants (`enum { Pass, Fail, Error }`), chosen between with `match` (spec 3.2). |
 | **`handle`** | The structure that branches on an error's category (`ok`, `io.timeout`, `_`…). |
 | **session**, **opaque type** | A value that designates an open connection (`visa.session`) without showing its content. |
+| **resource** | What a value designates without containing it: a session, a `ref<T>`, a panel element read or written live, a file (spec 8.1). A library declares which of its opaque types are resources; a run reports those it opened, left open or leaked (`resources`), and what a call guarantees on one is up to its library. |
 | **variadic parameter** | A parameter that takes any number of arguments (`parts: string...`). |
 | **pass-through pair** | An input and an output of the same session or error type on one line, so the wire crosses the node straight. |
 | **notch** | Where a wire from outside a structure enters its frame. |

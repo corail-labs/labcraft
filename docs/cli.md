@@ -564,7 +564,9 @@ each value of a variant, so that an empty string or an empty array still costs s
 of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `i64` or a `duration`,
 twice that for a complex number, 16 for a `timestamp`), and the bytes of a `string` in UTF-8 and of
 `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
-and the limit stops it. A value counts once while some wire holds it, however many share it (D-11).
+and the limit stops it. A value counts once while some wire holds it, however many share it (D-11). Each
+node that runs or waits, and each frame of a call, counts 256 bytes *(proposed)*, so that a `for parallel` over
+millions of elements reaches the limit as a fault rather than the memory of the process.
 
 **The clock of a run** counts whole nanoseconds from 0, and ends at 2^62 ns, about 146 years *(proposed)*: a wait or
 a timeout that would take it further ends the run with the fault `LC8007`, in deterministic mode and in real

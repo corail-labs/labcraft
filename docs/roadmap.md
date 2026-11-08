@@ -26,11 +26,11 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0b**: the architecture of the M0b crates. Written: the command catalog v0
-  ([commands.md](commands.md)), the MCP specification ([mcp.md](mcp.md)), the CLI specification of
-  `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6), and the throwaway
-  feasibility prototype, a scheduler with parallel loops and a clean stop: the scheduler of the proof of
-  concept (scenario 3);
+- **before M0b**: nothing more. Written: the command catalog v0 ([commands.md](commands.md)), the MCP
+  specification ([mcp.md](mcp.md)), the CLI specification of `run` with how the CLI and MCP set a panel element
+  ([cli.md](cli.md), section 6), the throwaway feasibility prototype, a scheduler with parallel loops and a
+  clean stop (the scheduler of the proof of concept, scenario 3), and the architecture of the M0b crates
+  ([architecture.md](architecture.md), section 10) with the dataflow IR ([ir.md](ir.md));
 - **before M0v**: the architecture of the `diagram` and `editor` crates (in
   [architecture.md](architecture.md), like that of the M0b crates). Written: the visual notation
   (compact view, automatic placement, wire routing, font, values on the wires and theme), the command
@@ -106,6 +106,7 @@ As in the Craft apps: a crate depends only on strictly lower layers, checked by
 |---|---|---|
 | L0 | `types` | Types, values, physical units, diagnostics |
 | L1 | `graph` | Semantic model of the program, separate layout |
+| L1 | `trace` | The trace of a run and the JSON form of values: events, a bounded writer and reader (commands.md 5, 8) |
 | L2 | `format` | Reading and writing the format, migrations |
 | L3 | `check` | Name resolution, signatures (those of the primitives too), type and connection checking |
 | L4 | `ir` | Dataflow IR, analyses, linear IR |
@@ -113,6 +114,7 @@ As in the Craft apps: a crate depends only on strictly lower layers, checked by
 | L5 | `diagram` | Automatic placement, wire routing and the visual notation as shapes, headless, with SVG export; run values come in as plain data |
 | L5 | `interop` | C ABI, .NET, Python |
 | L6 | `engine` | Session, command registry, undo, journal, crash reports |
+| L6 | native crates of libraries | The bodies of `extern rust` functions, beside their library: `libs/visa`, `examples/results_log` ([architecture](architecture.md), section 10) |
 | L7 | `editor`, `ui-egui`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; IDE (window, panel, debugger); MCP server; Cranelift and building executables and DLLs |
 | apps | `labcraft`, `labcraft-cli`, `labcraft-web` | Desktop, CLI, browser |
 
@@ -124,7 +126,7 @@ ordinary library folder, with its `labcraft.toml` and `.lcf` files, plus a Rust 
 native functions. A native function is declared in a `.lcf` file with `extern rust` (spec 4.1):
 the signature is LabCraft, read by `check` and the viewer from M0a; the body is the crate,
 registered with the runtime. The rule, checked by `cargo xtask`: **no crate of `crates/` depends
-on `libs/`**; only the apps link them. The boundary that packages (M11) will use is tried from M0.
+on `libs/`**; only the apps and the test harness link them. The boundary that packages (M11) will use is tried from M0.
 When the registry exists, these libraries can be published as packages.
 
 | Library | Content |
@@ -163,7 +165,7 @@ LabCraft/
 
 ## Next
 
-M0b (`runtime`, `engine`, `mcp`, `libs/visa`, `libs/scpi`, `labcraft-cli run` and `mcp`) and M0v
+M0b (`trace`, `ir`, `runtime`, `engine`, `mcp`, `libs/visa`, `libs/scpi`, `labcraft-cli run` and `mcp`) and M0v
 (`diagram`, `editor`, `labcraft` and `labcraft-web` in read-only mode, `labcraft-cli diagram`), in
 parallel, each once what it needs is written ("Still to write", above, and the "write first" column
 of [acceptance-m0.md](acceptance-m0.md)).

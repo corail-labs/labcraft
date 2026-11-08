@@ -314,7 +314,21 @@ calls wrong usage (cli.md, section 6.2): a time of `set` below 0, an input name 
 `schedule_seed` or a `max_real_time` with `mode: "real_time"` are `params.invalid`. `null` removes the
 default of `max_iterations` and `max_nodes`, as `none` does on the command line.
 
-### 6.5 The registry itself
+### 6.5 Diagrams and the viewer
+
+Registered as `planned` until M0v brings them (section 1), then enabled. None writes a file; the `view.*` commands
+change only the state of the viewer, which the session holds.
+
+| Command | Parameters | Returns |
+|---|---|---|
+| `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives, and its report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote (D-18) |
+| `view.open` | `folder` (a library folder, as the `FOLDER` of `check`), *`lib_path`* | The functions of the folder, each with its file and whether it is drawable, and the report of `check` (`labcraft-check/1`). The viewer shows it in place of the folder open before, and watches its files |
+| `view.show_function` | `function` (a function of the open folder, named as the `FUNCTION` of `diagram`, cli.md 7) | Draws it in the viewer, as its file gives it (cli.md 7.1); returns its entry of `diagrams` in `labcraft-diagram/1` (function, file, drawn, nodes, codes). An unknown function is an error of the command |
+| `view.set_standard_view` | `on` (boolean) | The preference of the IDE that shows every node in standard view (notation 3), kept with the preferences; returns the value it had. Changes no file |
+| `view.set_state` | `function`, `state`: the view state of notation 2.1 that the file does not hold, in part (per structure: the branch shown in tabs or unfolded; per construction: folded or not; per node: optional inputs shown; per loop: the iteration chosen, notation 6.1) | The drawing's entry of `diagrams` in `labcraft-diagram/1`. A click on a tab, a fold or an iteration selector goes through it |
+| `view.open_trace` | `file` (a trace, `labcraft-trace/1`) | Shows the values of that run on the function shown (notation 6.1), read with the limits of cli.md 7.4; returns the `trace` part of `labcraft-diagram/1` (file, events, status, cut, stale, ignored) |
+
+### 6.6 The registry itself
 
 | Command | Parameters | Returns |
 |---|---|---|
@@ -415,8 +429,13 @@ The example leaves lines out, and files from the first line.
   panel element changed by `ui.set`, `set` or `run.set_element`: `element`, `value`, `by`); `truncated`;
   `end` (the last line, with the status; absent if the process died).
 - **`t_ms`** is the clock of the run when the event happened: simulated in deterministic mode.
-- **Bounded** *(proposed figures)*. Values are cut as in section 5. After 1,000,000 events or 256 MiB, a
-  line `{"event":"truncated"}` is written, then only `end`. A run in real time that lasts a day traces if
+- **Bounded** *(proposed figures)*. Values are cut as in section 5. A whole line stays within 16 MiB, its
+  `types` and the `files` of the first line included: past it, the values of the line that are left show as
+  `{ "$cut": true }`, then the entries of `types` and `files` that are left are dropped and the line says
+  `"truncated": true`; a line that would still pass 16 MiB (a signature of hundreds of thousands of inputs) keeps
+  only its `seq`, `t_ms`, `event`, `frame`, `node` and `"truncated": true`. So a reader that takes 16 MiB per line
+  reads every line whole. After 1,000,000 events
+  or 256 MiB, a line `{"event":"truncated"}` is written, then only `end`. A run in real time that lasts a day traces if
   asked, within that bound.
 - **Where.** With `trace: file`, the trace of the last run of each function is
   `.labcraft/runs/<function>.trace.jsonl` under the root of the project, the function named from the root
@@ -436,8 +455,7 @@ The example leaves lines out, and files from the first line.
 ## 9. Left for later
 
 Each can be added without breaking anything above: commands that edit the graph rather than the text
-(M1: add a node, wire, move), the commands of the viewer (M0v: open, zoom, pan, export SVG, registered
-as `planned` until then), probes and breakpoints (M5), batches of commands in one call with a rollback
+(M1: add a node, wire, move), the other commands of the viewer (M0v: zoom, pan), probes and breakpoints (M5), batches of commands in one call with a rollback
 (SolidCraft's `batch`), scripts of commands in a file, run by `labcraft-cli script` (D-18; `run` runs
 a program), undo and the journal of commands (M1), crash reports that replay the commands
 that led to a bug (a Craft rule), real instruments and the consent they need (M4, [mcp.md](mcp.md),
