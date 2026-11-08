@@ -33,6 +33,7 @@ Tell the owner what is ready, the rules of the language that it decides, and wha
 
 - One branch per topic, a short English subject, and the attribution trailers of the session.
 - Write the body for someone who never saw this conversation: what it adds, what to read closely, what is not settled, and how it was tested. Say what was not run, and which results come from probes that are not in the repository.
+- If the change makes a valid program invalid or changes what it means, the body has a line that starts with `Changes the language:` (`CONTRIBUTING.md`, point 4), and the files of the repository are migrated in the same pull request.
 
 Name the files in `git add`, rather than adding everything.
 

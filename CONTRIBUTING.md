@@ -58,6 +58,13 @@ python tools/lcf-poc/tests/mcp_smoke.py
 
 The `checks` workflow runs the same commands on every pull request, with `cargo xtask ci` (below).
 The tests include the corpora of `tests/acceptance/`, which say what `check` and `fmt` must report.
+An expected value in a test or a corpus never comes from the output of the program under test: work it
+out by hand or with another tool, and say how.
+
+The proof of concept stays the executable reference for running a program until the interpreter of M0b.
+It no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
+`labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept check
+above that fails only because it lags behind a rule is dropped, in the pull request that brings the rule.
 
 The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/lcf_view.py`
 (Lark): a change to one goes in the other. `.lcf` and `.lct` files use LF line endings.
@@ -93,7 +100,8 @@ ci` runs the checks of the Rust code.
 4. A change that makes a valid program invalid, or changes what it means (a reserved word, a rule of
    `check` or `fmt`, a type rule), says so in a line of its description that starts with
    `Changes the language:`, and migrates the files of the repository in the same pull request. Until
-   the first release this is allowed; afterwards it follows spec 14.1, new words.
+   the first release this is allowed. Afterwards, a new reserved word or a name refused to types follows
+   spec 14.1 (new words); the policy for the other changes is still to be written.
 
 ## Licence
 

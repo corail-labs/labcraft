@@ -37,8 +37,9 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 - **Never crash.** In no scenario does the tool panic, abort or get killed: every failure is a
   report with a code and a location. A viewer shows the report and stays responsive.
 - **Executable reference.** `examples/` and the proof of concept (`tools/lcf-poc`) give the
-  expected results. Where M0 and the proof of concept differ, the spec decides, and the difference
-  is recorded.
+  expected results of running a program. For `check`, the expected results are those of the corpora of
+  `tests/acceptance/`, which the proof of concept no longer follows in every rule. Where they differ,
+  the spec decides, and the difference is recorded.
 - **Automated** in `tests/acceptance/` and run by the `checks` workflow, except fuzzing (scenario 4),
   run by the `fuzz` workflow, and the parts played by an agent (scenario 1, second half of scenario 2),
   which are run by hand before the tag of their milestone. The

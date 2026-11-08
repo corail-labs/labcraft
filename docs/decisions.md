@@ -1,6 +1,6 @@
 # Decisions
 
-*Last updated: 2026-11-03*
+*Last updated: 2026-11-08*
 
 Each decision has a status. D-01 to D-28 are all accepted; the other two statuses are for future
 entries:
@@ -183,7 +183,7 @@ same file).
 - **Stable identifiers** for every node and every wire, for merging and for references (their form
   is open question Q-10 of the spec; corrected 2026-11-02).
 - **Format version** in the file (`labcraft 1`; corrected 2026-11-02), with successive migrations
-  and a clean refusal of newer formats, like `solidcraft/N`.
+  and a clean refusal of newer formats.
 - **One file per function** (simpler to merge); a library = a folder with a manifest, which also
   serves as the basis of the package (D-25).
 
@@ -361,6 +361,12 @@ ecosystem). `CONTRIBUTING.md` states it: *"By contributing you agree that
 your contribution is licensed as MIT OR Apache-2.0, like the rest of LabCraft."* Each contributor
 keeps their rights: the licence of contributions cannot be changed. No CLA. The DCO
 (`Signed-off-by:` on each commit) remains possible later, if a host organization requires it.
+
+**What users ship** (added on 2026-11-08). The runtime goes into everything a user builds (D-15): an
+executable, a library with a C interface, a .NET assembly or a WASM module. With it go the MIT and
+Apache-2.0 licence texts, and those of its dependencies. No runtime exception is added to the licence:
+`labcraft build` will generate these notices and join them to what it builds, so that the user has
+nothing to do.
 
 ## D-20 — Place in the Craft ecosystem
 
