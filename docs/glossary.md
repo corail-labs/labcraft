@@ -28,7 +28,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **notch** | Where a wire from outside a structure enters its frame. |
 | **the carry trap** | Inside the body, a carry holds its current value, not the one just assigned with `next`. |
 | **panel** | The front panel attached to a function (`panel` section): controls and indicators. |
-| **compact view**, **standard view** | The two ways a node is drawn: a small shape with an icon or short label (default), or a block with one named terminal per line. |
+| **compact view**, **standard view** | The two ways a node is drawn: a small shape (the default) with an icon or short label, under a band naming its library when it comes from another one, or a block with named terminals. |
 | **inline constant**, **pill** | A constant written as an argument, drawn on its terminal as a small pill rather than as a node. |
 | **layout** | Positions and wire routes on screen (`layout` section), separate from the program's meaning. |
 | **icon** | The drawing of a function's compact view (`icon` section). |
