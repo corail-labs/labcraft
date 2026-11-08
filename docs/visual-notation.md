@@ -169,23 +169,31 @@ developer chooses the zoom, and the font of the other panels of the IDE.
   followed by U+FE0F); `©`, `™` or `▶`, which Hack draws, take one cell:
   a library name in Japanese is cut after 5 characters and `…`, not after 11. The Unicode version is
   the one with which names are read (spec 14.1).
+- **Every text has a cut.** A text that no other rule cuts (the name of a terminal or a wire, a title,
+  a label in standard view, an inline constant) is cut at 40 cells *(proposed)*: 39 and `…`, and its
+  tooltip shows more of it. A name of normal length stays whole (`measurement_channel_voltage_limit` is 33
+  cells), and a name or a string of millions of characters cannot stretch the drawing or the SVG.
+- **A tooltip is cut too**, on the canvas as in the `<title>` of the SVG ([cli.md](cli.md), section 7.2): at
+  200 code points and `…`, names and values alike, so that hovering stays fast whatever the file holds. To
+  see a longer value whole belongs to the debugger (M5).
 - **Width.** Every character of Hack has the same advance, 1233/2048 of the size: 7.22 units at 12,
   6.62 at 11, 5.42 at 9. A text is as wide as its cells times that advance. No kerning, no ligatures.
-  A character that Hack lacks (a name in Japanese, an emoji in a string) is drawn by a fallback font,
-  scaled down when needed to fit inside its cells on the canvas, so that it never runs past them.
+  A character that Hack lacks (a name in Japanese, an emoji in a string) is drawn by a fallback font.
+  On the canvas, a text that a fallback font makes wider than its cells is drawn smaller, as a whole, to
+  fit them, so that it never runs past them.
   A text keeps 4 units on its left and on its right between itself and the edge of its box (block,
   band, pill, badge, tab, bubble).
 - **Direction.** Every text is put in display order with the Unicode bidirectional algorithm
   (UAX #9), on its own and with a left-to-right base direction, so that a name in Hebrew or Arabic
   reads in its order. A text is cut first, in its logical order (11 cells and `…` at its logical end,
-  which then shows on the right), and reordered after. The `diagram` crate computes the display order,
-  and the canvas draws it as it is, without reordering it again. The SVG writes the text in its logical
-  order, isolated, with a left-to-right base (`direction: ltr; unicode-bidi: isolate`): the browser
-  applies the same algorithm, reaches the same order and joins Arabic letters. A bidirectional control
+  which then shows on the right), and reordered after. The `diagram` crate cuts and counts; it does not
+  reorder. The canvas and the SVG both give the text in its logical order, isolated, with a left-to-right
+  base, to a text engine that applies the algorithm and joins Arabic letters: epaint, in the egui of the
+  Craft suite, for the canvas ([architecture.md](architecture.md), section 11.4); the browser for the SVG
+  (`direction: ltr; unicode-bidi: isolate`). A bidirectional control
   character of those that `LC0005` names (U+202A to U+202E, U+2066 to U+2069) never acts: it is shown
   as its code, `⟨U+202E⟩`, in the token `mark.invalid`, so that no text can hide how it reads (spec 2,
-  Encoding). The marks U+061C, U+200E and U+200F act as in any right-to-left text. Letters joined as
-  Arabic needs depend on the text engine of the canvas.
+  Encoding). The marks U+061C, U+200E and U+200F act as in any right-to-left text.
 - **Height.** A line of text is 2384/2048 of the size (ascent 1901 and descent 483, in units of 2048).
   A text that sits on a line, such as the name of a terminal, has the middle of its capitals on that
   line (capital height 1493/2048); a text in a box (band, pill, badge, tab, bubble, each line of a
@@ -193,8 +201,8 @@ developer chooses the zoom, and the font of the other panels of the IDE.
 - **Where the numbers live.** These metrics and the counting of cells live in one crate, with the
   SHA-256 of the font file that they come from, low enough for `check` to judge the text of an icon
   (spec 11.1) and for `diagram` to place. A test reads the font that the canvas draws with and checks
-  them, so that another version of the font is a reviewed change of the drawing. Which crate holds them,
-  and which supplies the file, is part of the architecture of `diagram` and `editor`.
+  them, so that another version of the font is a reviewed change of the drawing. They are the module
+  `text` of `types`, and the file is in `assets/fonts/` ([architecture.md](architecture.md), section 11.1).
 - **In the SVG**, the font is named once, on the root element:
   `font-family="Hack, DejaVu Sans Mono, Menlo, monospace"`. DejaVu Sans Mono and Menlo come from the
   same Bitstream Vera design and have the same advance. Another font draws texts slightly narrower or
@@ -507,8 +515,8 @@ The viewer of M0v shows the values of the last run of the function it draws, rea
 the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
 
 - **Every wire shows its value** once the run has ended, in a bubble next to the name of the wire at
-  its start. Order wires carry no value. The whole value is in the tooltip, which says when the trace
-  cut the value (`$len`, `$cut`). An error wire that carries no error shows nothing, so that the eye
+  its start. Order wires carry no value. The value is in the tooltip, up to 200 code points (2.3), which
+  says when the trace cut the value (`$len`, `$cut`). An error wire that carries no error shows nothing, so that the eye
   goes to the errors; one that carries an error shows its category, as the node that produced it does.
 - **Short forms.**
   - A float with 4 significant digits, zeros after the decimal point dropped, then its unit
