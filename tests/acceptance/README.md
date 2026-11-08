@@ -2,13 +2,12 @@
 
 Files for the [M0 acceptance scenarios](../../docs/acceptance-m0.md), and what the tool must report on
 them, in the terms of [docs/cli.md](../../docs/cli.md). `tests/harness` runs them against the Rust crates,
-natively and in WASM, as the steps of [the architecture](../../docs/architecture.md) arrive: so far the
-families Encoding, Truncation and Nesting, through `read`, and what `fmt` expects of the stored cases, through
-`format`. `apps/labcraft-cli/tests/fmt.rs` runs what needs files through the program: the stored cases, the
-families Size and Library, and Truncation and Nesting again. The half of each case for `check` runs in both,
-as far as the passes that exist can tell: [`hostile-later.txt`](hostile-later.txt) lists the cases whose
-codes come with later steps. The proof of concept has no static type checking
-and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
+natively and in WASM: the families Truncation and Nesting, through `read`, the stored cases, through `format`
+and `check`, and the corpus of scenario 2. `apps/labcraft-cli/tests/fmt.rs` and `check.rs` run what needs
+files through the program: the stored cases, the families Size and Library, and Truncation and Nesting again.
+[`hostile-later.txt`](hostile-later.txt) lists the stored cases whose codes come with a later step of
+[the architecture](../../docs/architecture.md); none is left for M0a. The proof of concept has no static
+type checking and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
 that the proof of concept does not crash on them.
 
 ## `type-errors/`: scenario 2

@@ -1,6 +1,7 @@
 # M0 acceptance scenarios
 
-*Last updated: 2026-11-04. Status: first draft.*
+*Last updated: 2026-11-08. Status: the scenarios of M0a pass, but for the long fuzzing run of
+scenario 4; those of M0b and M0v are a first draft.*
 
 M0, the first milestone in Rust, comes in three parts ([roadmap](roadmap.md)): M0a reads, checks
 and writes programs; M0b runs them and opens the agent loop; M0a and M0b are a thin vertical
@@ -358,6 +359,6 @@ are ordinary tests, not acceptance scenarios.
 | 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
 | 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | Q-20; two-multimeter simulation files; scheduler prototype |
-| 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits |
+| 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
 | 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |

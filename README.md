@@ -21,12 +21,12 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-04): the first milestone in Rust has started, and nothing is usable in Rust yet.**
-The language and its text format are described (spec v0), with example programs. What runs today is
-a set of throwaway Python tools, including a proof of concept that checks and runs the examples
-against simulated instruments, and that an AI agent drives over MCP. The first milestone (M0: reading,
-checking and writing programs, then running them, with a read-only diagram viewer alongside) is
-described in [docs/roadmap.md](docs/roadmap.md).
+**Status (2026-11-08): M0a, the first part of the first milestone, is implemented in Rust: it
+reads, checks and writes programs (`labcraft-cli check` and `fmt`); it does not run them yet.**
+The language and its text format are described (spec v0), with example programs. Running programs
+is M0b, with a read-only diagram viewer alongside (M0v); until then, a throwaway Python proof of
+concept checks and runs the examples against simulated instruments, and an AI agent drives it over
+MCP. The milestones are described in [docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 
@@ -73,7 +73,16 @@ the function runs against a simulated power supply.
 
 ## Try it
 
-The proof of concept is in Python (3.11 or later):
+The Rust command line checks the examples, and that they are in canonical form (Rust 1.95 or later):
+
+```sh
+cargo run -p labcraft-cli -- check examples
+cargo run -p labcraft-cli -- fmt --check examples
+```
+
+Its reports and diagnostic codes are described in [docs/cli.md](docs/cli.md).
+
+The proof of concept, which also runs programs, is in Python (3.11 or later):
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
@@ -93,7 +102,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 |---|---|
 | [docs/language-spec-v0.md](docs/language-spec-v0.md) | Language and file format, v0 (first draft): types and units, dataflow, errors, structures, grammar, open questions |
 | [docs/visual-notation.md](docs/visual-notation.md) | How a diagram is drawn: nodes, terminals, wire families, structures (first draft) |
-| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (first draft) |
+| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a) |
 | [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |
 

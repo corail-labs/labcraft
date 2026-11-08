@@ -1,21 +1,23 @@
 # Roadmap
 
-*Last updated: 2026-11-04*
+*Last updated: 2026-11-08*
 
 The language is described and tried out by a throwaway Python proof of concept. M0a, the first
-milestone in Rust, has started ([order of work](architecture.md#9-order-of-work)). This page says
-where the project stands, what the milestones are, and how the Rust code is organized.
+milestone in Rust, is implemented ([order of work](architecture.md#9-order-of-work)); its tag waits
+for the long fuzzing run of scenario 4. This page says where the project stands, what the milestones
+are, and how the Rust code is organized.
 
-## Where we are: specification done for M0a, M0a started
+## Where we are: M0a implemented, its tag pending
 
 | Document or tool | Status |
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
-| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-26 |
-| Command line ([cli.md](cli.md)) | First draft: `fmt` and `check`, reports, diagnostic codes |
-| Architecture ([architecture.md](architecture.md)) | First draft: the crates of M0a and the order of work |
-| Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-12 |
+| Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-27 |
+| Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a |
+| Architecture ([architecture.md](architecture.md)) | The crates of M0a as implemented, and the order of work |
+| Rust code (`crates/`, `apps/labcraft-cli`, `libs/embedded`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build |
+| Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-14 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
 | Python proof of concept ([tools/lcf-poc](../tools/lcf-poc/README.md)) | Checks and runs the examples against simulated instruments; MCP server driven by an AI agent |
@@ -45,7 +47,7 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 
 | # | Milestone | Content |
 |---|---|---|
-| **M0a** | Read, check, write | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
+| **M0a** | Read, check, write (implemented, tag pending) | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
 | **M0b** | Run, agents | The interpreter with its scheduler: what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; the agent and the human edit the same program. Target: 60 frames/s while editing 1,000 nodes |
@@ -124,7 +126,7 @@ When the registry exists, these libraries can be published as packages.
 
 | Library | Content |
 |---|---|
-| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources and its instrument definitions, today in `instruments/`, moved to `libs/visa/sim/` when the Rust code starts (M0b); the real transports (M4) |
+| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources and its instrument definitions, today in `instruments/`, moved to `libs/visa/sim/` with M0b; the real transports (M4) |
 | `libs/scpi` | Written in LabCraft over `visa` (written, read from M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
 
 The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) stay native in
@@ -158,7 +160,6 @@ LabCraft/
 
 ## Next
 
-M0a in Rust: the `types`, `graph`, `format` and `check` crates and `labcraft-cli fmt` and `check`,
-with `examples/` and the proof of concept as the reference. Then, in parallel, M0b (`runtime`,
+The tag of M0a, once the long fuzzing run of scenario 4 has passed. Then, in parallel, M0b (`runtime`,
 `engine`, `mcp`, `libs/visa`, `libs/scpi`, `labcraft-cli run` and `mcp`) and M0v (`diagram`,
 `editor`, `labcraft` and `labcraft-web` in read-only mode, `labcraft-cli diagram`).

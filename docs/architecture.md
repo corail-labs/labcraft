@@ -1,7 +1,7 @@
 # Architecture: M0a
 
-*Last updated: 2026-11-04. Status: first draft. M0b and M0v add their sections when their milestones
-are prepared.*
+*Last updated: 2026-11-08. Status: implemented for M0a (section 9). M0b and M0v add their sections
+when their milestones are prepared.*
 
 How the Rust code of M0a is arranged: the crates `types`, `graph`, `format` and `check`, the app
 `labcraft-cli`, and `xtask`. It is written for whoever implements them, person or agent. The contract
@@ -368,7 +368,8 @@ judge types, where the corpus decides.
 
 ## 9. Order of work
 
-Each step ends with something testable, and can be one or a few pull requests.
+Each step ends with something testable, and can be one or a few pull requests. All ten are merged
+(2026-11-07); the tag of M0a waits for the long fuzzing run of scenario 4.
 
 1. **Workspace:** crates, lints, `xtask` (`ci`, `layers`, `licences`, `libs`, `wasm`), CI.
 2. **`types`:** `Name`, `Unit`, `Ty`, `Code` and `Report`, `xtask codes`.
@@ -383,5 +384,5 @@ Each step ends with something testable, and can be one or a few pull requests.
 9. **`check`, passes 5 and 6:** warnings, panel, layout, icon, and the rest of scenario 4; fuzzing `check`.
 10. **The agent half of scenario 2,** by hand before the tag.
 
-Rust contributions open at the end of M0a, but steps 7 to 9 divide well along the codes of cli.md if
-someone offers earlier.
+Rust contributions open with the tag of M0a for its crates, and for those of M0b and M0v once their
+sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
