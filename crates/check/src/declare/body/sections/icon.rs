@@ -16,6 +16,8 @@ const SLACK: f64 = 1e-9;
 pub(super) const TOKENS: &[&str] = &[
     "badge.fill",
     "badge.text",
+    "band.fill",
+    "band.text",
     "canvas.fill",
     "canvas.grid",
     "coercion.fill",

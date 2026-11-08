@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-03. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2) is written for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -63,13 +63,15 @@ Craft family:
 
 A function call has **two views**:
 
-- **Compact, the default**: a small shape with the function's icon or a short label, unnamed
-  terminals (3.2). It lets a whole function fit on screen.
-- **Standard, on request**: a block with the name as a header and one named terminal per line
-  (3.1).
+- **Compact, the default**: a small shape with the function's icon or a short label, under a band
+  naming its library when it comes from another one, unnamed terminals (3.2). It lets a whole
+  function fit on screen.
+- **Standard, on request**: a block with the name as a header and named terminals (3.1).
 
 The view of a node is changed in the IDE and saved in the `layout` section (`view standard`,
-spec 11); an IDE preference displays everything in standard view. **Primitives** are not a special
+spec 11); an IDE preference displays everything in standard view. The read-only viewer of M0v
+draws the view that the file gives; a view changed there is a state of the viewer, never written to
+the file, like the branch shown in a `match` (N-2). **Primitives** are not a special
 case: they are the `core` functions whose compact view is a circle with a glyph (3.2); a project's own
 `add` is an ordinary function, with no glyph. The choice
 of view changes nothing in the program: the text, its canonical form and its diffs stay the same.
@@ -77,21 +79,32 @@ of view changes nothing in the program: the text, its canonical form and its dif
 ### 3.1 Standard view
 
 Rectangular block with rounded corners. Header: the function name (`visa.open`, the library in
-muted ink). One line per terminal, named, **in signature order**.
+muted ink). Named terminals, **in signature order**: inputs on the left, outputs on the right. The
+sides of the terminals, and the error chain along the bottom, are **defaults**: what the IDE and the
+agents draw when nobody chooses. The author of a function may later choose other sides for its
+terminals (N-15).
 
 ```text
                 ┌─ visa.open ───────────────┐
-  resource ─────▬ resource                  │
+  resource ─────▬ resource              dmm ■━━━━━━━━ dmm
                 │ timeout ◂ 2 s             │
-                │                       dmm ■━━━━━━━━ dmm
   err ──›──›────▸ err                    e1 ▸──›──›── e1
                 └───────────────────────────┘
 ```
 
+- **Lines of terminals**: a line holds at most one input, on the left, and one output, on the right.
 - **Pass-through pair on the same line**: an input and an output of the same opaque type (session)
-  or error type share a line, so that the wire crosses the node in a straight line. Since `err` is
-  by convention the last input and the last output, the error chain runs along the bottom of the
-  nodes.
+  or error type share a line, so that the wire crosses the node in a straight line. Pairs are made
+  by name first (an input `to` with the output `to`), then in signature order among the terminals of
+  that type that are left. A pair that would cross one made before it, in signature order, is not
+  kept: its two terminals are placed like the others. Since `err` is by convention the last input
+  and the last output, the error chain runs along the bottom of the nodes.
+- **The other terminals**: the pairs fix their lines, in signature order. Before the first pair,
+  between two pairs and after the last, the inputs and the outputs that lie there in their own
+  lists fill lines side by side, in signature order; when one side has more, the rest take lines of
+  their own. `visa.open` above: `resource` and `dmm`, then `timeout` alone, then the pair `err`,
+  `e1`. `scpi.query_f64` (inputs `session`, `command`, `err`; outputs `value`, `session`, `err`):
+  `value` alone, the pair `session`, `command` alone, the pair `err`, so four lines.
 - **Inline constants**: a constant written as an argument (spec 5.1) is shown on its terminal
   (`timeout ◂ 2 s`, `◂ "MEAS:VOLT:DC?"`), not as a separate node. Long text is truncated (`…`),
   in full in the tooltip.
@@ -122,48 +135,93 @@ muted ink). One line per terminal, named, **in signature order**.
 ### 3.2 Compact view
 
 ```text
-               ┌──────┐
-  resource ────▬      ■━━━━━━━━ dmm
-               │ open │
-     2 s ◂ ────▸      │
-  err ──›──›───▸ ▴    ▸──›──›── e1
-               └──────┘
+               ┌─ visa ─┐
+  resource ────▬        ■━━━━━━━━ dmm
+     2 s ◂ ────●  open  │
+  err ──›──›───▸        ▸──›──›── e1
+               └────────┘
 ```
 
-- **Shape**: square block of at least 40 units, which grows downward in steps of 12 units per
-  terminal beyond three. At the center, the function's icon (`icon` section, spec 11.1); without
-  an icon, a short label: the last segment of the name (`visa.open` → `open`), truncated to 8
-  characters. The full name is in the tooltip.
-- **Unnamed terminals**, in signature order: inputs on the left, outputs on the right. The name is
-  shown in the tooltip and while wiring, on the targeted terminal. The shape of the terminal still
-  tells its family (4.1).
+A compact node is a **block** whose center says what the function does: its icon, or a short label.
+When the function comes from another library, a **band** above the block says which.
+
+- **Band**: the name of the library of the function (`visa`, `scpi`, `dmm_driver`, `results_log`), whole
+  up to 12 characters, beyond that cut to 11 followed by `…`, in the token `band.text` on `band.fill`, neutral by default,
+  with a contrast of at least 4.5:1 in both themes. The band is 12 units high and as wide as the block,
+  which widens to hold it. A call to a function of `core`, or of the library that holds the diagram, has
+  no band. A folder of the project is a library like any other (spec 4), so a call from the root to
+  `relays.close` has the band `relays`. A sub-library `a.b` shows its last segment, `b`, with the full
+  path in the tooltip; when two bands of one diagram would read the same (`x.util` and `y.util`), each
+  shows the full path. The texts compared are those drawn, after the cut: when they still read the
+  same, each is cut in the middle instead, keeping its start and its end (`measurement_a` and
+  `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
+  no band. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
+  (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
+- **Block**: at least 40 × 40 units. Its width holds the label or the band, rounded up to the grid.
+  Its height is the larger of 40 and 16 units per line of terminals (below), plus 8 for each pair of
+  neighbouring lines that both carry an inline constant: 40 for one or two lines, then 48, 64, 80.
+- **Center**: the function's icon (`icon` section, spec 11.1), alone, drawn 28 × 28 units; otherwise a
+  short label: the last segment of the name (`visa.open` → `open`). A label of more than 8 characters
+  that holds an underscore is written on **two lines**, cut at an underscore, which is not drawn. The
+  cut is the one whose longer line is the shortest, the first one on a tie, and never one that leaves
+  a line empty: `query_f64` → `query` / `f64`, `bench_selftest` → `bench` / `selftest`,
+  `read_dc_volts` → `read_dc` / `volts`, `count_to_fixed` → `count` / `to_fixed`. When no cut is allowed (`abcdefgh_`), the label stays on
+  one line. A line of more than 12 characters is cut to 11 followed by `…`. Here and in the band,
+  characters are code points, and a cut falls between two graphemes, before the one that would pass
+  the limit. The author does not declare a label: the icon is there for that. The qualified
+  name (`visa.open`) is in the tooltip, and in the `<title>` of the node in an exported SVG.
+- **Unnamed terminals**: inputs on the left, outputs on the right by default (3.1, N-15), on the
+  **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
+  node from one view to the other never reorders its terminals. By default (N-15), lines are counted
+  from the bottom: the last one is 8 units above the lower edge, and each line above it is 16 units higher, or 24 when both lines carry an inline
+  constant, since a pill is 18 high. A block of one line has it at 32 from the top, a block of two
+  lines at 16 and 32. The name of a terminal is shown in the tooltip and while wiring, on the targeted
+  terminal. The shape of the terminal still tells its family (4.1).
 - **The `err` pair stays on the bottom line**, as in standard view: the error chain crosses the
   node in a straight line.
-- **What the compact view never hides**: the `always` badge (reduced to `▴` in the bottom-left
-  corner), the inline constants (abbreviated to 8 characters), the label (`#close:`), the `after:`
-  terminal, the conversion marks and the run-time state (6). Otherwise the diagram would lie about
-  the execution.
+- **What the compact view never hides**: the `always` badge (reduced to `▴` at the bottom center,
+  clear of the `err` terminal, drawn over the icon if they meet), the inline constants (abbreviated to
+  8 characters), the label (`#close:`), the `after:` terminal (on the left of the band; with no band, on
+  the top edge of the block, 8 units from its left corner), the conversion marks and the run-time state
+  (6). Otherwise the diagram would lie about the execution.
+- **Unwired optional inputs** are hidden, with no `+n` indicator: the tooltip lists them with their
+  default values.
+- **Construction** (`StepResult { … }`, 3.3): the label is the name of the type, without its library,
+  which goes to the band (`results_log` above `StepResult`). **Variant constructor**: the type and the
+  variant on two lines (`Reading` / `Value`).
+- **Nodes of `ui`** (`ui.set`, `ui.get`, 3.1): no band; the label is the operation and the element on
+  two lines (`set` / `live_voltage`), so the element stays on the face of the node.
 - **Indistinguishable inputs**: when two or more wired inputs have the same type and nothing
   tells them apart (no inline constant, no wire name), the editor warns: "inputs `low` and `high`
   indistinguishable in compact view", with the action "show in standard view". This is a warning,
   not an error.
 
 **Primitives.** The compact view of the `core` operations is a **circle** of 28 units with a
-glyph, unnamed terminals (name in the tooltip):
+glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 
 | Glyph | Primitives |
 |---|---|
 | `+` `−` `×` `÷` | `add`, `sub`, `mul`, `div` |
+| `−` with one input | `neg` |
+| `√` | `sqrt` |
 | `\|x\|` | `abs` |
 | `≥` `≤` `>` `<` `=` `≠` | comparisons |
 | `∧` `∨` `¬` | `and`, `or`, `not` |
-| `?` | `select` (condition on top, then value if true, value if false) |
+| `?` | `select` (condition on the upper input, then value if true, value if false) |
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
-The other `core` functions have the ordinary compact view (square block).
+A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
+the unit needs. When two neighbouring inputs both carry an inline constant, the circle stretches into
+a capsule of the same width, as tall as needed for those inputs to be 24 apart, as on a block, since
+a pill is 18 high (`select(ok, 1 V, 0 V)`). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
+ordinary compact view (block, no band).
 
 **Constant on a primitive input**: the circle has no terminal line, so the pill is attached to the
 left of the terminal, outside the circle (`◂ 0.5` in front of `>`).
+
+**Terminals of a circle**: on its edge. One input at the middle of the left side, two at 8 units
+above and below the middle, three at 10 above, at the middle and 10 below; the output at the middle
+of the right side. They are not on the grid of 8: the routing of the wires (N-7) joins them.
 
 ### 3.3 Field access, structs, variants
 
@@ -310,7 +368,8 @@ zoom:
 `mark.coercion`, `mark.invalid`, `probe.fill`. Supporting tokens, which appeared while drawing
 real diagrams (`tools/lcf-figcraft`): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
-`coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`. Contrast of at least 4.5:1 between each
+`coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
+compact view, 3.2). Contrast of at least 4.5:1 between each
 wire and `canvas.fill`, in both themes. The values are chosen with the `craft-ui` theme, with no
 reference to another editor's palette (D-23).
 
@@ -335,14 +394,15 @@ reference to another editor's palette (D-23).
 | N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough; to revisit on real diagrams |
 | N-2 | Branch displayed by default for a `match` | The first; the editor remembers the last one viewed (editor state, not saved in the file) |
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
-| N-4 | Primitives: closed list of glyphs or extensible by a library? | Closed for `core` in v0 |
+| N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
-| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward |
+| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom (3.2), so a block that grows moves its bottom line, and the error chain, down: from 32 to 40 when it goes from two lines to three |
 | N-7 | Does automatic layout keep the error chain straight? | **Yes.** The main error chain occupies a horizontal line, at the bottom of the nodes it crosses; columns follow the order of dependencies. Tested on `check_voltage` and `settle` (`tools/lcf-figcraft`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | Current `lcf-figcraft` rendering: the output starts from the first branch, the others have a terminal of the same name on the right edge; an outer value passes a notch, then a small vertical bus. To judge on `station` |
-| N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | Derived from the name in v0; the icon is enough for anyone who wants better |
-| N-11 | An icon shared by several functions of a library | Copied into each file in v0; later, a library icon referenced by its name |
+| N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
+| N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon |
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | Lighten the nesting backgrounds rather than darken the wires |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
+| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires (N-7) leaves by any side from M0v on |
