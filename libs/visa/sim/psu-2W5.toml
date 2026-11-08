@@ -1,18 +1,18 @@
 # Simulated power supply feeding a product: 5.02 V, 0.50 A, about 2.5 W.
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::PSU0"
 idn = "SIM,PSU,0,1.0"
 
-[instrument.measure]
+[visa.instrument.measure]
 "MEAS:VOLT?" = "voltage"
 "MEAS:CURR?" = "current"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 value = 5.02
 noise = 0.002
 seed = 1
 
-[instrument.quantity.current]
+[visa.instrument.quantity.current]
 value = 0.50
 noise = 0.001
 seed = 2

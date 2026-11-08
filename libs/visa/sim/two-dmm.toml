@@ -1,0 +1,24 @@
+# Two multimeters without latency, one for each branch of `two_benches` (scenario 3).
+[[visa.instrument]]
+resource = "SIM::DMM0"
+idn = "SIM,DMM,0,1.0"
+
+[visa.instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[visa.instrument.quantity.voltage]
+value = 230.0
+noise = 0.05
+seed = 1
+
+[[visa.instrument]]
+resource = "SIM::DMM1"
+idn = "SIM,DMM,1,1.0"
+
+[visa.instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[visa.instrument.quantity.voltage]
+value = 12.0
+noise = 0.01
+seed = 2

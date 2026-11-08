@@ -73,7 +73,7 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
    FAIL. The verdict reads as PASS or FAIL without interpretation (an enumeration or a string; a
    bare `bool` does not count).
 3. The program never returns PASS when the measurement did not take place: with a simulation file
-   that defines no instrument (`no-instrument.toml`, *new*), the run reports the error and the
+   that defines no instrument (`no-instrument.toml`, shipped with `visa`), the run reports the error and the
    verdict is not PASS (writing rule of 7.2).
 4. No session is left open, whatever the outcome (`sessions.open` empty in all three runs).
 5. No human message after the prompt; at most 20 calls to the MCP tools *(proposed)*.
@@ -87,8 +87,8 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
 `tools/lcf-poc/tests/mcp_smoke.py`) plays a fixed loop over real stdio MCP: write a draft with one
 error, read the diagnostic, fix it, run against both multimeters and against `no-instrument.toml`.
 
-**Proof of concept today.** Points 1 to 4 pass with `examples/check_voltage.lcf` (point 3 with a
-resource name that no simulation file defines). An agent has written, checked and fixed a new
+**Proof of concept today.** Points 1 to 4 pass with `examples/check_voltage.lcf` (point 3 with
+`no-instrument.toml`). An agent has written, checked and fixed a new
 program through the MCP server (the demo), but the five-session measure has not been made.
 
 ## Scenario 2: a type error names its node and its wire
@@ -153,7 +153,7 @@ needs queues, which come with M2 (spec 6.4, Q-11). It becomes an M2 criterion (b
 concurrency that the v0 language already has: independent branches (8, 8.1).
 
 **Setup.** A new example, `two_benches`: two independent branches, each with its own multimeter, and
-two new simulation files with two multimeters without latency, `two-dmm.toml` and
+two simulation files shipped with `visa`, with two multimeters without latency, `two-dmm.toml` and
 `two-dmm-timeout.toml` (in the latter, branch A's multimeter never answers). Both loops are in the
 body of `two_benches` itself, not in a subfunction (Q-24). Each branch opens its session, runs a
 `loop` of N = 10 measurements spaced by `time.wait(100 ms)`, then closes the session (`visa.close`,
@@ -205,7 +205,8 @@ abort, and does not have `two_benches`.
 - Done (2026-11-08): how the CLI and MCP set a panel element (Q-20): `--set` and `set`
   ([cli.md](cli.md), section 6.4), `run.set_element` ([commands.md](commands.md), section 6.4).
 - `ui.get` in the proof of concept.
-- The simulation files `two-dmm.toml` and `two-dmm-timeout.toml`.
+- Done (2026-11-08): the simulation files `two-dmm.toml` and `two-dmm-timeout.toml`, in `libs/visa/sim/`
+  ([libs/visa/simulation.md](../libs/visa/simulation.md)).
 - The feasibility prototype (a scheduler with two parallel loops and a clean stop) answers
   points 2, 4 and 5 before M0b starts.
 
@@ -368,9 +369,9 @@ are ordinary tests, not acceptance scenarios.
 
 | Scenario | Milestone | In CI | By hand, before the tag | Proof of concept today | Write first |
 |---|---|---|---|---|---|
-| 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
+| 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | |
 | 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
-| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; two-multimeter simulation files; scheduler prototype |
+| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
 | 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Font and theme of the snapshots; `diagram` and `editor` architecture |

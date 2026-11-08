@@ -1,12 +1,12 @@
 # Multimeter whose measurement never answers: injected failure (io.timeout).
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::DMM0"
 
-[instrument.measure]
+[visa.instrument.measure]
 "MEAS:VOLT:DC?" = "voltage"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 value = 230.0
 
-[instrument.faults]
+[visa.instrument.faults]
 timeout = ["MEAS:VOLT:DC?"]

@@ -88,11 +88,11 @@ The proof of concept, which also runs programs, is in Python (3.11 or later):
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-poc/lcf.py check examples
-python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml --arg resource=SIM::DMM0
+python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0
 ```
 
 `check` reports errors with their line and node; `run` executes a function against a simulated
-instrument and prints its outputs (here `Verdict.Pass`, 230.06 V). To let an AI agent drive it over
+instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). To let an AI agent drive it over
 MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 
 ## Documents
@@ -106,6 +106,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a) |
 | [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (draft for M0b) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (draft for M0b) |
+| [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (draft for M0b) |
 | [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |
 
@@ -129,7 +130,6 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [tools/lcf-poc](tools/lcf-poc/README.md) | Python proof of concept: check, run against simulated instruments, MCP server |
 | [tools/lcf-figcraft](tools/lcf-figcraft/README.md) | Renders a function as a diagram, following the visual notation |
 | [tools/lcf-view](tools/lcf-view/lcf_view.py) | Syntax check of the examples and of the spec's code blocks |
-| [instruments/](instruments/) | Simulated instruments (TOML) for the proof of concept |
 | [design/](design/) | The board of the visual notation, drawn by hand, and the component library the renderer reads ([FigCraft](https://github.com/storytold/figcraft) files) |
 | [docs/rfc/](docs/rfc/) | Small programs discussed in the RFCs |
 

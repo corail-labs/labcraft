@@ -1,0 +1,1 @@
+# No simulated instrument: every `visa.open` fails with `visa.resource_not_found` (scenario 1).

@@ -128,7 +128,7 @@ When the registry exists, these libraries can be published as packages.
 
 | Library | Content |
 |---|---|
-| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources and its instrument definitions, today in `instruments/`, moved to `libs/visa/sim/` with M0b; the real transports (M4) |
+| `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources ([libs/visa/simulation.md](../libs/visa/simulation.md)) and its instrument definitions, in `libs/visa/sim/`; the real transports (M4) |
 | `libs/scpi` | Written in LabCraft over `visa` (written, read from M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
 
 The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) stay native in

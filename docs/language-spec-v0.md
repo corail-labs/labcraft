@@ -966,8 +966,9 @@ executed is limited only in deterministic mode (a `for` ends with its array): th
 an agent from a program that never ends, including one whose simulated clock no longer advances. For the
 same reason a deterministic run is limited in real time, since a computation does not advance the
 simulated clock; that limit alone depends on the speed of the machine. In real time a loop runs as long as
-the program says, for days on a bench, unless the run is given a limit. The values of the limits are
-those of `run` ([cli.md](cli.md), section 6.2). Which other run-time failures are faults rather than `error` values (integer
+the program says, for days on a bench, unless the run is given a limit. The clock of a run has an end, far
+beyond any run, and a wait that would pass it is a fault. The values of the limits are those of `run`
+([cli.md](cli.md), section 6.2). Which other run-time failures are faults rather than `error` values (integer
 overflow, `core.to_i32` of `nan`, integer division by zero) is Q-25.
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
@@ -1329,7 +1330,7 @@ same with a real instrument. Running against a simulated instrument, with the pr
 future `labcraft run` will be equivalent):
 
 ```sh
-python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml \
+python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml \
     --arg resource=SIM::DMM0
 ```
 
@@ -1768,7 +1769,7 @@ What the grammar alone does not say:
 | Q-13 | State machine | Reference example written (section 13): readable without dedicated syntax. To be confirmed on a larger machine |
 | Q-14 | Functions passed as arguments | **Settled (2026-10-30): typed function references in v0**, without anonymous functions or closures (section 4) |
 | Q-15 | Typed configuration loading | `config.load(path) -> (steps: [Step], err: error)`: file (TOML) to declared type, precise field errors |
-| Q-16 | Default values that flow like data | Writing rule in v0 (7.2: a verdict depends on `err`). Seen with the proof of concept (`docs/rfc/check_power.lcf`, run against `instruments/psu-timeout.toml`): when the current readback of a power check times out, the verdict is `Error`, as it should be, but the `power` output is `0 W`, a value that looks measured. Options: (a) keep default values and the writing rule; (b) propagate the absence of a value (a node that consumes the output of a skipped node is skipped in turn, and an output reads "no value"); (c) an optional type (`f64[W]?`) for outputs that may be missing. Topic for an RFC |
+| Q-16 | Default values that flow like data | Writing rule in v0 (7.2: a verdict depends on `err`). Seen with the proof of concept (`docs/rfc/check_power.lcf`, run against `libs/visa/sim/psu-timeout.toml`): when the current readback of a power check times out, the verdict is `Error`, as it should be, but the `power` output is `0 W`, a value that looks measured. Options: (a) keep default values and the writing rule; (b) propagate the absence of a value (a node that consumes the output of a skipped node is skipped in turn, and an output reads "no value"); (c) an optional type (`f64[W]?`) for outputs that may be missing. Topic for an RFC |
 | Q-17 | Spread an array into a variadic parameter? | No in v0: call the function that takes an array (`string.join`). Spread syntax possible later |
 | Q-18 | Mini-language of `string.format` fields | Settled: the form of C++20, with a name and a display unit (5.4). Left open: the inverse reading `string.scan` |
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |

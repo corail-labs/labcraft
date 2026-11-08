@@ -1,11 +1,11 @@
 # Source that settles in 3 s: the voltage rises from 0 V to 230 V in 3 s (linear ramp).
-[[instrument]]
+[[visa.instrument]]
 resource = "SIM::DMM0"
 
-[instrument.measure]
+[visa.instrument.measure]
 "MEAS:VOLT:DC?" = "voltage"
 
-[instrument.quantity.voltage]
+[visa.instrument.quantity.voltage]
 initial = 0.0
 value = 230.0
 settle_ms = 3000

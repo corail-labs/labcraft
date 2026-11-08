@@ -4,7 +4,7 @@
     python tools/lcf-poc/lcf.py check examples
     python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc
     python tools/lcf-poc/lcf.py list examples
-    python tools/lcf-poc/lcf.py run examples check_voltage --sim instruments/dmm-230V.toml \\
+    python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml \\
         --arg resource=SIM::DMM0 [--trace]
 """
 import argparse

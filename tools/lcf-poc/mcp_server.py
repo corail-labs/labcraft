@@ -20,7 +20,7 @@ mcp = FastMCP(
         "LabCraft v0: a dataflow language for test benches. A library is a folder of "
         ".lcf files (one function per file) and .lct files (one type per file). Working loop: "
         "list_functions (with builtins=true) to learn the primitives, write the file, `check` "
-        "until zero errors, `run` against a simulated instrument (a .toml file from the instruments/ folder), "
+        "until zero errors, `run` against a simulated instrument (a .toml file from the libs/visa/sim/ folder), "
         "read `outputs`, `error` and `fault`, fix. `trace=true` gives the execution order and the value "
         "of each wire. Spec: docs/language-spec-v0.md; examples: examples/."
     ),
@@ -46,7 +46,7 @@ def run(folder: str, function: str, sim: str | None = None, args: dict | None = 
         max_iterations: int = 10000) -> dict:
     """Runs a function against simulated instruments (deterministic, simulated clock).
 
-    sim: instruments .toml file (e.g. instruments/dmm-230V.toml). args: input values by name;
+    sim: instruments .toml file (e.g. libs/visa/sim/dmm-230V.toml). args: input values by name;
     numbers with a unit as text ("230 V", "50 ms"), arrays and structs as JSON, session = resource
     name ("SIM::DMM0"). Returns outputs, error (error that reached the `err` output), fault (run-time
     fault or invalid file), sim (simulated time, sessions still open, commands exchanged)

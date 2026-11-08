@@ -56,7 +56,8 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   `..` of a path are not names, and fall under the rule above.
 - **`.toml` files** are reached only as simulation files: an existing one is read, written, renamed or
   deleted only if it reads as a simulation file, and a new one must read as one. It reads as one when
-  every key at its top level is a key of the format of simulation files (M0b, step 3), so an empty file,
+  it is TOML and every key at its top level names a library that simulates (in M0, `visa`:
+  [libs/visa/simulation.md](../libs/visa/simulation.md)), so an empty file,
   as `no-instrument.toml` may be, is one. The name `labcraft.toml` is refused whatever it holds, since it
   names the manifest of a library. So `Cargo.toml`, `pyproject.toml` and the manifests of the shipped
   libraries are out of reach, and so is a user library's manifest when M2 brings it.
@@ -279,7 +280,7 @@ How `check` keeps and reuses its work is written in the architecture of M0b.
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `simulation.describe` | `path` | What a simulation file of the project or of `<labcraft>/visa/sim/` defines: each instrument with its resource, its `*IDN?` answer, its latency, the queries it answers and what each one measures, the writes it accepts, the faults it injects; or the diagnostics of the file. The format of these files is specified with them (M0b, step 3) |
+| `simulation.describe` | `path` | What a simulation file of the project or of `<labcraft>/visa/sim/` defines, part by part: for each library that simulates, the description that library gives of its part (for `visa`, each instrument with its resource, its `*IDN?` answer, its latency, the queries it answers and what each one reads, the writes it accepts, the faults it injects: [libs/visa/simulation.md](../libs/visa/simulation.md), section 9); or the diagnostics of the file, those of the tool (`LC0006`, `LC0007`, `LC8109`, `LC8110`) and those of each library |
 
 ### 6.4 Runs
 
@@ -334,13 +335,13 @@ prints. One example, then the fields.
   "mode": "deterministic",
   "outputs": [
     { "name": "verdict", "type": "Verdict", "value": "Verdict.Pass" },
-    { "name": "voltage", "type": "f64[V]", "value": "230.03 V" },
+    { "name": "voltage", "type": "f64[V]", "value": "230.071217 V" },
     { "name": "err", "type": "error", "value": null }
   ],
   "clock": { "simulated_ms": 0.0, "real_ms": 2 },
   "sessions": { "opened": 1, "open": [], "leaked": [] },
   "instruments": [
-    { "resource": "SIM::DMM0", "commands": [ { "t_ms": 0.0, "sent": "MEAS:VOLT:DC?", "answer": "230.03" } ] }
+    { "resource": "SIM::DMM0", "commands": [ { "t_ms": 0.0, "sent": "MEAS:VOLT:DC?", "answer": "230.071217" } ] }
   ],
   "trace": { "file": ".labcraft/runs/check_voltage.trace.jsonl", "events": 41, "truncated": false },
   "check": {
@@ -383,8 +384,8 @@ run can be followed and a cut file still reads.
 {"seq":2,"t_ms":0.0,"event":"call","frame":1,"parent":0,"node":"dmm","function":"visa.open","in":[…],"types":{…}}
 {"seq":5,"t_ms":0.0,"frame":0,"node":"dmm","event":"ran","out":{"dmm":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
 {"seq":6,"t_ms":0.0,"event":"call","frame":2,"parent":0,"node":"raw","function":"scpi.query_f64","in":[{"name":"session","type":"visa.session","value":{"opaque":"visa.session","resource":"SIM::DMM0","open":true}},{"name":"command","type":"string","value":"MEAS:VOLT:DC?"},{"name":"err","type":"error","value":null}],"types":{"text":"string","s":"visa.session","e1":"error","value":"f64","e2":"error"}}
-{"seq":9,"t_ms":0.0,"frame":2,"node":"text","event":"ran","out":{"text":"230.03","s":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
-{"seq":12,"t_ms":0.0,"frame":0,"node":"raw","event":"ran","out":{"raw":230.03,"dmm2":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e2":null}}
+{"seq":9,"t_ms":0.0,"frame":2,"node":"text","event":"ran","out":{"text":"230.071217","s":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
+{"seq":12,"t_ms":0.0,"frame":0,"node":"raw","event":"ran","out":{"raw":230.071217,"dmm2":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e2":null}}
 {"seq":24,"t_ms":0.0,"frame":0,"node":"measured","event":"arm","arm":"true"}
 {"seq":41,"t_ms":0.0,"event":"end","status":"ok"}
 ```
