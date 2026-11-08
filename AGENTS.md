@@ -50,9 +50,15 @@ next milestones go on. `tools/` remains throwaway, until Rust replaces it.
   ```
 
   Blocks containing `…` are illustrative fragments and are skipped. Requires `pip install lark`.
-- `examples/` is also a library for the Python proof of concept: it must pass
+- An expected value in a test or a corpus never comes from the output of the program under test: work
+  it out by hand or with another tool, and say how.
+- `examples/` is also a library for the Python proof of concept: while these checks pass, it must pass
   `python tools/lcf-poc/lcf.py check examples`, and `python -m unittest discover tools/lcf-poc/tests`
-  must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`).
+  must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`). The proof of concept is the
+  executable reference for running a program until M0b. It no longer follows every rule of `check`:
+  there the corpora of `tests/acceptance/` and the Rust `labcraft-cli check` are the reference, and the
+  spec decides where they differ. A proof-of-concept check that fails only because it lags behind a
+  rule is dropped, in the pull request that brings the rule.
 - Examples and spec code blocks must be in canonical form (spec 5.2: order of lines and layout of
   the text): `python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples`.
 - `libs/visa` and `libs/scpi` (libraries shipped with LabCraft) follow the same rules: `check` each
