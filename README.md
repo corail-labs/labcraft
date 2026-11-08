@@ -21,8 +21,9 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-08): M0a, the first part of the first milestone, is implemented in Rust: it
-reads, checks and writes programs (`labcraft-cli check` and `fmt`); it does not run them yet.**
+**Status (2026-11-08): M0a, the first part of the first milestone, is done in Rust (tag
+`v0.1.0-m0a`): it reads, checks and writes programs (`labcraft-cli check` and `fmt`); it does not
+run them yet.**
 The language and its text format are described (spec v0), with example programs. Running programs
 is M0b, with a read-only diagram viewer alongside (M0v); until then, a throwaway Python proof of
 concept checks and runs the examples against simulated instruments, and an AI agent drives it over

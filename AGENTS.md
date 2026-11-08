@@ -4,8 +4,8 @@ LabCraft is an AI-native graphical dataflow language and IDE, aiming to do at le
 does, in pure Rust, open and cross-platform. It follows the conventions of the Craft apps
 (storytold, SolidCraft); see `docs/craft-ecosystem.md`.
 
-**Current phase: M0a in Rust** (`docs/architecture.md`, section 9), while the specifications of the
-next milestones go on. `tools/` remains throwaway, until Rust replaces it.
+**Current phase: the specifications of M0b and M0v.** M0a is done (tag `v0.1.0-m0a`,
+`docs/architecture.md`, section 9). `tools/` remains throwaway, until Rust replaces it.
 
 ## Start every session here
 

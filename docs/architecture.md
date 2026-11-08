@@ -369,7 +369,7 @@ judge types, where the corpus decides.
 ## 9. Order of work
 
 Each step ends with something testable, and can be one or a few pull requests. All ten are merged
-(2026-11-07); the tag of M0a waits for the long fuzzing run of scenario 4.
+(2026-11-07), and M0a is tagged `v0.1.0-m0a` (2026-11-08).
 
 1. **Workspace:** crates, lints, `xtask` (`ci`, `layers`, `licences`, `libs`, `wasm`), CI.
 2. **`types`:** `Name`, `Unit`, `Ty`, `Code` and `Report`, `xtask codes`.
@@ -384,5 +384,5 @@ Each step ends with something testable, and can be one or a few pull requests. A
 9. **`check`, passes 5 and 6:** warnings, panel, layout, icon, and the rest of scenario 4; fuzzing `check`.
 10. **The agent half of scenario 2,** by hand before the tag.
 
-Rust contributions open with the tag of M0a for its crates, and for those of M0b and M0v once their
+Rust contributions have been open since the tag of M0a for its crates, and for those of M0b and M0v once their
 sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).

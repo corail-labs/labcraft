@@ -8,18 +8,18 @@ cross-platform.
 
 ## Where the project is
 
-LabCraft has **implemented M0a, the first part of its first milestone in Rust**: `labcraft-cli`
+LabCraft has **done M0a, the first part of its first milestone in Rust**: `labcraft-cli`
 reads, checks and writes programs, but does not run them yet. The repository holds the language and file format specification, the decisions behind it, example
 programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
 concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
 
-Code contributions in Rust open in stages. With the tag of milestone M0a, which waits for a long
-fuzzing run, they open on what exists: bugs and improvements of `fmt` and `check`, cases for the
+Code contributions in Rust open in stages. Since the tag of milestone M0a (`v0.1.0-m0a`), they have
+been open on what exists: bugs and improvements of `fmt` and `check`, cases for the
 corpora of `tests/acceptance/`, other platforms, the WASM build. The interpreter (M0b) and the
 diagram viewer (M0v) open each when its specification and its section of
 [docs/architecture.md](docs/architecture.md) are written, so that a contribution has a contract to
-meet; [docs/roadmap.md](docs/roadmap.md) lists what is still to write. Until the tag, the most
-useful help is feedback on the language.
+meet; [docs/roadmap.md](docs/roadmap.md) lists what is still to write. Feedback on the language
+remains the most useful help.
 
 ## How to help now
 
@@ -32,6 +32,8 @@ useful help is feedback on the language.
 - **Report a problem in the spec or the examples** as an issue: a contradiction, a hole, an
   example that does not do what the text says.
 - **Fix one.** A pull request to the spec or the examples is welcome; see the checks below.
+- **Improve `fmt` and `check`.** A bug, a missing case in the corpora of `tests/acceptance/`, another
+  platform or the WASM build; see the checks below.
 
 The open questions are listed in the spec, section 15; the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).

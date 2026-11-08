@@ -109,7 +109,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-check"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-format",
  "labcraft-graph",
@@ -120,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-cli"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "craft-atomic",
  "labcraft-check",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-format"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-graph",
  "labcraft-types",
@@ -143,14 +143,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-graph"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-types",
 ]
 
 [[package]]
 name = "labcraft-harness"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -162,14 +162,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-libs"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
 ]
 
 [[package]]
 name = "labcraft-types"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "serde",
  "serde_json",
@@ -564,7 +564,7 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 
 [[package]]
 name = "xtask"
-version = "0.0.0"
+version = "0.1.0-m0a"
 dependencies = [
  "labcraft-types",
  "serde_json",
