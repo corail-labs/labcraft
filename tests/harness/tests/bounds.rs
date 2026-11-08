@@ -276,13 +276,13 @@ fn filled(head: &str, mut line: impl FnMut(usize) -> String, tail: &str) -> Stri
 /// The Size family: under the limit only without indentation.
 fn nodes_300000() -> Vec<Folder> {
     let lines: String = (0..300_000).map(|index| format!("a{index}=1\n")).collect();
-    alone("a.lcf", format!("labcraft 1\nfn f()->(){{\n{lines}}}\n"))
+    alone("f.lcf", format!("labcraft 1\nfn f()->(){{\n{lines}}}\n"))
 }
 
 fn comment_at_the_limit() -> Vec<Folder> {
     let (head, tail) = ("labcraft 1\n\n// ", "\nfn f() -> () {}\n");
     let size = usize::try_from(Limits::default().max_file_size).unwrap();
-    alone("a.lcf", format!("{head}{}{tail}", "x".repeat(size - head.len() - tail.len())))
+    alone("f.lcf", format!("{head}{}{tail}", "x".repeat(size - head.len() - tail.len())))
 }
 
 /// A pseudo-random sequence, the same on every run.
@@ -307,41 +307,41 @@ fn names_in_random_order() -> Vec<Folder> {
     for index in (1..lines.len()).rev() {
         lines.swap(index, random.below(index + 1));
     }
-    alone("a.lcf", format!("{HEAD}fn f() -> () {{\n{}\n}}\n", lines.join("\n")))
+    alone("f.lcf", format!("{HEAD}fn f() -> () {{\n{}\n}}\n", lines.join("\n")))
 }
 
 fn one_value_read_everywhere() -> Vec<Folder> {
-    alone("a.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    x = 1\n"), |index| format!("    b{index} = core.add(x, 1)\n"), "}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    x = 1\n"), |index| format!("    b{index} = core.add(x, 1)\n"), "}\n"))
 }
 
 /// The entry asks for the wires of a value read on every line.
 fn one_value_read_everywhere_in_layout() -> Vec<Folder> {
     let tail = "}\n\nlayout {\n    wire x -> b1 via (10, 10)\n}\n";
-    alone("a.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    x = 1\n"), |index| format!("    b{index} = core.add(x, 1)\n"), tail))
+    alone("f.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    x = 1\n"), |index| format!("    b{index} = core.add(x, 1)\n"), tail))
 }
 
 /// Four bytes a parameter, each one with the same name and an unknown type.
 fn parameters_that_repeat() -> Vec<Folder> {
-    alone("a.lcf", filled(&format!("{HEAD}fn f("), |_| "a:b,".to_owned(), ") -> () {}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f("), |_| "a:b,".to_owned(), ") -> () {}\n"))
 }
 
 fn parameters() -> Vec<Folder> {
-    alone("a.lcf", filled(&format!("{HEAD}fn f("), |index| format!("p{index}: f64, "), ") -> () {}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f("), |index| format!("p{index}: f64, "), ") -> () {}\n"))
 }
 
 /// Loops 250 deep, again and again, without indentation.
 fn towers_of_parallel_loops() -> Vec<Folder> {
     let tower: String = (0..250).map(|depth| format!("_=for parallel x{depth} in [1]{{\n")).collect::<String>() + "y=1\n" + &"}\n".repeat(250);
-    alone("a.lcf", filled(&format!("{HEAD}fn f() -> () {{\n"), |_| tower.clone(), "}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f() -> () {{\n"), |_| tower.clone(), "}\n"))
 }
 
 /// One node with millions of targets, which `core.add` does not have (`LC2103`).
 fn targets() -> Vec<Folder> {
-    alone("a.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    "), |index| format!("c{index}, "), "z = core.add(1, 1)\n}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    "), |index| format!("c{index}, "), "z = core.add(1, 1)\n}\n"))
 }
 
 fn chain_of_calls() -> Vec<Folder> {
-    alone("a.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    c0 = 1\n"), |index| format!("    c{} = core.add(c{index}, 2)\n", index + 1), "}\n"))
+    alone("f.lcf", filled(&format!("{HEAD}fn f() -> () {{\n    c0 = 1\n"), |index| format!("    c{} = core.add(c{index}, 2)\n", index + 1), "}\n"))
 }
 
 /// A wire entry on each parameter.
@@ -357,7 +357,7 @@ fn an_entry_per_parameter() -> Vec<Folder> {
     while text(count).len() > size {
         count -= count / 20;
     }
-    alone("a.lcf", text(count))
+    alone("f.lcf", text(count))
 }
 
 /// Each value is read under 250 loops and has an entry: far more wires than the file has places, so past the limit of wires,
@@ -377,7 +377,7 @@ fn values_that_cross_250_frames() -> Vec<Folder> {
     while text(count).len() > size {
         count -= count / 20;
     }
-    alone("a.lcf", text(count))
+    alone("f.lcf", text(count))
 }
 
 /// `x` and `y` in 100 arms, and an entry from one to the other again and again: each entry compares 10,000 pairs, until the
@@ -386,7 +386,7 @@ fn a_budget_of_comparisons_spent() -> Vec<Folder> {
     let arms: String = (0..100).map(|arm| format!("{arm}=>{{\nx=1\ny=core.add(x,1)\nyield y\n}}\n")).collect();
     let head = format!("labcraft 1\nuse core\nfn f(n: i32) -> (r: i32) {{\nq=1\nr=match n {{\n{arms}_=>yield 0\n}}\na=[q");
     let tail = format!("]\n}}\nlayout {{\n{}}}\n", "wire x->y\n".repeat(15_000));
-    alone("a.lcf", filled(&head, |_| ",q".to_owned(), &tail))
+    alone("f.lcf", filled(&head, |_| ",q".to_owned(), &tail))
 }
 
 fn library_of_100000_files() -> Vec<Folder> {

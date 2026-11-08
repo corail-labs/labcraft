@@ -82,7 +82,7 @@ fn layout_of_nodes(entries: &str) -> Vec<&'static str> {
     let (types, function) = NODES.split_once("\n\n").unwrap_or_default();
     let mut names = Interner::new();
     let files = [
-        ("limits.lct", format!("labcraft 1\n\n{types}\n")),
+        ("Limits.lct", format!("labcraft 1\n\n{types}\n")),
         ("f.lcf", format!("labcraft 1\n\nuse core\n\n{function}\n\nlayout {{\n{entries}\n}}\n")),
     ];
     let files = files
@@ -232,7 +232,7 @@ fn a_field_read_is_a_value_of_its_own() {
     let function = "fn f(limits: Limits) -> (y: bool) {\n    low = limits.low\n    high = limits.high\n    y = core.lt(low, high)\n}";
     let mut names = Interner::new();
     let files =
-        [("limits.lct", format!("labcraft 1\n\n{text}\n")), ("f.lcf", format!("labcraft 1\n\nuse core\n\n{function}\n\nlayout {{\n{entries}\n}}\n"))];
+        [("Limits.lct", format!("labcraft 1\n\n{text}\n")), ("f.lcf", format!("labcraft 1\n\nuse core\n\n{function}\n\nlayout {{\n{entries}\n}}\n"))];
     let files = files
         .into_iter()
         .map(|(shown, text)| SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.into_bytes())) })

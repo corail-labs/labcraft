@@ -97,8 +97,8 @@ fn bytes_have_a_text_and_no_number() {
 fn a_field_refuses_what_has_no_text() {
     let session = [
         ("session.lct", "type session = opaque"),
-        ("holder.lct", "type Holder = struct { s: session, x: f64 }"),
-        ("kinds.lct", "type Kinds = enum { One(session), Two }"),
+        ("Holder.lct", "type Holder = struct { s: session, x: f64 }"),
+        ("Kinds.lct", "type Kinds = enum { One(session), Two }"),
     ];
     let wired = |ty: &str| judged_with(&session, &format!("q: {ty}"), "x: string", "x = string.format(\"{a}\", a: q)");
     assert_eq!(wired("session"), ["LC3001"]);
@@ -156,8 +156,8 @@ fn a_unit_converts_each_number() {
 
 #[test]
 fn a_struct_of_one_dimension_takes_a_unit() {
-    let ok = [("pair.lct", "type Pair = struct { low: f64[V], high: f64[mV], name: string }")];
-    let mixed = [("pair.lct", "type Pair = struct { low: f64[V], high: f64[A] }")];
+    let ok = [("Pair.lct", "type Pair = struct { low: f64[V], high: f64[mV], name: string }")];
+    let mixed = [("Pair.lct", "type Pair = struct { low: f64[V], high: f64[A] }")];
     let shown = "x = string.format(\"{a:mV}\", a: q)";
     assert_eq!(judged_with(&ok, "q: Pair", "x: string", shown), NOTHING);
     assert_eq!(judged_with(&mixed, "q: Pair", "x: string", shown), ["LC3005"]);
@@ -194,7 +194,7 @@ fn what_is_unknown_says_nothing_more() {
     assert_eq!(field(":x", "[nowhere]"), ["LC2001"], "in an array");
     let shown = "y = g()\nx = string.format(\"{a:x}\", a: y)";
     assert_eq!(judged_with(&[("g.lcf", "fn g() -> (o: [Nowhere]) {\n    o = []\n}")], "", "x: string", shown), ["LC2003"], "from another node");
-    let holder = [("s.lct", "type S = struct { q: Nowhere }"), ("g.lcf", "fn g(s: S) -> (o: S) {\n    o = s\n}")];
+    let holder = [("S.lct", "type S = struct { q: Nowhere }"), ("g.lcf", "fn g(s: S) -> (o: S) {\n    o = s\n}")];
     assert_eq!(judged_with(&holder, "s: S", "x: string", "y = g(s)\nx = string.format(\"{a:x}\", a: y)"), ["LC2003"], "inside a struct");
 }
 
@@ -222,7 +222,7 @@ fn a_type_is_looked_at_once() {
     let large = format!("type Large = struct {{ {} }}", fields.join(", "));
     let template = "{a:.3 mV}".repeat(100_000);
     let body = format!("x = string.format(\"{template}\", a: q)");
-    assert_eq!(judged_with(&[("large.lct", large.as_str())], "q: Large", "x: string", &body), NOTHING);
+    assert_eq!(judged_with(&[("Large.lct", large.as_str())], "q: Large", "x: string", &body), NOTHING);
 }
 
 fn said(args: &str) -> Vec<Diagnostic> {

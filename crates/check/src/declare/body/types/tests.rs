@@ -52,10 +52,10 @@ fn judged_with(extra: &[(&str, &str)], inputs: &str, outputs: &str, body: &str) 
     let text = program(inputs, outputs, body);
     let mut files = vec![
         ("f.lcf", text.as_str()),
-        ("reading.lct", "type Reading = enum { Value(f64[V]), Pair(i32, string), Overload }"),
-        ("point.lct", "type Point = struct { x: f64[m], label: string }"),
-        ("verdict.lct", "type Verdict = enum { Pass, Fail }"),
-        ("grade.lct", "type Grade = enum { Pass, Fail }"),
+        ("Reading.lct", "type Reading = enum { Value(f64[V]), Pair(i32, string), Overload }"),
+        ("Point.lct", "type Point = struct { x: f64[m], label: string }"),
+        ("Verdict.lct", "type Verdict = enum { Pass, Fail }"),
+        ("Grade.lct", "type Grade = enum { Pass, Fail }"),
         ("scale.lcf", "fn scale(x: f64[V], gain: f64 = 1.0) -> (y: f64[V]) {\n    y = x\n}"),
         ("measure.lcf", "fn measure(x: f64[V], err: error = none) -> (y: f64[V], err: error) {\n    y = x\n    err = err\n}"),
     ];
@@ -80,8 +80,7 @@ fn gives(ty: &str, line: &str) -> Vec<&'static str> {
 
 #[test]
 fn an_alias_is_another_name() {
-    let types =
-        [("volts.lct", "type Volts = f64[V]"), ("alias.lct", "type A = Verdict"), ("again.lct", "type B = A"), ("many.lct", "type Many = [f64[V]]")];
+    let types = [("Volts.lct", "type Volts = f64[V]"), ("A.lct", "type A = Verdict"), ("B.lct", "type B = A"), ("Many.lct", "type Many = [f64[V]]")];
     assert_eq!(judged_with(&types, "v: Volts", "x: f64[V]", "x = v"), NOTHING);
     assert_eq!(judged_with(&types, "v: f64[V]", "x: Volts", "x = v"), NOTHING);
     assert_eq!(judged_with(&types, "v: f64[mV]", "x: Volts", "x = v"), NOTHING, "a conversion applies through the name");
@@ -98,7 +97,7 @@ fn an_alias_is_another_name() {
 #[test]
 fn an_alias_of_error_is_still_not_written_as_error_on_an_external_function() {
     let external = "extern rust(crate: \"c\", function: \"e\")\nfn e() -> (err: E)";
-    assert_eq!(codes(&[("e.lcf", external), ("t.lct", "type E = error")]), ["LC4005"], "R-13");
+    assert_eq!(codes(&[("e.lcf", external), ("E.lct", "type E = error")]), ["LC4005"], "R-13");
 }
 
 #[test]
@@ -496,7 +495,7 @@ fn a_reference_matches_exactly() {
     let exact = |ty: &str, name: &str| judged(&format!("h: {ty}"), "", &format!("_ = for i in 0..1 {{\na = core.eq(h, {name})\n}}"));
     assert_eq!(exact("fn(f64[V], f64) -> (f64[V])", "scale"), NOTHING);
     assert_eq!(exact("fn(f64[mV], f64) -> (f64[V])", "scale"), ["LC3008"], "no conversion on a reference");
-    let variadic = [("v.lcf", "fn many(parts: string...) -> (n: i32) {\n    n = 1\n}")];
+    let variadic = [("many.lcf", "fn many(parts: string...) -> (n: i32) {\n    n = 1\n}")];
     assert_eq!(judged_with(&variadic, "h: fn([string]) -> (i32)", "", "a = core.eq(h, many)"), NOTHING, "a variadic parameter counts as an array");
 }
 
@@ -554,7 +553,7 @@ fn a_value_says_its_fields() {
     assert_eq!(judged(p, "x: f64[m]", "x = p.x.y"), ["LC2006"]);
     assert_eq!(judged(p, "x: i32", "x = n.y"), ["LC2006"]);
     assert_eq!(judged(p, "x: i32", "x = e.code"), ["LC2006"], "an error is read through `handle`");
-    let alias = [("a.lct", "type Q = Point")];
+    let alias = [("Q.lct", "type Q = Point")];
     assert_eq!(judged_with(&alias, "q: Q", "x: f64[m]", "x = q.x"), NOTHING);
 }
 
@@ -918,7 +917,7 @@ fn every_value_has_an_arm() {
 
 #[test]
 fn the_message_names_a_few_missing_variants() {
-    let many = ("many.lct", "type Many = enum { A, B, C, D, E, F, G, H }");
+    let many = ("Many.lct", "type Many = enum { A, B, C, D, E, F, G, H }");
     let text = program("s: Many", "y: i32", "y = match s {\nMany.A => yield 1\n}");
     let found = diagnostics(&[("f.lcf", text.as_str()), many]);
     assert_eq!(found.len(), 1);
@@ -929,10 +928,10 @@ fn the_message_names_a_few_missing_variants() {
 #[test]
 fn an_alias_covers_what_its_type_covers() {
     let extra = [
-        ("channel.lct", "type Channel = i32"),
-        ("flag.lct", "type Flag = bool"),
-        ("other.lct", "type Other = Verdict"),
-        ("t.lct", "type T = string"),
+        ("Channel.lct", "type Channel = i32"),
+        ("Flag.lct", "type Flag = bool"),
+        ("Other.lct", "type Other = Verdict"),
+        ("T.lct", "type T = string"),
     ];
     let on = |selector: &str, arms: &str| judged_with(&extra, &format!("s: {selector}"), "y: i32", &format!("y = match s {{\n{arms}\n}}"));
     assert_eq!(on("Channel", "1..=3 => yield 1\n_ => yield 2"), NOTHING);
@@ -1059,7 +1058,7 @@ fn the_fix_of_a_useless_wildcard_removes_it() {
 /// The code, the line and the related lines of each diagnostic of a function with these arms.
 fn places(selector: &str, arms: &str, kind: &str) -> Vec<(&'static str, u32, Vec<u32>)> {
     let text = format!("use core\n\nfn f(s: {selector}) -> (y: i32) {{\ny = {kind} s {{\n{arms}\n}}\n}}");
-    let files = [("f.lcf", text.as_str()), ("verdict.lct", "type Verdict = enum { Pass, Fail }")];
+    let files = [("f.lcf", text.as_str()), ("Verdict.lct", "type Verdict = enum { Pass, Fail }")];
     diagnostics(&files)
         .iter()
         .map(|diagnostic| {

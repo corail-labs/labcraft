@@ -7,8 +7,9 @@ use std::panic::{self, AssertUnwindSafe};
 
 use labcraft_format::{Read, read};
 use labcraft_graph::{Decl, File, Id, SourceMap, TypeExpr};
-use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, normalize};
+use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, cut_text, normalize};
 
+use crate::file_name::{case_key, kept_by_windows};
 use crate::manifest::Manifest;
 use crate::primitives::PrimitiveLibrary;
 use crate::{Content, DependencyReport, Found, Libraries, LibrarySource, Origin, SourceFile};
@@ -134,6 +135,7 @@ impl Loader<'_> {
         let mut budget = Budget { left: self.limits.max_library_size, over: false };
         let mut stack = vec![(String::new(), root)];
         while let Some((path, mut source)) = stack.pop() {
+            self.judge_the_folders(&source.sub_libraries);
             // In reverse, so that the first of two folders with one normalized name is the one that a `use` finds.
             for sub in std::mem::take(&mut source.sub_libraries).into_iter().rev() {
                 let segment = normalize(&sub.name).into_owned();
@@ -149,6 +151,39 @@ impl Loader<'_> {
         }
         if budget.over {
             self.report.push(Diagnostic::new(Code::Lc0010, over_the_limit(self.limits), shown));
+        }
+    }
+
+    /// The folders side by side follow R-22 as files do: none that Windows keeps for a device, and no two that only
+    /// their case or their spelling tell apart. Once for each pair, on the last one, as for files.
+    fn judge_the_folders(&mut self, folders: &[LibrarySource]) {
+        let mut by_case: HashMap<String, Vec<&LibrarySource>> = HashMap::new();
+        for folder in folders {
+            let name = normalize(&folder.name);
+            if kept_by_windows(&name) {
+                let message = format!("Windows keeps `{}` for a device: Git for Windows refuses a folder of that name (R-22)", cut_text(&name));
+                self.report.push(Diagnostic::new(Code::Lc2025, message, folder.shown.clone()));
+            }
+            by_case.entry(case_key(&name)).or_default().push(folder);
+        }
+        let mut groups: Vec<Vec<&LibrarySource>> = by_case.into_values().filter(|group| group.len() > 1).collect();
+        for group in &mut groups {
+            group.sort_by(|a, b| a.shown.cmp(&b.shown));
+        }
+        groups.sort_by(|a, b| a.first().map(|f| &f.shown).cmp(&b.first().map(|f| &f.shown)));
+        for group in groups {
+            let Some((last, others)) = group.split_last() else { continue };
+            let message = format!(
+                "the folder `{}` differs from another one beside it only by its case or its spelling: they cannot be side by side on \
+                 Windows or macOS (R-22)",
+                cut_text(&last.name)
+            );
+            let mut diagnostic = Diagnostic::new(Code::Lc2024, message, last.shown.clone());
+            diagnostic.related = others
+                .iter()
+                .map(|other| Related { message: format!("`{}` is here", cut_text(&other.name)), file: other.shown.clone(), span: None })
+                .collect();
+            self.report.push(diagnostic);
         }
     }
 
@@ -570,8 +605,14 @@ mod tests {
 
     const FUNCTION: &[u8] = b"labcraft 1\n\nfn f() -> () {}\n";
 
+    /// A file of another name than `f` declares a function of its name (R-22), as `fn f` would in `f.lcf`.
     fn file(shown: &str, bytes: &[u8]) -> SourceFile {
-        SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(bytes.to_vec())) }
+        let stem = crate::file_name::stem(shown);
+        let bytes = match std::str::from_utf8(bytes) {
+            Ok(text) if stem != "f" && labcraft_format::is_name(&stem) => text.replace("fn f(", &format!("fn {stem}(")).into_bytes(),
+            _ => bytes.to_vec(),
+        };
+        SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(bytes)) }
     }
 
     fn library(name: &str, files: Vec<SourceFile>) -> LibrarySource {
@@ -615,7 +656,7 @@ mod tests {
 
     #[test]
     fn a_clean_folder_is_counted() {
-        let mut root = library("", vec![file("f.lcf", FUNCTION), file("t.lct", b"labcraft 1\n\ntype T = f64\n")]);
+        let mut root = library("", vec![file("f.lcf", FUNCTION), file("T.lct", b"labcraft 1\n\ntype T = f64\n")]);
         root.sub_libraries.push(library("sub", vec![file("sub/g.lcf", FUNCTION)]));
         let checked = check(root, &Nothing, &mut Interner::new(), &Limits::default());
         assert_eq!(checked.report.errors() + checked.report.warnings(), 0);
@@ -648,16 +689,16 @@ mod tests {
         let ty = b"labcraft 1\n\ntype T = f64\n";
         let extern_ = b"labcraft 1\n\nextern rust(crate: \"a\", function: \"b\")\nfn g() -> (err: error)\n";
         let other = b"labcraft 1\n\ntype U = f64\n";
-        let found = codes_of_files(vec![file("t.lcf", ty), file("f.lct", FUNCTION), file("e.lct", extern_), file("u.lct", other)]);
+        let found = codes_of_files(vec![file("T.lcf", ty), file("f.lct", FUNCTION), file("g.lct", extern_), file("U.lct", other)]);
         assert_eq!(found, ["LC0103", "LC0103", "LC0103"]);
-        let checked = check(library("", vec![file("t.lcf", ty), file("f.lct", FUNCTION)]), &Nothing, &mut Interner::new(), &Limits::default());
+        let checked = check(library("", vec![file("T.lcf", ty), file("f.lct", FUNCTION)]), &Nothing, &mut Interner::new(), &Limits::default());
         assert_eq!((checked.counts.functions, checked.counts.types), (1, 1));
     }
 
     #[test]
     fn each_section_of_a_type_is_refused() {
         let text = b"labcraft 1\n\ntype T = f64\n\npanel {\n}\n\nlayout {\n}\n\nicon 32 {\n}\n";
-        assert_eq!(codes_of_files(vec![file("t.lct", text)]), ["LC0104", "LC0104", "LC0104"]);
+        assert_eq!(codes_of_files(vec![file("T.lct", text)]), ["LC0104", "LC0104", "LC0104"]);
     }
 
     #[test]
@@ -698,6 +739,27 @@ mod tests {
         let mut root = library("", vec![file("f.lcf", &uses(&["VISA"]))]);
         root.sub_libraries.push(library("visa", vec![file("visa/g.lcf", FUNCTION)]));
         assert_eq!(codes(root, &Nothing, &Limits::default()), ["LC2004"]);
+    }
+
+    #[test]
+    fn folders_side_by_side_follow_the_rules_of_files() {
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        root.sub_libraries.push(library("Visa", vec![file("Visa/g.lcf", FUNCTION)]));
+        root.sub_libraries.push(library("visa", vec![file("visa/g.lcf", FUNCTION)]));
+        root.sub_libraries.push(library("nul", vec![file("nul/g.lcf", FUNCTION)]));
+        root.sub_libraries.push(library("caf\u{E9}", vec![file("caf\u{E9}/g.lcf", FUNCTION)]));
+        root.sub_libraries.push(library("cafe\u{301}", vec![file("cafe\u{301}/g.lcf", FUNCTION)]));
+        let mut checked = check(root, &Nothing, &mut Interner::new(), &Limits::default());
+        checked.report.finish();
+        let found: Vec<(&str, &str)> =
+            checked.report.diagnostics().iter().map(|diagnostic| (diagnostic.code().as_str(), diagnostic.file.as_str())).collect();
+        assert_eq!(found, [("LC2024", "caf\u{E9}"), ("LC2025", "nul"), ("LC2024", "visa")], "once for each pair, on the last one");
+        assert!(checked.report.diagnostics().iter().all(|diagnostic| !diagnostic.message.contains("  ")));
+        let mut inner = library("a", vec![file("a/f.lcf", FUNCTION)]);
+        inner.sub_libraries.push(library("Aux", vec![file("a/Aux/g.lcf", FUNCTION)]));
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        root.sub_libraries.push(inner);
+        assert_eq!(codes(root, &Nothing, &Limits::default()), ["LC2025"], "at any depth");
     }
 
     #[test]

@@ -266,7 +266,7 @@ fn a_name_for_a_session_and_a_carry_are_the_same_resource() {
 #[test]
 fn the_parts_of_a_struct_are_resources_and_the_struct_overlaps_them() {
     let bench = [
-        ("bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
+        ("Bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
         ("use_all.lcf", "fn use_all(b: Bench, err: error = none) -> (err: error) {\n    err = err\n    _ = b\n}"),
     ];
     let inputs = "b: Bench";
@@ -428,7 +428,7 @@ fn arms_nested_are_judged_by_where_they_part() {
 #[test]
 fn a_whole_struct_stays_to_be_compared_with_its_other_parts() {
     let bench = [
-        ("bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
+        ("Bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
         ("use_all.lcf", "fn use_all(b: Bench, err: error = none) -> (err: error) {\n    err = err\n    _ = b\n}"),
     ];
     let parts = "e0 = use_all(b)\nx, _, e1 = visa.query(b.dmm, \"x\", err: e0)\nt1 = core.add(q, 1.0)\nt2 = core.add(t1, 1.0)\nt3 = core.add(t2, 1.0)\ny, _, e2 = visa.query(b.source, \"y\", after: t3)\nerr = errors.merge(e1, e2)\n_ = x";
@@ -440,7 +440,7 @@ fn a_whole_struct_stays_to_be_compared_with_its_other_parts() {
 #[test]
 fn a_plain_field_of_a_struct_with_a_session_is_no_resource() {
     let rig = [
-        ("rig.lct", "use visa\n\ntype Rig = struct { dmm: visa.session, limit: f64 }"),
+        ("Rig.lct", "use visa\n\ntype Rig = struct { dmm: visa.session, limit: f64 }"),
         ("within.lcf", "fn within(x: f64) -> (y: f64) {\n    y = x\n}"),
     ];
     assert_eq!(judged_with(&rig, "r: Rig", "y: f64", "a = within(r.limit)\nb = within(r.limit)\ny = core.add(a, b)"), NOTHING);
@@ -546,7 +546,7 @@ fn a_value_follows_many_sessions() {
 #[test]
 fn what_a_warning_names_does_not_depend_on_the_lines() {
     let bench = [
-        ("bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
+        ("Bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
         ("use_b.lcf", "fn use_b(b: Bench, err: error = none) -> (err: error) {\n    err = err\n    _ = b\n}"),
     ];
     let lines = [
@@ -615,7 +615,7 @@ fn a_signature_with_an_error_waits_too() {
 #[test]
 fn a_chain_on_a_part_is_searched_once() {
     let bench = [
-        ("bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
+        ("Bench.lct", "use visa\n\ntype Bench = struct { dmm: visa.session, source: visa.session }"),
         ("use_b.lcf", "fn use_b(b: Bench, err: error = none) -> (err: error) {\n    err = err\n    _ = b\n}"),
     ];
     let mut lines = vec!["e0 = use_b(b)".to_owned()];
@@ -633,8 +633,8 @@ fn a_chain_on_a_part_is_searched_once() {
 #[test]
 fn a_part_of_a_part_overlaps_what_holds_it() {
     let deep = [
-        ("inner.lct", "use visa\n\ntype Inner = struct { a: visa.session, c: visa.session }"),
-        ("outer.lct", "use visa\n\ntype Outer = struct { sub: Inner, other: visa.session }"),
+        ("Inner.lct", "use visa\n\ntype Inner = struct { a: visa.session, c: visa.session }"),
+        ("Outer.lct", "use visa\n\ntype Outer = struct { sub: Inner, other: visa.session }"),
         ("use_i.lcf", "fn use_i(i: Inner, err: error = none) -> (err: error) {\n    err = err\n    _ = i\n}"),
     ];
     let conflict = "x, _, e0 = visa.query(o.sub.a, \"x\")\ne1 = use_i(o.sub)\ny = x\nerr = errors.merge(e0, e1)";
@@ -646,8 +646,8 @@ fn a_part_of_a_part_overlaps_what_holds_it() {
 #[test]
 fn what_holds_a_resource() {
     let held = [
-        ("rig.lct", "use visa\n\ntype Rig = struct { d: visa.session }"),
-        ("held.lct", "use visa\n\ntype Held = enum { One(visa.session), Nothing }"),
+        ("Rig.lct", "use visa\n\ntype Rig = struct { d: visa.session }"),
+        ("Held.lct", "use visa\n\ntype Held = enum { One(visa.session), Nothing }"),
         ("use_rigs.lcf", "fn use_rigs(r: [Rig], err: error = none) -> (err: error) {\n    err = err\n    _ = r\n}"),
         ("use_held.lcf", "fn use_held(h: Held, err: error = none) -> (err: error) {\n    err = err\n    _ = h\n}"),
     ];
@@ -659,7 +659,7 @@ fn what_holds_a_resource() {
 #[test]
 fn a_value_bound_out_of_a_variant_is_what_the_variant_holds() {
     let held = [
-        ("held.lct", "use visa\n\ntype Held = enum { One(visa.session), Nothing }"),
+        ("Held.lct", "use visa\n\ntype Held = enum { One(visa.session), Nothing }"),
         ("use_held.lcf", "fn use_held(h: Held, err: error = none) -> (err: error) {\n    err = err\n    _ = h\n}"),
     ];
     let body = "y, e1 = match h {\n    Held.One(s) => {\n        x, _, e0 = visa.query(s, \"x\")\n        yield (x, e0)\n    }\n    Held.Nothing => yield (0.0, none)\n}\ne2 = use_held(h)\nerr = errors.merge(e1, e2)";

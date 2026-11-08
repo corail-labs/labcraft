@@ -48,9 +48,9 @@ fn codes(files: &[(&str, &str)]) -> Vec<&'static str> {
 fn in_file(text: &str) -> Vec<&'static str> {
     codes(&[
         ("f.lcf", text),
-        ("reading.lct", "type Reading = enum { Value(f64), Overload }"),
-        ("point.lct", "type Point = struct { x: f64, y: f64 }"),
-        ("bag.lct", "type Bag = enum { Ints([i32]), Takers([fn([i32]) -> (i32)]) }"),
+        ("Reading.lct", "type Reading = enum { Value(f64), Overload }"),
+        ("Point.lct", "type Point = struct { x: f64, y: f64 }"),
+        ("Bag.lct", "type Bag = enum { Ints([i32]), Takers([fn([i32]) -> (i32)]) }"),
         ("g.lcf", "fn g(a: i32, b: i32 = 0, err: error = none) -> (r: i32, err: error) {\n    r = a\n    err = err\n}"),
         ("takes.lcf", "fn takes(a: [i32]) -> (r: i32) {\n    r = 1\n}"),
     ])
@@ -171,7 +171,7 @@ fn a_value_cannot_bear_the_name_of_a_library_a_type_or_a_live_element() {
     );
     assert_eq!(in_file("fn f(stop: bool) -> (x: bool) {\n    x = stop\n}\n\npanel {\n    control stop: button\n}"), NOTHING);
     assert_eq!(
-        codes(&[("f.lcf", "fn f() -> (x: i32) {\n    session = 1\n    x = session\n}"), ("s.lct", "type session = opaque")]),
+        codes(&[("f.lcf", "fn f() -> (x: i32) {\n    session = 1\n    x = session\n}"), ("session.lct", "type session = opaque")]),
         NOTHING,
         "an opaque type has nothing to name"
     );
@@ -219,17 +219,17 @@ fn a_variant_is_positional_then_order_as_a_call_is() {
 
 #[test]
 fn a_variant_through_an_alias_is_a_variant_of_what_it_names() {
-    let files = [("f.lcf", "fn f() -> (x: A) {\n    x = A.One\n}"), ("a.lct", "type A = B"), ("b.lct", "type B = enum { One }")];
+    let files = [("f.lcf", "fn f() -> (x: A) {\n    x = A.One\n}"), ("A.lct", "type A = B"), ("B.lct", "type B = enum { One }")];
     assert_eq!(codes(&files), NOTHING);
-    let files = [("f.lcf", "fn f() -> (x: A) {\n    x = A.Two\n}"), ("a.lct", "type A = B"), ("b.lct", "type B = enum { One }")];
+    let files = [("f.lcf", "fn f() -> (x: A) {\n    x = A.Two\n}"), ("A.lct", "type A = B"), ("B.lct", "type B = enum { One }")];
     assert_eq!(codes(&files), ["LC2007"]);
 }
 
 #[test]
 fn a_type_with_an_error_says_nothing_more() {
-    let files = [("f.lcf", "fn f() -> (x: i32) {\n    x = T.One\n}"), ("t.lct", "type T = enum { One(nowhere) }")];
+    let files = [("f.lcf", "fn f() -> (x: i32) {\n    x = T.One\n}"), ("T.lct", "type T = enum { One(nowhere) }")];
     assert_eq!(codes(&files), ["LC2003"]);
-    let files = [("f.lcf", "fn f() -> (x: i32) {\n    x = T { a: 1 }\n}"), ("t.lct", "type T = nowhere")];
+    let files = [("f.lcf", "fn f() -> (x: i32) {\n    x = T { a: 1 }\n}"), ("T.lct", "type T = nowhere")];
     assert_eq!(codes(&files), ["LC2003"]);
 }
 
@@ -423,14 +423,14 @@ fn a_function_with_a_bad_signature_says_nothing_more_in_a_call() {
 #[test]
 fn a_function_defined_twice_binds_to_the_first_one() {
     let files = [
-        ("a.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"),
-        ("b.lcf", "fn g() -> (r: i32) {\n    r = 1\n}"),
+        ("g.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"),
+        ("g.lcf", "fn g() -> (r: i32) {\n    r = 1\n}"),
         ("f.lcf", "fn f() -> (r: i32) {\n    r = g(1)\n}"),
     ];
     assert_eq!(codes(&files), ["LC2013"]);
     let files = [
-        ("a.lcf", "fn g() -> (r: i32, s: i32) {\n    r = 1\n    s = 1\n}"),
-        ("b.lcf", "fn g() -> (r: i32) {\n    r = 1\n}"),
+        ("g.lcf", "fn g() -> (r: i32, s: i32) {\n    r = 1\n    s = 1\n}"),
+        ("g.lcf", "fn g() -> (r: i32) {\n    r = 1\n}"),
         ("f.lcf", "fn f() -> (r: i32) {\n    r = g()\n}"),
     ];
     assert_eq!(codes(&files), ["LC2013"], "which one was meant stays unknown");
@@ -460,7 +460,7 @@ fn a_call_to_a_library_that_is_not_there_says_nothing_more() {
 fn a_sub_library_is_named_by_its_path_and_its_types_and_variants_too() {
     let mut root = source("", &[("f.lcf", "use a.b\n\nfn f() -> (x: a.b.T, y: i32) {\n    x = a.b.T.One\n    y = a.b.g(1)\n}")]);
     let mut a = source("a", &[("a/x.lcf", "fn x() -> () {}")]);
-    a.sub_libraries.push(source("b", &[("a/b/t.lct", "type T = enum { One }"), ("a/b/g.lcf", "fn g(n: i32) -> (r: i32) {\n    r = n\n}")]));
+    a.sub_libraries.push(source("b", &[("a/b/T.lct", "type T = enum { One }"), ("a/b/g.lcf", "fn g(n: i32) -> (r: i32) {\n    r = n\n}")]));
     root.sub_libraries.push(a);
     let mut report = run(root).0.report;
     report.finish();
@@ -478,7 +478,7 @@ fn a_sub_library_is_named_by_its_path_and_its_types_and_variants_too() {
 /// The folder given has `lib`, with a type `T`, and `lib/sub`, with a function `g`.
 fn with_library(text: &str) -> Vec<Diagnostic> {
     let mut root = source("", &[("f.lcf", text)]);
-    let mut lib = source("lib", &[("lib/t.lct", "type T = enum { A }")]);
+    let mut lib = source("lib", &[("lib/T.lct", "type T = enum { A }")]);
     lib.sub_libraries.push(source("sub", &[("lib/sub/g.lcf", "fn g() -> () {}")]));
     root.sub_libraries.push(lib);
     let mut report = run(root).0.report;
@@ -538,7 +538,7 @@ fn what_a_path_names_does_not_depend_on_another_file() {
 fn a_function_of_another_library_binds_to_its_signature() {
     let run_on = |line: &str| {
         let mut root = source("", &[("f.lcf", &format!("use lib\n\nfn f() -> () {{\n    x = {line}\n}}"))]);
-        root.sub_libraries.push(source("lib", &[("lib/g.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"), ("lib/t.lct", "type T = enum { A }")]));
+        root.sub_libraries.push(source("lib", &[("lib/g.lcf", "fn g(a: i32) -> (r: i32) {\n    r = a\n}"), ("lib/T.lct", "type T = enum { A }")]));
         let mut report = run(root).0.report;
         report.finish();
         report
@@ -738,8 +738,8 @@ fn the_place_of_a_cycle_is_the_first_call_whatever_the_order_of_a_map() {
 #[test]
 fn an_extern_defined_twice_is_what_a_call_reaches() {
     let external = "extern rust(crate: \"c\", function: \"f\")\nfn dup() -> (err: error)";
-    let files = [("a.lcf", external), ("z.lcf", "fn dup() -> (err: error) {\n    err = dup()\n}")];
-    assert_eq!(codes(&files), ["LC2013"], "no cycle: the call binds to the first one");
+    let files = [("dup.lcf", external), ("z.lcf", "fn dup() -> (err: error) {\n    err = dup()\n}")];
+    assert_eq!(codes(&files), ["LC2023"], "no cycle: the call binds to the one in its own file, not to the copy");
 }
 
 #[test]
@@ -792,8 +792,8 @@ fn each_kind_of_item_has_its_meaning() {
         "",
         &[
             ("f.lcf", text),
-            ("reading.lct", "type Reading = enum { Value(f64), Overload }"),
-            ("point.lct", "type Point = struct { x: f64, y: f64 }"),
+            ("Reading.lct", "type Reading = enum { Value(f64), Overload }"),
+            ("Point.lct", "type Point = struct { x: f64, y: f64 }"),
             ("g.lcf", "fn g() -> () {}"),
         ],
     ));

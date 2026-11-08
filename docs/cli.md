@@ -122,7 +122,8 @@ dataflow rules, panel, layout, icon. It writes nothing and does not care whether
 **A library is a folder.** Its files are the `.lcf` and `.lct` files directly in it; each sub-folder
 that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read only for
 the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored. In M0a
-the name of a file is not compared with the name of its function (open question Q-26 of the spec). A folder given inside another one given
+a file bears the name of what it declares, and the names of files and folders are names that every system can hold (spec, R-22:
+`LC2023`, `LC2024`, `LC2025`). A folder given inside another one given
 is one of its sub-libraries, even one that a walk of the outer folder would not reach, such as `.hidden`: each
 file is checked once, under the outermost folder given.
 
@@ -282,7 +283,7 @@ Diagnostics are sorted by `file` in code point order, then line, column (those w
 code and message, so that the same input always gives the same report. The expected results of the
 corpora ([tests/acceptance](../tests/acceptance/README.md)) compare everything except the text of
 `message` and `fixes`. A problem across files
-(`LC2013`, `LC2016`, `LC2017`) is reported once, on the last file in path order for `LC2013` and on the first
+(`LC2013`, `LC2016`, `LC2017`, `LC2024`) is reported once, on the last file in path order for `LC2013` and `LC2024` and on the first
 for `LC2016` and `LC2017`, with the others in `related`.
 
 A value that does not convert gets the code of where it goes: `LC3001` or `LC3004` on an input, `LC3003` on an
@@ -380,7 +381,7 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2010` | error | Unknown panel element in `ui.get` or `ui.set` | 10, R-1 |
 | `LC2011` | error | Unknown label in `after:` | R-15 |
 | `LC2012` | error | Value defined twice in a body | 5.1 |
-| `LC2013` | error | Function or type defined twice in a library, or a function and a type with the same name | 4 |
+| `LC2013` | error | Function or type defined twice in a library, or a function and a type with the same name. A copy in a file of another name, when the name has its own file, has `LC2023` instead | 4, R-22 |
 | `LC2014` | error | Value with the name of a library that its file imports, of a type of its library or of a live panel element; function or type with the name of a library that any file of its library imports, on the declaration, with the `use` in `related` | R-1 |
 | `LC2015` | error | Label used twice in a function | R-17 |
 | `LC2016` | warning | Function that calls itself, directly or across files: a run stops at the limit of call depth (8.2). Only a call counts, not a function reference | 8.2 |
@@ -390,6 +391,9 @@ Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (f
 | `LC2020` | warning | Library imported twice: `fmt` removes the line, unless it has a comment | 5.2 |
 | `LC2021` | error | Libraries that use each other in a cycle | 4 |
 | `LC2022` | error | Type with a name that the language gives to a type: a base type, `waveform`, `queue`, `ref`, `opaque` | 3.2 |
+| `LC2023` | error | File whose name is not that of what it declares, case included (`gain.lcf` holding `fn scale`). The fixes rename the function or the type as the file, when the name of the file is a name, or the file as the declaration, each only when that name is free in the library, case aside: neither leads to `LC2013`, `LC2014`, `LC2022`, `LC2024` or `LC2025`. With neither, the fix says to give them a name of their own, or to delete a copy. A copy of a declaration in a file of another name has this code alone, not `LC2013`, and a call binds to the one in its own file | R-22 |
+| `LC2024` | error | Two functions, or two types, of one library, or two folders side by side, whose names differ only by their case or their spelling (`Scale` and `scale`). Once, on the last one in the order of the paths, with the others in `related` | R-22 |
+| `LC2025` | error | Function, type or folder with a name that Windows keeps for a device: `con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, whatever their case and their extension: Git for Windows refuses such a file. Such a declaration has no `LC2023` | R-22 |
 
 ### Calls: `LC21`
 

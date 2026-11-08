@@ -20,6 +20,7 @@ use labcraft_graph::{Decl, File, SourceMap};
 use labcraft_types::{CheckCounts, Diagnostic, Interner, Limits, Report, TypeTable};
 
 mod declare;
+mod file_name;
 mod load;
 pub mod manifest;
 mod primitives;
@@ -94,7 +95,8 @@ impl LibrarySource {
 
 #[derive(Debug)]
 pub struct SourceFile {
-    /// Its path as reports show it, with its extension.
+    /// Its path as reports show it, with its extension. Its last segment, after a `/` or a `\`, is the name of the file,
+    /// which must be that of what the file declares (R-22): a host that shows something else gets `LC2023`.
     pub shown: String,
     pub content: Content,
 }
