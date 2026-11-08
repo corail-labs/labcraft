@@ -1,4 +1,4 @@
-"""The corpora of tests/acceptance are sound: they are specifications for M0a, not run against Rust yet.
+"""The corpora of tests/acceptance are sound: they are the specifications of M0a, run against Rust by tests/harness.
 
 Each file is what it says it is, the expected reports use only what docs/cli.md defines, and the proof
 of concept does not crash on any of them.
