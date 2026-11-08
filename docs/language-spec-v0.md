@@ -959,11 +959,15 @@ requested from outside; a fault, found by the runtime.
   where it happened.
 
 **Limits.** The depth of calls is always limited, to protect the stack: a function may call itself
-(with a warning at edit time), and a run that goes too deep ends with a fault. By default, the number of
-iterations per loop and of nodes executed is limited only in deterministic mode: there it protects
-a test or an agent from a program that never ends, including one whose simulated clock no longer
-advances. In real time a loop runs as long as the program says, for days on a bench, unless the run
-is given a limit. Which other run-time failures are faults rather than `error` values (integer
+(with a warning at edit time), and a run that goes too deep ends with a fault. So is the memory that
+the values of a run hold at once: a run that would pass it ends with a fault, rather than the process
+running out of memory, in real time too. By default, the number of iterations of a `loop` and of nodes
+executed is limited only in deterministic mode (a `for` ends with its array): there it protects a test or
+an agent from a program that never ends, including one whose simulated clock no longer advances. For the
+same reason a deterministic run is limited in real time, since a computation does not advance the
+simulated clock; that limit alone depends on the speed of the machine. In real time a loop runs as long as
+the program says, for days on a bench, unless the run is given a limit. The values of the limits are
+those of `run` ([cli.md](cli.md), section 6.2). Which other run-time failures are faults rather than `error` values (integer
 overflow, `core.to_i32` of `nan`, integer division by zero) is Q-25.
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
@@ -1768,7 +1772,7 @@ What the grammar alone does not say:
 | Q-17 | Spread an array into a variadic parameter? | No in v0: call the function that takes an array (`string.join`). Spread syntax possible later |
 | Q-18 | Mini-language of `string.format` fields | Settled: the form of C++20, with a name and a display unit (5.4). Left open: the inverse reading `string.scan` |
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
-| Q-20 | Setting a panel element from the CLI or MCP | For example `--set stop_button=true@5s` in deterministic mode, and the equivalent MCP command |
+| Q-20 | Setting a panel element from the CLI or MCP | **Settled (2026-11-08): `--set ELEMENT=VALUE@TIME`** on the clock of the run, simulated in deterministic mode, for the elements of the function that is run; `set` in `run.start` and, in real time, `run.set_element` in MCP ([cli.md](cli.md), section 6.4; [commands.md](commands.md), section 6.4) |
 | Q-21 | Default values not covered by 7.2 | `timestamp` (the origin of the clock?), function references (a reference that fails when called?), `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?) |
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
@@ -1778,6 +1782,7 @@ What the grammar alone does not say:
 | Q-27 | From `[[f64]]` to `[f64; 2]` | Settled: `array.from_rows` and `array.to_rows` (appendix A). A constant takes the type expected if its rows have one length; an array of wires never does, so nothing fails at run time without an `err` (3.1). |
 | Q-28 | Dictionary and set | Names settled (2026-11-08): `map<K, V>` and `set<T>`, refused to types until M2 (3.2), the names of LabVIEW, Rust, Java, Go and C++ rather than `dict`. To write for M2, with the generics: the types a key can have (an `f64`? a unit?); an order of iteration that is deterministic (order of insertion, or sorted keys); `get` of a missing key, with an error category as for `array.get`; the cost of a copy on a wire (D-11); how a map is drawn and how a literal is written |
 | Q-29 | Constants shared outside a function | Nothing declares a constant outside a function today: `limit = 240 V` lives in one body (5.1), so neither `math.pi` nor a limit common to several functions of a project can be written. **Option A (preferred):** a declaration of its own, one per file as for a type (R-22), named by a path (`math.pi`) and drawn as a constant, with no node; its values are those of R-21, with their units; it needs a file kind or a contextual word at the head of its file (14.1, new words). **Option B:** a function with no input (`math.pi()`), with no change to the grammar, but a node on the diagram for a fixed value. To settle with how the viewer of M0v draws a named constant that feeds several nodes |
+| Q-30 | Modes of a `button` | In M0 a `button` is latching: a press stays true until its first read (10). Other modes are likely (true while held, a press seen on release…), and with them what setting a button to `false` from a command does; until then a command can only press it ([cli.md](cli.md), section 6.4) |
 
 ## Appendix A. Library signatures (v0)
 

@@ -26,9 +26,10 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0b**: the CLI specification of `run`, the MCP specification, the command catalog v0,
-  how the CLI and MCP set a panel element (Q-20), and a throwaway feasibility prototype: a scheduler
-  with two parallel loops and a clean stop;
+- **before M0b**: a throwaway feasibility prototype: a scheduler with two parallel loops and a clean
+  stop; the architecture of the M0b crates. Written: the command catalog v0
+  ([commands.md](commands.md)), the MCP specification ([mcp.md](mcp.md)), and the CLI specification of
+  `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6);
 - **before M0v**: the compact view, automatic placement and wire routing in the visual notation,
   and the architecture of the `diagram` and `editor` crates (in [architecture.md](architecture.md),
   like that of the M0b crates). The egui canvas with 1,000 nodes and

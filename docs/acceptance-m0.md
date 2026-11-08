@@ -27,8 +27,8 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
 - **Status and exit code.** Every run reports one of the statuses of spec 8.2: `ok`, `error`,
   `aborted`, `fault`. A program that `check` refuses, or a bad argument, does not run: its report has
   the status `refused` ([commands.md](commands.md), section 7). Exit codes of the CLI ([cli.md](cli.md)): 0 `ok`; 1 `error` or `refused`, or an error (not
-  a warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, malformed
-  `--arg`); 3 `aborted`; 4 `fault`. `fmt` exits 1 on a file it cannot read or parse, and leaves
+  a warning) found by `fmt`, `check` or `diagram`; 2 wrong usage (unknown option, an
+  `--arg` with no `=`: [cli.md](cli.md), section 6.2); 3 `aborted`; 4 `fault`. `fmt` exits 1 on a file it cannot read or parse, and leaves
   it unchanged. `diagram` writes the SVG of every drawable function (6.3), type errors marked,
   and exits 1 only for the functions it cannot draw.
 - **A point that needs a later milestone** is marked *with M0b* and checked when M0b closes, or
@@ -202,7 +202,9 @@ abort, and does not have `two_benches`.
 
 - Done (2026-11-03): spec 8.2 (Stop, Abort, fault, limits, statuses), the `switch` element (10)
   and the discrete-event simulated clock (8).
-- How the CLI and MCP set a panel element (Q-20), and `ui.get` in the proof of concept.
+- Done (2026-11-08): how the CLI and MCP set a panel element (Q-20): `--set` and `set`
+  ([cli.md](cli.md), section 6.4), `run.set_element` ([commands.md](commands.md), section 6.4).
+- `ui.get` in the proof of concept.
 - The simulation files `two-dmm.toml` and `two-dmm-timeout.toml`.
 - The feasibility prototype (a scheduler with two parallel loops and a clean stop) answers
   points 2, 4 and 5 before M0b starts.
@@ -365,7 +367,7 @@ are ordinary tests, not acceptance scenarios.
 |---|---|---|---|---|---|
 | 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | `no-instrument.toml` |
 | 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
-| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | Q-20; two-multimeter simulation files; scheduler prototype |
+| 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; two-multimeter simulation files; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
 | 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Compact view, placement and routing; font, `match` view and theme of the snapshots; `diagram` and `editor` architecture |

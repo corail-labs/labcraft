@@ -93,8 +93,9 @@ A failed command returns one object:
     "code": "params.unknown",
     "message": "unknown parameter `max_iteration`: did you mean `max_iterations`?",
     "parameter": "max_iteration",
-    "expected": ["function", "folder", "sim", "args", "mode", "seed", "timeout", "max_iterations",
-                 "max_nodes", "set", "trace", "wait"]
+    "expected": ["function", "folder", "sim", "args", "set", "mode", "schedule_seed", "timeout",
+                 "max_iterations", "max_nodes", "max_call_depth", "max_memory", "max_real_time",
+                 "deny_warnings", "trace", "wait"]
   }
 }
 ```
@@ -116,7 +117,6 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `file.unreadable`, `file.unwritable` | The system refused; `message` holds its error, in English |
 | `file.too_large` | A file over `--max-file-size` (cli.md, section 1), read or about to be written |
 | `file.not_simulation` | A `.toml` file that does not read as a simulation file, to write, rename or delete (section 2) |
-| `function.unknown` | `run.start` on a function the library does not have; `expected` gives the nearest names |
 | `run.unknown` | A run id that this session does not know, or no longer keeps, or no run at all |
 | `run.busy` | `run.start` while another run of this session is going (section 4); `run` gives its id |
 | `internal` | A bug of LabCraft, caught: `message` says where. The session goes on |
@@ -145,7 +145,7 @@ runs a program and reads its result. Otherwise it returns
 ```
 
 and the run goes on. `run.wait` waits again and returns the same thing; `run.status` returns at once;
-`run.set_element` sets a panel element of the running function (Q-20, with `run` in [cli.md](cli.md));
+`run.set_element` sets a panel element of the running function (Q-20, [cli.md](cli.md), section 6.4);
 `run.abort` aborts it (spec 8.2) and returns its final report.
 
 - **The default wait stays under the timeouts of clients.** Many MCP clients give up on a request after
@@ -199,11 +199,12 @@ encoding stays short:
 `others` is flat: the errors that `errors.merge` gathered, each without its own `others`, however they
 were merged, at most 32 *(proposed)*, then `others_more` gives how many are left out.
 
-- **An argument** takes the same forms, and a little more, since it is converted as a wire would be
-  (spec 3.3, 3.4): `"230 V"` or `"0.23 kV"` for an `f64[V]`, `2` for an `f64`, `"Verdict.Pass"` or
-  `"Pass"` for a `Verdict`. A number with no unit is not accepted for a type with a unit: the unit is
-  what the run cannot guess. An argument that does not convert is a diagnostic of the run, with the
-  name of the input (section 7).
+- **An argument** takes the same forms, and a little more, since it is converted as a literal of the
+  language is (spec 3.4, literals; cli.md, section 6.3): `"230 V"`, `"230V"` or `"0.23 kV"` for an
+  `f64[V]`, `2` for an `f64`, `0.5` for an `f32`, `"Verdict.Pass"` or `"Pass"` for a `Verdict`. A number
+  with no unit is not accepted for a type with a unit or a `duration`: the unit is what the run cannot
+  guess. An argument that does not convert is a diagnostic of the run, with the name of the input
+  (section 7).
 - **Durations given to a command** (`wait`, `timeout`, the times of `set`) take the form of a `duration`:
   `"30 s"`, `"500 ms"`.
 - **Order.** Objects and lists keep the order of the program: inputs and outputs in the order of the
@@ -284,10 +285,10 @@ How `check` keeps and reuses its work is written in the architecture of M0b.
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`mode`* (`deterministic`), *`seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`set`*, *`trace`* (`file`), *`wait`* (30 s) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5); `sim`, a simulation file; `seed`, the seed of the scheduler (scenario 3); `set`, panel elements and the time of the clock at which each is set (Q-20); `trace`: `file` (the default, so that whoever watches the viewer sees the values of every run on the wires), `inline` or `none` (section 8) |
+| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`set`* (`[]`), *`mode`* (`deterministic`), *`schedule_seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`max_call_depth`*, *`max_memory`*, *`max_real_time`*, *`deny_warnings`* (`false`), *`trace`* (`file`), *`wait`* (30 s) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5); `sim`, a simulation file; `set`, panel elements and the time on the clock of the run at which each is set, `[{ "element": "stop_switch", "value": true, "at": "5 s" }]` (Q-20, cli.md, section 6.4); `schedule_seed`, the seed of the order among ready nodes (scenario 3); `trace`: `file` (the default, so that whoever watches the viewer sees the values of every run on the wires), `inline` or `none` (section 8) |
 | `run.wait` | *`run`*, *`wait`* (30 s) | The final report, or `running` again |
 | `run.status` | *`run`* | The report so far, at once: `running` with the clock and where each loop is, or the final report |
-| `run.set_element` | *`run`*, `element`, `value` | Sets a panel element of the running top-level function (spec 10, Q-20), in real time only: in deterministic mode the time a call arrives would date the change, and a run would no longer replay, so a change is given to `run.start` by `set`, at its time on the simulated clock, and this command is not enabled. Specified with `run` in cli.md |
+| `run.set_element` | *`run`*, `element`, `value` | Sets a panel element of the running top-level function (spec 10, Q-20), in real time only: in deterministic mode the time a call arrives would date the change, and a run would no longer replay, so a change is given to `run.start` by `set`, at its time on the simulated clock, and this command is not enabled. The element and its value follow the rules of `--set` (cli.md, section 6.4); the change is seen by the reads that start after it. The run is going, so a setting that `--set` would refuse is a command error, `params.invalid`, whose `message` gives the code of cli.md, section 6.6 (`LC8108`, `LC8104`…), and the run goes on |
 | `run.abort` | *`run`* | Aborts the run (spec 8.2) and returns its final report, status `aborted`. A run that has already ended is left as it is, and its final report is returned with its own status (section 4) |
 | `run.trace` | *`run`* or *`function`*, *`frame`*, *`node`*, *`event`*, *`from`* (1), *`limit`* (500) | Reads the trace written by a run (section 8), in pages: the events from number `from` that match the filters, at most `limit` (at most 2,000 *proposed*), with the first line of the trace, the `call` events of the frames they belong to, so that every value decodes, and `next`, the number to give as `from` for the next page, or `null`. `run` reads the trace of that run, or the one going; `function`, the last trace of that function; neither, the run of the session. `node` keeps the events of the nodes of that name, `frame` those of one frame, `event` those of one kind. A run with `trace: none`, or whose trace is no longer the last of its function, gives `run.unknown` with the reason |
 
@@ -295,9 +296,22 @@ How `check` keeps and reuses its work is written in the architecture of M0b.
 "what did `raw` bind in each iteration" is one call with `node: "raw"`. It reads the same file as the
 viewer, and needs no file tool of the client.
 
-The parameters of `run.start` are those of `labcraft-cli run`, except `wait` and `trace: inline`, which
-only a call needs; their exact names, ranges and defaults are written once, with `run` in
-[cli.md](cli.md).
+The parameters of `run.start` are the options of `labcraft-cli run`, named in `snake_case`
+(`--max-call-depth` is `max_call_depth`), with these differences: `--args FILE` and `--arg` give `args`, an object, and
+`--set` gives `set`, an array; `--real-time` is `mode`; `--trace FILE` and `--no-trace` are `trace`,
+which writes only under `.labcraft/runs/` and can also be `inline`; `wait` exists only for a call;
+`--json`, `--lib-path` and the options of section 1 of cli.md are those of the server ([mcp.md](mcp.md),
+section 1). `schedule_seed` is a number, or a string of digits beyond 2^53−1. Ranges and defaults are
+written once, in [cli.md](cli.md), section 6.2.
+
+**What `run.start` judges as the command line does.** An unknown function, a `folder` or a `sim` file
+that does not exist or does not read, an argument or a setting that does not convert, give the report of a
+`refused` run with the diagnostic of cli.md, section 6.6, as `labcraft-cli run` does, not a command error:
+an agent reads one answer, whichever way it calls. A call that breaks the rules of section 2 (a path out of
+the project, a `.toml` that is not a simulation file) is a command error, and so is what the command line
+calls wrong usage (cli.md, section 6.2): a time of `set` below 0, an input name that is not a name, a
+`schedule_seed` or a `max_real_time` with `mode: "real_time"` are `params.invalid`. `null` removes the
+default of `max_iterations` and `max_nodes`, as `none` does on the command line.
 
 ### 6.5 The registry itself
 
@@ -339,23 +353,23 @@ prints. One example, then the fields.
 | Field | Always | Content |
 |---|---|---|
 | `schema`, `run`, `function`, `mode` | yes | `mode`: `deterministic` or `real_time` |
-| `status` | yes | `ok`, `error`, `aborted`, `fault` (spec 8.2); `running` while it goes on (section 4); `refused` when `check` found an error and nothing ran. `labcraft-cli run` exits with 1 on `refused`, as `check` does on an error |
+| `status` | yes | `ok`, `error`, `aborted`, `fault` (spec 8.2); `running` while it goes on (section 4); `refused` when `check` found an error in what the run can reach (or, under `deny_warnings`, a warning in a file of the folder that the run can reach), or the function is unknown, or an argument, a setting or the simulation file was refused, and nothing ran (cli.md, section 6.1). `labcraft-cli run` exits with 1 on `refused`, as `check` does on an error |
 | `outputs` | yes | The outputs of the function, in the order of its signature, each with its type and its value (section 5); `[]` when it did not finish (`aborted`, `fault`, `refused`) |
 | `error` | no | When `status` is `error`: the error on the `err` output, as in section 5, repeated here so that it is found without looking for the output |
-| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, with `run` in cli.md), `message`, `file`, `span`, `function`, `node`, and the iteration of each loop around it |
+| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `file`, `span`, `function`, `node`, and the iteration of each loop around it |
 | `abort` | no | When `status` is `aborted`: `by` (`request`, `timeout`, `interrupt`), `at_ms` on the clock of the run, `loops` (as below, when the abort came), and `warning`: the instruments are in an unknown state |
 | `loops` | no | When `status` is `running`: each loop going, outermost first, with its `function`, its `node` (section 8) and its `iteration`, from 0 |
 | `clock` | yes | `simulated_ms` in deterministic mode; `real_ms` always |
 | `sessions` | yes | `opened`: how many the run opened; `open`: those still open at its end, each with its resource and where it was opened, which scenario 1 wants empty; `leaked`: those an abort could not close (spec 8.2) |
 | `instruments` | no | With a simulation: per resource, in code point order of the resource names so that two seeds give the same list, the commands it received in order, dated, with their answers, each text cut as a string is (section 5). At most 64 resources and 1,000 commands per resource in the report *(proposed)*, then `truncated`; the bound of a result (section 2) can shorten it further |
-| `panel` | no | The elements set by `set` or `run.set_element`, with their time and value |
-| `check` | yes | The `check` made before the run: its `summary` and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2); the diagnostics are the errors when `refused`, the warnings otherwise |
+| `panel` | no | Each setting of `set` or `run.set_element`, in the order applied: `element`, `value`, `at_ms` on the clock of the run, `by` (`set`, `run.set_element`), and `applied` (`false` for a setting after the end of the run) |
+| `check` | yes | The `check` made before the run: its `summary`, which counts everything found in the folder, and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2): those of what the run can reach, and the errors found elsewhere in the folder, which do not refuse the run but are listed, so that the counts and the list agree |
 | `trace` | no | With `trace: file`: `{ "file": ".labcraft/runs/check_voltage.trace.jsonl", "events": 41, "truncated": false }`; with `trace: inline`: the events themselves (section 8), at most 2,000 *(proposed)*, and fewer if the bound of a result is reached (section 2). A trace that cannot be written (a read-only project, a full disk) does not stop the run: `trace` then gives `error`, a command error of section 3 (`file.unwritable`) |
 
 An argument that does not convert, an input with no value and no default, or an unknown input is a
 diagnostic in `check.diagnostics`, with the name of the input, and the status `refused`: like a type
-error, it is found before anything reaches an instrument (scenario 2, *with M0b*). Its codes come with
-`run` in cli.md.
+error, it is found before anything reaches an instrument (scenario 2, *with M0b*). Its codes are those
+of the family `LC81` (cli.md, section 6.6).
 
 ## 8. The trace of a run: `labcraft-trace/1`
 
@@ -407,9 +421,13 @@ The example leaves lines out, and files from the first line.
   `.labcraft/runs/<function>.trace.jsonl` under the root of the project, the function named from the root
   (`dmm_driver.measure`), so two functions never share a file. The folder starts with `.`, so no walk reads
   it as a library, and LabCraft writes a `.gitignore` holding `*` in it when it creates it, so that runs
-  leave nothing for git to see. The run writes `<function>.trace.jsonl.partial` as it goes, which can be
-  followed, and renames it over the last trace when it ends, so the trace of the last finished run is always
-  whole. A reader opens a trace so that it can be replaced while open (on Windows, with `FILE_SHARE_DELETE`);
+  leave nothing for git to see. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
+  `<id>` is unique to the run (the process and the run), which can be followed, and renames it over the
+  last trace when it ends, so the trace of the last finished run is always whole, and two runs of one
+  function at once never write the same file: the one that ends last stays. A run first removes the
+  `.partial` files of its function left by a process that no longer runs, so a killed run leaves nothing
+  for long. A `refused` run writes no
+  trace, and the last one stays. A reader opens a trace so that it can be replaced while open (on Windows, with `FILE_SHARE_DELETE`);
   if the rename still fails, the trace stays as `.partial` and the report says so in `trace.error`. The
   viewer of M0v shows the values of the last run of the function it draws; an agent reads it with
   `run.trace` (section 6.4); `labcraft-cli run --trace FILE` writes elsewhere.
