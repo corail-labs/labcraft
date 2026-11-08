@@ -26,10 +26,11 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0b**: a throwaway feasibility prototype: a scheduler with two parallel loops and a clean
-  stop; the architecture of the M0b crates. Written: the command catalog v0
-  ([commands.md](commands.md)), the MCP specification ([mcp.md](mcp.md)), and the CLI specification of
-  `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6);
+- **before M0b**: the architecture of the M0b crates. Written: the command catalog v0
+  ([commands.md](commands.md)), the MCP specification ([mcp.md](mcp.md)), the CLI specification of
+  `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6), and the throwaway
+  feasibility prototype, a scheduler with parallel loops and a clean stop: the scheduler of the proof of
+  concept (scenario 3);
 - **before M0v**: the limits of M0v for scenario 4 (the visual notation is written: compact view,
   automatic placement, wire routing, font, values on the wires and theme), and the architecture of the
   `diagram` and `editor` crates (in [architecture.md](architecture.md),

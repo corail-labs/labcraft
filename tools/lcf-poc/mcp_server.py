@@ -43,15 +43,23 @@ def list_functions(folder: str, builtins: bool = False) -> dict:
 
 @mcp.tool()
 def run(folder: str, function: str, sim: str | None = None, args: dict | None = None, trace: bool = False,
-        max_iterations: int = 10000) -> dict:
+        max_iterations: int = 10000, set: list[dict] | None = None, schedule_seed: int | None = None,
+        timeout: str | None = None) -> dict:
     """Runs a function against simulated instruments (deterministic, simulated clock).
 
     sim: instruments .toml file (e.g. libs/visa/sim/dmm-230V.toml). args: input values by name;
     numbers with a unit as text ("230 V", "50 ms"), arrays and structs as JSON, session = resource
     name ("SIM::DMM0"). Returns outputs, error (error that reached the `err` output), fault (run-time
     fault or invalid file), sim (simulated time, sessions still open, commands exchanged)
-    and, with trace=true, the executed nodes in order with the wire values."""
-    return api.run(folder, function, sim, args or {}, trace, max_iter=max_iterations)
+    and, with trace=true, the executed nodes in order with the wire values.
+    set: panel elements set at a time of the run, [{"element": "stop_switch", "value": true, "at": "450 ms"}];
+    schedule_seed: draws the order among the nodes ready at the same time; timeout: aborts the run
+    after that simulated duration ("300 ms"). `status` is ok, error, refused, aborted or fault."""
+    if schedule_seed is not None and not 0 <= schedule_seed < 2 ** 64:
+        return {"function": function, "status": "refused", "ok": False, "outputs": {}, "error": None,
+                "fault": {"category": "lcf.bad_argument", "message": "schedule_seed: an integer from 0 to 2^64-1"}}
+    return api.run(folder, function, sim, args or {}, trace, set or [], max_iter=max_iterations,
+                   schedule_seed=schedule_seed, timeout=timeout)
 
 
 if __name__ == "__main__":

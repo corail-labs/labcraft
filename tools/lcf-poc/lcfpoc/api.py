@@ -50,11 +50,11 @@ def _entry(name, lib, f):
             "signature": f"{'always ' if always else ''}fn {name}.{f.name}({inputs}) -> ({outputs})"}
 
 
-def run(folder, function, sim=None, args=None, trace=False, **limits):
+def run(folder, function, sim=None, args=None, trace=False, settings=(), **limits):
     lib = load_library(folder)
     if lib.errors:
-        return {"function": function, "ok": False, "outputs": {}, "error": None,
+        return {"function": function, "status": "refused", "ok": False, "outputs": {}, "error": None,
                 "fault": {"category": "lcf.check_failed",
                           "message": f"{len(lib.errors)} check error(s): fix them, then run `check` again"},
                 "diagnostics": _diags(lib)}
-    return run_function(lib, function, dict(args or {}), sim, trace, **limits)
+    return run_function(lib, function, dict(args or {}), sim, trace, settings if settings is not None else [], **limits)

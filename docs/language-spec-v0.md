@@ -870,8 +870,8 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   (D-12).
   - **Discrete-event clock.** Everything that takes simulated time (waits, and the latency and
     timeouts of simulated instruments) overlaps between parallel branches, as in real time: two
-    branches that each wait 100 ms advance the clock by 100 ms, not 200 ms. Two calls on the same
-    session do not overlap: the session is locked during a call (8.1).
+    branches that each wait 100 ms advance the clock by 100 ms, not 200 ms. Whether two calls on one
+    resource overlap is up to its library (8.1): two calls on one `visa` session do not.
   - **Global order.** The runtime repeatedly runs, among the nodes ready at the current simulated
     time, the first one in this order: the position of a node is the list of the canonical
     positions (5.2) of the statements that contain it, from the top-level function down through
@@ -891,9 +891,10 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
 - **Races remain possible on resources**, that is, what a value designates without containing it: a
   session (two copies of the handle designate the same connection, and the instrument has a
   state), a `ref<T>` reference, a panel element read or written live (10), a file.
-- **Each call is atomic on its resource.** The runtime locks a session for the duration of a
-  native call: `visa.query` writes then reads without another branch stepping in. A race therefore
-  never corrupts a message; it leaves the order between calls undetermined.
+- **What a call guarantees on its resource is up to its library**, which says it; the runtime adds no
+  lock. `visa` makes each of its calls atomic on its session, so that `visa.query` writes then reads
+  without another call stepping in ([libs/visa/README.md](../libs/visa/README.md)). Two calls that the
+  program does not order, on one resource, are the program's concern: the warning below points them out.
 - **Warning at edit time** when two nodes receive the same resource with no dependency path between
   them (data, error wire or `after:`), for example two branches that set the same instrument:
   "concurrent access to `dmm`: order by the error wire or `after:`", once per resource. Two nodes in
@@ -947,8 +948,11 @@ requested from outside; a fault, found by the runtime.
   command, a time limit on the run. No node starts any more, `always` nodes included: an abort has
   no exception and runs nothing of the diagram. Waits (`time.wait`) end at once. A native call in
   progress ends or reaches its own timeout; one that has none, or still runs after a grace period
-  of the runtime, is abandoned and its resource is reported as leaked. The runtime then releases
-  the other resources the run opened (it closes the session handles) without running a node. The run
+  of the runtime, is abandoned and its resource is reported as leaked. The grace period counts on the
+  clock of the run, simulated in deterministic mode, so that an abort by a time limit replays exactly:
+  the run ends when the last call in progress ends, or when the grace period ends if one is abandoned.
+  The runtime then releases the other resources the run opened, each through its library (`visa` closes
+  its sessions), without running a node. The run
   ends with an `aborted` status, the time of the abort and where each loop was, and no output: the
   function did not finish. The report warns that the instruments are in an unknown state: closing
   a session does not switch a supply off.
@@ -1871,8 +1875,8 @@ fn errors.raise_if(condition: bool, category: kind category, message: string = "
                    err: error = none) -> (err: error)
 fn errors.merge(errs: error...) -> (err: error)            // 7.4; the PoC takes up to six
 
-fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the element, section 10; not in the PoC
-fn ui.set<T>(element: kind element, value: T) -> (value: T)   // same; never read, T: what this node is given; not in the PoC
+fn ui.get<T>(element: kind element) -> (value: T)          // T: type of the element, section 10
+fn ui.set<T>(element: kind element, value: T) -> (value: T)   // same; never read, T: what this node is given
 ```
 
 `array.get`, `array.set` and `array.slice` fail with the category `array.index_out_of_range`. An error of

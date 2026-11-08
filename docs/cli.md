@@ -666,7 +666,7 @@ terminal stops a run with Ctrl-C.
 - **Ctrl-C** aborts the run (spec 8.2, `abort.by` = `interrupt`): no node starts any more, waits end,
   native calls end or reach their timeout within the grace period (5 s, *proposed*), then the
   resources are released and the report is written, with exit 3. A second Ctrl-C ends the grace period
-  at once: the calls still going are abandoned and their sessions reported as leaked. The report is
+  at once: the calls still going are abandoned and their resources reported as leaked. The report is
   still written.
 - **`--timeout`** aborts the same way, `abort.by` = `timeout`.
 - **A limit** (`--max-…`) ends the run with a fault (exit 4), at the node and the iteration where it was
@@ -703,7 +703,7 @@ Which other failures are faults rather than `error` values is Q-25; their codes 
 
 ### 6.7 Human-readable form
 
-Without `--json`, the outputs one per line, then what a reader checks first: the sessions, the error, the
+Without `--json`, the outputs one per line, then what a reader checks first: the resources, the error, the
 trace. Values are written as the language writes constants, cut as commands.md, section 5 cuts them, and
 with the escapes of section 4.1, so that the answer of an instrument cannot drive a terminal.
 
@@ -712,7 +712,7 @@ check_voltage: ok, 0 ms simulated, 2 ms real
   verdict = Verdict.Pass
   voltage = 230.071217 V
   err     = none
-sessions: 1 opened, 0 open
+resources: 1 opened, 0 open
 trace: .labcraft/runs/check_voltage.trace.jsonl, 41 events
 ```
 
