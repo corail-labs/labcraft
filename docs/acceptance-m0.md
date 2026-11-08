@@ -351,11 +351,11 @@ agree.
 **Write first:**
 
 - In the visual notation: nothing left. The compact view (3.2), automatic placement (2.1), wire
-  routing (2.2) and the values of a run on the wires (6.1) are written.
-- For the snapshots: the font and its metrics (a fixed font, attributed, named in the SVG) and the
-  theme they use.
+  routing (2.2), the font of the diagrams and snapshots (2.3), the values of a run on the wires (6.1)
+  and the theme (8) are written. Snapshots show `match` and `handle` unfolded, like every exported
+  image (5.2).
 - The limits of M0v for scenario 4, files and run traces (a trace can reach 256 MiB, commands.md,
-  section 8): bounds, families of the corpus, diagnostic codes. They show `match` and `handle` unfolded, like every exported image (notation 5.2).
+  section 8): bounds, families of the corpus, diagnostic codes.
 - The architecture of the `diagram` and `editor` crates: what `diagram` computes, what the
   `editor` canvas draws (D-27).
 
@@ -374,4 +374,4 @@ are ordinary tests, not acceptance scenarios.
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Close after an error | `ui.get` in the proof of concept; scheduler prototype |
 | 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b and M0v |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
-| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | Font and theme of the snapshots; `diagram` and `editor` architecture |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | `diagram` and `editor` architecture |
