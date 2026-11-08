@@ -570,7 +570,7 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   other files" when there are more. Nothing is hidden, and nothing looks current that is not.
 - **The trace is an input like a file.** Reading it is bounded and never crashes the viewer: a line
   that does not read ends the values there, as a cut trace would, and a first line that does not read
-  gives a diagnostic and no values. The limits of M0v for traces belong with those for files
+  gives a diagnostic and no values. Its limits are those of [cli.md](cli.md), section 7.4
   (scenario 4).
 - **Called functions.** The viewer shows the values of the function it draws, when that function is
   the one that was run. Opening a called function to see the values of one of its calls belongs to the
@@ -626,7 +626,7 @@ IDE, the diagram takes its colors from this table.
   `<style>` element gives the light values, and the dark ones under
   `@media (prefers-color-scheme: dark)`; the background, in `canvas.fill`, is always painted. An SVG shows the theme of whoever looks at it, and an agent reads
   what each stroke is. `diagram --svg` can force one theme for an image (`--theme light` or
-  `--theme dark`). The snapshots of CI use this table.
+  `--theme dark`, [cli.md](cli.md), section 7.2). The snapshots of CI use this table.
 - **The developer's colors.** The developer may change the colors of their screen, and the IDE warns
   when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
 - **Where the values come from.** The light values of the first list of tokens come from the board

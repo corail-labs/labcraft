@@ -49,4 +49,4 @@ These families are too large or cannot be stored, so the test harness generates 
 | Library | A folder with nothing to check | `LC0002` |
 | Library | A symbolic link loop, next to a clean file | `LC0009`, exit 0 |
 
-The families Instruments, Arguments and MCP of scenario 4 come with M0b.
+The families Instruments, Arguments and MCP of scenario 4 come with M0b, and the family Traces with M0v, once M0b writes traces.

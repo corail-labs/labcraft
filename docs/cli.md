@@ -1,11 +1,10 @@
-# Command line: `fmt`, `check` and `run`
+# Command line: `fmt`, `check`, `run` and `diagram`
 
 *Last updated: 2026-11-08. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
-M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` comes with the specification of M0v
-([roadmap](roadmap.md)).*
+M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` a draft for M0v (section 7).*
 
-This document is the contract of `labcraft-cli fmt`, `labcraft-cli check` and `labcraft-cli run`: their arguments, exit
-codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
+This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run` and
+`labcraft-cli diagram`: their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
 so they are part of the interface and are tested (acceptance scenarios
 [2, 4 and 5](acceptance-m0.md)). Values marked *proposed* are starting points.
 
@@ -21,6 +20,7 @@ The Python proof of concept (`tools/lcf-poc`) does not implement this document.
 labcraft-cli fmt   [--check] [--json] [options] PATH...
 labcraft-cli check [--json] [--deny-warnings] [--lib-path DIR]... [options] FOLDER...
 labcraft-cli run   [--json] [run options] [options] FOLDER FUNCTION
+labcraft-cli diagram --svg --out DIR [--json] [diagram options] [options] FOLDER [FUNCTION]...
 labcraft-cli version
 labcraft-cli --help
 ```
@@ -32,7 +32,8 @@ labcraft-cli --help
 | 2 | Wrong usage: unknown option, no path, a file given to `check`. A plain message on stderr, nothing on stdout, nothing read or written |
 
 `run` adds 3 (`aborted`) and 4 (`fault`), and uses 1 for the statuses `error` (spec 8.2) and `refused`
-([commands.md](commands.md), section 7). A missing
+([commands.md](commands.md), section 7). `diagram` uses 1 when a function is not drawn, and not for the errors that
+it marks on a drawing (section 7.1). A missing
 path is exit 1 with a diagnostic, not exit 2: a path is data, and a bad one does not hide the
 diagnostics of the others.
 
@@ -337,7 +338,8 @@ the spec and from the corpora of scenarios 2 and 4. New codes can be added at an
 message of each one is written with its implementation. `S2` marks a case of the corpus of
 scenario 2.
 
-Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (faults and arguments).
+Reserved for later specifications: `LC7xxx` for `diagram` (section 7.6), `LC8xxx` for `run` (faults and
+arguments, section 6.6).
 `LC9xxx` stays free: MCP reports a failed call with a command error ([commands.md](commands.md),
 section 3), not a diagnostic.
 
@@ -723,7 +725,232 @@ when it was aborted, where each loop was, and the warning that the instruments a
 While a run goes on, a terminal on stderr shows the clock and where each loop is, once a second; never
 with `--json` or when stderr is not a terminal.
 
-## 7. Left for later
+## 7. `diagram`
+
+*Status: draft for milestone M0v, nothing implemented.*
+
+Draws the functions of a library as SVG, following the [visual notation](visual-notation.md): the
+drawing of the viewer's canvas, which paints only the shapes that the `diagram` crate computes, for tests
+and for agents (scenario 6 of [acceptance-m0.md](acceptance-m0.md)). Through MCP, the command `diagram.svg` of the
+catalog returns the same SVG (D-18, [commands.md](commands.md), *with M0b*), with the options below as its
+parameters.
+
+```text
+labcraft-cli diagram --svg --out DIR [--json] [--lib-path DIR]... [--theme light|dark]
+                     [--trace FILE] [--max-diagram-nodes N] [--max-trace-size BYTES]
+                     [options] FOLDER [FUNCTION]...
+```
+
+`FOLDER` is the root of the project, as for `check` and `run`. Without `FUNCTION`, every function of
+`FOLDER` and of its sub-libraries is drawn, not those of a dependency or of a shipped library. A
+`FUNCTION` is named from the root, as for `run` (`check_voltage`, `dmm_driver.measure`), and a function
+given twice is drawn once. `[options]` are those of section 1.
+
+```sh
+labcraft-cli diagram --svg --out diagrams .
+labcraft-cli diagram --svg --out diagrams --trace .labcraft/runs/check_voltage.trace.jsonl . check_voltage
+```
+
+### 7.1 What it does
+
+1. **Checks** `FOLDER`, as `check` would with the same options: the drawing needs what `check` finds,
+   the types of the wires, the badges and the marks of the notation.
+2. **Draws** each function, as the viewer of M0v draws it:
+   - each node in the view that its file gives it: compact, unless the `layout` section writes `view
+     standard` for it (notation, section 3; spec 11). There is no option for all the nodes at once:
+     the view belongs to each node;
+   - as every exported image: `match` and `handle` unfolded (notation 5.2), a construction as its
+     block (notation 3.1), and the rest of the view state at its default (notation 2.1);
+   - at 100%, at which everything is shown (notation 7).
+
+   A function is **drawable** when its file parses, its names resolve and it has no cycle (scenario 6,
+   point 3); a type error or another error of `check` is drawn with the marks of the notation. A
+   function that is not drawable, or that is too large to draw (`LC7002`), gets an SVG that shows its
+   diagnostics in place of the drawing (7.2), so that the SVG of a function never shows a drawing that
+   its file no longer gives. A file that does not parse is known by its path. An unknown `FUNCTION`
+   (`LC7001`) gets no SVG, and the SVG of a function that no longer exists stays: `diagram` removes
+   nothing.
+3. **Puts the values of a run** on the wires with `--trace` (7.3).
+4. **Writes** an SVG for each function at the path of its file under `DIR`, with `.svg` for `.lcf`
+   (`DIR/check_voltage.svg`, `DIR/dmm_driver/measure.svg`), so that two functions never share one, then
+   the report (7.5). `DIR` and the folders under it are created when they do not exist. On a file
+   system that ignores case, a path that differs from one before it, in code point order, only in case
+   gets `LC7004`. Each SVG is
+   written to a temporary file of `DIR`, then renamed over the old one, so that a reader never sees
+   half an image. Nothing else in `DIR` is written or removed. `DIR` may be inside `FOLDER`: no walk
+   reads an `.svg`, but its folders count toward the bounds of a walk (section 1).
+
+Exit codes (section 1): 0 when every function is drawn; 1 when one is not (not drawable, `LC7002`), when
+a `FUNCTION` is unknown (`LC7001`), when there is nothing to draw (`LC0002`, `LC7003`), or when an SVG
+could not be written (`LC7004`); 2 wrong usage. An error that `check` finds in a function that is still
+drawn does not change the exit code, and neither does a problem of the trace (7.4): they are marked on
+the drawing and listed in the report.
+
+**The diagnostics of `diagram`** (`LC70`, `LC71`) join those of `check` in `check.diagnostics` and count in
+`check.summary`, as those of a run do (6.1). One about a function is located in its file, with no
+position; one about the trace in the trace file, at its line; one about an unknown `FUNCTION` at
+`FOLDER`, with no position.
+
+**What is wrong usage** (exit 2, nothing drawn, nothing written): no `--svg` or no `--out`, an unknown
+option, a missing `FOLDER`, a `FUNCTION` that is not names joined by `.`, `--trace` without exactly one
+`FUNCTION`, a `--theme` other than `light` or `dark`, an option that takes one value given twice, a
+number out of the range of its option. A `DIR` that exists and is not a folder, or a `--trace` file that
+does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` for the trace.
+
+### 7.2 The SVG
+
+- **The drawing of the notation**, with its font named and not embedded (notation 2.3), and its colors as
+  CSS variables named after the tokens, light and dark under `prefers-color-scheme` (notation 8).
+  `--theme light` or `--theme dark` writes one theme only, without the media query. The `viewBox` holds
+  the frame of the function and 16 units around it *(proposed)*, and one unit is one pixel at 100%.
+- **What each shape is**, for an agent and for the tests, in attributes that name the program as the
+  reports do (sections 4.2 and 4.3), and only in their forms: an attribute is absent where the reports
+  have no form for it.
+  - the root carries `data-schema="labcraft-diagram/1"` and `data-function` (`check_voltage`), and
+    `data-drawn="false"` when the function is not drawn;
+  - each node, a structure included, is a `<g data-node="raw">`, named as the terminals of section 4.3
+    name a node (the name of its line, `#close`, `@12`), and its `<title>` holds the full name of what it
+    calls (`visa.open`), as its tooltip does (notation 3.2);
+  - each wire is a `<g>` with the fields of a wire of a diagnostic (4.2): `data-wire`, the name of its
+    value; `data-from`, the terminal it leaves; `data-to`, the terminals it reaches, separated by
+    spaces, those that have a form. In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
+    data-to="#close.err">`: `e2` also enters the `handle` as its selector, which has no form;
+  - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, written as its tab (`other`
+    for `_`);
+  - each mark of a diagnostic carries `data-code` (`LC3002`), so that the place of a diagnostic in the
+    image can be found;
+  - each value of a run (7.3) is a `<g data-value="raw">`, named after its wire, and its `<title>` holds
+    the whole value, as its tooltip does (notation 6.1).
+
+  A name or a text in an attribute or a `<title>` is cut at 200 code points and ends with `…`, as in a
+  report (4.2), so that a long name repeated on every node cannot make the SVG huge; two names that
+  differ only after the cut then read the same, as in a report. A character that
+  XML 1.0 cannot hold, even escaped (a control character other than tab and line feed, U+FFFE, U+FFFF),
+  is written as its code, `⟨U+0000⟩`, as the notation shows a bidirectional control (notation 2.3);
+  `<`, `>`, `&` and quotes are escaped as XML escapes them.
+- **A function that is not drawn** shows its frame with its name, and its diagnostics, one per line, as
+  the first line of section 4.1 writes them (`check_voltage.lcf:4:9: error[LC2001]: …`), each cut at
+  200 code points, at most 32 *(proposed)*, then how many are left out.
+- **The same bytes every time.** The same files, the same options and the same trace give the same SVG,
+  on every platform and in the WASM build (scenario 6, point 2): no date, no time (the banner of a
+  trace that no longer matches names the files, without the time of the trace), a path relative to
+  `FOLDER` whatever the current folder, numbers in the shortest form with at most two decimals and no exponent,
+  elements in the order of drawing and attributes in a fixed order, UTF-8 without a byte order mark, LF
+  line endings.
+- **What is stable** (section 4.4): the `data-` attributes and the names of the CSS variables, under
+  `labcraft-diagram/1`; a reader ignores those it does not know. The geometry is not: a change of the
+  drawing is a reviewed change of the snapshots of CI.
+
+### 7.3 Values of a run: `--trace`
+
+`--trace FILE` reads the trace of a run (`labcraft-trace/1`, [commands.md](commands.md), section 8) and
+draws its values on the wires of the function, as the viewer does (notation 6.1): the bubbles, the
+banners of a run that did not end well and of a trace that no longer matches, the branches that the run
+did not take muted. An image does not move, so each loop shows its last iteration, the default of its
+iteration selector, and there is no selector and no curve; the `<title>` of a bubble gives the whole
+value.
+
+The trace is named on the command line, never taken from `.labcraft/runs/` on its own, so that a
+snapshot does not depend on the last run. A trace of another function gives `LC7102`, and the function
+is drawn without values. Whether the trace matches the files is judged as in the viewer, on the files
+that `diagram` resolved to draw the function.
+
+### 7.4 Reading a trace: limits (scenario 4)
+
+The trace is an input like a file (notation 6.1), and the viewer reads it with the same limits and the
+same code. Reading it never crashes and never stops the drawing: what was read before a problem stands,
+as in a cut trace, and the banner says that the trace was cut. *Proposed figures*:
+
+| Limit | Bound | Reached |
+|---|---|---|
+| Size of the file | `--max-trace-size`, default 512 MiB, twice the 256 MiB after which a run stops tracing (commands.md, section 8), at most 4 GiB; a larger value is wrong usage | The values read up to there; `LC7103` |
+| A line | 16 MiB, every line, of every frame: the bound of a whole line that a run writes (commands.md, section 8, *with M0b*) | The values end before that line; `LC7103` |
+| Lines | 1,000,002 after the first: the 1,000,000 events of a run, then `truncated` and `end` | The values read up to there; `LC7103` |
+| Nesting of a line | 256 levels; a value of a trace nests at most 64 (commands.md, section 5) | A line that does not read |
+
+- **A line that does not read** (not JSON, not an object, a field of the schema missing or of the wrong
+  kind, a negative number where an iteration, a frame or a sequence number is expected) ends the values
+  there, with `LC7103`, which gives its line. A first line that does not read, or that names another
+  schema or a later version of it, gives `LC7101` and no values.
+- **Only frame 0 gives values**, the call of the function drawn: the events of the other frames are
+  not decoded beyond what tells their frame, within the limits above.
+- **An event that fits nothing in the drawing** is ignored: an event of frame 0 that names a node or a
+  wire that the function drawn does not have, a value of another type than its wire, an iteration whose
+  levels are not the loops around the node, or a value already given for that node and iteration, an
+  iteration number from 2^63 on; an event that names a frame that no `call` opened. Iterations may come in any order (`for parallel`,
+  `--schedule-seed`). A trace that matches its files never holds such an event. `LC7104` counts them and
+  gives the line of the first, and every other value is shown. A loop counts its iterations up to the
+  highest that the trace gives.
+- **Bounded resources.** Reading a trace at these limits takes at most 5 s and 512 MB on a CI runner
+  *(proposed)*, measured by `cargo xtask bounds`, whatever the numbers it holds: memory follows the
+  values of frame 0 that it keeps, not the size of the file, and a hostile iteration number allocates
+  nothing. The viewer draws the function at once,
+  without values, reads the trace beside the drawing, and shows the values once it is read; the canvas
+  stays responsive meanwhile (scenario 6, point 5). A trace replaced while it is read (a new run) is read
+  again from its start.
+- `diagram` opens the trace so that a run can replace it while it is read (commands.md, section 8).
+
+### 7.5 Reports
+
+The human-readable form gives the diagnostics as section 4.1 does, then one line per function, in code
+point order of their names, then the summary:
+
+```text
+broken.lcf:4:9: error[LC2001]: unknown value `x`
+  in function `broken`, node `y`: y = core.add(x, 1)
+drawn check_voltage: diagrams/check_voltage.svg, 12 nodes
+not drawn broken: diagrams/broken.svg, its diagnostics
+diagram: 2 functions, 1 drawn, 1 not drawn: 1 error, 0 warnings
+```
+
+With `--trace`, a line before the summary says what was read: `trace: …/check_voltage.trace.jsonl, 41
+events, ok`: the status of its `end` event or `no end`, then `cut` when the run or a limit of
+  reading cut it, and the files that have changed since the run.
+
+`--json` prints `labcraft-diagram/1`:
+
+```json
+{
+  "schema": "labcraft-diagram/1",
+  "status": "error",
+  "summary": { "functions": 2, "drawn": 1, "not_drawn": 1 },
+  "diagrams": [
+    { "function": "broken", "file": "broken.lcf", "svg": "diagrams/broken.svg", "drawn": false, "nodes": 3, "codes": ["LC2001"] },
+    { "function": "check_voltage", "file": "check_voltage.lcf", "svg": "diagrams/check_voltage.svg", "drawn": true, "nodes": 12 }
+  ],
+  "check": {
+    "summary": { "libraries": 1, "functions": 2, "types": 1, "errors": 1, "warnings": 0, "truncated": false },
+    "diagnostics": [ … ]
+  }
+}
+```
+
+| Field | Always | Content |
+|---|---|---|
+| `schema` | yes | Name and version of this schema (section 4.4) |
+| `status` | yes | `ok` or `error`; `error` exactly when the exit code is 1 |
+| `summary` | yes | `functions` asked or found, how many are `drawn` and `not_drawn` |
+| `diagrams` | yes | One entry per function, in code point order of their names: `function`, `file` (absent for an unknown `FUNCTION`), `svg` (absent when it could not be written), `drawn`; `nodes`, the nodes counted against `--max-diagram-nodes`, when the file parses; `codes`, the codes that keep it from being drawn |
+| `trace` | no | With `--trace`: `file`; `events`, the events read; `status`, that of its `end` event, absent when it has none; `cut`, true when the run or a limit of reading cut it; `stale`, the files that have changed or are gone since the run, `[]` when it matches; `ignored`, the events counted by `LC7104` |
+| `check` | yes | As in the report of a run (commands.md, section 7): the `summary` and the `diagnostics` of `check`, those of `diagram` included |
+
+### 7.6 Codes of `diagram`
+
+These codes join the tables of section 5 when they are implemented, as `cargo xtask codes` requires. The
+family `LC70` is for drawing, `LC71` for reading a trace.
+
+| Code | Severity | When |
+|---|---|---|
+| `LC7001` | error | `FUNCTION` is not a function of `FOLDER`; fix: the nearest names |
+| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the counts |
+| `LC7003` | error | `FOLDER` holds no function to draw, only types |
+| `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written |
+| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values |
+| `LC7102` | warning | The trace is that of another function: no values |
+| `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit (7.4): the values up to there, as in a cut trace. Gives the line and the limit |
+| `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored (7.4). Gives how many, and the line of the first |
+
+## 8. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,
@@ -735,3 +962,7 @@ other: a folder over the bounds of section 1 gives `LC0010` even if it holds no 
 For `run`, besides what [commands.md](commands.md), section 9 lists: setting a panel element live from
 the command line (the first Ctrl-C as a press of a Stop switch, the second as an abort), arguments from a
 JSON file read from stdin (`--args -`).
+
+For `diagram`: other formats (`--png`), an SVG on stdout, the view state from the command line (every
+node in standard view, as the preference of the IDE, folded constructions, the branch of a `match` in
+tabs), an iteration chosen with `--trace`, an SVG that embeds a subset of the font with its notice.

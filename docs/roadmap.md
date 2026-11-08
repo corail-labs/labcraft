@@ -31,10 +31,10 @@ Still to write, besides what the acceptance scenarios list under "write first"
   `run` with how the CLI and MCP set a panel element ([cli.md](cli.md), section 6), and the throwaway
   feasibility prototype, a scheduler with parallel loops and a clean stop: the scheduler of the proof of
   concept (scenario 3);
-- **before M0v**: the limits of M0v for scenario 4 (the visual notation is written: compact view,
-  automatic placement, wire routing, font, values on the wires and theme), and the architecture of the
-  `diagram` and `editor` crates (in [architecture.md](architecture.md),
-  like that of the M0b crates). The egui canvas with 1,000 nodes and
+- **before M0v**: the architecture of the `diagram` and `editor` crates (in
+  [architecture.md](architecture.md), like that of the M0b crates). Written: the visual notation
+  (compact view, automatic placement, wire routing, font, values on the wires and theme), the command
+  line of `diagram` and the limits of M0v for scenario 4 ([cli.md](cli.md), section 7). The egui canvas with 1,000 nodes and
   2,000 wires at 60 frames/s is not a separate prototype: it is a target of M0v.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
