@@ -63,7 +63,7 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 | **Clean room** | Black-box observation of the target product; never its code, icons or texts; no GPL code | Adapted to NI (D-23): LabVIEW is not even observed, so there is no target to compare with (see below) |
 | **Attributed assets** | Every asset has a line in `ATTRIBUTION.md` | Adopted |
 | **Versioned format** | `solidcraft/N`, step-by-step migrations, a corpus of old files that must still open; SolidCraft opens a newer file with a warning and keeps what it does not read | Adopted (`labcraft N`, D-07), but a newer format is refused: a program that drives hardware must not run half understood |
-| **CLI and MCP** | `<app>-cli run / eval / mcp`; MCP headless or attached to the app through a local token-protected control channel. `gridcraft-cli check`: exit 0, 1, 2; `--json` prints one object with a named schema (`gridcraft-check/1`); `docs/cli.md` | Adopted (D-18, [cli.md](cli.md)) |
+| **CLI and MCP** | `<app>-cli run / eval / mcp`; MCP headless or attached to the app through a local token-protected control channel. `gridcraft-cli check`: exit 0, 1, 2; `--json` prints one object with a named schema (`gridcraft-check/1`); `docs/cli.md` | Adopted (D-18, [cli.md](cli.md)), except that `labcraft-cli run` runs a program and a script of commands is `labcraft-cli script` |
 | **Local `plan/`** | A local, git-ignored `plan/` folder for working notes | Adopted, except the ADRs: public in [decisions.md](decisions.md) (see [roadmap.md](roadmap.md)) |
 | **Progress docs** | One-page `ROADMAP.md`; detail in `docs/` (parity, ranked gaps, architecture) | Adopted |
 | **One task identifier per commit** | For example `M2.1: borders gallery` | Adopted |

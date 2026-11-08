@@ -29,7 +29,8 @@ labcraft-cli --help
 | 1 | An error was found: a diagnostic of severity `error`, or a file that is not canonical under `fmt --check` |
 | 2 | Wrong usage: unknown option, no path, a file given to `check`. A plain message on stderr, nothing on stdout, nothing read or written |
 
-`run` adds 3 (`aborted`) and 4 (`fault`), and uses 1 for the status `error` (spec 8.2). A missing
+`run` adds 3 (`aborted`) and 4 (`fault`), and uses 1 for the statuses `error` (spec 8.2) and `refused`
+([commands.md](commands.md), section 7). A missing
 path is exit 1 with a diagnostic, not exit 2: a path is data, and a bad one does not hide the
 diagnostics of the others.
 
@@ -331,8 +332,9 @@ the spec and from the corpora of scenarios 2 and 4. New codes can be added at an
 message of each one is written with its implementation. `S2` marks a case of the corpus of
 scenario 2.
 
-Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (faults and arguments),
-`LC9xxx` for MCP.
+Reserved for later specifications: `LC7xxx` for `diagram`, `LC8xxx` for `run` (faults and arguments).
+`LC9xxx` stays free: MCP reports a failed call with a command error ([commands.md](commands.md),
+section 3), not a diagnostic.
 
 ### Reading a file: `LC00`, `LC01`
 
