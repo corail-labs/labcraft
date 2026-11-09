@@ -106,10 +106,18 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
                             Shape::Wire { points, .. } => {
                                 // Its ends stop short of the terminals they reach.
                                 let last = points.len().saturating_sub(1);
+                                // The way into its terminal: its last segment, and the one before when the last comes
+                                // down onto a top edge (an `after:` of a compact block).
+                                let end = points.last().copied();
+                                let from_above = match points.len().checked_sub(2).and_then(|at| points.get(at)) {
+                                    Some(&(x, y)) => end.is_some_and(|end| end.0 == x && end.1 > y),
+                                    None => false,
+                                };
                                 for (index, pair) in points.windows(2).enumerate() {
                                     let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
                                     let a = if index == 0 { toward(a, b, TERMINAL) } else { a };
-                                    let reaches = (index + 1 == last).then_some(b);
+                                    let into = index + 1 == last || (from_above && index + 2 == last);
+                                    let reaches = if into { end } else { None };
                                     let b = if index + 1 == last { toward(b, a, TERMINAL) } else { b };
                                     segments.push(Segment { a, b, net, reaches });
                                 }
@@ -322,12 +330,12 @@ us
 
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
-    /// an `after:` on the top edge of a labelled block; and four that the fuzzing found: a node that reads its own error,
-    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, and a constant too many beside a wire on a circle. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// an `after:` on the top edge of a labelled block; and five that the fuzzing found: a node that reads its own error,
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, and two order wires into one `after:` from above. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 11] = [
+        const CASES: [(&str, &str); 12] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -339,6 +347,7 @@ us
             ("unknown_error.lcf", include_str!("../routing-cases/unknown_error.lcf")),
             ("one_output_twice.lcf", include_str!("../routing-cases/one_output_twice.lcf")),
             ("pill_beside_a_wire.lcf", include_str!("../routing-cases/pill_beside_a_wire.lcf")),
+            ("two_orders_into_one.lcf", include_str!("../routing-cases/two_orders_into_one.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {
