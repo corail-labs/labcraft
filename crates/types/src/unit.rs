@@ -248,6 +248,18 @@ impl Unit {
         (numerator.nearest(), denominator.nearest())
     }
 
+    /// Whether a value can go from this unit to `to`: the ratio of their scales is a scale too, and stays within the bounds
+    /// of one, 1e300 on each side of its fraction (spec 3.3, `LC3016`). `GV^33` to `mV^33` is 1e396, which no `f64` holds. Each
+    /// unit is within those bounds, so a `duration`, in seconds, always converts.
+    pub fn scales_to(&self, to: &Unit) -> bool {
+        let mut ratio = ten(0);
+        for ((slot, from), to) in ratio.iter_mut().zip(&self.scale).zip(&to.scale) {
+            let Some(exponent) = from.checked_sub(*to) else { return false };
+            *slot = exponent;
+        }
+        scale_in_bounds(ratio).is_some()
+    }
+
     /// The condition of `add`, `sub` and comparisons, and of an implicit conversion (spec 3.3).
     pub fn same_dimension(&self, other: &Unit) -> bool {
         self.exponents == other.exponents
@@ -496,6 +508,21 @@ mod tests {
         // GV/mV is 10^12, cubed 10^36, which `u64` cannot hold: its nearest `f64` is that of its decimal text.
         assert_eq!(parsed("GV^3").scale_ratio(&parsed("mV^3")), ("1e36".parse::<f64>().unwrap(), 1.0));
         assert_eq!((parsed("°C").offset(), parsed("°F").offset(), parsed("K").offset()), (Some(273.15), Some(459.67), None));
+    }
+
+    /// Worked out by hand: `GV` to `mV` is 10^12, so `GV^25` to `mV^25` is 10^300, the last power within bounds, and `^26` is
+    /// 10^312. `°F` to `K` is 5/9 whatever the power, below the bounds; `GV^33` alone is 10^297.
+    #[test]
+    fn a_ratio_of_scales_beyond_bounds_does_not_convert() {
+        assert!(parsed("GV^25").scales_to(&parsed("mV^25")));
+        assert!(parsed("mV^25").scales_to(&parsed("GV^25")));
+        assert!(!parsed("GV^26").scales_to(&parsed("mV^26")));
+        assert!(!parsed("mV^26").scales_to(&parsed("GV^26")));
+        assert!(!parsed("GV^33").scales_to(&parsed("mV^33")));
+        assert!(parsed("GV^33").scales_to(&parsed("V^33")));
+        assert!(parsed("°F").scales_to(&parsed("K")));
+        assert!(parsed("V").scales_to(&parsed("V")));
+        assert_eq!(parsed("GV^25").scale_ratio(&parsed("mV^25")), ("1e300".parse::<f64>().unwrap(), 1.0));
     }
 
     #[test]

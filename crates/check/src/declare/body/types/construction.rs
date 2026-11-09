@@ -43,7 +43,7 @@ impl<'a> Typer<'_, '_, '_, 'a> {
     pub(super) fn judge_piece(&mut self, operand: &'a Operand, found: TyId, expected: TyId, piece: &str) {
         match self.fit_of(operand, found, expected) {
             Fit::Same => {}
-            Fit::Coerce => self.resolved.add_coercion(operand.id(), found, expected),
+            Fit::Coerce => self.coerce(operand.id(), found, expected),
             Fit::Narrow | Fit::No => {
                 let (expected_text, found_text) = (self.show(expected), self.show(found));
                 let message = format!("`{}` has the type `{expected_text}`, and this is `{found_text}`", cut_text(piece));

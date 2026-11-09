@@ -1,6 +1,6 @@
 # Command line: `fmt`, `check`, `run` and `diagram`
 
-*Last updated: 2026-11-08. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
+*Last updated: 2026-11-09. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
 M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` a draft for M0v (section 7).*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run` and
@@ -293,7 +293,8 @@ for `LC2016` and `LC2017`, with the others in `related`.
 
 A value that does not convert gets the code of where it goes: `LC3001` or `LC3004` on an input, `LC3003` on an
 output, `LC3006` in an arm, `LC3007` on a carry, `LC3001` as an element of an array, `LC3015` on a field or a value of a
-construction, element of an array included, `LC3017` in a default value, whatever it builds. So a narrowing to an output is
+construction, element of an array included, `LC3017` in a default value, whatever it builds. A literal too large keeps its
+`LC3018`, and a conversion whose ratio of scales is out of bounds its `LC3016`, wherever they go, a default included. So a narrowing to an output is
 `LC3003`, and its fix still names the conversion. A default has no fix that adds a node, since it reads nothing of the
 diagram; its terminal is that of the parameter, `fn.gain`, or of the panel element, `panel.gain`. A generic primitive that does not match what it goes to has
 no type to compare: `LC3008`, except in a construction or a default, which keep their code. A type argument or an array makes a variable fixed, and an input against
@@ -436,8 +437,8 @@ section 3), not a diagnostic.
 | `LC3013` | error | Selector of the wrong type in a `match` or `handle`. With a selector of unknown type, its arms get no `LC3010`, `LC3011`, `LC4106`, nor `LC3022` on a variant; a repeated `_` and a `handle` without `_` are still reported | 6.1, 7.3 | |
 | `LC3014` | error | `until` that is not a `bool` | 6.3 | |
 | `LC3015` | error | Struct, `waveform` or variant construction: a field or a value missing, given twice, in excess or of the wrong type, a narrowing and a function of the wrong signature included; `{ }` on what is neither a struct nor a `waveform`; `samples` that is not an array. What is missing is one diagnostic per node, naming at most five fields, and none when a field is unknown or given twice, which may be the cause | 3.2, 5.1 | |
-| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul` | 3.3 | |
-| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument. Every mistake in what a default builds has this code, in place of `LC3015` or `LC3019`. A parameter of unknown type says nothing of its default. A signature that is faulty as a whole (a name defined twice, `LC2019`, `LC2105`, `LC2107`), or a generic function, says nothing of any default | 4, 10, R-21 | |
+| `LC3016` | error | Unit not computable: `sqrt` of an odd exponent or of a scale that is no exact square, `pow` without a constant integer exponent, an exponent or a scale that goes out of bounds through a chain of `mul`, a conversion whose ratio of scales goes out of those bounds (`f64[GV^26]` to `f64[mV^26]`, 1e312), on a wire, a literal or the unit of `core.unitless` | 3.3 | |
+| `LC3017` | error | Default value of the wrong type, for a parameter or a panel element, or the default of a parameter that is not a constant: a value of the diagram, a call of a function, `after:`, a type argument. Every mistake in what a default builds has this code, in place of `LC3015` or `LC3019`, but `LC3016` and `LC3018`, which keep theirs. A parameter of unknown type says nothing of its default. A signature that is faulty as a whole (a name defined twice, `LC2019`, `LC2105`, `LC2107`), or a generic function, says nothing of any default | 4, 10, R-21 | |
 | `LC3018` | error | Literal that does not keep its value in its type: `300` for an `i8`, `16777217` for an `f32`, a bound of a range even when it is excluded (`0..256` on a `u8`), a literal too large for its type by its value in the unit it goes to (`1e39` for an `f32` or a `c64`, `1e36 V` for an `f32[mV]`), in a default value too | 3.4, 6.1 | |
 | `LC3019` | error | Type variable of a generic primitive that cannot be determined, a generic primitive as a value where no function type is expected, a `[]` whose type nothing says (on the line of a named constant, nothing does), the wrong number of type arguments, or a `waveform` that does not hold numbers (`waveform<string>`, `samples` of `[[f64]]`) | 3.2, 3.5, 4 | |
 | `LC3020` | error | `for` clause over something other than an array, or a range with bounds that are not integers | 6.2 | |
