@@ -14,6 +14,7 @@ cargo-fuzz = true
 
 [dependencies]
 labcraft-check = { path = "../crates/check" }
+labcraft-diagram = { path = "../crates/diagram" }
 labcraft-format = { path = "../crates/format" }
 labcraft-graph = { path = "../crates/graph" }
 labcraft-libs = { path = "../libs/embedded" }
@@ -37,6 +38,13 @@ bench = false
 [[bin]]
 name = "check"
 path = "fuzz_targets/check.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "diagram"
+path = "fuzz_targets/diagram.rs"
 test = false
 doc = false
 bench = false

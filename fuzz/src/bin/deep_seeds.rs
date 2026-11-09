@@ -2,9 +2,9 @@
 //!
 //! - the programs of the Nesting family, at the default limit and one level above it: after 100,000 runs from the other
 //!   seeds, the deepest input is 4 levels deep. Generated, so that the grammar cannot leave them behind;
-//! - the libraries of the repository for the target `check`: the files of each folder of `examples/`, `libs/`, `docs/rfc/`
-//!   and `tests/acceptance/`, as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types
-//!   cross files.
+//! - the libraries of the repository for the targets `check` and `diagram`: the files of each folder of `examples/`,
+//!   `libs/`, `docs/rfc/`, `tests/acceptance/` and `tests/harness/routing-cases/` (the drawings built to break the rules of
+//!   routing), as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types cross files.
 //!
 //! Run from `fuzz/`.
 
@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(folder.join(format!("{kind}-above-the-limit.lcf")), program(limit + 1))?;
     }
     let mut libraries = Vec::new();
-    for root in ["../examples", "../libs", "../docs/rfc", "../tests/acceptance"] {
+    for root in ["../examples", "../libs", "../docs/rfc", "../tests/acceptance", "../tests/harness/routing-cases"] {
         libraries_under(Path::new(root), &mut libraries)?;
     }
     for (index, files) in libraries.iter().enumerate() {

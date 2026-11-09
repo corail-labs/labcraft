@@ -240,6 +240,38 @@ mod tests {
         }
     }
 
+    /// Every case of the corpora of acceptance (`tests/acceptance/hostile`, `type-errors`), checked as a folder and each
+    /// function drawn in both views: what the fuzzing of `diagram` starts from.
+    #[test]
+    fn the_corpora_of_acceptance_keep_the_rules() {
+        let mut faults = Vec::new();
+        for case in crate::HOSTILE.iter().chain(crate::TYPE_ERRORS) {
+            let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+            for file in case.files {
+                let shown = file.path.rsplit('/').next().unwrap_or(file.path).to_owned();
+                root.files.push(SourceFile { shown, content: Content::Bytes(Cow::Borrowed(file.bytes)) });
+            }
+            let mut names = Interner::new();
+            let checked = check(root, &Nothing, &mut names, &Limits::default());
+            for index in 0..checked.files.len() {
+                for standard_everywhere in [false, true] {
+                    let view = ViewState { standard_everywhere, ..ViewState::default() };
+                    if let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) {
+                        faults.extend(super::faults(&drawing).into_iter().map(|fault| format!("{}: {fault}", case.name)));
+                    }
+                }
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
     /// an `after:` on the top edge of a labelled block. Each is drawn in both views and checked.

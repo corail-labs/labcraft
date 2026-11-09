@@ -10,6 +10,8 @@ workspace, with its own `Cargo.lock`: nothing here reaches the product, which bu
 | `round_trip` | On any input up to 64 KiB that parses, what `fmt` writes holds every line of the declaration and reads again, to the same model and the same text (scenario 5), every comment is still there, nothing is left to remove, a body that cannot be ordered still gets its warning, and the text ends with one line feed, with no CR and no space at the end of a line |
 | `check` | On a library of up to 32 files, separated by two NUL bytes, each named by its length: for two lengths in four after what it declares (R-22), for one `f<N>`, for one after what it declares with the other extension (`LC0103`), and `f<N>` when it does not read or a file before it took the name, with the shipped libraries, `check` ends without `LC0099`, places each diagnostic in a file of the library or of a shipped one, with a well-formed span, gives the same report whatever the order of the files, and the same codes after `fmt` of each file, but for a duplicate `use` (`LC2020`), when `fmt` removes an entry (`LC5004`), and when a budget or a limit of `check` made it say less (`Checked::cut_short`), since what it says then depends on the order of lines and entries |
 
+| `diagram` | On a library as for `check`, each file named after what it declares, `diagram` draws every function that `check` lets it draw, in both views, without an internal error, gives the same SVG when it draws it again, refuses under a limit of 3 nodes what has more (`LC7002`), and keeps the rules of routing of notation 2.2 as `tests/harness/src/routing.rs` reads them, but in a body whose file places a node and for a wire that the file gives waypoints |
+
 Larger inputs belong to the Size family of the corpus (`LC0006`), and their time and memory to `cargo xtask bounds`
 (`tests/harness/tests/bounds.rs`).
 
@@ -23,6 +25,7 @@ cargo install cargo-fuzz --version 0.13.2 --locked
 bash fuzz/run.sh read 60
 bash fuzz/run.sh round_trip 60
 bash fuzz/run.sh check 60
+bash fuzz/run.sh diagram 60
 ```
 
 `run.sh` is what the workflow `fuzz` runs (`.github/workflows/fuzz.yml`), for 60 s. It also fails, with exit 3, when
@@ -41,7 +44,7 @@ by many seconds, which gives false `slow-unit` files, false timeouts and runs th
 again alone, with `--replay`, before believing it.
 
 **The long run before a tag** (8 hours per target, scenario 4) is `bash fuzz/long.sh <target> 8` for each target, on a
-machine of your own that does not sleep, since a job on a GitHub runner stops at 6 hours. The three can run side by
+machine of your own that does not sleep, since a job on a GitHub runner stops at 6 hours. The targets can run side by
 side. `long.sh` runs `run.sh` in parts of one hour, and counts an hour only when its part succeeded:
 
 - a part that stopped early is run again;

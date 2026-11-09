@@ -114,8 +114,12 @@ pub struct Plan {
     pub lowest: Option<i64>,
     verticals: Vec<Vertical>,
     nets: Vec<NetPlan>,
-    /// Wires that go back to the left, which only a position of the file gives: each routed around on its own.
-    back: Vec<usize>,
+    /// Wires that go back to the left (a body that cannot be ordered, a position of the file): each up a vertical in the
+    /// channel after its source, along a track over the columns from its reader to its source, and down a vertical in
+    /// the channel before its reader. By wire: the track, and the two verticals.
+    back: Vec<(usize, i64, Option<usize>, Option<usize>)>,
+    /// The wires that go back, before they have their track.
+    back_wires: Vec<usize>,
     /// Wires with waypoints, each routed through them on its own.
     through: Vec<(usize, Vec<(i64, i64)>)>,
     /// By wire: an error that stays on the axis, straight, past columns that hold nothing on it (notation 2.1).
@@ -183,7 +187,7 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             continue;
         }
         if ends.to_column <= ends.from_column {
-            plan.back.push(index);
+            plan.back_wires.push(index);
             continue;
         }
         let _ = family;
@@ -284,6 +288,17 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
         }
     }
+    // A wire that goes back: a track over every column from its reader to its source, as the others stack.
+    for &wire in &plan.back_wires.clone() {
+        let Some(ends) = body.ends.get(wire).copied().flatten() else { continue };
+        let (low, high) = (ends.to_column.max(1), ends.from_column.max(ends.to_column));
+        let (start, end) = (2 * low, 2 * (high + 1));
+        let limit = tops.query(low, high).saturating_sub(CLEAR).min(above.query(start, end).saturating_sub(GAP));
+        let track = limit.min(ends.from.y - CLEAR).min(ends.to.approach - CLEAR);
+        above.update(start, end, track);
+        plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
+        plan.back.push((wire, track, None, None));
+    }
     // The verticals of each net.
     for (index, net) in nets.iter_mut().enumerate() {
         let mut first: Vec<i64> = vec![net.source.y];
@@ -307,6 +322,13 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             let made = vertical(&mut plan.verticals, index, column, net.track.unwrap_or(0), heights.get(1..).unwrap_or_default());
             net.drops.insert(column, made);
         }
+    }
+    // The verticals of the wires that go back, each a net of its own.
+    let first_back = nets.len();
+    for (index, entry) in plan.back.iter_mut().enumerate() {
+        let Some(ends) = body.ends.get(entry.0).copied().flatten() else { continue };
+        entry.2 = vertical(&mut plan.verticals, first_back + index, ends.from_column + 1, ends.from.y, &[entry.1]);
+        entry.3 = vertical(&mut plan.verticals, first_back + index, ends.to_column, entry.1, &[ends.to.approach]);
     }
     plan.nets = nets;
     jogs(&mut plan, channels, body.axis);
@@ -630,7 +652,7 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
             points.push((x, from));
         }
     };
-    let mut routed = Vec::with_capacity(plan.nets.len() + plan.back.len());
+    let mut routed = Vec::with_capacity(plan.nets.len() + plan.back.len() + plan.through.len());
     for net in &plan.nets {
         let mut out = Routed::default();
         let source = net.source;
@@ -679,12 +701,23 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         let right = found.to_column == plan.slots.len().saturating_sub(1);
         routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: true });
     }
-    // Back to the left: out to the right, over both ends, down to the reader from its left.
-    for &wire in &plan.back {
+    // Back to the left: up in the channel after the source, over the columns, down in the channel before the reader.
+    for &(wire, over, up, down) in &plan.back {
         let Some(found) = ends.get(wire).copied().flatten() else { continue };
         let (from, to) = (found.from, found.to);
-        let over = from.y.min(to.approach) - 2 * CLEAR;
-        let mut points = vec![(from.x, from.y), (from.x + CLEAR, from.y), (from.x + CLEAR, over), (to.x - CLEAR, over), (to.x - CLEAR, to.approach)];
+        let mut points = vec![(from.x, from.y)];
+        if let Some(index) = up
+            && let Some(x) = slot_x(index)
+        {
+            enter(index, from.y, &mut points);
+            points.push((x, over));
+        }
+        if let Some(index) = down
+            && let Some(x) = slot_x(index)
+        {
+            enter(index, over, &mut points);
+            points.push((x, to.approach));
+        }
         tail(&to, &mut points);
         let right = found.to_column == plan.slots.len().saturating_sub(1);
         routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false });

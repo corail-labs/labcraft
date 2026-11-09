@@ -65,6 +65,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "labcraft-diagram"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-check",
+ "labcraft-format",
+ "labcraft-graph",
+ "labcraft-types",
+]
+
+[[package]]
 name = "labcraft-format"
 version = "0.1.0-m0a"
 dependencies = [
@@ -78,6 +88,7 @@ name = "labcraft-fuzz"
 version = "0.0.0"
 dependencies = [
  "labcraft-check",
+ "labcraft-diagram",
  "labcraft-format",
  "labcraft-graph",
  "labcraft-libs",

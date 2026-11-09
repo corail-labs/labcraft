@@ -12,9 +12,9 @@ usage="usage: run.sh TARGET SECONDS | run.sh TARGET --replay FILE"
 target=${1:?$usage}
 second=${2:?$usage}
 # Seconds for one input. A function whose budget of work runs out (`Checked::cut_short`) takes about 9 s under the sanitizer,
-# and an input of 64 KiB holds up to three of them.
+# and an input of 64 KiB holds up to three of them; `diagram` checks its input first.
 timeout=10
-if [ "$target" = check ]; then timeout=60; fi
+if [ "$target" = check ] || [ "$target" = diagram ]; then timeout=60; fi
 
 if [ "$second" = --replay ]; then
     file=$(realpath "${3:?$usage}")
