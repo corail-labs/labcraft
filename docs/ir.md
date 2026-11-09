@@ -53,13 +53,13 @@ pub struct Function {
     pub elements: Vec<Element>,            // its panel (spec 10), by ElementId
     pub body: Body,                        // its region, or the native function an `extern` declaration names
 }
-pub enum Body { Region(Region), Native { library: LibraryId, function: Name, runs: bool, always: bool } }
+pub enum Body { Region(Region), Native { library: LibraryId, function: Name, runs: bool, skip: Skip } }
 ```
 
 - **An `extern` function** (spec 4.1) has a native body: `function` is what its `function:` argument names, and `runs`
   is true for an `extern rust` function, whose library gives the body, and false for the others, whose call gives
-  `extern.unavailable` on `err` in M0; `always` is what the manifest of its library says of it (7.2), which a `core.call`
-  of it needs.
+  `extern.unavailable` on `err` in M0; `skip` is what a call of it does with an error (section 5), in the places of its
+  own inputs, which a `core.call` of it applies.
 - **An element** has its name, its kind (`switch`, `button`, `numeric`…), its type as `check` settled it, its
   default value, and the input or the output it is the element of, if any. An element that no node reads or writes, and
   that nothing else gives a type, has none, and no default. It belongs to its call: each call of the
@@ -120,7 +120,8 @@ pub enum Order { Value(Use), Node(u32) }   // a value of this region, or a node 
 - **A constant** is `Source::Const`, evaluated once at lowering by the rules of spec 3.4: a number in the type and
   unit of the use it reaches, read once in its kind (an `f32` is not read through an `f64`), then converted as a wire
   would convert it; a text, its escapes read; a boolean, `none`, a variant, an array of constants, a struct (a default,
-  R-21), a function reference. Two more have no value of their own: **the `length` of `array.slice` with no wire is the
+  R-21), a function reference: a `FunctionId`, or a primitive with the `Skip` of a call of it, by its function type
+  (section 5). Two more have no value of their own: **the `length` of `array.slice` with no wire is the
   constant `…`, which reaches the end of the array** (decision of the owner, 2026-11-09: the diagram shows `…` on the
   terminal, as appendix A writes it), and **a default that Q-21 has not settled** (a `timestamp`, a function reference)
   is `Unsettled`. The default of an opaque type is `InvalidHandle` (7.2). **A literal takes the type of each use** (3.4): the line `k = 0.5` is a node whose output holds the
@@ -208,7 +209,7 @@ pub enum Skip {
     OnError { err: u32, always: bool,       // which input is `err`; `always` from the manifest (7.2)
               defaults: Vec<ConstId>,       // the default of each output (7.2)
               through: Vec<Option<u32>> },  // the output named like an input passes that input through (5.3)
-    ByCallee,                               // `core.call`: the skip of the function it runs, when it runs
+    ByCallee,                               // `core.call`: the skip of the function it runs, which that function holds
 }
 ```
 
@@ -220,10 +221,14 @@ decides, by its own input named `err`, whatever names the function type gives (`
 A node `OnError` whose `err` input holds an error, and that is not `always`, does not run: its outputs take their
 defaults, those in `through` take the input they pass, and its `err` output takes the error it got. An `always`
 node runs, and its `err` output passes on the error it got if it had one. `ByCallee` applies, when the call
-happens, the `Skip` that a node of the function it runs would have, from its signature: `Runs` for a function written in
-LabCraft; for a primitive or an `extern` function, its input named `err`, one place further on the node since the
-function comes first (the inputs after it follow its signature, a variadic parameter as one array: spec 4), its
-outputs named like an input, and the `always` of its body. This is all the runtime needs to know of 7.2.
+happens, the `Skip` of the function it runs, which lowering made from that function's signature: `Runs` for a function
+written in LabCraft; for an `extern` function, the `skip` of its `Body::Native`; for a primitive, the `skip` of its
+`ConstValue::Primitive`, made from the names of its parameters and the types its function type gives them. Those are in
+the places of the function's own inputs, a variadic parameter as one array (spec 4), so on the node, whose first input is
+the function, each input is one place further on. `verify` keeps `ByCallee` to a primitive whose first input is a
+function and whose other inputs and outputs are those of its type; it reads no names, so it cannot tell that such a node is
+`core.call` itself, nor see a `core.call` given another skip, since a generic primitive such as `array.repeat` can take a
+function first too. This is all the runtime needs to know of 7.2.
 
 ## 6. Origins and positions
 
@@ -266,7 +271,12 @@ lowering, and so is what `ir::lower` returns as a `LowerError`: what `check` sho
 of every function of `examples/`, `libs/` and `docs/rfc/` is printed and compared with its snapshot in
 `tests/harness/snapshots/ir/`, natively and in WASM, so that a change of lowering shows in review. Uses are written by the
 name of what they read, fields by their name, a conversion after `as`, constants as the language writes them (a duration
-in nanoseconds). `examples/check_voltage.lcf`:
+in nanoseconds), and a native body with its skip. A constant is written up to 80 bytes, the names of its types and
+variants and its brackets included, and then `…` if it goes on: a text is cut between its quotes, so a `…` inside them is
+a character of the text and one after them the cut, and the constant `…` of `array.slice` is the only one that is `…`
+alone. Constants share what they hold, and a name can be as long as its file, so without the cut one use of a
+constant could be written larger than the file; with it, the text form stays within a constant factor of the file.
+`examples/check_voltage.lcf`:
 
 ```text
 fn check_voltage(resource: string, low: f64[V] = 220.0 V, high: f64[V] = 240.0 V, err: error = none) -> (verdict: Verdict, voltage: f64[V], err: error)

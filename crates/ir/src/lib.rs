@@ -124,13 +124,13 @@ pub enum PortOf {
 pub enum Body {
     Region(Region),
     /// What an `extern` declaration names (spec 4.1). `runs` is true for `extern rust`, whose library gives the body;
-    /// a call of another gives `extern.unavailable` on `err` in M0. `always` comes from the manifest of its library (7.2),
-    /// for what a `core.call` of it reads.
+    /// a call of another gives `extern.unavailable` on `err` in M0. `skip` is what a call of it does with an error (7.2), in
+    /// the places of its own inputs: what a `core.call` of it applies, one place further on.
     Native {
         library: LibraryId,
         function: Name,
         runs: bool,
-        always: bool,
+        skip: Skip,
     },
 }
 
@@ -344,9 +344,9 @@ pub enum Skip {
         /// The output named like an input passes that input through (5.3).
         through: Vec<Option<u32>>,
     },
-    /// `core.call`: the skip of the function it runs, decided when it runs, by that function's own `err` input, whatever names
-    /// the function type gives. Its inputs after the first follow the signature of that function, so its `err` input is one
-    /// place after where its signature has it.
+    /// `core.call`: the skip of the function it runs, whatever names the function type gives. A LabCraft function `Runs`; an
+    /// `extern` function has its own in its `Body::Native`, and a primitive in its `ConstValue::Primitive`. Their inputs and
+    /// outputs are in the places of the function, so the node's inputs, which start with the function, are one place on.
     ByCallee,
 }
 
@@ -403,9 +403,12 @@ pub enum ConstValue {
         values: Vec<ConstId>,
     },
     Function(FunctionId),
+    /// A primitive as a value, with what a call of it does with an error (7.2), in the places of its own inputs, as its
+    /// function type gives them.
     Primitive {
         library: PrimitiveLibrary,
         name: Name,
+        skip: Skip,
     },
     /// The default of an opaque type, on which the functions of its library fail (7.2).
     InvalidHandle,

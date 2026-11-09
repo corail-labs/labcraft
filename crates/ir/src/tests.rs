@@ -394,7 +394,7 @@ fn pair(x: f64[mV]) -> (y: f64[mV]) {
 }
 
 /// The text form of a constant is cut, so that it stays within a constant factor of its file: a long text, written in full
-/// once on its line, is written as its first 80 characters wherever it is used.
+/// once on its line, is written wherever it is used as its first 78 characters between its two quotes, 80 bytes, then `…`.
 #[test]
 fn a_long_constant_is_cut_where_it_is_printed() {
     let long = "A".repeat(10_000);
@@ -410,7 +410,119 @@ fn f() -> (x: string) {{
 "
     );
     let text = text_of(&[("f.lcf", &source)]);
-    let cut = format!("\"{}\"…", "A".repeat(80));
+    let cut = format!("\"{}\"…", "A".repeat(78));
     assert!(text.contains(&format!("primitive string.concat({cut}, {cut})")), "{}", text.chars().take(600).collect::<String>());
     assert!(text.len() < 1_000, "{}", text.len());
+}
+
+/// The 80 bytes of a constant count the names of its types and variants and its brackets too. `[T.` and 77 of the 200 `V` of
+/// the variant are 80 bytes; an array nested 200 deep is 80 `[`. Each line stays short however long the name or deep the array.
+#[test]
+fn names_and_brackets_count_in_what_a_constant_writes() {
+    let variant = "V".repeat(200);
+    let source = format!(
+        "labcraft 1
+
+use array
+
+fn f() -> (y: [T], n: i32) {{
+    k = [T.{variant}]
+    y = array.concat(k, k)
+    n = array.len(d)
+    d = {open}1{close}
+}}
+",
+        open = "[".repeat(200),
+        close = "]".repeat(200),
+    );
+    let enumeration = format!("type T = enum {{ {variant}, B }}");
+    let ty = format!("labcraft 1\n\n{enumeration}\n");
+    let text = text_of(&[("f.lcf", &source), ("T.lct", &ty)]);
+    let cut = format!("[T.{}…", "V".repeat(77));
+    assert!(text.contains(&format!("primitive array.concat({cut}, {cut})")), "{text}");
+    assert!(text.contains(&format!("primitive array.len({}…)", "[".repeat(80))), "{text}");
+    assert!(text.lines().all(|line| line.len() < 300), "{text}");
+}
+
+/// What a `core.call` applies comes with the function it runs (7.2): `string.to_f64` as a value skips on its input 1, `err`,
+/// its outputs taking `0.0` and `none`, and its `err` passing the one it got; `twice`, an `extern` function, the same by its
+/// own ports. Worked out from their signatures: `(text, err) -> (value, err)` and `(x, err) -> (y, err)`.
+#[test]
+fn a_function_called_by_reference_brings_its_skip() {
+    let source = "labcraft 1
+
+use core
+use string
+
+fn g(t: string) -> (v: f64, e: error, w: f64, e2: error) {
+    v, e = core.call(string.to_f64, t, none)
+    w, e2 = core.call(twice, v, none)
+}
+";
+    let twice = "labcraft 1
+
+extern rust(crate: \"labcraft-twice\", function: \"twice_of\")
+fn twice(x: f64, err: error = none) -> (y: f64, err: error)
+";
+    let (program, _) = lowered(&[("g.lcf", source), ("twice.lcf", twice)]);
+    let value = |skip: &crate::Skip| match skip {
+        crate::Skip::OnError { err, always, defaults, through } => {
+            let defaults: Vec<&ConstValue> = defaults.iter().map(|id| &program.constants[id.0 as usize].value).collect();
+            Some((*err, *always, format!("{defaults:?}"), through.clone()))
+        }
+        _ => None,
+    };
+    let expected = Some((1, false, "[Float(0.0), NoError]".to_owned(), vec![None, Some(1)]));
+    let primitive = program.constants.iter().find_map(|constant| match &constant.value {
+        ConstValue::Primitive { skip, .. } => Some(skip),
+        _ => None,
+    });
+    assert_eq!(primitive.map(value), Some(expected.clone()));
+    let native = program.functions.iter().find(|function| &*function.shown == "twice").unwrap();
+    let crate::Body::Native { skip, .. } = &native.body else { panic!("twice has no native body") };
+    assert_eq!(value(skip), expected);
+}
+
+/// `ByCallee` belongs to a call of a reference alone: on `core.neg`, whose input is no function, or on a native body, the
+/// verifier says so.
+#[test]
+fn the_verifier_keeps_a_skip_by_the_callee_to_a_call_of_a_reference() {
+    let source = "labcraft 1
+
+use core
+
+fn neg(x: f64) -> (y: f64) {
+    y = core.neg(x)
+}
+";
+    let (mut program, _) = lowered(&[("neg.lcf", source)]);
+    let crate::Body::Region(region) = &mut program.functions[0].body else { panic!() };
+    region.nodes[0].skip = crate::Skip::ByCallee;
+    let messages: Vec<String> = verify(&program).into_iter().map(|violation| violation.message).collect();
+    assert!(messages.iter().any(|message| message.contains("calls no reference")), "{messages:?}");
+}
+
+/// A text is written as the language writes it: `it's` keeps its apostrophe, which has no escape (`LC1003`), and a quote and a
+/// tab take theirs. A text that starts where no character of it fits is not written at all: 73 `a` between quotes and `, ` are
+/// 1 + 75 + 2 = 78 bytes after `[`, and `"` and one more character with its closing quote would pass 80.
+#[test]
+fn a_text_is_written_as_the_language_writes_it() {
+    let filler = "a".repeat(73);
+    let source = format!(
+        "labcraft 1
+
+use array
+use string
+
+fn f() -> (x: string, n: i32) {{
+    t = \"it's \\\"so\\\"\\t\"
+    x = string.concat(t, t)
+    n = array.len(l)
+    l = [\"{filler}\", \"bc\"]
+}}
+"
+    );
+    let text = text_of(&[("f.lcf", &source)]);
+    assert!(text.contains(r#"primitive string.concat("it's \"so\"\t", "it's \"so\"\t")"#), "{text}");
+    assert!(text.contains(&format!("array.len([\"{filler}\", …)")), "{text}");
 }

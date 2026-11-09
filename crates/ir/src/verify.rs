@@ -192,6 +192,20 @@ impl Checker<'_> {
             {
                 self.say(format!("constant {index} names function {}, which does not exist", function.0));
             }
+            if let ConstValue::Primitive { skip, .. } = &constant.value {
+                let ty = self.definition(constant.ty);
+                let signature = match self.program.types.get(ty) {
+                    Ty::Function { params, outputs } => Some((params.iter().map(|param| param.ty).collect::<Vec<TyId>>(), outputs.clone())),
+                    _ => None,
+                };
+                match signature {
+                    Some((params, outputs)) => self.skip_against(skip, &params, &outputs, "a primitive as a value"),
+                    None => self.say(format!("constant {index}, a primitive, has no function type")),
+                }
+                if *skip == Skip::Runs {
+                    self.say(format!("constant {index}, a primitive, runs as a LabCraft function"));
+                }
+            }
         }
     }
 
@@ -218,7 +232,18 @@ impl Checker<'_> {
                 self.constant(default, "an element");
             }
         }
-        let Body::Region(region) = &function.body else { return };
+        let region = match &function.body {
+            Body::Region(region) => region,
+            Body::Native { skip, .. } => {
+                let inputs: Vec<TyId> = function.inputs.iter().map(|port| port.ty).collect();
+                let outputs: Vec<TyId> = function.outputs.iter().map(|port| port.ty).collect();
+                self.skip_against(skip, &inputs, &outputs, "a native body");
+                if *skip == Skip::Runs {
+                    self.say("a native body that runs as a LabCraft function".to_owned());
+                }
+                return;
+            }
+        };
         if region.args.len() != function.inputs.len() {
             self.say(format!("the region of the function has {} arguments for {} inputs", region.args.len(), function.inputs.len()));
         }
@@ -530,34 +555,62 @@ impl Checker<'_> {
     }
 
     fn skip(&mut self, node: &Node) {
-        match &node.skip {
-            Skip::Never | Skip::Runs => {}
-            Skip::ByCallee => {
-                if !matches!(node.kind, NodeKind::Primitive { .. }) {
-                    self.say("a skip by the callee on a node that calls no reference".to_owned());
-                }
+        if node.skip == Skip::ByCallee {
+            self.by_callee(node);
+            return;
+        }
+        let inputs: Vec<TyId> = node.inputs.iter().map(|input| input.ty).collect();
+        let outputs: Vec<TyId> = node.outputs.iter().map(|output| output.ty).collect();
+        self.skip_against(&node.skip, &inputs, &outputs, "a node");
+    }
+
+    /// `core.call`: a primitive whose first input is a function, whose other inputs and outputs are those of its type (4).
+    fn by_callee(&mut self, node: &Node) {
+        let callee = node.inputs.first().map(|input| self.definition(input.ty));
+        let signature = match callee.map(|ty| self.program.types.get(ty)) {
+            Some(Ty::Function { params, outputs }) if matches!(node.kind, NodeKind::Primitive { .. }) => {
+                Some((params.iter().map(|param| param.ty).collect::<Vec<TyId>>(), outputs.clone()))
             }
-            Skip::OnError { err, defaults, through, .. } => {
-                let is_error = |ty: TyId| matches!(self.program.types.get(ty), Ty::ErrorValue);
-                if !node.inputs.get(*err as usize).is_some_and(|input| is_error(input.ty)) {
-                    self.say(format!("a skip on input {err}, which is no `error`"));
-                }
-                if !node.outputs.iter().any(|output| is_error(output.ty)) {
-                    self.say("a node that skips with no `err` output".to_owned());
-                }
-                if defaults.len() != node.outputs.len() || through.len() != node.outputs.len() {
-                    self.say("a skip that does not say what each output takes".to_owned());
-                }
-                for default in defaults {
-                    self.constant(*default, "a skip");
-                }
-                for (output, input) in node.outputs.iter().zip(through) {
-                    if let Some(input) = input
-                        && !node.inputs.get(*input as usize).is_some_and(|input| self.same(input.ty, output.ty))
-                    {
-                        self.say("an output that passes through an input of another type".to_owned());
-                    }
-                }
+            _ => None,
+        };
+        let Some((params, outputs)) = signature else {
+            self.say("a skip by the callee on a node that calls no reference".to_owned());
+            return;
+        };
+        let inputs: Vec<TyId> = node.inputs.iter().skip(1).map(|input| input.ty).collect();
+        let found: Vec<TyId> = node.outputs.iter().map(|output| output.ty).collect();
+        let same = |a: &[TyId], b: &[TyId]| a.len() == b.len() && a.iter().zip(b).all(|(a, b)| self.same(*a, *b));
+        if !same(&inputs, &params) || !same(&found, &outputs) {
+            self.say("a call of a reference whose inputs or outputs are not those of its type".to_owned());
+        }
+    }
+
+    /// A skip in the places of these inputs and outputs: of a node, of a native body by its ports, of a primitive by its type.
+    fn skip_against(&mut self, skip: &Skip, inputs: &[TyId], outputs: &[TyId], what: &str) {
+        let Skip::OnError { err, defaults, through, .. } = skip else {
+            if *skip == Skip::ByCallee {
+                self.say(format!("a skip by the callee on {what}"));
+            }
+            return;
+        };
+        let is_error = |ty: TyId| matches!(self.program.types.get(ty), Ty::ErrorValue);
+        if !inputs.get(*err as usize).is_some_and(|ty| is_error(*ty)) {
+            self.say(format!("a skip of {what} on input {err}, which is no `error`"));
+        }
+        if !outputs.iter().any(|ty| is_error(*ty)) {
+            self.say(format!("{what} that skips with no `err` output"));
+        }
+        if defaults.len() != outputs.len() || through.len() != outputs.len() {
+            self.say(format!("a skip of {what} that does not say what each output takes"));
+        }
+        for default in defaults {
+            self.constant(*default, what);
+        }
+        for (output, input) in outputs.iter().zip(through) {
+            if let Some(input) = input
+                && !inputs.get(*input as usize).is_some_and(|input| self.same(*input, *output))
+            {
+                self.say(format!("an output of {what} that passes through an input of another type"));
             }
         }
     }

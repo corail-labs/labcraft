@@ -1,6 +1,8 @@
 //! The text form of a program (`docs/ir.md`, section 8), for people, diffs and snapshot tests. Uses are written by the name of
 //! what they read. Regions are written with an explicit stack.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use labcraft_types::{Interner, LibraryId, Ty, TyId};
@@ -14,7 +16,7 @@ use crate::{
 pub fn print(program: &Program, names: &Interner) -> String {
     let mut out = String::new();
     for function in &program.functions {
-        Printer { program, names, function }.function(&mut out);
+        Printer { program, names, function, shown_types: RefCell::default() }.function(&mut out);
     }
     out
 }
@@ -23,7 +25,7 @@ pub fn print(program: &Program, names: &Interner) -> String {
 pub fn print_function(program: &Program, function: FunctionId, names: &Interner) -> String {
     let mut out = String::new();
     if let Some(function) = program.functions.get(function.0 as usize) {
-        Printer { program, names, function }.function(&mut out);
+        Printer { program, names, function, shown_types: RefCell::default() }.function(&mut out);
     }
     out
 }
@@ -36,6 +38,7 @@ struct Printer<'p> {
     program: &'p Program,
     names: &'p Interner,
     function: &'p Function,
+    shown_types: RefCell<HashMap<TyId, String>>,
 }
 
 /// What is left to write.
@@ -81,10 +84,9 @@ impl<'p> Printer<'p> {
             let _ = writeln!(out, "  element {}: {} {ty}{default}{port}", self.name(element.name), self.name(element.kind));
         }
         match &function.body {
-            Body::Native { library: _, function: native, runs, always } => {
+            Body::Native { library: _, function: native, runs, skip } => {
                 let runs = if *runs { "" } else { ", unavailable" };
-                let always = if *always { ", always" } else { "" };
-                let _ = writeln!(out, "  native {}{runs}{always}", self.name(*native));
+                let _ = writeln!(out, "  native {}{runs}{}", self.name(*native), self.skip_text(skip));
             }
             Body::Region(region) => self.regions(out, region),
         }
@@ -249,16 +251,17 @@ impl<'p> Printer<'p> {
                 .collect();
             let _ = write!(line, " after({})", after.join(", "));
         }
-        match &node.skip {
-            Skip::Never => {}
-            Skip::Runs => line.push_str("  runs"),
-            Skip::OnError { err, always, .. } => {
-                let always = if *always { ", always" } else { "" };
-                let _ = write!(line, "  skip(err: {err}{always})");
-            }
-            Skip::ByCallee => line.push_str("  skip(by callee)"),
-        }
+        line.push_str(&self.skip_text(&node.skip));
         line
+    }
+
+    fn skip_text(&self, skip: &Skip) -> String {
+        match skip {
+            Skip::Never => String::new(),
+            Skip::Runs => "  runs".to_owned(),
+            Skip::OnError { err, always, .. } => format!("  skip(err: {err}{})", if *always { ", always" } else { "" }),
+            Skip::ByCallee => "  skip(by callee)".to_owned(),
+        }
     }
 
     fn output_name_or_skip(&self, node: &Node, output: usize) -> String {
@@ -295,10 +298,15 @@ impl<'p> Printer<'p> {
     }
 
     fn variant_name(&self, ty: TyId, variant: u32) -> String {
+        self.variant_text(ty, variant).map_or_else(|| format!("#{variant}"), str::to_owned)
+    }
+
+    /// The name of a variant, borrowed: in a constant it is written once per use, and can be as long as its file.
+    fn variant_text(&self, ty: TyId, variant: u32) -> Option<&str> {
         let definition = self.program.definitions.get(&ty).copied().flatten().unwrap_or(ty);
         match self.program.types.get(definition) {
-            Ty::Enum(variants) => variants.get(variant as usize).map_or_else(|| format!("#{variant}"), |variant| self.name(variant.name).to_owned()),
-            _ => format!("#{variant}"),
+            Ty::Enum(variants) => variants.get(variant as usize).map(|variant| self.name(variant.name)),
+            _ => None,
         }
     }
 
@@ -326,99 +334,169 @@ impl<'p> Printer<'p> {
         patterns.join(", ")
     }
 
-    /// A constant as the language would write it, its unit after it, cut past [`CONSTANT_TEXT`] bytes: constants share
-    /// what they hold, so one written out can be exponentially larger than the table. Arrays nest as deep as `check` let them.
+    /// A constant as the language would write it, its unit after it, cut past [`CONSTANT_TEXT`] bytes and then ended with `…`:
+    /// constants share what they hold, so one written out can be exponentially larger than the table, and the names of its
+    /// types and variants are as long as their files let them be. Arrays nest as deep as `check` let them.
     fn constant(&self, id: ConstId) -> String {
-        let mut out = String::new();
-        let mut budget = CONSTANT_TEXT;
-        self.write_constant(id, &mut out, &mut budget);
-        out
+        let mut out = Bounded { text: String::new(), cut: false };
+        self.write_constant(id, &mut out);
+        let mut text = out.text;
+        if out.cut {
+            text.push('…');
+        }
+        text
     }
 
-    fn write_constant(&self, id: ConstId, out: &mut String, budget: &mut usize) {
-        if *budget == 0 {
-            out.push('…');
+    fn write_constant(&self, id: ConstId, out: &mut Bounded) {
+        if out.cut {
             return;
         }
-        let before = out.len();
         let Some(constant) = self.program.constants.get(id.0 as usize) else {
-            let _ = write!(out, "?{}", id.0);
+            out.push(&format!("?{}", id.0));
             return;
         };
-        let unit = match self.program.types.get(constant.ty) {
-            Ty::Number { unit, .. } if *unit != labcraft_types::Unit::ONE => format!(" {unit}"),
-            _ => String::new(),
-        };
-        let items = |out: &mut String, budget: &mut usize, items: &[ConstId]| {
+        let items = |out: &mut Bounded, items: &[ConstId]| {
             for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(", ");
-                }
-                if *budget == 0 {
-                    out.push('…');
+                if out.cut {
                     break;
                 }
-                self.write_constant(*item, out, budget);
+                if index > 0 {
+                    out.push(", ");
+                }
+                self.write_constant(*item, out);
             }
         };
         match &constant.value {
-            ConstValue::Bool(value) => out.push_str(&value.to_string()),
+            ConstValue::Bool(value) => out.push(if *value { "true" } else { "false" }),
             ConstValue::Int(value) => {
-                let _ = write!(out, "{value}{unit}");
+                out.push(&value.to_string());
+                self.write_unit(constant.ty, out);
             }
             ConstValue::Float(value) => {
-                let _ = write!(out, "{value:?}{unit}");
+                out.push(&format!("{value:?}"));
+                self.write_unit(constant.ty, out);
             }
             ConstValue::Complex { re, im } => {
-                let _ = write!(out, "({re:?}, {im:?}){unit}");
+                out.push(&format!("({re:?}, {im:?})"));
+                self.write_unit(constant.ty, out);
             }
-            ConstValue::Text(text) => {
-                // A text of a megabyte, used a million times, is written as its first characters each time.
-                let shown: String = text.chars().take(*budget).collect();
-                let _ = write!(out, "{shown:?}");
-                if shown.len() < text.len() {
-                    out.push('…');
-                }
-            }
-            ConstValue::Bytes(bytes) => {
-                let _ = write!(out, "bytes({})", bytes.len());
-            }
-            ConstValue::Duration(ns) => {
-                let _ = write!(out, "{ns} ns");
-            }
-            ConstValue::NoError => out.push_str("none"),
+            ConstValue::Text(text) => out.push_text(text),
+            ConstValue::Bytes(bytes) => out.push(&format!("bytes({})", bytes.len())),
+            ConstValue::Duration(ns) => out.push(&format!("{ns} ns")),
+            ConstValue::NoError => out.push("none"),
             ConstValue::Array(values) => {
-                out.push('[');
-                items(out, budget, values);
-                out.push(']');
+                out.push("[");
+                items(out, values);
+                out.push("]");
             }
             ConstValue::Struct(fields) => {
-                let _ = write!(out, "{} {{", self.ty(constant.ty));
-                items(out, budget, fields);
-                out.push('}');
+                self.write_ty(constant.ty, out);
+                out.push(" {");
+                items(out, fields);
+                out.push("}");
             }
             ConstValue::Variant { variant, values } => {
-                let _ = write!(out, "{}.{}", self.ty(constant.ty), self.variant_name(constant.ty, *variant));
+                self.write_ty(constant.ty, out);
+                out.push(".");
+                match self.variant_text(constant.ty, *variant) {
+                    Some(name) => out.push(name),
+                    None => out.push(&format!("#{variant}")),
+                }
                 if !values.is_empty() {
-                    out.push('(');
-                    items(out, budget, values);
-                    out.push(')');
+                    out.push("(");
+                    items(out, values);
+                    out.push(")");
                 }
             }
             ConstValue::Function(function) => {
-                let _ = write!(out, "fn {}", self.shown(function.0));
+                out.push("fn ");
+                out.push(self.shown(function.0));
             }
-            ConstValue::Primitive { library, name } => {
-                let _ = write!(out, "{}.{}", library.as_str(), self.name(*name));
+            ConstValue::Primitive { library, name, .. } => {
+                out.push(library.as_str());
+                out.push(".");
+                out.push(self.name(*name));
             }
             ConstValue::InvalidHandle => {
-                let _ = write!(out, "invalid {}", self.ty(constant.ty));
+                out.push("invalid ");
+                self.write_ty(constant.ty, out);
             }
-            ConstValue::ToTheEnd => out.push('…'),
+            ConstValue::ToTheEnd => out.push("…"),
             ConstValue::Unsettled => {
-                let _ = write!(out, "unsettled {}", self.ty(constant.ty));
+                out.push("unsettled ");
+                self.write_ty(constant.ty, out);
             }
         }
-        *budget = budget.saturating_sub(out.len().saturating_sub(before).max(1));
+    }
+
+    fn write_unit(&self, ty: TyId, out: &mut Bounded) {
+        if let Ty::Number { unit, .. } = self.program.types.get(ty)
+            && *unit != labcraft_types::Unit::ONE
+        {
+            out.push(&format!(" {unit}"));
+        }
+    }
+
+    /// A type within a constant, made into text once per printer: its name can be as long as its file.
+    fn write_ty(&self, ty: TyId, out: &mut Bounded) {
+        if out.cut {
+            return;
+        }
+        let mut shown = self.shown_types.borrow_mut();
+        let text = shown.entry(ty).or_insert_with(|| self.ty(ty));
+        out.push(text);
+    }
+}
+
+/// The text of a constant, which stops at [`CONSTANT_TEXT`] bytes, at a character.
+struct Bounded {
+    text: String,
+    cut: bool,
+}
+
+impl Bounded {
+    fn push(&mut self, piece: &str) {
+        if self.cut {
+            return;
+        }
+        let room = CONSTANT_TEXT.saturating_sub(self.text.len());
+        if piece.len() <= room {
+            self.text.push_str(piece);
+            return;
+        }
+        let mut end = room;
+        while end > 0 && !piece.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.text.push_str(piece.get(..end).unwrap_or_default());
+        self.cut = true;
+    }
+
+    /// A text between its quotes, escaped as the language writes it (`\"`, `\\`, `\n`, `\t`, `\r`), and other characters that
+    /// do not show as Rust writes them: what is cut of it is cut inside them, so a `…` after the closing quote is the cut, and
+    /// one inside is a character of the text. When not one character fits, nothing of it is written.
+    fn push_text(&mut self, text: &str) {
+        if self.cut {
+            return;
+        }
+        let mut quoted = String::from("\"");
+        let mut whole = true;
+        for c in text.chars() {
+            // `'` needs no escape between double quotes, and the language has none for it.
+            let escaped: String = if c == '\'' { c.to_string() } else { c.escape_debug().collect() };
+            // Room for this character and the closing quote.
+            if self.text.len() + quoted.len() + escaped.len() + 1 > CONSTANT_TEXT {
+                whole = false;
+                break;
+            }
+            quoted.push_str(&escaped);
+        }
+        quoted.push('"');
+        if self.text.len() + quoted.len() > CONSTANT_TEXT || (!whole && quoted.len() == 2) {
+            self.cut = true;
+            return;
+        }
+        self.text.push_str(&quoted);
+        self.cut = !whole;
     }
 }

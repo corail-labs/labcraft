@@ -4,12 +4,13 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use labcraft_check::primitives::{ParamKind, primitive};
 use labcraft_check::{Checked, CheckedFile, DeclaredFunction, Meaning, PrimitiveLibrary, read_escapes, unit_of};
 use labcraft_graph::{Arg, Constant as Written, Decl, Id, Operand, Signature};
 use labcraft_types::{Interner, LibraryId, Name, NumberKind, Ty, TyId, TypeTable, Unit};
 
 use crate::constant::literal_number;
-use crate::{Body, ConstId, ConstValue, Constant, Element, Function, FunctionId, FunctionKey, Port, PortOf, Program, VERSION};
+use crate::{Body, ConstId, ConstValue, Constant, Element, Function, FunctionId, FunctionKey, Port, PortOf, Program, Skip, VERSION, Variadic};
 
 mod body;
 mod shape;
@@ -88,7 +89,7 @@ fn key_of(value: &ConstValue) -> Key {
         ConstValue::Struct(fields) => Key::Struct(fields.clone()),
         ConstValue::Variant { variant, values } => Key::Variant(*variant, values.clone()),
         ConstValue::Function(function) => Key::Function(*function),
-        ConstValue::Primitive { library, name } => Key::Primitive(*library, *name),
+        ConstValue::Primitive { library, name, .. } => Key::Primitive(*library, *name),
         ConstValue::InvalidHandle => Key::InvalidHandle,
         ConstValue::ToTheEnd => Key::ToTheEnd,
         ConstValue::Unsettled => Key::Unsettled,
@@ -230,7 +231,13 @@ impl<'c> Lowering<'c> {
                 });
                 let native = native.map_or(function.name, |text| self.names.intern(&text));
                 let always = checked.libraries.get(key.library as usize).is_some_and(|library| library.always.contains(&key.name));
-                Body::Native { library, function: native, runs, always }
+                // In the places of its own inputs, a variadic one as one array, as a `core.call` of it passes them (spec 4).
+                let input_names: Vec<Name> = inputs.iter().map(|port| port.name).collect();
+                let input_tys: Vec<TyId> = inputs.iter().map(|port| port.ty).collect();
+                let output_names: Vec<Name> = outputs.iter().map(|port| port.name).collect();
+                let output_tys: Vec<TyId> = outputs.iter().map(|port| port.ty).collect();
+                let skip = self.on_error(file, &input_names, &input_tys, None, &output_names, &output_tys, always)?;
+                Body::Native { library, function: native, runs, skip }
             }
             Decl::Type(_) => return Err(self.bug(file, "a type file is lowered as a function")),
         };
@@ -323,6 +330,70 @@ impl<'c> Lowering<'c> {
         let Ty::Enum(variants) = self.types.get(self.definition(ty)?) else { return None };
         let index = variants.iter().position(|candidate| candidate.name == variant)?;
         Some((index_u32(index), variants.get(index)?.values.clone()))
+    }
+
+    /// Spec 7.2: the input named `err`, of type `error`, and what each output takes when the node does not run. The names and
+    /// types are those of the parameters; `variadic` says where the inputs of a variadic one are, on a node that has them.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn on_error(
+        &mut self,
+        file: &CheckedFile,
+        input_names: &[Name],
+        input_tys: &[TyId],
+        variadic: Option<Variadic>,
+        output_names: &[Name],
+        output_tys: &[TyId],
+        always: bool,
+    ) -> Result<Skip, LowerError> {
+        // The input of a parameter, past the arguments of a variadic one.
+        let input_of = |position: usize| -> Option<usize> {
+            match variadic {
+                Some(Variadic { start, count }) if position > start as usize => Some(position + count as usize - 1),
+                Some(Variadic { start, .. }) if position == start as usize => None,
+                _ => Some(position),
+            }
+        };
+        let error_names = self.names.find("err");
+        let types = &self.types;
+        let err = input_names.iter().enumerate().find_map(|(position, name)| {
+            let input = input_of(position)?;
+            (Some(*name) == error_names && input_tys.get(input).is_some_and(|ty| matches!(types.get(*ty), Ty::ErrorValue))).then_some(input)
+        });
+        let Some(err) = err else { return Ok(Skip::Never) };
+        let mut defaults = Vec::with_capacity(output_tys.len());
+        for ty in output_tys {
+            defaults.push(self.default_of(*ty, file)?);
+        }
+        let through = output_tys
+            .iter()
+            .enumerate()
+            .map(|(output, ty)| {
+                let name = output_names.get(output)?;
+                let position = input_names.iter().position(|input| input == name)?;
+                let input = input_of(position)?;
+                input_tys.get(input).filter(|input| self.types.matches(**input, *ty)).map(|_| index_u32(input))
+            })
+            .collect();
+        Ok(Skip::OnError { err: index_u32(err), always, defaults, through })
+    }
+
+    /// What a call of a primitive passed as a value does with an error: its parameters have their names in the table of
+    /// primitives, and the types that its function type gives them.
+    fn primitive_skip(&mut self, library: PrimitiveLibrary, name: Name, ty: TyId, file: &CheckedFile) -> Result<Skip, LowerError> {
+        let text = self.names.resolve(name).to_owned();
+        let signature = primitive(library, &text).ok_or_else(|| self.bug(file, "a primitive that the table does not have"))?;
+        let definition = self.definition(ty).ok_or_else(|| self.bug(file, "a primitive of an opaque type"))?;
+        let Ty::Function { params, outputs } = self.types.get(definition).clone() else {
+            return Err(self.bug(file, "a primitive whose type is no function"));
+        };
+        let values: Vec<&str> = signature.params.iter().filter(|param| param.kind == ParamKind::Value).map(|param| param.name).collect();
+        if values.len() != params.len() || values.len() != signature.params.len() {
+            return Err(self.bug(file, "a primitive as a value whose type does not match its parameters"));
+        }
+        let input_names: Vec<Name> = values.iter().map(|name| self.names.intern(name)).collect();
+        let input_tys: Vec<TyId> = params.iter().map(|param| param.ty).collect();
+        let output_names: Vec<Name> = signature.outputs.unwrap_or(&[]).iter().map(|output| self.names.intern(output)).collect();
+        self.on_error(file, &input_names, &input_tys, None, &output_names, &outputs, false)
     }
 
     /// The default value of a type (spec 7.2). Recursion follows the type, as deep as `check` let it nest.
@@ -486,7 +557,7 @@ impl<'c> Lowering<'c> {
                     ConstValue::Variant { variant: index, values: Vec::new() }
                 }
                 Meaning::Function { library, name } => ConstValue::Function(self.function_id(library, name, file)?),
-                Meaning::Primitive { library, name } => ConstValue::Primitive { library, name },
+                Meaning::Primitive { library, name } => ConstValue::Primitive { library, name, skip: self.primitive_skip(library, name, ty, file)? },
                 Meaning::Value(value) => match literals.get(&value) {
                     Some(literal) if path.rest.is_empty() => return self.literal(file, literal, ty, literals),
                     _ => return Err(self.bug(file, "a wire taken for a constant")),
