@@ -571,8 +571,8 @@ The `N` of the `--max-` options is an integer from 1 to 2^63−1, and `none` rem
 process: 16 bytes for each value, and inside it for each element of an array, each field of a struct and
 each value of a variant, so that an empty string or an empty array still costs something; plus the bytes
 of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `i64` or a `duration`,
-twice that for a complex number, 16 for a `timestamp`), and the bytes of a `string` in UTF-8 and of
-`bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
+twice that for a complex number, 16 for a `timestamp`, 8 for a function reference and for an opaque value), and the
+bytes of a `string` in UTF-8 and of `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
 and the limit stops it. A value counts once while some wire holds it, however many share it (D-11). Each
 node that runs or waits, and each frame of a call, counts 256 bytes *(proposed)*, so that a `for parallel` over
 millions of elements reaches the limit as a fault rather than the memory of the process.
@@ -701,6 +701,7 @@ ships its own format, and the tool does not read it.
 | `LC8005` | error | Fault: the memory limit of the run is reached, at the node that would pass it |
 | `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
 | `LC8007` | error | Fault: the clock of the run would pass 2^62 ns, about 146 years: a wait or a timeout that long, or one that is not finite |
+| `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), or the empty separator of `string.split`. Gives the node and the values |
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
 | `LC8103` | error | An input with no default has no `--arg` |
@@ -712,7 +713,8 @@ ships its own format, and the tool does not read it.
 | `LC8109` | error | The simulation file does not read as TOML (syntax, encoding, a key given twice, an integer that does not fit in 64 bits) |
 | `LC8110` | error | A key at the top level of the simulation file names no library that simulates; fix: the nearest name |
 
-Which other failures are faults rather than `error` values is Q-25; their codes come with its answer.
+A value that its operation cannot take, a number that its type cannot hold first, is `LC8008` (spec 8.2, Q-25, settled
+2026-11-09).
 
 ### 6.7 Human-readable form
 

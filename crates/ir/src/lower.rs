@@ -376,7 +376,7 @@ impl<'c> Lowering<'c> {
                 let name = output_names.get(output)?;
                 let position = input_names.iter().position(|input| input == name)?;
                 let input = input_of(position)?;
-                input_tys.get(input).filter(|input| self.types.matches(**input, *ty)).map(|_| index_u32(input))
+                input_tys.get(input).filter(|input| crate::passes_through(&self.types, **input, *ty)).map(|_| index_u32(input))
             })
             .collect();
         Ok(Skip::OnError { err: index_u32(err), always, defaults, through })

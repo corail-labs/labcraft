@@ -608,7 +608,9 @@ impl Checker<'_> {
         }
         for (output, input) in outputs.iter().zip(through) {
             if let Some(input) = input
-                && !inputs.get(*input as usize).is_some_and(|input| self.same(*input, *output))
+                && !inputs
+                    .get(*input as usize)
+                    .is_some_and(|input| self.same(*input, *output) || crate::passes_through(&self.program.types, *input, *output))
             {
                 self.say(format!("an output of {what} that passes through an input of another type"));
             }

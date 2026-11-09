@@ -69,7 +69,7 @@ icon 32 { … } // optional: icon of the compact view (section 11.1)
 | `c64` `c128` | complex |
 | `string` | UTF-8 |
 | `bytes` | binary data (instrument responses, frames) |
-| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2). A `duration` is a whole number of nanoseconds, as the clock of a run is: from an `f64[s]`, the value is multiplied by 10^9 as an `f64`, then rounded to the nearest integer, ties to even (as `libs/visa/simulation.md` does for its times), and a value that is not finite or does not fit is Q-25. To a number, its nanoseconds are taken as an `f64` and divided by 10^9, then converted as a wire is (3.3) |
+| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2). A `duration` is a whole number of nanoseconds, as the clock of a run is: from an `f64[s]`, the value is multiplied by 10^9 as an `f64`, then rounded to the nearest integer, ties to even (as `libs/visa/simulation.md` does for its times), and a value that is not finite or does not fit is a fault (8.2). To a number, its nanoseconds are taken as an `f64` and divided by 10^9, then converted as a wire is (3.3) |
 | `error` | see section 7 |
 
 ### 3.2 Composite types
@@ -655,8 +655,22 @@ line = string.format("U = {u:.3 mV}, I = {i:.2}", u: voltage, i: current)
   function reference, a `queue` or a `ref` have no text, even inside a struct, and are rejected on the wire. So is a format
   that does not suit the value: decimals, `+`, `0` or a letter on what holds no number, `d`, `x`, `X`, `o` or `b` on what is
   not an integer without a unit, and a unit that does not convert each number inside. `{n:.3}` on an integer is `5.000`. A
-  constant on a field keeps its own type (`a: 255` is an `i32`, so `{a:x}` is accepted). The text of each type is fixed with
-  `run`, in M0b.
+  constant on a field keeps its own type (`a: 255` is an `i32`, so `{a:x}` is accepted).
+- **The text of a value** with no format is the one the reports of a run give it, so that what a run shows and what a program
+  writes agree: a number with the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16
+  and with an exponent outside, a float with no fraction keeping `.0` (`12.0`, `1.5e-7`), then a space and its unit
+  (`230.0712173 V`); a complex number as `1.0 - 2.0i`; `true`, `false`; a `duration` in seconds (`0.1 s`); a `timestamp` in
+  RFC 3339, in UTC, to the nanosecond; `bytes` in hexadecimal (`0aff03`); a variant as `Verdict.Pass` or
+  `Reading.Value(230.0 V)`; a struct as `Limits { low: 220.0 V, high: 240.0 V }`, and one written in place without its name;
+  an array in brackets, `[1.0 V, 0.2 V]`, and an `[f64; 2]` row by row; an `error` as `none`, or its category, its code
+  when it is not 0 and its message when there is one, then each error merged into it after `; `
+  (`io.timeout (-1073807339): no answer; dmm.overload`). A `string` is its text alone, and inside an array, a struct or a
+  variant it is written as a literal, between quotes and with its escapes (`["a", "b"]`); a control character, which no file
+  holds (section 2), as `\u{1b}`, a form that the language does not read back yet.
+- **A format** gives each number inside the value its decimals (`.3`, fixed), its letter, its sign, its zeros and its unit;
+  its width and fill go to each value inside. As in C++20: `f` alone has six decimals, `e` writes `1.234500e+03`, `g`
+  counts significant digits (six by default) and drops the zeros that end it, a number goes to the right of its width and
+  anything else to the left, zeros never pad `nan` or `inf`, and `#o` writes a leading `0`. The width counts the unit.
 - `string.format` cannot fail and has no `err` input or output. A field may be named `err`, as `"failed: {err}"`: it is
   a field like another, so the node runs and shows the error, which is when that text is useful (7.2). It does not pass the
   error on: that wire goes on separately.
@@ -999,8 +1013,11 @@ same reason a deterministic run is limited in real time, since a computation doe
 simulated clock; that limit alone depends on the speed of the machine. In real time a loop runs as long as
 the program says, for days on a bench, unless the run is given a limit. The clock of a run has an end, far
 beyond any run, and a wait that would pass it is a fault. The values of the limits are those of `run`
-([cli.md](cli.md), section 6.2). Which other run-time failures are faults rather than `error` values (integer
-overflow, `core.to_i32` of `nan`, integer division by zero) is Q-25.
+([cli.md](cli.md), section 6.2). **A number that its type cannot hold**, where no `err` can say it, is a fault too (Q-25):
+an integer that overflows (`core.add` of two `i32` past 2^31, `core.neg` of a `u8`, `array.sum`), `core.to_i32` and
+`core.round_to_i32` of `nan` or of a value beyond the `i32`, a `duration` that is not finite or does not fit
+(3.1), and the empty separator of `string.split`. A silent value there would be a wrong measurement that looks right; a
+program that counts past 2^31 takes an `i64`. A division of integers cannot be one: `core.div` gives an `f64` (3.4).
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
 top-level function holds an error (7.5); `aborted`; `fault`.
@@ -1814,7 +1831,7 @@ What the grammar alone does not say:
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
-| Q-25 | Fault or error at run time | Integer overflow, `core.to_i32` of `nan` or out of range: a fault (8.2), an `error` value on `err`, or a default value? |
+| Q-25 | Fault or error at run time | **Settled (2026-11-09): a fault** (8.2, `LC8008`) for an integer that overflows, `core.to_i32` and `core.round_to_i32` of `nan` or out of range, and a `duration` that is not finite or does not fit; and the empty separator of `string.split`. An `error` on `err` would add a terminal to every arithmetic node; a default or a value that wraps would look measured |
 | Q-26 | Name of a function and name of its file | **Settled (2026-11-08): the file bears the name of what it declares (R-22).** Option A of this question: the declaration keeps its name in the file and the format does not change; a renamed copy has one error, `LC2023`, with two fixes, since only the user knows which name was meant. Option B, the name of the file alone, was set aside: an excerpt or a diff would no longer say its name, and a file renamed outside the editor would silently break every call. A type is named exactly as a function is (`Verdict.lct`): no rule turns `StepResult` into `step_result`. Names that file systems would confuse or refuse are errors on every system (`LC2024`, `LC2025`) |
 | Q-27 | From `[[f64]]` to `[f64; 2]` | Settled: `array.from_rows` and `array.to_rows` (appendix A). A constant takes the type expected if its rows have one length; an array of wires never does, so nothing fails at run time without an `err` (3.1). |
 | Q-28 | Dictionary and set | Names settled (2026-11-08): `map<K, V>` and `set<T>`, refused to types until M2 (3.2), the names of LabVIEW, Rust, Java, Go and C++ rather than `dict`. To write for M2, with the generics: the types a key can have (an `f64`? a unit?); an order of iteration that is deterministic (order of insertion, or sorted keys); `get` of a missing key, with an error category as for `array.get`; the cost of a copy on a wire (D-11); how a map is drawn and how a literal is written |
@@ -1838,15 +1855,15 @@ declarations without a body. Conventions:
 ### A.1 `core`
 
 ```text
-fn core.add<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a` (3.3)
+fn core.add<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a` (3.3); an integer that overflows: a fault (8.2)
 fn core.sub<N: Number>(a: N, b: N) -> (result: N)               // same dimension; unit of `a`
 fn core.mul<A: Number, B: Number>(a: A, b: B) -> (result: A·B)  // exponents add
 fn core.div<A: Number, B: Number>(a: A, b: B) -> (result: A/B)  // exponents subtract; integers give f64 (3.4); x/0: inf or nan
-fn core.abs<N: Number>(x: N) -> (result: N)
+fn core.abs<N: Number>(x: N) -> (result: N)                     // of a complex number: its magnitude, with no imaginary part
 fn core.neg<N: Number>(x: N) -> (result: N)
 fn core.sqrt<N: Number>(x: N) -> (result: √N)                   // exponents halved; rejected if odd; integers give f64
-fn core.pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; integers give f64; not in the PoC
-fn core.min<N: Number>(a: N, b: N) -> (result: N)               // same dimension
+fn core.pow<N: Number>(x: N, exponent: i32) -> (result: N^exponent)   // constant exponent; integers give f64; by squaring; not in the PoC
+fn core.min<N: Number>(a: N, b: N) -> (result: N)               // same dimension; nan gives nan, -0 is below 0
 fn core.max<N: Number>(a: N, b: N) -> (result: N)               // same dimension
 
 fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge; no complex numbers
@@ -1857,10 +1874,20 @@ fn core.select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
 fn core.with_unit(x: f64, unit: kind unit) -> (result: f64[unit])     // `core.with_unit(raw, [V])`
 fn core.unitless<N: Number>(x: N, unit: kind unit) -> (result: f64)   // unit of the dimension of `x`
-fn core.to_i32(x: f64) -> (result: i32)                         // narrowing (3.4); not in the PoC
-fn core.round_to_i32(x: f64) -> (result: i32)                   // not in the PoC
+fn core.to_i32(x: f64) -> (result: i32)                         // narrowing (3.4), toward zero; not in the PoC
+fn core.round_to_i32(x: f64) -> (result: i32)                   // to the nearest, a half to even; not in the PoC
 fn core.to_f32(x: f64) -> (result: f32)                         // not in the PoC
 ```
+
+Operations on real numbers are those of IEEE 754, so `nan` compares false with everything. `core.min` and `core.max` are
+its `minimum` and `maximum` (2019): a `nan` among the inputs gives `nan`, whatever their order, so that a failed
+measurement does not disappear, and `-0` is below `0`. `core.pow` multiplies by squaring, from the lowest bit of the
+exponent, then divides once for a negative exponent, and a complex `core.abs`, `core.sqrt` and `core.div` are fixed
+sequences of such operations, so every platform gives the same bits (D-10). `core.eq` compares what values hold: numbers
+as IEEE 754 does (`nan` equals nothing, `-0` equals `0`), texts and bytes by their content, arrays by their shape and their
+items, structs and variants field by field, errors by category, code, message and the errors merged into them (not where
+they were made), opaque values by what they designate, references by the function. `core.to_i32` and `core.round_to_i32`
+of `nan` or of a value beyond the `i32` are a fault (8.2).
 
 `core.call` runs a function reference (section 4); its inputs after the first and its outputs are those
 of the referenced function. Not in the PoC.
@@ -1909,14 +1936,17 @@ fn ui.set<T>(element: kind element, value: T) -> (value: T)   // same; never rea
 ```
 
 `array.get`, `array.set` and `array.slice` fail with the category `array.index_out_of_range`. An error of
-`array.set` gives the array unchanged. `array.slice` goes from `start` for `length` elements: with no wire, `start`
-is 0 and `length` reaches the end, and a negative value or what goes past the end is an error, which gives an empty array. It takes
+`array.set` gives the array unchanged, an `[f64; 2]` as its rows. `array.slice` goes from `start` for `length` elements: with no wire, `start`
+is 0 and `length` reaches the end, and a negative value or what goes past the end is an error, whose output `array` passes
+its input through, as `array.set` does (7.2). It takes
 whole rows, so that a slice of an `[f64; 2]` stays an `[f64; 2]`. `array.repeat` gives `count` copies, none at 0, and
 fails on a negative `count` with `array.negative_size`, giving an empty array. `array.from_rows` fails with `array.unequal_rows` on rows of
 different lengths, giving an empty array, and its message says which row, with both lengths; no row at all gives an
 empty array. `array.concat`, `array.push` and `array.set` on rows give an `[[f64]]`, since nothing keeps their
 lengths equal, and nothing converts between the arrays of `array.concat` (3.4). With no input, `array.concat` needs its type from
-what its line binds (3.5) or a type argument. `string.to_f64` and
+what its line binds (3.5) or a type argument. `string.split` gives the parts between each separator, empty ones included (`"a,,b"` at `","` is `["a", "", "b"]`);
+an empty separator splits nothing, which is a fault (8.2). `time.wait` of a negative duration waits nothing. `array.sum`
+adds from the first item to the last. `string.to_f64` and
 `string.to_i32` fail with `string.parse`. Both ignore the spaces around the text: `to_f64` reads an
 optional sign, digits with decimals, an exponent, or `nan` and `inf` in any case; `to_i32` reads an
 optional sign and digits, in the range of `i32`. `errors.make` produces an error of the given category and
