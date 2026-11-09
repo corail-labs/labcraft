@@ -154,6 +154,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-trace",
         "--package",
         "labcraft-ir",
+        "--package",
+        "labcraft-diagram",
     ])?;
     wasm_tests()
 }

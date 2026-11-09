@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 188.8" width="340" height="188.8" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="scpi.query_f64">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="340" height="188.8" style="fill: var(--canvas-fill)"/>
+<text x="16" y="26.41" font-size="11" style="fill: var(--ink-muted)">scpi.query_f64</text>
+<g data-node="text"><title>visa.query</title>
+<rect x="21" y="44.8" width="152" height="128" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="21,68.8 173,68.8" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="33" y="61.18" font-size="12" style="fill: var(--ink-muted)">visa.</text>
+<text x="69.12" y="61.18" font-size="12" style="fill: var(--node-title)">query</text>
+<rect x="168" y="81.3" width="10" height="7" style="fill: var(--wire-data)"/>
+<text x="132.1" y="89.18" font-size="12" style="fill: var(--node-title)">text</text>
+<rect x="16" y="103.8" width="10" height="10" style="fill: var(--wire-resource)"/>
+<text x="33" y="113.18" font-size="12" style="fill: var(--node-title)">session</text>
+<rect x="168" y="103.8" width="10" height="10" style="fill: var(--wire-resource)"/>
+<text x="110.43" y="113.18" font-size="12" style="fill: var(--node-title)">session</text>
+<rect x="16" y="129.3" width="10" height="7" style="fill: var(--wire-data)"/>
+<text x="33" y="137.18" font-size="12" style="fill: var(--node-title)">command</text>
+<polygon points="16,151.8 26,156.8 16,161.8 19.34,156.8" style="fill: var(--wire-error)"/>
+<text x="33" y="161.18" font-size="12" style="fill: var(--node-title)">err</text>
+<polygon points="168,151.8 178,156.8 168,161.8 171.34,156.8" style="fill: var(--wire-error)"/>
+<text x="139.33" y="161.18" font-size="12" style="fill: var(--node-title)">err</text>
+</g>
+<g data-node="value"><title>string.to_f64</title>
+<rect x="199" y="44.8" width="120" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="199,68.8 319,68.8" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="211" y="61.18" font-size="12" style="fill: var(--ink-muted)">string.</text>
+<text x="261.57" y="61.18" font-size="12" style="fill: var(--node-title)">to_f64</text>
+<rect x="194" y="81.3" width="10" height="7" style="fill: var(--wire-data)"/>
+<text x="211" y="89.18" font-size="12" style="fill: var(--node-title)">text</text>
+<circle cx="319" cy="84.8" r="5" style="fill: var(--wire-data)"/>
+<text x="270.88" y="89.18" font-size="12" style="fill: var(--node-title)">value</text>
+<polygon points="194,103.8 204,108.8 194,113.8 197.34,108.8" style="fill: var(--wire-error)"/>
+<text x="211" y="113.18" font-size="12" style="fill: var(--node-title)">err</text>
+<polygon points="314,103.8 324,108.8 314,113.8 317.34,108.8" style="fill: var(--wire-error)"/>
+<text x="285.33" y="113.18" font-size="12" style="fill: var(--node-title)">err</text>
+</g>
+</svg>

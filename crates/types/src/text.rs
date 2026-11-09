@@ -165,21 +165,157 @@ pub fn cut_middle(text: &str, max: u64) -> Cow<'_, str> {
 /// The bidirectional controls that never act in a drawing (`LC0005`, spec 2): each is shown as its code.
 const BIDI_CONTROLS: [char; 9] = ['\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'];
 
-/// The text as a drawing shows it: each bidirectional control of `LC0005` replaced by its code, `⟨U+202E⟩`, so that no
-/// text can hide how it reads (notation 2.3). U+061C, U+200E and U+200F stay, and act.
+/// What a line break is drawn as, and a tab (notation 2.3).
+pub const LINE_BREAK: &str = "\u{21B5}";
+pub const TAB: &str = "\u{21E5}";
+
+/// The ink of a piece of text: that of the text, or `mark.invalid` for a bidirectional control (notation 2.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ink {
+    Text,
+    Invalid,
+}
+
+/// A piece of a text as a drawing shows it: a grapheme as the drawing keeps it ([`drawn`]), or the sign of a control.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Piece<'a> {
+    pub text: Cow<'a, str>,
+    pub cells: u64,
+    pub ink: Ink,
+    /// A grapheme that the drawing cuts short, which ends the text.
+    pub short: bool,
+}
+
+/// A control, which the drawing shows by a sign: `↵` for a line break (LF, CR, CRLF), `⇥` for a tab, and its code,
+/// `⟨U+0007⟩`, for every other control (general category Cc) and for a bidirectional control of `LC0005`, which
+/// alone is in `mark.invalid` (notation 2.3). A control is always a grapheme of its own (GB4, GB5).
+fn sign(grapheme: &str) -> Option<(Cow<'static, str>, Ink)> {
+    let mut chars = grapheme.chars();
+    let (first, second) = (chars.next()?, chars.next());
+    match (first, second) {
+        ('\r', Some('\n')) | ('\r' | '\n', None) => Some((Cow::Borrowed(LINE_BREAK), Ink::Text)),
+        ('\t', None) => Some((Cow::Borrowed(TAB), Ink::Text)),
+        (c, None) if BIDI_CONTROLS.contains(&c) => Some((Cow::Owned(code(c)), Ink::Invalid)),
+        (c, None) if c.is_control() => Some((Cow::Owned(code(c)), Ink::Text)),
+        _ => None,
+    }
+}
+
+/// `⟨U+202E⟩`.
+pub fn code(c: char) -> String {
+    format!("\u{27E8}U+{:04X}\u{27E9}", u32::from(c))
+}
+
+fn piece(grapheme: &str) -> Piece<'_> {
+    if let Some((text, ink)) = sign(grapheme) {
+        let cells = graphemes(&text).map(grapheme_cells).fold(0, u64::saturating_add);
+        return Piece { text, cells, ink, short: false };
+    }
+    let kept = drawn(grapheme);
+    Piece { text: Cow::Borrowed(kept), cells: grapheme_cells(grapheme), ink: Ink::Text, short: kept.len() < grapheme.len() }
+}
+
+/// The pieces of a text, in its logical order.
+pub fn pieces(text: &str) -> impl Iterator<Item = Piece<'_>> {
+    graphemes(text).map(piece)
+}
+
+/// Whether a code point is shown by a sign.
+fn signed(c: char) -> bool {
+    c.is_control() || BIDI_CONTROLS.contains(&c)
+}
+
+/// The text as a drawing shows it, every control by its sign (see [`pieces`]), so that no text can hide how it reads
+/// (notation 2.3). U+061C, U+200E and U+200F stay, and act. `cells` of it counts what a drawing shows.
 pub fn shown(text: &str) -> Cow<'_, str> {
-    if !text.contains(BIDI_CONTROLS) {
+    if !text.contains(signed) {
         return Cow::Borrowed(text);
     }
     let mut out = String::with_capacity(text.len() + 16);
-    for c in text.chars() {
-        if BIDI_CONTROLS.contains(&c) {
-            out.push_str(&format!("\u{27E8}U+{:04X}\u{27E9}", u32::from(c)));
-        } else {
-            out.push(c);
+    for grapheme in graphemes(text) {
+        match sign(grapheme) {
+            Some((sign, _)) => out.push_str(&sign),
+            None => out.push_str(grapheme),
         }
     }
     Cow::Owned(out)
+}
+
+/// A text as a drawing shows it: runs of one ink, and the cells they take.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ShownText {
+    pub runs: Vec<(Ink, String)>,
+    pub cells: u64,
+}
+
+impl ShownText {
+    fn push(&mut self, ink: Ink, text: &str, cells: u64) {
+        self.cells = self.cells.saturating_add(cells);
+        match self.runs.last_mut() {
+            Some((last, run)) if *last == ink => run.push_str(text),
+            _ => self.runs.push((ink, text.to_owned())),
+        }
+    }
+
+    /// A text with no control in it, already cut: the name of a library in a band.
+    pub fn plain(text: &str) -> ShownText {
+        let mut shown = ShownText::default();
+        if !text.is_empty() {
+            shown.push(Ink::Text, text, cells(text));
+        }
+        shown
+    }
+
+    /// The text followed by a text with no control in it, in the ink of the text.
+    #[must_use]
+    pub fn then(mut self, text: &str) -> ShownText {
+        if !text.is_empty() {
+            self.push(Ink::Text, text, cells(text));
+        }
+        self
+    }
+
+    /// The text of every run, joined.
+    pub fn text(&self) -> String {
+        self.runs.iter().map(|(_, run)| run.as_str()).collect()
+    }
+}
+
+/// The text as a drawing shows it, cut as [`cut`] cuts, on its pieces: whole when it holds in `max` cells, otherwise
+/// the pieces that hold in `max - 1`, and `…`. The sign of a control is never split: it is whole, or gone after `…`.
+/// It reads no further than the piece that passes the limit.
+pub fn show(text: &str, max: u64) -> ShownText {
+    let mut kept: Vec<Piece<'_>> = Vec::new();
+    let (mut used, mut room): (u64, usize) = (0, 0);
+    for piece in pieces(text) {
+        if piece.short {
+            if used.saturating_add(piece.cells) < max {
+                kept.push(piece);
+                room = kept.len();
+            }
+            return ended_pieces(kept.get(..room).unwrap_or(&[]), max);
+        }
+        used = used.saturating_add(piece.cells);
+        if used > max {
+            return ended_pieces(kept.get(..room).unwrap_or(&[]), max);
+        }
+        kept.push(piece);
+        if used < max {
+            room = kept.len();
+        }
+    }
+    let mut shown = ShownText::default();
+    kept.iter().for_each(|piece| shown.push(piece.ink, &piece.text, piece.cells));
+    shown
+}
+
+fn ended_pieces(kept: &[Piece<'_>], max: u64) -> ShownText {
+    let mut shown = ShownText::default();
+    if max > 0 {
+        kept.iter().for_each(|piece| shown.push(piece.ink, &piece.text, piece.cells));
+        shown.push(Ink::Text, "\u{2026}", 1);
+    }
+    shown
 }
 
 /// The value of a code point in the tables.
@@ -453,5 +589,46 @@ mod tests {
         assert!(matches!(shown("a\u{200F}b\u{61C}"), Cow::Borrowed(_)));
         let all: String = BIDI_CONTROLS.iter().collect();
         assert_eq!(shown(&all).matches('\u{27E8}').count(), 9);
+    }
+
+    /// Decided at the start of step 2 of M0v (notation 2.3): `↵` for a line break, `⇥` for a tab, the code of every
+    /// other control in the ink of the text, and only a bidirectional control in `mark.invalid`. In the UCD 18.0 files,
+    /// U+21B5 and U+21E5 are Neutral and not emoji, U+27E8 and U+27E9 Narrow: one cell each, so a code is 8 cells.
+    #[test]
+    fn a_control_is_shown_by_its_sign() {
+        assert_eq!(shown("a\nb\r\nc\rd\te"), "a\u{21B5}b\u{21B5}c\u{21B5}d\u{21E5}e");
+        assert_eq!(shown("a\u{7}b\u{7F}c\u{85}"), "a\u{27E8}U+0007\u{27E9}b\u{27E8}U+007F\u{27E9}c\u{27E8}U+0085\u{27E9}");
+        assert_eq!(cells(&shown("a\nb")), 3);
+        assert_eq!(cells(&shown("\u{7}")), 8);
+        assert_eq!(cells(&shown("\u{202E}")), 8);
+        // U+2028 is a line separator, not a control: it stays.
+        assert!(matches!(shown("a\u{2028}b"), Cow::Borrowed(_)));
+        let runs = |text: &str, max: u64| show(text, max).runs;
+        assert_eq!(
+            runs("a\u{202E}b\u{7}", 40),
+            [(Ink::Text, "a".to_owned()), (Ink::Invalid, "\u{27E8}U+202E\u{27E9}".to_owned()), (Ink::Text, "b\u{27E8}U+0007\u{27E9}".to_owned()),]
+        );
+        assert_eq!(show("a\u{202E}b\u{7}", 40).cells, 18);
+    }
+
+    /// A cut never splits a sign: `a` and the 8 cells of a code need 9, then `…`.
+    #[test]
+    fn a_cut_keeps_a_sign_whole_or_leaves_it_out() {
+        assert_eq!(show("a\u{202E}b", 10).text(), "a\u{27E8}U+202E\u{27E9}b");
+        assert_eq!(show("a\u{202E}bc", 10).text(), "a\u{27E8}U+202E\u{27E9}\u{2026}");
+        assert_eq!(show("a\u{202E}bc", 9).text(), "a\u{2026}");
+        assert_eq!(show("a\u{202E}bc", 9).cells, 2);
+        assert_eq!(show("ab", 0), ShownText::default());
+        // As `cut`, on a text with no control, and as many cells as it shows.
+        for (text, max) in [("abcdefghijklm", 12), ("\u{6E2C}\u{5B9A}\u{30E9}\u{30A4}\u{30D6}\u{30E9}\u{30EA}", 12), ("abc", 1), ("", 3)] {
+            let shown = show(text, max);
+            assert_eq!(shown.text(), cut(text, max), "{text:?}");
+            assert_eq!(shown.cells, cells(&shown.text()), "{text:?}");
+        }
+        let long = format!("x{}", "\u{301}".repeat(100));
+        assert_eq!(show(&format!("{long}y"), 40).text(), cut(&format!("{long}y"), 40));
+        // It reads no further than the piece that passes the limit.
+        let huge = "\u{7}".repeat(1_000_000);
+        assert_eq!(show(&huge, 40).cells, 33);
     }
 }

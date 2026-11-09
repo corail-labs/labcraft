@@ -151,6 +151,7 @@ codes! {
     Lc6001 = "LC6001" Error,
     Lc6002 = "LC6002" Warning,
     Lc6003 = "LC6003" Error,
+    Lc7002 = "LC7002" Error,
 }
 
 impl Code {

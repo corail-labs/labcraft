@@ -720,7 +720,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 
 ## 11. M0v: the viewer
 
-*Status: draft; `text` (11.1) and `trace` (11.2) implemented.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: draft; `text` (11.1) and `trace` (11.2) implemented, `diagram` (11.3) up to the sizes.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
@@ -755,8 +755,9 @@ text of an icon by its box (`LC5009`, spec 11.1), and for `diagram` (L5), which 
   that a drawing keeps (a grapheme cut short ends the text that `cut` gives, with `…`); `cells(text)`: two cells for a grapheme one of whose code points is East Asian Wide or
   Fullwidth or `Emoji_Presentation`, or is U+FE0F (notation 2.3), one otherwise; `cut(text, cells)`, in logical
   order, with `…`, which reads no further than the grapheme that passes its limit, and `cut_middle` for the bands
-  that would read the same (notation 3.2); `shown(text)`, each bidirectional control of `LC0005` replaced by its
-  code, as a drawing shows it;
+  that would read the same (notation 3.2); `shown(text)`, each control replaced by its sign as a drawing shows it
+  (`↵`, `⇥`, or its code, `⟨U+202E⟩`), and `show(text, cells)`, the same cut on those pieces, in runs of one ink,
+  a bidirectional control of `LC0005` in `mark.invalid`;
 - `width(cells, size)` and `scale`: a length from the font, in hundredths of a unit from a size in hundredths,
   rounded to the nearest hundredth, a half up, the one rounding of every such length (722 for a cell at 12).
   `check` judges the box of a text of an icon with the same constants in floating point, as the other shapes, since
@@ -844,9 +845,15 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 
 ### 11.3 `diagram` (L5)
 
+*Status: steps 1 and 2 below implemented (step 2 of 11.7): the graph and the sizes, with the SVG of the boxes, each
+body as a row of its nodes until placement comes.* `draw` takes the index of the file of the function in
+`Checked::files`, as `ir::lower` does, and the `Interner`.
+
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
 gives (scenario 6). It reads `check::Checked` and never resolves again: names, callees, the terminals of each call
-and the type of each wire are in `Resolved` (section 5).
+and the type of each wire are in `Resolved` (section 5). It does not build on `ir`: a function with a type error is
+still drawn, with its marks (cli.md 7.1), and `ir` lowers only a run that `check` accepts. A node is named as `check`
+names its terminals (cli.md 4.3); the trace names it by its first output (commands.md 8), which `expected` follows.
 
 ```rust
 pub struct ViewState { standard_everywhere: bool,   // the preference of the IDE (notation 3)
@@ -869,12 +876,15 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
 - **Every branch is placed.** A structure shown in tabs is as large as its largest branch (2.1, 5.2), so the
   `Drawing` holds the shapes of every branch, and the tab shown is chosen when painting, from `Shown`: picking a
   tab, choosing an iteration (the tab follows the branch the run took, 6.1) or hiding the values places nothing.
-- **Coordinates are integers**, in hundredths of a unit, in `i64` with checked arithmetic: a text of millions of
-  cells cannot wrap a position. No floating point decides a position, and no map is walked in an order that a
+- **Coordinates are integers**, in hundredths of a unit, in `i64`: every text is cut before it is measured, and
+  `LC7002` bounds the nodes and the terminals, so a text of millions of cells cannot wrap a position. No floating point decides a position, and no map is walked in an order that a
   hash gives: the native and the WASM builds give the same bytes of SVG (scenario 6, point 2).
 - **Steps**, each in a module of its own:
   1. **The graph of the function**, from `Resolved`: nodes, terminals in signature order, wires with their
-     families, structures and their frames. `LC7002` is decided here, by counting, before anything is placed.
+     families, structures and their frames. `LC7002` is decided here, before anything is placed: the nodes are
+     counted from the text, the terminals as the graph is built, which stops at the first one too many, so that a
+     signature of thousands of inputs called thousands of times costs no more than the limit. What a call needs of
+     its callee is worked out once per callee.
   2. **Sizes**: the view of each node (its file, then the preference), compact and standard blocks (3.1, 3.2),
      every text cut in cells by `types::text` (3.2, 6.1, and 40 cells for the others, 2.3), icons, bands,
      badges.

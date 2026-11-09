@@ -5,6 +5,9 @@
 # The snapshots of the IR are compared byte for byte with what `ir::print` writes (docs/ir.md, section 8)
 *.ir text eol=lf
 
+# The snapshots of diagrams are compared byte for byte with what `diagram::svg` writes (docs/cli.md, 7.2)
+tests/harness/snapshots/diagram/** text eol=lf
+
 # A CR breaks a shell script, on Windows too
 *.sh text eol=lf
 

@@ -488,6 +488,12 @@ section 3), not a diagnostic.
 | `LC6002` | warning | Body left in written order: a cycle, or a value or a label defined twice | 5.2 |
 | `LC6003` | error | Canonical form could not be written: over `--max-file-size`, or the file system refused it, as for a read-only file. The file is unchanged | section 2 above |
 
+### `diagram`: `LC70`
+
+| Code | Severity | Problem | Spec |
+|---|---|---|---|
+| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, a missing input included. Gives the counts | section 7.6 |
+
 ## 6. `run`
 
 *Status: draft for milestone M0b, nothing implemented.*
@@ -818,7 +824,8 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
   - each wire is a `<g>` with the fields of a wire of a diagnostic (4.2): `data-wire`, the name of its
     value; `data-from`, the terminal it leaves; `data-to`, the terminals it reaches, separated by
     spaces, those that have a form. In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
-    data-to="#close.err">`: `e2` also enters the `handle` as its selector, which has no form;
+    data-to="e3.err">`: the line `#close: e3 = visa.close(…)` is named `e3`, the name of its line, as `check` names its
+    terminals; `e2` also enters the `handle` as its selector, which has no form;
   - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, written as its tab (`other`
     for `_`);
   - each mark of a diagnostic carries `data-code` (`LC3002`), so that the place of a diagnostic in the
@@ -841,9 +848,14 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
 - **The same bytes every time.** The same files, the same options and the same trace give the same SVG,
   on every platform and in the WASM build (scenario 6, point 2): no date, no time (the banner of a
   trace that no longer matches names the files, without the time of the trace), a path relative to
-  `FOLDER` whatever the current folder, numbers in the shortest form with at most two decimals and no exponent,
-  elements in the order of drawing and attributes in a fixed order, UTF-8 without a byte order mark, LF
-  line endings.
+  `FOLDER` whatever the current folder, numbers in the shortest form with at most two decimals and no exponent
+  (those of an icon too, a coordinate beyond a million drawn as a million, which its grid cuts anyway; the data of a
+  `path` as its file writes it), elements in the order of drawing and attributes in a fixed order, UTF-8 without a
+  byte order mark, LF line endings.
+- **An icon once.** Each icon is a `<symbol>` in `<defs>`, once however many nodes show it, that each of them
+  `<use>`s; its id is `icon-` and a 64-bit hash of what it draws, so that two SVGs inlined in one page share a symbol
+  when they draw the same icon. The hash is not cryptographic: two icons built on purpose to meet could show each
+  other's in one page, never in one SVG.
 - **What is stable** (section 4.4): the `data-` attributes and the names of the CSS variables, under
   `labcraft-diagram/1`; a reader ignores those it does not know. The geometry is not: a change of the
   drawing is a reviewed change of the snapshots of CI.
@@ -951,7 +963,7 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | Code | Severity | When |
 |---|---|---|
 | `LC7001` | error | `FUNCTION` is not a function of `FOLDER`; fix: the nearest names |
-| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the counts |
+| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, a missing input included. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the nodes, or the nodes built when the terminals passed the limit |
 | `LC7003` | error | `FOLDER` holds no function to draw, only types |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written |
 | `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values |

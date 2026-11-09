@@ -41,6 +41,17 @@ pub fn write_line(statement: &Statement, names: &Interner) -> String {
     writer.out
 }
 
+/// An operand as the text writes it (`2 s`, `Verdict.Pass`, `[1, 2]`), stopped once it passes `limit` bytes: the pill of an
+/// inline constant in a diagram, which cuts it anyway (`docs/visual-notation.md`, section 2.3). What is stopped ends with `…`.
+pub fn write_operand(operand: &Operand, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    writer.operand(operand);
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
 /// The text of a reference of the `layout` section: `#close`, `mean.b`.
 pub(crate) fn reference_text(node: NodeRef, terminal: Option<Name>, names: &Interner) -> String {
     let mut text = String::new();
