@@ -1,0 +1,6 @@
+fn count_to_fixed(limit: i32) -> (n: i32)
+  region (limit) -> (n)
+    0 n = loop (carries 1, collects 0) (0, limit)
+      region (c, limit) -> (c1, done)
+        0 c1 = primitive core.add(c, 1)
+        1 done = primitive core.ge(c1, limit)

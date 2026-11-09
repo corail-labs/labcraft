@@ -1,0 +1,6 @@
+fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: error)
+  region (resource, err) -> (voltage, e3)
+    0 dmm, e1 = native visa.open(resource, 2000000000 ns, err)  skip(err: 2)
+    1 raw, dmm2, e2 = call scpi.query_f64(dmm, "MEAS:VOLT:DC?", e1)  runs
+    2 e3 = native visa.close(dmm2, e2)  skip(err: 1, always)
+    3 voltage = primitive core.with_unit(raw, [V])

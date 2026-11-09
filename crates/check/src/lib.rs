@@ -18,8 +18,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use labcraft_format::{BodyOrders, canonical_orders};
-use labcraft_graph::{Decl, File, SourceMap};
-use labcraft_types::{CheckCounts, Diagnostic, FileCounts, Interner, Limits, Report, TypeTable};
+use labcraft_graph::{Decl, File, SourceMap, UnitExpr};
+use labcraft_types::{CheckCounts, Diagnostic, FileCounts, Interner, Limits, Report, TypeTable, Unit, UnitError};
 
 mod declare;
 mod file_name;
@@ -256,6 +256,22 @@ fn check_with(root: LibrarySource, libraries: &dyn Libraries, names: &mut Intern
         for_run,
         cut_short: declared.cut_short,
     }
+}
+
+/// The unit that a written unit means (spec 3.3), as `check` reads it.
+pub fn unit_of(expr: &UnitExpr, names: &Interner) -> Result<Unit, UnitError> {
+    declare::unit_of(expr, names)
+}
+
+/// The text of a string literal, as it runs: its escapes read (14.1).
+pub fn read_escapes(text: &str) -> Cow<'_, str> {
+    declare::read_escapes(text)
+}
+
+/// The fields of a `string.format` template whose escapes are read, each once, in the order they first appear: the order
+/// of the free terminals of its node (5.4).
+pub fn template_fields(text: &str) -> Vec<String> {
+    declare::template_fields(text)
 }
 
 fn add(counts: &mut FileCounts, more: FileCounts) {

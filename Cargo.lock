@@ -203,11 +203,22 @@ dependencies = [
  "labcraft-check",
  "labcraft-format",
  "labcraft-graph",
+ "labcraft-ir",
  "labcraft-libs",
  "labcraft-trace",
  "labcraft-types",
  "serde_json",
  "wasm-bindgen-test",
+]
+
+[[package]]
+name = "labcraft-ir"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-check",
+ "labcraft-format",
+ "labcraft-graph",
+ "labcraft-types",
 ]
 
 [[package]]

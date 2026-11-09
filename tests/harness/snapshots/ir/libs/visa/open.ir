@@ -1,0 +1,2 @@
+fn visa.open(resource: string, timeout: duration = 2000000000 ns, err: error = none) -> (session: session, err: error)
+  native open

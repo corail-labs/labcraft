@@ -35,7 +35,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::deep::{DEEP, Generator};
-    use super::{Embedded, HOSTILE, PROGRAMS, TYPE_ERRORS};
+    use super::{Embedded, HOSTILE, PROGRAMS, SNAPSHOTS, TYPE_ERRORS};
 
     /// In WASM the stack is the one that `.cargo/config.toml` links.
     #[cfg(target_arch = "wasm32")]
@@ -359,6 +359,55 @@ mod tests {
                 };
                 let checked = check(root, &Shipped, &mut Interner::new(), &limits);
                 assert!(!checked.report.diagnostics().iter().any(|diagnostic| diagnostic.code() == Code::Lc0099), "{kind}");
+            }
+        });
+    }
+
+    /// The IR of every function of the repository (`docs/ir.md`, section 8): it lowers, `ir::verify` finds nothing, and its
+    /// text form is its snapshot in `tests/harness/snapshots/ir/`. A change of lowering shows there, in review. With
+    /// `LABCRAFT_BLESS=1`, natively, the snapshots are written again; the files they replace are read by hand before a commit.
+    #[test]
+    fn every_function_of_the_repository_lowers_to_its_snapshot() {
+        on_the_stack_of_a_host(|| {
+            let mut written = BTreeMap::new();
+            for root in ["examples/", "libs/", "docs/rfc/"] {
+                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+                let mut names = Interner::new();
+                let checked = check_for_run(project(root, files), &Shipped, &mut names, &Limits::default());
+                for (index, file) in checked.files.iter().enumerate() {
+                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                        continue;
+                    }
+                    let program = labcraft_ir::lower(&checked, index, &mut names).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
+                    let violations = labcraft_ir::verify(&program);
+                    assert!(
+                        violations.is_empty(),
+                        "{root}{}: {violations:?}
+{}",
+                        file.shown,
+                        labcraft_ir::print(&program, &names)
+                    );
+                    let text = labcraft_ir::print_function(&program, labcraft_ir::FunctionId(0), &names);
+                    let stem = file.shown.rsplit_once('.').map_or(file.shown.as_str(), |(stem, _)| stem).replace(char::from(92), "/");
+                    written.insert(format!("tests/harness/snapshots/ir/{root}{stem}.ir"), text);
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var_os("LABCRAFT_BLESS").is_some() {
+                let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+                for (path, text) in &written {
+                    let path = base.join(path);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, text).unwrap();
+                }
+                return;
+            }
+            let stored: BTreeMap<&str, &str> =
+                SNAPSHOTS.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
+            let paths: Vec<&str> = written.keys().map(String::as_str).collect();
+            assert_eq!(stored.keys().copied().collect::<Vec<_>>(), paths, "snapshots without a function, or functions without a snapshot");
+            for (path, text) in &written {
+                assert_eq!(stored.get(path.as_str()).copied(), Some(text.as_str()), "{path}: write the snapshots again with LABCRAFT_BLESS=1");
             }
         });
     }

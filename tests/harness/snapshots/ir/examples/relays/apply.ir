@@ -1,0 +1,4 @@
+fn relays.apply(bank: visa.session, route: string, err: error = none) -> (bank: visa.session, err: error)
+  region (bank, route, err) -> (b, e1)
+    0 command = primitive string.format(route, template "ROUT:CLOS {route}")
+    1 b, e1 = native visa.write(bank, command, err)  skip(err: 2)

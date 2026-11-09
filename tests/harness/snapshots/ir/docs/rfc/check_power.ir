@@ -1,0 +1,16 @@
+fn check_power(resource: string, limit: f64[W] = 2.0 W, err: error = none) -> (verdict: Verdict, power: f64[W], err: error)
+  region (resource, limit, err) -> (verdict, power, e4)
+    0 supply, e1 = native visa.open(resource, 2000000000 ns, err)  skip(err: 2)
+    1 raw_v, supply2, e2 = call scpi.query_f64(supply, "MEAS:VOLT?", e1)  runs
+    2 raw_i, supply3, e3 = call scpi.query_f64(supply2, "MEAS:CURR?", e2)  runs
+    3 current = primitive core.with_unit(raw_i, [A])
+    4 e4 = native visa.close(supply3, e3)  skip(err: 1, always)
+    5 voltage = primitive core.with_unit(raw_v, [V])
+    6 power = primitive core.mul(voltage, current)
+    7 below = primitive core.lt(power, limit)
+    8 measured = match (below)
+      arm true () -> (Verdict.Pass)
+      arm false () -> (Verdict.Fail)
+    9 verdict = handle (e3, measured)
+      arm ok (measured) -> (measured)
+      arm _ (measured) -> (Verdict.Error)

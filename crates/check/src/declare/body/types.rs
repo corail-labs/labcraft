@@ -33,7 +33,9 @@ mod template;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use coverage::read_escapes;
 pub(super) use template::Shown;
+pub(crate) use template::template_fields;
 
 const NO_STEP: u32 = u32::MAX;
 const NO_RANK: u8 = u8::MAX;
@@ -591,7 +593,10 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         }
         match (phase, &statement.kind) {
             (Phase::Whole, StatementKind::Call(call)) => {
-                self.type_call(call, None);
+                let outs = self.type_call(call, None);
+                if self.trying.is_none() {
+                    self.resolved.set_outputs(statement.id, outs.iter().map(|out| out.ty).collect());
+                }
             }
             (Phase::Whole, StatementKind::Collect(value)) => {
                 let hint = self.collect_hint(statement.id);
@@ -1706,7 +1711,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         }
         for (target, out) in targets.iter().zip(&outs) {
             match target {
-                Line::Skip(_) => {}
+                // Nothing reads it, and lowering gives the node an output of that type.
+                Line::Skip(id) => self.resolved.set_type(*id, out.ty),
                 Line::Next(id, name) => {
                     if let Meaning::Value(carry) = self.resolved.of(*id) {
                         let expected = self.resolved.ty(carry);

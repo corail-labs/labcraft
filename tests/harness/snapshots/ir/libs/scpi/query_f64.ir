@@ -1,0 +1,4 @@
+fn scpi.query_f64(session: visa.session, command: string, err: error = none) -> (value: f64, session: visa.session, err: error)
+  region (session, command, err) -> (value, s, e2)
+    0 text, s, e1 = native visa.query(session, command, err)  skip(err: 2)
+    1 value, e2 = primitive string.to_f64(text, e1)  skip(err: 1)

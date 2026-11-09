@@ -119,7 +119,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
 | [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a (implemented), M0b and M0v (drafts) |
-| [docs/ir.md](docs/ir.md) | The dataflow IR that `check` lowers a program to and the runtime runs: regions, one node per line, origins, invariants (draft for M0b) |
+| [docs/ir.md](docs/ir.md) | The dataflow IR that a checked program is lowered to and the runtime runs: regions, one node per line, origins, invariants (implemented for M0b) |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |
 | [docs/inspirations.md](docs/inspirations.md) | Ideas to borrow (languages, compilers, tools, UX) |

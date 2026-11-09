@@ -1,0 +1,9 @@
+fn run_step(bench: Bench, step: Step, err: error = none) -> (result: results_log.StepResult, err: error)
+  region (bench, step, err) -> (result, e3)
+    0 _, e1 = call relays.apply(bench.relays, step.route, err)  runs
+    1 _, e2 = call psu.set_voltage(bench.source, step.voltage, e1)  runs
+    2 v, e3 = call settle(bench.dmm, step.voltage, 0.2 V, 50000000 ns, 1000000000 ns, e2)  runs
+    3 above = primitive core.ge(v, step.low)
+    4 below = primitive core.le(v, step.high)
+    5 passed = primitive core.and(above, below)
+    6 result = construct results_log.StepResult {step.name, v, passed}

@@ -1,0 +1,2 @@
+fn visa.write(session: session, command: string, err: error = none) -> (session: session, err: error)
+  native write

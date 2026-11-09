@@ -1,0 +1,4 @@
+fn bench_selftest(bench: Bench, err: error = none) -> (err: error)
+  region (bench, err) -> (e2)
+    0 _, e1 = call scpi.check_errors(bench.dmm, err)  runs
+    1 _, e2 = call scpi.check_errors(bench.source, e1)  runs

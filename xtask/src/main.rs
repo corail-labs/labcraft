@@ -21,7 +21,7 @@ commands:
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
   bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
-  wasm      format, check and trace build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check, trace and ir build for wasm32-unknown-unknown, and the harness passes there
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
 
@@ -137,6 +137,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-check",
         "--package",
         "labcraft-trace",
+        "--package",
+        "labcraft-ir",
     ])?;
     wasm_tests()
 }

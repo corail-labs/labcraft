@@ -1,0 +1,4 @@
+fn dmm_driver.read_dc_volts(session: visa.session, err: error = none) -> (volts: f64[V], session: visa.session, err: error)
+  region (session, err) -> (volts, s, e1)
+    0 raw, s, e1 = call scpi.query_f64(session, "MEAS:VOLT:DC?", err)  runs
+    1 volts = primitive core.with_unit(raw, [V])

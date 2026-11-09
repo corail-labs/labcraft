@@ -269,6 +269,12 @@ fn read_template<'t>(text: &'t str, say: Say<'_>) -> (Vec<Field<'t>>, bool) {
     (fields, malformed)
 }
 
+/// The names of the fields of a template, each once, in the order they first appear (5.4): the order of the free terminals of a
+/// `string.format` node. `text` has its escapes read.
+pub(crate) fn template_fields(text: &str) -> Vec<String> {
+    read_template(text, &mut |_| {}).0.into_iter().map(|field| field.name.into_owned()).collect()
+}
+
 /// The dimension of the numbers of a type, as a unit has to convert them all.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Dimension {

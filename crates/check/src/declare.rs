@@ -21,6 +21,8 @@ use crate::resolved::Resolved;
 use crate::{Libraries, Origin};
 
 mod body;
+
+pub(crate) use self::body::{read_escapes, template_fields};
 #[cfg(test)]
 mod tests;
 
@@ -376,7 +378,7 @@ fn dimensions_of(text: &str) -> Option<u8> {
 }
 
 /// A `UnitExpr` has the shape that `parse_unit` reads from a text: equal precedence, from left to right.
-fn unit_of(expr: &UnitExpr, names: &Interner) -> Result<Unit, UnitError> {
+pub(crate) fn unit_of(expr: &UnitExpr, names: &Interner) -> Result<Unit, UnitError> {
     let mut unit = term_of(&expr.first, names)?;
     for (op, term) in &expr.rest {
         let term = term_of(term, names)?;

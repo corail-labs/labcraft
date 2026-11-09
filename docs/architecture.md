@@ -211,7 +211,8 @@ their types, and M0b runs from it. `Resolved` gives, by `Id`:
 - the kind of each `Bracket` (R-5);
 - the callee of each call, and the terminals of that call, which a signature alone does not give for
   `string.format` and variadics;
-- the type of each wire, and the coercions to show (3.3, 3.4).
+- the type of each wire, and the coercions to show (3.3, 3.4); the type of what a `_` target binds, and of the outputs of
+  a call written alone (`Resolved::outputs_of`), which lowering gives the node.
 
 `root` includes its sub-libraries, which are checked even if nothing uses them (cli.md, section 3).
 `Limits` bounds the total size of a library, since the caller hands all its files at once.
@@ -325,7 +326,7 @@ character boundary, and these crates hold little numerical code.
 | `codes` | `Code` equals the tables of cli.md, section 5; from M0b, the codes of each native library equal the table of its document (section 10.6) |
 | `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
-| `wasm` | `format`, `check` and `trace` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, `ir`, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
+| `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
@@ -399,7 +400,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 and 1 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 2 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -477,12 +478,30 @@ pub struct Reach { functions: Vec<u32>, types: Vec<u32>, unresolved: Vec<Unresol
 
 ### 10.2 `ir` (L4)
 
-[ir.md](ir.md) defines it: a program as regions of nodes, the nodes of the diagram, each region reading only its
-arguments, every node with its origin and its canonical position, every value typed. `ir::lower` takes the `Checked`
-of a run, `ir::verify` checks the invariants, `ir::print` gives the text form that snapshot tests compare. Lowering
-walks calls and bodies with explicit work lists, and a structure nested as deep as `max_nesting` allows is in the
-stack test of section 4. It is written to last: the interpreter, the trace, the debugger (M5) and the linear IR (M7)
-build on it.
+*Status: implemented (step 2).* [ir.md](ir.md) defines it: a program as regions of nodes, the nodes of the diagram, each
+region reading only its arguments, every node with its origin and its canonical position, every value typed. It is
+written to last: the interpreter, the trace, the debugger (M5) and the linear IR (M7) build on it.
+
+```rust
+pub fn lower(checked: &Checked, start: usize, names: &mut Interner) -> Result<Program, LowerError>;  // LowerError: LC8004
+pub fn verify(program: &Program) -> Vec<Violation>;
+pub fn print(program: &Program, names: &Interner) -> String;     // print_function: one of them, for a snapshot
+pub fn apply_scale(value: f64, scale: &Scale, single: bool) -> f64;  // the conversions of 3.3, for the runtime too
+```
+
+- **Lowering** takes the `Checked` of a run that is not refused (10.1) and the file of the function to run, and
+  lowers it, then each function it names, through a work list; the signature of a callee, with its defaults, is made
+  when it is first named. A function is walked once to find its shape (its bodies, where each value is defined, the
+  lines that make no node, the values each structure passes in, the orders of `after:`), then its bodies are lowered
+  innermost first. Nothing recurses on the nesting of bodies; a constant and a type recurse, as `check` does, on the
+  stack of the host. `crates/ir/tests/stack.rs` lowers loops, `match` and an array constant nested to `MAX_NESTING`.
+- **What it adds to `check` and `types`**, for it: `Resolved::outputs_of` and the type of `_` targets (section 5);
+  `check::unit_of`, `check::read_escapes` and `check::template_fields`, so that a unit, a text and the order of the
+  fields of a template are read as `check` reads them; `Unit::scale_ratio` and `Unit::offset`, the integers and the
+  offsets of spec 3.3.
+- **Tests:** a test per construct and per kind of node in `crates/ir/src/tests.rs`, their expected text written by hand;
+  the snapshots of every function of `examples/`, `libs/` and `docs/rfc/` in `tests/harness/snapshots/ir/`, natively
+  and in WASM, with `ir::verify` on each.
 
 ### 10.3 Values
 
@@ -661,7 +680,7 @@ checks, for the web simulation of M10.
 
 | What | Where | Scenario |
 |---|---|---|
-| The IR of every file of `examples/`, `libs/`, `docs/rfc/`, against snapshots; `ir::verify` after every lowering | `ir` tests | |
+| The IR of every file of `examples/`, `libs/`, `docs/rfc/`, against snapshots; `ir::verify` after every lowering | `tests/harness` (`snapshots/ir/`) | |
 | One lowering test per construct of the language, and per row of ir.md, section 4 | `ir` tests | |
 | A body for every primitive signature, and no other | `runtime` tests | |
 | **The corpus of runs**: each case a program, a simulation file, arguments and settings, and the expected report | `tests/acceptance/runs/` | 1, 3, 4 |
@@ -680,7 +699,8 @@ Each step of work ends with something testable:
 0. **`check` for runs:** the interface of 10.1. *Done.*
 1. **`trace`**, with M0v: the events, the JSON form of values and its bounds, the writer and the reader. *Done*
    (section 11.2).
-2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`.
+2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`. *Done*
+   (section 10.2).
 3. **Values and primitives** in `runtime`, with their test of signatures.
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
    codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`.

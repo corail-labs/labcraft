@@ -1,0 +1,11 @@
+fn read_in_out(input: string, output: string, err: error = none) -> (v_in: f64[V], v_out: f64[V], err: error)
+  region (input, output, err) -> (v_in, v_out, err)
+    0 dmm_in, e1 = native visa.open(input, 2000000000 ns, err)  skip(err: 2)
+    1 dmm_out, e4 = native visa.open(output, 2000000000 ns, err)  skip(err: 2)
+    2 raw_in, dmm_in2, e2 = call scpi.query_f64(dmm_in, "MEAS:VOLT:DC?", e1)  runs
+    3 e3 = native visa.close(dmm_in2, e2)  skip(err: 1, always)
+    4 raw_out, dmm_out2, e5 = call scpi.query_f64(dmm_out, "MEAS:VOLT:DC?", e4)  runs
+    5 e6 = native visa.close(dmm_out2, e5)  skip(err: 1, always)
+    6 err = primitive errors.merge(e3, e6)
+    7 v_in = primitive core.with_unit(raw_in, [V])
+    8 v_out = primitive core.with_unit(raw_out, [V])
