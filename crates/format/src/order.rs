@@ -11,7 +11,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use labcraft_graph::{
-    Arg, Arm, Body, Branching, Call, Clause, ClauseKind, For, Loop, Operand, OrderRef, Pattern, Rhs, Signature, Statement, StatementKind, Target,
+    Arg, Arm, Body, Branching, Call, Clause, ClauseKind, For, Id, Loop, Operand, OrderRef, Pattern, Rhs, Signature, Statement, StatementKind, Target,
     UnitTerm,
 };
 use labcraft_types::{Interner, Name};
@@ -35,6 +35,84 @@ pub fn canonical_order(body: &Body, signature: Option<&Signature>, names: &Inter
         Some(Err(fault)) => Err(fault),
         _ => Ok((0..body.statements.len()).collect()),
     }
+}
+
+/// The canonical order of every body of a function, found in one walk (`docs/architecture.md`, 10.1): asking
+/// [`canonical_order`] body by body is not linear in a function nested deep.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BodyOrders {
+    function: Option<Result<Vec<usize>, Unorderable>>,
+    /// By the id of what holds the body: the statement of a `for` or a `loop`, an arm of a `match` or a `handle`.
+    inner: HashMap<Id, Result<Vec<usize>, Unorderable>>,
+}
+
+impl BodyOrders {
+    /// The order of the body of the function, as indices of its statements.
+    pub fn of_function(&self) -> Option<Result<&[usize], Unorderable>> {
+        self.function.as_ref().map(borrowed)
+    }
+
+    /// The order of the body held by this statement or this arm.
+    pub fn of(&self, owner: Id) -> Option<Result<&[usize], Unorderable>> {
+        self.inner.get(&owner).map(borrowed)
+    }
+}
+
+fn borrowed(order: &Result<Vec<usize>, Unorderable>) -> Result<&[usize], Unorderable> {
+    match order {
+        Ok(order) => Ok(order),
+        Err(fault) => Err(*fault),
+    }
+}
+
+/// The order of the body of a function and of every body inside it. A body whose written order is already canonical gets
+/// that order, so that every body has one, or the reason it has none.
+pub fn canonical_orders(body: &Body, signature: &Signature, names: &Interner) -> BodyOrders {
+    let mut orders = analyse(body, Some(signature), names).into_iter();
+    let mut found = BodyOrders::default();
+    // The bodies in the order of the walk of `analyse`, innermost first, with an explicit stack: a body is done once
+    // every body inside it is.
+    let mut stack: Vec<Pending<'_>> = vec![(None, body, inner_bodies(body))];
+    while let Some((owner, current, pending)) = stack.last_mut() {
+        if pending.is_empty() {
+            let (owner, current) = (*owner, *current);
+            stack.pop();
+            let order = match orders.next() {
+                Some(Ok(Some(order))) => Ok(order),
+                Some(Err(fault)) => Err(fault),
+                Some(Ok(None)) | None => Ok((0..current.statements.len()).collect()),
+            };
+            match owner {
+                Some(owner) => {
+                    found.inner.insert(owner, order);
+                }
+                None => found.function = Some(order),
+            }
+        } else if let Some((owner, next)) = pending.pop() {
+            stack.push((Some(owner), next, inner_bodies(next)));
+        }
+    }
+    found
+}
+
+/// A body that waits for the bodies inside it: what holds it (`None` for the function), the body, those still to do.
+type Pending<'a> = (Option<Id>, &'a Body, Vec<(Id, &'a Body)>);
+
+/// The bodies directly inside the statements of `body`, with what holds each, last first: popped, they come in the order of
+/// the walk of [`analyse`].
+fn inner_bodies(body: &Body) -> Vec<(Id, &Body)> {
+    let mut found = Vec::new();
+    for statement in &body.statements {
+        let StatementKind::Binding { value, .. } = &statement.kind else { continue };
+        match value {
+            Rhs::Match(branching) | Rhs::Handle(branching) => found.extend(branching.arms.iter().map(|arm| (arm.id, &arm.body))),
+            Rhs::For(structure) => found.push((statement.id, &structure.body)),
+            Rhs::Loop(structure) => found.push((statement.id, &structure.body)),
+            Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => {}
+        }
+    }
+    found.reverse();
+    found
 }
 
 /// What one body gets: nothing to change, a new order, or why it cannot have one.

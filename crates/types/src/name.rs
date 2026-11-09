@@ -48,6 +48,11 @@ impl Interner {
         Name(index)
     }
 
+    /// The name of this text, normalized, if something made it already: what no one interned is the name of nothing.
+    pub fn find(&self, text: &str) -> Option<Name> {
+        self.indices.get(normalize(text).as_ref()).map(|index| Name(*index))
+    }
+
     /// The text of a name; empty for a name that another interner made.
     pub fn resolve(&self, name: Name) -> &str {
         self.names.get(name.0 as usize).map_or("", AsRef::as_ref)
@@ -73,6 +78,9 @@ mod tests {
         assert_eq!(names.intern("voltage"), voltage);
         assert_ne!(names.intern("current"), voltage);
         assert_eq!(names.resolve(voltage), "voltage");
+        assert_eq!(names.find("voltage"), Some(voltage));
+        assert_eq!(names.find("power"), None, "finding a name makes none");
+        assert_eq!(names.find("power"), None);
     }
 
     #[test]

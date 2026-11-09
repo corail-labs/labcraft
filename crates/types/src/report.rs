@@ -2,6 +2,7 @@
 //! absent, not `null`.
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use serde::Serialize;
 
@@ -205,9 +206,28 @@ pub struct Report {
     /// Once a cut has kept `max_report` diagnostics, the last of them: one that comes after it in the order of the cut
     /// can never be listed, so it is only counted. Millions of errors then cost no sorting.
     last_kept: Option<Box<Diagnostic>>,
+    /// The counts of each file, which stay complete when the list is cut: a run is refused for an error in a file that it
+    /// reaches (`docs/cli.md`, 6.1), whatever the list keeps. Keyed by the file of each diagnostic, empty until named. Boxed,
+    /// and made at the first diagnostic: a report is part of what a host hands over for each library.
+    #[expect(clippy::box_collection, reason = "one pointer in each report until a diagnostic comes: `Found::Library` holds one")]
+    by_file: Option<Box<HashMap<Box<str>, FileCounts>>>,
 }
 
-/// What the report says, whatever it remembers to go faster.
+/// The errors and warnings of one file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FileCounts {
+    pub errors: u64,
+    pub warnings: u64,
+}
+
+impl FileCounts {
+    fn add(&mut self, other: FileCounts) {
+        self.errors = self.errors.saturating_add(other.errors);
+        self.warnings = self.warnings.saturating_add(other.warnings);
+    }
+}
+
+/// What the report says, whatever it remembers to go faster: the counts by file follow from what it was told.
 impl PartialEq for Report {
     fn eq(&self, other: &Self) -> bool {
         (self.max_report, &self.diagnostics, self.errors, self.warnings) == (other.max_report, &other.diagnostics, other.errors, other.warnings)
@@ -223,16 +243,43 @@ fn keep_order(a: &Diagnostic, b: &Diagnostic) -> std::cmp::Ordering {
 
 impl Report {
     pub fn new(max_report: usize) -> Self {
-        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0, last_kept: None }
+        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0, last_kept: None, by_file: None }
+    }
+
+    fn count(&mut self, file: &str, counts: FileCounts) {
+        let by_file = self.by_file.get_or_insert_with(Box::default);
+        match by_file.get_mut(file) {
+            Some(slot) => slot.add(counts),
+            None => {
+                by_file.insert(file.into(), counts);
+            }
+        }
+    }
+
+    /// Every file that has a diagnostic, with its counts, in no order.
+    pub fn file_counts(&self) -> impl Iterator<Item = (&str, FileCounts)> {
+        self.by_file.iter().flat_map(|by_file| by_file.iter()).map(|(file, counts)| (file.as_ref(), *counts))
+    }
+
+    /// The errors and warnings of this file, complete whatever the list keeps. `""` counts those with no file.
+    pub fn counts_of(&self, file: &str) -> FileCounts {
+        self.by_file.as_ref().and_then(|by_file| by_file.get(file)).copied().unwrap_or_default()
     }
 
     /// Every diagnostic enters here, so its long texts and lists are always bounded.
     pub fn push(&mut self, mut diagnostic: Diagnostic) {
         diagnostic.bound_texts_and_lists();
-        match diagnostic.severity {
-            Severity::Error => self.errors += 1,
-            Severity::Warning => self.warnings += 1,
-        }
+        let counts = match diagnostic.severity {
+            Severity::Error => {
+                self.errors += 1;
+                FileCounts { errors: 1, warnings: 0 }
+            }
+            Severity::Warning => {
+                self.warnings += 1;
+                FileCounts { errors: 0, warnings: 1 }
+            }
+        };
+        self.count(&diagnostic.file, counts);
         if self.last_kept.as_ref().is_some_and(|last| keep_order(&diagnostic, last).is_ge()) {
             return;
         }
@@ -245,6 +292,9 @@ impl Report {
     /// diagnostics have no file yet: a cut has already chosen by file, so naming some of them could not give back the
     /// choice of a cut at the end.
     pub fn set_file(&mut self, file: &str) {
+        if let Some(counts) = self.by_file.as_mut().and_then(|by_file| by_file.remove("")) {
+            self.count(file, counts);
+        }
         for diagnostic in self.diagnostics.iter_mut().chain(self.last_kept.as_deref_mut()).filter(|diagnostic| diagnostic.file.is_empty()) {
             diagnostic.file = file.to_owned();
         }
@@ -253,6 +303,9 @@ impl Report {
     pub fn merge(&mut self, other: Report) {
         self.errors += other.errors;
         self.warnings += other.warnings;
+        for (file, counts) in other.by_file.into_iter().flat_map(|by_file| *by_file) {
+            self.count(&file, counts);
+        }
         self.diagnostics.extend(other.diagnostics);
         self.prune_when_full();
     }
@@ -260,6 +313,9 @@ impl Report {
     /// The errors of `other` with their complete count, and none of its warnings: what a dependency has to say.
     pub fn merge_errors(&mut self, other: Report) {
         self.errors += other.errors;
+        for (file, counts) in other.by_file.into_iter().flat_map(|by_file| *by_file).filter(|(_, counts)| counts.errors > 0) {
+            self.count(&file, FileCounts { errors: counts.errors, warnings: 0 });
+        }
         self.diagnostics.extend(other.diagnostics.into_iter().filter(|diagnostic| diagnostic.severity == Severity::Error));
         self.prune_when_full();
     }
@@ -417,6 +473,36 @@ mod tests {
 
     fn diagnostic(code: Code, file: &str, span: Option<Span>, message: &str) -> Diagnostic {
         Diagnostic { span, ..Diagnostic::new(code, message, file) }
+    }
+
+    #[test]
+    fn the_counts_of_each_file_stay_complete_when_the_list_is_cut() {
+        let counts = |errors, warnings| FileCounts { errors, warnings };
+        let mut report = Report::new(1);
+        for line in 1..=5 {
+            report.push(diagnostic(Code::Lc3002, "a.lcf", at(line, 1), "e"));
+        }
+        report.push(diagnostic(Code::Lc4101, "b.lcf", at(1, 1), "w"));
+        // A file read alone names its diagnostics once they are made.
+        let mut read = Report::new(1);
+        read.push(diagnostic(Code::Lc3002, "", at(1, 1), "e"));
+        read.push(diagnostic(Code::Lc3002, "", at(2, 1), "e"));
+        read.set_file("c.lcf");
+        report.merge(read);
+        // What a dependency says: its errors only.
+        let mut dependency = Report::new(1);
+        dependency.push(diagnostic(Code::Lc3002, "d.lcf", at(1, 1), "e"));
+        dependency.push(diagnostic(Code::Lc4101, "d.lcf", at(2, 1), "w"));
+        dependency.push(diagnostic(Code::Lc4101, "e.lcf", at(1, 1), "w"));
+        report.merge_errors(dependency);
+        report.finish();
+        assert_eq!(report.diagnostics().len(), 1);
+        assert_eq!(report.counts_of("a.lcf"), counts(5, 0));
+        assert_eq!(report.counts_of("b.lcf"), counts(0, 1));
+        assert_eq!(report.counts_of("c.lcf"), counts(2, 0));
+        assert_eq!(report.counts_of("d.lcf"), counts(1, 0));
+        assert_eq!(report.counts_of("e.lcf"), counts(0, 0));
+        assert_eq!(report.counts_of(""), counts(0, 0), "named, they are no longer counted without a file");
     }
 
     /// The example of `docs/cli.md`, section 4.2.

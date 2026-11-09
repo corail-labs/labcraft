@@ -154,6 +154,7 @@ version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
+ "labcraft-graph",
  "labcraft-libs",
  "labcraft-types",
  "serde_json",
