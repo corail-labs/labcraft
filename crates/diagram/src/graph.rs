@@ -264,8 +264,6 @@ struct Callee<'a> {
     /// How many parameters are wires with a default: those that no argument wires are hidden.
     defaults: u32,
     outputs: Vec<String>,
-    /// The types of the outputs that the signature declares: those of a call written alone when `check` gives none.
-    output_types: Vec<TyId>,
     band: Option<String>,
     always: bool,
     glyph: Option<&'static str>,
@@ -608,13 +606,13 @@ impl<'a> Builder<'a> {
         let (inputs, hidden) = self.inputs(call, &signature, &wiring);
         // Outputs: one per name of the signature, typed by what the line binds, or by what a call written alone gives.
         let alone = self.resolved().outputs_of(statement.id);
-        // A call written alone has the outputs of what it gives, `core.call` those of the function it calls.
+        // A call written alone has the outputs that `check` gives it: those of its callee, `core.call` those of the function it calls.
         let count = signature.outputs.len().max(targets.len()).max(if targets.is_empty() { alone.len() } else { 0 });
         let outputs = (0..count)
             .map(|index| {
                 let name = signature.outputs.get(index).cloned().unwrap_or_else(|| index.to_string());
                 if targets.is_empty() {
-                    let ty = alone.get(index).or(signature.output_types.get(index)).copied().unwrap_or(TyId::ERROR);
+                    let ty = alone.get(index).copied().unwrap_or(TyId::ERROR);
                     self.terminal(name, ty, None, true)
                 } else {
                     self.output_of(targets, index, &name)
@@ -671,7 +669,6 @@ impl<'a> Builder<'a> {
             required: Vec::new(),
             defaults: 0,
             outputs: Vec::new(),
-            output_types: Vec::new(),
             band: None,
             always: false,
             glyph: None,
@@ -689,7 +686,6 @@ impl<'a> Builder<'a> {
                         .map(|param| Param { name: self.text(param.name), has_default: param.has_default, is_wire: true, ty: Some(param.ty) })
                         .collect();
                     found.outputs = function.outputs.iter().map(|output| self.text(output.name)).collect();
-                    found.output_types = function.outputs.iter().map(|output| output.ty).collect();
                 }
                 found.band = declared
                     .map(|declared| declared.name.as_str())
