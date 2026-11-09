@@ -663,6 +663,14 @@ line = string.format("U = {u:.3 mV}, I = {i:.2}", u: voltage, i: current)
 A structure is a node that contains a sub-diagram. It returns outputs like an ordinary node. Outer
 values can be used directly inside (these are LabVIEW's *tunnels*).
 
+A value read inside a structure and defined outside it is **passed in**: it enters the frame of each
+structure between its line and where it is read, and in each, every region (each arm of a `match` or a
+`handle`) receives it, whichever arm reads it. A new name (`e = d`), a field read (`k = step.low`) and
+the binding of an output are the value they name, so `step` is passed in, not `k`; a literal, a named
+constant and an `after:` pass nothing in. A function may have at most 1,000,000 values passed in
+*(proposed, scenario 4)*, each counted once on the frame and once in each region: a value read three
+`loop` down counts 2 × 3, and one read in a `match` of 10 arms 1 + 10. Beyond it, `LC4007`.
+
 What LabVIEW users will look for and not find:
 
 - **There is no sequence structure**: order comes from data, the error wire or order wires

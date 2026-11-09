@@ -387,6 +387,13 @@ mod tests {
                         file.shown,
                         labcraft_ir::print(&program, &names)
                     );
+                    // What `LC4007` bounds is what lowering builds.
+                    if let (Decl::Function(function), Some(labcraft_ir::Body::Region(region))) =
+                        (&file.file.decl, program.functions.first().map(|function| &function.body))
+                    {
+                        let counted = labcraft_check::passed_in(function, &file.resolved, u64::MAX).count;
+                        assert_eq!(counted, region.passed_in(), "{root}{}: the values passed in", file.shown);
+                    }
                     let text = labcraft_ir::print_function(&program, labcraft_ir::FunctionId(0), &names);
                     let stem = file.shown.rsplit_once('.').map_or(file.shown.as_str(), |(stem, _)| stem).replace(char::from(92), "/");
                     written.insert(format!("tests/harness/snapshots/ir/{root}{stem}.ir"), text);

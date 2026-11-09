@@ -2,6 +2,7 @@
 //! its lines that make one, in canonical order, and whose results are what leaves it (`docs/ir.md`, sections 3 to 5).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use labcraft_check::primitives::{ParamKind, PrimitiveDefault, PrimitiveTy, primitive};
 use labcraft_check::{CheckedFile, Meaning, PrimitiveLibrary, ResolvedCall, Terminal, read_escapes, template_fields, unit_of};
@@ -44,6 +45,7 @@ pub(super) fn lower_function<'f>(
         outputs,
         element_ids: elements.iter().enumerate().map(|(index, element)| (element.origin, ElementId(index_u32(index)))).collect(),
         built: (0..shape.bodies.len()).map(|_| None).collect(),
+        names: HashMap::new(),
     };
     for index in shape.post_order.iter().copied() {
         let region = walk.body(index)?;
@@ -67,6 +69,8 @@ struct Walk<'w, 'l, 'f> {
     /// The elements of the panel, by the id of their item.
     element_ids: HashMap<Id, ElementId>,
     built: Vec<Option<Region>>,
+    /// The names of each value, made once: every argument that passes it in shares them.
+    names: HashMap<Id, Arc<[Name]>>,
 }
 
 /// The region being lowered: what each value defined in it or passed into it is there.
@@ -95,11 +99,16 @@ impl<'f> Walk<'_, '_, 'f> {
         self.coercions.get(&id).map_or_else(|| self.file.resolved.ty(id), |(_, to)| *to)
     }
 
-    fn names_of(&self, id: Id, name: Option<Name>) -> Vec<Name> {
+    fn names_of(&mut self, id: Id, name: Option<Name>) -> Arc<[Name]> {
+        if let Some(names) = self.names.get(&id) {
+            return Arc::clone(names);
+        }
         let mut names: Vec<Name> = name.into_iter().collect();
         if let Some(more) = self.shape.more_names.get(&id) {
             names.extend(more.iter().copied());
         }
+        let names: Arc<[Name]> = names.into();
+        self.names.insert(id, Arc::clone(&names));
         names
     }
 
@@ -119,7 +128,7 @@ impl<'f> Walk<'_, '_, 'f> {
         let (body, holder) = (info.body, info.holder);
         let mut scope = Scope::default();
         let mut args = Vec::new();
-        let arg = |scope: &mut Scope, id: Id, ty: TyId, names: Vec<Name>, args: &mut Vec<Value>| {
+        let arg = |scope: &mut Scope, id: Id, ty: TyId, names: Arc<[Name]>, args: &mut Vec<Value>| {
             scope.values.insert(id, (Source::Arg(index_u32(args.len())), ty));
             args.push(Value { ty, names });
         };
@@ -458,7 +467,9 @@ impl<'f> Walk<'_, '_, 'f> {
         };
         let outputs = match built.outputs {
             Some(outputs) => outputs,
-            None if targets.is_empty() => self.file.resolved.outputs_of(statement.id).iter().map(|ty| Value { ty: *ty, names: Vec::new() }).collect(),
+            None if targets.is_empty() => {
+                self.file.resolved.outputs_of(statement.id).iter().map(|ty| Value { ty: *ty, names: Arc::default() }).collect()
+            }
             None => targets.iter().map(|target| self.output_value(target)).collect(),
         };
         let mut after = Vec::new();
@@ -483,9 +494,9 @@ impl<'f> Walk<'_, '_, 'f> {
             Target::Name(id, name) => Value { ty: self.value_ty(*id), names: self.names_of(*id, Some(*name)) },
             Target::Next(id, name) => {
                 let text = format!("next.{}", self.lowering.names.resolve(*name));
-                Value { ty: self.value_ty(*id), names: vec![self.lowering.names.intern(&text)] }
+                Value { ty: self.value_ty(*id), names: Arc::from([self.lowering.names.intern(&text)]) }
             }
-            Target::Skip(id) => Value { ty: self.value_ty(*id), names: Vec::new() },
+            Target::Skip(id) => Value { ty: self.value_ty(*id), names: Arc::default() },
         }
     }
 

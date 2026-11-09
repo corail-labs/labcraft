@@ -197,6 +197,13 @@ function it calls.
 - **The values passed in** (*k*) are what the regions of a structure read from outside, at any depth, in the order a
   walk of the file first reads them: a name read three structures down is an input of each of the three. A new name
   (`e = d`) and a field read (`k = step.low`) are followed to what they name first, so `step` is passed in, not `k`.
+  A structure of *k* values passed in and *r* regions has *k* inputs for them and *k* arguments in each region, *k* × (1 +
+  *r*) in all, so `check` bounds that sum over a function, `LC4007` (spec 6): `check::passed_in` counts it on the source,
+  `Region::passed_in` on what lowering built, and the harness compares the two on every function of the repository. The
+  names of a value (`Value::names`) are shared by every argument that passes it in, so that its new names cost once.
+  Without the bound, a file of 631 KiB, 20,000 values read in one arm of a `match` of 10,000 arms, took 55 s and
+  10.8 GB to lower; under it, in the cases measured up to 4 MiB, at most 0.25 s and 260 MB (probes outside the repository,
+  not a bound).
 
 ## 5. Errors on the wire
 
