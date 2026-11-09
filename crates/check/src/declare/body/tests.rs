@@ -831,7 +831,9 @@ fn nothing_here_is_quadratic() {
         ("f.lcf", &format!("fn f() -> () {{\n{calls}}}")),
         ("g.lcf", &format!("fn g() -> () {{\n{reads}}}")),
     ]);
-    assert_eq!(found.len(), count.min(1000), "each call has one `LC2101`, and the report keeps a thousand");
+    // The report keeps a thousand: `LC2023` of `big.lct`, then on line 2 of `f.lcf` the first `LC2101` and the `LC4008` of
+    // pass 5 (each call has 40,000 terminals), which this list leaves out, then the next `LC2101`.
+    assert_eq!(found.len(), count.min(1000) - 1, "each call has one `LC2101`, and the report keeps a thousand");
 }
 
 /// Each mistake of a line names that line and its function, and a call its missing input. Copied whole before the report cuts

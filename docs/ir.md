@@ -204,6 +204,14 @@ function it calls.
   Without the bound, a file of 631 KiB, 20,000 values read in one arm of a `match` of 10,000 arms, took 55 s and
   10.8 GB to lower; under it, in the cases measured up to 4 MiB, at most 0.25 s and 260 MB (probes outside the repository,
   not a bound).
+- **A call written alone** has the outputs of what it calls, which `check` records (`Resolved::outputs_of`), shared by
+  every call of the same callee, as lowering shares them (`Node::outputs` is an `Arc<[Value]>`). **The terminals of the
+  calls**, the inputs and outputs of the nodes `Primitive`, `Native` and `Call`, defaults included, are bounded by
+  `LC4008` (spec 4): a call of four bytes to a function of ten thousand parameters with a default builds ten thousand
+  inputs. `check::terminals` counts them on the source, `Region::terminals` on what lowering built, and the harness
+  compares the two on every function of the repository. Without the bound, 30,000 calls `f()` of a function of 10,000
+  such parameters (419 KiB) took 21 s to lower and 58 s to verify; at the bound, 1,000 calls of 1,000 terminals take
+  43 ms and 16 ms (probes outside the repository).
 
 ## 5. Errors on the wire
 

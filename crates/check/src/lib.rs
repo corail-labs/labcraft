@@ -29,11 +29,13 @@ mod passed_in;
 pub mod primitives;
 mod reach;
 mod resolved;
+mod terminals;
 
 pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
 pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};
 pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
+pub use terminals::{MAX_TERMINALS, Terminals, terminals};
 
 /// Which rules of `docs/cli.md`, section 3, a library follows when it uses another: a library shipped with LabCraft
 /// sees only the primitives and the others that are shipped.

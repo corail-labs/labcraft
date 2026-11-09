@@ -786,3 +786,29 @@ fn of_two_structures_that_weigh_the_same_the_first_in_the_file_is_said() {
     assert_eq!(found[0].span.map(|span| span.start.line), Some(9), "on the outer `match`: {}", found[0].message);
     assert!(found[0].message.contains("500,500 of them in this one"), "{}", found[0].message);
 }
+
+/// `g` has 999 parameters, each with its default, and one output: each `g()` written alone has 1,000 terminals.
+fn calls_of_defaults(calls: usize) -> (String, String) {
+    let params: Vec<String> = (0..999).map(|i| format!("p{i}: f64 = 1.0")).collect();
+    let g = format!("{USES}\nfn g({}) -> (y: f64) {{\n    y = p0\n}}", params.join(", "));
+    let body = "    g()\n".repeat(calls);
+    (g, format!("{body}    y = a"))
+}
+
+#[test]
+fn the_terminals_of_the_calls_are_bounded_defaults_included() {
+    // 1,000 calls of 1,000 terminals are the limit itself, one more call is past it.
+    let (g, body) = calls_of_defaults(1000);
+    assert_eq!(judged_with(&[("g.lcf", g.as_str())], "a: f64", "y: f64", &body), NOTHING);
+    let (g, body) = calls_of_defaults(1001);
+    let text = format!("{USES}\nfn f(a: f64) -> (y: f64) {{\n{body}\n}}");
+    let found = diagnostics(&[("f.lcf", text.as_str()), ("g.lcf", g.as_str())]);
+    assert_eq!(found.iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>(), ["LC4008"]);
+    // The calls weigh the same, and the first of them is said: on line 9, after the header, the uses and the signature.
+    assert_eq!(found[0].span.map(|span| span.start.line), Some(9));
+    assert_eq!(
+        found[0].message,
+        "the calls of this function have more than 1,000,000 terminals, the limit, 1,000 on this one: an input per parameter of what \
+         it calls, defaults included, and an output per output (spec 4)"
+    );
+}

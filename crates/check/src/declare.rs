@@ -6,6 +6,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use labcraft_format::is_name;
 use labcraft_graph::{Decl, EnumType, FnType, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
@@ -221,6 +222,10 @@ struct Pass<'a> {
     leaned: bool,
     /// For a run, what the bodies of the dependencies say, kept apart (`Checked::bodies`).
     bodies: Report,
+    /// The output types of a function, by its library and its name, and of a function type, made once for the calls written
+    /// alone (`Resolved::outputs_of`): a call of four bytes to a function of a million outputs costs nothing more.
+    function_outputs: HashMap<(u32, Name), Arc<[TyId]>>,
+    type_outputs: HashMap<TyId, Arc<[TyId]>>,
 }
 
 /// What the declaration of one file needs of it, made once: a file can hold millions of `use` lines and of types.
@@ -274,6 +279,8 @@ pub(crate) fn declare(
         for_run,
         leaned: false,
         bodies: Report::new(limits.max_report),
+        function_outputs: HashMap::new(),
+        type_outputs: HashMap::new(),
     };
     pass.gather();
     pass.find_cycles();

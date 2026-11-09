@@ -324,6 +324,12 @@ fn check_voltage(
   unit, category or element has no function type, and neither have `core.call` and `string.format`, which take
   more than their parameters. `core.call` wires every input of the type, in order or by
   the names that the type gives, since a function type has no default values.
+- **A call has a terminal for each parameter and each output** of what it calls, wired or not: an input for each
+  parameter, wired or left to its default, one for each value given to a variadic parameter, one for each field of a
+  `string.format` template and each argument of `core.call`, and an output for each output, a call written alone
+  included. The calls of a function may have at most 1,000,000 terminals in all *(proposed, scenario 4)*: 10,000 calls
+  `f()` of a function of 99 parameters with a default and one output are the limit. Beyond it, `LC4008`, on the call
+  with the most terminals among those counted when the limit is passed.
 
 A function with every kind of default value:
 

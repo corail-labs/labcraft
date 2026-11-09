@@ -465,10 +465,16 @@ impl<'f> Walk<'_, '_, 'f> {
                 }
             },
         };
-        let outputs = match built.outputs {
-            Some(outputs) => outputs,
+        let outputs: Arc<[Value]> = match built.outputs {
+            Some(outputs) => outputs.into(),
             None if targets.is_empty() => {
-                self.file.resolved.outputs_of(statement.id).iter().map(|ty| Value { ty: *ty, names: Arc::default() }).collect()
+                let types = self.file.resolved.outputs_of(statement.id);
+                let key = (types.as_ptr() as usize, types.len());
+                self.lowering
+                    .alone_outputs
+                    .entry(key)
+                    .or_insert_with(|| types.iter().map(|ty| Value { ty: *ty, names: Arc::default() }).collect())
+                    .clone()
             }
             None => targets.iter().map(|target| self.output_value(target)).collect(),
         };
@@ -647,7 +653,11 @@ impl<'f> Walk<'_, '_, 'f> {
         let bound = self.file.resolved.call(call.id).cloned().ok_or_else(|| self.bug("a call that `check` did not bind"))?;
         match bound.callee {
             Meaning::Variant { variant, .. } => {
-                let ty = targets_of(statement).first().map_or(TyId::ERROR, |target| self.value_ty(target_id(target)));
+                // Written alone, it has the type `check` gave the line.
+                let ty = match targets_of(statement).first() {
+                    Some(target) => self.value_ty(target_id(target)),
+                    None => self.file.resolved.outputs_of(statement.id).first().copied().unwrap_or(TyId::ERROR),
+                };
                 let (index, values) = self.lowering.variant_index(ty, variant).ok_or_else(|| self.bug("a variant of no enumeration"))?;
                 let mut inputs: Vec<Option<Use>> = vec![None; values.len()];
                 for (arg, terminal) in call.args.iter().zip(bound.terminals.iter()) {

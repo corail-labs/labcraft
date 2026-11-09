@@ -393,6 +393,8 @@ mod tests {
                     {
                         let counted = labcraft_check::passed_in(function, &file.resolved, u64::MAX).count;
                         assert_eq!(counted, region.passed_in(), "{root}{}: the values passed in", file.shown);
+                        let terminals = labcraft_check::terminals(function, &file.resolved, &checked.libraries, &names, u64::MAX).count;
+                        assert_eq!(terminals, region.terminals(), "{root}{}: the terminals of the calls", file.shown);
                     }
                     let text = labcraft_ir::print_function(&program, labcraft_ir::FunctionId(0), &names);
                     let stem = file.shown.rsplit_once('.').map_or(file.shown.as_str(), |(stem, _)| stem).replace(char::from(92), "/");

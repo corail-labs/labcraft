@@ -3,6 +3,7 @@
 //! its bodies are lowered innermost first (`body`), so nothing recurses on what a file nests.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use labcraft_check::primitives::{ParamKind, primitive};
 use labcraft_check::{Checked, CheckedFile, DeclaredFunction, Meaning, PrimitiveLibrary, read_escapes, unit_of};
@@ -10,7 +11,7 @@ use labcraft_graph::{Arg, Constant as Written, Decl, Id, Operand, Signature};
 use labcraft_types::{Interner, LibraryId, Name, NumberKind, Ty, TyId, TypeTable, Unit};
 
 use crate::constant::literal_number;
-use crate::{Body, ConstId, ConstValue, Constant, Element, Function, FunctionId, FunctionKey, Port, PortOf, Program, Skip, VERSION, Variadic};
+use crate::{Body, ConstId, ConstValue, Constant, Element, Function, FunctionId, FunctionKey, Port, PortOf, Program, Skip, VERSION, Value, Variadic};
 
 mod body;
 mod shape;
@@ -123,6 +124,9 @@ pub(crate) struct Lowering<'c> {
     literal_ids: HashMap<(usize, Id, TyId), ConstId>,
     /// The default of each type once: a struct of two fields of a struct of two fields… would double the work at each level.
     default_ids: HashMap<TyId, ConstId>,
+    /// The outputs of the calls written alone, by the list of types that `check` shares between the calls of one callee (by
+    /// its address, which stays while `checked` is borrowed): one list of values for all of them.
+    alone_outputs: HashMap<(usize, usize), Arc<[Value]>>,
 }
 
 /// The named constants of a function: what an operand that names one stands for, as `[a1, a1]` holds `a1`.
@@ -144,6 +148,7 @@ impl<'c> Lowering<'c> {
             library_of,
             literal_ids: HashMap::new(),
             default_ids: HashMap::new(),
+            alone_outputs: HashMap::new(),
         }
     }
 

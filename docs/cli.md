@@ -456,6 +456,7 @@ section 3), not a diagnostic.
 | `LC4005` | error | External function without an `err` output, or that differs from its native body | R-13, 4.1 |
 | `LC4006` | error | Feature planned for a later milestone: generic function or type written by the user, `ref<T>`, `queue<T>`, `event`, `notifier`, `map`, `set`… | 9 |
 | `LC4007` | error | More than 1,000,000 values passed into the structures of a function *(proposed)*, each counted once on its frame and once in each region, each arm of a `match` or a `handle`. Once per function, on the structure that weighs the most in what was counted, with its weight | 6, scenario 4 |
+| `LC4008` | error | More than 1,000,000 terminals in the calls of a function *(proposed)*: an input per parameter of what each calls, a default included, per value of a variadic parameter and per free terminal, and an output per output, a call written alone included. Once per function, on the call that has the most among those counted when the limit is passed, the first in the file of those that have as many. A call of a function whose signature has an error is not counted | 4, scenario 4 |
 | `LC4101` | warning | `err` output of a call wired nowhere: `_`, a name that nothing reads, or a call alone. An order wire is a wire | 7.5 |
 | `LC4102` | warning | Concurrent access to a resource: two function calls that receive it, with no dependency between them. Once per resource, on the second node, with the first in `related` | 8.1 |
 | `LC4103` | warning | Panel element written by two unordered nodes, once per element | 8.1 |
