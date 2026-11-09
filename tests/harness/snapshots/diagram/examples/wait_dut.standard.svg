@@ -22,8 +22,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1781.13" y="388.01" font-size="11" style="fill: var(--node-title)">err</text>
 <g data-wire="err" data-from="fn.err" data-to="t0.after present.e">
 <path d="M112.61 384 L134.61 384 Q140.61 384 140.61 378 L140.61 306 Q140.61 300 146.61 300 L153.61 300" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M112.61 384 L348.72 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M122.61 387 L126.61 384 L122.61 381 M146.61 387 L150.61 384 L146.61 381 M170.61 387 L174.61 384 L170.61 381 M194.61 387 L198.61 384 L194.61 381 M218.61 387 L222.61 384 L218.61 381 M242.61 387 L246.61 384 L242.61 381 M266.61 387 L270.61 384 L266.61 381 M290.61 387 L294.61 384 L290.61 381 M314.61 387 L318.61 384 L314.61 381 M338.61 387 L342.61 384 L338.61 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M140.61 384 L348.72 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M150.61 387 L154.61 384 L150.61 381 M174.61 387 L178.61 384 L174.61 381 M198.61 387 L202.61 384 L198.61 381 M222.61 387 L226.61 384 L222.61 381 M246.61 387 L250.61 384 L246.61 381 M270.61 387 L274.61 384 L270.61 381 M294.61 387 L298.61 384 L294.61 381 M318.61 387 L322.61 384 L318.61 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="140.61" cy="384" r="3" style="fill: var(--wire-order)"/>
 <text x="116.61" y="381" font-size="11" style="fill: var(--ink-muted)">err</text>
 </g>
@@ -100,7 +100,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M931.91 200 L965.91 200" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <path d="M952.91 200 L952.91 274 Q952.91 280 958.91 280 L965.91 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <path d="M952.91 200 L952.91 142 Q952.91 136 958.91 136 L1422.38 136 Q1428.38 136 1428.38 142 L1428.38 226 Q1428.38 232 1434.38 232 L1441.38 232" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M952.91 136 L1648.38 136 Q1654.38 136 1654.38 142 L1654.38 194 Q1654.38 200 1660.38 200 L1668.98 200" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1428.38 136 L1648.38 136 Q1654.38 136 1654.38 142 L1654.38 194 Q1654.38 200 1660.38 200 L1668.98 200" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="952.91" cy="200" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1428.38" cy="136" r="3" style="fill: var(--wire-data)"/>
 <text x="1290.4" y="133" font-size="11" style="fill: var(--ink-muted)">here</text>

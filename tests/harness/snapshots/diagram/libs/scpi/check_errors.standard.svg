@@ -122,7 +122,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="done" data-from="done.result" data-to="stop.a">
 <path d="M1059.46 536 L1066.46 536 Q1072.46 536 1072.46 530 L1072.46 310 Q1072.46 304 1078.46 304 L1101.46 304" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M1072.46 536 L1072.46 230 Q1072.46 224 1078.46 224 L1101.46 224" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1072.46 304 L1072.46 230 Q1072.46 224 1078.46 224 L1101.46 224" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="1072.46" cy="304" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-wire="full" data-from="full.result" data-to="stop.b">

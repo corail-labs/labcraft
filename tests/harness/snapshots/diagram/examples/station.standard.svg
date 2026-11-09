@@ -582,8 +582,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <g data-wire="r" data-from="r.result" data-to="all.item go_on.b">
 <path d="M1015.91 916 L1032.91 916 Q1036.91 916 1036.91 912 L1036.91 912 Q1036.91 908 1040.91 908 L1120.27 908" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M1015.91 916 L1032.91 916 Q1036.91 916 1036.91 912 L1036.91 912 Q1036.91 908 1040.91 908 L1120.27 908" style="fill: none; stroke: var(--frame-fill-4); stroke-width: 1.6"/>
-<path d="M1036.91 916 L1036.91 810 Q1036.91 804 1042.91 804 L1120.27 804" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
-<path d="M1036.91 916 L1036.91 810 Q1036.91 804 1042.91 804 L1120.27 804" style="fill: none; stroke: var(--frame-fill-4); stroke-width: 1.6"/>
+<path d="M1036.91 908 L1036.91 810 Q1036.91 804 1042.91 804 L1120.27 804" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
+<path d="M1036.91 908 L1036.91 810 Q1036.91 804 1042.91 804 L1120.27 804" style="fill: none; stroke: var(--frame-fill-4); stroke-width: 1.6"/>
 <circle cx="1036.91" cy="908" r="3" style="fill: var(--wire-data)"/>
 <rect x="1052.91" y="795" width="54.36" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="1056.91" y="808.01" font-size="11" style="fill: var(--pill-text)">.passed</text>

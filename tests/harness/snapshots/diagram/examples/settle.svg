@@ -30,8 +30,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1277.13" y="332.01" font-size="11" style="fill: var(--node-title)">err</text>
 <g data-wire="err" data-from="fn.err" data-to="t0.after value.e">
 <path d="M112.61 328 L154.86 328 Q160.86 328 160.86 322 L160.86 246 Q160.86 240 166.86 240 L177.86 240 Q181.86 240 181.86 244 L181.86 248" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M112.61 328 L315.73 328" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M122.61 331 L126.61 328 L122.61 325 M146.61 331 L150.61 328 L146.61 325 M170.61 331 L174.61 328 L170.61 325 M194.61 331 L198.61 328 L194.61 325 M218.61 331 L222.61 328 L218.61 325 M242.61 331 L246.61 328 L242.61 325 M266.61 331 L270.61 328 L266.61 325 M290.61 331 L294.61 328 L290.61 325" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M160.86 328 L315.73 328" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M170.86 331 L174.86 328 L170.86 325 M194.86 331 L198.86 328 L194.86 325 M218.86 331 L222.86 328 L218.86 325 M242.86 331 L246.86 328 L242.86 325 M266.86 331 L270.86 328 L266.86 325 M290.86 331 L294.86 328 L290.86 325" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="160.86" cy="328" r="3" style="fill: var(--wire-order)"/>
 <text x="116.61" y="325" font-size="11" style="fill: var(--ink-muted)">err</text>
 </g>
@@ -139,7 +139,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="x" data-from="x.volts" data-to="gap.a next.v">
 <path d="M758.06 296 L765.06 296 Q771.06 296 771.06 290 L771.06 240 Q771.06 234 777.06 234 L871.56 234" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M771.06 296 L771.06 142 Q771.06 136 777.06 136 L1135.73 136" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M771.06 234 L771.06 142 Q771.06 136 777.06 136 L1135.73 136" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="771.06" cy="234" r="3" style="fill: var(--wire-data)"/>
 <text x="950.08" y="133" font-size="11" style="fill: var(--ink-muted)">x</text>
 </g>

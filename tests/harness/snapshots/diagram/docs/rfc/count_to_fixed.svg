@@ -40,7 +40,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="c1" data-from="c1.result" data-to="done.a next.c">
 <path d="M239.94 174 L248.94 174 Q252.94 174 252.94 170 L252.94 170 Q252.94 166 256.94 166 L276.46 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M252.94 174 L252.94 142 Q252.94 136 258.94 136 L308.94 136 Q314.94 136 314.94 142 L314.94 160 Q314.94 166 320.94 166 L333.99 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M252.94 166 L252.94 142 Q252.94 136 258.94 136 L308.94 136 Q314.94 136 314.94 142 L314.94 160 Q314.94 166 320.94 166 L333.99 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="252.94" cy="166" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-wire="limit" data-to="done.b">

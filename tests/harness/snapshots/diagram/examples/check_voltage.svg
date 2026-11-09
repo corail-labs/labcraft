@@ -63,7 +63,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <g data-wire="voltage" data-from="voltage.result" data-to="fn.voltage above.a below.a">
 <path d="M475.96 269.2 L510.96 269.2 Q516.96 269.2 516.96 263.2 L516.96 94 Q516.96 88 522.96 88 L1130.96 88 Q1136.96 88 1136.96 94 L1136.96 318 Q1136.96 324 1142.96 324 L1154.38 324" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <path d="M516.96 269.2 L516.96 269.6 Q516.96 270 517.36 270 L548.48 270" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M516.96 269.2 L516.96 316 Q516.96 322 522.96 322 L548.48 322" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M516.96 270 L516.96 316 Q516.96 322 522.96 322 L548.48 322" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="516.96" cy="269.2" r="3" style="fill: var(--wire-data)"/>
 <circle cx="516.96" cy="270" r="3" style="fill: var(--wire-data)"/>
 <text x="803.78" y="85" font-size="11" style="fill: var(--ink-muted)">voltage</text>

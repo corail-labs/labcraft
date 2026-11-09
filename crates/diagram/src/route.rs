@@ -791,7 +791,28 @@ pub fn parts(branches: &[Vec<(i64, i64)>]) -> Vec<Vec<(i64, i64)>> {
                     _ => false,
                 })
                 .unwrap_or(branch.len());
-            let part: Vec<(i64, i64)> = branch.get(from..).unwrap_or_default().to_vec();
+            let mut part: Vec<(i64, i64)> = branch.get(from..).unwrap_or_default().to_vec();
+            // A segment held in part from its start (a track that goes on past the readers before) starts where what
+            // is held ends, so that what is drawn is the union of the branches, once.
+            if let (Some(&a), Some(&b)) = (part.first(), part.get(1)) {
+                let (lines, line, along, toward) = if a.0 == b.0 { (&vertical, a.0, a.1, b.1) } else { (&horizontal, a.1, a.0, b.0) };
+                let held = lines.get(&line).and_then(|list| list.range(..=along).next_back()).filter(|&(_, &end)| end >= along);
+                let start = match held {
+                    Some((_, &end)) if toward > along => Some(end.min(toward)),
+                    Some(_) if toward < along => {
+                        // Held toward lower coordinates: the start of the interval that holds `along`, as seen from it.
+                        lines
+                            .get(&line)
+                            .and_then(|list| list.range(..=along).next_back())
+                            .map(|(&start, _)| start.max(toward))
+                            .filter(|&start| start < along)
+                    }
+                    _ => None,
+                };
+                if let (Some(start), Some(first)) = (start, part.first_mut()) {
+                    *first = if a.0 == b.0 { (a.0, start) } else { (start, a.1) };
+                }
+            }
             for pair in part.windows(2) {
                 let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
                 if a.0 == b.0 {
@@ -915,6 +936,16 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_trunk_is_drawn_once() {
+        // Two readers further on one track: the second goes on from where the first drops.
+        let branches = vec![vec![(0, 0), (10, 0), (10, -20), (30, -20), (30, 10)], vec![(0, 0), (10, 0), (10, -20), (50, -20), (50, 10)]];
+        assert_eq!(parts(&branches), vec![branches[0].clone(), vec![(30, -20), (50, -20), (50, 10)]]);
+        // And back toward lower coordinates.
+        let branches = vec![vec![(0, 0), (0, -30), (-10, -30)], vec![(0, 0), (0, -50), (-10, -50)]];
+        assert_eq!(parts(&branches)[1], vec![(0, -30), (0, -50), (-10, -50)]);
+    }
 
     #[test]
     fn the_cycles_of_a_graph_are_its_strongly_connected_parts() {

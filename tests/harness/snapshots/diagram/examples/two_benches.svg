@@ -195,8 +195,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="stop.after next.e">
 <path d="M771.65 344 L786.65 344 Q792.65 344 792.65 338 L792.65 254 Q792.65 248 798.65 248 L809.65 248 Q813.65 248 813.65 252 L813.65 256" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M771.65 344 L996.19 344" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M781.65 347 L785.65 344 L781.65 341 M805.65 347 L809.65 344 L805.65 341 M829.65 347 L833.65 344 L829.65 341 M853.65 347 L857.65 344 L853.65 341 M877.65 347 L881.65 344 L877.65 341 M901.65 347 L905.65 344 L901.65 341 M925.65 347 L929.65 344 L925.65 341 M949.65 347 L953.65 344 L949.65 341 M973.65 347 L977.65 344 L973.65 341" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M792.65 344 L996.19 344" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M802.65 347 L806.65 344 L802.65 341 M826.65 347 L830.65 344 L826.65 341 M850.65 347 L854.65 344 L850.65 341 M874.65 347 L878.65 344 L874.65 341 M898.65 347 L902.65 344 L898.65 341 M922.65 347 L926.65 344 L922.65 341 M946.65 347 L950.65 344 L946.65 341 M970.65 347 L974.65 344 L970.65 341" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="792.65" cy="344" r="3" style="fill: var(--wire-order)"/>
 </g>
 <g data-wire="full" data-from="full.result" data-to="halt.a">
@@ -302,8 +302,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="stop.after next.e">
 <path d="M771.65 628 L786.65 628 Q792.65 628 792.65 622 L792.65 538 Q792.65 532 798.65 532 L809.65 532 Q813.65 532 813.65 536 L813.65 540" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M771.65 628 L996.19 628" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M781.65 631 L785.65 628 L781.65 625 M805.65 631 L809.65 628 L805.65 625 M829.65 631 L833.65 628 L829.65 625 M853.65 631 L857.65 628 L853.65 625 M877.65 631 L881.65 628 L877.65 625 M901.65 631 L905.65 628 L901.65 625 M925.65 631 L929.65 628 L925.65 625 M949.65 631 L953.65 628 L949.65 625 M973.65 631 L977.65 628 L973.65 625" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M792.65 628 L996.19 628" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M802.65 631 L806.65 628 L802.65 625 M826.65 631 L830.65 628 L826.65 625 M850.65 631 L854.65 628 L850.65 625 M874.65 631 L878.65 628 L874.65 625 M898.65 631 L902.65 628 L898.65 625 M922.65 631 L926.65 628 L922.65 625 M946.65 631 L950.65 628 L946.65 625 M970.65 631 L974.65 628 L970.65 625" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="792.65" cy="628" r="3" style="fill: var(--wire-order)"/>
 </g>
 <g data-wire="full" data-from="full.result" data-to="halt.a">

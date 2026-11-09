@@ -180,7 +180,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="m" data-from="m.result" data-to="full.a next.n">
 <path d="M708.93 296 L803.93 296 Q809.93 296 809.93 290 L809.93 246 Q809.93 240 815.93 240 L838.93 240" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M809.93 296 L809.93 190 Q809.93 184 815.93 184 L1289.93 184 Q1295.93 184 1295.93 190 L1295.93 290 Q1295.93 296 1301.93 296 L1308.45 296" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M809.93 240 L809.93 190 Q809.93 184 815.93 184 L1289.93 184 Q1295.93 184 1295.93 190 L1295.93 290 Q1295.93 296 1301.93 296 L1308.45 296" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="809.93" cy="240" r="3" style="fill: var(--wire-data)"/>
 <text x="1049.62" y="181" font-size="11" style="fill: var(--ink-muted)">m</text>
 </g>
@@ -204,8 +204,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="stop.after next.e">
 <path d="M950.93 472 L957.93 472 Q963.93 472 963.93 466 L963.93 394 Q963.93 388 969.93 388 L976.93 388" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M950.93 472 L1308.45 472" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M960.93 475 L964.93 472 L960.93 469 M984.93 475 L988.93 472 L984.93 469 M1008.93 475 L1012.93 472 L1008.93 469 M1032.93 475 L1036.93 472 L1032.93 469 M1056.93 475 L1060.93 472 L1056.93 469 M1080.93 475 L1084.93 472 L1080.93 469 M1104.93 475 L1108.93 472 L1104.93 469 M1128.93 475 L1132.93 472 L1128.93 469 M1152.93 475 L1156.93 472 L1152.93 469 M1176.93 475 L1180.93 472 L1176.93 469 M1200.93 475 L1204.93 472 L1200.93 469 M1224.93 475 L1228.93 472 L1224.93 469 M1248.93 475 L1252.93 472 L1248.93 469 M1272.93 475 L1276.93 472 L1272.93 469 M1296.93 475 L1300.93 472 L1296.93 469" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M963.93 472 L1308.45 472" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M973.93 475 L977.93 472 L973.93 469 M997.93 475 L1001.93 472 L997.93 469 M1021.93 475 L1025.93 472 L1021.93 469 M1045.93 475 L1049.93 472 L1045.93 469 M1069.93 475 L1073.93 472 L1069.93 469 M1093.93 475 L1097.93 472 L1093.93 469 M1117.93 475 L1121.93 472 L1117.93 469 M1141.93 475 L1145.93 472 L1141.93 469 M1165.93 475 L1169.93 472 L1165.93 469 M1189.93 475 L1193.93 472 L1189.93 469 M1213.93 475 L1217.93 472 L1213.93 469 M1237.93 475 L1241.93 472 L1237.93 469 M1261.93 475 L1265.93 472 L1261.93 469 M1285.93 475 L1289.93 472 L1285.93 469" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="963.93" cy="472" r="3" style="fill: var(--wire-order)"/>
 </g>
 <g data-wire="full" data-from="full.result" data-to="halt.a">
@@ -295,7 +295,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="m" data-from="m.result" data-to="full.a next.n">
 <path d="M708.93 712 L803.93 712 Q809.93 712 809.93 706 L809.93 662 Q809.93 656 815.93 656 L838.93 656" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M809.93 712 L809.93 606 Q809.93 600 815.93 600 L1289.93 600 Q1295.93 600 1295.93 606 L1295.93 706 Q1295.93 712 1301.93 712 L1308.45 712" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M809.93 656 L809.93 606 Q809.93 600 815.93 600 L1289.93 600 Q1295.93 600 1295.93 606 L1295.93 706 Q1295.93 712 1301.93 712 L1308.45 712" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="809.93" cy="656" r="3" style="fill: var(--wire-data)"/>
 <text x="1049.62" y="597" font-size="11" style="fill: var(--ink-muted)">m</text>
 </g>
@@ -319,8 +319,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="stop.after next.e">
 <path d="M950.93 888 L957.93 888 Q963.93 888 963.93 882 L963.93 810 Q963.93 804 969.93 804 L976.93 804" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M950.93 888 L1308.45 888" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M960.93 891 L964.93 888 L960.93 885 M984.93 891 L988.93 888 L984.93 885 M1008.93 891 L1012.93 888 L1008.93 885 M1032.93 891 L1036.93 888 L1032.93 885 M1056.93 891 L1060.93 888 L1056.93 885 M1080.93 891 L1084.93 888 L1080.93 885 M1104.93 891 L1108.93 888 L1104.93 885 M1128.93 891 L1132.93 888 L1128.93 885 M1152.93 891 L1156.93 888 L1152.93 885 M1176.93 891 L1180.93 888 L1176.93 885 M1200.93 891 L1204.93 888 L1200.93 885 M1224.93 891 L1228.93 888 L1224.93 885 M1248.93 891 L1252.93 888 L1248.93 885 M1272.93 891 L1276.93 888 L1272.93 885 M1296.93 891 L1300.93 888 L1296.93 885" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M963.93 888 L1308.45 888" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M973.93 891 L977.93 888 L973.93 885 M997.93 891 L1001.93 888 L997.93 885 M1021.93 891 L1025.93 888 L1021.93 885 M1045.93 891 L1049.93 888 L1045.93 885 M1069.93 891 L1073.93 888 L1069.93 885 M1093.93 891 L1097.93 888 L1093.93 885 M1117.93 891 L1121.93 888 L1117.93 885 M1141.93 891 L1145.93 888 L1141.93 885 M1165.93 891 L1169.93 888 L1165.93 885 M1189.93 891 L1193.93 888 L1189.93 885 M1213.93 891 L1217.93 888 L1213.93 885 M1237.93 891 L1241.93 888 L1237.93 885 M1261.93 891 L1265.93 888 L1261.93 885 M1285.93 891 L1289.93 888 L1285.93 885" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="963.93" cy="888" r="3" style="fill: var(--wire-order)"/>
 </g>
 <g data-wire="full" data-from="full.result" data-to="halt.a">
