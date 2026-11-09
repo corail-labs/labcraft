@@ -31,7 +31,7 @@ mod reach;
 mod resolved;
 mod terminals;
 
-pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
+pub use declare::{Align, DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType, Format as FieldFormat, Piece};
 pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};
 pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
@@ -276,6 +276,12 @@ pub fn read_escapes(text: &str) -> Cow<'_, str> {
 /// of the free terminals of its node (5.4).
 pub fn template_fields(text: &str) -> Vec<String> {
     declare::template_fields(text)
+}
+
+/// The parts of a `string.format` template whose escapes are read, in order, as the runtime writes them out (5.4): text, and
+/// each field with every part of its format, read as `check` reads it. `None` for a template that `check` refuses.
+pub fn template_pieces(text: &str) -> Option<Vec<Piece<'_>>> {
+    declare::template_pieces(text)
 }
 
 fn add(counts: &mut FileCounts, more: FileCounts) {

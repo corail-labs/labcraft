@@ -17,6 +17,7 @@ labcraft-types = { workspace = true }
 labcraft-diagram = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-libs = { workspace = true }
+labcraft-runtime = { workspace = true }
 labcraft-trace = { workspace = true }
 serde_json = { workspace = true }
 

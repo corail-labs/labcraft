@@ -34,7 +34,8 @@ pub(in crate::declare) fn later_pass(code: Code) -> bool {
 }
 mod types;
 
-pub(crate) use types::{read_escapes, template_fields};
+pub use types::{Align, Format, Piece};
+pub(crate) use types::{read_escapes, template_fields, template_pieces};
 
 /// What a call binds to, made once for each function: a hostile file can hold a million parameters and a million calls.
 struct Callable {

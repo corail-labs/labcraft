@@ -1191,7 +1191,7 @@ fn f(v: f64[mV], t: string) -> (a: string, b: string, n: f64, e: error) {
 """})
             r = api.run(td, "f", None, {"v": "230 mV", "t": "1.5,x"})
             self.assertTrue(r["ok"], r)
-            self.assertEqual(r["outputs"]["a"], "{230 mV} 0.23 V 2.2")
+            self.assertEqual(r["outputs"]["a"], "{230.0 mV} 0.23 V 2.2")
             self.assertEqual((r["outputs"]["b"], r["outputs"]["n"]), ("x", 1.5))
             r = api.run(td, "f", None, {"v": "1 mV", "t": "no,x"})
             self.assertEqual(r["error"]["category"], "string.parse")
@@ -1912,6 +1912,27 @@ panel {
             r = run("p", None, {}, folder=folder)
             self.assertEqual(r["status"], "ok", r)
             self.assertEqual([round(t["value"], 9) for t in r["outputs"]["ts"]], want, par)
+
+
+class TextOfValues(unittest.TestCase):
+    """`string.format` with no format writes a value as the reports do (spec 5.4, decision of the owner, 2026-11-09). The
+    expected texts are written by hand from the spec."""
+
+    def test_each_kind_of_value(self):
+        from lcfpoc.stdlib import _format_field, shortest
+        from lcfpoc.values import EnumVal, LcError, Struct
+        self.assertEqual([shortest(x) for x in (12.0, 0.1, 1.5e-7, 1e16, 0.00001, -0.0, 7)],
+                         ["12.0", "0.1", "1.5e-7", "1e16", "0.00001", "-0.0", "7"])
+        self.assertEqual(_format_field(True, ""), "true")
+        self.assertEqual(_format_field("abc", ""), "abc")
+        self.assertEqual(_format_field(["a", 'b"c'], ""), '["a", "b\\"c"]')
+        self.assertEqual(_format_field(None, ""), "none")
+        self.assertEqual(_format_field(bytes([10, 255, 3]), ""), "0aff03")
+        self.assertEqual(_format_field(LcError("io.timeout", "no answer", -1073807339, others=[LcError("dmm.overload")]), ""),
+                         "io.timeout (-1073807339): no answer; dmm.overload")
+        self.assertEqual(_format_field(EnumVal("Verdict", "Pass"), ""), "Verdict.Pass")
+        self.assertEqual(_format_field(Struct("Limits", {"low": 220.0, "high": 240.0}), ""), "Limits { low: 220.0, high: 240.0 }")
+        self.assertEqual(_format_field([1.25, 2.35], ".1"), "[1.2, 2.4]")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,10 @@ bodies of `extern rust` functions, as the crates of the libraries will provide t
 its inputs, its outputs and their default values (used when the node is skipped because of an error)."""
 import math
 import re
+import unicodedata
+from decimal import Decimal
 
-from .values import (Fault, LcError, LcFail, PathConst, Q, Session, UnitConst, ZERO, dim_label, from_si, is_num,
+from .values import (EnumVal, Fault, LcError, LcFail, PathConst, Q, Session, Struct, UnitConst, ZERO, dim_label, from_si, is_num,
                      parse_unit, UnitError)
 
 REQ = object()
@@ -349,7 +351,27 @@ def template_fields(template):
     return [m.group(1) for m in FIELD.finditer(template) if m.group(1)]
 
 
-def _format_field(v, spec):
+def _format_field(v, spec, top=True):
+    """The text of a value with the format of its field (5.4): as the reports write it, the format going to each number
+    inside. The proof of concept does not tell a `duration` from an `f64` in a unit of time: it writes both in their unit."""
+    if v is None:
+        return "none"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        return v if top else _quoted(v)
+    if isinstance(v, (bytes, bytearray)):
+        return bytes(v).hex()
+    if isinstance(v, list):
+        return "[" + ", ".join(_format_field(x, spec, False) for x in v) + "]"
+    if isinstance(v, Struct):
+        fields = ", ".join(f"{name}: {_format_field(x, spec, False)}" for name, x in v.fields.items())
+        return f"{v.type_name} {{ {fields} }}" if v.type_name else f"{{ {fields} }}"
+    if isinstance(v, EnumVal):
+        args = ", ".join(_format_field(x, spec, False) for x in v.args)
+        return f"{v.type_name}.{v.variant}" + (f"({args})" if v.args else "")
+    if isinstance(v, LcError):
+        return "; ".join(_error_text(e) for e in [v] + list(v.others))
     m = re.fullmatch(r"(?:\.(\d+))?\s*(.*)", spec or "")
     digits, unit = m.group(1), m.group(2).strip()
     number = v
@@ -368,8 +390,51 @@ def _format_field(v, spec):
         raise Fault("lcf.unit_mismatch", f"string.format: {v!r} has no unit to express in {unit}")
     if not is_num(number):
         return str(v)
-    text = f"{number:.{digits}f}" if digits is not None else f"{number:g}"
+    text = f"{number:.{digits}f}" if digits is not None else shortest(number)
     return f"{text} {unit}" if unit else text
+
+
+def _quoted(text):
+    """A text as the language writes a literal: its escapes (14.1), a control character as `\\u{1b}`, and every other
+    character as it is."""
+    escapes = {'"': '\\"', "\\": "\\\\", "\n": "\\n", "\t": "\\t", "\r": "\\r"}
+    control = lambda c: unicodedata.category(c) == "Cc"
+    return '"' + "".join(escapes.get(c, f"\\u{{{ord(c):x}}}" if control(c) else c) for c in text) + '"'
+
+
+def _error_text(e):
+    text = e.category
+    if e.code:
+        text += f" ({e.code})"
+    if e.message:
+        text += f": {e.message}"
+    return text
+
+
+def shortest(x):
+    """A number as the reports write it (decision of the owner, 2026-11-09): an integer as it is; a float with the fewest
+    digits that read back the same, in decimal notation from 1e-5 up to below 1e16 and with an exponent outside, keeping
+    `.0` when it has no fraction (`12.0`, `1.5e-7`, `1e16`), as `labcraft-trace` writes it."""
+    if isinstance(x, bool) or isinstance(x, int):
+        return str(x)
+    if math.isnan(x):
+        return "nan"
+    if math.isinf(x):
+        return "inf" if x > 0 else "-inf"
+    sign = "-" if math.copysign(1.0, x) < 0 else ""
+    if x == 0:
+        return sign + "0.0"
+    # `repr` gives the shortest digits that read back the same; only their layout differs.
+    digits, exponent = Decimal(repr(abs(x))).as_tuple()[1:]
+    digits = "".join(map(str, digits)).rstrip("0") or "0"
+    first = len(Decimal(repr(abs(x))).as_tuple()[1]) - 1 + exponent
+    if -5 <= first < 16:
+        if first >= 0:
+            whole, fraction = digits[:first + 1].ljust(first + 1, "0"), digits[first + 1:]
+            return f"{sign}{whole}.{fraction or '0'}"
+        return f"{sign}0.{'0' * (-first - 1)}{digits}"
+    rest = digits[1:]
+    return f"{sign}{digits[0]}{'.' + rest if rest else ''}e{first}"
 
 
 @builtin("string.format", [P("template", type="string")], ["text"], ("",), template=True)

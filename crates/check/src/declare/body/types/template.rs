@@ -31,14 +31,61 @@ struct Field<'t> {
     needs_an_integer: bool,
     /// As a unit, and as it is written, which is what a message shows.
     unit: Option<(Unit, &'t str)>,
+    format: Format<'t>,
 }
 
-/// What a format says of its value.
-#[derive(Debug, Default)]
-struct Format<'t> {
-    needs_a_number: bool,
-    needs_an_integer: bool,
-    unit: Option<(Unit, &'t str)>,
+/// Where a field puts its text in its width.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Align {
+    /// `<`
+    Left,
+    /// `^`
+    Center,
+    /// `>`
+    Right,
+}
+
+/// What is after the `:` of a field (5.4), every part of it: what `check` judges and what the runtime writes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Format<'t> {
+    /// The character of `fill align`; a space when there is none.
+    pub fill: Option<char>,
+    pub align: Option<Align>,
+    /// `+`
+    pub plus: bool,
+    /// `#`
+    pub alternate: bool,
+    /// `0`
+    pub zero: bool,
+    pub width: Option<u32>,
+    pub decimals: Option<u32>,
+    /// `d`, `x`, `X`, `o`, `b`, `f`, `e`, `E` or `g`.
+    pub letter: Option<char>,
+    /// As a unit, and as it is written.
+    pub unit: Option<(Unit, &'t str)>,
+}
+
+impl Format<'_> {
+    /// Decimals, a sign, zeros or a letter: what only a number has.
+    fn needs_a_number(&self) -> bool {
+        self.plus || self.zero || self.decimals.is_some() || self.letter.is_some()
+    }
+
+    /// `d`, `x`, `X`, `o`, `b`: an integer without a unit.
+    fn needs_an_integer(&self) -> bool {
+        self.letter.is_some_and(|letter| matches!(letter, 'd' | 'x' | 'X' | 'o' | 'b'))
+    }
+}
+
+/// A part of a template that `check` accepted, in order: text as it is written out, or a field.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Piece<'t> {
+    /// `{{` and `}}` read as one brace.
+    Text(String),
+    Field {
+        name: Cow<'t, str>,
+        format: Format<'t>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -125,7 +172,8 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
     let mut rest = format;
     let mut chars = rest.chars();
     let (first, second) = (chars.next(), chars.next());
-    let mut align = false;
+    let mut align = None;
+    let mut fill_char = None;
     // A letter before `^` starts a unit: `{a:m^2}` is in square metres.
     if let (Some(fill), Some(second)) = (first, second)
         && is_align(second)
@@ -134,10 +182,11 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
         if fill == '{' || !is_fill(fill) {
             return Err(form_mistake(format!("the fill of the field {position} is a character that shows, other than a brace (5.4)")));
         }
-        align = true;
+        align = align_of(second);
+        fill_char = Some(fill);
         rest = chars.as_str();
-    } else if first.is_some_and(is_align) {
-        align = true;
+    } else if let Some(first) = first.filter(|c| is_align(*c)) {
+        align = align_of(first);
         let mut after = rest.chars();
         after.next();
         rest = after.as_str();
@@ -149,7 +198,7 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
     if width.is_some_and(|width| width > MAX_WIDTH) {
         return Err(form_mistake(format!("the width of the field {position} goes up to {MAX_WIDTH} (5.4)")));
     }
-    let mut decimals = false;
+    let mut decimals = None;
     if take(&mut rest, '.') {
         let Some(count) = take_number(&mut rest) else {
             return Err(form_mistake(format!("the `.` of the field {position} takes a number of decimals (5.4)")));
@@ -157,7 +206,7 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
         if count > MAX_DECIMALS {
             return Err(form_mistake(format!("the decimals of the field {position} go up to {MAX_DECIMALS} (5.4)")));
         }
-        decimals = true;
+        decimals = Some(count);
     }
     let letter = take_letter(&mut rest);
     let is_base = letter.is_some_and(|letter| matches!(letter, 'x' | 'X' | 'o' | 'b'));
@@ -175,7 +224,7 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
     if unit_text.is_some_and(|text| text.contains('$')) {
         return Err(form_mistake(format!("the width and the decimals of the field {position} are numbers: a wire cannot give them (5.4)")));
     }
-    if zero && align {
+    if zero && align.is_some() {
         return Err(form_mistake(format!("the field {position} pads with `0` and with an alignment: keep one of them (5.4)")));
     }
     if alternate && !is_base {
@@ -184,7 +233,7 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
     if is_base && plus {
         return Err(form_mistake(format!("`+` in the field {position} does not go with `x`, `X`, `o` or `b` (5.4)")));
     }
-    if is_integer && decimals {
+    if is_integer && decimals.is_some() {
         return Err(form_mistake(format!("an integer has no decimals: remove them from the field {position}, or its letter (5.4)")));
     }
     if is_integer && unit_text.is_some() {
@@ -201,7 +250,16 @@ fn read_format<'t>(format: &'t str, position: usize, say: Say<'_>) -> Result<For
         }
         Err(mistake) => return Err(mistake),
     };
-    Ok(Format { needs_a_number: plus || zero || decimals || letter.is_some(), needs_an_integer: is_integer, unit })
+    Ok(Format { fill: fill_char, align, plus, alternate, zero, width, decimals, letter, unit })
+}
+
+fn align_of(c: char) -> Option<Align> {
+    match c {
+        '<' => Some(Align::Left),
+        '^' => Some(Align::Center),
+        '>' => Some(Align::Right),
+        _ => None,
+    }
 }
 
 fn read_field<'t>(inside: &'t str, position: usize, say: Say<'_>) -> Result<Field<'t>, Mistake> {
@@ -223,7 +281,7 @@ fn read_field<'t>(inside: &'t str, position: usize, say: Say<'_>) -> Result<Fiel
         Some(format) => read_format(format, position, say)?,
         None => Format::default(),
     };
-    Ok(Field { name, needs_a_number: format.needs_a_number, needs_an_integer: format.needs_an_integer, unit: format.unit })
+    Ok(Field { name, needs_a_number: format.needs_a_number(), needs_an_integer: format.needs_an_integer(), unit: format.unit, format })
 }
 
 /// The fields of a template, each written form once, and whether one of them is malformed (R-12). A `}` after a malformed field is
@@ -272,7 +330,44 @@ fn read_template<'t>(text: &'t str, say: Say<'_>) -> (Vec<Field<'t>>, bool) {
 /// The names of the fields of a template, each once, in the order they first appear (5.4): the order of the free terminals of a
 /// `string.format` node. `text` has its escapes read.
 pub(crate) fn template_fields(text: &str) -> Vec<String> {
-    read_template(text, &mut |_| {}).0.into_iter().map(|field| field.name.into_owned()).collect()
+    // `{a} and {a:.3}` are two written forms of one field, and one terminal (5.4).
+    let mut seen = HashSet::new();
+    read_template(text, &mut |_| {}).0.into_iter().map(|field| field.name.into_owned()).filter(|name| seen.insert(name.clone())).collect()
+}
+
+/// The parts of a template whose escapes are read, in order, as the runtime writes them out; `None` for a template that
+/// `check` refuses (R-12). A field written twice is in each of its places, with the format of that place.
+pub(crate) fn template_pieces(text: &str) -> Option<Vec<Piece<'_>>> {
+    let mut pieces = Vec::new();
+    let mut literal = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(['{', '}']) {
+        let (before, tail) = rest.split_at_checked(at)?;
+        literal.push_str(before);
+        if let Some(after) = tail.strip_prefix("{{").or_else(|| tail.strip_prefix("}}")) {
+            literal.push_str(tail.get(..1)?);
+            rest = after;
+            continue;
+        }
+        let inside = tail.strip_prefix('{')?;
+        let (field, after) = inside.split_once('}')?;
+        // An unknown unit is said and the field kept, for `check`: here it is a template that `check` refused.
+        let mut said = false;
+        let Field { name, format, .. } = read_field(field, 0, &mut |_| said = true).ok()?;
+        if said {
+            return None;
+        }
+        if !literal.is_empty() {
+            pieces.push(Piece::Text(std::mem::take(&mut literal)));
+        }
+        pieces.push(Piece::Field { name, format });
+        rest = after;
+    }
+    literal.push_str(rest);
+    if !literal.is_empty() {
+        pieces.push(Piece::Text(literal));
+    }
+    Some(pieces)
 }
 
 /// The dimension of the numbers of a type, as a unit has to convert them all.
@@ -524,6 +619,32 @@ mod tests {
         assert_eq!(fields("{{{a}}}"), [("a".to_owned(), false, false, false)]);
         assert_eq!(fields("{a} {a:.3}").len(), 2);
         assert_eq!(fields("{a:.3} {a:.3}").len(), 1, "one written form, once");
+        assert_eq!(template_fields("{a} and {a:.3} {b}"), ["a", "b"], "two forms of one field are one terminal");
+    }
+
+    #[test]
+    fn the_pieces_of_a_template_keep_each_place_and_its_format() {
+        let pieces = template_pieces("U = {u:.3 mV}, {{{n}}} and {u}").unwrap();
+        let shown: Vec<String> = pieces
+            .iter()
+            .map(|piece| match piece {
+                Piece::Text(text) => format!("text {text}"),
+                Piece::Field { name, format } => format!("{name} {:?} {:?}", format.decimals, format.unit.map(|(_, written)| written)),
+            })
+            .collect();
+        assert_eq!(shown, ["text U = ", "u Some(3) Some(\"mV\")", "text , {", "n None None", "text } and ", "u None None"]);
+        assert_eq!(template_pieces("{x:#e}"), None, "`#` with `e` is refused: no pieces");
+        let Some(Piece::Field { format, .. }) = template_pieces("{x:*>+12.3e mV}").and_then(|pieces| pieces.into_iter().next()) else {
+            panic!("a field");
+        };
+        let parts = (format.fill, format.align, format.plus, format.alternate, format.zero, format.width, format.decimals, format.letter);
+        assert_eq!(parts, (Some('*'), Some(Align::Right), true, false, false, Some(12), Some(3), Some('e')));
+        assert_eq!(format.unit.map(|(_, written)| written), Some("mV"));
+        let Some(Piece::Field { format, .. }) = template_pieces("{r:#06x}").and_then(|pieces| pieces.into_iter().next()) else {
+            panic!("a field");
+        };
+        assert_eq!((format.alternate, format.zero, format.width, format.letter), (true, true, Some(6), Some('x')));
+        assert_eq!(template_pieces("{a:Vx}"), None, "an unknown unit: a template that `check` refused");
     }
 
     #[test]

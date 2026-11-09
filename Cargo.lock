@@ -216,6 +216,7 @@ dependencies = [
  "labcraft-graph",
  "labcraft-ir",
  "labcraft-libs",
+ "labcraft-runtime",
  "labcraft-trace",
  "labcraft-types",
  "serde_json",
@@ -237,6 +238,17 @@ name = "labcraft-libs"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+]
+
+[[package]]
+name = "labcraft-runtime"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-check",
+ "labcraft-graph",
+ "labcraft-ir",
+ "labcraft-trace",
+ "labcraft-types",
 ]
 
 [[package]]

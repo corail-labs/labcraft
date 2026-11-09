@@ -421,6 +421,77 @@ mod tests {
         });
     }
 
+    /// What the runtime makes of every program of the repository (`docs/architecture.md`, 10.3, 10.5): each constant is a
+    /// value of its type, which writes as text when its type has one (5.4), and each primitive that a node calls has a body.
+    /// A default that Q-21 has not settled is the one constant with no value yet.
+    #[test]
+    fn every_constant_of_the_repository_is_a_value_and_every_primitive_has_a_body() {
+        use labcraft_ir::{ConstId, ConstValue, NodeKind, Region};
+        use labcraft_runtime::{Env, Text, Writer, constant};
+        on_the_stack_of_a_host(|| {
+            let bodies: BTreeSet<(&str, &str)> = labcraft_runtime::primitives::bodies().map(|(library, name)| (library.as_str(), name)).collect();
+            let (mut constants, mut primitives) = (0, 0);
+            for root in ["examples/", "libs/", "docs/rfc/"] {
+                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+                let mut names = Interner::new();
+                let checked = check_for_run(project(root, files), &Shipped, &mut names, &Limits::default());
+                for (index, file) in checked.files.iter().enumerate() {
+                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                        continue;
+                    }
+                    let program = labcraft_ir::lower(&checked, index, &mut names).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
+                    let env = Env { program: &program, names: &names };
+                    let viewer = program.functions[0].library;
+                    for (id, found) in program.constants.iter().enumerate() {
+                        if matches!(found.value, ConstValue::Unsettled) {
+                            continue;
+                        }
+                        let value = constant(env, ConstId(id as u32)).unwrap_or_else(|fault| panic!("{root}{}: constant {id}: {fault}", file.shown));
+                        let textual = !matches!(
+                            found.value,
+                            ConstValue::Function(_) | ConstValue::Primitive { .. } | ConstValue::InvalidHandle | ConstValue::ToTheEnd
+                        );
+                        if textual {
+                            let mut text = Text::new(1 << 20);
+                            Writer { env, viewer }
+                                .write(&mut text, &value, found.ty, None)
+                                .unwrap_or_else(|fault| panic!("{root}{}: the text of constant {id}: {fault}", file.shown));
+                        }
+                        constants += 1;
+                    }
+                    let mut pending: Vec<&Region> = program
+                        .functions
+                        .iter()
+                        .filter_map(|function| match &function.body {
+                            labcraft_ir::Body::Region(region) => Some(region),
+                            labcraft_ir::Body::Native { .. } => None,
+                        })
+                        .collect();
+                    while let Some(region) = pending.pop() {
+                        for node in &region.nodes {
+                            match &node.kind {
+                                NodeKind::Primitive { library, name, .. } => {
+                                    let name = names.resolve(*name);
+                                    assert!(
+                                        bodies.contains(&(library.as_str(), name)),
+                                        "{root}{}: no body for {}.{name}",
+                                        file.shown,
+                                        library.as_str()
+                                    );
+                                    primitives += 1;
+                                }
+                                NodeKind::Loop { region, .. } | NodeKind::For { region, .. } => pending.push(region),
+                                NodeKind::Match { arms } | NodeKind::Handle { arms } => pending.extend(arms.iter().map(|arm| &arm.region)),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            assert!(constants > 100 && primitives > 50, "{constants} constants, {primitives} primitive nodes: the repository reached");
+        });
+    }
+
     /// The SVG of every function of the repository (`docs/architecture.md`, 11.6), as its file gives it and with every node
     /// in standard view, compared byte for byte with its snapshot in `tests/harness/snapshots/diagram/`, natively and in
     /// WASM (scenario 6, point 2). With `LABCRAFT_BLESS=1`, natively, the snapshots are written again; the files they

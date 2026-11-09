@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use labcraft_check::PrimitiveLibrary;
 use labcraft_graph::Id;
-use labcraft_types::{LibraryId, Name, NumberKind, TyId, TypeTable, Unit};
+use labcraft_types::{LibraryId, Name, NumberKind, Ty, TyId, TypeTable, Unit};
 
 mod constant;
 mod lower;
@@ -29,7 +29,7 @@ mod print;
 mod tests;
 mod verify;
 
-pub use constant::{ConversionError, apply_scale, scale_between};
+pub use constant::{ConversionError, apply_scale, nanoseconds, scale_between};
 pub use lower::{LowerError, lower};
 pub use print::{print, print_function};
 pub use verify::{Violation, verify};
@@ -401,6 +401,24 @@ pub enum Skip {
     /// `extern` function has its own in its `Body::Native`, and a primitive in its `ConstValue::Primitive`. Their inputs and
     /// outputs are in the places of the function, so the node's inputs, which start with the function, are one place on.
     ByCallee,
+}
+
+/// Whether an output of type `output` can pass through an input of type `input` when its node skips or fails (spec 7.2): the
+/// same type, or the rows of an `[T; n]` into the `[[T; n - 1]]` that `array.set` gives (appendix A.2), which the runtime
+/// makes of them; so an error of `array.set` gives the array unchanged, as its rows (decision of the owner, 2026-11-09).
+pub fn passes_through(types: &TypeTable, input: TyId, output: TyId) -> bool {
+    if types.matches(input, output) {
+        return true;
+    }
+    let (Ty::Array { element, dimensions }, Ty::Array { element: row, dimensions: 1 }) = (types.get(input), types.get(output)) else {
+        return false;
+    };
+    match types.get(*row) {
+        Ty::Array { element: inner, dimensions: inner_dimensions } => {
+            *dimensions >= 2 && *inner_dimensions == *dimensions - 1 && types.matches(*element, *inner)
+        }
+        _ => false,
+    }
 }
 
 /// A conversion on a wire (spec 3.1, 3.3, 3.4).

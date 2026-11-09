@@ -74,7 +74,7 @@ fn as_float(value: &ConstValue) -> Option<f64> {
 }
 
 /// From an `f64[s]` to whole nanoseconds (spec 3.1).
-pub(crate) fn nanoseconds(seconds: f64) -> Result<i64, ConversionError> {
+pub fn nanoseconds(seconds: f64) -> Result<i64, ConversionError> {
     let ns = (seconds * 1e9).round_ties_even();
     // `i64::MAX` is not an `f64`: 2^63 is the first value past it.
     if (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&ns) { Ok(ns as i64) } else { Err(ConversionError) }

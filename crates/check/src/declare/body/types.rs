@@ -36,7 +36,8 @@ mod tests;
 
 pub(crate) use coverage::read_escapes;
 pub(super) use template::Shown;
-pub(crate) use template::template_fields;
+pub use template::{Align, Format, Piece};
+pub(crate) use template::{template_fields, template_pieces};
 
 const NO_STEP: u32 = u32::MAX;
 const NO_RANK: u8 = u8::MAX;

@@ -118,7 +118,7 @@ project promises, and how it knows that a result is right.
   (section 14.1, new words).
 - **The document acts on the world.** A crash is seen; a wrong result can go unseen, and a wrong PASS
   sends a faulty product out of the test bench. How the language keeps a result from being wrong in
-  silence is partly open (Q-16, Q-25).
+  silence is partly open (Q-16); a number that its type cannot hold is a fault (Q-25).
 - **Two writers for one program.** As in the apps, a gesture is a command (D-18). But an agent can also
   write the text, which is the source (D-08), while the user mostly sees the drawing.
 - **LabCraft can use the other apps.** In the long term, their command registries can generate libraries

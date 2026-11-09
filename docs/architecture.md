@@ -406,7 +406,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 2 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 3 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -511,7 +511,7 @@ pub fn apply_scale(value: f64, scale: &Scale, single: bool) -> f64;  // the conv
 
 ### 10.3 Values
 
-A run-time value is one enum, `runtime::Value`: booleans, the integers, floats and complex numbers of 3.1, `string`,
+*Status: implemented (step 3).* A run-time value is one enum, `runtime::Value`: booleans, the integers, floats and complex numbers of 3.1, `string`,
 `bytes`, arrays, structs, variants, `error`, a `duration` in whole nanoseconds (spec 3.1, Q-2), a `timestamp`, a
 function reference, and a **handle** for an opaque type (the library that made it and its number there). Arrays,
 strings, structs and variants are behind an `Arc`, and a change works on a copy only when the value is shared
@@ -525,7 +525,18 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
   rather than exhausting the memory of the process.
 - **Operations are defined bit for bit**: the primitives of `core` use operations that IEEE 754 rounds correctly, and
   those it does not (`core.pow` with an integer exponent, for one) are written as a fixed sequence of such operations,
-  rather than a function of the platform's library.
+  rather than a function of the platform's library: `pow` by squaring, a complex magnitude as the larger part times
+  `√(1 + r²)`, Smith's complex division (spec, appendix A.1). For `1.1^10`, CPython's `pow` gives `2.5937424601000023`
+  and the squaring `2.593742460100002`, which is what every platform gives.
+- **What it is in Rust:** an integer of each kind, `f32`, `f64`, a complex number as two of them; `String` and `Bytes`
+  as `Arc<str>` and `Arc<[u8]>`; `Array(Arc<Items>)` for one dimension, whose items keep their logical size as they
+  change, so that a push in a loop does not count the array again; `Grid` for an `[T; 2]` or more, its shape and its
+  items row after row; `Struct`, `Variant`; `Error(Option<Arc<ErrorData>>)`, `none` being `None`; `Function(ConstId)`,
+  since a reference is always a constant of the program; `Handle`; and `ToTheEnd`, the `length` of `array.slice` with no
+  wire. `runtime::constant` gives each constant of the program its value, `runtime::read` what a wire delivers (its
+  fields, then its conversion, by the steps that `ir` evaluates constants with: `ir::apply_scale`, `ir::nanoseconds`), and
+  `runtime::Writer` its text (spec 5.4), with the number writers of `trace`, so that a report and `string.format` agree.
+  A default that Q-21 has not settled has no value yet: the interpreter decides it (step 5).
 
 ### 10.4 The scheduler
 
@@ -571,7 +582,7 @@ What the prototype showed (scenario 3, the proof of concept): every point of spe
 
 ### 10.5 The interpreter and the primitives
 
-A frame holds the values of a region instance and the state of the panel of its call (spec 10: a `switch` holds, a
+*Status: the primitives are implemented (step 3); the interpreter is step 5.* A frame holds the values of a region instance and the state of the panel of its call (spec 10: a `switch` holds, a
 `button` is seen by one read). A node runs by its kind (ir.md, section 4), skips by its `Skip` (ir.md, section 5), and
 checks the limits of cli.md 6.2 as it goes: iterations of a loop, nodes run, depth, memory, the real time of a
 deterministic run. A limit reached is a fault at that node.
@@ -579,6 +590,37 @@ deterministic run. A limit reached is a fault at that node.
 The primitives (`core`, `string`, `array`, `errors`, `time`, `ui`) have their bodies here, by the names of `check`'s
 table of signatures; a test requires a body for every signature, and no body without one. A primitive that takes
 simulated time (`time.wait`) is a native call of the runtime's own.
+
+```rust
+pub fn primitives::run(library: PrimitiveLibrary, name: &str, call: &mut Call, host: &mut dyn Host) -> Result<Outcome, Fault>;
+pub enum Outcome { Done(Vec<Value>), Fail(Value), Wait(i64), Call { function: Value, inputs: Vec<Value> } }
+pub trait Host { fn now(&mut self) -> i64; fn element(..); fn set_element(..); fn room(&self) -> u64; fn error(..) -> Value; }
+pub fn outputs_on_error(env: Env, skip: &Skip, inputs: &[Value], failed: Option<Value>) -> Result<Vec<Value>, Fault>;
+```
+
+- **A body** reads its inputs in the order of ir.md, section 4, and its statics (units, categories, elements, the
+  template). It gives its outputs; or fails with a new error, which the host makes, so that the error has the origin of its
+  node; or, for `time.wait`, a wait on the clock of the run; or, for `core.call`, the function to run.
+- **A node that fails gives the outputs of a node that skips** (spec 7.2): `outputs_on_error` passes through each input
+  named like an output, gives the others their default, and the `err` output the error received, else the new one. So
+  `array.slice` and `array.set` that fail give their array unchanged.
+- **What `err` cannot say is a fault** (`runtime::Fault`): `LC8008` for a value that its operation cannot take, a number
+  that its type cannot hold first (spec 8.2, Q-25), `LC8005` when a body would build a value beyond the memory the host
+  has left (`Host::room`, asked before `array.repeat`, `concat`, `push`, `set`, `errors.merge` and the texts of `string`),
+  `LC8004` for a bug. A change asks for what it adds when nothing else holds what it changes, which then changes in
+  place, and for a whole copy when it is shared (D-11): the interpreter gives a body the last hold of a value it can.
+- **An `[T; 2]`** is a `Grid`: `array.get` gives a row, and `array.set`, `push` and `concat` work on its rows and give an
+  `[[T]]` (appendix A.2); a node of them that fails passes through the rows, in the type of its output.
+- **The template of `string.format`** is read by `check::template_pieces`, so a field and its format are read as `check`
+  judged them.
+- **Tests:** in `crates/runtime/src/primitives/tests.rs`, each body against appendix A and the spec, the expected values
+  worked out by hand or with Python's doubles; in `lowered.rs`, programs that go through `check` and `ir`, whose nodes a
+  small walk runs through the bodies with the `Skip` that lowering built; in the harness, every constant of `examples/`,
+  `libs/` and `docs/rfc/` is a value of its type that writes as text, and every primitive their nodes call has a body.
+- **Limits:** the logical size is below what the process holds: `string.split` of 4 million commas counts 61 MB and
+  takes 153 MB, `array.repeat(true, 50000000)` counts 810 MB and takes 1.1 GB (measured on Windows, by the review of
+  step 3); a run under the default limit of 1 GiB may hold about 2.5 times that. `cargo xtask codes` checks section 5 of
+  cli.md, not the codes of `run` (6.6) that `FaultCode` gives.
 
 ### 10.6 Native libraries
 
@@ -707,7 +749,7 @@ Each step of work ends with something testable:
    (section 11.2).
 2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`. *Done*
    (section 10.2).
-3. **Values and primitives** in `runtime`, with their test of signatures.
+3. **Values and primitives** in `runtime`, with their test of signatures. *Done* (sections 10.3, 10.5).
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
    codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`.
 5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the

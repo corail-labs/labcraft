@@ -1,0 +1,20 @@
+[package]
+name = "labcraft-runtime"
+description = "LabCraft L5: values of a run and the bodies of the primitives; the scheduler and the interpreter come next"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-check = { workspace = true }
+labcraft-ir = { workspace = true }
+labcraft-trace = { workspace = true }
+labcraft-types = { workspace = true }
+
+[dev-dependencies]
+labcraft-graph = { workspace = true }
+
+[lints]
+workspace = true
