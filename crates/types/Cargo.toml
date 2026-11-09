@@ -1,10 +1,11 @@
 [package]
 name = "labcraft-types"
-description = "LabCraft L0: names, physical units, types and diagnostics"
+description = "LabCraft L0: names, physical units, types, diagnostics, and the text of the notation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# The tables of `text` are data of the Unicode Consortium (`LICENSE-Unicode.txt`).
+license = "(MIT OR Apache-2.0) AND Unicode-3.0"
 publish.workspace = true
 
 [dependencies]
@@ -13,6 +14,7 @@ unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [lints]
 workspace = true

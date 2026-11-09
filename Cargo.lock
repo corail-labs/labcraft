@@ -242,6 +242,7 @@ version = "0.1.0-m0a"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2",
  "unicode-normalization",
 ]
 
@@ -660,6 +661,7 @@ version = "0.1.0-m0a"
 dependencies = [
  "labcraft-types",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

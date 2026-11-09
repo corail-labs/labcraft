@@ -68,6 +68,7 @@ What everything needs, with no knowledge of files.
   folders and `LC0009`, `LC0010` are merged.
 - `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
   `max_nesting` has a hard ceiling (cli.md, section 1), lower in WASM: a stack is sized from it (section 4).
+- `text`, from M0v: the font of the notation and the counting of cells (section 11.1).
 
 Run-time values are in `runtime` (section 10.3).
 
@@ -319,7 +320,7 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | Everything below but `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
+| `ci` | Everything below but `unicode` and `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
@@ -327,13 +328,15 @@ character boundary, and these crates hold little numerical code.
 | `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
+| `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
+| `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
 `unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
 `thiserror` for the error type of a crate, where a function can fail on something other than the program,
 such as a file that cannot be written (the versions the Craft apps use). In tests: `wasm-bindgen-test`,
-`cargo-fuzz`. `assets` joins `xtask ci` with the first asset.
+`cargo-fuzz`. `assets` joined `xtask ci` with the first asset, the font of the notation (section 11.1).
 
 **From the suite.** `craft-atomic`, from [`craft-libs`](https://github.com/storytold/craft-libs)
 (MIT or Apache-2.0), pinned to a revision as the apps do, is the only shared crate M0a needs, and only in
@@ -717,7 +720,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 
 ## 11. M0v: the viewer
 
-*Status: draft; `trace` implemented (11.2).* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: draft; `text` (11.1) and `trace` (11.2) implemented.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
@@ -743,21 +746,30 @@ throwaway, and `ui-egui` starts with the IDE. What lasts is `diagram`, `editor` 
 
 ### 11.1 `text` in `types` (L0)
 
-The numbers of notation 2.3, low enough for `check` (L3), which judges the text of an icon by its box (`LC5009`,
-spec 11.1), and for `diagram` (L5), which places:
+*Status: implemented (step 1 of 11.7).* The numbers of notation 2.3, low enough for `check` (L3), which judges the
+text of an icon by its box (`LC5009`, spec 11.1), and for `diagram` (L5), which places:
 
 - the metrics of Hack 3.003 Regular in units of 2048: advance 1233, ascent 1901, descent 483, capital height
   1493, and the SHA-256 of the file they come from;
-- `cells(text)`: graphemes by UAX #29, two cells for a first code point that is East Asian Wide or Fullwidth or an
-  emoji (notation 2.3), one otherwise; `cut(text, cells)`, in logical order, with `…`;
-- the width of a text in hundredths of a unit, from its cells and its size, rounded the same way everywhere.
+- `graphemes(text)` by UAX #29, extended grapheme clusters, and `drawn(grapheme)`, its first 32 code points, all
+  that a drawing keeps (a grapheme cut short ends the text that `cut` gives, with `…`); `cells(text)`: two cells for a grapheme one of whose code points is East Asian Wide or
+  Fullwidth or `Emoji_Presentation`, or is U+FE0F (notation 2.3), one otherwise; `cut(text, cells)`, in logical
+  order, with `…`, which reads no further than the grapheme that passes its limit, and `cut_middle` for the bands
+  that would read the same (notation 3.2); `shown(text)`, each bidirectional control of `LC0005` replaced by its
+  code, as a drawing shows it;
+- `width(cells, size)` and `scale`: a length from the font, in hundredths of a unit from a size in hundredths,
+  rounded to the nearest hundredth, a half up, the one rounding of every such length (722 for a cell at 12).
+  `check` judges the box of a text of an icon with the same constants in floating point, as the other shapes, since
+  the size of an icon is a decimal of any precision.
 
-The tables (the grapheme break property, East Asian Width, the emoji properties) are generated by
-`cargo xtask unicode` from the Unicode Character Database of the version that names are read with (spec 14.1),
-rather than taken from a crate, which can lag behind that version. They are committed, with the notice of the
-Unicode License V3 and their line in `ATTRIBUTION.md`, and a test checks their version. A test of the app reads the font file that
-the canvas installs and checks its SHA-256 and its metrics: another version of the font is a reviewed change of
-the drawing.
+The tables (the grapheme break property, `Indic_Conjunct_Break`, East Asian Width, `Extended_Pictographic` and
+`Emoji_Presentation`) are generated by `cargo xtask unicode` from the Unicode Character Database of the version that
+names are read with (spec 14.1), rather than taken from a crate, which can lag behind that version: Unicode 18.0
+changed rule GB9c. They are committed, with the notice of the Unicode License V3 and their line in `ATTRIBUTION.md`,
+and a test checks their version against the spec. The test file of UAX #29 that Unicode publishes with them is
+committed too, and every one of its cases passes. A test of `types` reads the font file in `assets/fonts/`, and
+checks its SHA-256 and its metrics from its tables; the app, which installs that file, does the same: another
+version of the font is a reviewed change of the drawing.
 
 ### 11.2 `trace` (L1)
 
@@ -951,8 +963,8 @@ around the canvas, `craft-window`, `craft-settings` for the preferences (standar
   them, the fonts of the system and the emoji. egui and eframe are built without `default_fonts`, which
   `cargo xtask layers` checks in the features of the graph. Hack (MIT and the Bitstream Vera licence) and Inter
   (OFL-1.1) are in `assets/fonts/` with their licences, and every face that a build embeds, those of
-  `craft-fonts` and the emoji face included, has its line in `ATTRIBUTION.md`; `cargo xtask assets` joins `ci`
-  with them.
+  `craft-fonts` and the emoji face included, has its line in `ATTRIBUTION.md`, which `cargo xtask assets` checks in
+  `ci`.
 
 **`apps/labcraft-web`**, the same viewer in the browser: eframe on WebGPU or WebGL2. The session runs in a Web
 Worker, and the page sends it the same commands as JSON. The page keeps the files it gave the worker, so that a

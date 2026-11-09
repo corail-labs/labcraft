@@ -168,15 +168,18 @@ developer chooses the zoom, and the font of the other panels of the IDE.
   (6.1), badges, tabs, legends and banners. 9 units: the text of the band (3.2). A title stands out by
   its place and its color, never by its weight: there is one face.
 - **Cells.** Every length of text in the notation is counted in cells: its width, and the limits at
-  which a text is cut (3.2, 6.1). A grapheme (Unicode, UAX #29) takes one cell, or two when its first
-  code point is East Asian Wide or Fullwidth (UAX #11) or when it is an emoji (`Emoji_Presentation`, or
-  followed by U+FE0F); `©`, `™` or `▶`, which Hack draws, take one cell:
-  a library name in Japanese is cut after 5 characters and `…`, not after 11. The Unicode version is
-  the one with which names are read (spec 14.1).
+  which a text is cut (3.2, 6.1). A grapheme (Unicode, UAX #29) takes one cell, or two when one of
+  its code points is East Asian Wide or Fullwidth (UAX #11) or an emoji (`Emoji_Presentation`, or
+  U+FE0F, which asks for one): `☝🏽`, a hand and a skin tone, takes two; `©`, `™` or `▶`, which Hack
+  draws, take one cell, and `e` with an accent one: a library name in Japanese is cut after 5 characters
+  and `…`, not after 11. The Unicode version is the one with which names are read (spec 14.1).
 - **Every text has a cut.** A text that no other rule cuts (the name of a terminal or a wire, a title,
   a label in standard view, an inline constant) is cut at 40 cells *(proposed)*: 39 and `…`, and its
   tooltip shows more of it. A name of normal length stays whole (`measurement_channel_voltage_limit` is 33
-  cells), and a name or a string of millions of characters cannot stretch the drawing or the SVG.
+  cells), and a name or a string of millions of characters cannot stretch the drawing or the SVG. Nor can
+  a letter followed by a million accents, a single grapheme: a drawing keeps the first 32 code points of a
+  grapheme *(proposed)*, which no real text passes (Unicode's stream-safe form asks for no more than 31),
+  and the text ends there with `…`, so that what it keeps cannot join what followed.
 - **A tooltip is cut too**, on the canvas as in the `<title>` of the SVG ([cli.md](cli.md), section 7.2): at
   200 code points and `…`, names and values alike, so that hovering stays fast whatever the file holds. To
   see a longer value whole belongs to the debugger (M5).
