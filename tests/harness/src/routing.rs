@@ -60,38 +60,40 @@ impl Segment {
 pub fn faults(drawing: &Drawing) -> Vec<String> {
     let mut found = Vec::new();
     let bodies = drawing.bodies.len();
-    // The texts of the frames: the function's, those of each structure inside its block, those of each arm.
-    let mut frames: Vec<Box> = Vec::new();
-    let mut texts = |shapes: &[Shape], inside: Option<&labcraft_diagram::Placed>| {
+    // The texts of the frames, each with the bodies whose wires must keep from it: the function's, for every body; those
+    // of a structure inside its block, for the bodies it holds; those of an arm, for its body. A plain node's texts are
+    // kept from the wires of its body by its boxes. A wire of another body meets a text only where the positions of the
+    // file make two nodes overlap, and what the file writes wins (notation 2.1).
+    let mut frames: Vec<(Box, Option<Vec<usize>>)> = Vec::new();
+    let mut texts = |shapes: &[Shape], inside: Option<&labcraft_diagram::Placed>, owners: Option<Vec<usize>>| {
         for shape in shapes {
             if let Shape::Text { x, y, size, width, .. } = shape {
                 let area = text_box(*x, *y, *size, *width, None, "a label of a frame");
                 if inside.is_none_or(|placed| {
                     area.x0 >= placed.x && area.x1 <= placed.x + placed.width && area.y0 >= placed.y && area.y1 <= placed.y + placed.height
                 }) {
-                    frames.push(area);
+                    frames.push((area, owners.clone()));
                 }
             }
         }
     };
-    texts(&drawing.loose, None);
+    texts(&drawing.loose, None, None);
     let mut nodes = drawing.placed.iter();
+    // The arms that follow a structure, in the order of the bodies it holds.
+    let mut arms: std::vec::IntoIter<usize> = Vec::new().into_iter();
     for group in &drawing.groups {
         match (&group.wire, &group.arm) {
             (Some(_), _) => {}
-            (None, Some(_)) => texts(&group.shapes, None),
+            (None, Some(_)) => {
+                let owner = arms.next();
+                texts(&group.shapes, None, Some(owner.into_iter().collect()));
+            }
             (None, None) => {
-                // A structure: the texts of its frame. Those of a plain node are its own, kept from the wires of its
-                // body by its boxes; a wire of another body meets them only where the positions of the file make the
-                // node overlap a frame, and what the file writes wins (notation 2.1).
-                let frame = group
-                    .shapes
-                    .iter()
-                    .any(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill.is_some_and(|fill| fill.starts_with("frame.fill"))));
                 if let Some(placed) = nodes.next()
-                    && frame
+                    && !placed.holds.is_empty()
                 {
-                    texts(&group.shapes, Some(placed));
+                    texts(&group.shapes, Some(placed), Some(placed.holds.clone()));
+                    arms = placed.holds.clone().into_iter();
                 }
             }
         }
@@ -152,7 +154,8 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
         }
         let value = |net: usize| errors.iter().find(|(index, ..)| *index == net).map_or("?", |(_, _, value)| value.as_str());
         for segment in &segments {
-            for area in boxes.iter().chain(&frames) {
+            let theirs = frames.iter().filter(|(_, owners)| owners.as_ref().is_none_or(|owners| owners.contains(&body))).map(|(area, _)| area);
+            for area in boxes.iter().chain(theirs) {
                 if area.net != Some(segment.net) && segment.crosses(area) {
                     found.push(format!("{}: the wire `{}` crosses {}", drawing.function, value(segment.net), area.what));
                     break;
@@ -407,11 +410,11 @@ fn main(x: f64) -> () {{
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
     /// an `after:` on the top edge of a labelled block; and six that the fuzzing found: a node that reads its own error,
-    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; one of the review: a track over a channel where a jog would go; and one that the fuzzing found on `main`: a loop that the file places over a node that it places too. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; one of the review: a track over a channel where a jog would go; one that the fuzzing found on `main`, a loop that the file places over a node that it places too; and one of its review, two loops that the file places one over the other. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 15] = [
+        const CASES: [(&str, &str); 16] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -427,6 +430,7 @@ fn main(x: f64) -> () {{
             ("back_twice.lcf", include_str!("../routing-cases/back_twice.lcf")),
             ("track_over_a_jog.lcf", include_str!("../routing-cases/track_over_a_jog.lcf")),
             ("projectile.lcf", include_str!("../routing-cases/loop_placed_left.lcf")),
+            ("two.lcf", include_str!("../routing-cases/two.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {

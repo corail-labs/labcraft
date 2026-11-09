@@ -1,0 +1,23 @@
+labcraft 1
+
+use core
+
+fn two(a: f64, n: f64) -> (p: f64, q: f64) {
+    p = loop carry s = a {
+        s2 = core.add(s, a)
+        d = core.gt(s2, n)
+        next s = s2
+        until d
+    }
+    q = loop carry t = a {
+        t2 = core.mul(t, a)
+        e = core.gt(t2, n)
+        next t = t2
+        until e
+    }
+}
+
+layout {
+    node p at (60, 40)
+    node q at (80, 50)
+}
