@@ -78,7 +78,8 @@ The job keeps what crashed as the artifact `fuzz-artifacts`, and the log gives a
    `cargo fuzz tmin <target> artifacts/<target>/<file>`, from this folder.
 2. Fix the bug.
 3. The file becomes a case of [`tests/acceptance/hostile/`](../tests/acceptance/README.md), with its
-   `expected.json`.
+   `expected.json`; for the target `diagram`, a case of [`tests/harness/routing-cases/`](../tests/harness/routing-cases),
+   listed in the test `the_hard_cases_keep_the_rules` of `tests/harness/src/routing.rs`.
 
 ## Keeping it up to date
 

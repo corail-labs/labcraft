@@ -253,7 +253,17 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             shapes.extend(sized_label(node, at));
         }
         let (width, height) = (sized.width, sized.height);
-        drawing.placed.push(Placed { key: node.stable.clone(), x: at.x, y: at.y, width, height, column: at.column, rank: at.rank, body: node.body });
+        drawing.placed.push(Placed {
+            key: node.stable.clone(),
+            x: at.x,
+            y: at.y,
+            width,
+            height,
+            column: at.column,
+            rank: at.rank,
+            body: node.body,
+            holds: node.bodies.clone(),
+        });
         drawing.groups.push(Group { node: node.key.clone(), title: title(&node.kind), shapes, arm: None, wire: None });
         drawing.groups.extend(arms.into_iter().map(|(arm, shapes)| Group {
             node: String::new(),

@@ -254,6 +254,9 @@ pub struct Placed {
     pub rank: u32,
     /// The body that holds it, by its index in the graph.
     pub body: usize,
+    /// The bodies of a structure, by their index in the graph: one, or one per arm, in the order of its arms. Empty for
+    /// another node.
+    pub holds: Vec<usize>,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).
