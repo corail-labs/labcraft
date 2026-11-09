@@ -15,6 +15,7 @@ enum Class {
 const TABLE: &[(&str, Class)] = &[
     ("labcraft-types", Class::Layer(0)),
     ("labcraft-graph", Class::Layer(1)),
+    ("labcraft-trace", Class::Layer(1)),
     ("labcraft-format", Class::Layer(2)),
     ("labcraft-check", Class::Layer(3)),
     ("labcraft-ir", Class::Layer(4)),

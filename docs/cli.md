@@ -887,7 +887,7 @@ as in a cut trace, and the banner says that the trace was cut. *Proposed figures
 - **Bounded resources.** Reading a trace at these limits takes at most 5 s and 512 MB on a CI runner
   *(proposed)*, measured by `cargo xtask bounds`, whatever the numbers it holds: memory follows the
   values of frame 0 that it keeps, not the size of the file, and a hostile iteration number allocates
-  nothing. What it keeps, the index of the values included, is bounded too: past 256 MiB *(proposed)*,
+  nothing. What it keeps, the index of the values included, is bounded too: past 384 MiB *(proposed)*,
   reading stops there, with `LC7103` ([architecture.md](architecture.md), section 11.2). The viewer draws the function at once,
   without values, reads the trace beside the drawing, and shows the values once it is read; the canvas
   stays responsive meanwhile (scenario 6, point 5). A trace replaced while it is read (a new run) is read

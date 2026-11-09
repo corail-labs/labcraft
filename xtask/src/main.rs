@@ -21,7 +21,7 @@ commands:
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
   bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
-  wasm      format and check build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check and trace build for wasm32-unknown-unknown, and the harness passes there
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
 
@@ -126,7 +126,18 @@ fn wasm() -> Result<(), String> {
         let version = wasm_bindgen_version(&metadata(true)?).unwrap_or("<the version of wasm-bindgen in Cargo.lock>".to_owned());
         return Err(format!("{WASM_RUNNER} is missing; install it with\n  cargo install wasm-bindgen-cli --version {version} --locked"));
     }
-    run(&["build", "--locked", "--target", WASM_TARGET, "--package", "labcraft-format", "--package", "labcraft-check"])?;
+    run(&[
+        "build",
+        "--locked",
+        "--target",
+        WASM_TARGET,
+        "--package",
+        "labcraft-format",
+        "--package",
+        "labcraft-check",
+        "--package",
+        "labcraft-trace",
+    ])?;
     wasm_tests()
 }
 

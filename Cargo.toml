@@ -15,6 +15,7 @@ labcraft-types = { path = "crates/types" }
 labcraft-graph = { path = "crates/graph" }
 labcraft-format = { path = "crates/format" }
 labcraft-check = { path = "crates/check" }
+labcraft-trace = { path = "crates/trace" }
 labcraft-libs = { path = "libs/embedded" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
@@ -22,6 +23,7 @@ craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "2e2312d
 
 # foundation
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 unicode-normalization = "0.1"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }

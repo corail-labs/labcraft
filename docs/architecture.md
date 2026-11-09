@@ -325,7 +325,7 @@ character boundary, and these crates hold little numerical code.
 | `codes` | `Code` equals the tables of cli.md, section 5; from M0b, the codes of each native library equal the table of its document (section 10.6) |
 | `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
-| `wasm` | `format` and `check` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, `ir`, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
+| `wasm` | `format`, `check` and `trace` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, `ir`, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
@@ -399,7 +399,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; step 0 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 and 1 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -408,7 +408,7 @@ first in the proof of concept (scenario 3): what it taught is written here.
 
 ```text
 apps/labcraft-cli ──> mcp ──> engine ──> runtime ──> ir ──> check ──> format ──> graph ──> types
-       │                                    │                                      trace ──┘
+       │                                    ├──> trace
        ├──> libs/visa (labcraft-visa) ──────┤
        ├──> examples/results_log ───────────┘
        └──> libs/embedded
@@ -678,7 +678,8 @@ The proof of concept runs the corpus too, through a small runner, until the Rust
 Each step of work ends with something testable:
 
 0. **`check` for runs:** the interface of 10.1. *Done.*
-1. **`trace`**, with M0v: the events, the JSON form of values and its bounds, the writer and the reader.
+1. **`trace`**, with M0v: the events, the JSON form of values and its bounds, the writer and the reader. *Done*
+   (section 11.2).
 2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`.
 3. **Values and primitives** in `runtime`, with their test of signatures.
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
@@ -696,7 +697,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 
 ## 11. M0v: the viewer
 
-*Status: draft, nothing implemented.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: draft; `trace` implemented (11.2).* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
@@ -704,7 +705,7 @@ viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (command
 
 ```text
 apps/labcraft ──> engine ──> diagram ──> check ──> format ──> graph ──> types
-      │                         └──────> trace ──> types
+      │                         └──────> trace
       └──> editor ──> diagram, egui (the fork of the suite)
 apps/labcraft-web: the same, with the session in a worker
 apps/labcraft-cli ──> diagram (diagram --svg), and mcp ──> engine (diagram.svg)
@@ -740,32 +741,74 @@ the drawing.
 
 ### 11.2 `trace` (L1)
 
-The trace belongs to M0b (commands.md, sections 5 and 8), which writes this crate first (section 10.11); it is
-where the writer and the readers meet, so that what a run writes and what the viewer reads cannot drift apart. It
-depends on `types` alone.
+*Status: implemented (step 1 of M0b, section 10.11).* The trace belongs to M0b (commands.md, sections 5 and 8), which
+wrote this crate first; it is where the writer and the readers meet, so that what a run writes and what the viewer
+reads cannot drift apart, and a test reads back what the writer writes. It depends on no other crate of LabCraft, and on
+`sha2` (MIT or Apache-2.0).
 
-- **Values in JSON** (commands.md 5), with the bounded writer: `$len`, `$head`, `$cut`, 64 KiB and 64 levels.
-  `runtime` turns its `Value` into that form, and the report of a run uses it too; `trace` never sees `runtime`.
-- **Events** as plain data, written one per line to a sink that the caller gives, with the bounds of the writer
-  (commands.md, section 8; section 10.7).
+```rust
+pub trait WriteValue { fn write_value(&self, writer: &mut ValueWriter<'_>); }    // `runtime` implements it
+pub fn write_value(out: &mut String, value: &dyn WriteValue) -> Written;          // a value of a report, 64 KiB
+impl<W: io::Write> TraceWriter<W> {
+    pub fn new(sink: W, header: &Header) -> Self;                                  // the first line
+    pub fn event(&mut self, t_ns: u64, event: &Event);                             // `call`, `ran`, `skipped`, `arm`, `set`
+    pub fn end(&mut self, t_ns: u64, status: &str);
+}
+impl Reader {
+    pub fn new(expected: Expected, limits: ReadLimits) -> Self;
+    pub fn feed(&mut self, bytes: &[u8]) -> bool;                                  // false: the rest is not needed
+    pub fn finish(self) -> Trace;
+}
+pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Vec<&'a str>;
+```
+
+- **Values in JSON** (commands.md 5), with the bounded writer: `$len`, `$head`, `$cut`, 64 KiB and 64 levels. The
+  caller drives it, as it knows its values: it gives scalars, and begins and ends arrays and objects; the writer
+  decides as it goes, so an array of a million elements costs the 16 it writes, and a caller can stop when it is
+  `spent`. `runtime` implements `WriteValue` for its `Value` with its type, and the report of a run uses the same
+  writer; `trace` never sees `runtime`. Numbers are written by `trace::number`, the same for the report and the trace:
+  the fewest digits that read back the same, decimal from 10^-5 up to below 10^16, `.0` on a float with no
+  fraction; durations and the clock exactly, from their nanoseconds.
+- **Events** as plain data (`Event`), written one per line to an `io::Write` that the caller gives, with the bounds
+  of commands.md 8 (`WriteLimits`): a line of 16 MiB, its values cut, then its entries dropped, then only what
+  places it; 1,000,000 events or 256 MiB, then `truncated` and `end`. A sink that fails stops the trace and says why
+  (`error`), never the run (section 10.7); `flush` gives the sink what it holds, so that a run can be followed, and
+  `end` flushes. The reader reads every line that the writer shortens: such a line cuts the trace, and a value
+  whose type it left out is dropped without counting under `LC7104`.
 - **The reader** of cli.md 7.4. It takes the bytes of the file in parts, so that it never holds the whole file, and
-  cuts at the limits of a file, a line, the number of lines and nesting. The caller gives it, as plain data, what
-  the function drawn has (`trace::Expected`, from `diagram`, section 11.3): its nodes by name, each with the body or
-  arm that holds it and the loops around it, and its wires by name, each with its type as the trace writes it. So
-  the reader decides what fits nothing (`LC7104`) as it reads, and keeps nothing for it: a name that no node has, a
-  value of another type than its wire, a name bound in two arms that the `arm` event before it does not tell apart,
-  a value whose text passes the 64 KiB that the writer never passes (commands.md 5). A line is decoded only as far
-  as its frame: the events of frame 0 are kept, the other frames are skipped. What it keeps is an index sorted by
-  node, wire and iterations, a node and a wire as their numbers in what the caller gave; the `arm` and `skipped`
-  events by node and iteration, which choose the tab shown and keep the defaults of a skipped node out of sight
-  (notation 6.1); and the text of the values, as the file gave them: `diagram` decodes only the values it shows,
-  one at a time, so that decoding never holds more than one value of at most 64 KiB. **What it keeps, the
-  index included, is bounded**: 256 MiB *(proposed)*; past it, reading stops as at the other limits (`LC7103`,
-  cli.md 7.4). So its memory follows the values of frame 0 that fit the drawing, never the size of the file, the
-  depth of an iteration or a hostile number. Its diagnostics are `LC7101` to `LC7104`.
-- `stale(first_line, files)` compares the SHA-256 that the first line gives with the bytes of the files that
-  `diagram` resolved to draw the function (notation 6.1), with `sha2` (MIT or Apache-2.0). The session gives the
-  bytes and the time of the trace file, which it reads through the `Workspace` of the app (section 10.8).
+  cuts at the limits of a file, a line, the number of lines and nesting (`ReadLimits`), with a scanner of JSON that
+  does not recurse. The caller gives it, as plain data, what the function drawn has (`Expected`, from `diagram`,
+  section 11.3): its inputs; its nodes by name, each with the arms that hold it (`ArmOf`: the `match` or `handle`
+  and its arm as the trace writes its pattern) and the loops around it, by index; and its wires by name, each with
+  its type as the trace writes it. So the reader decides what fits nothing (`LC7104`) as it reads, and keeps nothing
+  for it: a name that no node has, a value of another type than its wire (by the `types` of the `call` of frame 0,
+  or of the event), a name that the `arm` events before it do not tell apart from another, an iteration whose
+  levels are not the loops around the node or that reaches 2^63, a value given twice, an event of a frame that no
+  `call` opened, a value whose text passes the 64 KiB that the writer never passes (commands.md 5). A name shared
+  by several nodes is resolved in a few lookups, however many share it: a node becomes a candidate once the `arm`
+  of its innermost structure is taken, that structure having been resolved the same way. A line is decoded only as
+  far as its frame, whatever the order of its fields: the events of frame 0 are kept, the other frames are skipped. What it keeps is
+  an index sorted by node, wire and iterations, a node and a wire as their numbers in what the caller gave
+  (`Trace::value`, `Trace::values`); the `arm` and `skipped` events by node and iteration, which choose the tab
+  shown and keep the defaults of a skipped node out of sight (notation 6.1); the iterations of each loop within
+  those of the loops around it (`Trace::iterations`, and `Trace::values_within` for the values of one outer
+  iteration); and the text of the values, as the file gave them: `diagram`
+  decodes only the values it shows, one at a time, so that decoding never holds more than one value of at most
+  64 KiB. **What it keeps, the index included, is bounded**: 384 MiB *(proposed)*, each entry counted as its
+  text, its iterations and 112 bytes, its share of the index and of what an allocator adds, the texts kept in one
+  buffer; past it, reading stops as at the other limits (`LC7103`, cli.md 7.4). Measured with a counting allocator,
+  the memory really taken at the bound is about 0.65 of what is counted, and 1,000,000 events of three small outputs
+  each, the most a run writes, fit; values of 60 bytes each would stop near line 930,000. So its
+  memory follows the values of frame 0 that fit the drawing, never the size of the file, the depth of an iteration
+  or a hostile number.
+- **Its findings are plain data**, and `diagram` makes the diagnostics `LC7101` to `LC7104` from them, with the file
+  of the trace, when it adds them to cli.md 5: `Trace::header` (or why the first line gives no values),
+  `other_function`, `stop` (the line and the limit), `ignored` and the line of the first. The time and memory of
+  cli.md 7.4 are measured by `cargo xtask bounds` once `diagram --trace` reads a trace.
+- `stale(header, files)` compares the SHA-256 that the first line gives with the bytes of the files that `diagram`
+  resolved to draw the function (notation 6.1); a file gone, or that the first line does not list, is stale too.
+  The session gives the bytes and the time of the trace file, which it reads through the `Workspace` of the app
+  (section 10.8).
 
 ### 11.3 `diagram` (L5)
 
@@ -780,7 +823,7 @@ pub struct Shown { tabs: ..., iterations: ..., values_hidden: bool }  // what it
 pub fn draw(checked: &Checked, function: &FunctionRef, view: &ViewState, limits: &DiagramLimits) -> Drawn;
 pub enum Drawn { Drawing(Drawing), NotDrawn(Vec<Diagnostic>) }      // LC7002, or a function that is not drawable
 pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the reader keeps (11.2)
-pub fn values(drawing: &Drawing, checked: &Checked, trace: &trace::Read, shown: &Shown) -> Overlay;  // 6.1
+pub fn values(drawing: &Drawing, checked: &Checked, trace: &trace::Trace, shown: &Shown) -> Overlay;  // 6.1
 pub fn svg(drawing: &Drawing, overlay: Option<&Overlay>, shown: &Shown, theme: Theme) -> String;  // cli.md 7.2
 pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: Theme) -> String;
 ```
@@ -914,7 +957,7 @@ MCP, keeps. Both give the same SVG, from the same function of `diagram`.
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
-| Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 256 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
+| Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
 | File change to new drawing within 200 ms, through the session and the watcher, without a window | `apps/labcraft/tests` | 6.3 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
 | Fuzzing placement and routing, and the reader of a trace | `fuzz/` | 4 |
