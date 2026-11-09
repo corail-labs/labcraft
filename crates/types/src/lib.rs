@@ -15,6 +15,7 @@ mod code;
 mod limits;
 mod name;
 mod report;
+pub mod text;
 mod ty;
 mod unit;
 

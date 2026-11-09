@@ -380,12 +380,51 @@ fn a_shape_that_leaves_the_grid_is_a_warning() {
     for item in ["rect (-1, 0) (10, 10)", "circle (16, 16) 17", "line (0, 0) (33, 1)", "path \"M7 5 A9 9 0 0 1 25 5\"", "text \"V\" at (40, 4)"] {
         assert_eq!(icon(item), ["LC5009"], "{item}");
     }
-    // A text counts by its point until M0v, when spec 11.1 judges its box in the font of the notation.
-    // A path that comes back where it started draws nothing.
-    assert_eq!(icon("text \"a long label\" at (16, 16) size 30"), NOTHING);
+    // A path that comes back where it started draws nothing, nor does an empty text.
     assert_eq!(icon("path \"M40 40 Z\""), NOTHING);
     assert_eq!(icon("path \"M40 40 L40 40\""), NOTHING);
     assert_eq!(icon("line (40, 40) (40, 40)"), NOTHING);
+    assert_eq!(icon("text \"\" at (40, 40)"), NOTHING);
+}
+
+/// Spec 11.1: a text by its box, as wide as its cells times 1233/2048 of its size, centered on `at`, from 1493/2048 of its size
+/// above the baseline to 483/2048 below it. Worked out by hand: at size 10 a cell is 6.0205 wide, the capitals 7.2900 high and
+/// the descent 2.3584; at 14 a cell is 8.4287 wide.
+#[test]
+fn a_text_leaves_the_grid_by_its_box() {
+    for item in [
+        "text \"a long label\" at (16, 16) size 30",     // 12 cells: 216.7 wide
+        "text \"V\" at (1, 16)",                         // from x -2.01
+        "text \"V\" at (31, 16)",                        // to x 34.01
+        "text \"V\" at (16, 7.28)",                      // from y -0.0100
+        "text \"V\" at (16, 29.65)",                     // to y 32.0084
+        "text \"\u{4E2D}\u{4E2D}\" at (16, 20) size 14", // 4 cells: 33.71 wide
+    ] {
+        assert_eq!(icon(item), ["LC5009"], "{item}");
+    }
+    for item in [
+        "text \"V\" at (16, 27) size 6",
+        "text \"V\" at (3.02, 16)",                              // from x 0.0098
+        "text \"V\" at (16, 7.3)",                               // from y 0.0100
+        "text \"V\" at (16, 29.64)",                             // to y 31.9984
+        "text \"abc\" at (16, 20) size 14",                      // 3 cells: 25.29 wide
+        "text \"e\u{301}e\u{301}e\u{301}\" at (16, 20) size 14", // 3 graphemes of 2 code points: 3 cells
+    ] {
+        assert_eq!(icon(item), NOTHING, "{item}");
+    }
+}
+
+/// A bidirectional control is drawn as its code, `⟨U+202E⟩`, 8 cells: 33.7 wide at 7, where the character alone would be 4.2.
+#[test]
+fn a_text_counts_the_cells_it_is_drawn_with() {
+    assert_eq!(icon("text \"\u{202E}\" at (16, 20) size 7"), ["LC5009", "LC0005"]);
+    assert_eq!(icon("text \"\u{202E}\" at (16, 20) size 6"), ["LC0005"]);
+    // The text as it runs, its escapes read: `a"b` and `\"` are 3 cells, 25.29 wide at 14; written, they would be 4 or more.
+    assert_eq!(icon("text \"a\\\"b\" at (16, 20) size 14"), NOTHING);
+    assert_eq!(icon("text \"\\\\\\\\\\\\\" at (16, 20) size 14"), NOTHING);
+    assert_eq!(icon("text \"a\\\\\\\\\\\\b\" at (16, 20) size 14"), ["LC5009"]);
+    // A finite size can give a box past every number: it leaves the grid all the same.
+    assert_eq!(icon("text \"VVVV\" at (16, 16) size 1e308"), ["LC5009"]);
 }
 
 #[test]

@@ -1,10 +1,12 @@
 //! Workspace tooling: `cargo xtask <command>` (`docs/architecture.md`, section 7).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod assets;
 mod codes;
 mod layers;
 mod libs;
 mod licences;
+mod unicode;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -15,13 +17,15 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci        fmt --check, layers, licences, libs, codes, clippy -D warnings, tests, bounds, wasm; stops at the first failure
+  ci        fmt --check, layers, licences, libs, codes, assets, clippy -D warnings, tests, bounds, wasm; stops at the first failure
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
+  assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
   wasm      format, check, trace and ir build for wasm32-unknown-unknown, and the harness passes there
+  unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
 
@@ -40,6 +44,8 @@ fn main() -> ExitCode {
         Some("fuzz-licences") => check_fuzz_licences(),
         Some("libs") => check_libs(),
         Some("codes") => check_codes(),
+        Some("assets") => check_assets(),
+        Some("unicode") => unicode::generate(&root()),
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
         Some("-h" | "--help" | "help") | None => {
@@ -63,6 +69,7 @@ fn ci() -> Result<(), String> {
     check_licences()?;
     check_libs()?;
     check_codes()?;
+    check_assets()?;
     run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
     run(&["test", "--locked", "--workspace"])?;
     bounds()?;
@@ -118,6 +125,14 @@ fn check_codes() -> Result<(), String> {
     let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     let in_code = codes::in_code();
     report("codes", in_code.len(), "codes", codes::check(&codes::from_document(&document)?, &in_code))
+}
+
+fn check_assets() -> Result<(), String> {
+    let root = root();
+    let path = root.join("ATTRIBUTION.md");
+    let attribution = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let files = assets::files(&root)?;
+    report("assets", files.len(), "assets", assets::check(&root, &files, &attribution))
 }
 
 fn wasm() -> Result<(), String> {

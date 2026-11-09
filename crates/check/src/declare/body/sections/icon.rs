@@ -1,14 +1,18 @@
 //! The `icon` section (spec 11.1, R-14): a grid written `32`, numbers that are finite, a radius or a size above zero, `path` strings in
 //! the SVG path syntax, `accent` tokens of the theme (`LC5008`), and shapes that stay in the grid (`LC5009`). What a shape draws counts,
-//! stroke aside: a curve or an arc by its real extent, not by its control points, and a text by its point `at`. Spec 11.1 now judges
-//! a text by its box in the font of the notation: this code follows with M0v.
+//! stroke aside: a curve or an arc by its real extent, not by its control points, and a text by its box in the font of the notation
+//! (`types::text`): as wide as its cells as a drawing shows them, from the top of its capitals to its descent.
 
 use labcraft_graph::{Icon, IconItem, IconShape, Numeral, NumeralKind, Point};
-use labcraft_types::{Code, cut_text};
+use labcraft_types::{Code, cut_text, text};
 
+use super::super::read_escapes;
 use super::{Sections, numeral_text};
 
 const GRID: f64 = 32.0;
+
+/// The size of a `text` that does not write one (11.1).
+const TEXT_SIZE: f64 = 10.0;
 
 /// What rounding may add to a shape that touches an edge.
 const SLACK: f64 = 1e-9;
@@ -83,6 +87,10 @@ fn judge_item(sections: &mut Sections<'_, '_>, item: &IconItem) {
 
 /// A number for a message: two decimals at most.
 fn shown(value: f64) -> String {
+    // A text of a finite size can still draw past every number: `size 1e308`.
+    if value.is_infinite() {
+        return if value > 0.0 { "\u{221E}".to_owned() } else { "-\u{221E}".to_owned() };
+    }
     let text = format!("{value:.2}");
     let text = text.trim_end_matches('0').trim_end_matches('.');
     if text == "-0" { "0".to_owned() } else { text.to_owned() }
@@ -130,11 +138,22 @@ fn shape_extent(sections: &Sections<'_, '_>, shape: &IconShape) -> Result<Option
             extent.add(from);
             extent.add(to);
         }
-        IconShape::Text { at, size, .. } => {
-            if let Some(size) = size {
-                positive(*size, "size")?;
+        IconShape::Text { text, at, size } => {
+            let size = match size {
+                Some(size) => positive(*size, "size")?,
+                None => TEXT_SIZE,
+            };
+            let (x, y) = point(at)?;
+            // `at` is the middle of the baseline. The numbers are those of `types::text`, in floating point here, since a
+            // size of an icon is a decimal of any precision.
+            let cells = text::cells(&text::shown(&read_escapes(text)));
+            if cells == 0 {
+                return Ok(None);
             }
-            extent.add(point(at)?);
+            let em = size / f64::from(text::UNITS_PER_EM);
+            let half = cells as f64 * f64::from(text::ADVANCE) * em / 2.0;
+            extent.add((x - half, y - f64::from(text::CAP_HEIGHT) * em));
+            extent.add((x + half, y + f64::from(text::DESCENT) * em));
         }
         IconShape::Path { data } => return path_extent(data),
     }

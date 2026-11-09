@@ -13,3 +13,7 @@ tests/acceptance/hostile/** -text
 
 # FigCraft files are zip archives
 *.figcraft binary
+
+# Fonts, and the data of Unicode byte for byte (its SHA-256 is in ATTRIBUTION.md and the generated tables)
+*.ttf binary
+crates/types/tests/data/** -text
