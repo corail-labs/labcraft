@@ -1,0 +1,7 @@
+labcraft 1
+
+fn swap(a: f64, b: f64, err: error = none) -> (y: f64, z: f64, err: errorz) {
+    p, q, e1 = t(a, b, err: err)
+    y, z, e2 = t(q, p, err: e1)
+    err = e2
+}

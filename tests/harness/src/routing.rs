@@ -249,6 +249,45 @@ mod tests {
         }
     }
 
+    /// A library with a file that does not read: `check` types nothing, `t` is unknown, so no wire is an error and there
+    /// is no axis. Found by the fuzzing: a jog took a height 4 from a value that crosses the channel straight.
+    #[test]
+    fn an_untyped_library_keeps_the_rules() {
+        const FILES: [(&str, &str); 2] = [
+            ("swap.lcf", include_str!("../routing-cases/swap_untyped.lcf")),
+            (
+                "broken.lcf",
+                "labcraft 1
+
+us
+",
+            ),
+        ];
+        let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+        for (shown, text) in FILES {
+            root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Borrowed(text.as_bytes())) });
+        }
+        let mut names = Interner::new();
+        let checked = check(root, &Nothing, &mut names, &Limits::default());
+        let mut faults = Vec::new();
+        for index in 0..checked.files.len() {
+            for standard_everywhere in [false, true] {
+                let view = ViewState { standard_everywhere, ..ViewState::default() };
+                if let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) {
+                    faults.extend(super::faults(&drawing));
+                }
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
     /// Every case of the corpora of acceptance (`tests/acceptance/hostile`, `type-errors`), checked as a folder and each
     /// function drawn in both views: what the fuzzing of `diagram` starts from.
     #[test]

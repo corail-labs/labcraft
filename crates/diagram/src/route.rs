@@ -358,7 +358,13 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             list.push(index);
         }
     }
-    for list in by_channel {
+    let mut entering: Vec<Vec<i64>> = vec![Vec::new(); channels];
+    for net in &plan.nets {
+        if let Some(list) = entering.get_mut(net.source_column + 1) {
+            list.push(net.source.y);
+        }
+    }
+    for (channel, list) in by_channel.into_iter().enumerate() {
         if list.len() < 2 {
             continue;
         }
@@ -375,8 +381,10 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
         split.sort_unstable();
         // Every height where a wire enters or leaves the channel.
         let mut heights: Vec<i64> = verticals.iter().flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry])).collect();
-        // The main chain runs through every channel on its axis, which nothing but an error crosses below.
+        // The main chain runs through every channel on its axis, which nothing but an error crosses below; a value whose
+        // source stands just before the channel enters it at its height, with a vertical or straight through.
         heights.extend(axis);
+        heights.extend(entering.get(channel).into_iter().flatten().copied());
         heights.sort_unstable();
         for index in split {
             let Some(vertical) = plan.verticals.get(index).cloned() else { continue };
