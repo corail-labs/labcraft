@@ -233,7 +233,8 @@ Passes, each one over all the files, so that a bad file does not hide the others
    before its body and one after. What is left in a cycle stays unknown, and pass 5 says why. A panel element adds nothing to that
    order (spec 10): one that is read says its type before the walk, by its name, its kind or its `default:`, and the wires of one that
    is never read are compared when the walk ends. So no wire of the diagram depends on the type of an element that its wires decide.
-5. **Dataflow:** cycles, outputs bound once, carries; then the warnings of 7.5, 8.1 and 10.
+5. **Dataflow:** cycles, outputs bound once, carries, the values passed into structures (`LC4007`, counted in `passed_in.rs`
+   as `labcraft-ir` builds them, and stopped a little past the limit); then the warnings of 7.5, 8.1 and 10.
 6. **Panel, layout, icon:** kinds that M0 does not know, elements declared twice or of the wrong direction, references to nodes, coordinates, the icon (R-14: grid,
    a validator of the SVG path syntax, a table of `accent` tokens). A `wire` entry is matched against the wires of the function, one per frame (spec 11): each
    value read, with the input it reaches, and for a value from outside a structure, one more wire per edge it crosses. The entries of a function wait for its

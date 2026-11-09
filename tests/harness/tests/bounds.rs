@@ -96,6 +96,13 @@ const CASES: &[Case] = &[
         seconds: SECONDS,
         codes: Some((&["LC6003"], &["LC5006"])),
     },
+    Case {
+        name: "values-passed-into-250-frames",
+        folders: values_passed_into_250_frames,
+        fmt: true,
+        seconds: SECONDS,
+        codes: Some((&["LC6003"], &["LC4007"])),
+    },
     Case { name: "library-of-100000-files", folders: library_of_100000_files, fmt: false, seconds: LIBRARY_SECONDS, codes: Some((&[], &[])) },
 ];
 
@@ -387,6 +394,24 @@ fn a_budget_of_comparisons_spent() -> Vec<Folder> {
     let head = format!("labcraft 1\nuse core\nfn f(n: i32) -> (r: i32) {{\nq=1\nr=match n {{\n{arms}_=>yield 0\n}}\na=[q");
     let tail = format!("]\n}}\nlayout {{\n{}}}\n", "wire x->y\n".repeat(15_000));
     alone("f.lcf", filled(&head, |_| ",q".to_owned(), &tail))
+}
+
+/// Inputs read under 250 loops: each passes into every loop, on its node and in its region, so the count goes past the limit of
+/// `LC4007` long before the last of them, and nothing is lowered.
+fn values_passed_into_250_frames() -> Vec<Folder> {
+    let size = usize::try_from(Limits::default().max_file_size).unwrap() - ROOM;
+    let open: String = (0..250).map(|depth| format!("_=for i{depth} in [1]{{\n")).collect();
+    let close = "}\n".repeat(250);
+    let text = |count: usize| {
+        let inputs: Vec<String> = (0..count).map(|index| format!("a{index}:f64")).collect();
+        let reads: Vec<String> = (0..count).map(|index| format!("a{index}")).collect();
+        format!("{HEAD}fn f({})->(){{\n{open}x=[{}]\n{close}}}\n", inputs.join(","), reads.join(","))
+    };
+    let mut count = size / 10;
+    while text(count).len() > size {
+        count -= count / 20;
+    }
+    alone("f.lcf", text(count))
 }
 
 fn library_of_100000_files() -> Vec<Folder> {

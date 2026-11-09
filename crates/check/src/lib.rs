@@ -25,11 +25,13 @@ mod declare;
 mod file_name;
 mod load;
 pub mod manifest;
+mod passed_in;
 pub mod primitives;
 mod reach;
 mod resolved;
 
 pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
+pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};
 pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
 

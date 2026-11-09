@@ -18,6 +18,7 @@ use super::super::{Pass, Scope, path_text};
 use super::types::panel::ui_node;
 use super::{Context, definition_of, node_of, targets_of};
 use crate::load::{at, cycles};
+use crate::passed_in::MAX_PASSED_IN;
 use crate::primitives::PrimitiveLibrary;
 use crate::resolved::{Meaning, Resolved};
 
@@ -37,12 +38,34 @@ const MAX_REFS: usize = 16;
 const WORK_PER_ITEM: u64 = 64;
 const MIN_WORK: u64 = 1 << 24;
 
+/// A number in groups of three digits, as the spec writes it.
+fn grouped(number: u64) -> String {
+    let digits = number.to_string();
+    let mut text = String::new();
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            text.push(',');
+        }
+        text.push(digit);
+    }
+    text
+}
+
 /// What only this pass says: the programs that test the other passes are written for what those judge.
 #[cfg(test)]
 pub(in crate::declare) fn only_this_pass(code: Code) -> bool {
     matches!(
         code,
-        Code::Lc4001 | Code::Lc4002 | Code::Lc4003 | Code::Lc4004 | Code::Lc4101 | Code::Lc4102 | Code::Lc4103 | Code::Lc4104 | Code::Lc4105
+        Code::Lc4001
+            | Code::Lc4002
+            | Code::Lc4003
+            | Code::Lc4004
+            | Code::Lc4007
+            | Code::Lc4101
+            | Code::Lc4102
+            | Code::Lc4103
+            | Code::Lc4104
+            | Code::Lc4105
     )
 }
 
@@ -629,6 +652,7 @@ pub(super) fn judge_function<'a>(
         flow.judge_outputs(signature);
     }
     flow.judge_carries();
+    flow.judge_passed_in(function);
     let order = Order::of(flow.graph.steps.len(), &flow.graph.edges);
     if order.steps.len() < flow.graph.steps.len() {
         flow.judge_cycles();
@@ -667,6 +691,19 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
 
     fn here(&self, message: String, id: Id) -> Related {
         Related { message, file: self.scope.file.shown.clone(), span: self.scope.model.source_map.span(id) }
+    }
+
+    /// Spec 6: the values that the structures pass in are bounded, since each one is built when the function is lowered.
+    fn judge_passed_in(&mut self, function: &'a Function) {
+        let found = crate::passed_in::passed_in(function, self.resolved, MAX_PASSED_IN);
+        let Some((statement, weight)) = found.over else { return };
+        let message = format!(
+            "the structures of this function pass in more than {} values, the limit, {} of them in this one: a value counts on each \
+             frame and in each region it enters, each arm (spec 6)",
+            grouped(MAX_PASSED_IN),
+            grouped(weight)
+        );
+        self.say(Code::Lc4007, message, statement.id, Some(statement), Vec::new());
     }
 
     /// R-2: an output is bound exactly once.

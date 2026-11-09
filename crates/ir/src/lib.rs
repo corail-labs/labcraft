@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use labcraft_check::PrimitiveLibrary;
 use labcraft_graph::Id;
@@ -147,6 +148,35 @@ pub struct Region {
     pub results: Vec<Use>,
 }
 
+impl Region {
+    /// The values that the structures inside it pass in: on each structure node, its inputs from outside, once on the node and
+    /// once among the arguments of each of its regions (`docs/ir.md`, section 4). What `check::passed_in` counts on the source,
+    /// and bounds with `LC4007`. Regions nest as deep as `check` lets them: an explicit stack.
+    pub fn passed_in(&self) -> u64 {
+        let mut total = 0_u64;
+        let mut pending = vec![self];
+        while let Some(region) = pending.pop() {
+            for node in &region.nodes {
+                let (passed, regions): (usize, Vec<&Region>) = match &node.kind {
+                    NodeKind::Loop { carries, region, .. } => (node.inputs.len().saturating_sub(*carries as usize), vec![region]),
+                    NodeKind::For { clauses, carries, region, .. } => {
+                        (region.args.len().saturating_sub(clauses.len()).saturating_sub(*carries as usize), vec![region])
+                    }
+                    NodeKind::Match { arms } | NodeKind::Handle { arms } => {
+                        (node.inputs.len().saturating_sub(1), arms.iter().map(|arm| &arm.region).collect())
+                    }
+                    _ => continue,
+                };
+                let passed = u64::try_from(passed).unwrap_or(u64::MAX);
+                let frames = u64::try_from(regions.len()).unwrap_or(u64::MAX).saturating_add(1);
+                total = total.saturating_add(passed.saturating_mul(frames));
+                pending.extend(regions);
+            }
+        }
+        total
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Node {
     pub kind: NodeKind,
@@ -170,8 +200,9 @@ pub struct Node {
 #[derive(Clone, Debug)]
 pub struct Value {
     pub ty: TyId,
-    /// The names it bears: that of its line, then each new name a line gives it (`err = e3`).
-    pub names: Vec<Name>,
+    /// The names it bears: that of its line, then each new name a line gives it (`err = e3`). Shared by every argument that
+    /// passes the value into a region, so that a value of many names passed into many regions costs its names once.
+    pub names: Arc<[Name]>,
 }
 
 /// A wire as one input reads it.

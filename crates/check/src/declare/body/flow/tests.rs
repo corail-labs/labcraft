@@ -722,3 +722,67 @@ fn the_order_of_the_lines_changes_no_verdict() {
         );
     }
 }
+
+/// A `match` of `arms` arms, the last of which reads 1,000 inputs: they pass in on its node and in each arm, 1,000 × (1 + `arms`).
+fn passed_into_arms(arms: usize) -> (String, String, String) {
+    let inputs: Vec<String> = std::iter::once("c: i32".to_owned()).chain((0..1000).map(|i| format!("a{i}: f64"))).collect();
+    let mut body = vec!["    y = match c {".to_owned()];
+    body.extend((0..arms - 1).map(|k| format!("        {k} => yield []")));
+    let all: Vec<String> = (0..1000).map(|i| format!("a{i}")).collect();
+    body.push(format!("        _ => {{\n            r = [{}]\n            yield r\n        }}", all.join(", ")));
+    body.push("    }".to_owned());
+    (inputs.join(", "), "y: [f64]".to_owned(), body.join("\n"))
+}
+
+#[test]
+fn the_values_passed_in_are_bounded_by_their_frames_and_their_regions() {
+    // 1,000 × (1 + 999) is the limit itself, 1,000 × (1 + 1,000) = 1,001,000 one arm of values more.
+    let (inputs, outputs, body) = passed_into_arms(999);
+    assert_eq!(judged(&inputs, &outputs, &body), NOTHING);
+    let (inputs, outputs, body) = passed_into_arms(1000);
+    assert_eq!(judged(&inputs, &outputs, &body), ["LC4007"]);
+    assert_eq!(
+        messages(&inputs, &outputs, &body),
+        ["the structures of this function pass in more than 1,000,000 values, the limit, 1,001,000 of them in this one: a value \
+          counts on each frame and in each region it enters, each arm (spec 6)"]
+    );
+}
+
+#[test]
+fn the_values_passed_in_are_said_on_the_structure_that_weighs_the_most() {
+    // The `match` weighs the limit itself, 1,000 × (1 + 999); the loop after it, `a0` on its node and in its region, 2 more:
+    // the count passes the limit in the loop, which is counted last.
+    let (inputs, outputs, body) = passed_into_arms(999);
+    let lines =
+        "    z = loop carry v = 0.0 {\n        w = core.add(v, a0)\n        done = core.gt(w, a0)\n        next v = w\n        until done\n    }";
+    let body = format!("{body}\n{lines}");
+    let outputs = format!("{outputs}, z: f64");
+    let text = format!("{USES}\nfn f({inputs}) -> ({outputs}) {{\n{body}\n}}");
+    let found = diagnostics(&[("f.lcf", text.as_str())]);
+    assert_eq!(found.iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>(), ["LC4007"]);
+    // Lines 1 to 8 are the header, the uses and the signature; the `match` starts on line 9.
+    assert_eq!(found[0].span.map(|span| span.start.line), Some(9), "on the `match`, not on the loop where the count passed the limit");
+    assert!(found[0].message.contains("1,000,000 of them in this one"), "{}", found[0].message);
+}
+
+#[test]
+fn of_two_structures_that_weigh_the_same_the_first_in_the_file_is_said() {
+    // 500 values read in an inner `match` of 1,000 arms, inside an outer one of 1,000 arms: each value weighs 1 + 1,000 in
+    // each. After 499 values, 998,998; the 500th brings the inner one to 999,999, under the limit, and the outer one past it,
+    // at 1,001,000, where both weigh 500 × 1,001 = 500,500. The outer `match` comes first in the file, though its id, given at
+    // the end of its line, is the greater.
+    let inputs: Vec<String> = std::iter::once("c: i32".to_owned()).chain((0..500).map(|i| format!("a{i}: f64"))).collect();
+    let mut body = vec!["    y = match c {".to_owned()];
+    body.extend((0..999).map(|k| format!("        {k} => yield []")));
+    body.push("        _ => {\n            k1 = 1\n            r = match k1 {".to_owned());
+    body.extend((0..999).map(|k| format!("                {k} => yield []")));
+    let all: Vec<String> = (0..500).map(|i| format!("a{i}")).collect();
+    body.push(format!("                _ => {{\n                    q = [{}]\n                    yield q\n                }}", all.join(", ")));
+    body.push("            }\n            yield r\n        }\n    }".to_owned());
+    let text = format!("{USES}\nfn f({}) -> (y: [f64]) {{\n{}\n}}", inputs.join(", "), body.join("\n"));
+    let found = diagnostics(&[("f.lcf", text.as_str())]);
+    assert_eq!(found.iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>(), ["LC4007"]);
+    // Lines 1 to 8 are the header, the uses and the signature; the outer `match` starts on line 9, the inner one on 1,011.
+    assert_eq!(found[0].span.map(|span| span.start.line), Some(9), "on the outer `match`: {}", found[0].message);
+    assert!(found[0].message.contains("500,500 of them in this one"), "{}", found[0].message);
+}

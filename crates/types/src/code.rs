@@ -129,6 +129,7 @@ codes! {
     Lc4004 = "LC4004" Error,
     Lc4005 = "LC4005" Error,
     Lc4006 = "LC4006" Error,
+    Lc4007 = "LC4007" Error,
     Lc4101 = "LC4101" Warning,
     Lc4102 = "LC4102" Warning,
     Lc4103 = "LC4103" Warning,

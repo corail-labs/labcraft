@@ -526,3 +526,189 @@ fn f() -> (x: string, n: i32) {{
     assert!(text.contains(r#"primitive string.concat("it's \"so\"\t", "it's \"so\"\t")"#), "{text}");
     assert!(text.contains(&format!("array.len([\"{filler}\", …)")), "{text}");
 }
+
+/// What `check` counts against `LC4007` is what lowering builds (spec 6). Counted by hand: `k` is `step` and `d` is `a` (a new
+/// name and a field read are followed), `lim` is a constant, `v` a carry of the loop. The loop passes in `step` and `a`, on
+/// its node and in its region: 2 × 2. The `match` passes in the same two, on its node and in its two arms: 2 × 3. In all 10.
+#[test]
+fn what_check_counts_passed_in_is_what_lowering_builds() {
+    let source = "labcraft 1
+
+use core
+
+fn f(c: bool, step: Step, a: f64) -> (y: f64) {
+    k = step.low
+    lim = 2.0
+    d = a
+    y = match c {
+        true => {
+            r = loop carry v = 0.0 {
+                w = core.add(v, k)
+                q = core.add(w, d)
+                s = core.mul(q, lim)
+                done = core.gt(s, a)
+                next v = s
+                until done
+            }
+            yield r
+        }
+        false => yield d
+    }
+}
+";
+    let step = "labcraft 1
+
+type Step = struct { low: f64 }
+";
+    assert_eq!(passed_in_both(&[("f.lcf", source), ("Step.lct", step)]), (10, 10));
+}
+
+/// Counted by hand: in the `match`, `x` comes from the `for` and `b` from the function, on its node and in its two arms:
+/// 2 × 3. The `for` passes in `b` and the selector `c`, on its node and in its region: 2 × 2; `xs` and `n` are its clauses,
+/// not values passed in. In all 10.
+#[test]
+fn a_value_passes_into_each_structure_between_its_line_and_where_it_is_read() {
+    let source = "labcraft 1
+
+use core
+
+fn g(xs: [f64], n: i32, b: f64, c: i32) -> (ys: [f64]) {
+    ys = for x in xs, i in 0..n {
+        z = match c {
+            1 => {
+                u = core.add(x, b)
+                yield u
+            }
+            _ => yield x
+        }
+        collect z
+    }
+}
+";
+    assert_eq!(passed_in_both(&[("g.lcf", source)]), (10, 10));
+}
+
+/// The values passed in of the function of the first file, as `check` counts them and as lowering built them.
+fn passed_in_both(files: &[(&str, &str)]) -> (u64, u64) {
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    for (shown, text) in files {
+        root.files.push(SourceFile { shown: (*shown).to_owned(), content: Content::Bytes(Cow::Owned(text.as_bytes().to_vec())) });
+    }
+    let mut names = Interner::new();
+    let checked = check_for_run(root, &Nothing, &mut names, &Limits::default());
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let start = checked.files.iter().position(|file| file.shown == files[0].0).unwrap();
+    let file = &checked.files[start];
+    let labcraft_graph::Decl::Function(function) = &file.file.decl else { panic!("not a function") };
+    let counted = labcraft_check::passed_in(function, &file.resolved, u64::MAX).count;
+    let program = lower(&checked, start, &mut names).unwrap();
+    let crate::Body::Region(region) = &program.functions[0].body else { panic!("no region") };
+    (counted, region.passed_in())
+}
+
+/// Counted by hand, each rule of `check::passed_in` a value of its own, so that leaving a rule out changes the count. The loop
+/// passes in `h` (its body) and `stop` (its `until`): 2 × 2. The arm passes in `a` (the first value of the carry), `h` and
+/// `stop`: the `match` has one arm, 3 × 2. In all 10.
+#[test]
+fn the_first_value_of_a_carry_and_until_are_read_where_they_are_written() {
+    let source = "labcraft 1
+
+use core
+
+fn f(c: i32, a: f64, h: f64, stop: bool) -> (y: f64) {
+    y = match c {
+        _ => {
+            r = loop carry v = a {
+                w = core.add(v, h)
+                next v = w
+                until stop
+            }
+            yield r
+        }
+    }
+}
+";
+    assert_eq!(passed_in_both(&[("f.lcf", source)]), (10, 10));
+}
+
+/// Counted by hand: `next v = z` reads the output `z`, which `z = d` binds, so it is `d`. The loop passes in `d` and `s`: 2 × 2;
+/// the `match`, `a`, `d` and `s`: 3 × 2. In all 10. Reading `v` itself is the carry, never passed in.
+#[test]
+fn next_and_an_output_read_back_are_followed_to_what_they_name() {
+    let source = "labcraft 1
+
+fn g(c: i32, a: f64, d: f64, s: bool) -> (y: f64, z: f64) {
+    z = d
+    y = match c {
+        _ => {
+            r = loop carry v = a {
+                next v = z
+                until s
+            }
+            yield r
+        }
+    }
+}
+";
+    assert_eq!(passed_in_both(&[("g.lcf", source)]), (10, 10));
+}
+
+/// Counted by hand: the `for` passes in `b` and `q` (the fields of the struct), `g` (through `[g]`, an array of one value for
+/// a parameter that takes a value, R-5) and `e` (its second `collect`): 4 × 2. The arm passes in `xs` and `n` (the clauses, the
+/// end of the range included), `b`, `q`, `g` and `e`: 6 × 2. In all 20.
+#[test]
+fn clauses_fields_brackets_and_collect_read_what_they_name() {
+    let source = "labcraft 1
+
+fn h(c: i32, xs: [f64], n: i32, b: f64, q: f64, g: f64, e: f64) -> (ps: [P], m: [f64]) {
+    ps, m = match c {
+        _ => {
+            r, es, ms = for x in xs, i in 0..n {
+                p = P { u: b, w: [q] }
+                t = first([g])
+                collect p
+                collect e
+                collect t
+            }
+            yield (r, ms)
+        }
+    }
+}
+";
+    let first = "labcraft 1
+
+fn first(xs: [f64]) -> (y: f64) {
+    y = 1.0
+}
+";
+    let p = "labcraft 1
+
+type P = struct { u: f64, w: [f64] }
+";
+    assert_eq!(passed_in_both(&[("h.lcf", source), ("P.lct", p), ("first.lcf", first)]), (20, 20));
+}
+
+/// Counted by hand: `ee` is bound by the pattern of its arm, and the loop inside passes it in, with `s`: 2 × 2. The `handle`
+/// passes in `a` and `s`, on its node and in its two arms: 2 × 3. In all 10.
+#[test]
+fn what_a_pattern_binds_is_defined_in_its_arm() {
+    let source = "labcraft 1
+
+use errors
+
+fn k(a: f64, s: bool, err: error) -> (y: f64) {
+    y = handle err {
+        ok => yield a
+        _(ee) => {
+            r = loop carry v = a {
+                e2 = errors.merge(ee, ee)
+                next v = v
+                until s
+            }
+            yield r
+        }
+    }
+}
+";
+    assert_eq!(passed_in_both(&[("k.lcf", source)]), (10, 10));
+}
