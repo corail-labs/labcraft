@@ -1,0 +1,10 @@
+labcraft 1
+
+use core
+
+fn back_twice(x: f64) -> (y: f64) {
+    a = core.add(v, x)
+    b = core.add(v, x)
+    v = core.neg(a)
+    y = core.add(a, b)
+}
