@@ -31,7 +31,8 @@ Still to write, besides what the acceptance scenarios list under "write first"
   ([cli.md](cli.md), section 6), the throwaway feasibility prototype, a scheduler with parallel loops and a
   clean stop (the scheduler of the proof of concept, scenario 3), and the architecture of the M0b crates
   ([architecture.md](architecture.md), section 10) with the dataflow IR ([ir.md](ir.md));
-- **before M0v**: nothing left but trying the rules on mock-ups. Written: the architecture of the
+- **before M0v**: nothing left. The rules were tried on mock-ups of every rule, which changed the compact
+  view (square blocks), the width of the channels and the place of the values. Written: the architecture of the
   `trace`, `diagram` and `editor` crates and of the viewers ([architecture.md](architecture.md),
   section 11), the visual notation
   (compact view, automatic placement, wire routing, font, values on the wires and theme), the command
