@@ -1,2 +1,2 @@
 fn results_log.append_csv(results: [StepResult], err: error = none) -> (err: error)
-  native append_csv
+  native append_csv  skip(err: 1)

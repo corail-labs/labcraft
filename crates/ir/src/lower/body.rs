@@ -688,49 +688,9 @@ impl<'f> Walk<'_, '_, 'f> {
         let input_names: Vec<Name> = ports.iter().map(|port| port.name).collect();
         let output_names: Vec<Name> = outputs.iter().map(|port| port.name).collect();
         let output_tys: Vec<TyId> = outputs.iter().map(|port| port.ty).collect();
-        let skip = self.on_error(&input_names, &inputs, variadic, &output_names, &output_tys, always)?;
+        let input_tys: Vec<TyId> = inputs.iter().map(|input| input.ty).collect();
+        let skip = self.lowering.on_error(self.file, &input_names, &input_tys, variadic, &output_names, &output_tys, always)?;
         Ok(Built { kind: NodeKind::Native { function, variadic }, inputs, skip, outputs: None })
-    }
-
-    /// Spec 7.2: the input named `err`, of type `error`, and what each output takes when the node does not run.
-    fn on_error(
-        &mut self,
-        input_names: &[Name],
-        inputs: &[Use],
-        variadic: Option<Variadic>,
-        output_names: &[Name],
-        output_tys: &[TyId],
-        always: bool,
-    ) -> Result<Skip, LowerError> {
-        // The input of a parameter, past the arguments of a variadic one.
-        let input_of = |position: usize| -> Option<usize> {
-            match variadic {
-                Some(Variadic { start, count }) if position > start as usize => Some(position + count as usize - 1),
-                Some(Variadic { start, .. }) if position == start as usize => None,
-                _ => Some(position),
-            }
-        };
-        let error_names = self.lowering.names.find("err");
-        let err = input_names.iter().enumerate().find_map(|(position, name)| {
-            let input = input_of(position)?;
-            (Some(*name) == error_names && inputs.get(input).is_some_and(|input| matches!(self.lowering.types.get(input.ty), Ty::ErrorValue)))
-                .then_some(input)
-        });
-        let Some(err) = err else { return Ok(Skip::Never) };
-        let mut defaults = Vec::with_capacity(output_tys.len());
-        for ty in output_tys {
-            defaults.push(self.lowering.default_of(*ty, self.file)?);
-        }
-        let through = output_names
-            .iter()
-            .zip(output_tys)
-            .map(|(name, ty)| {
-                let position = input_names.iter().position(|input| input == name)?;
-                let input = input_of(position)?;
-                inputs.get(input).filter(|input| self.lowering.types.matches(input.ty, *ty)).map(|_| index_u32(input))
-            })
-            .collect();
-        Ok(Skip::OnError { err: index_u32(err), always, defaults, through })
     }
 
     fn primitive_call(
@@ -797,7 +757,8 @@ impl<'f> Walk<'_, '_, 'f> {
         // The types of its outputs are what its line binds, which `check` resolved.
         let output_tys = self.call_output_tys(statement);
         let skip = if output_tys.len() == output_names.len() {
-            self.on_error(&input_names, &inputs, variadic, &output_names, &output_tys, false)?
+            let input_tys: Vec<TyId> = inputs.iter().map(|input| input.ty).collect();
+            self.lowering.on_error(self.file, &input_names, &input_tys, variadic, &output_names, &output_tys, false)?
         } else {
             Skip::Never
         };

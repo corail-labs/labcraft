@@ -1,2 +1,2 @@
 fn visa.read(session: session, err: error = none) -> (text: string, session: session, err: error)
-  native read
+  native read  skip(err: 1)
