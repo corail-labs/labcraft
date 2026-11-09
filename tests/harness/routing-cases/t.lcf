@@ -1,0 +1,9 @@
+labcraft 1
+
+use core
+
+fn t(x: f64, z: f64, err: error = none) -> (y: f64, w: f64, err: error) {
+    y = core.neg(x)
+    w = core.abs(z)
+    err = err
+}

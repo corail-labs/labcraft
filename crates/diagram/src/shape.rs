@@ -75,6 +75,69 @@ pub enum Shape {
         side: i64,
         icon: usize,
     },
+    /// A wire: an orthogonal polyline, its corners rounded (notation 2), drawn as its family says (notation 4.1).
+    Wire {
+        points: Vec<(i64, i64)>,
+        style: WireStyle,
+    },
+}
+
+/// How a wire is drawn (notation 4.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WireStyle {
+    pub token: Token,
+    /// In hundredths of a unit.
+    pub width: i64,
+    pub pattern: Pattern,
+    /// A struct is sheathed: its core, in the fill of the frame it runs in.
+    pub core: Option<Token>,
+    /// An array has a cross-tick per dimension every 8 units.
+    pub ticks: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pattern {
+    Solid,
+    /// An error: chevrons every 24 units, in the direction of the flow.
+    Chevrons,
+    /// An order wire, thin and dotted.
+    Dotted,
+    /// A function reference.
+    DashDot,
+}
+
+/// The radius of the corners of a wire (notation 2).
+pub const WIRE_RADIUS: i64 = 600;
+/// Between two chevrons of an error wire, and from its start to the first.
+pub const CHEVRON_STEP: i64 = 2400;
+
+/// The chevrons of an error wire along its polyline: each three points, pointing in the direction of the flow.
+pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
+    let mut found = Vec::new();
+    let mut next = CHEVRON_STEP / 2;
+    let mut walked = 0i64;
+    for pair in points.windows(2) {
+        let (Some(&(x0, y0)), Some(&(x1, y1))) = (pair.first(), pair.get(1)) else { continue };
+        let (dx, dy) = ((x1 - x0).signum(), (y1 - y0).signum());
+        let length = (x1 - x0).abs() + (y1 - y0).abs();
+        // Not on a corner, where the wire bends.
+        while next <= walked + length - WIRE_RADIUS {
+            let along = next - walked;
+            if along >= WIRE_RADIUS {
+                let (x, y) = (x0 + dx * along, y0 + dy * along);
+                let (back, side) = (200, 300);
+                found.push([
+                    (x - dx * back - dy * side, y - dy * back + dx * side),
+                    (x + dx * back, y + dy * back),
+                    (x - dx * back + dy * side, y - dy * back - dx * side),
+                ]);
+            }
+            next += CHEVRON_STEP;
+        }
+        walked += length;
+        next = next.max(walked + WIRE_RADIUS);
+    }
+    found
 }
 
 /// An icon as the SVG draws it: its grid and its items, in the numbers that the file writes.
@@ -133,6 +196,24 @@ pub struct Group {
     pub shapes: Vec<Shape>,
     /// `data-arm`: a branch of a `match` or a `handle`, as its tab writes it, instead of a node.
     pub arm: Option<String>,
+    /// A wire, instead of a node.
+    pub wire: Option<WireOf>,
+}
+
+/// What a wire stands for (`docs/cli.md`, 7.2): `data-wire`, `data-from`, `data-to`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WireOf {
+    /// The body that holds it, by its index in the graph. Not in the SVG.
+    pub body: usize,
+    /// Whether it carries an error. Not in the SVG.
+    pub error: bool,
+    /// Whether the file gives it waypoints (`via`), which it keeps whatever the rules say. Not in the SVG.
+    pub via: bool,
+    pub value: String,
+    /// The terminal it leaves, when that has a form in the reports (`docs/cli.md`, 4.3).
+    pub from: Option<String>,
+    /// The terminals it reaches that have one.
+    pub to: Vec<String>,
 }
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
@@ -150,6 +231,15 @@ pub struct Drawing {
     /// Where each node is, by the key that follows it across a change of the file (notation 2.1): for the glide of
     /// the canvas, and the figure of stability. Not in the SVG.
     pub placed: Vec<Placed>,
+    /// What the checker of the rules of routing needs of each body (notation 2.2). Not in the SVG.
+    pub bodies: Vec<BodyDrawn>,
+}
+
+/// A body drawn: the height of its main error chain, and whether its file places a node of it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BodyDrawn {
+    pub axis: Option<i64>,
+    pub from_file: bool,
 }
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.

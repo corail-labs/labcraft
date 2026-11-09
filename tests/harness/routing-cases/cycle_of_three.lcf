@@ -1,0 +1,19 @@
+labcraft 1
+
+use core
+
+fn cycle_of_three(i0: f64, i1: f64, err: error = none) -> (o0: f64, err: error) {
+    #l0: v0, e0 = s(i1, err: err)
+    v1 = [i0, i1, i0]
+    v2 = core.sub(i1, i0)
+    v3, e3 = s(v0, err: e0)
+    #l4: v4, e4 = s(i0, err: err)
+    v5 = core.neg(i1)
+    #l6: v6, e6 = s(v5, err: e4)
+    v7 = core.add(v2, v0)
+    v8 = core.add(i0, v0)
+    v9 = [v2, v4, v4]
+    v10, w10, e10 = t(i1, v7, err: e6)
+    o0 = i0
+    err = e10
+}

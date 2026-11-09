@@ -60,7 +60,7 @@ panel {
 }
 
 layout {
-    node flight_time at (400, 80)
-    node k at (220, 80) view standard
-    wire k -> flight_time via (300, 80) (300, 120)
+    node flight_time at (440, 48)
+    node k at (184, 512) view standard
+    wire k -> flight_time via (400, 566)
 }

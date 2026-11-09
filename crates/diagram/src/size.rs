@@ -191,11 +191,15 @@ pub struct Sized {
     /// The centre of each terminal, in the order of the node's inputs and outputs, from the top-left of the block.
     pub inputs: Vec<(i64, i64)>,
     pub outputs: Vec<(i64, i64)>,
+    /// The centre of the `after:` terminal, when the node has one.
+    pub order: Option<(i64, i64)>,
+    /// Where an order wire from its label starts: right after the label, at its middle.
+    pub label_end: Option<(i64, i64)>,
 }
 
 impl Sized {
     pub fn new(width: i64, height: i64, shapes: Vec<Shape>) -> Sized {
-        Sized { width, height, above: 0, left: 0, right: 0, shapes, inputs: Vec::new(), outputs: Vec::new() }
+        Sized { width, height, above: 0, left: 0, right: 0, shapes, inputs: Vec::new(), outputs: Vec::new(), order: None, label_end: None }
     }
 }
 
@@ -205,6 +209,23 @@ pub fn wire_token(family: Family) -> Token {
         Base::Session => "wire.resource",
         Base::Error => "wire.error",
         _ => "wire.data",
+    }
+}
+
+/// How a wire of a family is drawn (notation 4.1); `core` is the fill of the frame it runs in.
+pub fn wire_style(family: Family, core: Token) -> crate::shape::WireStyle {
+    use crate::shape::{Pattern, WireStyle};
+    let token = wire_token(family);
+    let ticks = family.dimensions.min(3);
+    match family.base {
+        Base::Struct => WireStyle { token, width: 400, pattern: Pattern::Solid, core: Some(core), ticks },
+        Base::Session => WireStyle { token, width: 250, pattern: Pattern::Solid, core: None, ticks },
+        Base::Error => WireStyle { token, width: 200, pattern: Pattern::Chevrons, core: None, ticks },
+        Base::Order => WireStyle { token: "wire.order", width: 100, pattern: Pattern::Dotted, core: None, ticks: 0 },
+        Base::Function => WireStyle { token, width: 150, pattern: Pattern::DashDot, core: None, ticks },
+        Base::Number | Base::Bool | Base::Text | Base::Enum | Base::Unknown => {
+            WireStyle { token, width: 150, pattern: Pattern::Solid, core: None, ticks }
+        }
     }
 }
 
@@ -267,6 +288,25 @@ pub fn pill(text: &Text, x: i64, middle: i64) -> Vec<Shape> {
     ]
 }
 
+/// The pill of a wire just before its reader: a field it reads (notation 3.3), or a conversion, in `mark.coercion`
+/// (notation 4.2).
+pub fn wire_pill(text: &Text, x: i64, middle: i64, conversion: bool) -> Vec<Shape> {
+    if !conversion {
+        return pill(text, x, middle);
+    }
+    vec![
+        Shape::Rect {
+            x,
+            y: middle - PILL_HEIGHT / 2,
+            width: pill_width(text),
+            height: PILL_HEIGHT,
+            radius: PILL_HEIGHT / 2,
+            paint: Paint::both("pill.fill", "mark.coercion", OUTLINE),
+        },
+        text.at(x + PADDING, middle, "mark.coercion"),
+    ]
+}
+
 pub fn pill_width(text: &Text) -> i64 {
     text.width + 2 * PADDING
 }
@@ -303,7 +343,7 @@ fn label_height(lines: &[Text]) -> i64 {
 
 /// Whether a line carries an inline constant: it keeps 16 from its neighbours, 24 from one that carries one too.
 fn carries(line: &Line, inputs: &[Terminal]) -> bool {
-    line.0.and_then(|input| inputs.get(input)).is_some_and(|terminal| terminal.constant.is_some())
+    line.0.and_then(|input| inputs.get(input)).is_some_and(|terminal| terminal.constant.is_some() || terminal.pilled)
 }
 
 /// The gaps between the lines, from the top: as the notation spaces them, and at the closest (8 between wired lines).
@@ -380,11 +420,17 @@ impl Sizer<'_> {
         sized.outputs.resize(node.outputs.len(), (sized.width, sized.height / 2));
         if let Some(label) = &node.label {
             // Above the band, or above the block (notation 3.1, 3.2).
+            // Right of an `after:` terminal on the top edge, which a wire reaches from above (notation 2.2).
             let text = Text::new(&format!("{label}:"), ANY_TEXT, MEDIUM);
+            let start = match sized.order {
+                Some((x, y)) if y <= 0 && x > 0 => x + TERMINAL / 2 + PADDING,
+                _ => 0,
+            };
             let middle = -sized.above - 400 - line_height(MEDIUM) / 2;
-            sized.shapes.push(text.at(0, middle, "ink.muted"));
+            sized.shapes.push(text.at(start, middle, "ink.muted"));
             sized.above += 400 + line_height(MEDIUM);
-            sized.right = sized.right.max(text.width - sized.width);
+            sized.right = sized.right.max(start + text.width - sized.width);
+            sized.label_end = Some((start + text.width + PADDING, middle));
         }
         sized
     }
@@ -467,8 +513,8 @@ impl Sizer<'_> {
             }
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, if shrunk { 70 } else { 100 }, &mut shapes);
-        self.compact_marks(node, width, side, band.is_some(), &mut shapes);
-        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs }
+        let order = self.compact_marks(node, width, side, band.is_some(), &mut shapes);
+        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
     }
 
     /// The terminals of a block on its lines, and the pills of its constants; how far the pills reach to the left, and
@@ -504,15 +550,19 @@ impl Sizer<'_> {
         (self.outside_pills(node, &pills, shapes), inputs, outputs)
     }
 
-    /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal.
-    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, band: bool, shapes: &mut Vec<Shape>) {
+    /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal, whose
+    /// centre it gives.
+    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, band: bool, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
         if node.always {
             let mark = Text::new("\u{25B4}", 1, MEDIUM);
             shapes.push(mark.centred(width / 2, height - GRID, "node.title"));
         }
-        if node.after {
-            shapes.push(if band { order_terminal(0, -BAND_HEIGHT / 2) } else { order_terminal(GRID, 0) });
+        if !node.after {
+            return None;
         }
+        let at = if band { (0, -BAND_HEIGHT / 2) } else { (GRID, 0) };
+        shapes.push(order_terminal(at.0, at.1));
+        Some(at)
     }
 
     /// A construction, a variant constructor or a node of `ui`: as wide as its label, never a square (notation 3.2).
@@ -547,8 +597,8 @@ impl Sizer<'_> {
             shapes.push(line.centred(width / 2, top + row * index as i64 + row / 2, "node.title"));
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, 100, &mut shapes);
-        self.compact_marks(node, width, height, band.is_some(), &mut shapes);
-        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs }
+        let order = self.compact_marks(node, width, height, band.is_some(), &mut shapes);
+        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
     }
 
     /// A primitive of `core` with a glyph: a circle of 28, or a capsule (notation 3.2).
@@ -626,8 +676,8 @@ impl Sizer<'_> {
             shapes.extend(terminal(output.family, width, middle, 100, output.ignored));
         }
         let left = self.outside_pills(node, &pills, &mut shapes);
-        self.compact_marks(node, width, height, false, &mut shapes);
-        Sized { left, right: TERMINAL / 2, inputs, outputs: vec![(width, middle)], ..Sized::new(width, height, shapes) }
+        let order = self.compact_marks(node, width, height, false, &mut shapes);
+        Sized { left, right: TERMINAL / 2, inputs, outputs: vec![(width, middle)], order, ..Sized::new(width, height, shapes) }
     }
 
     /// A block in standard view (notation 3.1, with the numbers decided at step 2 of M0v): the name as a header, the
@@ -746,7 +796,8 @@ impl Sizer<'_> {
                 shapes.push(name.at(x - name.width, y, "node.title"));
             }
         }
-        Sized { left: TERMINAL / 2, right: TERMINAL / 2, inputs, outputs, ..Sized::new(width, height, shapes) }
+        let order = node.after.then_some((0, HEADER / 2));
+        Sized { left: TERMINAL / 2, right: TERMINAL / 2, inputs, outputs, order, ..Sized::new(width, height, shapes) }
     }
 
     /// The icon of the function, in the numbers its file writes (spec 11.1); its texts cut at 40 cells (decided at

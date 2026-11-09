@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use crate::shape::{Drawing, IconItem, IconShape, Paint, Run, Shape};
+use crate::shape::{Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WIRE_RADIUS, WireStyle, chevrons};
 use crate::theme::{TOKENS, variable};
 
 /// The schema of the attributes, stable under this name (`docs/cli.md`, 4.4).
@@ -114,13 +114,24 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
     }
     for group in &drawing.groups {
         out.push_str("<g");
-        match &group.arm {
+        match (&group.arm, &group.wire) {
             // A branch of a `match` or a `handle`, written as its tab (cli.md 7.2).
-            Some(arm) => {
+            (Some(arm), _) => {
                 attribute("data-arm", arm, &mut out);
                 out.push_str(">\n");
             }
-            None => {
+            // A wire, with the terminals it joins that have a form in the reports.
+            (None, Some(wire)) => {
+                attribute("data-wire", &wire.value, &mut out);
+                if let Some(from) = &wire.from {
+                    attribute("data-from", from, &mut out);
+                }
+                if !wire.to.is_empty() {
+                    attribute("data-to", &wire.to.join(" "), &mut out);
+                }
+                out.push_str(">\n");
+            }
+            (None, None) => {
                 attribute("data-node", &group.node, &mut out);
                 out.push_str("><title>");
                 escape(&group.title, &mut out);
@@ -221,6 +232,63 @@ fn write_shape(shape: &Shape, icons: &[String], out: &mut String) {
         Shape::Icon { x, y, side, icon } => {
             let Some(id) = icons.get(*icon) else { return };
             let _ = writeln!(out, "<use href=\"#{id}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>", n(*x), n(*y), n(*side), n(*side));
+        }
+        Shape::Wire { points, style } => wire(points, style, out),
+    }
+}
+
+/// The data of an orthogonal polyline, its corners rounded.
+fn rounded(points: &[(i64, i64)]) -> String {
+    let mut data = String::new();
+    let Some(&(x, y)) = points.first() else { return data };
+    let _ = write!(data, "M{} {}", n(x), n(y));
+    for (index, &(x, y)) in points.iter().enumerate().skip(1) {
+        let (Some(&(px, py)), Some(next)) = (points.get(index - 1), points.get(index + 1)) else {
+            let _ = write!(data, " L{} {}", n(x), n(y));
+            continue;
+        };
+        let (nx, ny) = *next;
+        let before = (x - px).abs() + (y - py).abs();
+        let after = (nx - x).abs() + (ny - y).abs();
+        let radius = WIRE_RADIUS.min(before / 2).min(after / 2);
+        let (ax, ay) = (x - (x - px).signum() * radius, y - (y - py).signum() * radius);
+        let (bx, by) = (x + (nx - x).signum() * radius, y + (ny - y).signum() * radius);
+        let _ = write!(data, " L{} {} Q{} {} {} {}", n(ax), n(ay), n(x), n(y), n(bx), n(by));
+    }
+    data
+}
+
+/// A wire, as its family draws it (notation 4.1): a stroke, the core of a sheath, the ticks of an array, the chevrons of
+/// an error.
+fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
+    let data = rounded(points);
+    let token = variable(style.token);
+    let dash = match style.pattern {
+        Pattern::Dotted => "; stroke-dasharray: 1.5 3",
+        Pattern::DashDot => "; stroke-dasharray: 6 3 1.5 3",
+        Pattern::Solid | Pattern::Chevrons => "",
+    };
+    let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({token}); stroke-width: {}{dash}\"/>", n(style.width));
+    if let Some(core) = style.core {
+        let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({}); stroke-width: {}\"/>", variable(core), n(style.width - 240));
+    }
+    if style.ticks > 0 {
+        // A tick is a dash of a wide stroke: 6 across, 1 along, one per dimension, every 8.
+        let dashes = match style.ticks {
+            1 => "1 7",
+            2 => "1 2 1 4",
+            _ => "1 2 1 2 1 1",
+        };
+        let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({token}); stroke-width: 6; stroke-dasharray: {dashes}\"/>");
+    }
+    if style.pattern == Pattern::Chevrons {
+        let marks = chevrons(points);
+        if !marks.is_empty() {
+            let mut data = String::new();
+            for [a, b, c] in marks {
+                let _ = write!(data, "M{} {} L{} {} L{} {} ", n(a.0), n(a.1), n(b.0), n(b.1), n(c.0), n(c.1));
+            }
+            let _ = writeln!(out, "<path d=\"{}\" style=\"fill: none; stroke: var({token}); stroke-width: 1.5\"/>", data.trim_end());
         }
     }
 }

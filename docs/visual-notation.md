@@ -111,8 +111,8 @@ are the nodes that a `layout` section does not place (spec 11).
 - **The numbers** *(proposed)*. In a column, the blocks are aligned on their left edge, and the column is as
   wide as its widest node. Two nodes stacked are 24 apart, plus what a band or a label adds above the lower one;
   a column with no node of the chain starts 40 above the axis. The order in a column comes from four sweeps of
-  barycentres each way, the order that makes the wires the shortest kept. Until routing measures the channels
-  (2.2), a channel is 48 wide. A frame has a header of 32 for its title and 16 inside around what it holds; a
+  barycentres each way, the order that makes the wires the shortest kept. A channel is as wide as
+  its wires need (2.2). A frame has a header of 32 for its title and 16 inside around what it holds; a
   `match` or a `handle` unfolded stacks its arms 16 apart, 16 below its header, each with a title of 24, all as wide
   as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
   The terminals of a frame keep their order (the signature, the clauses of a loop), each at the height of the
@@ -152,8 +152,27 @@ are the nodes that a `layout` section does not place (spec 11).
 - Two wires never share a segment: parallel wires are 8 units apart.
 - **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
   8 apart, with the conversion and field pills of its wires, the pills of the inline constants of the blocks
-  it leads to, and a margin of 8 on each side. The name of a wire never widens it (section 4), nor does a value
-  of a run (6.1): they take the room that is there, or none.
+  it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other. The
+  pills stand just before the block they lead to, in the room that its inline constants take (3.2). The name of a
+  wire never widens it (section 4), nor does a value of a run (6.1): they take the room that is there, or none.
+- **The numbers of routing** *(proposed)*. The wires of one value (its readers, an `after:` that names it) are one
+  net: from its source, a vertical in the channel after it reaches the readers of the next column and rises to its
+  track, which runs 16 above what the columns it passes over hold, 8 above another track, and drops in the channel
+  before each column further on. A track that would start at the height of its source starts there, with no
+  vertical, when no other wire ends within 8 of that height in that channel. A secondary error wire runs 16 below
+  the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
+  the other's; otherwise those that rise stand left of those that fall. Wires that must each stand left of the next,
+  round a cycle, cannot all keep 8 apart: all but the first of the cycle jog, a vertical where they enter, across at a
+  height of the grid that no other wire of the channel enters or leaves within 8, above the main chain, then their own
+  vertical. The main error chain runs straight on its axis past the columns that hold nothing there
+  (2.1). A wire leaves a terminal of a frame past its name, and reaches one before its name; an order wire from a
+  label starts right after the label, at its middle; a terminal on the top edge (`after:` of a compact block) is
+  reached from 8 above what is above the node, and the label of that block starts right of it. A junction point is a
+  disc of radius 3. A trunk is drawn once: each branch from where it leaves the others.
+- **The margins of a `match` or a `handle`** *(proposed)*. A value that enters by a notch of the frame goes on to the
+  notch of each arm that reads it, and what each arm yields to the output of the frame: a vertical each in the margin
+  between the edge and the boxes of the arms, 8 apart, the margin 16 wide at least and 8 more for each other
+  vertical. On the right, the later outputs stand further left.
 - The order of preference is the fewest crossings, then the shortest length, then the fewest bends.
   Ties are broken by the order of the signature and by the names, as for placement. These are
   preferences that a fixed procedure follows as well as it can, not an exact optimum, which large
@@ -163,7 +182,10 @@ are the nodes that a `layout` section does not place (spec 11).
   chain and never crosses it. An error wire that leaves the main chain runs below it, and crosses it
   once, in the channel before the node it reaches.
 - Order wires are routed like the others.
-- The waypoints that a `via` gives (spec 11) are kept, and the routing joins them.
+- The waypoints that a `via` gives (spec 11) are kept, and the routing joins them: across, then down to each, and
+  from the last down to the height of the reader *(proposed)*. A `wire` entry keeps its waypoints when it names one
+  wire by its value and the node it reaches, an output of the function or an input named after it; the part inside a
+  structure that `wire stop -> n` names does not keep them yet (to do with the editor, M1).
 - A terminal can sit on any side of its node, and the routing leaves it in that direction, so that
   sides chosen later (N-15) need no other routing. The terminals of a circle are off the grid of 8 (3.2), and the wire reaches them with a short
   segment.
@@ -344,7 +366,7 @@ When the function comes from another library, a **band** above the block says wh
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
   same, each is cut in the middle instead, keeping its start and its end (`measurement_a` and
   `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
-  no band, in 11 and `ink.muted`, 4 above it *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
+  no band, in 11 and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
 - **Block**: a square *(proposed)*, of 40 × 40 units at least, so that a node reads as an icon. Its side is
   the largest of 40, the width of its label with 9 units on each side (4, and half a terminal, which is 10
@@ -433,7 +455,11 @@ of the right side. They are not on the grid of 8: the routing of the wires (2.2)
 ### 3.3 Field access, structs, variants
 
 - **Field access** (`step.low`): no node. The wire starts at `step` and carries, just before the
-  terminal, a `.low` pill. This is what the text says: a path as an argument, not a call.
+  terminal, a `.low` pill. This is what the text says: a path as an argument, not a call. A pill of a
+  wire, a field or a conversion (4.2), is cut at 12 cells, and its line keeps from its neighbours the distance
+  of a line that carries an inline constant (3.2) *(proposed)*.
+- **An array of wires** (`y = [a, b]`): a block `[ ]` with one input per element, in order, one output,
+  as the IR builds it; an array of constants is an inline constant *(proposed)*.
 - **Construction** (`StepResult { name: n, … }`): block with the header `StepResult { }`, one
   input per field in declaration order, one output.
 - **Enum value** (`Verdict.Pass`): inline constant. **Variant constructor** (`Reading.Value(v)`):
@@ -447,7 +473,8 @@ terminal. It is written on the first horizontal segment of the wire, 3 units abo
 (cut at 40 cells, 2.3) fits there with 4 units on each side and covers no node, pill, bubble, wire or other name (a parallel
 wire 8 above runs through a name, which is 12.8 high);
 otherwise it is only in the tooltip and in the `data-wire` of the SVG: it never widens a channel (2.2). A long
-wire repeats its name halfway (N-3), by the same rule.
+wire repeats its name halfway (N-3), by the same rule: on its longest horizontal past the first segment, centred,
+when that is three times what the name needs *(proposed)*.
 
 ### 4.1 Wire families
 
@@ -463,6 +490,11 @@ wire repeats its name halfway (N-3), by the same rule.
 | Error | `error` | solid, 2, chevrons `›` every 24 in the flow direction | chevron | `wire.error` |
 | Order | `after:` | thin dotted | hollow chevron | `wire.order` (muted) |
 | Function | function references (Q-14) | dash-dot | `ƒ` | `wire.data` |
+
+*(proposed)*: the core of a sheath is the fill of the frame it runs in, 1.6 wide; a cross-tick is 6 across and 1
+along, every 8, up to three per period for three dimensions and more; the chevrons of an error are 24 apart, the
+first 12 from the start, none on a bend; an order wire is 1 wide, dotted 1.5 and 3; a function wire dashed 6, 3,
+1.5, 3. A value read as an order and as a value is one net: its trunk is drawn with each.
 
 - A terminal is 10 units across, centred on the edge of its node.
 - The chevrons of the error wire show **the direction of the order**: this is the wire you follow
