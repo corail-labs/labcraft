@@ -1,8 +1,7 @@
 # Simulated instruments of `visa`
 
-*Last updated: 2026-11-08. Status: draft for milestone M0b. The proof of concept (`tools/lcf-poc`)
-implements it, the refusals of section 7 included; the Rust body of `visa` comes with M0b. Values marked
-*proposed* are starting points.*
+*Last updated: 2026-11-09. Status: draft for milestone M0b. The proof of concept (`tools/lcf-poc`) and the crate
+`labcraft-visa` (`src/`) implement it, the refusals of section 7 included. Values marked *proposed* are starting points.*
 
 `visa` answers for the resources `SIM::…` as the instruments of a simulation file describe them, so a
 program, and the drivers it uses (`scpi`, a driver written over `visa`), runs and is tested without
@@ -118,7 +117,8 @@ control character stays in it, so it matches no key. Each command first takes `l
 the run, then, in this order:
 
 1. A query in `faults.timeout` gets no answer: the read that waits for it ends with its timeout
-   (below). The instrument stays free, and handles the next command as usual.
+   (below). The instrument does nothing else with it, so an entry of `error_on` for it adds no error; it stays free, and
+   handles the next command as usual.
 2. A command in `faults.error_on` adds its error to the error queue of the instrument, then goes on.
 3. `SYST:ERR?` answers the oldest error of the queue and removes it, as `-113,"Undefined header"`, or
    `0,"No error"` when the queue is empty; a `"` in a message is doubled, as in a SCPI string. `*IDN?` answers `idn`. `*CLS` empties the queue. `*RST` does
@@ -139,7 +139,8 @@ the run, then, in this order:
 is a write followed by a read. A read with no answer waiting waits for the timeout of the session, then
 fails (section 6): so does the read of a query that is never answered. A read with an answer waiting takes
 no time. A new command sent while an answer is still waiting discards it, and adds
-`-410,"Query INTERRUPTED"` to the queue.
+`-410,"Query INTERRUPTED"` to the queue when the instrument handles that command, before step 1: the queue follows the order
+in which the instrument handles its commands, whichever session sends them.
 
 **The error queue** holds at most 32 errors *(proposed)*, as SCPI allows: one more replaces the last by
 `-350,"Queue overflow"`. So a program that never reads its errors cannot fill the memory.
@@ -225,6 +226,6 @@ without reading the file.
 
 A simulation file is read as hostile as a program is (scenario 4, family Instruments): it never crashes the
 tool, and every problem is a diagnostic. Its size and its nesting are bounded by `--max-file-size` and
-`--max-nesting`, its tables by section 7, and a chain of sources is followed without recursion, once, when
+`--max-nesting`, and its nesting by 80 levels at most, as the reader of TOML goes (cli.md 6.2), its tables by section 7, and a chain of sources is followed without recursion, once, when
 the file is read. When the Rust body of `visa` exists, a fuzz target reads simulation files, run as the
 other targets are (`fuzz/README.md`, `fuzz/run.sh`, `fuzz/long.sh`), seeded with the files of section 8.

@@ -18,7 +18,9 @@
 
 mod convert;
 mod fault;
+pub mod native;
 pub mod primitives;
+pub mod simulation;
 mod text;
 mod value;
 

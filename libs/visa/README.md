@@ -1,6 +1,7 @@
 # `visa`: sessions on instruments
 
-*Status: draft for milestone M0b. The proof of concept follows it (`tools/lcf-poc/lcfpoc/stdlib.py`).*
+*Status: draft for milestone M0b. The proof of concept follows it (`tools/lcf-poc/lcfpoc/stdlib.py`), and so does the crate
+`labcraft-visa`, in `src/`, in deterministic mode.*
 
 `visa` is the transport library shipped with LabCraft: it opens sessions on instruments, writes commands
 and reads answers. Its functions are declared in this folder (`extern rust`, spec 4.1), and their native

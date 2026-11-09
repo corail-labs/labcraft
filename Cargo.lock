@@ -249,6 +249,8 @@ dependencies = [
  "labcraft-ir",
  "labcraft-trace",
  "labcraft-types",
+ "toml",
+ "toml_parser",
 ]
 
 [[package]]
@@ -267,6 +269,16 @@ dependencies = [
  "serde_json",
  "sha2",
  "unicode-normalization",
+]
+
+[[package]]
+name = "labcraft-visa"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-runtime",
+ "labcraft-trace",
+ "labcraft-types",
+ "toml",
 ]
 
 [[package]]
@@ -682,7 +694,9 @@ checksum = "8c3b93199df0ab874cdf0c6a94f0a0dc3423fe41f1cafb62b8bd7b1deb277aef"
 name = "xtask"
 version = "0.1.0-m0a"
 dependencies = [
+ "labcraft-runtime",
  "labcraft-types",
+ "labcraft-visa",
  "serde_json",
  "sha2",
 ]
