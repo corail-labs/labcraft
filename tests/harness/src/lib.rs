@@ -363,6 +363,53 @@ mod tests {
         });
     }
 
+    /// The trace of a run, natively and in WASM, where the viewer reads it: what the writer writes the reader reads, the
+    /// cuts and the numbers of commands.md 5 are the same text, and the SHA-256 of FIPS 180-2 (B.1) is the same digest.
+    #[test]
+    fn a_trace_reads_back_the_same_on_every_target() {
+        use labcraft_trace::{Event, Expected, ExpectedNode, ExpectedWire, Header, Input, ReadLimits, Reader, TraceWriter, ValueWriter};
+
+        let source = PROGRAMS.iter().find(|program| program.path == "examples/check_voltage.lcf").unwrap().bytes;
+        let sha = labcraft_trace::sha256_hex(source);
+        assert_eq!(labcraft_trace::sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let files = [("check_voltage.lcf", sha.as_str())];
+        let header = Header { run: "r1", function: "check_voltage", mode: "deterministic", files: &files };
+        let mut writer = TraceWriter::new(Vec::new(), &header);
+        let low = |w: &mut ValueWriter<'_>| w.f64(1.5e-7, Some("V"));
+        let inputs = [Input { name: "low", ty: "f64[V]", value: &low }];
+        writer.event(0, &Event::Call { frame: 0, caller: None, function: "check_voltage", inputs: &inputs, types: &[("raw", "[f64]")] });
+        let raw = |w: &mut ValueWriter<'_>| {
+            let count = w.begin_array(100_000);
+            for index in 0..count {
+                w.f64(index as f64 + 0.5, None);
+            }
+            w.end();
+        };
+        writer.event(250, &Event::Ran { frame: 0, node: "raw", iter: &[], out: &[("raw", &raw)], types: &[] });
+        writer.end(1_000, "ok");
+        let bytes = writer.into_inner();
+
+        let wire = |name: &str, ty: &str| ExpectedWire { name: name.into(), ty: ty.into() };
+        let expected = Expected {
+            function: "check_voltage".into(),
+            inputs: vec![wire("low", "f64[V]")],
+            nodes: vec![ExpectedNode { name: "raw".into(), wires: vec![wire("raw", "[f64]")], ..ExpectedNode::default() }],
+        };
+        let mut reader = Reader::new(expected, ReadLimits::default());
+        for part in bytes.chunks(7) {
+            assert!(reader.feed(part));
+        }
+        let trace = reader.finish();
+        assert_eq!((trace.end.as_deref(), trace.ignored, trace.cut()), (Some("ok"), 0, false));
+        assert_eq!(trace.input(0), Some(r#""1.5e-7 V""#));
+        // Worked out by hand: 0.5, 1.5, … 15.5, the 16 of `$head`.
+        let head: Vec<String> = (0..16).map(|index| format!("{index}.5")).collect();
+        assert_eq!(trace.value(0, 0, &[]), Some(format!(r#"{{"$len":100000,"$head":[{}]}}"#, head.join(",")).as_str()));
+        let header = trace.header.unwrap();
+        assert!(labcraft_trace::stale(&header, &[("check_voltage.lcf", Some(source))]).is_empty());
+        assert_eq!(labcraft_trace::stale(&header, &[("check_voltage.lcf", Some(b"changed"))]), ["check_voltage.lcf"]);
+    }
+
     /// What was really linked, whatever the configuration says: an environment variable RUSTFLAGS replaces
     /// it. The stack comes first in the memory of a WASM build and grows down, so a local of a shallow
     /// function lies just under its size.

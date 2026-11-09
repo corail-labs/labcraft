@@ -174,16 +174,16 @@ encoding stays short:
 |---|---|---|
 | `bool` | a boolean | `true` |
 | integers | a number, exact; an `i64` or `u64` beyond ±(2^53−1) as a string of digits | `12`, `"9007199254740993"` |
-| `f32`, `f64` without a unit | a number, the shortest that reads back the same; `"nan"`, `"inf"`, `"-inf"` | `0.5` |
-| a number with a unit | a string, as the language writes a constant, in the unit of the type | `"230.03 V"`, `"-1.5e-3 A"` |
-| `duration` | a string, written in seconds; read in any unit of time | `"0.1 s"`; `"100 ms"` as an argument |
-| `c64`, `c128` | `{ "re": …, "im": … }`, each as above | `{ "re": "1 V", "im": "0 V" }` |
+| `f32`, `f64` without a unit | a number: the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16 and with an exponent outside, written as the language writes it (`1.5e-7`, `1e16`); a float with no fraction keeps `.0`, so that it is not taken for an integer; `"nan"`, `"inf"`, `"-inf"` | `0.5`, `12.0`, `0.0015` |
+| a number with a unit | a string, as the language writes a constant, in the unit of the type: the number as above, a space, the unit | `"230.03 V"`, `"-0.0015 A"`, `"-3 mV"` |
+| `duration` | a string, written in seconds, exactly from its nanoseconds; read in any unit of time | `"0.1 s"`, `"2 s"`; `"100 ms"` as an argument |
+| `c64`, `c128` | `{ "re": …, "im": … }`, each as above | `{ "re": "1.0 V", "im": "0.0 V" }` |
 | `string` | a string | `"MEAS:VOLT:DC?"` |
 | `bytes` | `{ "base64": "…" }` | |
 | `timestamp` | a string, RFC 3339, UTC, to the nanosecond. In deterministic mode, a time of the simulated clock, whose origin is Q-21, still open | `"2026-11-08T12:00:00.000000250Z"` in real time |
 | array | an array; an `[f64; 2]` is an array of rows | `[1, 2]`, `[[1, 2], [3, 4]]` |
-| struct, `waveform` | an object, fields in declared order | `{ "t0": …, "dt": "1 ms", "samples": […] }` |
-| enumeration | a variant without values as a string, `Type.Variant`; with values, an object of one key | `"Verdict.Pass"`, `{ "Reading.Value": ["230 V"] }` |
+| struct, `waveform` | an object, fields in declared order | `{ "t0": …, "dt": "0.001 s", "samples": […] }` |
+| enumeration | a variant without values as a string, `Type.Variant`; with values, an object of one key | `"Verdict.Pass"`, `{ "Reading.Value": ["230.0 V"] }` |
 | `error` | `null` for `none`; otherwise an object (spec 7.1) | below |
 | opaque, function reference | an object that names it, read-only | `{ "opaque": "visa.session", "resource": "SIM::DMM0", "open": false }`, `{ "function": "measure" }` |
 
@@ -220,8 +220,11 @@ were merged, at most 32 *(proposed)*, then `others_more` gives how many are left
     with `…` is never taken for a cut one; `bytes` over 1,000 bytes show
     `{ "$len": 4000, "$head": { "base64": "…" } }`, the first 1,000 bytes;
   - beyond that, **each value has a budget** of 64 KiB of JSON, and a depth of 64 levels: once either is
-    spent, what is left of it shows as `{ "$cut": true }`. A struct, deep arrays or many strings cannot
-    pass it, and a client's JSON reader never meets a document deeper than it reads.
+    spent, what is left of it shows as `{ "$cut": true }`: in an array, in the place of the elements left; in an
+    object, as the value of the field that does not fit, or, when its name does not fit either, as the member
+    `"$cut": true` that ends the object. A level is an array or an object, the
+    two of `$len` and `$head` and the mark of a cut included. A struct, deep arrays or many strings cannot pass it,
+    and a client's JSON reader never meets a document deeper than it reads.
 
   A name of the language never starts with `$`, so an object whose keys start with `$` is a cut, never a
   struct. The trace cuts the same way.
@@ -394,7 +397,7 @@ run can be followed and a cut file still reads.
 
 ```text
 {"schema":"labcraft-trace/1","run":"r2","function":"check_voltage","mode":"deterministic","files":[{"file":"check_voltage.lcf","sha256":"…"},{"file":"Verdict.lct","sha256":"…"},{"file":"<labcraft>/scpi/query_f64.lcf","sha256":"…"},{"file":"<labcraft>/visa/open.lcf","sha256":"…"},…]}
-{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"check_voltage","in":[{"name":"resource","type":"string","value":"SIM::DMM0"},{"name":"low","type":"f64[V]","value":"220 V"},{"name":"high","type":"f64[V]","value":"240 V"},{"name":"err","type":"error","value":null}],"types":{"dmm":"visa.session","e1":"error","raw":"f64","dmm2":"visa.session","e2":"error","measured":"Verdict"}}
+{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"check_voltage","in":[{"name":"resource","type":"string","value":"SIM::DMM0"},{"name":"low","type":"f64[V]","value":"220.0 V"},{"name":"high","type":"f64[V]","value":"240.0 V"},{"name":"err","type":"error","value":null}],"types":{"dmm":"visa.session","e1":"error","raw":"f64","dmm2":"visa.session","e2":"error","measured":"Verdict"}}
 {"seq":2,"t_ms":0.0,"event":"call","frame":1,"parent":0,"node":"dmm","function":"visa.open","in":[…],"types":{…}}
 {"seq":5,"t_ms":0.0,"frame":0,"node":"dmm","event":"ran","out":{"dmm":{"opaque":"visa.session","resource":"SIM::DMM0","open":true},"e1":null}}
 {"seq":6,"t_ms":0.0,"event":"call","frame":2,"parent":0,"node":"raw","function":"scpi.query_f64","in":[{"name":"session","type":"visa.session","value":{"opaque":"visa.session","resource":"SIM::DMM0","open":true}},{"name":"command","type":"string","value":"MEAS:VOLT:DC?"},{"name":"err","type":"error","value":null}],"types":{"text":"string","s":"visa.session","e1":"error","value":"f64","e2":"error"}}
@@ -435,7 +438,7 @@ The example leaves lines out, and files from the first line.
   `"truncated": true`; a line that would still pass 16 MiB (a signature of hundreds of thousands of inputs) keeps
   only its `seq`, `t_ms`, `event`, `frame`, `node` and `"truncated": true`. So a reader that takes 16 MiB per line
   reads every line whole. After 1,000,000 events
-  or 256 MiB, a line `{"event":"truncated"}` is written, then only `end`. A run in real time that lasts a day traces if
+  or 256 MiB, a line `{"seq":…,"t_ms":…,"event":"truncated"}` is written, then only `end`. A run in real time that lasts a day traces if
   asked, within that bound.
 - **Where.** With `trace: file`, the trace of the last run of each function is
   `.labcraft/runs/<function>.trace.jsonl` under the root of the project, the function named from the root
