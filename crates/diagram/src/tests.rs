@@ -854,5 +854,7 @@ fn a_via_is_kept() {
     let Some(Shape::Rect { x: frame, .. }) = drawing.loose.first() else { panic!() };
     let found = branches(wire_of(&drawing, "x"));
     assert!(found[0].iter().any(|&(x, _)| x == frame + 10_000), "{found:?}");
-    assert!(drawing.bodies[0].from_file);
+    // The wire is marked as the file's; the body is not, since no node of it is placed.
+    assert!(wire_of(&drawing, "x").wire.as_ref().unwrap().via);
+    assert!(!drawing.bodies[0].from_file);
 }
