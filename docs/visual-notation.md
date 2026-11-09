@@ -441,9 +441,10 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
 A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
-the unit needs, with 3 on each side *(proposed)*. When two neighbouring inputs both carry an inline constant,
-the circle stretches into a capsule of the same width, as tall as needed for those inputs to be 24 apart, since a
-pill is 18 high (`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
+the unit needs, with 3 on each side *(proposed)*. When an input carries a pill (an inline
+constant, the pill of its wire), the circle stretches into a capsule of the same width, as tall as needed for it to
+be 16 from a neighbour, 24 from a neighbour that carries one too, as on a compact block, since a pill is 18 high
+(`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
 `check` refuses but the drawing still shows, are 8 apart, and the circle stretches the same way. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
 ordinary compact view (block, no band).
 
