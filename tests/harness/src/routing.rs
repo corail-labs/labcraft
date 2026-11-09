@@ -81,7 +81,16 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
             (Some(_), _) => {}
             (None, Some(_)) => texts(&group.shapes, None),
             (None, None) => {
-                if let Some(placed) = nodes.next() {
+                // A structure: the texts of its frame. Those of a plain node are its own, kept from the wires of its
+                // body by its boxes; a wire of another body meets them only where the positions of the file make the
+                // node overlap a frame, and what the file writes wins (notation 2.1).
+                let frame = group
+                    .shapes
+                    .iter()
+                    .any(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill.is_some_and(|fill| fill.starts_with("frame.fill"))));
+                if let Some(placed) = nodes.next()
+                    && frame
+                {
                     texts(&group.shapes, Some(placed));
                 }
             }
@@ -398,11 +407,11 @@ fn main(x: f64) -> () {{
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
     /// an `after:` on the top edge of a labelled block; and six that the fuzzing found: a node that reads its own error,
-    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; and one of the review: a track over a channel where a jog would go. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; one of the review: a track over a channel where a jog would go; and one that the fuzzing found on `main`: a loop that the file places over a node that it places too. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 14] = [
+        const CASES: [(&str, &str); 15] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -417,6 +426,7 @@ fn main(x: f64) -> () {{
             ("two_orders_into_one.lcf", include_str!("../routing-cases/two_orders_into_one.lcf")),
             ("back_twice.lcf", include_str!("../routing-cases/back_twice.lcf")),
             ("track_over_a_jog.lcf", include_str!("../routing-cases/track_over_a_jog.lcf")),
+            ("projectile.lcf", include_str!("../routing-cases/loop_placed_left.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {
