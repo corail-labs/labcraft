@@ -102,7 +102,16 @@ fn bench() -> (Checked, Interner) {
 }
 
 fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
-    Terminal { name: name.to_owned(), ty, family: Family { base, dimensions: 0 }, unit: None, constant: None, ignored: false, reads: Vec::new() }
+    Terminal {
+        name: name.to_owned(),
+        ty,
+        family: Family { base, dimensions: 0 },
+        unit: None,
+        constant: None,
+        ignored: false,
+        reads: Vec::new(),
+        pilled: false,
+    }
 }
 
 /// Notation 3.1: `visa.open` has `resource` and `dmm`, then `timeout` alone, then the pair `err`, `e1`; `scpi.query_f64`
@@ -656,12 +665,13 @@ fn a_placed_node_keeps_its_place() {
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, y) = (&placed["a"], &placed["y"]);
     // `a` stands in the first column: after the name `x` (one cell at 11, 6.62), 12 before it and 8 after it, the
-    // channel of 48 and the half terminal of 5: 95.62 from the corner of the frame. It reaches over `y`, at 80, so it
+    // narrowest channel, 16, its wire being straight, and the half terminal of 5: 63.62 from the corner of the frame.
+    // It reaches over `y`, at 80, so it
     // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header and its margin (48). The frame
     // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40.
     // Across, the margin of 16 is around everything: the terminal of `x` reaches 5 left of the frame, at 21.
     assert_eq!((y.x, y.y), (2100 + 8000, 4000 + 8000));
-    assert_eq!((a.x, a.y), (2100 + 1200 + 662 + 800 + 4800 + 500, 4000 + 2800));
+    assert_eq!((a.x, a.y), (2100 + 1200 + 662 + 800 + 1600 + 500, 4000 + 2800));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.

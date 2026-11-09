@@ -69,6 +69,8 @@ pub struct Terminal {
     /// What an input reads: the paths of its operand that read a value, each the end of a wire, with the name that the
     /// wire bears (`step.low`).
     pub reads: Vec<(Id, String)>,
+    /// A wire with a pill reaches it (a field, a conversion): its line keeps its distance as a line with a constant does.
+    pub pilled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,6 +246,19 @@ pub struct Graph<'a> {
     pub function: String,
     pub bodies: Vec<BodyOf>,
     pub nodes: Vec<Node<'a>>,
+    /// The pill that a wire carries just before its reader, by body and wire: the field it reads (`.low`, notation 3.3),
+    /// the conversion it goes through (`mV→V`, notation 4.2), or both.
+    pub pills: HashMap<(usize, usize), Pill>,
+    /// The waypoints that a `wire` entry of the `layout` section gives (spec 11), by body and wire, in hundredths, from the
+    /// top-left corner of the frame of the body.
+    pub vias: HashMap<(usize, usize), Vec<(i64, i64)>>,
+}
+
+/// A pill on a wire: its text, and whether it shows a conversion.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pill {
+    pub text: String,
+    pub conversion: bool,
 }
 
 /// What `LC7002` counts (`docs/cli.md`, 7.6): nodes at every level, structures included, and their terminals. The
@@ -386,7 +401,7 @@ impl<'a> Builder<'a> {
         let function = self.qualified(name);
         let mut body = self.function_frame(function.clone(), signature);
         flow::finish_frame(&mut body, None);
-        Graph { bodies: vec![body], function, nodes: Vec::new() }
+        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new() }
     }
 
     /// From the root, as `run` names it.
@@ -400,7 +415,8 @@ impl<'a> Builder<'a> {
 
     /// The graph, unless its terminals pass `max_terminals`: then what was counted when building stopped.
     pub fn graph(&mut self, function: &'a Function, orders: &BodyOrders, max_terminals: u64) -> Result<Graph<'a>, TooLarge> {
-        let mut graph = Graph { function: self.qualified(function.name), bodies: Vec::new(), nodes: Vec::new() };
+        let mut graph =
+            Graph { function: self.qualified(function.name), bodies: Vec::new(), nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new() };
         let entries = self.layout_entries(&self.file.file);
         let mut counts = Counts::default();
         let mut flow = flow::Flow::default();
@@ -474,7 +490,111 @@ impl<'a> Builder<'a> {
             flow::finish_frame(body, owner);
         }
         flow::structure_pairs(&mut graph, &flow);
+        graph.pills = self.pills(&graph);
+        graph.vias = self.vias(&graph, &flow);
+        for &(body, wire) in graph.pills.keys() {
+            if let Some(End::Node { node, terminal }) = graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to)
+                && let Some(input) = graph.nodes.get_mut(node).and_then(|node| node.inputs.get_mut(terminal))
+            {
+                input.pilled = true;
+            }
+        }
         Ok(graph)
+    }
+
+    /// The waypoints of the `wire` entries that name one wire (spec 11): by the value it carries and the node it goes to,
+    /// or an output of the function, and the input when one is named. An entry that names none or several gives a
+    /// warning of `check` (`LC5004`, `LC5006`) and nothing here; neither does the part inside a structure that names it.
+    fn vias(&self, graph: &Graph<'_>, flow: &flow::Flow) -> HashMap<(usize, usize), Vec<(i64, i64)>> {
+        let mut vias = HashMap::new();
+        let Some(layout) = &self.file.file.layout else { return vias };
+        let coordinate = |numeral: &Numeral| -> Option<i64> {
+            let NumeralKind::Int(text) = numeral.kind else { return None };
+            let value = i64::from(labcraft_format::coordinate_value(self.names.resolve(text))?);
+            Some(if numeral.negative { -value } else { value } * 100)
+        };
+        for item in &layout.items {
+            let LayoutKind::Wire { from, to, via } = &item.kind else { continue };
+            if via.is_empty() {
+                continue;
+            }
+            let Some(points) = via.iter().map(|point| Some((coordinate(&point.x)?, coordinate(&point.y)?))).collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            let value = match from.node.is_label {
+                true => format!("#{}", self.names.resolve(from.node.name)),
+                false => self.names.resolve(from.node.name).to_owned(),
+            };
+            let input = to.terminal.map(|name| self.names.resolve(name).to_owned());
+            let node = match flow.designations.get(&(to.node.is_label, to.node.name)).map(Vec::as_slice) {
+                Some(&[node]) => Some(node),
+                _ => None,
+            };
+            let output = (!to.node.is_label).then(|| self.names.resolve(to.node.name).to_owned());
+            let mut found = Vec::new();
+            for (body, frame) in graph.bodies.iter().enumerate() {
+                for (index, wire) in frame.wires.iter().enumerate() {
+                    if wire.name.split('.').next() != Some(value.as_str()) {
+                        continue;
+                    }
+                    let fits = match wire.to {
+                        End::Node { node: reader, terminal } if Some(reader) == node => input.as_ref().is_none_or(|input| {
+                            graph.nodes.get(reader).and_then(|reader| reader.inputs.get(terminal)).is_some_and(|terminal| &terminal.name == input)
+                        }),
+                        End::Order(reader) if Some(reader) == node => input.as_ref().is_none_or(|input| input == "after"),
+                        End::Right(at) if body == 0 && node.is_none() && input.is_none() => {
+                            frame.right.get(at).is_some_and(|terminal| Some(&terminal.terminal.name) == output.as_ref())
+                        }
+                        _ => false,
+                    };
+                    if fits {
+                        found.push((body, index));
+                    }
+                }
+            }
+            if let [one] = found.as_slice() {
+                vias.insert(*one, points);
+            }
+        }
+        vias
+    }
+
+    /// The pills on the wires into nodes: the field that a path reads after its value, the conversion that `check` puts
+    /// on what it reads.
+    fn pills(&self, graph: &Graph<'_>) -> HashMap<(usize, usize), Pill> {
+        let conversions: HashMap<Id, (TyId, TyId)> =
+            self.resolved().coercions().iter().map(|coercion| (coercion.at, (coercion.from, coercion.to))).collect();
+        let mut pills = HashMap::new();
+        for (body, frame) in graph.bodies.iter().enumerate() {
+            for (index, wire) in frame.wires.iter().enumerate() {
+                let Some(read) = wire.read else { continue };
+                let field = wire.name.find('.').and_then(|at| wire.name.get(at..)).map(str::to_owned);
+                let conversion = conversions.get(&read).map(|&(from, to)| self.conversion(from, to));
+                let text = match (&field, &conversion) {
+                    (Some(field), Some(conversion)) => format!("{field} {conversion}"),
+                    (Some(text), None) | (None, Some(text)) => text.clone(),
+                    (None, None) => continue,
+                };
+                pills.insert((body, index), Pill { text, conversion: conversion.is_some() });
+            }
+        }
+        pills
+    }
+
+    /// A conversion as its pill writes it: the units when only they change (`mV→V`), the types otherwise (`i16→i32`).
+    fn conversion(&self, from: TyId, to: TyId) -> String {
+        let (a, b) = (unit(self.types(), from), unit(self.types(), to));
+        let shape = |ty: TyId| match self.types().get(ty) {
+            labcraft_types::Ty::Number { kind, .. } => Some(*kind),
+            _ => None,
+        };
+        if let (Some(a), Some(b)) = (&a, &b)
+            && shape(from) == shape(to)
+        {
+            return format!("{a}\u{2192}{b}");
+        }
+        let written = |ty: TyId| self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names));
+        format!("{}\u{2192}{}", written(from), written(to))
     }
 
     /// The entries of the `layout` section that place a node or set its view, by how they designate it (spec 11): a
@@ -521,6 +641,13 @@ impl<'a> Builder<'a> {
                     let (kind, inputs) = self.construction(lit, targets);
                     let outputs = vec![self.output_of(targets, 0, "value")];
                     (kind, inputs, outputs, 0, false, false)
+                }
+                // An array of wires is a node with an input per element, as `ir` lowers it (decision of the owner, M0v
+                // step 4); an array of constants stays a constant.
+                Rhs::Operand(operand @ Operand::Array(_, values)) if !self.reads(operand).is_empty() => {
+                    let inputs = values.iter().enumerate().map(|(index, value)| self.input(index.to_string(), value, None)).collect();
+                    let kind = Kind::Construction { ty: "[ ]".to_owned(), library: None };
+                    (kind, inputs, vec![self.output_of(targets, 0, "value")], 0, false, false)
                 }
                 Rhs::Operand(operand) if is_constant(operand, self.resolved()) => {
                     let name = targets.first().map_or_else(String::new, |target| self.target_text(target));
@@ -584,6 +711,7 @@ impl<'a> Builder<'a> {
             constant,
             ignored,
             reads: Vec::new(),
+            pilled: false,
         }
     }
 
@@ -664,16 +792,8 @@ impl<'a> Builder<'a> {
     }
 
     fn make_callee(&self, callee: Meaning) -> Callee<'a> {
-        let mut found = Callee {
-            params: Vec::new(),
-            required: Vec::new(),
-            defaults: 0,
-            outputs: Vec::new(),
-            band: None,
-            always: false,
-            glyph: None,
-            icon: None,
-        };
+        let mut found =
+            Callee { params: Vec::new(), required: Vec::new(), defaults: 0, outputs: Vec::new(), band: None, always: false, glyph: None, icon: None };
         // The parameters: name, whether it has a default, whether it is a wire at all (not a unit, a category, an element).
         match callee {
             Meaning::Function { library, name } => {

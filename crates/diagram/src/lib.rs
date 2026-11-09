@@ -24,13 +24,15 @@ use labcraft_types::text::{ShownText, cut_middle};
 use labcraft_types::{Code, Diagnostic, Interner};
 
 mod graph;
+mod names;
 mod place;
+mod route;
 mod shape;
 mod size;
 mod svg;
 pub mod theme;
 
-pub use shape::{Drawing, Group, IconDrawing, IconItem, IconShape, Paint, Placed, Run, Shape, Token};
+pub use shape::{BodyDrawn, Drawing, Group, IconDrawing, IconItem, IconShape, Paint, Pattern, Placed, Run, Shape, Token, WireOf, WireStyle};
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
@@ -219,6 +221,13 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             sizer.size(node, bands.get(index).and_then(Option::as_ref), icon)
         })
         .collect();
+    // The pill of a wire stands left of its reader, as the pill of an inline constant does (notation 3.2).
+    for (&(body, wire), pill) in &graph.pills {
+        let Some(graph::End::Node { node, .. }) = graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to) else { continue };
+        if let Some(found) = sized.get_mut(node) {
+            found.left = found.left.max(pill_reach(pill));
+        }
+    }
     let titles = titles(graph);
     let placement = place::place(graph, &mut sized, &titles, (MARGIN, MARGIN));
     // The function's frame, then each node, a structure with its frame before what it holds.
@@ -227,18 +236,37 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         frame_terminals(body, frame, true, &mut shapes);
         drawing.loose = shapes;
     }
+    // The wires of each body, drawn over its frame and under its nodes.
+    let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len()).map(|body| wire_groups(graph, body, &placement, &sized)).collect();
+    if let Some(first) = wires.first_mut() {
+        drawing.groups.append(first);
+    }
     for (index, (node, sized)) in graph.nodes.iter().zip(sized).enumerate() {
         let Some(Some(at)) = placement.nodes.get(index) else { continue };
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
         let mut arms = Vec::new();
         if let Kind::Structure(structure) = &node.kind {
-            (shapes, arms) = structure_shapes(graph, node, structure, &placement, at, &sized.inputs, &sized.outputs);
+            // The frame, then the wires in the margins of a `match`.
+            let margins = std::mem::take(&mut shapes);
+            (shapes, arms) = structure_shapes(graph, node, structure, &placement, at, (sized.width, &sized.inputs, &sized.outputs));
+            shapes.extend(margins);
             shapes.extend(sized_label(node, at));
         }
         let (width, height) = (sized.width, sized.height);
         drawing.placed.push(Placed { key: node.stable.clone(), x: at.x, y: at.y, width, height, column: at.column, rank: at.rank, body: node.body });
-        drawing.groups.push(Group { node: node.key.clone(), title: title(&node.kind), shapes, arm: None });
-        drawing.groups.extend(arms.into_iter().map(|(arm, shapes)| Group { node: String::new(), title: String::new(), shapes, arm: Some(arm) }));
+        drawing.groups.push(Group { node: node.key.clone(), title: title(&node.kind), shapes, arm: None, wire: None });
+        drawing.groups.extend(arms.into_iter().map(|(arm, shapes)| Group {
+            node: String::new(),
+            title: String::new(),
+            shapes,
+            arm: Some(arm),
+            wire: None,
+        }));
+        for &body in &node.bodies {
+            if let Some(list) = wires.get_mut(body) {
+                drawing.groups.append(list);
+            }
+        }
     }
     // The extent: everything, and the margin around it (cli.md 7.2).
     let (mut right, mut bottom) = (0i64, 0i64);
@@ -261,6 +289,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
         }
     }
+    drawing.bodies = placement.frames.iter().map(|frame| BodyDrawn { axis: frame.axis.map(|axis| axis + dy), from_file: frame.from_file }).collect();
     drawing.width = right + dx + MARGIN;
     drawing.height = bottom + dy + MARGIN;
     drawing
@@ -391,6 +420,9 @@ fn edge_terminal(terminal: &graph::FrameTerminal, x: i64, y: i64) -> Vec<Shape> 
     }
 }
 
+/// The width of a block and where its inputs and outputs are.
+type Terminals<'a> = (i64, &'a [(i64, i64)], &'a [(i64, i64)]);
+
 /// A structure: its frame with its header, the terminals of its bodies; the selector, the notches and the outputs of a
 /// `match` on its own edges, and its arms unfolded, each apart, with its title.
 fn structure_shapes(
@@ -399,8 +431,7 @@ fn structure_shapes(
     structure: &graph::Structure,
     placement: &place::Placement,
     at: &place::NodeAt,
-    inputs: &[(i64, i64)],
-    outputs: &[(i64, i64)],
+    (width, inputs, outputs): Terminals<'_>,
 ) -> (Vec<Shape>, Vec<(String, Vec<Shape>)>) {
     let title = Text::new(&structure.header, ANY_TEXT, LARGE);
     let stroke = if structure.kind == StructureKind::Handle { "wire.error" } else { "frame.stroke" };
@@ -423,10 +454,6 @@ fn structure_shapes(
         }
         StructureKind::Match | StructureKind::Handle => {
             let depth = node.bodies.first().and_then(|index| placement.frames.get(*index)).map_or(1, |frame| frame.depth.saturating_sub(1));
-            let width = outputs.first().map_or_else(
-                || node.bodies.first().and_then(|index| placement.frames.get(*index)).map_or(0, |frame| frame.width + 2 * place::PAD),
-                |output| output.0,
-            );
             let height = node
                 .bodies
                 .last()
@@ -481,6 +508,12 @@ fn extent(shape: &Shape) -> (i64, i64, i64, i64) {
         }
         Shape::Text { x, y, size, width, .. } => (*x, y - size::line_height(*size), x + width, *y),
         Shape::Icon { x, y, side, .. } => (*x, *y, x + side, y + side),
+        Shape::Wire { points, style } => {
+            let half = style.width.max(600) / 2;
+            let (a, b, c, d) =
+                points.iter().fold((i64::MAX, i64::MAX, i64::MIN, i64::MIN), |(a, b, c, d), &(x, y)| (a.min(x), b.min(y), c.max(x), d.max(y)));
+            (a - half, b - half, c + half, d + half)
+        }
     }
 }
 
@@ -492,6 +525,164 @@ fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
         Shape::Poly { points, closed, paint } => Shape::Poly { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), closed, paint },
         Shape::Text { x, y, size, width, runs } => Shape::Text { x: x + dx, y: y + dy, size, width, runs },
         Shape::Icon { x, y, side, icon } => Shape::Icon { x: x + dx, y: y + dy, side, icon },
+        Shape::Wire { points, style } => Shape::Wire { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), style },
+    }
+}
+
+/// The fill of a frame at a depth of nesting (notation 8).
+fn frame_fill(depth: u32) -> Token {
+    match (depth + 1).min(4) {
+        1 => "frame.fill.1",
+        2 => "frame.fill.2",
+        3 => "frame.fill.3",
+        _ => "frame.fill.4",
+    }
+}
+
+/// The wires of a body, one group per value: its branches, each from the source to one reader, the trunk drawn by each,
+/// and its junction points (notation 2.2, 4).
+fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, sized: &[size::Sized]) -> Vec<Group> {
+    let (Some(of), Some(routes)) = (graph.bodies.get(body), placement.routes.get(body)) else { return Vec::new() };
+    let core = frame_fill(placement.frames.get(body).map_or(0, |frame| frame.depth));
+    // What a name must not cover: the nodes of the body, its wires, the pills.
+    let mut obstacles = names::Obstacles::default();
+    for &node in &of.nodes {
+        let (Some(Some(at)), Some(found)) = (placement.nodes.get(node), sized.get(node)) else { continue };
+        obstacles.rect(at.x - found.left, at.y - found.above, at.x + found.width + found.right, at.y + found.height);
+    }
+    for routed in routes {
+        for branch in &routed.branches {
+            for pair in branch.windows(2) {
+                if let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) {
+                    obstacles.segment(a, b);
+                }
+            }
+        }
+    }
+    // The pill of each wire, just before its reader.
+    let mut pills: HashMap<usize, Vec<Shape>> = HashMap::new();
+    for routed in routes {
+        for (&wire, branch) in routed.wires.iter().zip(&routed.branches) {
+            let (Some(pill), Some(&(x, y))) = (graph.pills.get(&(body, wire)), branch.last()) else { continue };
+            let text = Text::new(&pill.text, size::LABEL_LINE, MEDIUM);
+            let start = x - pill_reach(pill);
+            obstacles.rect(start, y - size::PILL_HEIGHT / 2, start + size::pill_width(&text), y + size::PILL_HEIGHT / 2);
+            pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion));
+        }
+    }
+    routes
+        .iter()
+        .filter_map(|routed| {
+            let first = of.wires.get(*routed.wires.first()?)?;
+            // Each branch as its wire is drawn: a value read as an order (`after:`) and as a value shares its trunk.
+            let style = size::wire_style(first.family, core);
+            let mut shapes: Vec<Shape> = routed
+                .wires
+                .iter()
+                .zip(&routed.branches)
+                .map(|(&wire, points)| {
+                    let style = of.wires.get(wire).map_or(style, |wire| size::wire_style(wire.family, core));
+                    Shape::Wire { points: points.clone(), style }
+                })
+                .collect();
+            shapes.extend(routed.junctions.iter().map(|&(x, y)| Shape::Circle { x, y, radius: 300, paint: Paint::fill(style.token) }));
+            for wire in &routed.wires {
+                shapes.extend(pills.remove(wire).unwrap_or_default());
+            }
+            let value = first.name.split('.').next().unwrap_or_default().to_owned();
+            shapes.extend(wire_names(&value, &routed.branches, &mut obstacles));
+            let from = terminal_form(graph, of, body, &first.from, true);
+            let mut to: Vec<String> = routed
+                .wires
+                .iter()
+                .filter_map(|&wire| of.wires.get(wire))
+                .filter_map(|wire| terminal_form(graph, of, body, &wire.to, false))
+                .collect();
+            to.dedup();
+            let error = routed.wires.iter().filter_map(|&wire| of.wires.get(wire)).any(|wire| wire.family == graph::Family::ERROR);
+            Some(Group { node: String::new(), title: String::new(), shapes, arm: None, wire: Some(WireOf { body, error, value, from, to }) })
+        })
+        .collect()
+}
+
+/// How far the pill of a wire reaches left of the terminal it leads to.
+fn pill_reach(pill: &graph::Pill) -> i64 {
+    size::TERMINAL / 2 + GRID + size::pill_width(&Text::new(&pill.text, size::LABEL_LINE, MEDIUM))
+}
+
+/// Above a wire, its name (notation 4): on its first horizontal segment, 3 units above it, when the whole name fits there
+/// with 4 on each side and covers nothing; and again halfway along a long horizontal of the wire, by the same rule.
+fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::Obstacles) -> Vec<Shape> {
+    const ABOVE: i64 = 300;
+    const SIDE: i64 = 400;
+    let text = Text::new(value, ANY_TEXT, MEDIUM);
+    if text.width == 0 {
+        return Vec::new();
+    }
+    let height = size::line_height(MEDIUM);
+    let across = |a: (i64, i64), b: (i64, i64)| (a.1 == b.1 && a.0 != b.0).then_some((a.0.min(b.0), a.0.max(b.0), a.1));
+    let mut candidates = Vec::new();
+    if let Some((x0, x1, y)) = branches.first().and_then(|branch| across(*branch.first()?, *branch.get(1)?)) {
+        candidates.push((x0 + SIDE, x1 - SIDE, y, false));
+    }
+    // The longest horizontal of the net past its first segment, when it is long: three times what the name needs.
+    let longest = branches
+        .iter()
+        .flat_map(|branch| branch.windows(2).skip(1).filter_map(|pair| across(*pair.first()?, *pair.get(1)?)))
+        .max_by_key(|&(x0, x1, y)| (x1 - x0, -y, -x0));
+    if let Some((x0, x1, y)) = longest
+        && x1 - x0 >= 3 * (text.width + 2 * SIDE)
+    {
+        candidates.push((x0 + SIDE, x1 - SIDE, y, true));
+    }
+    let mut shapes = Vec::new();
+    for (start, end, y, centred) in candidates {
+        if end - start < text.width {
+            continue;
+        }
+        let x = if centred { start + (end - start - text.width) / 2 } else { start };
+        let (top, bottom) = (y - ABOVE - height, y - ABOVE);
+        if !obstacles.free(x, top, x + text.width, bottom) {
+            continue;
+        }
+        obstacles.rect(x, top, x + text.width, bottom);
+        // Its baseline 3 above the wire, its line above that, as the extent of a text counts it.
+        let cap = labcraft_types::text::scale(u64::from(labcraft_types::text::CAP_HEIGHT), MEDIUM).unwrap_or(0);
+        shapes.push(text.at(x, bottom - (cap + 1) / 2, "ink.muted"));
+    }
+    shapes
+}
+
+/// A terminal as the reports write it (`docs/cli.md`, 4.3), when it has a form there.
+fn terminal_form(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, end: &graph::End, start: bool) -> Option<String> {
+    match *end {
+        graph::End::Node { node, terminal } => {
+            let found = graph.nodes.get(node)?;
+            // The selector of a `match` or a `handle` has no form.
+            if !start
+                && terminal == 0
+                && matches!(&found.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Match | StructureKind::Handle))
+            {
+                return None;
+            }
+            let terminals = if start { &found.outputs } else { &found.inputs };
+            Some(format!("{}.{}", found.key, terminals.get(terminal)?.name))
+        }
+        graph::End::Order(node) => (!start).then(|| graph.nodes.get(node).map(|found| format!("{}.after", found.key))).flatten(),
+        graph::End::Left(index) => (body == 0).then(|| of.left.get(index).map(|terminal| format!("fn.{}", terminal.terminal.name))).flatten(),
+        graph::End::Right(index) => {
+            let terminal = of.right.get(index)?;
+            match terminal.edge {
+                graph::Edge::Output => Some(format!("fn.{}", terminal.terminal.name)),
+                graph::Edge::Register => Some(format!("next.{}", terminal.terminal.name.trim_start_matches("next "))),
+                graph::Edge::Until => Some("until".to_owned()),
+                graph::Edge::Collect => {
+                    Some(format!("collect.{}", of.right.iter().take(index).filter(|other| other.edge == graph::Edge::Collect).count()))
+                }
+                graph::Edge::Yield => Some(format!("yield.{}", of.right.iter().take(index).filter(|other| other.edge == graph::Edge::Yield).count())),
+                _ => None,
+            }
+        }
     }
 }
 

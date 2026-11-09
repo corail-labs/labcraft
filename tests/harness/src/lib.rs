@@ -23,6 +23,9 @@ include!(concat!(env!("OUT_DIR"), "/corpus.rs"));
 mod deep;
 
 #[cfg(test)]
+mod routing;
+
+#[cfg(test)]
 mod tests {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
@@ -430,6 +433,8 @@ mod tests {
         use labcraft_diagram::{DiagramLimits, Drawn, Theme, ViewState, draw, svg};
         on_the_stack_of_a_host(|| {
             let mut written = BTreeMap::new();
+            // The rules of routing, on every drawing (notation 2.2).
+            let mut faults: Vec<String> = Vec::new();
             for root in ["examples/", "libs/", "docs/rfc/"] {
                 let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
                 let mut names = Interner::new();
@@ -444,6 +449,7 @@ mod tests {
                         let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else {
                             panic!("{root}{}: not drawn", file.shown)
                         };
+                        faults.extend(super::routing::faults(&drawing).into_iter().map(|fault| format!("{root}{stem}{suffix}: {fault}")));
                         written.insert(format!("tests/harness/snapshots/diagram/{root}{stem}{suffix}.svg"), svg(&drawing, Theme::Both));
                     }
                 }
@@ -458,6 +464,7 @@ mod tests {
                 }
                 return;
             }
+            assert!(faults.is_empty(), "the rules of routing (notation 2.2):\n{}", faults.join("\n"));
             let stored: BTreeMap<&str, &str> =
                 DIAGRAMS.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
             let paths: Vec<&str> = written.keys().map(String::as_str).collect();
