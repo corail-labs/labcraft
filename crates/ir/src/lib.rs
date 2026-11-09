@@ -149,6 +149,27 @@ pub struct Region {
 }
 
 impl Region {
+    /// The terminals of the calls inside it, at any depth: the inputs and the outputs of its nodes `Primitive`, `Native` and
+    /// `Call`. What `check::terminals` counts on the source, and bounds with `LC4008`.
+    pub fn terminals(&self) -> u64 {
+        let mut total = 0_u64;
+        let mut pending = vec![self];
+        while let Some(region) = pending.pop() {
+            for node in &region.nodes {
+                match &node.kind {
+                    NodeKind::Primitive { .. } | NodeKind::Native { .. } | NodeKind::Call { .. } => {
+                        let count = node.inputs.len().saturating_add(node.outputs.len());
+                        total = total.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+                    }
+                    NodeKind::Loop { region, .. } | NodeKind::For { region, .. } => pending.push(region),
+                    NodeKind::Match { arms } | NodeKind::Handle { arms } => pending.extend(arms.iter().map(|arm| &arm.region)),
+                    NodeKind::Constant | NodeKind::Construct { .. } | NodeKind::BuildArray => {}
+                }
+            }
+        }
+        total
+    }
+
     /// The values that the structures inside it pass in: on each structure node, its inputs from outside, once on the node and
     /// once among the arguments of each of its regions (`docs/ir.md`, section 4). What `check::passed_in` counts on the source,
     /// and bounds with `LC4007`. Regions nest as deep as `check` lets them: an explicit stack.
@@ -182,8 +203,9 @@ pub struct Node {
     pub kind: NodeKind,
     /// In the order of `docs/ir.md`, section 4.
     pub inputs: Vec<Use>,
-    /// One per output of what it computes.
-    pub outputs: Vec<Value>,
+    /// One per output of what it computes. Shared by the calls written alone of one callee, whose outputs no target names: a
+    /// million calls of a function of a million outputs hold one list.
+    pub outputs: Arc<[Value]>,
     /// What it waits for without reading it.
     pub after: Vec<Order>,
     /// The canonical index of its line in its body (spec 5.2).

@@ -712,3 +712,135 @@ fn k(a: f64, s: bool, err: error) -> (y: f64) {
 ";
     assert_eq!(passed_in_both(&[("k.lcf", source)]), (10, 10));
 }
+
+/// A call written alone has the outputs of what it calls, which nothing reads (architecture 5): `f0(x)` one `f64`, as `f0`
+/// declares it, and `core.call(f0, x)` the same, from the function type of `f0`. `lowered` verifies them.
+#[test]
+fn a_call_written_alone_has_the_outputs_of_what_it_calls() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64) -> (z: f64) {
+    core.call(f0, x)
+    f0(x)
+    z = x
+}
+";
+    let f0 = "labcraft 1
+
+fn f0(x: f64) -> (y: f64) {
+    y = x
+}
+";
+    let (program, _) = lowered(&[("main.lcf", main), ("f0.lcf", f0)]);
+    let crate::Body::Region(region) = &program.functions[0].body else { panic!("no region") };
+    let f64_type = region.args[0].ty;
+    let outputs: Vec<Vec<labcraft_types::TyId>> = region.nodes.iter().map(|node| node.outputs.iter().map(|value| value.ty).collect()).collect();
+    assert_eq!(outputs, [vec![f64_type], vec![f64_type]]);
+}
+
+/// Every kind of call written alone, with what it gives worked out from the declarations: `core.call` of a parameter by
+/// named arguments, the two outputs of its function type (`f64`, `string`); `two`, its own two (`f64`, `string`), twice; the
+/// `extern` function `q`, its `f64` and its `error`; the variant `Shape.Circle(x)`, one `Shape`. The two calls of `two` share
+/// one list of outputs, as `check` shares their types.
+#[test]
+fn every_call_written_alone_has_what_its_callee_gives() {
+    let main = "labcraft 1
+
+use core
+
+fn main(x: f64, s: string, g: fn(a: f64, b: string) -> (f64, string)) -> (z: f64) {
+    core.call(g, b: s, a: x)
+    two(x)
+    two(x)
+    q(x)
+    Shape.Circle(x)
+    z = x
+}
+";
+    let two = "labcraft 1
+
+fn two(x: f64) -> (y: f64, t: string) {
+    y = x
+    t = \"\"
+}
+";
+    let q = "labcraft 1
+
+extern rust(crate: \"c\", function: \"q\")
+fn q(x: f64, err: error = none) -> (y: f64, err: error)
+";
+    let shape = "labcraft 1
+
+type Shape = enum { Circle(f64), Empty }
+";
+    let files = [("main.lcf", main), ("two.lcf", two), ("q.lcf", q), ("Shape.lct", shape)];
+    let (program, names) = lowered(&files);
+    let crate::Body::Region(region) = &program.functions[0].body else { panic!("no region") };
+    let shown = |node: &crate::Node| -> Vec<String> {
+        node.outputs.iter().map(|value| program.types.display(value.ty, program.functions[0].library, &names).to_string()).collect()
+    };
+    let by_line: Vec<(u32, Vec<String>)> = region.nodes.iter().map(|node| (node.position, shown(node))).collect();
+    let mut sorted = by_line.clone();
+    sorted.sort();
+    assert_eq!(by_line.len(), 5);
+    let all: Vec<Vec<String>> = sorted.into_iter().map(|(_, types)| types).collect();
+    assert!(all.contains(&vec!["f64".to_owned(), "string".to_owned()]), "{all:?}");
+    assert!(all.contains(&vec!["f64".to_owned(), "error".to_owned()]), "{all:?}");
+    assert!(all.contains(&vec!["Shape".to_owned()]), "{all:?}");
+    assert_eq!(all.iter().filter(|types| **types == ["f64", "string"]).count(), 3, "{all:?}");
+    let twos: Vec<&crate::Node> = region.nodes.iter().filter(|node| matches!(node.kind, NodeKind::Call { .. })).collect();
+    assert_eq!(twos.len(), 2);
+    assert!(std::sync::Arc::ptr_eq(&twos[0].outputs, &twos[1].outputs), "one list for the calls of one callee");
+}
+
+/// What `check` counts against `LC4008` is what lowering builds for its calls. Counted by hand: `core.call(g, b: s, a: x)` the
+/// function, its two inputs and the two outputs of its type, 5; `two(x)` its two parameters, `k` by its default, and its two
+/// outputs, 4; `q(x)` its two parameters, `err` by its default, and its two outputs, 4; `string.format` its one field and its
+/// text, 2; `core.add` 2 and 1, 3; `errors.merge` its two errors, one variadic parameter, and its error, 3. In all 21.
+#[test]
+fn what_check_counts_as_terminals_is_what_lowering_builds() {
+    let main = "labcraft 1
+
+use core
+use errors
+use string
+
+fn main(x: f64, s: string, g: fn(a: f64, b: string) -> (f64, string)) -> (z: f64, m: string, e: error) {
+    core.call(g, b: s, a: x)
+    two(x)
+    q(x)
+    m = string.format(\"{s}\", s: s)
+    z = core.add(x, x)
+    e = errors.merge(none, none)
+}
+";
+    let two = "labcraft 1
+
+fn two(x: f64, k: f64 = 2.0) -> (y: f64, t: string) {
+    y = k
+    t = \"\"
+}
+";
+    let q = "labcraft 1
+
+extern rust(crate: \"c\", function: \"q\")
+fn q(x: f64, err: error = none) -> (y: f64, err: error)
+";
+    let files = [("main.lcf", main), ("two.lcf", two), ("q.lcf", q)];
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    for (shown, text) in files {
+        root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.as_bytes().to_vec())) });
+    }
+    let mut names = Interner::new();
+    let checked = check_for_run(root, &Nothing, &mut names, &Limits::default());
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let start = checked.files.iter().position(|file| file.shown == "main.lcf").unwrap();
+    let file = &checked.files[start];
+    let labcraft_graph::Decl::Function(function) = &file.file.decl else { panic!("not a function") };
+    let counted = labcraft_check::terminals(function, &file.resolved, &checked.libraries, &names, u64::MAX).count;
+    let program = lower(&checked, start, &mut names).unwrap();
+    let crate::Body::Region(region) = &program.functions[0].body else { panic!("no region") };
+    assert_eq!((counted, region.terminals()), (21, 21));
+}

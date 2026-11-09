@@ -334,7 +334,7 @@ impl Checker<'_> {
                     Order::Node(_) => {}
                 }
             }
-            for output in &node.outputs {
+            for output in node.outputs.iter() {
                 self.known_ty(output.ty, "an output");
             }
             if last_position.is_some_and(|last| node.position <= last) {

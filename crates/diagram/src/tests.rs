@@ -528,8 +528,8 @@ fn a_missing_input_keeps_its_place() {
     assert_eq!(graph.nodes[0].inputs.iter().map(|input| input.name.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
 }
 
-/// A function called alone has the outputs of its signature. `core.call` written alone should have those of the
-/// function it calls, but `check` gives none for it yet (`Resolved::outputs_of`), so it has no output so far.
+/// A function called alone has the outputs of its signature, and `core.call` written alone those of the function it calls
+/// (`Resolved::outputs_of`).
 #[test]
 fn a_call_written_alone_has_the_outputs_of_its_callee() {
     let f0 = "labcraft 1\n\nfn f0(x: f64) -> (y: f64) {\n    y = x\n}\n";
@@ -538,7 +538,7 @@ fn a_call_written_alone_has_the_outputs_of_its_callee() {
     assert!(checked.report.diagnostics().is_empty());
     let graph = graph(&checked, &names, "main.lcf");
     let outputs: Vec<Vec<Base>> = graph.nodes.iter().map(|node| node.outputs.iter().map(|output| output.family.base).collect()).collect();
-    assert_eq!(outputs, [vec![], vec![Base::Number]]);
+    assert_eq!(outputs, [vec![Base::Number], vec![Base::Number]]);
 }
 
 /// A `match` unfolded is a frame with its header, cut at 40 cells, and a box per arm titled by its patterns, `_` written

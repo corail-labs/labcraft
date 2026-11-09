@@ -21,6 +21,7 @@ use crate::load::{at, cycles};
 use crate::passed_in::MAX_PASSED_IN;
 use crate::primitives::PrimitiveLibrary;
 use crate::resolved::{Meaning, Resolved};
+use crate::terminals::MAX_TERMINALS;
 
 #[cfg(test)]
 mod tests;
@@ -61,6 +62,7 @@ pub(in crate::declare) fn only_this_pass(code: Code) -> bool {
             | Code::Lc4003
             | Code::Lc4004
             | Code::Lc4007
+            | Code::Lc4008
             | Code::Lc4101
             | Code::Lc4102
             | Code::Lc4103
@@ -653,6 +655,7 @@ pub(super) fn judge_function<'a>(
     }
     flow.judge_carries();
     flow.judge_passed_in(function);
+    flow.judge_terminals(function);
     let order = Order::of(flow.graph.steps.len(), &flow.graph.edges);
     if order.steps.len() < flow.graph.steps.len() {
         flow.judge_cycles();
@@ -704,6 +707,19 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
             grouped(weight)
         );
         self.say(Code::Lc4007, message, statement.id, Some(statement), Vec::new());
+    }
+
+    /// Spec 4: the terminals of the calls are bounded, since each one is built when the function is lowered.
+    fn judge_terminals(&mut self, function: &'a Function) {
+        let found = crate::terminals::terminals(function, self.resolved, self.context.declared, self.pass.names, MAX_TERMINALS);
+        let Some((statement, weight)) = found.over else { return };
+        let message = format!(
+            "the calls of this function have more than {} terminals, the limit, {} on this one: an input per parameter of what it \
+             calls, defaults included, and an output per output (spec 4)",
+            grouped(MAX_TERMINALS),
+            grouped(weight)
+        );
+        self.say(Code::Lc4008, message, statement.id, Some(statement), Vec::new());
     }
 
     /// R-2: an output is bound exactly once.

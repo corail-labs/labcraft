@@ -2,6 +2,7 @@
 //! (`docs/architecture.md`, section 5).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use labcraft_graph::Id;
 use labcraft_types::{Name, TyId};
@@ -96,7 +97,8 @@ pub struct Resolved {
     coercions: Vec<Coercion>,
     /// The types of the outputs of a call written alone (`time.wait(50 ms)`), by the id of its statement: it has no target to
     /// hold them.
-    outputs: HashMap<Id, Box<[TyId]>>,
+    /// Shared by the calls of one function, or of one function type, written alone: a million of them cost one list.
+    outputs: HashMap<Id, Arc<[TyId]>>,
     leans_elsewhere: bool,
 }
 
@@ -171,7 +173,7 @@ impl Resolved {
         self.types.get(id.index()).copied().unwrap_or(TyId::ERROR)
     }
 
-    pub(crate) fn set_outputs(&mut self, statement: Id, types: Box<[TyId]>) {
+    pub(crate) fn set_outputs(&mut self, statement: Id, types: Arc<[TyId]>) {
         self.outputs.insert(statement, types);
     }
 

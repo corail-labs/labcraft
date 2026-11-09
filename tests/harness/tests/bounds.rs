@@ -103,6 +103,21 @@ const CASES: &[Case] = &[
         seconds: SECONDS,
         codes: Some((&["LC6003"], &["LC4007"])),
     },
+    Case {
+        name: "calls-alone-of-many-outputs",
+        folders: calls_alone_of_many_outputs,
+        fmt: true,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &["LC4008"])),
+    },
+    Case { name: "calls-of-many-defaults", folders: calls_of_many_defaults, fmt: true, seconds: SECONDS, codes: Some((&["LC6001"], &["LC4008"])) },
+    Case {
+        name: "calls-of-a-faulty-signature",
+        folders: calls_of_a_faulty_signature,
+        fmt: true,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &["LC2107"])),
+    },
     Case { name: "library-of-100000-files", folders: library_of_100000_files, fmt: false, seconds: LIBRARY_SECONDS, codes: Some((&[], &[])) },
 ];
 
@@ -412,6 +427,35 @@ fn values_passed_into_250_frames() -> Vec<Folder> {
         count -= count / 20;
     }
     alone("f.lcf", text(count))
+}
+
+/// A function of 100,000 outputs, and 300,000 calls of it written alone, each of nine bytes: the tenth call takes the terminals
+/// past the limit of `LC4008`, and what a call gives is shared by all of them, or the types alone would take 120 GB.
+fn calls_alone_of_many_outputs() -> Vec<Folder> {
+    let outputs: Vec<String> = (0..100_000).map(|index| format!("y{index}: f64")).collect();
+    let binds: String = (0..100_000).map(|index| format!("    y{index} = x\n")).collect();
+    let f = format!("labcraft 1\n\nfn f(x: f64) -> ({}) {{\n{binds}}}\n", outputs.join(", "));
+    let calls = "    f(x)\n".repeat(300_000);
+    let main = format!("labcraft 1\n\nfn main(x: f64) -> (z: f64) {{\n{calls}    z = x\n}}\n");
+    vec![vec![("f.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
+}
+
+/// A function of 100,000 parameters with a default, and 300,000 calls of it with no argument, each of eight bytes: the tenth
+/// call takes the terminals past the limit of `LC4008`.
+fn calls_of_many_defaults() -> Vec<Folder> {
+    let params: Vec<String> = (0..100_000).map(|index| format!("p{index}: f64 = 1.0")).collect();
+    let f = format!("labcraft 1\n\nfn f({}) -> (y: f64) {{\n    y = p0\n}}\n", params.join(", "));
+    let main = format!("labcraft 1\n\nfn main(x: f64) -> (z: f64) {{\n{}    z = x\n}}\n", "    f()\n".repeat(300_000));
+    vec![vec![("f.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
+}
+
+/// A signature of 20,000 variadic parameters, which `LC2107` refuses, and 100,000 calls of it with no argument: its calls are
+/// not counted for `LC4008`, or each would walk the 20,000.
+fn calls_of_a_faulty_signature() -> Vec<Folder> {
+    let params: Vec<String> = (0..20_000).map(|index| format!("a{index}: f64...")).collect();
+    let f = format!("labcraft 1\n\nfn f({}) -> (y: f64) {{\n    y = 1.0\n}}\n", params.join(", "));
+    let main = format!("labcraft 1\n\nfn main(x: f64) -> (z: f64) {{\n{}    z = x\n}}\n", "    f()\n".repeat(100_000));
+    vec![vec![("f.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
 }
 
 fn library_of_100000_files() -> Vec<Folder> {

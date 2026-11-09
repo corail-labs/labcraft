@@ -10,6 +10,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use labcraft_graph::{
     Arg, Body, Branching, Call, Clause, ClauseKind, Function, Id, Numeral, NumeralKind, Operand, Path, Pattern, Rhs, Signature, Statement,
@@ -435,6 +436,8 @@ struct Typer<'p, 'c, 'w, 'a> {
     rows_covered: u8,
     /// Whether a constant has one length at each level, by its id and a number of dimensions: a line can use it a thousand times.
     rectangular: HashMap<(Id, u8), bool>,
+    /// What a function or `core.call` written alone gives, shared with every call of the same callee.
+    alone: Option<Arc<[TyId]>>,
 }
 
 /// Types one function, or the default values of an `extern`, unless its signature has an error or is generic, which have their
@@ -486,6 +489,7 @@ pub(super) fn type_function<'a>(
         call_targets: None,
         rows_covered: 0,
         rectangular: HashMap::new(),
+        alone: None,
     };
     typer.defaults(signature, declaration);
     typer.signature(signature, declaration);
@@ -593,9 +597,11 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         }
         match (phase, &statement.kind) {
             (Phase::Whole, StatementKind::Call(call)) => {
+                self.alone = None;
                 let outs = self.type_call(call, None);
                 if self.trying.is_none() {
-                    self.resolved.set_outputs(statement.id, outs.iter().map(|out| out.ty).collect());
+                    let types = self.alone.take().unwrap_or_else(|| outs.iter().map(|out| out.ty).collect());
+                    self.resolved.set_outputs(statement.id, types);
                 }
             }
             (Phase::Whole, StatementKind::Collect(value)) => {
@@ -2125,7 +2131,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     // Calls.
 
     /// What a call gives, when `wanted` targets can take it. Pass 3 said what it has to say of a number that differs, so
-    /// a function of a million outputs costs nothing per call.
+    /// a function of a million outputs costs nothing per call; written alone, a call of a function or a `core.call` leaves in
+    /// `alone` the list its callee shares.
     fn type_call(&mut self, call: &'a Call, wanted: Option<usize>) -> Vec<Out<'a>> {
         let Some(bound) = self.resolved.call(call.id).cloned() else { return Vec::new() };
         match bound.callee {
@@ -2155,7 +2162,19 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 self.check_input(value, param.ty, self.pass.names.resolve(param.name));
             }
         }
-        if wanted != Some(function.outputs.len()) {
+        let Some(targets) = wanted else {
+            // Written alone, it gives its outputs too, which nothing reads (architecture 5): one list for every such call.
+            let shared = self
+                .pass
+                .function_outputs
+                .entry((library, name))
+                .or_insert_with(|| function.outputs.iter().map(|output| output.ty).collect())
+                .clone();
+            self.alone = Some(shared);
+            return Vec::new();
+        };
+        // A number of targets that differs has its diagnostic from pass 3.
+        if targets != function.outputs.len() {
             return Vec::new();
         }
         function.outputs.iter().map(|output| Out { ty: output.ty, label: Label::Named(output.name), operand: None }).collect()
@@ -2904,7 +2923,21 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             Ty::Function { outputs, .. } => outputs.len(),
             _ => 0,
         };
-        let Some(targets) = wanted else { return Vec::new() };
+        let Some(targets) = wanted else {
+            // Written alone, it gives the outputs of the function type, which nothing reads: one list for every such call.
+            let table = &self.pass.table;
+            let shared = self
+                .pass
+                .type_outputs
+                .entry(ty)
+                .or_insert_with(|| match table.get(ty) {
+                    Ty::Function { outputs, .. } => outputs.iter().copied().collect(),
+                    _ => Arc::default(),
+                })
+                .clone();
+            self.alone = Some(shared);
+            return Vec::new();
+        };
         if targets != outputs {
             if let Some(statement) = self.statement {
                 let plural = if outputs == 1 { "" } else { "s" };
