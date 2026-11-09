@@ -1,0 +1,338 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4322 273.6" width="4322" height="273.6" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="projectile">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="4322" height="273.6" style="fill: var(--canvas-fill)"/>
+<text x="16" y="26.41" font-size="11" style="fill: var(--ink-muted)">projectile</text>
+<text x="16" y="159.21" font-size="11" style="fill: var(--ink-muted)">flight_time, range, _, _, _, apex = loo…</text>
+<g data-node="g"><title>g = 9.81 m/s^2</title>
+<text x="16" y="61.18" font-size="12" style="fill: var(--node-title)">g</text>
+<rect x="31.22" y="47.8" width="74.23" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="35.22" y="60.81" font-size="11" style="fill: var(--pill-text)">9.81 m/s^2</text>
+<circle cx="113.45" cy="56.8" r="5" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="k"><title>core.div</title>
+<rect x="139.45" y="44.8" width="184" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="139.45,68.8 323.45,68.8" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="151.45" y="61.18" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="187.57" y="61.18" font-size="12" style="fill: var(--node-title)">div</text>
+<circle cx="139.45" cy="84.8" r="5" style="fill: var(--wire-data)"/>
+<text x="151.45" y="89.18" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="162.67" y="88.81" font-size="11" style="fill: var(--ink-muted)">[kg/m]</text>
+<circle cx="323.45" cy="84.8" r="5" style="fill: var(--wire-data)"/>
+<text x="278.34" y="88.81" font-size="11" style="fill: var(--ink-muted)">[1/m]</text>
+<text x="230.99" y="89.18" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="139.45" cy="108.8" r="5" style="fill: var(--wire-data)"/>
+<text x="151.45" y="113.18" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="162.67" y="112.81" font-size="11" style="fill: var(--ink-muted)">[kg]</text>
+</g>
+<g data-node="dx"><title>core.mul</title>
+<rect x="21" y="177.6" width="160" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="21,201.6 181,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="33" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="69.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="21" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="33" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="44.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="181" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="149.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<text x="101.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="21" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="33" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="44.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+</g>
+<g data-node="dy"><title>core.mul</title>
+<rect x="207" y="177.6" width="160" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="207,201.6 367,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="219" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="255.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="207" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="219" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="230.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="367" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="335.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<text x="287.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="207" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="219" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="230.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+</g>
+<g data-node="ny"><title>core.add</title>
+<rect x="393" y="177.6" width="152" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="393,201.6 545,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="405" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="441.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="393" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="405" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="416.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="545" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="513.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<text x="465.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="393" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="405" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="416.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+</g>
+<g data-node="landed"><title>core.le</title>
+<rect x="571" y="177.6" width="128" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="571,201.6 699,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="583" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="619.12" y="193.98" font-size="12" style="fill: var(--node-title)">le</text>
+<circle cx="571" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="583" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="594.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<polygon points="699,212.6 704,217.6 699,222.6 694,217.6" style="fill: var(--wire-data)"/>
+<text x="643.65" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="571" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="583" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="594.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<rect x="622.09" y="232.6" width="27.87" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="626.09" y="245.61" font-size="11" style="fill: var(--pill-text)">0 m</text>
+</g>
+<g data-node="vx2"><title>core.mul</title>
+<rect x="725" y="177.6" width="200" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="725,201.6 925,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="737" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="773.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="725" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="737" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="748.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="925" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="853.4" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+<text x="806.05" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="725" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="737" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="748.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="vy2"><title>core.mul</title>
+<rect x="951" y="177.6" width="200" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="951,201.6 1151,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="963" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="999.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="951" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="963" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="974.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="1151" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1079.4" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+<text x="1032.05" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="951" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="963" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="974.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="v2"><title>core.add</title>
+<rect x="1177" y="177.6" width="232" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="1177,201.6 1409,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="1189" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="1225.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="1177" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1189" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="1200.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+<circle cx="1409" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1337.4" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+<text x="1290.05" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="1177" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1189" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="1200.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+</g>
+<g data-node="speed"><title>core.sqrt</title>
+<rect x="1435" y="177.6" width="200" height="56" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="1435,201.6 1635,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="1447" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="1483.12" y="193.98" font-size="12" style="fill: var(--node-title)">sqrt</text>
+<circle cx="1435" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1447" y="221.98" font-size="12" style="fill: var(--node-title)">x</text>
+<text x="1458.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m^2/s^2]</text>
+<circle cx="1635" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1589.89" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<text x="1542.54" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+</g>
+<g data-node="ks"><title>core.mul</title>
+<rect x="1661" y="177.6" width="168" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="1661,201.6 1829,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="1673" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="1709.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="1661" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1673" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="1684.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[1/m]</text>
+<circle cx="1829" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1790.51" y="221.61" font-size="11" style="fill: var(--ink-muted)">[Hz]</text>
+<text x="1743.16" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="1661" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1673" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="1684.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="kvx"><title>core.mul</title>
+<rect x="1855" y="177.6" width="184" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="1855,201.6 2039,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="1867" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="1903.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="1855" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1867" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="1878.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[Hz]</text>
+<circle cx="2039" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1980.64" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<text x="1933.29" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="1855" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="1867" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="1878.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="ax"><title>core.neg</title>
+<rect x="2065" y="177.6" width="200" height="56" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="2065,201.6 2265,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="2077" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="2113.12" y="193.98" font-size="12" style="fill: var(--node-title)">neg</text>
+<circle cx="2065" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2077" y="221.98" font-size="12" style="fill: var(--node-title)">x</text>
+<text x="2088.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<circle cx="2265" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2206.64" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<text x="2159.29" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+</g>
+<g data-node="dvx"><title>core.mul</title>
+<rect x="2291" y="177.6" width="192" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="2291,201.6 2483,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="2303" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="2339.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="2291" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2303" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="2314.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<circle cx="2483" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2437.89" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<text x="2390.54" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="2291" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2303" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="2314.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+</g>
+<g data-node="kvy"><title>core.mul</title>
+<rect x="2509" y="177.6" width="184" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="2509,201.6 2693,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="2521" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="2557.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="2509" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2521" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="2532.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[Hz]</text>
+<circle cx="2693" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2634.64" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<text x="2587.29" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="2509" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2521" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="2532.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="drag_y"><title>core.neg</title>
+<rect x="2719" y="177.6" width="200" height="56" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="2719,201.6 2919,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="2731" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="2767.12" y="193.98" font-size="12" style="fill: var(--node-title)">neg</text>
+<circle cx="2719" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2731" y="221.98" font-size="12" style="fill: var(--node-title)">x</text>
+<text x="2742.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<circle cx="2919" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2860.64" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<text x="2813.29" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+</g>
+<g data-node="ay"><title>core.sub</title>
+<rect x="2945" y="177.6" width="200" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="2945,201.6 3145,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="2957" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="2993.12" y="193.98" font-size="12" style="fill: var(--node-title)">sub</text>
+<circle cx="2945" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2957" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="2968.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<circle cx="3145" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3086.64" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<text x="3039.29" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="2945" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="2957" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="2968.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+</g>
+<g data-node="dvy"><title>core.mul</title>
+<rect x="3171" y="177.6" width="192" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="3171,201.6 3363,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="3183" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="3219.12" y="193.98" font-size="12" style="fill: var(--node-title)">mul</text>
+<circle cx="3171" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3183" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="3194.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s^2]</text>
+<circle cx="3363" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3317.89" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<text x="3270.54" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="3171" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3183" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="3194.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+</g>
+<g data-node="@41"><title>core.add</title>
+<rect x="3389" y="177.6" width="152" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="3389,201.6 3541,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="3401" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="3437.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="3389" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3401" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="3412.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+<circle cx="3541" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3509.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+<text x="3461.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="3389" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3401" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="3412.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[s]</text>
+</g>
+<g data-node="@42"><title>core.max</title>
+<rect x="3567" y="177.6" width="152" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="3567,201.6 3719,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="3579" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="3615.12" y="193.98" font-size="12" style="fill: var(--node-title)">max</text>
+<circle cx="3567" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3579" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="3590.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="3719" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3687.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<text x="3639.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="3567" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3579" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="3590.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+</g>
+<g data-node="@43"><title>core.add</title>
+<rect x="3745" y="177.6" width="176" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="3745,201.6 3921,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="3757" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="3793.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="3745" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3757" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="3768.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="3921" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3875.89" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<text x="3828.54" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="3745" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3757" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="3768.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="@44"><title>core.add</title>
+<rect x="3947" y="177.6" width="176" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="3947,201.6 4123,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="3959" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="3995.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="3947" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3959" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="3970.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<circle cx="4123" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="4077.89" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+<text x="4030.54" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="3947" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="3959" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="3970.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m/s]</text>
+</g>
+<g data-node="@45"><title>core.add</title>
+<rect x="4149" y="177.6" width="152" height="80" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<polyline points="4149,201.6 4301,201.6" style="fill: none; stroke: var(--node-divider); stroke-width: 1"/>
+<text x="4161" y="193.98" font-size="12" style="fill: var(--ink-muted)">core.</text>
+<text x="4197.12" y="193.98" font-size="12" style="fill: var(--node-title)">add</text>
+<circle cx="4149" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="4161" y="221.98" font-size="12" style="fill: var(--node-title)">a</text>
+<text x="4172.22" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="4301" cy="217.6" r="5" style="fill: var(--wire-data)"/>
+<text x="4269.13" y="221.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+<text x="4221.78" y="221.98" font-size="12" style="fill: var(--node-title)">result</text>
+<circle cx="4149" cy="241.6" r="5" style="fill: var(--wire-data)"/>
+<text x="4161" y="245.98" font-size="12" style="fill: var(--node-title)">b</text>
+<text x="4172.22" y="245.61" font-size="11" style="fill: var(--ink-muted)">[m]</text>
+</g>
+</svg>

@@ -25,6 +25,14 @@ fn main() {
     }
     writeln!(out, "pub static SNAPSHOTS: &[Embedded] = &[{}];", embedded(&root, &stored)).unwrap();
 
+    // The SVG of each function of `PROGRAMS` (`docs/architecture.md`, 11.6).
+    let diagrams = snapshots.join("diagram");
+    let mut drawn = Vec::new();
+    if diagrams.is_dir() {
+        walk_with(&diagrams, &mut drawn, "svg");
+    }
+    writeln!(out, "pub static DIAGRAMS: &[Embedded] = &[{}];", embedded(&root, &drawn)).unwrap();
+
     for (name, folder) in [("HOSTILE", "tests/acceptance/hostile"), ("TYPE_ERRORS", "tests/acceptance/type-errors")] {
         let corpus = root.join(folder);
         println!("cargo::rerun-if-changed={}", corpus.display());

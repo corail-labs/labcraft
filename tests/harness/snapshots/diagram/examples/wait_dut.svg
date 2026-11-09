@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 902.12 237.6" width="902.12" height="237.6" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="wait_dut">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="902.12" height="237.6" style="fill: var(--canvas-fill)"/>
+<text x="16" y="26.41" font-size="11" style="fill: var(--ink-muted)">wait_dut</text>
+<text x="16" y="119.21" font-size="11" style="fill: var(--ink-muted)">present, err_out = loop carry p = false…</text>
+<g data-node="t0"><title>time.now</title>
+<rect x="21" y="44.8" width="40" height="40" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="30.17" y="69.18" font-size="12" style="fill: var(--node-title)">now</text>
+<circle cx="61" cy="76.8" r="5" style="fill: var(--wire-data)"/>
+<polyline points="24,39.8 34,44.8 24,49.8" style="fill: none; stroke: var(--wire-order); stroke-width: 1.5"/>
+</g>
+<g data-node="level"><title>scpi.query_f64</title>
+<rect x="89.98" y="149.6" width="56" height="56" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<rect x="89.98" y="137.6" width="56" height="12" style="fill: var(--band-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="107.15" y="146.88" font-size="9" style="fill: var(--band-text)">scpi</text>
+<text x="99.92" y="174.99" font-size="12" style="fill: var(--node-title)">query</text>
+<text x="107.15" y="188.96" font-size="12" style="fill: var(--node-title)">f64</text>
+<circle cx="145.98" cy="157.6" r="3.5" style="fill: var(--wire-data)"/>
+<rect x="86.48" y="162.1" width="7" height="7" style="fill: var(--wire-resource)"/>
+<rect x="142.48" y="162.1" width="7" height="7" style="fill: var(--node-fill); stroke: var(--wire-resource); stroke-width: 1.2"/>
+<rect x="86.48" y="179.15" width="7" height="4.9" style="fill: var(--wire-data)"/>
+<polygon points="86.48,194.1 93.48,197.6 86.48,201.1 88.82,197.6" style="fill: var(--wire-error)"/>
+<polygon points="142.48,194.1 149.48,197.6 142.48,201.1 144.82,197.6" style="fill: var(--wire-error)"/>
+<rect x="16" y="172.6" width="60.98" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="20" y="185.61" font-size="11" style="fill: var(--pill-text)">&quot;DUT:PR…</text>
+</g>
+<g data-node="here"><title>core.gt</title>
+<circle cx="219.33" cy="163.6" r="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="215.72" y="167.98" font-size="12" style="fill: var(--node-title)">&gt;</text>
+<circle cx="207.85" cy="155.6" r="5" style="fill: var(--wire-data)"/>
+<circle cx="207.85" cy="171.6" r="5" style="fill: var(--wire-data)"/>
+<polygon points="233.33,158.6 238.33,163.6 233.33,168.6 228.33,163.6" style="fill: var(--wire-data)"/>
+<rect x="166.98" y="162.6" width="27.87" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="170.98" y="175.61" font-size="11" style="fill: var(--pill-text)">0.5</text>
+</g>
+<g data-node="absent"><title>core.not</title>
+<circle cx="273.33" cy="163.6" r="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="269.72" y="167.98" font-size="12" style="fill: var(--node-title)">¬</text>
+<polygon points="259.33,158.6 264.33,163.6 259.33,168.6 254.33,163.6" style="fill: var(--wire-data)"/>
+<polygon points="287.33,158.6 292.33,163.6 287.33,168.6 282.33,163.6" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="pause"><title>core.select</title>
+<rect x="368.14" y="149.6" width="28" height="52" rx="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="378.53" y="179.98" font-size="12" style="fill: var(--node-title)">?</text>
+<polygon points="369.07,153.6 374.07,158.6 369.07,163.6 364.07,158.6" style="fill: var(--wire-data)"/>
+<circle cx="368.14" cy="168.6" r="5" style="fill: var(--wire-data)"/>
+<circle cx="369.07" cy="192.6" r="5" style="fill: var(--wire-data)"/>
+<circle cx="396.14" cy="175.6" r="5" style="fill: var(--wire-data)"/>
+<rect x="320.65" y="159.6" width="34.49" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="324.65" y="172.61" font-size="11" style="fill: var(--pill-text)">0 ms</text>
+<rect x="308.33" y="183.6" width="47.74" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="312.33" y="196.61" font-size="11" style="fill: var(--pill-text)">100 ms</text>
+</g>
+<g data-node="e2"><title>time.wait</title>
+<rect x="422.14" y="149.6" width="48" height="48" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="431.69" y="177.98" font-size="12" style="fill: var(--node-title)">wait</text>
+<circle cx="422.14" cy="173.6" r="5" style="fill: var(--wire-data)"/>
+<polygon points="417.14,184.6 427.14,189.6 417.14,194.6 420.48,189.6" style="fill: var(--wire-error)"/>
+<polygon points="465.14,184.6 475.14,189.6 465.14,194.6 468.48,189.6" style="fill: var(--wire-error)"/>
+</g>
+<g data-node="t"><title>time.elapsed</title>
+<rect x="496.14" y="149.6" width="72" height="72" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="506.86" y="189.98" font-size="12" style="fill: var(--node-title)">elapsed</text>
+<circle cx="496.14" cy="213.6" r="5" style="fill: var(--wire-data)"/>
+<circle cx="568.14" cy="213.6" r="5" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="late"><title>core.gt</title>
+<circle cx="608.14" cy="163.6" r="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="604.53" y="167.98" font-size="12" style="fill: var(--node-title)">&gt;</text>
+<circle cx="596.66" cy="155.6" r="5" style="fill: var(--wire-data)"/>
+<circle cx="596.66" cy="171.6" r="5" style="fill: var(--wire-data)"/>
+<polygon points="622.14,158.6 627.14,163.6 622.14,168.6 617.14,163.6" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="give_up"><title>core.and</title>
+<circle cx="662.14" cy="163.6" r="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="658.53" y="167.98" font-size="12" style="fill: var(--node-title)">∧</text>
+<polygon points="650.66,150.6 655.66,155.6 650.66,160.6 645.66,155.6" style="fill: var(--wire-data)"/>
+<polygon points="650.66,166.6 655.66,171.6 650.66,176.6 645.66,171.6" style="fill: var(--wire-data)"/>
+<polygon points="676.14,158.6 681.14,163.6 676.14,168.6 671.14,163.6" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="done"><title>core.or</title>
+<circle cx="716.14" cy="163.6" r="14" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="712.53" y="167.98" font-size="12" style="fill: var(--node-title)">∨</text>
+<polygon points="704.66,150.6 709.66,155.6 704.66,160.6 699.66,155.6" style="fill: var(--wire-data)"/>
+<polygon points="704.66,166.6 709.66,171.6 704.66,176.6 699.66,171.6" style="fill: var(--wire-data)"/>
+<polygon points="730.14,158.6 735.14,163.6 730.14,168.6 725.14,163.6" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="@21"><title>errors.raise_if</title>
+<rect x="825.12" y="149.6" width="56" height="56" rx="4" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="835.06" y="174.99" font-size="12" style="fill: var(--node-title)">raise</text>
+<text x="845.9" y="188.96" font-size="12" style="fill: var(--node-title)">if</text>
+<polygon points="825.12,160.6 830.12,165.6 825.12,170.6 820.12,165.6" style="fill: var(--wire-data)"/>
+<rect x="820.12" y="178.1" width="10" height="7" style="fill: var(--wire-data)"/>
+<polygon points="820.12,192.6 830.12,197.6 820.12,202.6 823.46,197.6" style="fill: var(--wire-error)"/>
+<polygon points="876.12,192.6 886.12,197.6 876.12,202.6 879.46,197.6" style="fill: var(--wire-error)"/>
+<rect x="751.14" y="172.6" width="60.98" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="755.14" y="185.61" font-size="11" style="fill: var(--pill-text)">&quot;produc…</text>
+</g>
+</svg>

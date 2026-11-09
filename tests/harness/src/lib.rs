@@ -35,7 +35,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test as test;
 
     use super::deep::{DEEP, Generator};
-    use super::{Embedded, HOSTILE, PROGRAMS, SNAPSHOTS, TYPE_ERRORS};
+    use super::{DIAGRAMS, Embedded, HOSTILE, PROGRAMS, SNAPSHOTS, TYPE_ERRORS};
 
     /// In WASM the stack is the one that `.cargo/config.toml` links.
     #[cfg(target_arch = "wasm32")]
@@ -404,6 +404,53 @@ mod tests {
             }
             let stored: BTreeMap<&str, &str> =
                 SNAPSHOTS.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
+            let paths: Vec<&str> = written.keys().map(String::as_str).collect();
+            assert_eq!(stored.keys().copied().collect::<Vec<_>>(), paths, "snapshots without a function, or functions without a snapshot");
+            for (path, text) in &written {
+                assert_eq!(stored.get(path.as_str()).copied(), Some(text.as_str()), "{path}: write the snapshots again with LABCRAFT_BLESS=1");
+            }
+        });
+    }
+
+    /// The SVG of every function of the repository (`docs/architecture.md`, 11.6), as its file gives it and with every node
+    /// in standard view, compared byte for byte with its snapshot in `tests/harness/snapshots/diagram/`, natively and in
+    /// WASM (scenario 6, point 2). With `LABCRAFT_BLESS=1`, natively, the snapshots are written again; the files they
+    /// replace are read by hand before a commit, and opened in a browser.
+    #[test]
+    fn every_function_of_the_repository_draws_its_snapshot() {
+        use labcraft_diagram::{DiagramLimits, Drawn, Theme, ViewState, draw, svg};
+        on_the_stack_of_a_host(|| {
+            let mut written = BTreeMap::new();
+            for root in ["examples/", "libs/", "docs/rfc/"] {
+                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+                let mut names = Interner::new();
+                let checked = check(project(root, files), &Shipped, &mut names, &Limits::default());
+                for (index, file) in checked.files.iter().enumerate() {
+                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                        continue;
+                    }
+                    let stem = file.shown.rsplit_once('.').map_or(file.shown.as_str(), |(stem, _)| stem).replace(char::from(92), "/");
+                    for (suffix, standard_everywhere) in [("", false), (".standard", true)] {
+                        let view = ViewState { standard_everywhere, ..ViewState::default() };
+                        let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else {
+                            panic!("{root}{}: not drawn", file.shown)
+                        };
+                        written.insert(format!("tests/harness/snapshots/diagram/{root}{stem}{suffix}.svg"), svg(&drawing, Theme::Both));
+                    }
+                }
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var_os("LABCRAFT_BLESS").is_some() {
+                let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+                for (path, text) in &written {
+                    let path = base.join(path);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, text).unwrap();
+                }
+                return;
+            }
+            let stored: BTreeMap<&str, &str> =
+                DIAGRAMS.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
             let paths: Vec<&str> = written.keys().map(String::as_str).collect();
             assert_eq!(stored.keys().copied().collect::<Vec<_>>(), paths, "snapshots without a function, or functions without a snapshot");
             for (path, text) in &written {

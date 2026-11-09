@@ -1,0 +1,17 @@
+[package]
+name = "labcraft-diagram"
+description = "LabCraft L5: the drawing of a function as the visual notation says, for the canvas and the SVG"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-check = { workspace = true }
+labcraft-format = { workspace = true }
+labcraft-graph = { workspace = true }
+labcraft-types = { workspace = true }
+
+[lints]
+workspace = true

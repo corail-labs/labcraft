@@ -1,0 +1,826 @@
+//! Step 1 (`docs/architecture.md`, 11.3): the graph of a function, from what `check` resolved. Nodes in the canonical
+//! order of their body (spec 5.2), their terminals in signature order with their families (notation 4.1). `LC7002` is
+//! decided here: the nodes are counted before anything is built, the terminals as the graph is built.
+
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+
+use labcraft_check::primitives::{ParamKind, primitive};
+use labcraft_check::{Checked, CheckedFile, DeclaredLibrary, Meaning, PrimitiveLibrary, Resolved, Terminal as Wiring, read_escapes};
+use labcraft_format::{BodyOrders, canonical_orders, write_line, write_operand};
+use labcraft_graph::{Arg, Body, Call, Decl, File, Function, Icon, LayoutKind, Operand, Rhs, Statement, StatementKind, StructLit, Target, View};
+use labcraft_types::{Interner, LibraryId, Name, Ty, TyId, TypeTable, cut_text};
+
+/// How many bytes of a constant are written before it is cut: far more than the 40 cells a pill shows.
+const CONSTANT_BYTES: usize = 1024;
+
+/// The family of a terminal, which its shape tells (notation 4.1). An array is the family of its element, with its
+/// dimensions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Family {
+    pub base: Base,
+    pub dimensions: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Base {
+    Number,
+    Bool,
+    Text,
+    Enum,
+    Struct,
+    Session,
+    Error,
+    Function,
+    /// A type that an error left unknown, or a type variable.
+    Unknown,
+}
+
+impl Family {
+    const ERROR: Family = Family { base: Base::Error, dimensions: 0 };
+
+    /// The families whose input and output share a line when a node passes them through (notation 3.1).
+    pub fn passes_through(self) -> bool {
+        self.dimensions == 0 && matches!(self.base, Base::Error | Base::Session)
+    }
+}
+
+/// A terminal of a node, as the drawing needs it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Terminal {
+    pub name: String,
+    /// Two terminals of one opaque type or of `error` make a pass-through pair (notation 3.1).
+    pub ty: TyId,
+    pub family: Family,
+    /// `V` for `f64[V]`.
+    pub unit: Option<String>,
+    /// The text of an inline constant on an input (spec 5.1), as the text writes it, escapes read.
+    pub constant: Option<String>,
+    /// An output that the line binds to `_` has no wire (notation 3.1).
+    pub ignored: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kind<'a> {
+    /// A call: `qualified` as the text writes it (`visa.open`), the library of the callee for its band, and its glyph
+    /// when it is a primitive drawn as a circle (notation 3.2).
+    Call { qualified: String, short: String, library: Option<String>, glyph: Option<Glyph>, icon: Option<&'a Icon> },
+    /// A struct construction: the name of its type without its library, which goes to the band.
+    Construction { ty: String, library: Option<String> },
+    /// A variant constructor with values.
+    Variant { ty: String, variant: String, library: Option<String> },
+    /// `ui.set` or `ui.get`: the operation and the element on two lines.
+    Ui { operation: String, element: String },
+    /// A named constant, or a construction whose fields are all constants, folded (notation 3.1).
+    Constant { name: String, value: String },
+    /// A `loop`, a `for`, a `match` or a `handle`: counted, and drawn with placement (step 3).
+    Structure,
+}
+
+/// The glyph of a primitive drawn as a circle (notation 3.2, closed list).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Glyph {
+    Sign(&'static str),
+    /// `with_unit`, and `unitless` struck through.
+    Unit {
+        unit: String,
+        struck: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Node<'a> {
+    pub kind: Kind<'a>,
+    /// As the terminals of `docs/cli.md`, 4.3 name it: the name of its line, `#label`, or `@12`.
+    pub key: String,
+    /// `#close`, drawn above the node.
+    pub label: Option<String>,
+    pub always: bool,
+    pub after: bool,
+    /// The `layout` section gives it `view standard`.
+    pub standard: bool,
+    pub inputs: Vec<Terminal>,
+    pub outputs: Vec<Terminal>,
+    /// Unwired optional inputs, hidden (notation 3.1, 3.2).
+    pub hidden: u32,
+}
+
+/// A body: the function's, or one that a structure holds, with what the drawing names it until it is placed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BodyOf {
+    pub caption: String,
+    /// The number of its arm, from 1, written after the caption, which is cut so that it stays.
+    pub arm: Option<usize>,
+    /// Indices in `Graph::nodes`, in canonical order.
+    pub nodes: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Graph<'a> {
+    /// From the root, as `run` names it: `check_voltage`, `dmm_driver.measure`.
+    pub function: String,
+    pub bodies: Vec<BodyOf>,
+    pub nodes: Vec<Node<'a>>,
+}
+
+/// What `LC7002` counts (`docs/cli.md`, 7.6): nodes at every level, structures included, and their terminals. The
+/// nodes are counted from the text before anything is built; the terminals, which depend on the signatures of what is
+/// called (a missing input is still a terminal), as the graph is built, which stops at the first one too many.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub nodes: u64,
+    pub terminals: u64,
+}
+
+/// What a call needs of its callee, the same for every call to it: worked out once per callee, so that drawing a call
+/// costs what its arguments and its terminals cost, never the size of a signature again.
+struct Callee<'a> {
+    params: Vec<Param>,
+    /// The positions of the parameters that are wires without a default: each is a terminal, wired or not.
+    required: Vec<usize>,
+    /// How many parameters are wires with a default: those that no argument wires are hidden.
+    defaults: u32,
+    outputs: Vec<String>,
+    /// The types of the outputs that the signature declares: those of a call written alone when `check` gives none.
+    output_types: Vec<TyId>,
+    band: Option<String>,
+    always: bool,
+    glyph: Option<&'static str>,
+    icon: Option<&'a Icon>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum CalleeKey {
+    Function(u32, Name),
+    Primitive(PrimitiveLibrary, Name),
+    Variant(TyId, Name),
+}
+
+/// The graph could not be built within the budget of terminals: what was counted when it stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TooLarge(pub Counts);
+
+/// Every body of the function, with the order of its lines: the written order when it has no canonical one.
+/// A body: the statement of the structure that holds it, the number of its arm, the body, the order of its lines.
+type Walked<'a> = (Option<&'a Statement>, Option<usize>, &'a Body, Vec<usize>);
+
+fn bodies<'a>(function: &'a Function, orders: &BodyOrders) -> Vec<Walked<'a>> {
+    let order_of = |body: &Body, order: Option<Result<&[usize], labcraft_format::Unorderable>>| match order {
+        Some(Ok(order)) => order.to_vec(),
+        _ => (0..body.statements.len()).collect(),
+    };
+    let mut found = Vec::new();
+    let mut stack = vec![(None, None, &function.body, order_of(&function.body, orders.of_function()))];
+    while let Some((owner, arm, body, order)) = stack.pop() {
+        let mut inner = Vec::new();
+        for &index in &order {
+            let Some(statement) = body.statements.get(index) else { continue };
+            if let StatementKind::Binding { value, .. } = &statement.kind {
+                match value {
+                    Rhs::Loop(structure) => inner.push((Some(statement), None, &structure.body, order_of(&structure.body, orders.of(statement.id)))),
+                    Rhs::For(structure) => inner.push((Some(statement), None, &structure.body, order_of(&structure.body, orders.of(statement.id)))),
+                    Rhs::Match(branching) | Rhs::Handle(branching) => {
+                        for (number, arm) in branching.arms.iter().enumerate() {
+                            inner.push((Some(statement), Some(number), &arm.body, order_of(&arm.body, orders.of(arm.id))));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        found.push((owner, arm, body, order));
+        // Depth first, in the order of the lines: the last pushed is walked first.
+        stack.extend(inner.into_iter().rev());
+    }
+    found
+}
+
+/// Counts the nodes that `LC7002` counts, without building anything: every line that the graph draws as a node.
+pub fn count_nodes(function: &Function, orders: &BodyOrders, resolved: &Resolved) -> u64 {
+    let mut nodes: u64 = 0;
+    for (_, _, body, _) in bodies(function, orders) {
+        for statement in &body.statements {
+            if draws_a_node(statement, resolved) {
+                nodes = nodes.saturating_add(1);
+            }
+        }
+    }
+    nodes
+}
+
+/// Whether a line is a node of the drawing: not a new name for a wire (`err = e3`), not `collect` or `until`.
+fn draws_a_node(statement: &Statement, resolved: &Resolved) -> bool {
+    match &statement.kind {
+        StatementKind::Binding { value: Rhs::Operand(operand), .. } => is_constant(operand, resolved),
+        StatementKind::Binding { .. } | StatementKind::Call(_) => true,
+        StatementKind::Collect(_) | StatementKind::Until(_) => false,
+    }
+}
+
+/// An operand that gives a constant rather than reading a wire: a literal, a variant without values, a function.
+fn is_constant(operand: &Operand, resolved: &Resolved) -> bool {
+    !matches!(operand, Operand::Path(_)) || matches!(resolved.of(operand.id()), Meaning::Variant { .. } | Meaning::Function { .. })
+}
+
+pub struct Builder<'a> {
+    checked: &'a Checked,
+    file: &'a CheckedFile,
+    names: &'a Interner,
+    /// The library of the file, by its name: a call into it has no band.
+    own: &'a str,
+    own_id: Option<LibraryId>,
+    /// Whether a construction whose fields are all constants is folded (notation 3.1): never in an exported image.
+    fold: bool,
+    callees: HashMap<CalleeKey, Rc<Callee<'a>>>,
+}
+
+impl<'a> Builder<'a> {
+    pub fn new(checked: &'a Checked, file: &'a CheckedFile, names: &'a Interner) -> Self {
+        let declared = checked.libraries.get(file.library as usize);
+        let own = declared.map_or("", |library| library.name.as_str());
+        let own_id = declared.map(|library| library.id);
+        Builder { checked, file, names, own, own_id, fold: false, callees: HashMap::new() }
+    }
+
+    /// Folds the constructions whose fields are all constants, as the viewer does by default (notation 3.1).
+    pub fn folding(mut self, fold: bool) -> Self {
+        self.fold = fold;
+        self
+    }
+
+    fn resolved(&self) -> &'a Resolved {
+        &self.file.resolved
+    }
+
+    fn types(&self) -> &'a TypeTable {
+        &self.checked.types
+    }
+
+    fn text(&self, name: Name) -> String {
+        cut_text(self.names.resolve(name)).into_owned()
+    }
+
+    /// The graph of a function with no body: an `extern` declaration.
+    pub fn empty(&self, name: Name) -> Graph<'a> {
+        let function = self.qualified(name);
+        Graph { bodies: vec![BodyOf { caption: function.clone(), arm: None, nodes: Vec::new() }], function, nodes: Vec::new() }
+    }
+
+    /// From the root, as `run` names it.
+    fn qualified(&self, name: Name) -> String {
+        let qualified = match self.own {
+            "" => self.text(name),
+            own => format!("{own}.{}", self.names.resolve(name)),
+        };
+        cut_text(&qualified).into_owned()
+    }
+
+    /// The graph, unless its terminals pass `max_terminals`: then what was counted when building stopped.
+    pub fn graph(&mut self, function: &'a Function, orders: &BodyOrders, max_terminals: u64) -> Result<Graph<'a>, TooLarge> {
+        let mut graph = Graph { function: self.qualified(function.name), bodies: Vec::new(), nodes: Vec::new() };
+        let standard = self.standard_nodes(&self.file.file);
+        let mut counts = Counts::default();
+        // The head of a structure, written once for all its arms.
+        let mut heads: HashMap<labcraft_graph::Id, String> = HashMap::new();
+        for (owner, arm, body, order) in bodies(function, orders) {
+            let caption = match owner {
+                None => graph.function.clone(),
+                Some(statement) => heads.entry(statement.id).or_insert_with(|| head(statement, self.names)).clone(),
+            };
+            let mut nodes = Vec::new();
+            for &index in &order {
+                let Some(statement) = body.statements.get(index) else { continue };
+                if let Some(mut node) = self.node(statement) {
+                    node.standard = self.designated(statement, &standard);
+                    counts.nodes = counts.nodes.saturating_add(1);
+                    counts.terminals = counts.terminals.saturating_add((node.inputs.len() + node.outputs.len()) as u64);
+                    if counts.terminals > max_terminals {
+                        return Err(TooLarge(counts));
+                    }
+                    nodes.push(graph.nodes.len());
+                    graph.nodes.push(node);
+                }
+            }
+            graph.bodies.push(BodyOf { caption, arm: arm.map(|number| number + 1), nodes });
+        }
+        Ok(graph)
+    }
+
+    /// The nodes that the `layout` section shows in standard view, by how it designates them (spec 11): by label, and
+    /// by the name of a line.
+    fn standard_nodes(&self, file: &File) -> HashSet<(bool, Name)> {
+        let Some(layout) = &file.layout else { return HashSet::new() };
+        layout
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                LayoutKind::Node { node, view: Some(View::Standard), .. } => Some((node.is_label, node.name)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Spec 11: by its label, or by the name of its line.
+    fn designated(&self, statement: &Statement, standard: &HashSet<(bool, Name)>) -> bool {
+        statement.label.is_some_and(|label| standard.contains(&(true, label.name)))
+            || first_name(statement).is_some_and(|name| standard.contains(&(false, name)))
+    }
+
+    /// `docs/cli.md`, 4.3: the name of its line, its label, or `@12`.
+    fn key(&self, statement: &Statement) -> String {
+        match (first_name(statement), statement.label) {
+            (Some(name), _) => self.text(name),
+            (None, Some(label)) => format!("#{}", self.text(label.name)),
+            (None, None) => format!("@{}", self.file.source_map.span(statement.id).map_or(0, |span| span.start.line)),
+        }
+    }
+
+    fn node(&mut self, statement: &'a Statement) -> Option<Node<'a>> {
+        let (kind, inputs, outputs, hidden, always, after) = match &statement.kind {
+            StatementKind::Binding { targets, value } => match value {
+                Rhs::Call(call) => {
+                    let call = self.call(call, statement, targets);
+                    (call.0, call.1, call.2, call.3, call.4, call.5)
+                }
+                Rhs::Struct(lit) => {
+                    let (kind, inputs) = self.construction(lit, targets);
+                    let outputs = vec![self.output_of(targets, 0, "value")];
+                    (kind, inputs, outputs, 0, false, false)
+                }
+                Rhs::Operand(operand) if is_constant(operand, self.resolved()) => {
+                    let name = targets.first().map_or_else(String::new, |target| self.target_text(target));
+                    let kind = Kind::Constant { name, value: self.constant_text(operand) };
+                    (kind, Vec::new(), vec![self.output_of(targets, 0, "value")], 0, false, false)
+                }
+                Rhs::Operand(_) => return None,
+                Rhs::Loop(_) | Rhs::For(_) | Rhs::Match(_) | Rhs::Handle(_) => (Kind::Structure, Vec::new(), Vec::new(), 0, false, false),
+            },
+            StatementKind::Call(call) => {
+                let call = self.call(call, statement, &[]);
+                (call.0, call.1, call.2, call.3, call.4, call.5)
+            }
+            StatementKind::Collect(_) | StatementKind::Until(_) => return None,
+        };
+        Some(Node {
+            kind,
+            key: self.key(statement),
+            label: statement.label.map(|label| format!("#{}", self.text(label.name))),
+            always,
+            after,
+            standard: false,
+            inputs,
+            outputs,
+            hidden,
+        })
+    }
+
+    fn target_text(&self, target: &Target) -> String {
+        match target {
+            Target::Name(_, name) => self.text(*name),
+            Target::Next(_, name) => format!("next {}", self.text(*name)),
+            Target::Skip(_) => "_".to_owned(),
+        }
+    }
+
+    /// The output of a line that makes one value.
+    fn output_of(&self, targets: &[Target], index: usize, name: &str) -> Terminal {
+        let (ty, ignored) = match targets.get(index) {
+            Some(Target::Name(id, _) | Target::Next(id, _)) => (self.resolved().ty(*id), false),
+            Some(Target::Skip(id)) => (self.resolved().ty(*id), true),
+            None => (TyId::ERROR, false),
+        };
+        self.terminal(name.to_owned(), ty, None, ignored)
+    }
+
+    fn terminal(&self, name: String, ty: TyId, constant: Option<String>, ignored: bool) -> Terminal {
+        Terminal { name, ty, family: family(self.types(), &self.checked.libraries, ty), unit: unit(self.types(), ty), constant, ignored }
+    }
+
+    /// A call: its kind, its inputs and outputs in signature order, the unwired optional inputs, `always`, `after:`.
+    #[allow(clippy::type_complexity)]
+    fn call(&mut self, call: &'a Call, statement: &Statement, targets: &[Target]) -> (Kind<'a>, Vec<Terminal>, Vec<Terminal>, u32, bool, bool) {
+        let resolved = self.resolved().call(call.id);
+        let callee = resolved.map_or(Meaning::None, |resolved| resolved.callee);
+        let wiring = |index: usize| resolved.and_then(|resolved| resolved.terminals.get(index)).copied();
+        let after = call.args.iter().any(|arg| matches!(arg, Arg::After { .. }));
+        let qualified = cut_text(&path_text(&call.callee, self.names)).into_owned();
+        let short = cut_text(self.names.resolve(call.callee.rest.last().copied().unwrap_or(call.callee.first))).into_owned();
+        let signature = self.callee(callee);
+        if let Meaning::Variant { ty, variant } = callee {
+            let (type_name, band) = self.type_name(ty);
+            let kind = Kind::Variant { ty: type_name, variant: self.text(variant), library: band };
+            let inputs = self.inputs(call, &signature, &wiring);
+            return (kind, inputs.0, vec![self.output_of(targets, 0, "value")], inputs.1, false, after);
+        }
+        let (inputs, hidden) = self.inputs(call, &signature, &wiring);
+        // Outputs: one per name of the signature, typed by what the line binds, or by what a call written alone gives.
+        let alone = self.resolved().outputs_of(statement.id);
+        // A call written alone has the outputs of what it gives, `core.call` those of the function it calls.
+        let count = signature.outputs.len().max(targets.len()).max(if targets.is_empty() { alone.len() } else { 0 });
+        let outputs = (0..count)
+            .map(|index| {
+                let name = signature.outputs.get(index).cloned().unwrap_or_else(|| index.to_string());
+                if targets.is_empty() {
+                    let ty = alone.get(index).or(signature.output_types.get(index)).copied().unwrap_or(TyId::ERROR);
+                    self.terminal(name, ty, None, true)
+                } else {
+                    self.output_of(targets, index, &name)
+                }
+            })
+            .collect();
+        let kind = match callee {
+            Meaning::Primitive { library: PrimitiveLibrary::Ui, .. } => {
+                let element = call
+                    .args
+                    .iter()
+                    .find_map(|arg| match arg {
+                        Arg::Value { value: Operand::Path(path), .. } if matches!(self.resolved().of(path.id), Meaning::Element(_)) => {
+                            Some(cut_text(&path_text(path, self.names)).into_owned())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                Kind::Ui { operation: short.clone(), element }
+            }
+            _ => {
+                let glyph = match (signature.glyph, short.as_str()) {
+                    (Some("unit"), name) => self.unit_arg(call).map(|unit| Glyph::Unit { unit, struck: name == "unitless" }),
+                    (Some(sign), _) => Some(Glyph::Sign(sign)),
+                    (None, _) => None,
+                };
+                Kind::Call { qualified, short, library: signature.band.clone(), glyph, icon: signature.icon }
+            }
+        };
+        (kind, inputs, outputs, hidden, signature.always, after)
+    }
+
+    /// What a call needs of its callee, worked out on the first call to it.
+    fn callee(&mut self, callee: Meaning) -> Rc<Callee<'a>> {
+        let key = match callee {
+            Meaning::Function { library, name } => Some(CalleeKey::Function(library, name)),
+            Meaning::Primitive { library, name } => Some(CalleeKey::Primitive(library, name)),
+            Meaning::Variant { ty, variant } => Some(CalleeKey::Variant(ty, variant)),
+            _ => None,
+        };
+        if let Some(found) = key.and_then(|key| self.callees.get(&key)) {
+            return Rc::clone(found);
+        }
+        let made = Rc::new(self.make_callee(callee));
+        if let Some(key) = key {
+            self.callees.insert(key, Rc::clone(&made));
+        }
+        made
+    }
+
+    fn make_callee(&self, callee: Meaning) -> Callee<'a> {
+        let mut found = Callee {
+            params: Vec::new(),
+            required: Vec::new(),
+            defaults: 0,
+            outputs: Vec::new(),
+            output_types: Vec::new(),
+            band: None,
+            always: false,
+            glyph: None,
+            icon: None,
+        };
+        // The parameters: name, whether it has a default, whether it is a wire at all (not a unit, a category, an element).
+        match callee {
+            Meaning::Function { library, name } => {
+                let declared = self.checked.libraries.get(library as usize);
+                let function = declared.and_then(|declared| declared.functions.get(&name));
+                if let Some(function) = function {
+                    found.params = function
+                        .params
+                        .iter()
+                        .map(|param| Param { name: self.text(param.name), has_default: param.has_default, is_wire: true, ty: Some(param.ty) })
+                        .collect();
+                    found.outputs = function.outputs.iter().map(|output| self.text(output.name)).collect();
+                    found.output_types = function.outputs.iter().map(|output| output.ty).collect();
+                }
+                found.band = declared
+                    .map(|declared| declared.name.as_str())
+                    .filter(|name| !name.is_empty() && *name != self.own)
+                    .map(|name| cut_text(name).into_owned());
+                found.always = declared.is_some_and(|declared| declared.always.contains(&name));
+                found.icon = function
+                    .and_then(|function| function.file)
+                    .and_then(|file| self.checked.files.get(file as usize))
+                    .and_then(|file| file.file.icon.as_ref());
+            }
+            Meaning::Primitive { library, name } => {
+                if let Some(primitive) = primitive(library, self.names.resolve(name)) {
+                    found.params = primitive
+                        .params
+                        .iter()
+                        .map(|param| Param {
+                            name: param.name.to_owned(),
+                            has_default: param.default.is_some(),
+                            is_wire: param.kind == ParamKind::Value,
+                            ty: None,
+                        })
+                        .collect();
+                    found.outputs = primitive.outputs.map_or_else(Vec::new, |outputs| outputs.iter().map(|&output| output.to_owned()).collect());
+                }
+                found.glyph = (library == PrimitiveLibrary::Core).then(|| sign_of(self.names.resolve(name))).flatten();
+            }
+            Meaning::Variant { ty, variant } => {
+                found.params = self
+                    .variant_values(ty, variant)
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &ty)| Param { name: index.to_string(), has_default: false, is_wire: true, ty: Some(ty) })
+                    .collect();
+            }
+            _ => {}
+        }
+        for (position, param) in found.params.iter().enumerate() {
+            match (param.is_wire, param.has_default) {
+                (true, false) => found.required.push(position),
+                (true, true) => found.defaults = found.defaults.saturating_add(1),
+                (false, _) => {}
+            }
+        }
+        found
+    }
+
+    /// The inputs of a call in the order of its parameters: an argument wired, or given as a constant; a variadic parameter
+    /// gives one per argument; an argument of no parameter (the fields of `string.format`, what `core.call` passes) comes
+    /// last. A parameter with a default and no argument is hidden; a unit, a category or an element is no terminal. In
+    /// time, the arguments and the terminals: the parameters with a default are counted, not walked.
+    fn inputs(&self, call: &Call, callee: &Callee<'_>, wiring: &dyn Fn(usize) -> Option<Wiring>) -> (Vec<Terminal>, u32) {
+        // The arguments that a parameter takes, by its position then their own; the free ones, in their order.
+        let mut wired: Vec<(usize, usize, &Operand)> = Vec::new();
+        let mut free: Vec<(usize, Option<Name>, &Operand)> = Vec::new();
+        for (index, arg) in call.args.iter().enumerate() {
+            let Arg::Value { name, value, .. } = arg else { continue };
+            match wiring(index) {
+                Some(Wiring::Param(position)) => wired.push((position as usize, index, value)),
+                Some(Wiring::Free) | None => free.push((index, *name, value)),
+                Some(_) => {}
+            }
+        }
+        wired.sort_by_key(|&(position, index, _)| (position, index));
+        let mut inputs = Vec::new();
+        let mut wired_defaults: u32 = 0;
+        let mut required = callee.required.iter().copied().peekable();
+        let mut previous = None;
+        for &(position, _, operand) in &wired {
+            // The parameters without a default that come before, and that no argument wires: missing, which `check`
+            // says, and still a terminal, so the drawing shows where.
+            while let Some(missing) = required.next_if(|&missing| missing < position) {
+                self.missing(callee, missing, &mut inputs);
+            }
+            let _ = required.next_if_eq(&position);
+            let Some(param) = callee.params.get(position) else {
+                // A value of no parameter (one too many for a variant, which `check` says): still drawn, by its
+                // position, so that the drawing shows where, as an argument too many for a function.
+                inputs.push(self.input(position.to_string(), operand, None));
+                continue;
+            };
+            if param.is_wire {
+                inputs.push(self.input(param.name.clone(), operand, param.ty));
+                if param.has_default && previous != Some(position) {
+                    wired_defaults = wired_defaults.saturating_add(1);
+                }
+            }
+            previous = Some(position);
+        }
+        for missing in required {
+            self.missing(callee, missing, &mut inputs);
+        }
+        for (index, name, operand) in free {
+            let name = name.map_or_else(|| index.to_string(), |name| self.text(name));
+            inputs.push(self.input(name, operand, None));
+        }
+        (inputs, callee.defaults.saturating_sub(wired_defaults))
+    }
+
+    fn missing(&self, callee: &Callee<'_>, position: usize, inputs: &mut Vec<Terminal>) {
+        if let Some(param) = callee.params.get(position) {
+            inputs.push(self.terminal(param.name.clone(), param.ty.unwrap_or(TyId::ERROR), None, false));
+        }
+    }
+
+    /// An input: its type is that of the parameter, when the signature gives one, so that the terminal shows its unit
+    /// (notation 4.2), and otherwise that of what the call settles.
+    fn input(&self, name: String, operand: &Operand, declared: Option<TyId>) -> Terminal {
+        let ty = declared.filter(|ty| !self.types().has_error(*ty)).unwrap_or_else(|| self.resolved().ty(operand.id()));
+        let constant = match operand {
+            Operand::Path(path) => match self.resolved().of(path.id) {
+                Meaning::Value(_) | Meaning::None | Meaning::Element(_) => None,
+                _ => Some(self.constant_text(operand)),
+            },
+            _ => Some(self.constant_text(operand)),
+        };
+        self.terminal(name, ty, constant, false)
+    }
+
+    /// An inline constant as the text writes it: a string in quotes with its escapes read, which the drawing shows by
+    /// their signs (notation 2.3); the others in their canonical form.
+    fn constant_text(&self, operand: &Operand) -> String {
+        match operand {
+            Operand::Text(_, text) => {
+                let raw = text.char_indices().nth(CONSTANT_BYTES / 4).map_or(&**text, |(end, _)| text.get(..end).unwrap_or(text));
+                let more = if raw.len() < text.len() { "\u{2026}" } else { "\"" };
+                format!("\"{}{more}", read_escapes(raw))
+            }
+            _ => write_operand(operand, self.names, CONSTANT_BYTES),
+        }
+    }
+
+    /// The unit that `with_unit` or `unitless` takes, as written.
+    fn unit_arg(&self, call: &Call) -> Option<String> {
+        call.args.iter().find_map(|arg| match arg {
+            Arg::Value { value: operand @ Operand::Bracket(..), .. } => Some(write_operand(operand, self.names, CONSTANT_BYTES)),
+            _ => None,
+        })
+    }
+
+    /// A construction: folded when every field is a constant (notation 3.1), otherwise one input per field, in the order
+    /// the type declares them.
+    fn construction(&self, lit: &StructLit, targets: &[Target]) -> (Kind<'a>, Vec<Terminal>) {
+        let ty = match self.resolved().of(lit.id) {
+            Meaning::Type(ty) => ty,
+            _ => self.resolved().ty(lit.id),
+        };
+        let (type_name, band) = match self.resolved().of(lit.id) {
+            Meaning::Type(ty) => self.type_name(ty),
+            _ => (cut_text(&path_text(&lit.path, self.names)).into_owned(), None),
+        };
+        if self.fold && lit.fields.iter().all(|field| is_constant(&field.value, self.resolved())) {
+            let name = targets.first().map_or_else(String::new, |target| self.target_text(target));
+            return (Kind::Constant { name, value: format!("{type_name} {{\u{2026}}}") }, Vec::new());
+        }
+        let declared: Vec<Name> = match self.types().get(definition(self.types(), &self.checked.libraries, ty)) {
+            Ty::Struct(fields) => fields.iter().map(|(name, _)| *name).collect(),
+            _ => Vec::new(),
+        };
+        let mut fields: Vec<&labcraft_graph::FieldInit> = lit.fields.iter().collect();
+        if !declared.is_empty() {
+            let place: HashMap<Name, usize> = declared.iter().enumerate().rev().map(|(position, name)| (*name, position)).collect();
+            fields.sort_by_key(|field| place.get(&field.name).copied().unwrap_or(usize::MAX));
+        }
+        let inputs = fields.iter().map(|field| self.input(self.text(field.name), &field.value, None)).collect();
+        (Kind::Construction { ty: type_name, library: band }, inputs)
+    }
+
+    /// The name of a declared type without its library, and that library for the band when it is another one.
+    fn type_name(&self, ty: TyId) -> (String, Option<String>) {
+        match self.types().get(ty) {
+            Ty::Named { library, name } => {
+                let band = library_named(&self.checked.libraries, *library)
+                    .map(|declared| declared.name.as_str())
+                    .filter(|name| !name.is_empty() && *name != self.own)
+                    .map(|name| cut_text(name).into_owned());
+                (self.text(*name), band)
+            }
+            _ => (self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names)), None),
+        }
+    }
+
+    fn variant_values(&self, ty: TyId, variant: Name) -> Vec<TyId> {
+        match self.types().get(definition(self.types(), &self.checked.libraries, ty)) {
+            Ty::Enum(variants) => variants.iter().find(|candidate| candidate.name == variant).map_or_else(Vec::new, |found| found.values.clone()),
+            _ => Vec::new(),
+        }
+    }
+}
+
+/// The head of a structure as the text writes it, without its `{`: `measured = match in_range`.
+fn head(statement: &Statement, names: &Interner) -> String {
+    let line = write_line(statement, names);
+    cut_text(line.trim_end_matches('{').trim_end()).into_owned()
+}
+
+/// A parameter of what a call calls: whether it has a default, whether it is a wire at all (not a unit, a category or an
+/// element), and its type when the signature gives one that does not depend on the call.
+struct Param {
+    name: String,
+    has_default: bool,
+    is_wire: bool,
+    ty: Option<TyId>,
+}
+
+/// The first name that a line binds: the name of its line (spec 5.2).
+fn first_name(statement: &Statement) -> Option<Name> {
+    match &statement.kind {
+        StatementKind::Binding { targets, .. } => targets.iter().find_map(|target| match target {
+            Target::Name(_, name) => Some(*name),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn path_text(path: &labcraft_graph::Path, names: &Interner) -> String {
+    let mut text = names.resolve(path.first).to_owned();
+    for segment in &path.rest {
+        text.push('.');
+        text.push_str(names.resolve(*segment));
+    }
+    text
+}
+
+/// The glyph of a primitive of `core` drawn as a circle (notation 3.2); `unit` for those that show a unit.
+fn sign_of(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "add" => "+",
+        "sub" | "neg" => "\u{2212}",
+        "mul" => "\u{D7}",
+        "div" => "\u{F7}",
+        "sqrt" => "\u{221A}",
+        "abs" => "|x|",
+        "ge" => "\u{2265}",
+        "le" => "\u{2264}",
+        "gt" => ">",
+        "lt" => "<",
+        "eq" => "=",
+        "ne" => "\u{2260}",
+        "and" => "\u{2227}",
+        "or" => "\u{2228}",
+        "not" => "\u{AC}",
+        "select" => "?",
+        "with_unit" | "unitless" => "unit",
+        _ => return None,
+    })
+}
+
+fn library_named(libraries: &[DeclaredLibrary], id: LibraryId) -> Option<&DeclaredLibrary> {
+    libraries.iter().find(|library| library.id == id)
+}
+
+/// What a declared type stands for, followed a few times at most: an alias names a type, never itself.
+fn definition(types: &TypeTable, libraries: &[DeclaredLibrary], ty: TyId) -> TyId {
+    let mut current = ty;
+    for _ in 0..8 {
+        let Ty::Named { library, name } = types.get(current) else { return current };
+        let Some(declared) = library_named(libraries, *library).and_then(|library| library.types.get(name)) else { return current };
+        if declared.opaque || declared.definition == current {
+            return current;
+        }
+        current = declared.definition;
+    }
+    current
+}
+
+/// The family of a type (notation 4.1).
+pub fn family(types: &TypeTable, libraries: &[DeclaredLibrary], ty: TyId) -> Family {
+    let mut dimensions: u8 = 0;
+    let mut current = ty;
+    for _ in 0..64 {
+        let base = match types.get(current) {
+            Ty::Error | Ty::Variable(_) => Base::Unknown,
+            Ty::Bool => Base::Bool,
+            Ty::Number { .. } | Ty::Duration | Ty::Timestamp => Base::Number,
+            Ty::String | Ty::Bytes => Base::Text,
+            Ty::ErrorValue => return Family { dimensions, ..Family::ERROR },
+            Ty::Array { element, dimensions: more } => {
+                dimensions = dimensions.saturating_add(*more);
+                current = *element;
+                continue;
+            }
+            Ty::Struct(_) | Ty::Waveform(_) => Base::Struct,
+            Ty::Enum(_) => Base::Enum,
+            Ty::Queue(_) | Ty::Ref(_) => Base::Session,
+            Ty::Function { .. } => Base::Function,
+            Ty::Named { library, name } => {
+                let declared = library_named(libraries, *library).and_then(|library| library.types.get(name));
+                match declared {
+                    Some(declared) if declared.opaque => Base::Session,
+                    Some(declared) if declared.definition != current => {
+                        current = declared.definition;
+                        continue;
+                    }
+                    _ => Base::Unknown,
+                }
+            }
+        };
+        return Family { base, dimensions };
+    }
+    Family { base: Base::Unknown, dimensions }
+}
+
+/// The unit of a number, for its badge (notation 4.2): none for a number without one.
+pub fn unit(types: &TypeTable, ty: TyId) -> Option<String> {
+    match types.get(ty) {
+        Ty::Number { unit, .. } => Some(unit.to_string()).filter(|text| !text.is_empty()).map(|text| cut_text(&text).into_owned()),
+        _ => None,
+    }
+}
+
+/// The function of a checked file, if it declares one.
+pub fn function_of(file: &CheckedFile) -> Option<&Function> {
+    match &file.file.decl {
+        Decl::Function(function) => Some(function),
+        _ => None,
+    }
+}
+
+/// The orders of every body of the function, as `fmt` gives them.
+pub fn orders_of(file: &CheckedFile, function: &Function, names: &Interner) -> BodyOrders {
+    match &file.orders {
+        Some(orders) => orders.clone(),
+        None => canonical_orders(&function.body, &function.signature, names),
+    }
+}

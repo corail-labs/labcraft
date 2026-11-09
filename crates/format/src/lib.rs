@@ -30,4 +30,4 @@ pub use decode::decode;
 pub use lexer::{Keyword, Lexer, Token, TokenKind, is_fill, is_invisible, is_name};
 pub use order::{BodyOrders, Unorderable, canonical_order, canonical_orders};
 pub use read::{Read, STACK_SIZE, read};
-pub use write::{TooLarge, write, write_line};
+pub use write::{TooLarge, write, write_line, write_operand};

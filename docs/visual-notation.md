@@ -202,6 +202,11 @@ developer chooses the zoom, and the font of the other panels of the IDE.
   character of those that `LC0005` names (U+202A to U+202E, U+2066 to U+2069) never acts: it is shown
   as its code, `⟨U+202E⟩`, in the token `mark.invalid`, so that no text can hide how it reads (spec 2,
   Encoding). The marks U+061C, U+200E and U+200F act as in any right-to-left text.
+- **Controls.** A text has one line. A line break in it (LF, CR, or CR LF) is drawn `↵`, as a value of a run
+  writes it (6.1), and a tab `⇥`; any other control character (general category Cc) is shown as its code,
+  `⟨U+0007⟩`, in the ink of the text, since it is legal and hides nothing. Each sign counts the cells it
+  shows: a code takes 8. A cut never splits a sign: it is whole, or gone after `…`. The text of an icon and
+  `LC5009` count the same signs.
 - **Height.** A line of text is 2384/2048 of the size (ascent 1901 and descent 483, in units of 2048).
   A text that sits on a line, such as the name of a terminal, has the middle of its capitals on that
   line (capital height 1493/2048); a text in a box (band, pill, badge, tab, bubble, each line of a
@@ -251,6 +256,12 @@ terminals (N-15).
                 └───────────────────────────┘
 ```
 
+- **Sizes** *(proposed)*, those of `design/notation.figcraft` on the grid of 8: a header of 24, its text at 12; the
+  first line of terminals at 40 from the top, the others 24 apart (a pill is 18 high), the last at 16 above the
+  bottom, so a block of one line is 56 high and one of two 80. The names of the terminals keep 12 from the edge,
+  and an input name and an output name on one line 24 between them; a unit badge follows its name, 4 after it,
+  and the pill of a constant its input, 8 after. The width is the largest of 112, the header (12, the name, the
+  badges, 12) and each line, rounded up to the grid.
 - **Lines of terminals**: a line holds at most one input, on the left, and one output, on the right.
 - **Pass-through pair on the same line**: an input and an output of the same opaque type (session)
   or error type share a line, so that the wire crosses the node in a straight line. Pairs are made
@@ -271,11 +282,12 @@ terminals (N-15).
   in full in the tooltip.
 - **Named constant** (`limit = 240 V`, spec 5.1): a small node without a body, the user places it near what it
   feeds. It shows its name, its value in a pill and one output terminal (`limit  240 V ●`), and its wire splits like any
-  other. Dragging a wire from an inline constant to a second terminal makes one. A new name for a wire (`err = e3`) still
+  other. *(proposed)* It is 24 high: its name in 12, then 8, the pill, 8, and the terminal on its right edge. Dragging a wire from an inline constant to a second terminal makes one. A new name for a wire (`err = e3`) still
   draws nothing.
 - **Constant construction** (`k = Limits { low: 220 V, high: 240 V }`, or a variant with values): when every field is a
   constant and the values fit in a tooltip, it is drawn folded by default, as a small node (`k  Limits {…} ●`). Each node can be
-  unfolded into its block; the file does not change, and an exported image shows the block.
+  unfolded into its block; the file does not change, and an exported image shows the block. A field that is a variant
+  without values (`Verdict.Pass`) is a constant.
 - **Nodes of `ui`** (`ui.set`, `ui.get`, spec 10): the element is written on the face of the node (`set live_voltage`), with no
   terminal for it, since it is no wire. An element named like an input or an output of the function is also that terminal of the
   function, and selecting an element selects its nodes and terminals. The default of an input has one field in the inspector,
@@ -318,19 +330,24 @@ When the function comes from another library, a **band** above the block says wh
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
   same, each is cut in the middle instead, keeping its start and its end (`measurement_a` and
   `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
-  no band. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
+  no band, in 11 and `ink.muted`, 4 above it *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
 - **Block**: a square *(proposed)*, of 40 × 40 units at least, so that a node reads as an icon. Its side is
   the largest of 40, the width of its label with 9 units on each side (4, and half a terminal, which is 10
   across and straddles the edge, 4.1), and the height that its lines of terminals need at the closest (below),
-  with 8 above the top line and 8 below the bottom one, rounded up to the grid. A band never makes a block taller: a band wider than the square widens the block,
+  with 8 above the top line and 8 below the bottom one, and, with no icon, the height of its label with 8 above and
+  below *(proposed)*, rounded up to the grid. A band never makes a block taller: a band wider than the square widens the block,
   which is then wider than tall, and the terminals stay where they were. A label of more than 3 cells makes the
   square larger than 40 (`open` 48, `close` 56, `elapsed` 72): a reason to give the function an icon. A
   construction, a variant constructor and a node of `ui` are not squares: they can have no icon, and their text
   is what they show. Their width is that of their label with 9 on each side, their height the larger of what
   their lines need and their label with 8 above and below (two lines, `set` / `live_voltage`, need 44, so 48), each at
-  least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square.
-- **Center**: the function's icon (`icon` section, spec 11.1), alone, drawn 28 × 28 units; otherwise a
+  least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square. A value too many for a
+  variant, or an argument too many for a function, which `check` refuses, still has its input, named by its position
+  (`1`), so that the drawing shows where.
+- **Center** of the block, which a band can make wider than its square: the function's icon (`icon` section,
+  spec 11.1), alone, drawn 28 × 28 units and cut to its grid, so that a shape that leaves it (`LC5009`) never covers
+  the block, a terminal or a wire, each of its texts cut at 40 cells (2.3) to bound what is drawn; otherwise a
   short label: the last segment of the name (`visa.open` → `open`). A label that holds an
   underscore is written on **two lines** when that makes the square smaller, cut at an underscore, which is
   not drawn. The
@@ -386,9 +403,10 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
 A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
-the unit needs. When two neighbouring inputs both carry an inline constant, the circle stretches into
-a capsule of the same width, as tall as needed for those inputs to be 24 apart, since a pill is 18 high
-(`select(ok, 1 V, 0 V)`). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
+the unit needs, with 3 on each side *(proposed)*. When two neighbouring inputs both carry an inline constant,
+the circle stretches into a capsule of the same width, as tall as needed for those inputs to be 24 apart, since a
+pill is 18 high (`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
+`check` refuses but the drawing still shows, are 8 apart, and the circle stretches the same way. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
 ordinary compact view (block, no band).
 
 **Constant on a primitive input**: the circle has no terminal line, so the pill is attached to the
