@@ -274,12 +274,12 @@ mod tests {
 
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
-    /// an `after:` on the top edge of a labelled block; and one that the fuzzing found, a node that reads its own error,
-    /// read on to the right too. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// an `after:` on the top edge of a labelled block; and two that the fuzzing found: a node that reads its own error,
+    /// read on to the right too, and an `err` input whose type is unknown, which is then no error. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 8] = [
+        const CASES: [(&str, &str); 9] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -288,6 +288,7 @@ mod tests {
             ("order_from_label.lcf", include_str!("../routing-cases/order_from_label.lcf")),
             ("after_on_labelled.lcf", include_str!("../routing-cases/after_on_labelled.lcf")),
             ("self_loop.lcf", include_str!("../routing-cases/self_loop.lcf")),
+            ("unknown_error.lcf", include_str!("../routing-cases/unknown_error.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {

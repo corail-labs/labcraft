@@ -677,7 +677,7 @@ fn a_placed_node_keeps_its_place() {
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
 #[test]
 fn the_terminals_of_a_frame_keep_their_order() {
-    let heights = crate::place::resolve(&[Some(-5000), Some(-4900), None, Some(0)], &[false, false, false, true]);
+    let heights = crate::place::resolve(&[Some(-5000), Some(-4900), None, Some(0)], &[false, false, false, true], &[None; 4]);
     // Down: -5000, then -4900 is pushed to -2600, the third goes 24 after it to -200, the last stays on the axis. Up:
     // -200 rises to -2400, -2600 to -4800, -5000 to -7200.
     assert_eq!(heights, [-7200, -4800, -2400, 0]);

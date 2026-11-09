@@ -623,7 +623,18 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
             .iter()
             .map(|slot| has_axis && ((slot.left.is_some() && slot.left == frame.pair.0) || (slot.right.is_some() && slot.right == frame.pair.1)))
             .collect();
-        let heights = resolve(&prefer, &pinned);
+        // Only an error goes below the main chain (notation 2.2): a terminal of any other family stays above it, even
+        // the last of its edge, or the one that a type left unknown.
+        let caps: Vec<Option<i64>> = list
+            .iter()
+            .map(|slot| {
+                let error =
+                    |terminal: Option<&FrameTerminal>| terminal.is_some_and(|terminal| terminal.terminal.family == crate::graph::Family::ERROR);
+                let any_error = error(slot.left.and_then(|at| frame.left.get(at))) || error(slot.right.and_then(|at| frame.right.get(at)));
+                (has_axis && !any_error).then_some(-SLOT)
+            })
+            .collect();
+        let heights = resolve(&prefer, &pinned, &caps);
         for (slot, y) in list.iter().zip(heights) {
             if let Some(at) = slot.left.and_then(|index| left.get_mut(index)) {
                 *at = y;
@@ -1000,8 +1011,8 @@ fn ranks(members: &[Vec<usize>], chain_of: &[Option<(usize, i64)>]) -> HashMap<u
 }
 
 /// The heights of the terminals of one list, from the top: each where it prefers, at least `SLOT` below the one before,
-/// a pinned one on the axis.
-pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool]) -> Vec<i64> {
+/// a pinned one on the axis, none lower than its cap.
+pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool], caps: &[Option<i64>]) -> Vec<i64> {
     let count = prefer.len();
     // What has no preference goes after the one before it, or before the one after: the nearest known on each side,
     // found in one pass each way.
@@ -1044,6 +1055,12 @@ pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool]) -> Vec<i64> {
             && !pinned.get(index).copied().unwrap_or(false)
         {
             *y = (*y).max(before + SLOT);
+        }
+    }
+    // None lower than its cap: those above it go up with it.
+    for (y, cap) in heights.iter_mut().zip(caps) {
+        if let Some(cap) = cap {
+            *y = (*y).min(*cap);
         }
     }
     for index in (0..count.saturating_sub(1)).rev() {

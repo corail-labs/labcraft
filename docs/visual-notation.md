@@ -117,7 +117,8 @@ are the nodes that a `layout` section does not place (spec 11).
   as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
   The terminals of a frame keep their order (the signature, the clauses of a loop), each at the height of the
   first node it feeds or that feeds it, as far as that order allows and at least 24 apart; the error terminal on
-  the axis, at the bottom of its edge; the two boxes of a register at one height. Each has its name inside the
+  the axis, at the bottom of its edge, and every other terminal at least 24 above it; the two boxes of a register at
+  one height. Each has its name inside the
   frame, with its unit and the default of an input (`low ◂ 220 V`). An error that crosses a body with no node
   on its way still has its straight line.
 - **A partial `layout` section.** The nodes it places never move. A frame grows upward to hold the nodes that
