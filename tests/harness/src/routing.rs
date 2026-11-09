@@ -2,7 +2,8 @@
 //! comparing with an output (`docs/architecture.md`, 11.6). It reads only the shapes of the drawing:
 //!
 //! - no wire crosses a node, a label, a pill, a band or a wire name of its body, but its own pill and its own name;
-//! - parallel wires of two values keep 8 units apart: no two share a segment;
+//! - parallel wires of two values keep 8 units apart: no two share a segment, but the last one of two values that reach
+//!   the same terminal;
 //! - nothing but error wires below the main chain of a body, which no other wire crosses.
 //!
 //! A body whose file places a node is not checked, nor a wire that the file gives waypoints: there the rules hold only
@@ -22,6 +23,8 @@ struct Segment {
     a: (i64, i64),
     b: (i64, i64),
     net: usize,
+    /// The terminal it reaches, for the last segment of a wire.
+    reaches: Option<(i64, i64)>,
 }
 
 /// A box, its edges excluded.
@@ -106,8 +109,9 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
                                 for (index, pair) in points.windows(2).enumerate() {
                                     let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
                                     let a = if index == 0 { toward(a, b, TERMINAL) } else { a };
+                                    let reaches = (index + 1 == last).then_some(b);
                                     let b = if index + 1 == last { toward(b, a, TERMINAL) } else { b };
-                                    segments.push(Segment { a, b, net });
+                                    segments.push(Segment { a, b, net, reaches });
                                 }
                             }
                             Shape::Rect { x, y, width, height, .. } => {
@@ -212,6 +216,11 @@ fn too_close(one: &Segment, other: &Segment) -> bool {
     if one.horizontal() != other.horizontal() {
         return false;
     }
+    // Two values that reach one terminal share their way into it: a value bound twice, which `check` refuses, or an input
+    // that reads several values (notation 2.2).
+    if one.reaches.is_some() && one.reaches == other.reaches {
+        return false;
+    }
     let span = |segment: &Segment| -> ((i64, i64), i64) {
         if segment.horizontal() {
             ((segment.a.0.min(segment.b.0), segment.a.0.max(segment.b.0)), segment.a.1)
@@ -274,12 +283,12 @@ mod tests {
 
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
-    /// an `after:` on the top edge of a labelled block; and two that the fuzzing found: a node that reads its own error,
-    /// read on to the right too, and an `err` input whose type is unknown, which is then no error. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// an `after:` on the top edge of a labelled block; and three that the fuzzing found: a node that reads its own error,
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, and an output bound twice. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 9] = [
+        const CASES: [(&str, &str); 10] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -289,6 +298,7 @@ mod tests {
             ("after_on_labelled.lcf", include_str!("../routing-cases/after_on_labelled.lcf")),
             ("self_loop.lcf", include_str!("../routing-cases/self_loop.lcf")),
             ("unknown_error.lcf", include_str!("../routing-cases/unknown_error.lcf")),
+            ("one_output_twice.lcf", include_str!("../routing-cases/one_output_twice.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {

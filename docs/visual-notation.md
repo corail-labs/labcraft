@@ -150,7 +150,8 @@ are the nodes that a `layout` section does not place (spec 11).
   error wire, runs on a horizontal track above the nodes it passes over (`low` and `high` in
   `check_voltage`), with one vertical segment at each end; a secondary error wire does the same below
   the chain.
-- Two wires never share a segment: parallel wires are 8 units apart.
+- Two wires never share a segment: parallel wires are 8 units apart. Two values that reach one terminal share the
+  way into it: an input that reads several values, or a value bound twice, which `check` refuses.
 - **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
   8 apart, with the conversion and field pills of its wires, the pills of the inline constants of the blocks
   it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other. The
