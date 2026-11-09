@@ -485,16 +485,27 @@ fn block(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
     list.insert(start, end);
 }
 
-/// The height nearest `middle` outside every blocked interval: `middle`, or just past either end of the one that holds it,
-/// the upper one on a tie.
+/// The height of the grid nearest `middle` outside every blocked interval: on the grid at `middle`, or past either end
+/// of what holds it, each way as far as the next height of the grid that nothing blocks, the upper one on a tie.
 fn nearest_free(blocked: &BTreeMap<i64, i64>, middle: i64) -> i64 {
-    match blocked.range(..=middle).next_back() {
-        Some((&start, &end)) if end >= middle => {
-            let (up, down) = (start.saturating_sub(1), end.saturating_add(1));
-            if middle - up <= down - middle { up } else { down }
-        }
-        _ => middle,
+    let holding = |y: i64| blocked.range(..=y).next_back().filter(|&(_, &end)| end >= y).map(|(&start, &end)| (start, end));
+    let on_grid = middle - middle.rem_euclid(GAP);
+    let Some((start, end)) = holding(on_grid) else { return on_grid };
+    // Up: below the start of each interval in the way, down to the grid.
+    let mut up = start.saturating_sub(1);
+    up -= up.rem_euclid(GAP);
+    while let Some((start, _)) = holding(up) {
+        up = start.saturating_sub(1);
+        up -= up.rem_euclid(GAP);
     }
+    // Down: past the end of each interval in the way, up to the grid.
+    let mut down = end.saturating_add(1);
+    down += (GAP - down.rem_euclid(GAP)) % GAP;
+    while let Some((_, end)) = holding(down) {
+        down = end.saturating_add(1);
+        down += (GAP - down.rem_euclid(GAP)) % GAP;
+    }
+    if middle - up <= down - middle { up } else { down }
 }
 
 /// The order of preference of a vertical in its channel: those that rise, then the others, then those that fall.
@@ -1093,11 +1104,15 @@ mod tests {
         block(&mut blocked, 108, 120);
         // Touching intervals merge: just outside is free.
         assert_eq!(blocked.into_iter().collect::<Vec<_>>(), vec![(93, 120)]);
+        // On the grid of 8: a free middle goes down to the grid, a blocked one out to the grid on either side.
         let mut blocked = BTreeMap::new();
-        block(&mut blocked, 93, 107);
-        assert_eq!(nearest_free(&blocked, 50), 50);
-        assert_eq!(nearest_free(&blocked, 99), 92);
-        assert_eq!(nearest_free(&blocked, 105), 108);
+        block(&mut blocked, 9300, 10700);
+        assert_eq!(nearest_free(&blocked, 5000), 4800);
+        assert_eq!(nearest_free(&blocked, 9900), 8800);
+        assert_eq!(nearest_free(&blocked, 10500), 11200);
+        // A second interval in the way upward: past it too.
+        block(&mut blocked, 8100, 8900);
+        assert_eq!(nearest_free(&blocked, 9900), 11200);
     }
 
     #[test]

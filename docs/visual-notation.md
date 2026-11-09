@@ -165,8 +165,8 @@ are the nodes that a `layout` section does not place (spec 11).
   the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
   the other's; otherwise those that rise stand left of those that fall. Wires that must each stand left of the next,
   round a cycle, cannot all keep 8 apart: all but the first of the cycle jog, a vertical where they enter, across at a
-  height of the grid that no other wire of the channel enters or leaves within 8, above the main chain, then their own
-  vertical. The main error chain runs straight on its axis past the columns that hold nothing there
+  height of the grid that no other wire of the channel enters, leaves or crosses within 8 (a track over it included),
+  above the main chain, the nearest the middle of their vertical, then their own vertical. The main error chain runs straight on its axis past the columns that hold nothing there
   (2.1). A wire leaves a terminal of a frame past its name, and reaches one before its name; an order wire from a
   label starts right after the label, at its middle; a terminal on the top edge (`after:` of a compact block) is
   reached from 8 above what is above the node, and the label of that block starts right of it. A junction point is a
