@@ -848,9 +848,11 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 
 ### 11.3 `diagram` (L5)
 
-*Status: steps 1 to 3 below implemented (step 3 of 11.7): the graph with its wires, the sizes, placement, with the
-SVG of the frames and the nodes; the wires are drawn once they are routed (step 4). Structures are unfolded, as an
-export shows them; tabs come with the canvas that clicks them (step 6).* `draw` takes the index of the file of the
+*Status: steps 1 to 4 below implemented (step 4 of 11.7, first part): the graph with its wires, the sizes,
+placement, routing, with the SVG of the frames, the nodes and the wires, their names and their pills, checked on
+every drawing by `tests/harness/src/routing.rs`. Structures are unfolded, as an export shows them; tabs come with
+the canvas that clicks them (step 6). The bounds of placement and routing and their fuzzing come next (step 4,
+second part).* `draw` takes the index of the file of the
 function in `Checked::files`, as `ir::lower` does, and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
@@ -898,8 +900,12 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
      four sweeps of barycentres each way, the terminals of each frame, the positions of a `layout` section and the
      unplaced nodes around them. The `Drawing` keeps where each node is, by the key that follows it across a change
      of the file (notation 2.1), with its column and its rank: for the glide, and for the figure of stability.
-  4. **Routing** (2.2): channels between columns, tracks above the nodes, 8 units between parallel wires, the
-     waypoints of a `via`.
+  4. **Routing** (2.2), `route.rs`, in two passes: a plan on the heights alone, before anything is placed across,
+     so that each channel is as wide as its verticals need (their slots, from a tree over their intervals, after
+     the constraints of the wires that enter and leave at one height); then, once the columns are placed, a
+     polyline per wire and the junction points of each value. Tracks stack on a skyline over channels and columns.
+     The names and the pills of the wires, `names.rs`, are placed where they cover nothing, tested against the
+     edges of what the body draws, kept merged by line.
   5. **Shapes**, with their tokens, marks and badges.
 - **The values of a run** are an `Overlay`, drawn over the `Drawing` and never moving it (6.1): opening a trace
   computes no placement. `values` makes the short forms of 6.1 from the

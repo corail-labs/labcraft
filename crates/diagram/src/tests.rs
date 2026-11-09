@@ -755,3 +755,99 @@ fn the_notches_are_terminals() {
     assert!(Builder::new(&checked, file, &names).graph(function, &orders, 6).is_err());
     assert!(Builder::new(&checked, file, &names).graph(function, &orders, 7).is_ok());
 }
+
+/// The drawing of `main.lcf`, which must check without a diagnostic.
+fn drawing_of(main: &str) -> crate::Drawing {
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    drawing
+}
+
+/// The wire of a value: its group.
+fn wire_of<'a>(drawing: &'a crate::Drawing, value: &str) -> &'a crate::Group {
+    drawing.groups.iter().find(|group| group.wire.as_ref().is_some_and(|wire| wire.value == value)).unwrap()
+}
+
+fn branches(group: &crate::Group) -> Vec<&Vec<(i64, i64)>> {
+    group
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Wire { points, .. } => Some(points),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An array of wires is a node with an input per element, each reached by its wire, as `ir` lowers it (decision of the
+/// owner, M0v step 4); an array of constants stays a constant.
+#[test]
+fn an_array_of_wires_is_a_node_with_an_input_per_element() {
+    let main = "labcraft 1\n\nfn main(a: f64, b: f64) -> (y: [f64], z: [f64]) {\n    y = [a, b]\n    z = [1.0, 2.0]\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let kinds: Vec<(&str, usize)> = graph
+        .nodes
+        .iter()
+        .map(|node| match &node.kind {
+            Kind::Construction { ty, .. } => (ty.as_str(), node.inputs.len()),
+            Kind::Constant { .. } => ("constant", node.inputs.len()),
+            _ => ("other", node.inputs.len()),
+        })
+        .collect();
+    assert_eq!(kinds, [("[ ]", 2), ("constant", 0)]);
+    let into: Vec<&str> = graph.bodies[0]
+        .wires
+        .iter()
+        .filter(|wire| matches!(wire.to, crate::graph::End::Node { node: 0, .. }))
+        .map(|wire| wire.name.as_str())
+        .collect();
+    assert_eq!(into, ["a", "b"]);
+}
+
+/// A wire into a node carries the conversion that `check` puts on what it reads, in a pill (notation 4.2), and its line
+/// keeps its distance as a line with a constant does.
+#[test]
+fn a_conversion_is_a_pill_on_its_wire() {
+    let f0 = "labcraft 1\n\nfn f0(v: f64[V]) -> (w: f64[V]) {\n    w = v\n}\n";
+    let main = "labcraft 1\n\nfn main(x: f64[mV]) -> (y: f64[V]) {\n    y = f0(x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("f0.lcf", f0)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let pills: Vec<(&str, bool)> = graph.pills.values().map(|pill| (pill.text.as_str(), pill.conversion)).collect();
+    assert_eq!(pills, [("mV\u{2192}V", true)]);
+    assert!(graph.nodes[0].inputs[0].pilled);
+}
+
+/// A value read by two nodes is one wire: a trunk, a junction point where a branch leaves it, the terminals it joins in
+/// its attributes (cli.md 7.2).
+#[test]
+fn a_value_read_twice_is_one_wire_with_a_junction() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (a: f64, b: f64) {\n    a = core.neg(x)\n    b = core.abs(x)\n}\n";
+    let drawing = drawing_of(main);
+    let group = wire_of(&drawing, "x");
+    let wire = group.wire.as_ref().unwrap();
+    assert_eq!((wire.from.as_deref(), wire.to.len()), (Some("fn.x"), 2));
+    assert_eq!(branches(group).len(), 2);
+    assert_eq!(group.shapes.iter().filter(|shape| matches!(shape, Shape::Circle { .. })).count(), 1);
+    // Both branches start at the same point, past the name of the input.
+    let found = branches(group);
+    assert_eq!(found[0][0], found[1][0]);
+    let svg = crate::svg(&drawing, crate::Theme::Light);
+    assert!(svg.contains("<g data-wire=\"x\" data-from=\"fn.x\" data-to=\""), "{svg}");
+}
+
+/// The waypoints of a `via` are kept, in the frame of the wire (spec 11).
+#[test]
+fn a_via_is_kept() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.neg(x)\n}\n\nlayout {\n    wire x -> y via (100, 40)\n}\n";
+    let drawing = drawing_of(main);
+    let Some(Shape::Rect { x: frame, .. }) = drawing.loose.first() else { panic!() };
+    let found = branches(wire_of(&drawing, "x"));
+    assert!(found[0].iter().any(|&(x, _)| x == frame + 10_000), "{found:?}");
+    assert!(drawing.bodies[0].from_file);
+}
