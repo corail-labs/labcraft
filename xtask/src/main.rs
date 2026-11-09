@@ -23,7 +23,7 @@ commands:
   libs      no crate of crates/ depends on libs/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
-  bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
+  bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime and diagram build for wasm32-unknown-unknown, and the harness passes there
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci

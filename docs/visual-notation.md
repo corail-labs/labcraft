@@ -399,9 +399,9 @@ When the function comes from another library, a **band** above the block says wh
   **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
   node from one view to the other never reorders its terminals. By default (N-15), lines are counted
   from the bottom: the last one is 8 units above the lower edge, and the lines above it are 16 apart: a block
-  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries an inline
-  constant keeps 16 from its neighbours, and 24 from a neighbour that carries one too, since a pill is 18 high
-  and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
+  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries a pill, an inline
+  constant or the pill of its wire (3.3, 4.2), keeps 16 from its neighbours, and 24 from a neighbour that carries
+  one too, since a pill is 18 high and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
   between two wired lines shrink, all alike, to 8 (the grid of the canvas and the gap
   between parallel wires, 2.2), rather than the block growing; their terminals are then drawn at 70 %
   *(proposed)* so that they do not touch. Only when the lines need more than that does the block grow, by what

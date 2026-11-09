@@ -1,0 +1,17 @@
+labcraft 1
+
+use core
+
+fn track_over_a_jog(a: f64) -> (last: f64) {
+    b0 = core.neg(a)
+    b1 = core.neg(a)
+    b2 = core.neg(a)
+    p, q, e1 = t(b0, b1)
+    y, z, e2 = t(q, p)
+    r0 = core.add(b0, y)
+    r1 = core.add(b1, y)
+    r2 = core.add(b2, y)
+    c0 = core.neg(y)
+    c1 = core.neg(c0)
+    last = core.add(c1, p)
+}

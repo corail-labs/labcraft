@@ -296,6 +296,73 @@ us
         );
     }
 
+    /// A call that reads the many outputs of another in the reverse order: a crossing of every value with every other in
+    /// one channel, cycles everywhere, whose jogs find their heights far from the middle (found in review, at 90 values).
+    #[test]
+    fn many_values_read_in_reverse_keep_the_rules() {
+        let count = 120;
+        let params: Vec<String> = (0..count).map(|k| format!("x{k}: f64")).collect();
+        let outputs: Vec<String> = (0..count).map(|k| format!("y{k}: f64")).collect();
+        let body: String = (0..count)
+            .map(|k| {
+                format!(
+                    "    y{k} = core.neg(x{k})
+"
+                )
+            })
+            .collect();
+        let r = format!(
+            "labcraft 1
+
+use core
+
+fn r({}) -> ({}) {{
+{body}}}
+",
+            params.join(", "),
+            outputs.join(", ")
+        );
+        let firsts: Vec<String> = (0..count).map(|k| format!("a{k}")).collect();
+        let seconds: Vec<String> = (0..count).map(|k| format!("b{k}")).collect();
+        let reversed: Vec<String> = (0..count).rev().map(|k| format!("a{k}")).collect();
+        let inputs: Vec<String> = (0..count).map(|_| "x".to_owned()).collect();
+        let main = format!(
+            "labcraft 1
+
+fn main(x: f64) -> () {{
+    {} = r({})
+    {} = r({})
+}}
+",
+            firsts.join(", "),
+            inputs.join(", "),
+            seconds.join(", "),
+            reversed.join(", ")
+        );
+        let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+        for (shown, text) in [("r.lcf", r), ("main.lcf", main)] {
+            root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.into_bytes())) });
+        }
+        let mut names = Interner::new();
+        let checked = check(root, &Nothing, &mut names, &Limits::default());
+        let mut faults = Vec::new();
+        for index in 0..checked.files.len() {
+            for standard_everywhere in [false, true] {
+                let view = ViewState { standard_everywhere, ..ViewState::default() };
+                let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else { panic!() };
+                faults.extend(super::faults(&drawing));
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
     /// Every case of the corpora of acceptance (`tests/acceptance/hostile`, `type-errors`), checked as a folder and each
     /// function drawn in both views: what the fuzzing of `diagram` starts from.
     #[test]
@@ -331,11 +398,11 @@ us
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
     /// an `after:` on the top edge of a labelled block; and six that the fuzzing found: a node that reads its own error,
-    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, and a value read twice before it, by a cycle. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; and one of the review: a track over a channel where a jog would go. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 13] = [
+        const CASES: [(&str, &str); 14] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -349,6 +416,7 @@ us
             ("pill_beside_a_wire.lcf", include_str!("../routing-cases/pill_beside_a_wire.lcf")),
             ("two_orders_into_one.lcf", include_str!("../routing-cases/two_orders_into_one.lcf")),
             ("back_twice.lcf", include_str!("../routing-cases/back_twice.lcf")),
+            ("track_over_a_jog.lcf", include_str!("../routing-cases/track_over_a_jog.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {

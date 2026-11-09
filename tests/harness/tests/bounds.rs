@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
 use labcraft_diagram::{DiagramLimits, Drawn, Theme, ViewState, draw, svg};
 use labcraft_format::{STACK_SIZE, format};
+use labcraft_graph::Decl;
 use labcraft_harness::{Embedded, HOSTILE, PROGRAMS, TYPE_ERRORS};
 use labcraft_types::{Interner, Limits};
 
@@ -279,11 +280,13 @@ fn one_case() {
         _ => Tool::Check,
     };
     let folders = (case.folders)();
+    // A case built for the drawing must draw each of its functions, or it would pass for a fast one.
+    let drawn = name.starts_with("drawn-");
     let (slowest, codes) = std::thread::Builder::new()
         .stack_size(STACK_SIZE)
         .spawn(move || {
             let mut codes = BTreeSet::new();
-            let slowest = folders.into_iter().map(|folder| work(folder, command, &mut codes)).max().unwrap_or_default();
+            let slowest = folders.into_iter().map(|folder| work(folder, command, drawn, &mut codes)).max().unwrap_or_default();
             (slowest, codes)
         })
         .unwrap()
@@ -295,7 +298,7 @@ fn one_case() {
 
 /// What the program does on one folder, as far as the crates go.
 #[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
-fn work(folder: Folder, command: Tool, codes: &mut BTreeSet<&'static str>) -> Duration {
+fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'static str>) -> Duration {
     let limits = Limits::default();
     let start = Instant::now();
     match command {
@@ -325,9 +328,12 @@ fn work(folder: Folder, command: Tool, codes: &mut BTreeSet<&'static str>) -> Du
             codes.extend(checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()));
             // Only the drawing counts: placed, routed and written.
             let start = Instant::now();
-            for index in 0..checked.files.len() {
-                if let Drawn::Drawing(drawing) = draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) {
-                    std::hint::black_box(svg(&drawing, Theme::Both));
+            for (index, file) in checked.files.iter().enumerate() {
+                match draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) {
+                    Drawn::Drawing(drawing) => {
+                        std::hint::black_box(svg(&drawing, Theme::Both));
+                    }
+                    Drawn::NotDrawn(_) => assert!(!drawn || !matches!(file.file.decl, Decl::Function(_)), "{} is not drawn", file.shown),
                 }
             }
             return start.elapsed();

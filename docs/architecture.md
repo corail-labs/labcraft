@@ -367,8 +367,8 @@ exception (verified at step 1).
 | Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests, `tests/harness` | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |
-| Time and memory of `fmt` and `check`, in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
-| Fuzzing the parser, `check` and the round trip | `fuzz/` | 4 |
+| Time and memory of `fmt`, `check` and the drawing of `diagram` (11.6), in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
+| Fuzzing the parser, `check`, the round trip and `diagram` | `fuzz/` | 4 |
 
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the
 product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly. That job is
