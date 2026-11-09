@@ -971,6 +971,28 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         self.fit(found, expected)
     }
 
+    /// The unit that a value of this type is held in, for a change of scale: a `duration` is in seconds (3.1).
+    fn scale_unit(&self, ty: TyId) -> Option<Unit> {
+        match self.pass.table.get(ty) {
+            Ty::Number { unit, .. } => Some(*unit),
+            Ty::Duration => Some(Unit::SECOND),
+            _ => None,
+        }
+    }
+
+    /// A conversion on a wire, kept for lowering. One whose ratio of scales no `f64` holds has its `LC3016` (3.3).
+    fn coerce(&mut self, at: Id, from: TyId, to: TyId) {
+        if let (Some(from_unit), Some(to_unit)) = (self.scale_unit(from), self.scale_unit(to))
+            && !from_unit.scales_to(&to_unit)
+        {
+            let (to_text, from_text) = (self.show(to), self.show(from));
+            let message = format!("`{from_text}` does not convert to `{to_text}`: the ratio of their scales goes beyond 1e300 (3.3)");
+            self.say(Code::Lc3016, message, at, Details { expected: Some(to_text), found: Some(from_text), ..Details::default() });
+            return;
+        }
+        self.resolved.add_coercion(at, from, to);
+    }
+
     /// What it is as a number, for a variable bound by `Number` (3.5): a `duration` counts as an `f64[s]`.
     fn as_number(&mut self, ty: TyId) -> Option<TyId> {
         match self.pass.table.get(ty) {
@@ -1274,6 +1296,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let place = if is_duration { Some((NumberKind::F64, Unit::SECOND)) } else { expected };
             let place = place.filter(|(_, wanted)| wanted.same_dimension(&unit));
             let goes_to = place.map_or(unit, |(_, wanted)| wanted);
+            if !unit.scales_to(&goes_to) {
+                let (to, written) = (unit_text(&goes_to), unit_text(&unit));
+                let message = format!("a literal in `{written}` does not convert to `{to}`: the ratio of their scales goes beyond 1e300 (3.3)");
+                self.say(Code::Lc3016, message, id, Details { expected: Some(to), found: Some(written), ..Details::default() });
+                return TyId::ERROR;
+            }
             let kind = place.filter(|(kind, _)| is_integer || kind.is_inexact()).map_or(NumberKind::F64, |(kind, _)| kind);
             let fits = match numeral.kind {
                 NumeralKind::Int(digits) => {
@@ -1377,7 +1405,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             Fit::Same => true,
             Fit::Coerce => {
                 if self.trying.is_none() {
-                    self.resolved.add_coercion(value.id(), found, expected);
+                    self.coerce(value.id(), found, expected);
                 }
                 true
             }
@@ -1422,7 +1450,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 Fit::Same => return array,
                 Fit::Coerce => {
                     if self.trying.is_none() {
-                        self.resolved.add_coercion(id, element, wanted);
+                        self.coerce(id, element, wanted);
                     }
                     return array;
                 }
@@ -1444,7 +1472,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let fit = self.fit_of(operand, found, expected);
         match fit {
             Fit::Same => {}
-            Fit::Coerce => self.resolved.add_coercion(operand.id(), found, expected),
+            Fit::Coerce => self.coerce(operand.id(), found, expected),
             Fit::Narrow | Fit::No => {
                 let references = self.is_function(found) && self.is_function(expected);
                 let code = match fit {
@@ -1480,7 +1508,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         };
         match fit {
             Fit::Same => {}
-            Fit::Coerce => self.resolved.add_coercion(id, out.ty, expected),
+            Fit::Coerce => self.coerce(id, out.ty, expected),
             Fit::Narrow | Fit::No => {
                 let (expected_text, found_text) = (self.show(expected), self.show(out.ty));
                 let (code, to, value, message) = match bound {
@@ -1964,7 +1992,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         match self.fit_of(value, found, expected) {
             Fit::Same => true,
             Fit::Coerce => {
-                self.resolved.add_coercion(value.id(), found, expected);
+                self.coerce(value.id(), found, expected);
                 true
             }
             Fit::Narrow | Fit::No => {
@@ -2008,7 +2036,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     fn judge_initial(&mut self, value: &'a Operand, name: Name, found: TyId, written: TyId) {
         match self.fit_of(value, found, written) {
             Fit::Same => {}
-            Fit::Coerce => self.resolved.add_coercion(value.id(), found, written),
+            Fit::Coerce => self.coerce(value.id(), found, written),
             Fit::Narrow | Fit::No => {
                 let (expected, found_text) = (self.show(written), self.show(found));
                 let message = format!("the carry `{}` has the type `{expected}`, and its initial value is `{found_text}`", cut_text(self.text(name)));
@@ -2183,7 +2211,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             if let Some(final_ty) = variables.get(variable).and_then(|variable| variable.ty)
                 && !self.pass.table.matches(found, final_ty)
             {
-                self.resolved.add_coercion(id, found, final_ty);
+                self.coerce(id, found, final_ty);
             }
         }
         self.judge_unit_argument(call, bound, primitive, &variables);
@@ -2610,7 +2638,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                     }
                     Some(known) => match self.fit_of(operand, found, known) {
                         Fit::Same => {}
-                        Fit::Coerce => self.resolved.add_coercion(operand.id(), found, known),
+                        Fit::Coerce => self.coerce(operand.id(), found, known),
                         Fit::Narrow | Fit::No => {
                             match (self.number_of(found), self.number_of(known)) {
                                 // What is fixed is an input like another (`docs/cli.md`, 4.2).
@@ -2639,6 +2667,11 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let Some((_, expected)) = variable.ty.and_then(|ty| self.number_of(ty)) else { return };
         let Some((id, unit)) = self.unit_argument(call, bound, primitive) else { return };
         if unit.same_dimension(&expected) {
+            if !expected.scales_to(&unit) {
+                let (from, to) = (unit_text(&expected), unit_text(&unit));
+                let message = format!("a value in `{from}` does not convert to `{to}`: the ratio of their scales goes beyond 1e300 (3.3)");
+                self.say(Code::Lc3016, message, id, Details { found: Some(to), ..Details::default() });
+            }
             return;
         }
         let (expected_text, found_text) = (unit_text(&expected), unit_text(&unit));

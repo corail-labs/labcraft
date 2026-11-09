@@ -225,6 +225,26 @@ fn a_fix_of_a_narrowing_has_its_line_and_its_use() {
     assert_eq!(edits, ["x3 = core.round_to_i32(x)\n    ", "x3", "use core\n"], "a name that the function does not have");
 }
 
+/// `GV` to `mV` is 10^12 (spec 3.3): at the power 26 its ratio is 10^312, beyond the 1e300 of a scale, and at 25 it is 10^300,
+/// the last one within. Each path that converts: an output, an input, a literal, the second operand of `add`, an element of an
+/// array of wires, `core.unitless`, an arm, a carry.
+#[test]
+fn a_conversion_whose_ratio_of_scales_is_out_of_bounds_is_refused() {
+    let wires = "g: f64[GV^26], m: f64[mV^26], g25: f64[GV^25]";
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = g"), ["LC3016"], "an output");
+    assert_eq!(judged(wires, "y: f64[GV^26]", "y = m"), ["LC3016"], "the other way");
+    assert_eq!(judged(wires, "y: f64[mV^25]", "y = g25"), NOTHING, "10^300 is within");
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = 1 GV^26"), ["LC3016"], "a literal, and not `LC3018`");
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = 0 GV^26"), ["LC3016"], "whatever its value");
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = core.add(m, g)"), ["LC3016"], "the second operand of `add`");
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = core.add(m, 1 GV^26)"), ["LC3016"]);
+    assert_eq!(judged(wires, "y: [f64[mV^26]]", "y = [m, g]"), ["LC3016"], "an element of an array of wires");
+    assert_eq!(judged(wires, "y: f64", "y = core.unitless(g, [mV^26])"), ["LC3016"], "`core.unitless`");
+    assert_eq!(judged(wires, "y: f64", "y = core.unitless(g25, [mV^25])"), NOTHING);
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = match true {\ntrue => yield m\nfalse => yield g\n}"), ["LC3016"], "an arm");
+    assert_eq!(judged(wires, "y: f64[mV^26]", "y = loop carry c: f64[mV^26] = g {\nnext c = c\nuntil true\n}"), ["LC3016"], "a carry");
+}
+
 #[test]
 fn a_literal_has_bounds_in_its_type() {
     assert_eq!(gives("i8", "300"), ["LC3018"]);

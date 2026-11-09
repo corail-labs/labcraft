@@ -141,7 +141,9 @@ signatures still say what the session designates.
   whose scale is *n* times larger by one division by *n* (`9 mV` to `V` is 9 ÷ 1000, so 0.009), and to one *n*
   times smaller by one multiplication by *n*, *n* an integer; otherwise it is multiplied by the numerator of
   the ratio of the two scales, then divided by its denominator. Each integer is taken as the nearest `f64`, which
-  is exact up to 2^53 and for every power of ten up to 10^22. These operations are in `f64`: an `f32`, or each part of a
+  is exact up to 2^53 and for every power of ten up to 10^22. The scale of a unit has a numerator and a denominator of
+  at most 10^300 (`LC1006` when it is written so, `LC3016` when an operation makes it so), and so has the ratio of a conversion,
+  or it is rejected (`LC3016`): `f64[GV^26]` to `f64[mV^26]` is 10^312, which no `f64` holds. These operations are in `f64`: an `f32`, or each part of a
   `c64`, is widened to `f64`, which is exact, and the result is rounded to the nearest `f32` once, ties to even. A temperature with an offset (`°C`, `°F`) first loses
   the offset of its unit, then changes scale as above, then gets the offset of the target, each in one operation. The result of an
   operation takes the unit of its first operand: `core.add(1 V, 200 mV)` is `1.2 V`, `core.add(200 mV, 1 V)`
