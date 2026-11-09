@@ -916,6 +916,10 @@ around the canvas, `craft-window`, `craft-settings` for the preferences (standar
   `Arc<Drawing>`. M0v writes these commands, in a module of `engine`. While a drawing is computed, the one before
   stays on screen; a function that is no longer drawable keeps its last drawing with its diagnostics
   (scenario 6, point 3).
+- **The window.** A tree of the files of the folder, which marks a file whose function has a trace open and
+  gives the number of errors of a `.lcf` file whose function is not drawn; a tab per function opened; a bar with the trace and
+  its status; the canvas; `Problems` with the diagnostics. There is no text panel: the text stays in the
+  developer's editor, and the IDE of M1 adds it.
 - **Read-only.** Its `Workspace` refuses every write (scenario 6, point 6).
 - **Watching.** `notify` (CC0-1.0) watches the folder, the folders of `--lib-path` and the trace shown, without
   following symbolic links (cli.md, section 1); the changes of 50 ms are taken together, then the session checks
@@ -951,8 +955,9 @@ MCP, keeps. Both give the same SVG, from the same function of `diagram`.
 |---|---|---|
 | The metrics, the cells, the Unicode version of the tables, the SHA-256 of Hack | `types` tests, `apps/labcraft` tests | 6 |
 | The SVG of each function of `examples/`, `docs/rfc/` and `libs/`, as its file gives it and with every node in standard view, compared byte for byte with a snapshot, native and WASM | `tests/harness` | 6.2 |
-| The rules of 2.2, checked on every drawing by a checker of their own, not by comparing with an output: no wire crosses a node or a label, parallel wires 8 units apart, nothing but error wires below the main chain, which no other wire crosses | `tests/harness` | 6.1 |
+| The rules of 2.2, checked on every drawing by a checker of their own, not by comparing with an output: no wire crosses a node, a label, a pill, a band or a wire name, no bubble covers a node, a pill or another bubble, parallel wires 8 units apart, nothing but error wires below the main chain, which no other wire crosses | `tests/harness` | 6.1 |
 | The figure of stability: a neutral node on each data wire, the nodes that move (2.1) | `tests/harness`, reported in CI | 6.3 |
+| The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | `tests/harness`, reported in CI | — |
 | The SVG of `diagram --trace` for the runs of `examples/`, as a snapshot, *with M0b* | `tests/harness` | 6.7 |
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |

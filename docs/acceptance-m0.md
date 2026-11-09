@@ -350,7 +350,8 @@ agree.
    that no file changed. Editing is M1.
 7. **Values on the wires**, *with M0b*, in the desktop app: from the trace file that
    `labcraft-cli run` writes, each wire shows its last value, or its values per iteration in a
-   loop, and a skipped node is marked (notation). The SVG of `labcraft-cli diagram --trace` shows the
+   loop, in a bubble at its output terminal or, where no bubble has room, on hover, and a skipped node is
+   marked (notation 6.1). The SVG of `labcraft-cli diagram --trace` shows the
    same values, at the last iteration of each loop, and CI checks it as a snapshot. In the browser,
    runs come with M10.
 

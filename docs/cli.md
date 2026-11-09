@@ -804,7 +804,8 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
 - **The drawing of the notation**, with its font named and not embedded (notation 2.3), and its colors as
   CSS variables named after the tokens, light and dark under `prefers-color-scheme` (notation 8).
   `--theme light` or `--theme dark` writes one theme only, without the media query. The `viewBox` holds
-  the frame of the function and 16 units around it *(proposed)*, and one unit is one pixel at 100%.
+  the frame of the function and 16 units around it *(proposed)*, and above the frame the banner of a trace,
+  when there is one, which makes the image taller (notation 6.1), and one unit is one pixel at 100%.
 - **What each shape is**, for an agent and for the tests, in attributes that name the program as the
   reports do (sections 4.2 and 4.3), and only in their forms: an attribute is absent where the reports
   have no form for it.
@@ -822,7 +823,8 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
   - each mark of a diagnostic carries `data-code` (`LC3002`), so that the place of a diagnostic in the
     image can be found;
   - each value of a run (7.3) is a `<g data-value="raw">`, named after its wire, and its `<title>` holds
-    the value, as its tooltip does (notation 6.1).
+    the value, as its tooltip does (notation 6.1); a value whose bubble finds no place has its `<g>` and its
+    `<title>` with no shape drawn.
 
   A name or a text in an attribute or a `<title>` is cut at 200 code points and ends with `…`, as in a
   report (4.2), so that a long name repeated on every node cannot make the SVG huge; two names that
@@ -832,7 +834,9 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
   `<`, `>`, `&` and quotes are escaped as XML escapes them.
 - **A function that is not drawn** shows its frame with its name, and its diagnostics, one per line, as
   the first line of section 4.1 writes them (`check_voltage.lcf:4:9: error[LC2001]: …`), each cut at
-  200 code points, at most 32 *(proposed)*, then how many are left out.
+  200 code points, at most 32 *(proposed)*, then how many are left out. The place is in `ink.muted`, the
+  severity and the code of an error in `mark.invalid` and those of a warning in `node.title`, the message in
+  `node.title` (notation 8).
 - **The same bytes every time.** The same files, the same options and the same trace give the same SVG,
   on every platform and in the WASM build (scenario 6, point 2): no date, no time (the banner of a
   trace that no longer matches names the files, without the time of the trace), a path relative to

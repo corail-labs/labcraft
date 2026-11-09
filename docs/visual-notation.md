@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-08. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are written for M0v.*
+*Last updated: 2026-11-09. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are written for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -136,6 +136,10 @@ are the nodes that a `layout` section does not place (spec 11).
   `check_voltage`), with one vertical segment at each end; a secondary error wire does the same below
   the chain.
 - Two wires never share a segment: parallel wires are 8 units apart.
+- **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
+  8 apart, with the conversion and field pills of its wires, the pills of the inline constants of the blocks
+  it leads to, and a margin of 8 on each side. The name of a wire never widens it (section 4), nor does a value
+  of a run (6.1): they take the room that is there, or none.
 - The order of preference is the fewest crossings, then the shortest length, then the fewest bends.
   Ties are broken by the order of the signature and by the names, as for placement. These are
   preferences that a fixed procedure follows as well as it can, not an exact optimum, which large
@@ -182,7 +186,8 @@ developer chooses the zoom, and the font of the other panels of the IDE.
   On the canvas, a text that a fallback font makes wider than its cells is drawn smaller, as a whole, to
   fit them, so that it never runs past them.
   A text keeps 4 units on its left and on its right between itself and the edge of its box (block,
-  band, pill, badge, tab, bubble).
+  band, pill, badge, tab, bubble); the label of a compact block keeps 9, since the terminals straddle its edge
+  (3.2).
 - **Direction.** Every text is put in display order with the Unicode bidirectional algorithm
   (UAX #9), on its own and with a left-to-right base direction, so that a name in Hebrew or Arabic
   reads in its order. A text is cut first, in its logical order (11 cells and `…` at its logical end,
@@ -301,8 +306,10 @@ When the function comes from another library, a **band** above the block says wh
 - **Band**: the name of the library of the function (`visa`, `scpi`, `dmm_driver`, `results_log`), whole
   up to 12 cells, beyond that cut to 11 followed by `…` (cells, 2.3), in the token `band.text` on `band.fill`, neutral by default,
   with a contrast of at least 4.5:1 in both themes. The band is 12 units high and as wide as the block,
-  which widens to hold it. A call to a function of `core`, or of the library that holds the diagram, has
-  no band. A folder of the project is a library like any other (spec 4), so a call from the root to
+  which widens to hold it. A call to a function of `core`, of the other primitive libraries of the spec
+  (`array`, `string`, `time`, `errors`, `ui`, spec appendix A.2) or of the library that holds the diagram has no
+  band: those are everywhere, and their band would say nothing. `visa`, `scpi` and every other library keep
+  theirs. A folder of the project is a library like any other (spec 4), so a call from the root to
   `relays.close` has the band `relays`. A sub-library `a.b` shows its last segment, `b`, with the full
   path in the tooltip; when two bands of one diagram would read the same (`x.util` and `y.util`), each
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
@@ -310,13 +317,20 @@ When the function comes from another library, a **band** above the block says wh
   `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
   no band. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
-- **Block**: at least 40 × 40 units. Its width holds the label or the band, with their margins
-  (2.3), rounded up to the grid.
-  Its height is the larger of 40 and 16 units per line of terminals (below), plus 8 for each pair of
-  neighbouring lines that both carry an inline constant: 40 for one or two lines, then 48, 64, 80.
+- **Block**: a square *(proposed)*, of 40 × 40 units at least, so that a node reads as an icon. Its side is
+  the largest of 40, the width of its label with 9 units on each side (4, and half a terminal, which is 10
+  across and straddles the edge, 4.1), and the height that its lines of terminals need at the closest (below),
+  with 8 above the top line and 8 below the bottom one, rounded up to the grid. A band never makes a block taller: a band wider than the square widens the block,
+  which is then wider than tall, and the terminals stay where they were. A label of more than 3 cells makes the
+  square larger than 40 (`open` 48, `close` 56, `elapsed` 72): a reason to give the function an icon. A
+  construction, a variant constructor and a node of `ui` are not squares: they can have no icon, and their text
+  is what they show. Their width is that of their label with 9 on each side, their height the larger of what
+  their lines need and their label with 8 above and below (two lines, `set` / `live_voltage`, need 44, so 48), each at
+  least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square.
 - **Center**: the function's icon (`icon` section, spec 11.1), alone, drawn 28 × 28 units; otherwise a
-  short label: the last segment of the name (`visa.open` → `open`). A label of more than 8 cells
-  that holds an underscore is written on **two lines**, cut at an underscore, which is not drawn. The
+  short label: the last segment of the name (`visa.open` → `open`). A label that holds an
+  underscore is written on **two lines** when that makes the square smaller, cut at an underscore, which is
+  not drawn. The
   cut is the one whose longer line is the shortest, the first one on a tie, and never one that leaves
   a line empty: `query_f64` → `query` / `f64`, `bench_selftest` → `bench` / `selftest`,
   `read_dc_volts` → `read_dc` / `volts`, `count_to_fixed` → `count` / `to_fixed`. When no cut is allowed (`abcdefgh_`), the label stays on
@@ -326,9 +340,14 @@ When the function comes from another library, a **band** above the block says wh
 - **Unnamed terminals**: inputs on the left, outputs on the right by default (3.1, N-15), on the
   **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
   node from one view to the other never reorders its terminals. By default (N-15), lines are counted
-  from the bottom: the last one is 8 units above the lower edge, and each line above it is 16 units higher, or 24 when both lines carry an inline
-  constant, since a pill is 18 high. A block of one line has it at 32 from the top, a block of two
-  lines at 16 and 32. The name of a terminal is shown in the tooltip and while wiring, on the targeted
+  from the bottom: the last one is 8 units above the lower edge, and the lines above it are 16 apart: a block
+  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries an inline
+  constant keeps 16 from its neighbours, and 24 from a neighbour that carries one too, since a pill is 18 high
+  and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
+  between two wired lines shrink, all alike, to 8 (the grid of the canvas and the gap
+  between parallel wires, 2.2), rather than the block growing; their terminals are then drawn at 70 %
+  *(proposed)* so that they do not touch. Only when the lines need more than that does the block grow, by what
+  they need. The name of a terminal is shown in the tooltip and while wiring, on the targeted
   terminal. The shape of the terminal still tells its family (4.1).
 - **The `err` pair stays on the bottom line**, as in standard view: the error chain crosses the
   node in a straight line.
@@ -345,7 +364,7 @@ When the function comes from another library, a **band** above the block says wh
 - **Nodes of `ui`** (`ui.set`, `ui.get`, 3.1): no band; the label is the operation and the element on
   two lines (`set` / `live_voltage`), so the element stays on the face of the node.
 - **Indistinguishable inputs**: when two or more wired inputs have the same type and nothing
-  tells them apart (no inline constant, no wire name), the editor warns: "inputs `low` and `high`
+  tells them apart (no inline constant, no wire name drawn, section 4), the editor warns: "inputs `low` and `high`
   indistinguishable in compact view", with the action "show in standard view". This is a warning,
   not an error.
 
@@ -365,8 +384,8 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 
 A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
 the unit needs. When two neighbouring inputs both carry an inline constant, the circle stretches into
-a capsule of the same width, as tall as needed for those inputs to be 24 apart, as on a block, since
-a pill is 18 high (`select(ok, 1 V, 0 V)`). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
+a capsule of the same width, as tall as needed for those inputs to be 24 apart, since a pill is 18 high
+(`select(ok, 1 V, 0 V)`). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
 ordinary compact view (block, no band).
 
 **Constant on a primitive input**: the circle has no terminal line, so the pill is attached to the
@@ -389,7 +408,11 @@ of the right side. They are not on the grid of 8: the routing of the wires (2.2)
 
 **One value = one wire** (spec 5.1). The wire starts at a named output terminal; it splits at
 junction points when the value feeds several inputs. The name of the value is that of the output
-terminal; a long wire repeats its name halfway.
+terminal. It is written on the first horizontal segment of the wire, 3 units above it, when the whole name
+(cut at 40 cells, 2.3) fits there with 4 units on each side and covers no node, pill, bubble, wire or other name (a parallel
+wire 8 above runs through a name, which is 12.8 high);
+otherwise it is only in the tooltip and in the `data-wire` of the SVG: it never widens a channel (2.2). A long
+wire repeats its name halfway (N-3), by the same rule.
 
 ### 4.1 Wire families
 
@@ -406,6 +429,7 @@ terminal; a long wire repeats its name halfway.
 | Order | `after:` | thin dotted | hollow chevron | `wire.order` (muted) |
 | Function | function references (Q-14) | dash-dot | `ƒ` | `wire.data` |
 
+- A terminal is 10 units across, centred on the edge of its node.
 - The chevrons of the error wire show **the direction of the order**: this is the wire you follow
   to know what happens before what.
 - The exact type (`f64[V]`, `[StepResult]`) is always in the tooltip of the wire and the terminal.
@@ -503,7 +527,7 @@ rendered from a run trace
 
 | State | Rendering |
 |---|---|
-| Value of a wire (probe) | bubble attached to the wire: `230.1 V`, `Verdict.Pass`, `[3 elements]` (6.1) |
+| Value of a wire (probe) | bubble at the output terminal: `230.1 V`, `Verdict.Pass`, `[3 elements]` (6.1) |
 | Skipped node (error on input) | hatched body, muted ink |
 | Node that produced an error | `wire.error` outline, category in a badge (`io.timeout`) |
 | Running node | `node.active` outline |
@@ -514,10 +538,32 @@ rendered from a run trace
 The viewer of M0v shows the values of the last run of the function it draws, read from the trace that
 the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
 
-- **Every wire shows its value** once the run has ended, in a bubble next to the name of the wire at
-  its start. Order wires carry no value. The value is in the tooltip, up to 200 code points (2.3), which
-  says when the trace cut the value (`$len`, `$cut`). An error wire that carries no error shows nothing, so that the eye
-  goes to the errors; one that carries an error shows its category, as the node that produced it does.
+- **Every wire shows its value** once the run has ended, in a bubble at its output terminal, 4 units above
+  the wire *(proposed)*: below it, a bubble reads as that of the wire beneath.
+  - **The bubble** is 16 units high, a rectangle with corners of radius 3, in `probe.fill` with an outline in
+    `probe.stroke`: never the capsule of a constant, so that the two are told apart without color (principle 2).
+  - **Neighbouring outputs.** The outputs of a node less than 20 apart have their bubbles side by side, from the
+    bottom line up, each starting 4 units after the end of the one below.
+  - **What it covers.** A bubble covers the wires and the wire names under it, never a node, a pill or another
+    bubble: it moves along the first horizontal segment of its wire to the first place where it covers none.
+    When there is none, no bubble is drawn and its value is read on hover; the SVG still holds it, in a
+    `<g data-value>` with its `<title>` and no shape (cli.md 7.2).
+  - **The name of the wire** follows the bubble when the segment has room (section 4), and is otherwise in the
+    tooltip while the values are shown.
+  - **Other starts.** An input of the function shows its value at its terminal on the edge of the frame, in place
+    of the pill of its default. A value that a register, a branch or a bus binds has its bubble where it starts
+    inside the frame: the inner box of a register, the bound terminal of a branch, the top of a bus.
+  - **Inputs.** Hovering or selecting a node also shows the values at its input terminals, to the left of each,
+    side by side as those of outputs, each ending 4 units before the start of the one below; the values are
+    never drawn at every input, which would repeat a value at each of its readers.
+  - **Order.** Bubbles are drawn after everything else: those of the inputs of the function in the order of
+    the signature, then the others in the canonical order of the lines that bind their values (spec 5.2), so
+    that the SVG is the same every time.
+
+  Order wires carry no value. The value is in the tooltip, up to 200 code
+  points (2.3), which says when the trace cut the value (`$len`, `$cut`). An error wire that carries no error shows nothing, so that the eye
+  goes to the errors; one that carries an error has a bubble with its category in `wire.error`, as the badge of the node that
+  produced it shows it.
 - **Short forms.**
   - A float with 4 significant digits, zeros after the decimal point dropped, then its unit
     (`230.1 V`, `0.5 s`, `12350 Hz`); an exponent when the magnitude is below 0.001 or from 1,000,000
@@ -536,7 +582,8 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   - Every name or text that comes from the trace (a resource, a category, a file or node name in a
     banner) is cut like a string.
 - **Bubbles never move the drawing.** They are drawn over it, after placement and routing, which
-  ignore them (2.1): opening a trace or hiding the values changes no position.
+  ignore them (2.1), and cover what passes under them: the narrow channels (2.2) leave no room to make for
+  them. Opening a trace or hiding the values changes no position.
 - **A button hides the values** and shows them again. It is a state of the view, never written to the
   file.
 - **Where a value comes from**, in the frame of the function drawn (frame 0):
@@ -553,8 +600,10 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   - a value bound by a branch (`Reading.Value(v)`, `io.timeout(err)`): taken from the selector of the
     `match` or `handle`.
 - **Loops.** A wire inside a loop has one value per iteration (the `iter` of the trace). The frame of
-  the loop gets an iteration selector next to its counter (`× 6`), on the last iteration by default;
-  the bubbles inside show the chosen iteration, and stepping it forward or back shows the values
+  the loop gets an iteration selector next to its counter (`× 6`), on the last iteration by default.
+  What a person reads counts iterations from 1, as the counter does: the selector (`‹ 6/6 ›` next to `× 6`)
+  and the message of a fault (`LC8001`); the fields of JSON (`iter` of a trace, `status.loops.iteration`) count
+  from 0, as indices. The bubbles inside show the chosen iteration, and stepping it forward or back shows the values
   change. A loop that made no iteration shows `× 0` and no iteration selector. Each nested loop has
   its own iteration selector: when an outer one moves, the inner ones go to the last iteration of
   their loop in that outer iteration. In a `for parallel`, the last iteration is the one with the
@@ -567,14 +616,16 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   or another trace arrives. A branch that the run did not take, in a tab or in the unfolded view, is
   muted and carries no values.
 - **A run that did not end well.** A wire with no value in the trace (a node that never ran, after a
-  `fault`, an `aborted` run or a cut trace) shows nothing, and a banner gives the status that the
-  `end` event gives ("aborted", "fault"), or says that the trace was cut, or that it has no end (the
+  `fault`, an `aborted` run or a cut trace) shows nothing, and a banner gives the status that the `end` event gives ("aborted", "fault"), or says that the trace was cut, or that it has no end (the
   run did not finish writing it). With a cut trace, the last iteration shown is the last one traced,
-  and the banner says so.
+  and the banner says so. The banner is 20 units high, above the frame of the function and never over the
+  drawing; a trace that no longer matches (below) and did not end well has one banner, which names the files
+  first.
 - **A trace that no longer matches.** The first line of the trace gives the SHA-256 of every file the
   run read. The viewer compares only the files that it resolved itself to draw the function; one that
-  has changed or is gone mutes every value, and a banner names it, with the time when the trace was
-  written (the time of its file): "`check_voltage.lcf` has changed since this run (14:02)", or "and 2
+  has changed or is gone mutes every value (its bubble takes the fill of the canvas and a dashed outline, and its text
+  `ink.muted`), and a
+  banner names it, with the time when the trace was written (the time of its file): "`check_voltage.lcf` has changed since this run (14:02)", or "and 2
   other files" when there are more. Nothing is hidden, and nothing looks current that is not.
 - **The trace is an input like a file.** Reading it is bounded and never crashes the viewer: a line
   that does not read ends the values there, as a cut trace would, and a first line that does not read
@@ -590,17 +641,22 @@ M0v target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s; M1 ke
 editing (`roadmap.md`). Rendering depends on the
 zoom:
 
+Seeing a whole function without scrolling is a goal, never a rule: the narrow channels (2.2), the square
+blocks (3.2) and the bubbles that make no room (6.1) serve it, and a long sequence of steps stays legitimate.
+CI reports, for each example, its size and the zoom at which it fits whole in the canvas of the window of
+M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1): a figure, never a threshold.
+
 | Zoom | Shown |
 |---|---|
 | ≥ 75% | everything |
-| 40 to 75% | no terminal names, no long inline constants; the values of a run (6.1) only on hover |
-| < 40% | shapes, wires, structure titles; nodes as plain rectangles |
+| 40 to 75% | no terminal names; the values of a run (6.1) down to 50 %, only on hover below |
+| < 40% | shapes, wires, structure titles; nodes as plain rectangles; no values |
 
 ## 8. Theme tokens
 
 `canvas.fill`, `canvas.grid`, `node.fill`, `node.stroke`, `node.title`, `node.active`,
 `frame.fill.1..4`, `frame.stroke`, `wire.data`, `wire.resource`, `wire.error`, `wire.order`,
-`mark.coercion`, `mark.invalid`, `probe.fill`. Supporting tokens, which appeared while drawing
+`mark.coercion`, `mark.invalid`, `probe.fill`, `probe.stroke`. Supporting tokens, which appeared while drawing
 real diagrams (`tools/lcf-figcraft`): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
 `coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
@@ -614,8 +670,8 @@ IDE, the diagram takes its colors from this table.
   `ink.faint` on `node.fill`, `pill.text` on `pill.fill`, `badge.text` on `badge.fill`, `band.text` on
   `band.fill`, `node.title` on `tab.fill`, and the texts of a value bubble (`node.title`, `ink.muted`,
   `wire.error`, `mark.invalid`) on `probe.fill`.
-- **Outlines of at least 3:1**, checked by the same test: `node.stroke`, `frame.stroke`, `pill.stroke`
-  and `node.active` against `canvas.fill` and each `frame.fill`, in both themes. A node, a pill or a
+- **Outlines of at least 3:1**, checked by the same test: `node.stroke`, `frame.stroke`, `pill.stroke`,
+  `probe.stroke` and `node.active` against `canvas.fill` and each `frame.fill`, in both themes. A node, a pill or a
   structure is told from its background by its outline, at every level. The dividers inside a node or
   a frame (`node.divider`, `frame.divider`) are decoration and stay outside the rule.
 - **"Muted" does not exempt from contrast.** `wire.order` is told apart by its pattern (thin
@@ -627,7 +683,7 @@ IDE, the diagram takes its colors from this table.
   `mark.coercion`, `mark.invalid` and `ink.muted` are a little darker than before; in the dark theme,
   the backgrounds are closer to one another. Lightening the backgrounds alone did not work: to keep the
   former error color at 4.5:1, no background could be darker than `frame.fill.1`, and the four levels
-  looked alike. Whether neighbouring levels stay easy to tell apart is tried on the mock-ups.
+  looked alike. Whether neighbouring levels stay easy to tell apart is judged on the canvas of M0v.
 - **In the SVG**, every color is a CSS variable named after its token, with hyphens for dots
   (`wire.error` gives `--wire-error`, `frame.fill.1` gives `--frame-fill-1`), and a shape names it for
   each property it paints (`style="stroke: var(--wire-error)"`, `style="fill: var(--node-fill)"`). One
@@ -639,12 +695,12 @@ IDE, the diagram takes its colors from this table.
   when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
 - **Where the values come from.** The light values of the first list of tokens come from the board
   `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
-  from `tools/lcf-figcraft/build_notation.py`; `band.fill` and `band.text` are new. Changed on
+  from `tools/lcf-figcraft/build_notation.py`; `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new. Changed on
   2026-11-08 for the two rules above: in the light theme, `frame.fill.1..4`, `wire.resource`,
   `wire.error`, `wire.order`, `mark.coercion`, `mark.invalid`, `ink.muted`, `ink.faint` (now that of
   `ink.muted`), `node.stroke`, `frame.stroke` and `pill.stroke`; in the dark theme, `frame.fill.1..4`,
-  `mark.invalid`, `ink.faint`, `pill.stroke` and `probe.fill`. They are tried again on mock-ups before
-  the code of M0v.
+  `mark.invalid`, `ink.faint`, `pill.stroke` and `probe.fill`. They were tried on the mock-ups of
+  2026-11-09, and are judged again on the canvas of M0v.
 
 | Token | Light | Dark |
 |---|---|---|
@@ -674,6 +730,7 @@ IDE, the diagram takes its colors from this table.
 | `pill.stroke` | `#777D88` | `#7B8390` |
 | `pill.text` | `#3D4148` | `#C5CBD3` |
 | `probe.fill` | `#FFF7D6` | `#3A3419` |
+| `probe.stroke` | `#777D88` | `#7B8390` |
 | `badge.fill` | `#1F2328` | `#ECEFF3` |
 | `badge.text` | `#FFFFFF` | `#16181C` |
 | `tab.fill` | `#E1E4E8` | `#2B3038` |
@@ -689,13 +746,13 @@ IDE, the diagram takes its colors from this table.
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
-| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom (3.2), so a block that grows moves its bottom line, and the error chain, down: from 32 to 40 when it goes from two lines to three. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
+| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom, and the lines of a side come closer before the block grows (3.2): adding a wired terminal keeps the size of the block and its bottom line, so the error chain does not move, while the other lines of that side close up, until the lines need more than the side. When the block grows, it grows to the right and downward, and its bottom line and the error chain move down. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
 | N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, which does not yet keep the line straight through a `match`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | **Settled (2026-11-08):** the output of each branch joins a vertical bus along the inner right edge of the frame, which leads to the output terminal, so that the drawing says that every branch gives the value; an outer value read by several branches enters by its notch, then a vertical bus along the inner left edge; one bus per value, in the order of the outputs, the error output on the bottom line like the frame's (5.2) |
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
-| N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon |
-| N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | To complete in order to judge the compact view on `check_voltage`, `settle` and `station` |
+| N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon. Retained as a lead (2026-11-09): the mask of a library sets whether its band is shown, and a function can hide it in its own file, next to its `icon` (a helper; a function that talks to an instrument shows it by its session wire); to settle with N-15, before M1 |
+| N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | **Settled (2026-11-09):** the compact view was judged on mock-ups of `check_voltage`, `settle` and `station` before the code of M0v; the public tool stays as it is until `diagram` replaces it |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
-| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2) |
+| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1) |
