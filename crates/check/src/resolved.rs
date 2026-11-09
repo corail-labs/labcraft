@@ -1,6 +1,8 @@
 //! What passes 3 and 4 found out about a file, by `Id`, so that the layers above never resolve again
 //! (`docs/architecture.md`, section 5).
 
+use std::collections::HashMap;
+
 use labcraft_graph::Id;
 use labcraft_types::{Name, TyId};
 
@@ -92,6 +94,9 @@ pub struct Resolved {
     calls: Vec<ResolvedCall>,
     types: Vec<TyId>,
     coercions: Vec<Coercion>,
+    /// The types of the outputs of a call written alone (`time.wait(50 ms)`), by the id of its statement: it has no target to
+    /// hold them.
+    outputs: HashMap<Id, Box<[TyId]>>,
     leans_elsewhere: bool,
 }
 
@@ -103,6 +108,7 @@ impl Resolved {
             calls: Vec::new(),
             types: vec![TyId::ERROR; places],
             coercions: Vec::new(),
+            outputs: HashMap::new(),
             leans_elsewhere: false,
         }
     }
@@ -163,6 +169,16 @@ impl Resolved {
     /// what an error left unknown.
     pub fn ty(&self, id: Id) -> TyId {
         self.types.get(id.index()).copied().unwrap_or(TyId::ERROR)
+    }
+
+    pub(crate) fn set_outputs(&mut self, statement: Id, types: Box<[TyId]>) {
+        self.outputs.insert(statement, types);
+    }
+
+    /// The types of the outputs of the call that this statement writes alone, with no target: empty when an error left them
+    /// unknown. A target holds the type of what it binds, `_` included ([`Resolved::ty`]).
+    pub fn outputs_of(&self, statement: Id) -> &[TyId] {
+        self.outputs.get(&statement).map_or(&[], |types| types)
     }
 
     pub fn coercions(&self) -> &[Coercion] {

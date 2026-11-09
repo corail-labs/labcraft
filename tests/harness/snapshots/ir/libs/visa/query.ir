@@ -1,0 +1,2 @@
+fn visa.query(session: session, command: string, err: error = none) -> (text: string, session: session, err: error)
+  native query

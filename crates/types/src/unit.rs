@@ -98,6 +98,39 @@ impl NamedUnit {
     }
 }
 
+/// A whole number in base 10^9, least significant first: the side of a ratio of scales can reach 10^300, and its
+/// nearest `f64` comes from its decimal text, which `parse` rounds correctly on every target.
+struct Decimal(Vec<u64>);
+
+impl Decimal {
+    const BASE: u64 = 1_000_000_000;
+
+    fn one() -> Self {
+        Decimal(vec![1])
+    }
+
+    fn multiply(&mut self, by: u32) {
+        let mut carry = 0_u64;
+        for limb in &mut self.0 {
+            let product = *limb * u64::from(by) + carry;
+            *limb = product % Self::BASE;
+            carry = product / Self::BASE;
+        }
+        if carry > 0 {
+            self.0.push(carry);
+        }
+    }
+
+    fn nearest(&self) -> f64 {
+        let mut limbs = self.0.iter().rev();
+        let mut text = limbs.next().map_or_else(String::new, u64::to_string);
+        for limb in limbs {
+            text.push_str(&format!("{limb:09}"));
+        }
+        text.parse().unwrap_or(f64::INFINITY)
+    }
+}
+
 /// An exponent stays within ±127 (`docs/cli.md`, `LC1006`), which `i8` alone does not say.
 fn exponent_in_bounds(exponent: i8) -> Option<i8> {
     (exponent != i8::MIN).then_some(exponent)
@@ -189,6 +222,30 @@ impl Unit {
             *slot = (x % 2 == 0).then_some(x / 2)?;
         }
         Some(Unit { exponents, scale, offset: Offset::None })
+    }
+
+    /// What a temperature scale adds to a value to make it start at absolute zero, in its own unit: kelvins are
+    /// (value + offset) × scale, 273.15 for `°C` and 459.67 for `°F`. `None` for every other unit (spec 3.3).
+    pub fn offset(&self) -> Option<f64> {
+        match self.offset {
+            Offset::None => None,
+            Offset::Celsius => Some(273.15),
+            Offset::Fahrenheit => Some(459.67),
+        }
+    }
+
+    /// The ratio of the scale of this unit to that of `to`, as a numerator and a denominator in lowest terms, each the
+    /// nearest `f64` of its integer (spec 3.3): `mV` to `V` is (1, 1000), `min` to `h` is (1, 60), `°F` to `K` is (5, 9).
+    pub fn scale_ratio(&self, to: &Unit) -> (f64, f64) {
+        let (mut numerator, mut denominator) = (Decimal::one(), Decimal::one());
+        for ((from, to), prime) in self.scale.iter().zip(&to.scale).zip([2_u32, 3, 5]) {
+            let exponent = i64::from(*from) - i64::from(*to);
+            let side = if exponent > 0 { &mut numerator } else { &mut denominator };
+            for _ in 0..exponent.unsigned_abs() {
+                side.multiply(prime);
+            }
+        }
+        (numerator.nearest(), denominator.nearest())
     }
 
     /// The condition of `add`, `sub` and comparisons, and of an implicit conversion (spec 3.3).
@@ -424,6 +481,21 @@ mod tests {
 
     fn shown(text: &str) -> String {
         parsed(text).to_string()
+    }
+
+    /// Worked out by hand from the scales of spec 3.3: a numerator and a denominator in lowest terms, each an integer.
+    #[test]
+    fn a_ratio_of_scales_is_two_integers() {
+        assert_eq!(parsed("mV").scale_ratio(&parsed("V")), (1.0, 1000.0));
+        assert_eq!(parsed("kV").scale_ratio(&parsed("mV")), (1_000_000.0, 1.0));
+        // 1 h is 3600 s and 1 min is 60 s: 60.
+        assert_eq!(parsed("h").scale_ratio(&parsed("min")), (60.0, 1.0));
+        // °F is 5/9 of a kelvin.
+        assert_eq!(parsed("°F").scale_ratio(&parsed("K")), (5.0, 9.0));
+        assert_eq!(parsed("V").scale_ratio(&parsed("V")), (1.0, 1.0));
+        // GV/mV is 10^12, cubed 10^36, which `u64` cannot hold: its nearest `f64` is that of its decimal text.
+        assert_eq!(parsed("GV^3").scale_ratio(&parsed("mV^3")), ("1e36".parse::<f64>().unwrap(), 1.0));
+        assert_eq!((parsed("°C").offset(), parsed("°F").offset(), parsed("K").offset()), (Some(273.15), Some(459.67), None));
     }
 
     #[test]

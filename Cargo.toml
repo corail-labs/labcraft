@@ -16,6 +16,7 @@ labcraft-graph = { path = "crates/graph" }
 labcraft-format = { path = "crates/format" }
 labcraft-check = { path = "crates/check" }
 labcraft-trace = { path = "crates/trace" }
+labcraft-ir = { path = "crates/ir" }
 labcraft-libs = { path = "libs/embedded" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.

@@ -1,0 +1,2 @@
+fn visa.close(session: session, err: error = none) -> (err: error)
+  native close

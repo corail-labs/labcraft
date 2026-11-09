@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-04. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-09. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -69,7 +69,7 @@ icon 32 { … } // optional: icon of the compact view (section 11.1)
 | `c64` `c128` | complex |
 | `string` | UTF-8 |
 | `bytes` | binary data (instrument responses, frames) |
-| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2). A `duration` is a whole number of nanoseconds, as the clock of a run is: from an `f64[s]`, the value is multiplied by 10^9 as an `f64`, then rounded to the nearest integer, ties to even (as `libs/visa/simulation.md` does for its times), and a value that is not finite or does not fit is Q-25 |
+| `timestamp`, `duration` | absolute timestamp; duration: a distinct type, implicitly converted to and from `f64[s]` (Q-2). A `duration` is a whole number of nanoseconds, as the clock of a run is: from an `f64[s]`, the value is multiplied by 10^9 as an `f64`, then rounded to the nearest integer, ties to even (as `libs/visa/simulation.md` does for its times), and a value that is not finite or does not fit is Q-25. To a number, its nanoseconds are taken as an `f64` and divided by 10^9, then converted as a wire is (3.3) |
 | `error` | see section 7 |
 
 ### 3.2 Composite types
@@ -141,7 +141,8 @@ signatures still say what the session designates.
   whose scale is *n* times larger by one division by *n* (`9 mV` to `V` is 9 ÷ 1000, so 0.009), and to one *n*
   times smaller by one multiplication by *n*, *n* an integer; otherwise it is multiplied by the numerator of
   the ratio of the two scales, then divided by its denominator. Each integer is taken as the nearest `f64`, which
-  is exact up to 2^53 and for every power of ten up to 10^22. A temperature with an offset (`°C`, `°F`) first loses
+  is exact up to 2^53 and for every power of ten up to 10^22. These operations are in `f64`: an `f32`, or each part of a
+  `c64`, is widened to `f64`, which is exact, and the result is rounded to the nearest `f32` once, ties to even. A temperature with an offset (`°C`, `°F`) first loses
   the offset of its unit, then changes scale as above, then gets the offset of the target, each in one operation. The result of an
   operation takes the unit of its first operand: `core.add(1 V, 200 mV)` is `1.2 V`, `core.add(200 mV, 1 V)`
   is `1200 mV`.
@@ -232,7 +233,9 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   `9007199254740993` for an `f64` or with a unit. A decimal rounds to the nearest: `9007199254740993.0` is
   accepted. A literal too large for its type is an error, by its value in the unit it goes to: `1e39` for an `f32` or
   a `c64`, `1e36 V` for an `f32[mV]`, while `1e39 mV` for an `f32[V]` is accepted. One too small to tell from zero reads
-  as zero (`1e-999`, or `1e-50` for an `f32`).
+  as zero (`1e-999`, or `1e-50` for an `f32`). A literal in the unit it goes to is read once in its type; in another
+  unit it is read as an `f64`, converted as a wire is (3.3), then rounded to its type once: `1e39 mV` for an `f32[V]`
+  is the `f32` nearest to 1e36.
 
 ### 3.5 Generics
 
@@ -809,6 +812,8 @@ fields as a path in v0: `e.code` is rejected, and `handle` is how an error is to
 - Exception: a native function marked `always` (in the manifest of its library) runs anyway
   (closing a session, switching off a power supply) and passes on the error it received in
   preference to its own. `always` can only mark native functions.
+- **`core.call` skips as the function it runs would**, by the `err` input of that function, whatever names the
+  function type gives: `fn(duration, error)` and `fn(duration, err: error)` behave alike.
 - **A function written in LabCraft (`.lcf`), from any library, always runs its body**, like a
   LabVIEW subVI: only its native nodes are skipped, each according to its own `err` input, and its
   `always` nodes run. A cleanup function (`cleanup(dmm, err)` that calls `visa.close`) therefore

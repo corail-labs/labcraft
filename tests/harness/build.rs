@@ -10,11 +10,20 @@ fn main() {
     let mut out = String::new();
 
     let mut programs = Vec::new();
-    for folder in ["examples", "libs"] {
+    for folder in ["examples", "libs", "docs/rfc"] {
         println!("cargo::rerun-if-changed={}", root.join(folder).display());
         walk(&root.join(folder), &mut programs);
     }
     writeln!(out, "pub static PROGRAMS: &[Embedded] = &[{}];", embedded(&root, &programs)).unwrap();
+
+    // The text form of the IR of each function of `PROGRAMS` (`docs/ir.md`, section 8).
+    let snapshots = root.join("tests/harness/snapshots");
+    println!("cargo::rerun-if-changed={}", snapshots.display());
+    let mut stored = Vec::new();
+    if snapshots.is_dir() {
+        walk_with(&snapshots, &mut stored, "ir");
+    }
+    writeln!(out, "pub static SNAPSHOTS: &[Embedded] = &[{}];", embedded(&root, &stored)).unwrap();
 
     for (name, folder) in [("HOSTILE", "tests/acceptance/hostile"), ("TYPE_ERRORS", "tests/acceptance/type-errors")] {
         let corpus = root.join(folder);
@@ -37,12 +46,17 @@ fn main() {
 
 /// The programs below a folder, in the same order on every machine.
 fn walk(folder: &Path, files: &mut Vec<PathBuf>) {
+    walk_with(folder, files, "lcf");
+}
+
+/// The files below a folder with this extension, or `.lct` for programs, in the same order on every machine.
+fn walk_with(folder: &Path, files: &mut Vec<PathBuf>, wanted: &str) {
     let mut entries: Vec<PathBuf> = fs::read_dir(folder).unwrap().map(|entry| entry.unwrap().path()).collect();
     entries.sort();
     for path in entries {
         if path.is_dir() {
-            walk(&path, files);
-        } else if path.extension().is_some_and(|extension| extension == "lcf" || extension == "lct") {
+            walk_with(&path, files, wanted);
+        } else if path.extension().is_some_and(|extension| extension == wanted || (wanted == "lcf" && extension == "lct")) {
             files.push(path);
         }
     }

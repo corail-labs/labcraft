@@ -1,0 +1,17 @@
+[package]
+name = "labcraft-ir"
+description = "LabCraft L4: the dataflow IR, its lowering from a checked program, its verifier and its text form"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-check = { workspace = true }
+labcraft-format = { workspace = true }
+labcraft-graph = { workspace = true }
+labcraft-types = { workspace = true }
+
+[lints]
+workspace = true

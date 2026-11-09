@@ -1,0 +1,6 @@
+fn channel_voltage(channel: i32) -> (voltage: f64[V])
+  region (channel) -> (voltage)
+    0 voltage = match (channel)
+      arm 2 () -> (12.0 V)
+      arm 3..=5, 8 () -> (24.0 V)
+      arm 1, _ () -> (5.0 V)

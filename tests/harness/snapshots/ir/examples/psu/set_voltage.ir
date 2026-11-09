@@ -1,0 +1,5 @@
+fn psu.set_voltage(source: visa.session, voltage: f64[V], err: error = none) -> (source: visa.session, err: error)
+  region (source, voltage, err) -> (s, e1)
+    0 volts = primitive core.unitless(voltage, [V])
+    1 command = primitive string.format(volts, template "VOLT {volts:.6}")
+    2 s, e1 = native visa.write(source, command, err)  skip(err: 2)
