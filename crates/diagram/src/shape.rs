@@ -131,6 +131,8 @@ pub struct Group {
     /// The `<title>`: the full name of what it calls, as its tooltip.
     pub title: String,
     pub shapes: Vec<Shape>,
+    /// `data-arm`: a branch of a `match` or a `handle`, as its tab writes it, instead of a node.
+    pub arm: Option<String>,
 }
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
@@ -140,11 +142,28 @@ pub struct Drawing {
     pub function: String,
     pub width: i64,
     pub height: i64,
-    /// Shapes that stand for nothing of the program: the captions of the bodies until they are placed.
+    /// The frame of the function and its terminals.
     pub loose: Vec<Shape>,
     pub groups: Vec<Group>,
     /// The icons that the shapes show, each once.
     pub icons: Vec<IconDrawing>,
+    /// Where each node is, by the key that follows it across a change of the file (notation 2.1): for the glide of
+    /// the canvas, and the figure of stability. Not in the SVG.
+    pub placed: Vec<Placed>,
+}
+
+/// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placed {
+    pub key: String,
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+    pub column: u32,
+    pub rank: u32,
+    /// The body that holds it, by its index in the graph.
+    pub body: usize,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

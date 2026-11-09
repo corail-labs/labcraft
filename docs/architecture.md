@@ -330,6 +330,7 @@ character boundary, and these crates hold little numerical code.
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
+| `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 
@@ -721,7 +722,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 
 ## 11. M0v: the viewer
 
-*Status: draft; `text` (11.1) and `trace` (11.2) implemented, `diagram` (11.3) up to the sizes.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: draft; `text` (11.1) and `trace` (11.2) implemented, `diagram` (11.3) up to placement.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
@@ -846,9 +847,10 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 
 ### 11.3 `diagram` (L5)
 
-*Status: steps 1 and 2 below implemented (step 2 of 11.7): the graph and the sizes, with the SVG of the boxes, each
-body as a row of its nodes until placement comes.* `draw` takes the index of the file of the function in
-`Checked::files`, as `ir::lower` does, and the `Interner`.
+*Status: steps 1 to 3 below implemented (step 3 of 11.7): the graph with its wires, the sizes, placement, with the
+SVG of the frames and the nodes; the wires are drawn once they are routed (step 4). Structures are unfolded, as an
+export shows them; tabs come with the canvas that clicks them (step 6).* `draw` takes the index of the file of the
+function in `Checked::files`, as `ir::lower` does, and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
 gives (scenario 6). It reads `check::Checked` and never resolves again: names, callees, the terminals of each call
@@ -882,15 +884,19 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
   hash gives: the native and the WASM builds give the same bytes of SVG (scenario 6, point 2).
 - **Steps**, each in a module of its own:
   1. **The graph of the function**, from `Resolved`: nodes, terminals in signature order, wires with their
-     families, structures and their frames. `LC7002` is decided here, before anything is placed: the nodes are
-     counted from the text, the terminals as the graph is built, which stops at the first one too many, so that a
-     signature of thousands of inputs called thousands of times costs no more than the limit. What a call needs of
-     its callee is worked out once per callee.
+     families, structures and their frames. A value from outside a structure enters by a notch and has one wire
+     per frame it crosses, its readers inside sharing the part outside (spec 11). `LC7002` is decided here, before
+     anything is placed: the nodes are counted from the text, the terminals as the graph is built, notches
+     included, which stops at the first one too many, so that a signature of thousands of inputs called thousands
+     of times costs no more than the limit. What a call needs of its callee is worked out once per callee.
   2. **Sizes**: the view of each node (its file, then the preference), compact and standard blocks (3.1, 3.2),
      every text cut in cells by `types::text` (3.2, 6.1, and 40 cells for the others, 2.3), icons, bands,
      badges.
-  3. **Placement** (2.1): columns, the error chain on one line through every level, the positions of a `layout`
-     section, the unplaced nodes around them.
+  3. **Placement** (2.1): each body on its own, the innermost first, so that a structure is a node of the size of
+     its frame in the body around it; columns, the error chain on one line through every level, stacks ordered by
+     four sweeps of barycentres each way, the terminals of each frame, the positions of a `layout` section and the
+     unplaced nodes around them. The `Drawing` keeps where each node is, by the key that follows it across a change
+     of the file (notation 2.1), with its column and its rank: for the glide, and for the figure of stability.
   4. **Routing** (2.2): channels between columns, tracks above the nodes, 8 units between parallel wires, the
      waypoints of a `via`.
   5. **Shapes**, with their tokens, marks and badges.
@@ -999,8 +1005,8 @@ MCP, keeps. Both give the same SVG, from the same function of `diagram`.
 | The metrics, the cells, the Unicode version of the tables, the SHA-256 of Hack | `types` tests, `apps/labcraft` tests | 6 |
 | The SVG of each function of `examples/`, `docs/rfc/` and `libs/`, as its file gives it and with every node in standard view, compared byte for byte with a snapshot, native and WASM | `tests/harness` | 6.2 |
 | The rules of 2.2, checked on every drawing by a checker of their own, not by comparing with an output: no wire crosses a node, a label, a pill, a band or a wire name, no bubble covers a node, a pill or another bubble, parallel wires 8 units apart, nothing but error wires below the main chain, which no other wire crosses | `tests/harness` | 6.1 |
-| The figure of stability: a neutral node on each data wire, the nodes that move (2.1) | `tests/harness`, reported in CI | 6.3 |
-| The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | `tests/harness`, reported in CI | — |
+| The figure of stability: a neutral node on each data wire between two nodes, the nodes that move, and those whose column holds other nodes or another order (2.1) | `tests/harness/tests/figures.rs`, `cargo xtask figures`, in the summary of the job `checks` | 6.3 |
+| The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | the same | — |
 | The SVG of `diagram --trace` for the runs of `examples/`, as a snapshot, *with M0b* | `tests/harness` | 6.7 |
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |
@@ -1021,7 +1027,8 @@ Each step ends with something testable.
 1. **`types::text`**, Hack in `assets/fonts`, `cargo xtask assets` and `unicode`; `LC5009` by the box of the text
    (spec 11.1) in `check`.
 2. **`diagram`: the graph and the sizes**, compact and standard, with the SVG of the boxes; the snapshots start.
-3. **Placement**, with the `layout` section; the figure of stability.
+3. **Placement**, with the `layout` section, the frames of the structures, unfolded; the figures of stability and
+   of size.
 4. **Routing**: the snapshots of scenario 6, point 2, native and WASM; bounds; fuzzing.
 5. **`labcraft-cli diagram --svg`** (cli.md 7), and the diagnostics SVG.
 6. **`editor` and `apps/labcraft`**: the canvas, the fonts, watching, the glide, read-only; the session of `engine`

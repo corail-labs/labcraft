@@ -1192,9 +1192,11 @@ layout {
 }
 ```
 
-- **Coordinates** are in canvas units: 1 unit = 1 logical pixel at 100% zoom, origin at the top
-  left, y pointing down (visual notation, section 2). `node x at (40, 80)` places the top-left
-  corner of the node; the points after `via` are waypoints of the route.
+- **Coordinates** are in canvas units: 1 unit = 1 logical pixel at 100% zoom, y pointing down (visual
+  notation, section 2), from the top-left corner of the frame that holds what they place: the frame of the
+  function, of a loop, or the box of an arm. `node x at (40, 80)` places the top-left corner of the node
+  in its frame, so that a structure that moves moves what it holds, and its entries do not change; the
+  points after `via` are waypoints of the route, in the frame of the wire.
 - Nodes are designated by their label (`#close`) if they have one, or by the name of their line
   (5.2): their first output that is neither `_` nor `next x`. A node that has no such output (all
   its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A named

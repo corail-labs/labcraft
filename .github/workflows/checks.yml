@@ -63,6 +63,10 @@ jobs:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
       - name: Rust gate
         run: cargo xtask ci
+      # A figure, never a threshold (docs/visual-notation.md, 2.1 and 7): it never turns the job red.
+      - name: Figures of the viewer
+        continue-on-error: true
+        run: cargo xtask figures >> "$GITHUB_STEP_SUMMARY"
 
   # Paths, walking folders and atomic writes differ on Windows. The crates are the same everywhere, and
   # the gate above covers them, so this runs only what touches the file system.

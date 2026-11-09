@@ -52,6 +52,17 @@ pub fn write_operand(operand: &Operand, names: &Interner, limit: usize) -> Strin
     writer.out
 }
 
+/// A pattern of an arm as the text writes it (`Reading.Value(v)`, `io.timeout(err)`), stopped once it passes `limit` bytes:
+/// the title of an arm in a diagram (`docs/visual-notation.md`, section 5.2).
+pub fn write_pattern(pattern: &Pattern, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    writer.pattern(pattern);
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
 /// The text of a reference of the `layout` section: `#close`, `mean.b`.
 pub(crate) fn reference_text(node: NodeRef, terminal: Option<Name>, names: &Interner) -> String {
     let mut text = String::new();

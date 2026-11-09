@@ -57,8 +57,8 @@ Craft family:
   edge (2.1). An optional input shows its default value next to
   its terminal (`low ◂ 220 V`). The `///` documentation is the tooltip of the title.
 - Orthogonal wires, rounded corners (radius 6). Grid of 8 units.
-- Canvas units: 1 unit = 1 logical pixel at 100% zoom, origin at the top left;
-  `node x at (40, 80)` places the top-left corner of the node (spec 11).
+- Canvas units: 1 unit = 1 logical pixel at 100% zoom; `node x at (40, 80)` places the top-left corner
+  of the node, from the top-left corner of the frame that holds it (spec 11).
 
 ### 2.1 Automatic placement
 
@@ -108,7 +108,21 @@ are the nodes that a `layout` section does not place (spec 11).
   the axis around it, and the chain inside goes on along the same line: one straight line through every
   level of nesting. Structures grow upward, and their error lines line up. A structure off the main
   chain keeps its own chain straight along its own bottom.
-- **A partial `layout` section.** The nodes it places never move. A node that it does not place goes into
+- **The numbers** *(proposed)*. In a column, the blocks are aligned on their left edge, and the column is as
+  wide as its widest node. Two nodes stacked are 24 apart, plus what a band or a label adds above the lower one;
+  a column with no node of the chain starts 40 above the axis. The order in a column comes from four sweeps of
+  barycentres each way, the order that makes the wires the shortest kept. Until routing measures the channels
+  (2.2), a channel is 48 wide. A frame has a header of 32 for its title and 16 inside around what it holds; a
+  `match` or a `handle` unfolded stacks its arms 16 apart, 16 below its header, each with a title of 24, all as wide
+  as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
+  The terminals of a frame keep their order (the signature, the clauses of a loop), each at the height of the
+  first node it feeds or that feeds it, as far as that order allows and at least 24 apart; the error terminal on
+  the axis, at the bottom of its edge; the two boxes of a register at one height. Each has its name inside the
+  frame, with its unit and the default of an input (`low ◂ 220 V`). An error that crosses a body with no node
+  on its way still has its straight line.
+- **A partial `layout` section.** The nodes it places never move. A frame grows upward to hold the nodes that
+  they push out of it *(proposed)*; the positions of the file are still measured from the corner it has without
+  them. A node that it does not place goes into
   free space between what it connects: right of what feeds it, left of what it feeds, above the error
   chain if there is one. The other unplaced nodes move apart only as far as needed. With no position in
   the file, this gives the placement above. What the file writes always wins: around a position or a
