@@ -1,0 +1,17 @@
+[package]
+name = "labcraft-visa"
+description = "The native bodies of the LabCraft library visa: sessions, and the SIM:: instruments of a simulation file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-runtime = { workspace = true }
+labcraft-trace = { workspace = true }
+labcraft-types = { workspace = true }
+toml = { workspace = true }
+
+[lints]
+workspace = true

@@ -406,7 +406,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 3 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 3 of 10.11 implemented, and the first part of step 4 (4a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -624,26 +624,47 @@ pub fn outputs_on_error(env: Env, skip: &Skip, inputs: &[Value], failed: Option<
 
 ### 10.6 Native libraries
 
-The runtime defines what a library with native functions gives it:
+*Status: the interface and `labcraft-visa` in deterministic mode are implemented (step 4a); `Blocking` comes with real time
+(step 8).* The runtime defines what a library with native functions gives it (`runtime::native`):
 
 ```rust
 pub trait NativeLibrary: Send + Sync {
     fn name(&self) -> &str;                                              // "visa": as its manifest says
-    fn codes(&self) -> &[LibraryCode];                                   // `visa:S001`…, for `xtask codes`
-    fn simulate(&self, section: &SpannedTable, limits: &Limits) -> Result<Box<dyn Simulation>, Report>;
-    fn start_run(&self, simulation: Option<Box<dyn Simulation>>) -> Box<dyn LibraryRun>;   // what one run holds
+    fn codes(&self) -> &'static [LibraryCode];                           // `visa:S001`…, for `xtask codes`
+    fn simulates(&self) -> bool;                                         // it reads a section of a simulation file
+    fn simulate(&self, section: &Section) -> Result<Simulation, Vec<LibraryDiagnostic>>;
+    fn start_run(&self, library: u32, simulation: Option<&Simulation>) -> Box<dyn LibraryRun>;   // what one run holds
 }
 pub trait LibraryRun: Send {                                             // its sessions, its instruments, for one run
-    fn call(&mut self, function: &str, inputs: &[Value]) -> Option<Box<dyn NativeCall>>;  // an `extern rust` body
-    fn describe(&self, handle: Handle) -> HandleInfo;                    // what it designates, whether it is open
+    fn call(&mut self, function: &str, inputs: Vec<Value>) -> Option<CallId>;   // starts an `extern rust` body
+    fn step(&mut self, call: CallId, cx: CallContext) -> Step;           // asked again after each wait
+    fn cancel(&mut self, call: CallId);                                  // a call the run abandons
+    fn describe(&self, handle: Handle) -> Option<HandleInfo>;            // what it designates, whether it is open
     fn release(&mut self, handle: Handle);                               // after an abort or a fault
+    fn instruments(&self) -> Vec<InstrumentLog>;                         // the commands each instrument saw, for the report
 }
-pub trait NativeCall: Send {
-    fn step(&mut self, cx: &mut CallContext) -> Step;                    // called again after each wait
-}
-pub enum Step { Done(Vec<Value>), Sleep(Duration), Exclusive(Key), Release(Key),
-                Blocking(Box<dyn FnOnce() -> Vec<Value> + Send>) }
+pub enum Step { Done(NativeOutcome), Sleep(i64), Exclusive(Key), Release(Key) }   // `Blocking(…)` with real time
+pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
 ```
+
+- **The library keeps its calls.** A call is a state machine, but the run of its library holds it and steps it
+  (`LibraryRun::step`), rather than a `NativeCall` object of its own: a call reads and changes the sessions and the
+  instruments of its run, which an object apart from the run could only borrow from it while the run lends itself to
+  another call. A call that fails gives its error, without origin: the host makes it, at its node, and the outputs are
+  those of a node that fails (`outputs_on_error`, 10.5).
+- **A library judges its section** of the simulation file and returns its diagnostics with its own codes
+  (`LibraryDiagnostic`, cli.md 4.4), each at its key or its value; they join the report of the run with `labcraft-cli run`
+  (step 7). What it judged (`Simulation`, its own type) serves every run that uses the file.
+- **The file as a whole** is read by `runtime::simulation`: its nesting is counted first, on the tokens of the lexer of
+  `toml` and without recursion, along the path from its root to its deepest value (cli.md 6.2): 80 levels at most, or
+  `--max-nesting` when lower, since the parser recurses and stops at 80, and since the tree it builds is dropped by
+  recursion, so that the levels of keys and of containers multiply there: 80 inline tables each led by a key of 80
+  segments make 6,400 levels, which overflow a stack of 1 MiB. A parse error of the reader's own limit is `LC0007` too. Then it is parsed, its integers checked to fit in 64 bits, and each library given its table
+  (`SimulationFile::judge`). A position is a binary search in `simulation::Places` (the start of each line, and the code
+  points before every 1,024 bytes), so a file of many problems is placed in linear time. The codes of the tool that this
+  gives, `LC0007`, `LC8109` and `LC8110`, join the tables of cli.md, section 5, when `labcraft-cli run` gives them;
+  `cargo xtask codes` checks that each has its row there. A library says its problems in the order of the keys of its
+  section, which `toml` sorts: the tool sorts the diagnostics of a run by place (cli.md 4.2).
 
 - **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
   the run, and `describe` and `release` read them there.
@@ -665,8 +686,22 @@ pub enum Step { Done(Vec<Value>), Sleep(Duration), Exclusive(Key), Release(Key),
   and it calls `release` on what a run leaves open after an abort or a fault.
 
 `labcraft-visa` holds the sessions, the `SIM::` backend of [simulation.md](../libs/visa/simulation.md) (the clock in
-whole nanoseconds, the noise generator, the error queue, the faults), and its fuzz target for simulation files. Real
-instruments come with M4. `labcraft-results-log` keeps the results it is given, as the proof of concept does.
+whole nanoseconds, the noise generator, the error queue, the faults), and its fuzz target for simulation files (step 4b).
+Real instruments come with M4. `labcraft-results-log` keeps the results it is given, as the proof of concept does, and the
+report shows them (`logs`, decision of the owner, 2026-11-09; step 4b).
+
+- **The keys of `visa`:** a call takes the key of its session for all of its length, so it is atomic on its session; a
+  command takes the key of its instrument for its latency only, so an instrument handles one command at a time, whichever
+  session sends it, and is free while a session waits for its answer or its timeout (simulation.md 4). A session is the
+  handle `n` of its run, from 1, so the default of a `session`, numbered 0, is no session.
+- **What it keeps for the report:** the first 1,000 commands of each instrument *(proposed)*, then a count of the others;
+  of each command and answer, its first 1,000 code points and its length (commands.md 5); and for all the instruments of a
+  run, 16 MiB *(proposed)*, past which commands are counted, not kept, so that what a program sends cannot grow the memory of
+  a run outside `--max-memory`. A session holds the index of its instrument, not its name.
+- **Tests:** `libs/visa/src/tests.rs`, with a small driver that gives the keys and the clock as the scheduler will; the
+  expected values worked out by hand, or by a Python script written from simulation.md 3 alone, which gives the factor that
+  the document states. `cargo xtask codes` compares `labcraft_visa::CODES` with simulation.md 7. `labcraft-visa` builds for
+  WASM.
 
 ### 10.7 The trace and the report
 
@@ -751,7 +786,8 @@ Each step of work ends with something testable:
    (section 10.2).
 3. **Values and primitives** in `runtime`, with their test of signatures. *Done* (sections 10.3, 10.5).
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
-   codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`.
+   codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`. *4a done* (the interface,
+   `labcraft-visa`, `runtime::simulation`); 4b: the fuzz target and `labcraft-results-log`.
 5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the
    report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner.
 6. **`engine`:** the session, the registry and the commands of commands.md 6, the kept `check`, runs as tasks; `cargo

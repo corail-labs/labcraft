@@ -12,6 +12,8 @@ labcraft-check = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-trace = { workspace = true }
 labcraft-types = { workspace = true }
+toml = { workspace = true }
+toml_parser = { workspace = true }
 
 [dev-dependencies]
 labcraft-graph = { workspace = true }

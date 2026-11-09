@@ -21,10 +21,10 @@ commands:
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/
-  codes     the enumeration Code equals the tables of docs/cli.md, section 5
+  codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime and diagram build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check, trace, ir, runtime, visa and diagram build for wasm32-unknown-unknown, and the harness passes there
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -159,7 +159,22 @@ fn check_codes() -> Result<(), String> {
     let path = root().join("docs").join("cli.md");
     let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     let in_code = codes::in_code();
-    report("codes", in_code.len(), "codes", codes::check(&codes::from_document(&document)?, &in_code))
+    report("codes", in_code.len(), "codes", codes::check(&codes::from_document(&document)?, &in_code))?;
+    // The codes of each library with native bodies equal the table of its document (`docs/architecture.md`, 10.6).
+    let path = root().join("libs").join("visa").join("simulation.md");
+    let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let documented =
+        codes::library_from_document(&document, "## 7. What is refused", "visa").map_err(|error| format!("{}: {error}", path.display()))?;
+    let visa = codes::of_visa();
+    let mut violations: Vec<String> = codes::check(&documented, &visa)
+        .into_iter()
+        .map(|violation| violation.replace("docs/cli.md", "libs/visa/simulation.md").replace("the enumeration Code", "labcraft_visa::CODES"))
+        .collect();
+    violations.extend(codes::twice(&visa));
+    report("codes of visa", visa.len(), "codes", violations)?;
+    let path = root().join("docs").join("cli.md");
+    let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    report("codes of the simulation file", labcraft_runtime::simulation::CODES.len(), "codes", codes::of_the_simulation_file(&document))
 }
 
 fn check_assets() -> Result<(), String> {
@@ -191,6 +206,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-ir",
         "--package",
         "labcraft-runtime",
+        "--package",
+        "labcraft-visa",
         "--package",
         "labcraft-diagram",
     ])?;
