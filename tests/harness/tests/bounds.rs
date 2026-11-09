@@ -2,6 +2,12 @@
 //! 512 MB; the library of 100,000 files takes at most 60 s. The files are those of the corpus, and others built to cost the
 //! most just under the limit of size.
 //!
+//! Scenarios 4 and 6 (`docs/architecture.md`, 11.3, 11.6): drawing a function, placed, routed and written as SVG, takes at
+//! most 2 s and 512 MB for 20,000 nodes, the default of `--max-diagram-nodes`, and 1 s for 1,000 nodes and 2,000 wires.
+//! `diagram` times the drawing of each function of the folder after `check`, which is not counted, on the corpus and on
+//! cases built to cost the most: wires over many columns, a value or an error read everywhere, a chain of structures,
+//! crossings in one channel, a waypoint for every wire.
+//!
 //! In release only, since the crates of the workspace are not optimized in tests: `cargo xtask bounds`. Each case runs in a
 //! process of its own, this one started again, which times its own work and, on Linux, reads the peak of its resident memory
 //! (`VmHWM`). Elsewhere only the time is measured.
@@ -12,7 +18,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
+use labcraft_diagram::{DiagramLimits, Drawn, Theme, ViewState, draw, svg};
 use labcraft_format::{STACK_SIZE, format};
+use labcraft_graph::Decl;
 use labcraft_harness::{Embedded, HOSTILE, PROGRAMS, TYPE_ERRORS};
 use labcraft_types::{Interner, Limits};
 
@@ -23,6 +31,8 @@ mod deep;
 /// The case that a started process runs, as `name:command`.
 const CASE: &str = "LABCRAFT_BOUNDS_CASE";
 const SECONDS: f64 = 2.0;
+/// 1,000 nodes and 2,000 wires drawn (scenario 6).
+const SMALL_DRAWING_SECONDS: f64 = 1.0;
 const LIBRARY_SECONDS: f64 = 60.0;
 const BYTES: u64 = 512 * 1024 * 1024;
 
@@ -30,6 +40,7 @@ const BYTES: u64 = 512 * 1024 * 1024;
 enum Tool {
     Fmt,
     Check,
+    Diagram,
 }
 
 impl Tool {
@@ -37,6 +48,7 @@ impl Tool {
         match self {
             Tool::Fmt => "fmt",
             Tool::Check => "check",
+            Tool::Diagram => "diagram",
         }
     }
 }
@@ -50,6 +62,8 @@ struct Case {
     folders: fn() -> Vec<Folder>,
     /// Whether `fmt` reads it: one file at a time, so not a library.
     fmt: bool,
+    /// Whether its functions are drawn.
+    diagram: bool,
     seconds: f64,
     /// The codes that `fmt` and `check` report on it, so that a case that stops early cannot pass for a fast one; none for a
     /// family of folders.
@@ -57,16 +71,31 @@ struct Case {
 }
 
 const CASES: &[Case] = &[
-    Case { name: "corpus", folders: corpus, fmt: true, seconds: SECONDS, codes: None },
-    Case { name: "nesting", folders: nesting, fmt: true, seconds: SECONDS, codes: None },
-    Case { name: "nodes-300000", folders: nodes_300000, fmt: true, seconds: SECONDS, codes: Some((&["LC6003"], &[])) },
-    Case { name: "comment-at-the-limit", folders: comment_at_the_limit, fmt: true, seconds: SECONDS, codes: Some((&[], &[])) },
-    Case { name: "names-in-random-order", folders: names_in_random_order, fmt: true, seconds: SECONDS, codes: Some((&["LC6001"], &[])) },
-    Case { name: "one-value-read-everywhere", folders: one_value_read_everywhere, fmt: true, seconds: SECONDS, codes: Some((&["LC6001"], &[])) },
+    Case { name: "corpus", folders: corpus, fmt: true, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "nesting", folders: nesting, fmt: true, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "nodes-300000", folders: nodes_300000, fmt: true, diagram: false, seconds: SECONDS, codes: Some((&["LC6003"], &[])) },
+    Case { name: "comment-at-the-limit", folders: comment_at_the_limit, fmt: true, diagram: false, seconds: SECONDS, codes: Some((&[], &[])) },
+    Case {
+        name: "names-in-random-order",
+        folders: names_in_random_order,
+        fmt: true,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &[])),
+    },
+    Case {
+        name: "one-value-read-everywhere",
+        folders: one_value_read_everywhere,
+        fmt: true,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &[])),
+    },
     Case {
         name: "one-value-read-everywhere-in-layout",
         folders: one_value_read_everywhere_in_layout,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6001"], &[])),
     },
@@ -74,18 +103,34 @@ const CASES: &[Case] = &[
         name: "parameters-that-repeat",
         folders: parameters_that_repeat,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6003"], &["LC2003", "LC2019"])),
     },
-    Case { name: "parameters", folders: parameters, fmt: true, seconds: SECONDS, codes: Some((&["LC6003"], &[])) },
-    Case { name: "towers-of-parallel-loops", folders: towers_of_parallel_loops, fmt: true, seconds: SECONDS, codes: Some((&["LC6003"], &[])) },
-    Case { name: "targets", folders: targets, fmt: true, seconds: SECONDS, codes: Some((&[], &["LC2103"])) },
-    Case { name: "chain-of-calls", folders: chain_of_calls, fmt: true, seconds: SECONDS, codes: Some((&[], &[])) },
-    Case { name: "an-entry-per-parameter", folders: an_entry_per_parameter, fmt: true, seconds: SECONDS, codes: Some((&["LC6001"], &[])) },
+    Case { name: "parameters", folders: parameters, fmt: true, diagram: false, seconds: SECONDS, codes: Some((&["LC6003"], &[])) },
+    Case {
+        name: "towers-of-parallel-loops",
+        folders: towers_of_parallel_loops,
+        fmt: true,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&["LC6003"], &[])),
+    },
+    Case { name: "targets", folders: targets, fmt: true, diagram: false, seconds: SECONDS, codes: Some((&[], &["LC2103"])) },
+    Case { name: "chain-of-calls", folders: chain_of_calls, fmt: true, diagram: false, seconds: SECONDS, codes: Some((&[], &[])) },
+    Case {
+        name: "an-entry-per-parameter",
+        folders: an_entry_per_parameter,
+        fmt: true,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &[])),
+    },
     Case {
         name: "values-that-cross-250-frames",
         folders: values_that_cross_250_frames,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6003"], &[])),
     },
@@ -93,6 +138,7 @@ const CASES: &[Case] = &[
         name: "a-budget-of-comparisons-spent",
         folders: a_budget_of_comparisons_spent,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6003"], &["LC5006"])),
     },
@@ -100,6 +146,7 @@ const CASES: &[Case] = &[
         name: "values-passed-into-250-frames",
         folders: values_passed_into_250_frames,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6003"], &["LC4007"])),
     },
@@ -107,18 +154,56 @@ const CASES: &[Case] = &[
         name: "calls-alone-of-many-outputs",
         folders: calls_alone_of_many_outputs,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6001"], &["LC4008"])),
     },
-    Case { name: "calls-of-many-defaults", folders: calls_of_many_defaults, fmt: true, seconds: SECONDS, codes: Some((&["LC6001"], &["LC4008"])) },
+    Case {
+        name: "calls-of-many-defaults",
+        folders: calls_of_many_defaults,
+        fmt: true,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&["LC6001"], &["LC4008"])),
+    },
     Case {
         name: "calls-of-a-faulty-signature",
         folders: calls_of_a_faulty_signature,
         fmt: true,
+        diagram: false,
         seconds: SECONDS,
         codes: Some((&["LC6001"], &["LC2107"])),
     },
-    Case { name: "library-of-100000-files", folders: library_of_100000_files, fmt: false, seconds: LIBRARY_SECONDS, codes: Some((&[], &[])) },
+    Case {
+        name: "library-of-100000-files",
+        folders: library_of_100000_files,
+        fmt: false,
+        diagram: false,
+        seconds: LIBRARY_SECONDS,
+        codes: Some((&[], &[])),
+    },
+    Case { name: "drawn-chain-of-20000-nodes", folders: drawn_chain, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "drawn-value-in-every-column", folders: drawn_value_in_every_column, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "drawn-wires-over-100-columns", folders: drawn_wires_over_100_columns, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "drawn-error-read-everywhere", folders: drawn_error_read_everywhere, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case {
+        name: "drawn-crossings-in-one-channel",
+        folders: drawn_crossings_in_one_channel,
+        fmt: false,
+        diagram: true,
+        seconds: SECONDS,
+        codes: None,
+    },
+    Case { name: "drawn-chain-of-structures", folders: drawn_chain_of_structures, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "drawn-waypoints-for-every-wire", folders: drawn_waypoints, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case {
+        name: "drawn-1000-nodes-2000-wires",
+        folders: drawn_1000_nodes_2000_wires,
+        fmt: false,
+        diagram: true,
+        seconds: SMALL_DRAWING_SECONDS,
+        codes: None,
+    },
 ];
 
 /// The whole run: each case and command in a process of its own, then the table, then the verdict.
@@ -128,8 +213,8 @@ fn every_case_stays_within_the_bounds() {
     let mut over = Vec::new();
     println!("{:<38} {:<6} {:>8} {:>8}", "case", "", "seconds", "MB");
     for case in CASES {
-        for command in [Tool::Fmt, Tool::Check] {
-            if command == Tool::Fmt && !case.fmt {
+        for command in [Tool::Fmt, Tool::Check, Tool::Diagram] {
+            if (command == Tool::Fmt && !case.fmt) || (command == Tool::Diagram && !case.diagram) {
                 continue;
             }
             let mut measure = run(case.name, command);
@@ -138,7 +223,7 @@ fn every_case_stays_within_the_bounds() {
                 measure = run(case.name, command);
             }
             let (seconds, peak, codes) = measure;
-            if let Some((fmt, check)) = case.codes {
+            if let (Some((fmt, check)), false) = (case.codes, command == Tool::Diagram) {
                 let expected = if command == Tool::Fmt { fmt } else { check };
                 let expected: BTreeSet<String> = expected.iter().map(|code| (*code).to_owned()).collect();
                 if codes != expected {
@@ -189,13 +274,19 @@ fn one_case() {
     let Ok(which) = std::env::var(CASE) else { return };
     let (name, command) = which.split_once(':').unwrap();
     let case = CASES.iter().find(|case| case.name == name).unwrap();
-    let command = if command == "fmt" { Tool::Fmt } else { Tool::Check };
+    let command = match command {
+        "fmt" => Tool::Fmt,
+        "diagram" => Tool::Diagram,
+        _ => Tool::Check,
+    };
     let folders = (case.folders)();
+    // A case built for the drawing must draw each of its functions, or it would pass for a fast one.
+    let drawn = name.starts_with("drawn-");
     let (slowest, codes) = std::thread::Builder::new()
         .stack_size(STACK_SIZE)
         .spawn(move || {
             let mut codes = BTreeSet::new();
-            let slowest = folders.into_iter().map(|folder| work(folder, command, &mut codes)).max().unwrap_or_default();
+            let slowest = folders.into_iter().map(|folder| work(folder, command, drawn, &mut codes)).max().unwrap_or_default();
             (slowest, codes)
         })
         .unwrap()
@@ -207,7 +298,7 @@ fn one_case() {
 
 /// What the program does on one folder, as far as the crates go.
 #[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
-fn work(folder: Folder, command: Tool, codes: &mut BTreeSet<&'static str>) -> Duration {
+fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'static str>) -> Duration {
     let limits = Limits::default();
     let start = Instant::now();
     match command {
@@ -228,6 +319,24 @@ fn work(folder: Folder, command: Tool, codes: &mut BTreeSet<&'static str>) -> Du
             checked.report.finish();
             std::hint::black_box(serde_json::to_string(&checked.report.check_document(checked.counts, false)).unwrap());
             codes.extend(checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()));
+        }
+        Tool::Diagram => {
+            let files = folder.into_iter().map(|(shown, bytes)| SourceFile { shown, content: Content::Bytes(Cow::Owned(bytes)) }).collect();
+            let root = LibrarySource { files, ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+            let mut names = Interner::new();
+            let checked = check(root, &Shipped, &mut names, &limits);
+            codes.extend(checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()));
+            // Only the drawing counts: placed, routed and written.
+            let start = Instant::now();
+            for (index, file) in checked.files.iter().enumerate() {
+                match draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) {
+                    Drawn::Drawing(drawing) => {
+                        std::hint::black_box(svg(&drawing, Theme::Both));
+                    }
+                    Drawn::NotDrawn(_) => assert!(!drawn || !matches!(file.file.decl, Decl::Function(_)), "{} is not drawn", file.shown),
+                }
+            }
+            return start.elapsed();
         }
     }
     start.elapsed()
@@ -460,4 +569,76 @@ fn calls_of_a_faulty_signature() -> Vec<Folder> {
 
 fn library_of_100000_files() -> Vec<Folder> {
     vec![(0..100_000).map(|index| (format!("f{index}.lcf"), format!("labcraft 1\n\nfn f{index}() -> () {{\n    x = 1\n}}\n").into_bytes())).collect()]
+}
+
+// The drawings that cost the most, each under 20,000 nodes.
+
+const DRAWN: usize = 19_990;
+
+/// A chain of nodes, one per column.
+fn drawn_chain() -> Vec<Folder> {
+    let lines: String = (1..DRAWN).map(|k| format!("    v{k} = core.add(v{}, 1.0)\n", k - 1)).collect();
+    alone("f.lcf", format!("{HEAD}fn f() -> () {{\n    v0 = core.neg(1.0)\n{lines}}}\n"))
+}
+
+/// An input read in every column: one net, one drop per column.
+fn drawn_value_in_every_column() -> Vec<Folder> {
+    let lines: String = (1..DRAWN).map(|k| format!("    v{k} = core.add(v{}, x)\n", k - 1)).collect();
+    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n{lines}}}\n"))
+}
+
+/// Each value read again 100 columns later: 20,000 tracks, a hundred over each column.
+fn drawn_wires_over_100_columns() -> Vec<Folder> {
+    let lines: String = (1..DRAWN)
+        .map(|k| match k {
+            0..100 => format!("    v{k} = core.add(v{}, x)\n", k - 1),
+            _ => format!("    v{k} = core.add(v{}, v{})\n", k - 1, k - 100),
+        })
+        .collect();
+    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n{lines}}}\n"))
+}
+
+/// The function that the cases call with an error: it passes one through.
+const PASS: &str = "labcraft 1\n\nuse core\n\nfn s(x: f64, err: error = none) -> (y: f64, err: error) {\n    y = core.neg(x)\n    err = err\n}\n";
+const SWAP: &str = "labcraft 1\n\nuse core\n\nfn t(x: f64, z: f64, err: error = none) -> (y: f64, w: f64, err: error) {\n    y = core.neg(x)\n    w = core.abs(z)\n    err = err\n}\n";
+
+/// One error read by every node of a chain: a track below the chain, a drop in every column.
+fn drawn_error_read_everywhere() -> Vec<Folder> {
+    let lines: String = (1..DRAWN).map(|k| format!("    x{k}, e{k} = s(x{}, err: err)\n", k - 1)).collect();
+    let main = format!("labcraft 1\n\nuse core\n\nfn f(err: error = none) -> () {{\n    x0 = core.neg(1.0)\n{lines}}}\n");
+    vec![vec![("f.lcf".to_owned(), main.into_bytes()), ("s.lcf".to_owned(), PASS.as_bytes().to_vec())]]
+}
+
+/// Pairs of values swapped between two calls, all in two columns: crossings in one channel, each a cycle that jogs.
+fn drawn_crossings_in_one_channel() -> Vec<Folder> {
+    let lines: String = (0..DRAWN / 2).map(|k| format!("    p{k}, q{k}, e{k} = t(a, b)\n    y{k}, z{k}, f{k} = t(q{k}, p{k})\n")).collect();
+    let main = format!("labcraft 1\n\nfn f(a: f64, b: f64) -> () {{\n{lines}}}\n");
+    vec![vec![("f.lcf".to_owned(), main.into_bytes()), ("t.lcf".to_owned(), SWAP.as_bytes().to_vec())]]
+}
+
+/// A chain of loops, each holding a little body: a frame per structure, a value through each.
+fn drawn_chain_of_structures() -> Vec<Folder> {
+    let lines: String = (1..DRAWN / 4)
+        .map(|k| {
+            format!(
+                "    v{k} = loop carry c = v{} {{\n        d = core.add(c, 1.0)\n        stop = core.gt(d, 0.0)\n        next c = d\n        until stop\n    }}\n",
+                k - 1
+            )
+        })
+        .collect();
+    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n{lines}}}\n"))
+}
+
+/// A waypoint for every wire, from the `layout` section.
+fn drawn_waypoints() -> Vec<Folder> {
+    let count = DRAWN / 2;
+    let lines: String = (0..count).map(|k| format!("    y{k} = core.neg(x)\n")).collect();
+    let entries: String = (0..count).map(|k| format!("    wire x -> y{k} via (100, {})\n", 40 + k % 1000)).collect();
+    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n{lines}}}\n\nlayout {{\n{entries}}}\n"))
+}
+
+/// 1,000 nodes, each reading the two before it: 2,000 wires.
+fn drawn_1000_nodes_2000_wires() -> Vec<Folder> {
+    let lines: String = (2..1000).map(|k| format!("    v{k} = core.add(v{}, v{})\n", k - 1, k - 2)).collect();
+    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n    v1 = core.add(v0, x)\n{lines}}}\n"))
 }

@@ -104,6 +104,9 @@ struct NetPlan {
     drops: BTreeMap<usize, Option<usize>>,
 }
 
+/// A wire that goes back: the wire, its track, its vertical up and down, the net it joins.
+type Back = (usize, i64, Option<usize>, Option<usize>, Option<usize>);
+
 /// The plan of a body: how many slots each channel holds, how far the tracks go, and each net.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Plan {
@@ -114,8 +117,15 @@ pub struct Plan {
     pub lowest: Option<i64>,
     verticals: Vec<Vertical>,
     nets: Vec<NetPlan>,
-    /// Wires that go back to the left, which only a position of the file gives: each routed around on its own.
-    back: Vec<usize>,
+    /// Wires that go back to the left (a body that cannot be ordered, a position of the file): each up a vertical in the
+    /// channel after its source, along a track over the columns from its reader to its source, and down a vertical in
+    /// the channel before its reader. By wire: the track, the two verticals, and its net: that of its value when its
+    /// value reads on to the right, or one with the others of its value that go back.
+    back: Vec<Back>,
+    /// The wires that go back, before they have their track.
+    back_wires: Vec<usize>,
+    /// The channels over which the track of each wire that goes back runs, by wire.
+    back_ends: std::collections::HashMap<usize, (usize, usize)>,
     /// Wires with waypoints, each routed through them on its own.
     through: Vec<(usize, Vec<(i64, i64)>)>,
     /// By wire: an error that stays on the axis, straight, past columns that hold nothing on it (notation 2.1).
@@ -183,7 +193,7 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             continue;
         }
         if ends.to_column <= ends.from_column {
-            plan.back.push(index);
+            plan.back_wires.push(index);
             continue;
         }
         let _ = family;
@@ -284,6 +294,18 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
         }
     }
+    // A wire that goes back: a track over every column from its reader to its source, as the others stack.
+    for &wire in &plan.back_wires.clone() {
+        let Some(ends) = body.ends.get(wire).copied().flatten() else { continue };
+        let (low, high) = (ends.to_column.max(1), ends.from_column.max(ends.to_column));
+        let (start, end) = (2 * low, 2 * (high + 1));
+        let limit = tops.query(low, high).saturating_sub(CLEAR).min(above.query(start, end).saturating_sub(GAP));
+        let track = limit.min(ends.from.y - CLEAR).min(ends.to.approach - CLEAR);
+        above.update(start, end, track);
+        plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
+        plan.back.push((wire, track, None, None, None));
+        plan.back_ends.insert(wire, (low, high + 1));
+    }
     // The verticals of each net.
     for (index, net) in nets.iter_mut().enumerate() {
         let mut first: Vec<i64> = vec![net.source.y];
@@ -308,6 +330,23 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             net.drops.insert(column, made);
         }
     }
+    // The verticals of the wires that go back: of the net of their value when it reads on to the right, so that the two
+    // share their start; otherwise of one net with the others of their value, which go back too.
+    let net_of: std::collections::HashMap<End, usize> =
+        nets.iter().enumerate().filter_map(|(index, net)| Some((body.sources.get(*net.wires.first()?)?.0, index))).collect();
+    let first_back = nets.len();
+    let mut back_of: std::collections::HashMap<End, usize> = std::collections::HashMap::new();
+    for (index, entry) in plan.back.iter_mut().enumerate() {
+        let Some(ends) = body.ends.get(entry.0).copied().flatten() else { continue };
+        let source = body.sources.get(entry.0).map(|(source, _)| *source);
+        let net = match source.and_then(|source| net_of.get(&source)) {
+            Some(&net) => net,
+            None => source.map_or(first_back + index, |source| *back_of.entry(source).or_insert(first_back + index)),
+        };
+        entry.4 = Some(net);
+        entry.2 = vertical(&mut plan.verticals, net, ends.from_column + 1, ends.from.y, &[entry.1]);
+        entry.3 = vertical(&mut plan.verticals, net, ends.to_column, entry.1, &[ends.to.approach]);
+    }
     plan.nets = nets;
     jogs(&mut plan, channels, body.axis);
     slots(&mut plan, channels);
@@ -327,7 +366,49 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             list.push(index);
         }
     }
-    for list in by_channel {
+    let mut entering: Vec<Vec<i64>> = vec![Vec::new(); channels];
+    for net in &plan.nets {
+        if let Some(list) = entering.get_mut(net.source_column + 1) {
+            list.push(net.source.y);
+        }
+    }
+    // The tracks over each channel, found by a sweep across the channels: each from the channel where it starts to the
+    // one where it ends, with its height.
+    let mut tracks: Vec<(usize, usize, i64)> = Vec::new();
+    for net in &plan.nets {
+        if let Some(track) = net.track {
+            let last = net.drops.keys().copied().max().unwrap_or(net.source_column + 1);
+            tracks.push((net.source_column + 1, last, track));
+        }
+    }
+    for &(wire, track, ..) in &plan.back {
+        if let Some(found) = plan.back_ends.get(&wire) {
+            tracks.push((found.0, found.1, track));
+        }
+    }
+    tracks.sort_unstable();
+    let mut ending: std::collections::BinaryHeap<std::cmp::Reverse<(usize, i64)>> = std::collections::BinaryHeap::new();
+    let mut next_track = 0;
+    let mut over: BTreeMap<i64, usize> = BTreeMap::new();
+    for (channel, list) in by_channel.into_iter().enumerate() {
+        while let Some(&(start, end, height)) = tracks.get(next_track)
+            && start <= channel
+        {
+            *over.entry(height).or_insert(0) += 1;
+            ending.push(std::cmp::Reverse((end, height)));
+            next_track += 1;
+        }
+        while let Some(&std::cmp::Reverse((end, height))) = ending.peek()
+            && end < channel
+        {
+            ending.pop();
+            if let Some(count) = over.get_mut(&height) {
+                *count -= 1;
+                if *count == 0 {
+                    over.remove(&height);
+                }
+            }
+        }
         if list.len() < 2 {
             continue;
         }
@@ -342,24 +423,30 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             split.extend(part.into_iter().filter(|&local| Some(local) != kept).filter_map(|local| list.get(local).copied()));
         }
         split.sort_unstable();
-        // Every height where a wire enters or leaves the channel.
-        let mut heights: Vec<i64> = verticals.iter().flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry])).collect();
-        // The main chain runs through every channel on its axis, which nothing but an error crosses below.
-        heights.extend(axis);
-        heights.sort_unstable();
+        if split.is_empty() {
+            continue;
+        }
+        // What a jog must keep 8 from: every height where a wire enters or leaves the channel, a value whose source stands
+        // just before it (with a vertical or straight through), the main chain, and below it all that only an error crosses.
+        let mut blocked: BTreeMap<i64, i64> = BTreeMap::new();
+        let heights = verticals.iter().flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry]));
+        for height in heights.chain(entering.get(channel).into_iter().flatten().copied()) {
+            block(&mut blocked, height - GAP + 1, height + GAP - 1);
+        }
+        if let Some(axis) = axis {
+            block(&mut blocked, axis - GAP + 1, i64::MAX / 4);
+        }
         for index in split {
             let Some(vertical) = plan.verticals.get(index).cloned() else { continue };
-            // A height on the grid free of every other entry and exit, the nearest the middle of the vertical, inside it
-            // or not; none in 64 tries each way leaves it as it is.
+            // The free height nearest the middle of the vertical, inside it or not; a track over the channel that it would
+            // meet is blocked in its turn, so this ends after as many steps as tracks it meets.
             let middle = (vertical.y0 + vertical.y1) / 2;
-            let base = middle - middle.rem_euclid(GAP);
-            let free = |y: i64| {
-                let low = heights.partition_point(|&known| known <= y - GAP);
-                heights.get(low).is_none_or(|&known| known >= y + GAP)
-            };
-            let above = |y: i64| axis.is_none_or(|axis| y < axis);
-            let Some(across) = (0..64i64).flat_map(|step| [base - step * GAP, base + (step + 1) * GAP]).find(|&y| free(y) && above(y)) else {
-                continue;
+            let across = loop {
+                let candidate = nearest_free(&blocked, middle);
+                match over.range(candidate - GAP + 1..=candidate + GAP - 1).next() {
+                    Some((&track, _)) => block(&mut blocked, track - GAP + 1, track + GAP - 1),
+                    None => break candidate,
+                }
             };
             let lead = Vertical {
                 net: vertical.net,
@@ -379,10 +466,46 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
                 main.y1 = main.outs.iter().copied().chain([across]).max().unwrap_or(across);
                 main.lead = Some(lead_index);
             }
-            let at = heights.partition_point(|&known| known < across);
-            heights.insert(at, across);
+            block(&mut blocked, across - GAP + 1, across + GAP - 1);
         }
     }
+}
+
+/// Adds `[start, end]` to disjoint intervals, merging those it meets or touches, so that just outside an interval is free.
+fn block(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
+    let (mut start, mut end) = (start, end);
+    while let Some((&other_start, &other_end)) = list.range(..=end.saturating_add(1)).next_back() {
+        if other_end.saturating_add(1) < start {
+            break;
+        }
+        list.remove(&other_start);
+        start = start.min(other_start);
+        end = end.max(other_end);
+    }
+    list.insert(start, end);
+}
+
+/// The height of the grid nearest `middle` outside every blocked interval: on the grid at `middle`, or past either end
+/// of what holds it, each way as far as the next height of the grid that nothing blocks, the upper one on a tie.
+fn nearest_free(blocked: &BTreeMap<i64, i64>, middle: i64) -> i64 {
+    let holding = |y: i64| blocked.range(..=y).next_back().filter(|&(_, &end)| end >= y).map(|(&start, &end)| (start, end));
+    let on_grid = middle - middle.rem_euclid(GAP);
+    let Some((start, end)) = holding(on_grid) else { return on_grid };
+    // Up: below the start of each interval in the way, down to the grid.
+    let mut up = start.saturating_sub(1);
+    up -= up.rem_euclid(GAP);
+    while let Some((start, _)) = holding(up) {
+        up = start.saturating_sub(1);
+        up -= up.rem_euclid(GAP);
+    }
+    // Down: past the end of each interval in the way, up to the grid.
+    let mut down = end.saturating_add(1);
+    down += (GAP - down.rem_euclid(GAP)) % GAP;
+    while let Some((_, end)) = holding(down) {
+        down = end.saturating_add(1);
+        down += (GAP - down.rem_euclid(GAP)) % GAP;
+    }
+    if middle - up <= down - middle { up } else { down }
 }
 
 /// The order of preference of a vertical in its channel: those that rise, then the others, then those that fall.
@@ -630,7 +753,7 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
             points.push((x, from));
         }
     };
-    let mut routed = Vec::with_capacity(plan.nets.len() + plan.back.len());
+    let mut routed = Vec::with_capacity(plan.nets.len() + plan.back.len() + plan.through.len());
     for net in &plan.nets {
         let mut out = Routed::default();
         let source = net.source;
@@ -679,15 +802,52 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         let right = found.to_column == plan.slots.len().saturating_sub(1);
         routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: true });
     }
-    // Back to the left: out to the right, over both ends, down to the reader from its left.
-    for &wire in &plan.back {
+    // Back to the left: up in the channel after the source, over the columns, down in the channel before the reader.
+    let mut groups: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut touched = std::collections::BTreeSet::new();
+    for &(wire, over, up, down, joins) in &plan.back {
         let Some(found) = ends.get(wire).copied().flatten() else { continue };
         let (from, to) = (found.from, found.to);
-        let over = from.y.min(to.approach) - 2 * CLEAR;
-        let mut points = vec![(from.x, from.y), (from.x + CLEAR, from.y), (from.x + CLEAR, over), (to.x - CLEAR, over), (to.x - CLEAR, to.approach)];
+        let mut points = vec![(from.x, from.y)];
+        if let Some(index) = up
+            && let Some(x) = slot_x(index)
+        {
+            enter(index, from.y, &mut points);
+            points.push((x, over));
+        }
+        if let Some(index) = down
+            && let Some(x) = slot_x(index)
+        {
+            enter(index, over, &mut points);
+            points.push((x, to.approach));
+        }
         tail(&to, &mut points);
         let right = found.to_column == plan.slots.len().saturating_sub(1);
-        routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false });
+        // Into the net of its value, or the group of those of its value that go back.
+        let at = match joins {
+            Some(net) if net < plan.nets.len() => Some(net),
+            Some(net) => groups.get(&net).copied(),
+            None => None,
+        };
+        match at.and_then(|at| routed.get_mut(at).map(|found| (at, found))) {
+            Some((at, found)) => {
+                found.wires.push(wire);
+                found.branches.push(simplify(points));
+                found.right.push(right);
+                touched.insert(at);
+            }
+            None => {
+                if let Some(net) = joins {
+                    groups.insert(net, routed.len());
+                }
+                routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false })
+            }
+        }
+    }
+    for at in touched.into_iter().chain(groups.into_values()) {
+        if let Some(found) = routed.get_mut(at) {
+            found.junctions = junctions(&found.branches);
+        }
     }
     routed
 }
@@ -936,6 +1096,24 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_jog_takes_the_free_height_nearest_its_middle() {
+        let mut blocked = BTreeMap::new();
+        block(&mut blocked, 93, 107);
+        block(&mut blocked, 108, 120);
+        // Touching intervals merge: just outside is free.
+        assert_eq!(blocked.into_iter().collect::<Vec<_>>(), vec![(93, 120)]);
+        // On the grid of 8: a free middle goes down to the grid, a blocked one out to the grid on either side.
+        let mut blocked = BTreeMap::new();
+        block(&mut blocked, 9300, 10700);
+        assert_eq!(nearest_free(&blocked, 5000), 4800);
+        assert_eq!(nearest_free(&blocked, 9900), 8800);
+        assert_eq!(nearest_free(&blocked, 10500), 11200);
+        // A second interval in the way upward: past it too.
+        block(&mut blocked, 8100, 8900);
+        assert_eq!(nearest_free(&blocked, 9900), 11200);
+    }
 
     #[test]
     fn a_trunk_is_drawn_once() {

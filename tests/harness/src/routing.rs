@@ -2,7 +2,8 @@
 //! comparing with an output (`docs/architecture.md`, 11.6). It reads only the shapes of the drawing:
 //!
 //! - no wire crosses a node, a label, a pill, a band or a wire name of its body, but its own pill and its own name;
-//! - parallel wires of two values keep 8 units apart: no two share a segment;
+//! - parallel wires of two values keep 8 units apart: no two share a segment, but the last one of two values that reach
+//!   the same terminal;
 //! - nothing but error wires below the main chain of a body, which no other wire crosses.
 //!
 //! A body whose file places a node is not checked, nor a wire that the file gives waypoints: there the rules hold only
@@ -22,6 +23,8 @@ struct Segment {
     a: (i64, i64),
     b: (i64, i64),
     net: usize,
+    /// The terminal it reaches, for the last segment of a wire.
+    reaches: Option<(i64, i64)>,
 }
 
 /// A box, its edges excluded.
@@ -103,11 +106,20 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
                             Shape::Wire { points, .. } => {
                                 // Its ends stop short of the terminals they reach.
                                 let last = points.len().saturating_sub(1);
+                                // The way into its terminal: its last segment, and the one before when the last comes
+                                // down onto a top edge (an `after:` of a compact block).
+                                let end = points.last().copied();
+                                let from_above = match points.len().checked_sub(2).and_then(|at| points.get(at)) {
+                                    Some(&(x, y)) => end.is_some_and(|end| end.0 == x && end.1 > y),
+                                    None => false,
+                                };
                                 for (index, pair) in points.windows(2).enumerate() {
                                     let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
                                     let a = if index == 0 { toward(a, b, TERMINAL) } else { a };
+                                    let into = index + 1 == last || (from_above && index + 2 == last);
+                                    let reaches = if into { end } else { None };
                                     let b = if index + 1 == last { toward(b, a, TERMINAL) } else { b };
-                                    segments.push(Segment { a, b, net });
+                                    segments.push(Segment { a, b, net, reaches });
                                 }
                             }
                             Shape::Rect { x, y, width, height, .. } => {
@@ -212,6 +224,11 @@ fn too_close(one: &Segment, other: &Segment) -> bool {
     if one.horizontal() != other.horizontal() {
         return false;
     }
+    // Two values that reach one terminal share their way into it: a value bound twice, which `check` refuses, or an input
+    // that reads several values (notation 2.2).
+    if one.reaches.is_some() && one.reaches == other.reaches {
+        return false;
+    }
     let span = |segment: &Segment| -> ((i64, i64), i64) {
         if segment.horizontal() {
             ((segment.a.0.min(segment.b.0), segment.a.0.max(segment.b.0)), segment.a.1)
@@ -240,12 +257,152 @@ mod tests {
         }
     }
 
+    /// A library with a file that does not read: `check` types nothing, `t` is unknown, so no wire is an error and there
+    /// is no axis. Found by the fuzzing: a jog took a height 4 from a value that crosses the channel straight.
+    #[test]
+    fn an_untyped_library_keeps_the_rules() {
+        const FILES: [(&str, &str); 2] = [
+            ("swap.lcf", include_str!("../routing-cases/swap_untyped.lcf")),
+            (
+                "broken.lcf",
+                "labcraft 1
+
+us
+",
+            ),
+        ];
+        let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+        for (shown, text) in FILES {
+            root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Borrowed(text.as_bytes())) });
+        }
+        let mut names = Interner::new();
+        let checked = check(root, &Nothing, &mut names, &Limits::default());
+        let mut faults = Vec::new();
+        for index in 0..checked.files.len() {
+            for standard_everywhere in [false, true] {
+                let view = ViewState { standard_everywhere, ..ViewState::default() };
+                if let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) {
+                    faults.extend(super::faults(&drawing));
+                }
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
+    /// A call that reads the many outputs of another in the reverse order: a crossing of every value with every other in
+    /// one channel, cycles everywhere, whose jogs find their heights far from the middle (found in review, at 90 values).
+    #[test]
+    fn many_values_read_in_reverse_keep_the_rules() {
+        let count = 120;
+        let params: Vec<String> = (0..count).map(|k| format!("x{k}: f64")).collect();
+        let outputs: Vec<String> = (0..count).map(|k| format!("y{k}: f64")).collect();
+        let body: String = (0..count)
+            .map(|k| {
+                format!(
+                    "    y{k} = core.neg(x{k})
+"
+                )
+            })
+            .collect();
+        let r = format!(
+            "labcraft 1
+
+use core
+
+fn r({}) -> ({}) {{
+{body}}}
+",
+            params.join(", "),
+            outputs.join(", ")
+        );
+        let firsts: Vec<String> = (0..count).map(|k| format!("a{k}")).collect();
+        let seconds: Vec<String> = (0..count).map(|k| format!("b{k}")).collect();
+        let reversed: Vec<String> = (0..count).rev().map(|k| format!("a{k}")).collect();
+        let inputs: Vec<String> = (0..count).map(|_| "x".to_owned()).collect();
+        let main = format!(
+            "labcraft 1
+
+fn main(x: f64) -> () {{
+    {} = r({})
+    {} = r({})
+}}
+",
+            firsts.join(", "),
+            inputs.join(", "),
+            seconds.join(", "),
+            reversed.join(", ")
+        );
+        let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+        for (shown, text) in [("r.lcf", r), ("main.lcf", main)] {
+            root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.into_bytes())) });
+        }
+        let mut names = Interner::new();
+        let checked = check(root, &Nothing, &mut names, &Limits::default());
+        let mut faults = Vec::new();
+        for index in 0..checked.files.len() {
+            for standard_everywhere in [false, true] {
+                let view = ViewState { standard_everywhere, ..ViewState::default() };
+                let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else { panic!() };
+                faults.extend(super::faults(&drawing));
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
+    /// Every case of the corpora of acceptance (`tests/acceptance/hostile`, `type-errors`), checked as a folder and each
+    /// function drawn in both views: what the fuzzing of `diagram` starts from.
+    #[test]
+    fn the_corpora_of_acceptance_keep_the_rules() {
+        let mut faults = Vec::new();
+        for case in crate::HOSTILE.iter().chain(crate::TYPE_ERRORS) {
+            let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+            for file in case.files {
+                let shown = file.path.rsplit('/').next().unwrap_or(file.path).to_owned();
+                root.files.push(SourceFile { shown, content: Content::Bytes(Cow::Borrowed(file.bytes)) });
+            }
+            let mut names = Interner::new();
+            let checked = check(root, &Nothing, &mut names, &Limits::default());
+            for index in 0..checked.files.len() {
+                for standard_everywhere in [false, true] {
+                    let view = ViewState { standard_everywhere, ..ViewState::default() };
+                    if let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) {
+                        faults.extend(super::faults(&drawing).into_iter().map(|fault| format!("{}: {fault}", case.name)));
+                    }
+                }
+            }
+        }
+        assert!(
+            faults.is_empty(),
+            "{}",
+            faults.join(
+                "
+"
+            )
+        );
+    }
+
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
-    /// an `after:` on the top edge of a labelled block. Each is drawn in both views and checked.
+    /// an `after:` on the top edge of a labelled block; and six that the fuzzing found: a node that reads its own error,
+    /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; and one of the review: a track over a channel where a jog would go. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 7] = [
+        const CASES: [(&str, &str); 14] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -253,6 +410,13 @@ mod tests {
             ("cycle_in_loop.lcf", include_str!("../routing-cases/cycle_in_loop.lcf")),
             ("order_from_label.lcf", include_str!("../routing-cases/order_from_label.lcf")),
             ("after_on_labelled.lcf", include_str!("../routing-cases/after_on_labelled.lcf")),
+            ("self_loop.lcf", include_str!("../routing-cases/self_loop.lcf")),
+            ("unknown_error.lcf", include_str!("../routing-cases/unknown_error.lcf")),
+            ("one_output_twice.lcf", include_str!("../routing-cases/one_output_twice.lcf")),
+            ("pill_beside_a_wire.lcf", include_str!("../routing-cases/pill_beside_a_wire.lcf")),
+            ("two_orders_into_one.lcf", include_str!("../routing-cases/two_orders_into_one.lcf")),
+            ("back_twice.lcf", include_str!("../routing-cases/back_twice.lcf")),
+            ("track_over_a_jog.lcf", include_str!("../routing-cases/track_over_a_jog.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {
@@ -260,9 +424,6 @@ mod tests {
         }
         let mut names = Interner::new();
         let checked = check(root, &Nothing, &mut names, &Limits::default());
-        // Warnings are what the generator left (an error wired nowhere); none is an error.
-        let errors: Vec<_> = checked.report.diagnostics().iter().filter(|found| found.severity() == labcraft_types::Severity::Error).collect();
-        assert!(errors.is_empty(), "{errors:?}");
         let mut faults = Vec::new();
         for (index, file) in checked.files.iter().enumerate() {
             for standard_everywhere in [false, true] {

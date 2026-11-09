@@ -608,8 +608,9 @@ impl Sizer<'_> {
             Glyph::Unit { unit, struck } => (Text::new(unit, ANY_TEXT, LARGE), *struck),
         };
         let width = if text.width + 600 > CIRCLE { text.width + 600 } else { CIRCLE };
-        // The inputs from the middle: one at it, two at 8 above and below, three at 10; 24 apart where both neighbours
-        // carry a constant, since a pill is 18 high.
+        // The inputs from the middle: one at it, two at 8 above and below, three at 10; as on a compact block, 16 apart
+        // where one of two neighbours carries a pill (a constant, a field, a conversion), 24 where both do, since a pill is
+        // 18 high.
         let count = node.inputs.len();
         let mut offsets: Vec<i64> = match count {
             0 => Vec::new(),
@@ -622,15 +623,19 @@ impl Sizer<'_> {
         let mut stretched = false;
         let mut shift = 0;
         for index in 1..count {
-            let both = [index - 1, index].iter().all(|&input| node.inputs.get(input).is_some_and(|terminal| terminal.constant.is_some()));
+            let carries = |input: usize| node.inputs.get(input).is_some_and(|terminal| terminal.constant.is_some() || terminal.pilled);
+            let gap = match (carries(index - 1), carries(index)) {
+                (true, true) => 2400,
+                (true, false) | (false, true) => 1600,
+                (false, false) => 0,
+            };
             let before = offsets.get(index - 1).copied();
             let Some(at) = offsets.get_mut(index) else { continue };
             *at += shift;
             if let Some(before) = before
-                && both
-                && *at - before < 2400
+                && *at - before < gap
             {
-                let more = 2400 - (*at - before);
+                let more = gap - (*at - before);
                 *at += more;
                 shift += more;
                 stretched = true;

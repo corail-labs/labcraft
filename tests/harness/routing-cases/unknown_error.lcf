@@ -1,0 +1,41 @@
+labcraft 1
+
+use core
+
+fn unknown_error(i0: f64, i1: f64, err: errror = none) -> (o0: f64, err: error) {
+    v1 = core.sub(i1, i0)
+    v2 = core.add(v1, v1)
+    v3 = core.neg(v1)
+    v4, w6, e5 = t(v2, i1, err: err)
+    v7 = core.sub(i1, v2)
+    lo21, le22 = loop carry c8 = v3, carry ce9 = e5 {
+        v10, w12, e11 = t(w6, i1, err: ce9)
+        v13 = core.sub(i1, w12)
+        v14 = core.neg(w12)
+        v15 = core.sub(v2, v1)
+        v16, e17 = s(v2, err: ce9)
+        v18, w20, e19 = t(v3, c8, err: e11)
+        dn = core.gt(v18, 1.0)
+        next c8 = i0
+        next ce9 = e19
+        until dn
+    }
+    q23 = core.gt(w6, 0.0)
+    m24, me25 = match q23 {
+        true => {
+            v26 = core.sub(v4, v2)
+            v27, e28 = s(w6, err: le22)
+            v29, e30 = s(i0, err: e28)
+            yield (i0, e30)
+        }
+        false => {
+            yield (w6, le22)
+        }
+    }
+    v31, e32 = s(lo21, err: me25)
+    v33 = core.add(v1, v7)
+    v34 = core.neg(v33)
+    v35 = core.sub(i0, lo21)
+    o0 = lo21
+    err = e32
+}

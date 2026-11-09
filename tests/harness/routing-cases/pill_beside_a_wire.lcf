@@ -1,0 +1,7 @@
+labcraft 1
+
+use core
+
+fn pill_beside_a_wire(a: bool, b: bool, err: error = none) -> (y: bool) {
+    y = core.and(a, b, "product absent", err: err)
+}

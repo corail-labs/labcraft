@@ -117,7 +117,8 @@ are the nodes that a `layout` section does not place (spec 11).
   as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
   The terminals of a frame keep their order (the signature, the clauses of a loop), each at the height of the
   first node it feeds or that feeds it, as far as that order allows and at least 24 apart; the error terminal on
-  the axis, at the bottom of its edge; the two boxes of a register at one height. Each has its name inside the
+  the axis, at the bottom of its edge, and every other terminal at least 24 above it; the two boxes of a register at
+  one height. Each has its name inside the
   frame, with its unit and the default of an input (`low ◂ 220 V`). An error that crosses a body with no node
   on its way still has its straight line.
 - **A partial `layout` section.** The nodes it places never move. A frame grows upward to hold the nodes that
@@ -149,7 +150,8 @@ are the nodes that a `layout` section does not place (spec 11).
   error wire, runs on a horizontal track above the nodes it passes over (`low` and `high` in
   `check_voltage`), with one vertical segment at each end; a secondary error wire does the same below
   the chain.
-- Two wires never share a segment: parallel wires are 8 units apart.
+- Two wires never share a segment: parallel wires are 8 units apart. Two values that reach one terminal share the
+  way into it: an input that reads several values, or a value bound twice, which `check` refuses.
 - **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
   8 apart, with the conversion and field pills of its wires, the pills of the inline constants of the blocks
   it leads to, and a margin of 8 on each side: 16 with no vertical segment or one, 8 more for each other. The
@@ -163,8 +165,8 @@ are the nodes that a `layout` section does not place (spec 11).
   the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
   the other's; otherwise those that rise stand left of those that fall. Wires that must each stand left of the next,
   round a cycle, cannot all keep 8 apart: all but the first of the cycle jog, a vertical where they enter, across at a
-  height of the grid that no other wire of the channel enters or leaves within 8, above the main chain, then their own
-  vertical. The main error chain runs straight on its axis past the columns that hold nothing there
+  height of the grid that no other wire of the channel enters, leaves or crosses within 8 (a track over it included),
+  above the main chain, the nearest the middle of their vertical, then their own vertical. The main error chain runs straight on its axis past the columns that hold nothing there
   (2.1). A wire leaves a terminal of a frame past its name, and reaches one before its name; an order wire from a
   label starts right after the label, at its middle; a terminal on the top edge (`after:` of a compact block) is
   reached from 8 above what is above the node, and the label of that block starts right of it. A junction point is a
@@ -397,9 +399,9 @@ When the function comes from another library, a **band** above the block says wh
   **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
   node from one view to the other never reorders its terminals. By default (N-15), lines are counted
   from the bottom: the last one is 8 units above the lower edge, and the lines above it are 16 apart: a block
-  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries an inline
-  constant keeps 16 from its neighbours, and 24 from a neighbour that carries one too, since a pill is 18 high
-  and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
+  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries a pill, an inline
+  constant or the pill of its wire (3.3, 4.2), keeps 16 from its neighbours, and 24 from a neighbour that carries
+  one too, since a pill is 18 high and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
   between two wired lines shrink, all alike, to 8 (the grid of the canvas and the gap
   between parallel wires, 2.2), rather than the block growing; their terminals are then drawn at 70 %
   *(proposed)* so that they do not touch. Only when the lines need more than that does the block grow, by what
@@ -439,9 +441,10 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
 A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
-the unit needs, with 3 on each side *(proposed)*. When two neighbouring inputs both carry an inline constant,
-the circle stretches into a capsule of the same width, as tall as needed for those inputs to be 24 apart, since a
-pill is 18 high (`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
+the unit needs, with 3 on each side *(proposed)*. When an input carries a pill (an inline
+constant, the pill of its wire), the circle stretches into a capsule of the same width, as tall as needed for it to
+be 16 from a neighbour, 24 from a neighbour that carries one too, as on a compact block, since a pill is 18 high
+(`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
 `check` refuses but the drawing still shows, are 8 apart, and the circle stretches the same way. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
 ordinary compact view (block, no band).
 

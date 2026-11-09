@@ -259,7 +259,7 @@ fn lines_close_up_before_a_block_grows() {
 }
 
 /// Notation 3.2: a circle of 28; two inputs at 8 above and below the middle, on the edge; `select` with two constants
-/// stretches into a capsule for them to be 24 apart.
+/// stretches into a capsule for them to be 24 apart, and 16 from the wired input beside them.
 #[test]
 fn a_primitive_is_a_circle() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, ok: bool) -> (y: f64, z: f64) {\n    y = core.add(a, b)\n    z = core.select(ok, 1.0, 0.0)\n}\n";
@@ -279,10 +279,10 @@ fn a_primitive_is_a_circle() {
         })
         .collect();
     assert_eq!(inputs, [(252, 600), (252, 2200)]);
-    // `select`: 10 apart, then 24 between the two constants: -10, 0, 24 around the middle, -17, -7, 17 once centred;
-    // a span of 34 and a pill of 18 make 52.
+    // `select`: -10, 0, 10; 16 between `ok` and the first constant, which goes to 6; 24 between the two constants, the
+    // second at 30; a span of 40 and a pill of 18 make 58.
     let select = sizer.size(&graph.nodes[1], None, None);
-    assert_eq!((select.width, select.height), (2800, 5200));
+    assert_eq!((select.width, select.height), (2800, 5800));
 }
 
 /// Decided at step 2 of M0v: 24 for the header, the first line at 40, lines 24 apart, the last 16 above the bottom, 12
@@ -677,7 +677,7 @@ fn a_placed_node_keeps_its_place() {
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
 #[test]
 fn the_terminals_of_a_frame_keep_their_order() {
-    let heights = crate::place::resolve(&[Some(-5000), Some(-4900), None, Some(0)], &[false, false, false, true]);
+    let heights = crate::place::resolve(&[Some(-5000), Some(-4900), None, Some(0)], &[false, false, false, true], &[None; 4]);
     // Down: -5000, then -4900 is pushed to -2600, the third goes 24 after it to -200, the last stays on the axis. Up:
     // -200 rises to -2400, -2600 to -4800, -5000 to -7200.
     assert_eq!(heights, [-7200, -4800, -2400, 0]);

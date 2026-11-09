@@ -1,0 +1,23 @@
+labcraft 1
+
+use core
+
+fn one_output_twice(i0: f64, err: error = none) -> (o0: f64, o1: f64, o2: f64, err: error) {
+    v0, e0 = s(i0, err: err)
+    #l1: v1, w1, e1 = t(i0, v0, err: e0)
+    v2, e2 = s(v0, err: e1)
+    #l3: v3 = core.sub(v0, v2)
+    #l4: v4, w4, e4 = t(v3, v0, err: e0)
+    v5 = core.neg(v1)
+    v6, e6 = s(v0, err: e4, after: #l1)
+    v7 = core.neg(v5)
+    v8, e8 = s(i0, err: e6, after: #l3)
+    v9 = core.neg(v5)
+    v10 = [v1, i0, i0]
+    v11, w11, e11 = t(v0, v2, err: e8)
+    #l12: v12 = core.add(w11, w4)
+    o0 = v4
+    o1 = w4
+    o1 = v12
+    err = e11
+}

@@ -367,8 +367,8 @@ exception (verified at step 1).
 | Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests, `tests/harness` | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |
-| Time and memory of `fmt` and `check`, in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
-| Fuzzing the parser, `check` and the round trip | `fuzz/` | 4 |
+| Time and memory of `fmt`, `check` and the drawing of `diagram` (11.6), in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
+| Fuzzing the parser, `check`, the round trip and `diagram` | `fuzz/` | 4 |
 
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the
 product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly. That job is
@@ -890,12 +890,12 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 
 ### 11.3 `diagram` (L5)
 
-*Status: steps 1 to 4 below implemented (step 4 of 11.7, first part): the graph with its wires, the sizes,
-placement, routing, with the SVG of the frames, the nodes and the wires, their names and their pills, checked by
-`tests/harness/src/routing.rs` on every drawing of the repository and on cases built to break the rules
-(`tests/harness/routing-cases/`); the fuzzing of step 4b runs it on drawings it makes. Structures are unfolded, as an export shows them; tabs come with
-the canvas that clicks them (step 6). The bounds of placement and routing and their fuzzing come next (step 4,
-second part).* `draw` takes the index of the file of the
+*Status: steps 1 to 4 below implemented (step 4 of 11.7): the graph with its wires, the sizes, placement, routing,
+with the SVG of the frames, the nodes and the wires, their names and their pills, checked by
+`tests/harness/src/routing.rs` on every drawing of the repository, on cases built to break the rules
+(`tests/harness/routing-cases/`) and, by the fuzz target `diagram`, on the drawings it makes; their time and memory
+are bounded by `cargo xtask bounds`. Structures are unfolded, as an export shows them; tabs come with the canvas that
+clicks them (step 6).* `draw` takes the index of the file of the
 function in `Checked::files`, as `ir::lower` does, and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
@@ -1064,7 +1064,7 @@ MCP, keeps. Both give the same SVG, from the same function of `diagram`.
 | Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
 | File change to new drawing within 200 ms, through the session and the watcher, without a window | `apps/labcraft/tests` | 6.3 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
-| Fuzzing placement and routing, and the reader of a trace | `fuzz/` | 4 |
+| Fuzzing placement and routing (target `diagram`, which also checks the rules of 2.2), and the reader of a trace | `fuzz/` | 4 |
 | 60 frames/s with 1,000 nodes and 2,000 wires, on a reference machine | by hand, before the tag | 6.4 |
 
 `cargo xtask layers` gets `labcraft-trace` at L1; `wasm` also builds `trace`, `diagram` and `editor`, and passes
