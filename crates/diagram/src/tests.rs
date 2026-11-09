@@ -834,9 +834,14 @@ fn a_value_read_twice_is_one_wire_with_a_junction() {
     assert_eq!((wire.from.as_deref(), wire.to.len()), (Some("fn.x"), 2));
     assert_eq!(branches(group).len(), 2);
     assert_eq!(group.shapes.iter().filter(|shape| matches!(shape, Shape::Circle { .. })).count(), 1);
-    // Both branches start at the same point, past the name of the input.
+    // The first branch starts past the name of the input; the second is drawn from where it leaves the first, a
+    // junction point, so that the trunk is drawn once.
     let found = branches(group);
-    assert_eq!(found[0][0], found[1][0]);
+    let junction = group.shapes.iter().find_map(|shape| match shape {
+        Shape::Circle { x, y, .. } => Some((*x, *y)),
+        _ => None,
+    });
+    assert_eq!(Some(found[1][0]), junction);
     let svg = crate::svg(&drawing, crate::Theme::Light);
     assert!(svg.contains("<g data-wire=\"x\" data-from=\"fn.x\" data-to=\""), "{svg}");
 }

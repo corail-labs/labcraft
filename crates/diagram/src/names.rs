@@ -42,7 +42,7 @@ impl Obstacles {
 }
 
 /// Adds `[start, end]` to disjoint intervals, merging those it meets.
-fn add(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
+pub fn add(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
     let (mut start, mut end) = (start, end);
     // The intervals it meets are the last ones that start at or before its end.
     while let Some((&other_start, &other_end)) = list.range(..=end).next_back() {

@@ -36,7 +36,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="c" data-to="done.a @9.a">
 <path d="M140.35 170 L214.46 170" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M140.35 170 L172.84 170 Q178.84 170 178.84 164 L178.84 124 Q178.84 118 184.84 118 L214.46 118" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M178.84 170 L178.84 124 Q178.84 118 184.84 118 L214.46 118" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="178.84" cy="170" r="3" style="fill: var(--wire-data)"/>
 <text x="144.35" y="167" font-size="11" style="fill: var(--ink-muted)">c</text>
 </g>

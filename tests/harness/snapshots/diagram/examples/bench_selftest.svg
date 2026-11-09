@@ -19,8 +19,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <g data-wire="bench" data-from="fn.bench" data-to="e1.session e2.session">
 <path d="M70.11 148 L120.61 148 Q124.61 148 124.61 152 L124.61 152 Q124.61 156 128.61 156 L180.1 156" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M70.11 148 L120.61 148 Q124.61 148 124.61 152 L124.61 152 Q124.61 156 128.61 156 L180.1 156" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
-<path d="M70.11 148 L118.61 148 Q124.61 148 124.61 142 L124.61 94 Q124.61 88 130.61 88 L251.1 88 Q257.1 88 257.1 94 L257.1 150 Q257.1 156 263.1 156 L332.46 156" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
-<path d="M70.11 148 L118.61 148 Q124.61 148 124.61 142 L124.61 94 Q124.61 88 130.61 88 L251.1 88 Q257.1 88 257.1 94 L257.1 150 Q257.1 156 263.1 156 L332.46 156" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
+<path d="M124.61 148 L124.61 94 Q124.61 88 130.61 88 L251.1 88 Q257.1 88 257.1 94 L257.1 150 Q257.1 156 263.1 156 L332.46 156" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
+<path d="M124.61 148 L124.61 94 Q124.61 88 130.61 88 L251.1 88 Q257.1 88 257.1 94 L257.1 150 Q257.1 156 263.1 156 L332.46 156" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
 <circle cx="124.61" cy="148" r="3" style="fill: var(--wire-data)"/>
 <rect x="132.61" y="147" width="34.49" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="136.61" y="160.01" font-size="11" style="fill: var(--pill-text)">.dmm</text>

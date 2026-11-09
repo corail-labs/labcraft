@@ -559,6 +559,23 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             }
         }
     }
+    // The number of each `collect` and each `yield` on the right, among those of its kind.
+    let mut counted = (0usize, 0usize);
+    let ordinals: Vec<usize> = of
+        .right
+        .iter()
+        .map(|terminal| match terminal.edge {
+            graph::Edge::Collect => {
+                counted.0 += 1;
+                counted.0 - 1
+            }
+            graph::Edge::Yield => {
+                counted.1 += 1;
+                counted.1 - 1
+            }
+            _ => 0,
+        })
+        .collect();
     // The pill of each wire, just before its reader.
     let mut pills: HashMap<usize, Vec<Shape>> = HashMap::new();
     for routed in routes {
@@ -576,13 +593,15 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             let first = of.wires.get(*routed.wires.first()?)?;
             // Each branch as its wire is drawn: a value read as an order (`after:`) and as a value shares its trunk.
             let style = size::wire_style(first.family, core);
+            // The trunk once: each branch from where it leaves those before it.
             let mut shapes: Vec<Shape> = routed
                 .wires
                 .iter()
-                .zip(&routed.branches)
+                .zip(route::parts(&routed.branches))
+                .filter(|(_, points)| points.len() > 1)
                 .map(|(&wire, points)| {
                     let style = of.wires.get(wire).map_or(style, |wire| size::wire_style(wire.family, core));
-                    Shape::Wire { points: points.clone(), style }
+                    Shape::Wire { points, style }
                 })
                 .collect();
             shapes.extend(routed.junctions.iter().map(|&(x, y)| Shape::Circle { x, y, radius: 300, paint: Paint::fill(style.token) }));
@@ -591,16 +610,22 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             }
             let value = first.name.split('.').next().unwrap_or_default().to_owned();
             shapes.extend(wire_names(&value, &routed.branches, &mut obstacles));
-            let from = terminal_form(graph, of, body, &first.from, true);
+            let from = terminal_form(graph, of, body, &first.from, true, &ordinals);
             let mut to: Vec<String> = routed
                 .wires
                 .iter()
                 .filter_map(|&wire| of.wires.get(wire))
-                .filter_map(|wire| terminal_form(graph, of, body, &wire.to, false))
+                .filter_map(|wire| terminal_form(graph, of, body, &wire.to, false, &ordinals))
                 .collect();
             to.dedup();
             let error = routed.wires.iter().filter_map(|&wire| of.wires.get(wire)).any(|wire| wire.family == graph::Family::ERROR);
-            Some(Group { node: String::new(), title: String::new(), shapes, arm: None, wire: Some(WireOf { body, error, value, from, to }) })
+            Some(Group {
+                node: String::new(),
+                title: String::new(),
+                shapes,
+                arm: None,
+                wire: Some(WireOf { body, error, via: routed.via, value, from, to }),
+            })
         })
         .collect()
 }
@@ -654,7 +679,7 @@ fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::
 }
 
 /// A terminal as the reports write it (`docs/cli.md`, 4.3), when it has a form there.
-fn terminal_form(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, end: &graph::End, start: bool) -> Option<String> {
+fn terminal_form(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, end: &graph::End, start: bool, ordinals: &[usize]) -> Option<String> {
     match *end {
         graph::End::Node { node, terminal } => {
             let found = graph.nodes.get(node)?;
@@ -676,10 +701,8 @@ fn terminal_form(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, end: &graph
                 graph::Edge::Output => Some(format!("fn.{}", terminal.terminal.name)),
                 graph::Edge::Register => Some(format!("next.{}", terminal.terminal.name.trim_start_matches("next "))),
                 graph::Edge::Until => Some("until".to_owned()),
-                graph::Edge::Collect => {
-                    Some(format!("collect.{}", of.right.iter().take(index).filter(|other| other.edge == graph::Edge::Collect).count()))
-                }
-                graph::Edge::Yield => Some(format!("yield.{}", of.right.iter().take(index).filter(|other| other.edge == graph::Edge::Yield).count())),
+                graph::Edge::Collect => Some(format!("collect.{}", ordinals.get(index)?)),
+                graph::Edge::Yield => Some(format!("yield.{}", ordinals.get(index)?)),
                 _ => None,
             }
         }

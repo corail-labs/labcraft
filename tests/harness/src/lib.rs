@@ -462,9 +462,12 @@ mod tests {
                     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                     std::fs::write(path, text).unwrap();
                 }
-                return;
             }
             assert!(faults.is_empty(), "the rules of routing (notation 2.2):\n{}", faults.join("\n"));
+            #[cfg(not(target_arch = "wasm32"))]
+            if std::env::var_os("LABCRAFT_BLESS").is_some() {
+                return;
+            }
             let stored: BTreeMap<&str, &str> =
                 DIAGRAMS.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
             let paths: Vec<&str> = written.keys().map(String::as_str).collect();

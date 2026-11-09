@@ -849,8 +849,9 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 ### 11.3 `diagram` (L5)
 
 *Status: steps 1 to 4 below implemented (step 4 of 11.7, first part): the graph with its wires, the sizes,
-placement, routing, with the SVG of the frames, the nodes and the wires, their names and their pills, checked on
-every drawing by `tests/harness/src/routing.rs`. Structures are unfolded, as an export shows them; tabs come with
+placement, routing, with the SVG of the frames, the nodes and the wires, their names and their pills, checked by
+`tests/harness/src/routing.rs` on every drawing of the repository and on cases built to break the rules
+(`tests/harness/routing-cases/`); the fuzzing of step 4b runs it on drawings it makes. Structures are unfolded, as an export shows them; tabs come with
 the canvas that clicks them (step 6). The bounds of placement and routing and their fuzzing come next (step 4,
 second part).* `draw` takes the index of the file of the
 function in `Checked::files`, as `ir::lower` does, and the `Interner`.

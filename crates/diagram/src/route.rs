@@ -10,8 +10,9 @@
 //!   of a net shared by its branches, and a junction point where a branch leaves it.
 //!
 //! Columns are counted from the left edge of the frame (0) to its right edge (`n + 1`), the nodes in `1..=n`; channel
-//! `k` lies between columns `k - 1` and `k`. Every step is linear in the wires but for sorts and the trees of the slots
-//! and the tracks.
+//! `k` lies between columns `k - 1` and `k`. Every step is linear in the wires but for sorts, the trees of the slots
+//! and the tracks, and the constraints between the verticals of a channel, which grow with the wires that enter and
+//! leave within 8 of one height.
 
 use std::collections::BTreeMap;
 
@@ -137,6 +138,8 @@ pub struct Routed {
     pub junctions: Vec<(i64, i64)>,
     /// By branch: whether it ends on the right edge of the frame.
     pub right: Vec<bool>,
+    /// Whether it goes through the waypoints of the file.
+    pub via: bool,
 }
 
 impl Routed {
@@ -306,15 +309,18 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         }
     }
     plan.nets = nets;
-    jogs(&mut plan, channels);
+    jogs(&mut plan, channels, body.axis);
     slots(&mut plan, channels);
     plan
 }
 
-/// Two wires that cross in a channel with an entry of each within 8 of an exit of the other: in whichever order their
-/// verticals stand, two of their horizontals run closer than 8. The later of the two jogs: it enters by a vertical of
-/// its own, left of the other, goes across at a height free in the channel, and goes on by its vertical, right of it.
-fn jogs(plan: &mut Plan, channels: usize) {
+/// Wires that cross in a channel so that each must stand left of the next, round a cycle (an entry of each within 8 of
+/// an exit of the next): in whichever order their verticals stand, two of their horizontals run closer than 8. In each
+/// cycle, every wire but the one with the smallest key jogs: it enters by a vertical of its own, goes across at a free
+/// height of the grid, and goes on by its vertical; the part it enters by has no exit that another must stand left of,
+/// the part it goes on by no entry that must stand left of another, so the cycles are gone. The cycles are the strongly
+/// connected parts of the constraints, found in one pass.
+fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
     let mut by_channel: Vec<Vec<usize>> = vec![Vec::new(); channels];
     for (index, vertical) in plan.verticals.iter().enumerate() {
         if let Some(list) = by_channel.get_mut(vertical.channel) {
@@ -322,37 +328,39 @@ fn jogs(plan: &mut Plan, channels: usize) {
         }
     }
     for list in by_channel {
-        // Every height where a wire enters or leaves the channel.
-        let mut heights: Vec<i64> = list
-            .iter()
-            .filter_map(|&index| plan.verticals.get(index))
-            .flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry]))
-            .collect();
-        heights.sort_unstable();
-        let near = |a: i64, b: i64| (a - b).abs() < GAP;
-        let mut split = Vec::new();
-        for (position, &one) in list.iter().enumerate() {
-            for &other in list.iter().skip(position + 1) {
-                let (Some(a), Some(b)) = (plan.verticals.get(one), plan.verticals.get(other)) else { continue };
-                let crossing = a.outs.iter().any(|&out| near(out, b.entry)) && b.outs.iter().any(|&out| near(out, a.entry));
-                if crossing && !split.contains(&other) {
-                    split.push(other);
-                }
-            }
+        if list.len() < 2 {
+            continue;
         }
+        let verticals: Vec<&Vertical> = list.iter().filter_map(|&index| plan.verticals.get(index)).collect();
+        let right_of = constraints(&verticals);
+        let mut split = Vec::new();
+        for part in strongly_connected(&right_of) {
+            if part.len() < 2 {
+                continue;
+            }
+            let kept = part.iter().copied().min_by_key(|&local| (verticals.get(local).map(|vertical| key(vertical)), local));
+            split.extend(part.into_iter().filter(|&local| Some(local) != kept).filter_map(|local| list.get(local).copied()));
+        }
+        split.sort_unstable();
+        // Every height where a wire enters or leaves the channel.
+        let mut heights: Vec<i64> = verticals.iter().flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry])).collect();
+        // The main chain runs through every channel on its axis, which nothing but an error crosses below.
+        heights.extend(axis);
+        heights.sort_unstable();
         for index in split {
             let Some(vertical) = plan.verticals.get(index).cloned() else { continue };
-            // A height on the grid inside it, free of every other entry and exit, the nearest its middle; none in 64 tries
-            // leaves it as it is.
+            // A height on the grid free of every other entry and exit, the nearest the middle of the vertical, inside it
+            // or not; none in 64 tries each way leaves it as it is.
             let middle = (vertical.y0 + vertical.y1) / 2;
+            let base = middle - middle.rem_euclid(GAP);
             let free = |y: i64| {
                 let low = heights.partition_point(|&known| known <= y - GAP);
                 heights.get(low).is_none_or(|&known| known >= y + GAP)
             };
-            let found = (0..64i64)
-                .flat_map(|step| [middle - middle.rem_euclid(GAP) - step * GAP, middle - middle.rem_euclid(GAP) + (step + 1) * GAP])
-                .find(|&y| y > vertical.y0 && y < vertical.y1 && free(y));
-            let Some(across) = found else { continue };
+            let above = |y: i64| axis.is_none_or(|axis| y < axis);
+            let Some(across) = (0..64i64).flat_map(|step| [base - step * GAP, base + (step + 1) * GAP]).find(|&y| free(y) && above(y)) else {
+                continue;
+            };
             let lead = Vertical {
                 net: vertical.net,
                 channel: vertical.channel,
@@ -371,11 +379,109 @@ fn jogs(plan: &mut Plan, channels: usize) {
                 main.y1 = main.outs.iter().copied().chain([across]).max().unwrap_or(across);
                 main.lead = Some(lead_index);
             }
-            if let Some(slot) = heights.binary_search(&across).err() {
-                heights.insert(slot, across);
+            let at = heights.partition_point(|&known| known < across);
+            heights.insert(at, across);
+        }
+    }
+}
+
+/// The order of preference of a vertical in its channel: those that rise, then the others, then those that fall.
+fn key(vertical: &Vertical) -> (u8, i64) {
+    if vertical.entry == vertical.y1 {
+        (0, vertical.entry)
+    } else if vertical.entry == vertical.y0 {
+        (2, -vertical.entry)
+    } else {
+        (1, vertical.entry)
+    }
+}
+
+/// For each vertical of a channel, those it must stand left of: a vertical whose wire enters within 8 of the height
+/// where the wire of another leaves, another value.
+fn constraints(verticals: &[&Vertical]) -> Vec<Vec<usize>> {
+    let mut outs: Vec<(i64, usize)> =
+        verticals.iter().enumerate().flat_map(|(local, vertical)| vertical.outs.iter().map(move |&out| (out, local))).collect();
+    outs.sort_unstable();
+    verticals
+        .iter()
+        .map(|vertical| {
+            let low = outs.partition_point(|&(out, _)| out <= vertical.entry - GAP);
+            let high = outs.partition_point(|&(out, _)| out < vertical.entry + GAP);
+            let mut found: Vec<usize> = outs
+                .get(low..high)
+                .unwrap_or_default()
+                .iter()
+                .map(|&(_, other)| other)
+                .filter(|&other| verticals.get(other).is_some_and(|other| other.net != vertical.net))
+                .collect();
+            found.sort_unstable();
+            found.dedup();
+            found
+        })
+        .collect()
+}
+
+/// The strongly connected parts of a graph (Tarjan), without recursion, each in the order it is found.
+fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let count = edges.len();
+    let mut index = vec![usize::MAX; count];
+    let mut low = vec![0usize; count];
+    let mut on_stack = vec![false; count];
+    let mut stack = Vec::new();
+    let mut parts = Vec::new();
+    let mut next = 0usize;
+    for root in 0..count {
+        if index.get(root) != Some(&usize::MAX) {
+            continue;
+        }
+        // The path of the search: a node and how many of its edges it has followed.
+        let mut path: Vec<(usize, usize)> = vec![(root, 0)];
+        while let Some(&mut (node, ref mut followed)) = path.last_mut() {
+            if *followed == 0 && index.get(node) == Some(&usize::MAX) {
+                if let (Some(at), Some(least), Some(flag)) = (index.get_mut(node), low.get_mut(node), on_stack.get_mut(node)) {
+                    (*at, *least, *flag) = (next, next, true);
+                }
+                next += 1;
+                stack.push(node);
+            }
+            let target = edges.get(node).and_then(|list| list.get(*followed)).copied();
+            *followed += 1;
+            match target {
+                Some(other) if index.get(other) == Some(&usize::MAX) => path.push((other, 0)),
+                Some(other) => {
+                    if on_stack.get(other) == Some(&true) {
+                        let reached = index.get(other).copied().unwrap_or(usize::MAX);
+                        if let Some(least) = low.get_mut(node) {
+                            *least = (*least).min(reached);
+                        }
+                    }
+                }
+                None => {
+                    path.pop();
+                    let least = low.get(node).copied().unwrap_or(0);
+                    if let Some(&(parent, _)) = path.last()
+                        && let Some(parent_low) = low.get_mut(parent)
+                    {
+                        *parent_low = (*parent_low).min(least);
+                    }
+                    if Some(least) == index.get(node).copied() {
+                        let mut part = Vec::new();
+                        while let Some(member) = stack.pop() {
+                            if let Some(flag) = on_stack.get_mut(member) {
+                                *flag = false;
+                            }
+                            part.push(member);
+                            if member == node {
+                                break;
+                            }
+                        }
+                        parts.push(part);
+                    }
+                }
             }
         }
     }
+    parts
 }
 
 /// A vertical from `entry` through the heights it leaves at, unless they are all one.
@@ -408,33 +514,13 @@ fn slots(plan: &mut Plan, channels: usize) {
         }
         let verticals: Vec<&Vertical> = list.iter().filter_map(|&index| plan.verticals.get(index)).collect();
         let count = verticals.len();
-        let key = |vertical: &Vertical| -> (u8, i64) {
-            if vertical.entry == vertical.y1 {
-                (0, vertical.entry)
-            } else if vertical.entry == vertical.y0 {
-                (2, -vertical.entry)
-            } else {
-                (1, vertical.entry)
-            }
-        };
         let keys: Vec<((u8, i64), usize)> = verticals.iter().enumerate().map(|(local, vertical)| (key(vertical), local)).collect();
         // Who must stand left of whom: an entry and an exit of two wires within 8.
-        let mut outs: Vec<(i64, usize)> =
-            verticals.iter().enumerate().flat_map(|(local, vertical)| vertical.outs.iter().map(move |&out| (out, local))).collect();
-        outs.sort_unstable();
-        let mut right_of: Vec<Vec<usize>> = vec![Vec::new(); count];
+        let right_of = constraints(&verticals);
         let mut before = vec![0usize; count];
-        for (local, vertical) in verticals.iter().enumerate() {
-            let low = outs.partition_point(|&(out, _)| out <= vertical.entry - GAP);
-            let high = outs.partition_point(|&(out, _)| out < vertical.entry + GAP);
-            for &(_, other) in outs.get(low..high).unwrap_or_default() {
-                let same = verticals.get(other).is_some_and(|other| other.net == vertical.net);
-                if !same && let Some(list) = right_of.get_mut(local) {
-                    list.push(other);
-                    if let Some(count) = before.get_mut(other) {
-                        *count += 1;
-                    }
-                }
+        for &other in right_of.iter().flatten() {
+            if let Some(count) = before.get_mut(other) {
+                *count += 1;
             }
         }
         // In the order of the keys, as far as the constraints allow; a cycle is broken at its smallest key.
@@ -591,7 +677,7 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         }
         tail(&found.to, &mut points);
         let right = found.to_column == plan.slots.len().saturating_sub(1);
-        routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right] });
+        routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: true });
     }
     // Back to the left: out to the right, over both ends, down to the reader from its left.
     for &wire in &plan.back {
@@ -601,7 +687,7 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         let mut points = vec![(from.x, from.y), (from.x + CLEAR, from.y), (from.x + CLEAR, over), (to.x - CLEAR, over), (to.x - CLEAR, to.approach)];
         tail(&to, &mut points);
         let right = found.to_column == plan.slots.len().saturating_sub(1);
-        routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right] });
+        routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false });
     }
     routed
 }
@@ -684,6 +770,39 @@ pub fn junctions(branches: &[Vec<(i64, i64)>]) -> Vec<(i64, i64)> {
         }
     }
     found.into_iter().collect()
+}
+
+/// What each branch of a net adds to those before it: the branch from where it leaves them, so that a trunk is drawn
+/// once however many readers share it (an empty part for a branch they already hold).
+pub fn parts(branches: &[Vec<(i64, i64)>]) -> Vec<Vec<(i64, i64)>> {
+    let mut vertical: BTreeMap<i64, BTreeMap<i64, i64>> = BTreeMap::new();
+    let mut horizontal: BTreeMap<i64, BTreeMap<i64, i64>> = BTreeMap::new();
+    let held = |lines: &BTreeMap<i64, BTreeMap<i64, i64>>, line: i64, start: i64, end: i64| {
+        lines.get(&line).and_then(|list| list.range(..=start).next_back()).is_some_and(|(_, &held_end)| held_end >= end)
+    };
+    branches
+        .iter()
+        .map(|branch| {
+            let from = branch
+                .windows(2)
+                .position(|pair| match (pair.first(), pair.get(1)) {
+                    (Some(&a), Some(&b)) if a.0 == b.0 => !held(&vertical, a.0, a.1.min(b.1), a.1.max(b.1)),
+                    (Some(&a), Some(&b)) => !held(&horizontal, a.1, a.0.min(b.0), a.0.max(b.0)),
+                    _ => false,
+                })
+                .unwrap_or(branch.len());
+            let part: Vec<(i64, i64)> = branch.get(from..).unwrap_or_default().to_vec();
+            for pair in part.windows(2) {
+                let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
+                if a.0 == b.0 {
+                    crate::names::add(vertical.entry(a.0).or_default(), a.1.min(b.1), a.1.max(b.1));
+                } else {
+                    crate::names::add(horizontal.entry(a.1).or_default(), a.0.min(b.0), a.0.max(b.0));
+                }
+            }
+            part
+        })
+        .collect()
 }
 
 /// Intervals merged where they touch or overlap, sorted.
@@ -796,6 +915,17 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cycles_of_a_graph_are_its_strongly_connected_parts() {
+        // 0 -> 1 -> 2 -> 0, 2 -> 3, 3 alone; 4 -> 4 is never made (one value has no constraint on itself).
+        let mut parts = strongly_connected(&[vec![1], vec![2], vec![0, 3], vec![], vec![]]);
+        for part in &mut parts {
+            part.sort_unstable();
+        }
+        parts.sort();
+        assert_eq!(parts, vec![vec![0, 1, 2], vec![3], vec![4]]);
+    }
 
     #[test]
     fn a_tree_keeps_the_best_of_a_range() {

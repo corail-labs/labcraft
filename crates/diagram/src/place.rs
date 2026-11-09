@@ -84,8 +84,8 @@ pub struct FrameAt {
     pub depth: u32,
     /// The height of its main error chain.
     pub axis: Option<i64>,
-    /// Whether the file places a node of it or gives a wire of it waypoints: the rules that say "never" then hold only
-    /// as far as they can (notation 2.1).
+    /// Whether the file places a node of it: the rules that say "never" then hold only as far as they can (notation
+    /// 2.1).
     pub from_file: bool,
 }
 
@@ -335,9 +335,11 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
         }
     };
     let mut block = block;
-    // A label above the frame, as above a block (notation 3.1).
-    if found.label.is_some() {
+    // A label above the frame, as above a block (notation 3.1); an order wire from it starts right after it.
+    if let Some(label) = &found.label {
         block.above = LABEL_ABOVE + size::line_height(MEDIUM);
+        let width = Text::new(&format!("{label}:"), ANY_TEXT, MEDIUM).width;
+        block.label_end = Some((width + PADDING, -LABEL_ABOVE - size::line_height(MEDIUM) / 2));
     }
     if let Some(slot) = sized.get_mut(node) {
         *slot = block;
@@ -641,7 +643,15 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, extents: &extents, axis, vias: &vias });
     // Across: each column as wide as its widest node, its blocks aligned on the left, each channel as wide as its wires.
     let left_zone = frame.left.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| LABEL_START + widest + GRID);
-    let right_zone = frame.right.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| LABEL_START + widest + GRID);
+    let mut right_zone = frame.right.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| LABEL_START + widest + GRID);
+    // The pill of a conversion into a terminal on the right, before its name.
+    for (wire_index, wire) in wires.iter().enumerate() {
+        if let (End::Right(at), Some(pill), Some(terminal)) = (wire.to, graph.pills.get(&(index, wire_index)), wire_right(frame, wire)) {
+            let _ = at;
+            let reach = size::TERMINAL / 2 + GRID + pill_width(&Text::new(&pill.text, size::LABEL_LINE, MEDIUM));
+            right_zone = right_zone.max(LABEL_START + TerminalLabel::of(terminal).width() + PADDING + reach + GRID);
+        }
+    }
     let mut x_of = vec![0i64; count];
     let mut channel_at = vec![0i64; column_count + 2];
     let mut x = left_zone;
@@ -740,7 +750,15 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         axis: has_axis.then_some(shift),
         rise,
         routes,
-        from_file: !vias.iter().all(Option::is_none) || nodes.iter().any(|&node| graph.nodes.get(node).is_some_and(|node| node.at.is_some())),
+        from_file: nodes.iter().any(|&node| graph.nodes.get(node).is_some_and(|node| node.at.is_some())),
+    }
+}
+
+/// The terminal on the right of the frame that a wire reaches, if it reaches one.
+fn wire_right<'f>(frame: &'f BodyOf, wire: &crate::graph::Wire) -> Option<&'f FrameTerminal> {
+    match wire.to {
+        End::Right(at) => frame.right.get(at),
+        _ => None,
     }
 }
 
@@ -784,10 +802,11 @@ fn wire_ends(
                 let &(dx, dy) = sized.outputs.get(terminal)?;
                 Some((column, At::side(x + dx, y + dy, Side::Right)))
             }
-            // An order wire from a label starts at the right edge of its node.
+            // An order wire from a label starts right after the label.
             End::Order(index) => {
                 let (column, sized, x, y) = node(index)?;
-                Some((column, At::side(x + sized.width, y + GRID, Side::Right)))
+                let (dx, dy) = sized.label_end.unwrap_or((sized.width, GRID));
+                Some((column, At::side(x + dx, y + dy, Side::Right)))
             }
             End::Left(index) => {
                 let terminal = frame.left.get(index)?;

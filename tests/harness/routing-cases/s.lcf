@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+fn s(x: f64, err: error = none) -> (y: f64, err: error) {
+    y = core.neg(x)
+    err = err
+}

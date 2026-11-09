@@ -1,0 +1,23 @@
+labcraft 1
+
+use core
+
+fn after_on_labelled(i0: f64, i1: f64, i2: f64, err: error = none) -> (o0: f64, o1: f64, o2: f64, err: error) {
+    v0 = [i0, i0, i1]
+    v1 = core.sub(i0, i2)
+    v2 = core.neg(i0)
+    v3, e3 = s(i0, err: err)
+    v4, e4 = s(i0, err: err)
+    #l5: v5, e5 = s(i1, err: e4)
+    v6 = core.neg(v3)
+    v7, w7, e7 = t(i2, i0, err: e5, after: #l5)
+    v8 = core.sub(v6, i1)
+    v9 = core.add(v3, v1)
+    v10 = core.add(v2, w7)
+    v11 = core.neg(v8)
+    #l12: v12, w12, e12 = t(i1, v11, err: e3, after: #l5)
+    o0 = v5
+    o1 = v2
+    o2 = v3
+    err = e12
+}

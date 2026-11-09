@@ -193,11 +193,13 @@ pub struct Sized {
     pub outputs: Vec<(i64, i64)>,
     /// The centre of the `after:` terminal, when the node has one.
     pub order: Option<(i64, i64)>,
+    /// Where an order wire from its label starts: right after the label, at its middle.
+    pub label_end: Option<(i64, i64)>,
 }
 
 impl Sized {
     pub fn new(width: i64, height: i64, shapes: Vec<Shape>) -> Sized {
-        Sized { width, height, above: 0, left: 0, right: 0, shapes, inputs: Vec::new(), outputs: Vec::new(), order: None }
+        Sized { width, height, above: 0, left: 0, right: 0, shapes, inputs: Vec::new(), outputs: Vec::new(), order: None, label_end: None }
     }
 }
 
@@ -418,11 +420,17 @@ impl Sizer<'_> {
         sized.outputs.resize(node.outputs.len(), (sized.width, sized.height / 2));
         if let Some(label) = &node.label {
             // Above the band, or above the block (notation 3.1, 3.2).
+            // Right of an `after:` terminal on the top edge, which a wire reaches from above (notation 2.2).
             let text = Text::new(&format!("{label}:"), ANY_TEXT, MEDIUM);
+            let start = match sized.order {
+                Some((x, y)) if y <= 0 && x > 0 => x + TERMINAL / 2 + PADDING,
+                _ => 0,
+            };
             let middle = -sized.above - 400 - line_height(MEDIUM) / 2;
-            sized.shapes.push(text.at(0, middle, "ink.muted"));
+            sized.shapes.push(text.at(start, middle, "ink.muted"));
             sized.above += 400 + line_height(MEDIUM);
-            sized.right = sized.right.max(text.width - sized.width);
+            sized.right = sized.right.max(start + text.width - sized.width);
+            sized.label_end = Some((start + text.width + PADDING, middle));
         }
         sized
     }
@@ -506,7 +514,7 @@ impl Sizer<'_> {
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, if shrunk { 70 } else { 100 }, &mut shapes);
         let order = self.compact_marks(node, width, side, band.is_some(), &mut shapes);
-        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order }
+        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
     }
 
     /// The terminals of a block on its lines, and the pills of its constants; how far the pills reach to the left, and
@@ -590,7 +598,7 @@ impl Sizer<'_> {
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, 100, &mut shapes);
         let order = self.compact_marks(node, width, height, band.is_some(), &mut shapes);
-        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order }
+        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
     }
 
     /// A primitive of `core` with a glyph: a circle of 28, or a capsule (notation 3.2).

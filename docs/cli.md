@@ -828,8 +828,8 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
     spaces, those that have a form. In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
     data-to="e3.err">`: the line `#close: e3 = visa.close(…)` is named `e3`, the name of its line, as `check` names its
     terminals; `e2` also enters the `handle` as its selector, which has no form. One `<g>` holds a value
-    in one body: a path per reader, from the source, the trunk drawn by each, its junction points, its pills and
-    its name; a value read as an order (`after:`) and as a value is one `<g>`. A value that crosses into a
+    in one body: a path per reader, the first from the source, each other from where it leaves those before, its
+    junction points, its pills and its name; a value read as an order (`after:`) and as a value is one `<g>`. A value that crosses into a
     structure has one `<g>` per body;
   - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, written as its tab (`other`
     for `_`);

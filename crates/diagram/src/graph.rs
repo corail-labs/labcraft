@@ -254,6 +254,16 @@ pub struct Graph<'a> {
     pub vias: HashMap<(usize, usize), Vec<(i64, i64)>>,
 }
 
+/// The wires of each value to each reader, by body and index.
+type WiresByReader = HashMap<(String, Reader), Vec<(usize, usize)>>;
+
+/// What a wire reaches, for the `wire` entries of the `layout` section: a node, or an output of the function by name.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Reader {
+    Node(usize),
+    Output(String),
+}
+
 /// A pill on a wire: its text, and whether it shows a conversion.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pill {
@@ -513,6 +523,7 @@ impl<'a> Builder<'a> {
             let value = i64::from(labcraft_format::coordinate_value(self.names.resolve(text))?);
             Some(if numeral.negative { -value } else { value } * 100)
         };
+        let mut index: Option<WiresByReader> = None;
         for item in &layout.items {
             let LayoutKind::Wire { from, to, via } = &item.kind else { continue };
             if via.is_empty() {
@@ -531,12 +542,36 @@ impl<'a> Builder<'a> {
                 _ => None,
             };
             let output = (!to.node.is_label).then(|| self.names.resolve(to.node.name).to_owned());
-            let mut found = Vec::new();
-            for (body, frame) in graph.bodies.iter().enumerate() {
-                for (index, wire) in frame.wires.iter().enumerate() {
-                    if wire.name.split('.').next() != Some(value.as_str()) {
-                        continue;
+            // The wires of that value to that node, or to that output: an index made once, so that each entry costs the
+            // wires it may name, not all of them.
+            let index = index.get_or_insert_with(|| {
+                let mut index: WiresByReader = HashMap::new();
+                for (body, frame) in graph.bodies.iter().enumerate() {
+                    for (at, wire) in frame.wires.iter().enumerate() {
+                        let reader = match wire.to {
+                            End::Node { node, .. } | End::Order(node) => Reader::Node(node),
+                            End::Right(right) if body == 0 => {
+                                Reader::Output(frame.right.get(right).map(|terminal| terminal.terminal.name.clone()).unwrap_or_default())
+                            }
+                            _ => continue,
+                        };
+                        index.entry((wire.name.split('.').next().unwrap_or_default().to_owned(), reader)).or_default().push((body, at));
                     }
+                }
+                index
+            });
+            let reader = match (node, &output) {
+                (Some(node), _) => Reader::Node(node),
+                (None, Some(output)) => Reader::Output(output.clone()),
+                (None, None) => continue,
+            };
+            let mut found = Vec::new();
+            for &(body, at) in index.get(&(value, reader)).map_or(&[][..], Vec::as_slice) {
+                {
+                    let (Some(frame), Some(wire)) = (graph.bodies.get(body), graph.bodies.get(body).and_then(|frame| frame.wires.get(at))) else {
+                        continue;
+                    };
+                    let index = at;
                     let fits = match wire.to {
                         End::Node { node: reader, terminal } if Some(reader) == node => input.as_ref().is_none_or(|input| {
                             graph.nodes.get(reader).and_then(|reader| reader.inputs.get(terminal)).is_some_and(|terminal| &terminal.name == input)

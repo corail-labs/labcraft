@@ -207,6 +207,8 @@ pub struct WireOf {
     pub body: usize,
     /// Whether it carries an error. Not in the SVG.
     pub error: bool,
+    /// Whether the file gives it waypoints (`via`), which it keeps whatever the rules say. Not in the SVG.
+    pub via: bool,
     pub value: String,
     /// The terminal it leaves, when that has a form in the reports (`docs/cli.md`, 4.3).
     pub from: Option<String>,
@@ -233,7 +235,7 @@ pub struct Drawing {
     pub bodies: Vec<BodyDrawn>,
 }
 
-/// A body drawn: the height of its main error chain, and whether its file places a node or a wire of it.
+/// A body drawn: the height of its main error chain, and whether its file places a node of it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BodyDrawn {
     pub axis: Option<i64>,

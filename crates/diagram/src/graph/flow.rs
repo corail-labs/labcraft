@@ -449,8 +449,13 @@ impl<'a> Builder<'a> {
             },
             Target::Skip(_) => None,
         };
+        // What it binds is where `check` puts a conversion into the output (spec 3.3), shown by a pill (notation 4.2).
+        let read = match target {
+            Target::Name(id, _) | Target::Next(id, _) => Some(*id),
+            Target::Skip(_) => None,
+        };
         if let Some(right) = right {
-            push(graph, body, Wire { from, to: End::Right(right), family, name: name.trim_start_matches("next ").to_owned(), read: None });
+            push(graph, body, Wire { from, to: End::Right(right), family, name: name.trim_start_matches("next ").to_owned(), read });
         }
     }
 

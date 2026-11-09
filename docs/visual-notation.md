@@ -161,12 +161,14 @@ are the nodes that a `layout` section does not place (spec 11).
   before each column further on. A track that would start at the height of its source starts there, with no
   vertical, when no other wire ends within 8 of that height in that channel. A secondary error wire runs 16 below
   the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
-  the other's; otherwise those that rise stand left of those that fall. Two wires that cross so in both ways cannot
-  both keep 8 apart: the later one jogs, a vertical left of the other, across at a free height of the grid, then its
-  own vertical right of it. The main error chain runs straight on its axis past the columns that hold nothing there
+  the other's; otherwise those that rise stand left of those that fall. Wires that must each stand left of the next,
+  round a cycle, cannot all keep 8 apart: all but the first of the cycle jog, a vertical where they enter, across at a
+  height of the grid that no other wire of the channel enters or leaves within 8, above the main chain, then their own
+  vertical. The main error chain runs straight on its axis past the columns that hold nothing there
   (2.1). A wire leaves a terminal of a frame past its name, and reaches one before its name; an order wire from a
-  label starts at the right edge of its node, 8 below its top; a terminal on the top edge (`after:` of a compact
-  block) is reached from 8 above what is above the node. A junction point is a disc of radius 3.
+  label starts right after the label, at its middle; a terminal on the top edge (`after:` of a compact block) is
+  reached from 8 above what is above the node, and the label of that block starts right of it. A junction point is a
+  disc of radius 3. A trunk is drawn once: each branch from where it leaves the others.
 - **The margins of a `match` or a `handle`** *(proposed)*. A value that enters by a notch of the frame goes on to the
   notch of each arm that reads it, and what each arm yields to the output of the frame: a vertical each in the margin
   between the edge and the boxes of the arms, 8 apart, the margin 16 wide at least and 8 more for each other
@@ -364,7 +366,7 @@ When the function comes from another library, a **band** above the block says wh
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
   same, each is cut in the middle instead, keeping its start and its end (`measurement_a` and
   `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
-  no band, in 11 and `ink.muted`, 4 above it *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
+  no band, in 11 and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
 - **Block**: a square *(proposed)*, of 40 × 40 units at least, so that a node reads as an icon. Its side is
   the largest of 40, the width of its label with 9 units on each side (4, and half a terminal, which is 10

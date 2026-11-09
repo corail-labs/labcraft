@@ -30,8 +30,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <g data-wire="err" data-from="fn.err" data-to="dmm_in.err dmm_out.err">
 <path d="M112.61 363.6 L189.48 363.6" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
 <path d="M122.61 366.6 L126.61 363.6 L122.61 360.6 M146.61 366.6 L150.61 363.6 L146.61 360.6 M170.61 366.6 L174.61 363.6 L170.61 360.6" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<path d="M112.61 363.6 L126.61 363.6 Q132.61 363.6 132.61 357.6 L132.61 285.6 Q132.61 279.6 138.61 279.6 L189.48 279.6" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M122.61 366.6 L126.61 363.6 L122.61 360.6 M135.61 349.6 L132.61 345.6 L129.61 349.6 M135.61 325.6 L132.61 321.6 L129.61 325.6 M135.61 301.6 L132.61 297.6 L129.61 301.6 M136.61 282.6 L140.61 279.6 L136.61 276.6 M160.61 282.6 L164.61 279.6 L160.61 276.6" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M132.61 363.6 L132.61 285.6 Q132.61 279.6 138.61 279.6 L189.48 279.6" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<path d="M135.61 353.6 L132.61 349.6 L129.61 353.6 M135.61 329.6 L132.61 325.6 L129.61 329.6 M135.61 305.6 L132.61 301.6 L129.61 305.6 M136.61 282.6 L140.61 279.6 L136.61 276.6 M160.61 282.6 L164.61 279.6 L160.61 276.6" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
 <circle cx="132.61" cy="363.6" r="3" style="fill: var(--wire-error)"/>
 </g>
 <g data-wire="output" data-from="fn.output" data-to="dmm_out.resource">
