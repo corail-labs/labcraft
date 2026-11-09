@@ -15,7 +15,7 @@ use labcraft_graph::{
     Arg, Binding, Body, Branching, Call, Clause, ClauseKind, Constant, Decl, For, ForIn, Function, Id, IntBound, Loop, Numeral, NumeralKind, Operand,
     OrderRef, PanelDirection, Path, Pattern, Rhs, Signature, Statement, StatementKind, StructLit, Target as Line, TypeExpr, UnitExpr, UnitTerm,
 };
-use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Ty, TyId, UnitError, cut_text, normalize};
+use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Node, Related, Report, Ty, TyId, UnitError, cut_text, normalize};
 
 use super::{DeclaredFunction, DeclaredLibrary, DeclaredType, Pass, Scope, add_use, path_text, unit_of};
 use crate::load::{Target, at, cycles, last_resort};
@@ -89,7 +89,8 @@ impl Primitives {
         let mut core = HashSet::new();
         for primitive in PRIMITIVES {
             let name = names.intern(primitive.name);
-            let params = primitive.params.iter().map(|param| (names.intern(param.name), param.kind, param.has_default, param.variadic)).collect();
+            let params =
+                primitive.params.iter().map(|param| (names.intern(param.name), param.kind, param.default.is_some(), param.variadic)).collect();
             let callable = Callable::new(params, primitive.outputs.map(<[&str]>::len), primitive.open, Some(primitive.variables.names.len()), false);
             table.insert((primitive.library, name), Rc::new(callable));
             signatures.insert((primitive.library, name), primitive);
@@ -311,7 +312,9 @@ fn definition_of(pass: &Pass<'_>, context: &mut Context<'_, '_>, start: TyId) ->
 }
 
 impl<'a> Pass<'a> {
-    /// `resolved` is parallel to the files of each library, and holds something only for the libraries that are checked.
+    /// What each file of each library resolves to, parallel to the files of each library: something only for the libraries that
+    /// are checked, and for a run for every library. What the bodies of the dependencies say goes to `bodies`, apart: a run
+    /// says it only of what it reaches (`docs/cli.md`, 6.1).
     pub(super) fn check_bodies(&mut self, declared: &[DeclaredLibrary], primitives: &Primitives) -> Vec<Vec<Resolved>> {
         let loaded = self.loaded;
         let mut resources = HashSet::new();
@@ -319,7 +322,7 @@ impl<'a> Pass<'a> {
             let Some(types) = declared.get(library).map(|library| &library.types) else { continue };
             for (name, ty) in types {
                 let text = self.names.resolve(*name);
-                if ty.opaque && source.resources.iter().any(|resource| normalize(resource).as_ref() == text) {
+                if ty.opaque && source.manifest.resources.iter().any(|resource| normalize(resource).as_ref() == text) {
                     resources.insert(ty.ty);
                 }
             }
@@ -332,8 +335,9 @@ impl<'a> Pass<'a> {
         for (library, source) in loaded.iter().enumerate() {
             let mut resolved = Vec::with_capacity(source.files.len());
             let mut functions = Vec::new();
+            let apart = !source.checked;
             for file in &source.files {
-                let Some(model) = file.model.as_ref().filter(|_| source.checked) else {
+                let Some(model) = file.model.as_ref().filter(|_| source.checked || self.for_run) else {
                     resolved.push(Resolved::default());
                     continue;
                 };
@@ -345,6 +349,11 @@ impl<'a> Pass<'a> {
                         continue;
                     }
                 };
+                // The body of a dependency says what it has to say apart, to the run that reaches it; and what a budget of
+                // it leaves unsaid is nothing that `check` would say.
+                let library_report = apart.then(|| self.set_aside(library));
+                let cut_short = self.cut_short;
+                self.leaned = false;
                 self.begin_declaration(model);
                 self.current.not_imported = self.said.remove(file.shown.as_str()).unwrap_or_default();
                 self.function_errors = self.reports.get(library).map_or(0, labcraft_types::Report::errors);
@@ -372,14 +381,37 @@ impl<'a> Pass<'a> {
                         }
                     }
                 }
+                if let Some(report) = library_report {
+                    self.set_aside_back(library, report);
+                    self.cut_short = cut_short;
+                }
+                if self.leaned {
+                    done.lean_elsewhere();
+                }
                 // An `extern` has no calls, and a call can reach it.
                 functions.push(FunctionCalls { name, file: &file.shown, calls, source_map: &model.source_map });
                 resolved.push(done);
             }
-            self.report_recursion(library, functions);
+            if source.checked {
+                self.report_recursion(library, functions);
+            }
             all.push(resolved);
         }
         all
+    }
+
+    /// Gives the library the report of the bodies of the dependencies for one body, and returns its own: one report for all of
+    /// them, so that it is bounded as one, whatever the number of files.
+    fn set_aside(&mut self, library: usize) -> Report {
+        let bodies = std::mem::replace(&mut self.bodies, Report::new(0));
+        self.reports.get_mut(library).map_or_else(|| Report::new(0), |report| std::mem::replace(report, bodies))
+    }
+
+    /// Puts the report of the library back, and the report of the bodies where it was.
+    fn set_aside_back(&mut self, library: usize, report: Report) {
+        if let Some(slot) = self.reports.get_mut(library) {
+            self.bodies = std::mem::replace(slot, report);
+        }
     }
 
     /// `LC2016`, once per cycle: on the first file in the order of the paths, with the others in `related`. Only calls within
@@ -483,6 +515,13 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
 
     fn here(&self, message: String, id: Id) -> Related {
         Related { message, file: self.scope.file.shown.clone(), span: self.scope.model.source_map.span(id) }
+    }
+
+    /// Nothing to say here: the cause, a file that did not read or a declaration with an error, has its diagnostic
+    /// elsewhere. A run cannot lower what this leaves unknown, so the file is marked ([`Resolved::leans_elsewhere`]).
+    fn said_elsewhere(&mut self) -> Named {
+        self.pass.leaned = true;
+        Named::AlreadySaid
     }
 
     fn own_library_is_broken(&self) -> bool {
@@ -892,8 +931,11 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 self.resolved.set(literal.id, Meaning::NotAStruct);
                 return;
             }
-            // What has its diagnostic.
-            super::Lookup::AlreadySaid => return,
+            // What has its diagnostic, elsewhere.
+            super::Lookup::AlreadySaid => {
+                self.pass.leaned = true;
+                return;
+            }
         };
         let Some(declared) = declared else { return };
         self.resolved.set(literal.id, Meaning::Type(declared.ty));
@@ -968,7 +1010,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
             return self.find_in_target(target, *last, library_name);
         }
         if self.missing.contains(&path.first) {
-            return Named::AlreadySaid;
+            return self.said_elsewhere();
         }
         let Some((ty, library_head)) = head.split_last() else {
             // `Reading.Value`
@@ -983,7 +1025,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         match imports.get(&owner).copied() {
             Some(Target::Library(target)) => self.find_variant_in(target, *ty, *last, library_name),
             Some(Target::Primitive) => Named::NoFunction(library_name),
-            Some(Target::Missing | Target::Unreadable) => Named::AlreadySaid,
+            Some(Target::Missing | Target::Unreadable) => self.said_elsewhere(),
             None if self.is_known(&library_name) => Named::NotImported { library: library_name, known: true },
             None if self.is_known(&owner) => Named::NotImported { library: owner, known: true },
             None => Named::NotImported { library: library_name, known: false },
@@ -1005,13 +1047,13 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 }
             }
             Target::Library(target) => self.find_in(target, name, Named::NoFunction(library_name)),
-            Target::Missing | Target::Unreadable => Named::AlreadySaid,
+            Target::Missing | Target::Unreadable => self.said_elsewhere(),
         }
     }
 
     fn find_in(&mut self, library: usize, name: Name, otherwise: Named) -> Named {
         let declared = self.context.declared;
-        let Some(source) = declared.get(library) else { return Named::AlreadySaid };
+        let Some(source) = declared.get(library) else { return self.said_elsewhere() };
         if let Some(function) = source.functions.get(&name) {
             let key = (library, name);
             let callable = self.context.callables.entry(key).or_insert_with(|| Rc::new(Callable::of_function(function)));
@@ -1021,7 +1063,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         if source.types.contains_key(&name) {
             return Named::IsType;
         }
-        if source.broken || self.pass.is_refused(library, name) { Named::AlreadySaid } else { otherwise }
+        if source.broken || self.pass.is_refused(library, name) { self.said_elsewhere() } else { otherwise }
     }
 
     fn find_own_variant(&mut self, ty: Name, variant: Name, library_name: String) -> Named {
@@ -1029,7 +1071,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         let declared = self.context.declared;
         match declared.get(own).and_then(|source| source.types.get(&ty)).copied() {
             Some(declared) => self.variant_of(declared, ty, variant),
-            None if self.own_library_is_broken() || self.pass.is_refused(own, ty) => Named::AlreadySaid,
+            None if self.own_library_is_broken() || self.pass.is_refused(own, ty) => self.said_elsewhere(),
             // `g.h`, with a function `g`: the first name is known, and it is no library.
             None if declared.get(own).is_some_and(|source| source.functions.contains_key(&ty)) => Named::Unknown,
             None => {
@@ -1041,10 +1083,10 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
 
     fn find_variant_in(&mut self, library: usize, ty: Name, variant: Name, library_name: String) -> Named {
         let declared = self.context.declared;
-        let Some(source) = declared.get(library) else { return Named::AlreadySaid };
+        let Some(source) = declared.get(library) else { return self.said_elsewhere() };
         match source.types.get(&ty).copied() {
             Some(declared) => self.variant_of(declared, ty, variant),
-            None if source.broken || self.pass.is_refused(library, ty) => Named::AlreadySaid,
+            None if source.broken || self.pass.is_refused(library, ty) => self.said_elsewhere(),
             // `a.b.g`, with `use a`: the file does not import the sub-library that has `g`.
             None if self.is_known(&library_name) => Named::NotImported { library: library_name, known: true },
             None => Named::NoFunction(library_name),
@@ -1053,11 +1095,11 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
 
     fn variant_of(&mut self, declared: DeclaredType, ty: Name, variant: Name) -> Named {
         if declared.ty == TyId::ERROR {
-            return Named::AlreadySaid;
+            return self.said_elsewhere();
         }
         let definition = self.definition_of(declared.definition);
         if matches!(self.pass.table.get(definition), Ty::Error) {
-            return Named::AlreadySaid;
+            return self.said_elsewhere();
         }
         let is_enum = matches!(self.pass.table.get(definition), Ty::Enum(_));
         if is_enum && self.has_member(definition, variant) {

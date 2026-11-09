@@ -11,7 +11,7 @@ use labcraft_format::is_name;
 use labcraft_graph::{Decl, EnumType, FnType, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
 use labcraft_types::{
     Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, Limits, MAX_ARRAY_DIMENSIONS, MAX_NESTING, Name, Node, NumberKind, Position, Related,
-    Report, Span, Ty, TyId, TypeTable, Unit, UnitError, Variant, cut_text,
+    Report, Span, Ty, TyId, TypeTable, Unit, UnitError, Variant, cut_text, normalize,
 };
 
 use self::body::Primitives;
@@ -32,6 +32,16 @@ pub struct DeclaredLibrary {
     pub id: LibraryId,
     pub types: HashMap<Name, DeclaredType>,
     pub functions: HashMap<Name, DeclaredFunction>,
+    /// The file of each type of `types`, by its index in `Checked::files`: for a run, those of every library; otherwise those
+    /// of the folder given only.
+    pub type_files: HashMap<Name, u32>,
+    /// In the folder given or one of its sub-libraries, rather than a dependency.
+    pub checked: bool,
+    /// What its manifest says, normalized (R-20), in its order: the native functions that run even when `err` holds an error (7.2), the
+    /// opaque types that are resources (8.1), and the categories of its errors (7.1). Only a shipped library has one in M0.
+    pub always: Vec<Name>,
+    pub resources: Vec<Name>,
+    pub categories: Vec<String>,
     /// A file of it did not read, or a bug stopped one: a name that it does not seem to have may still be its own, and
     /// that has its diagnostic.
     pub broken: bool,
@@ -59,6 +69,8 @@ pub struct DeclaredFunction {
     /// Its signature has an error of its own (`LC2019`, `LC2105`, `LC2107`) or its name is defined twice (`LC2013`), so a
     /// call says nothing more about what it wires.
     pub faulty: bool,
+    /// Its file, by its index in `Checked::files`: for a run, in every library; otherwise in the folder given only.
+    pub file: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -80,6 +92,8 @@ pub(crate) struct Declared {
     pub(crate) libraries: Vec<DeclaredLibrary>,
     /// Pass 3, parallel to the files of each library.
     pub(crate) resolved: Vec<Vec<Resolved>>,
+    /// For a run, what the bodies of the dependencies say.
+    pub(crate) bodies: Report,
     pub(crate) cut_short: bool,
 }
 
@@ -199,6 +213,12 @@ struct Pass<'a> {
     function_errors: u64,
     /// A budget of work or a limit made a pass say less (`Checked::cut_short`).
     cut_short: bool,
+    /// The bodies of the dependencies are checked too, for a run (`docs/architecture.md`, 10.1).
+    for_run: bool,
+    /// The body being read leaves something unknown because of a mistake that has its diagnostic elsewhere.
+    leaned: bool,
+    /// For a run, what the bodies of the dependencies say, kept apart (`Checked::bodies`).
+    bodies: Report,
 }
 
 /// What the declaration of one file needs of it, made once: a file can hold millions of `use` lines and of types.
@@ -212,7 +232,14 @@ struct CurrentFile {
     not_imported: HashSet<String>,
 }
 
-pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: &mut Interner, limits: &Limits, report: &mut Report) -> Declared {
+pub(crate) fn declare(
+    loaded: &mut [Library],
+    libraries: &dyn Libraries,
+    names: &mut Interner,
+    limits: &Limits,
+    report: &mut Report,
+    for_run: bool,
+) -> Declared {
     // Each library has its own limit, so the table only keeps the ceiling that a stack is sized from.
     let mut table = TypeTable::new(MAX_NESTING);
     let ids: Vec<LibraryId> = loaded.iter().map(|library| table.add_library(names.intern(&library.name))).collect();
@@ -242,6 +269,9 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
         node: None,
         function_errors: 0,
         cut_short: false,
+        for_run,
+        leaned: false,
+        bodies: Report::new(limits.max_report),
     };
     pass.gather();
     pass.find_cycles();
@@ -250,7 +280,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
     pass.resolve_types();
     let declared = pass.declare_all();
     let resolved = pass.check_bodies(&declared, &primitives);
-    let Pass { table, reports, cut_short, .. } = pass;
+    let Pass { table, reports, cut_short, bodies, .. } = pass;
     for (library, own) in loaded.iter_mut().zip(reports) {
         if library.checked {
             report.merge(own);
@@ -258,7 +288,7 @@ pub(crate) fn declare(loaded: &mut [Library], libraries: &dyn Libraries, names: 
             library.report.merge(own);
         }
     }
-    Declared { types: table, libraries: declared, resolved, cut_short }
+    Declared { types: table, libraries: declared, resolved, bodies, cut_short }
 }
 
 /// Of two declarations of one name, which have their `LC2013`, a call binds to the first one and says nothing about it.
@@ -291,10 +321,19 @@ fn well_named(file: &LoadedFile, model: &Model, names: &Interner) -> bool {
 /// In the order of the paths, but the files that bear the name of what they declare first: a call binds to one of them
 /// rather than to a copy under another name.
 fn sorted_files<'a>(library: &'a Library, names: &Interner) -> Vec<&'a LoadedFile> {
-    let mut files: Vec<(bool, &LoadedFile)> =
-        library.files.iter().map(|file| (file.model.as_ref().is_some_and(|model| !well_named(file, model, names)), file)).collect();
-    files.sort_by(|(a_copy, a), (b_copy, b)| a_copy.cmp(b_copy).then_with(|| a.shown.cmp(&b.shown)));
-    files.into_iter().map(|(_, file)| file).collect()
+    sorted_files_at(library, names).into_iter().map(|(_, file)| file).collect()
+}
+
+/// As [`sorted_files`], with the index of each file in its library.
+fn sorted_files_at<'a>(library: &'a Library, names: &Interner) -> Vec<(usize, &'a LoadedFile)> {
+    let mut files: Vec<(bool, usize, &LoadedFile)> = library
+        .files
+        .iter()
+        .enumerate()
+        .map(|(index, file)| (file.model.as_ref().is_some_and(|model| !well_named(file, model, names)), index, file))
+        .collect();
+    files.sort_by(|(a_copy, _, a), (b_copy, _, b)| a_copy.cmp(b_copy).then_with(|| a.shown.cmp(&b.shown)));
+    files.into_iter().map(|(_, index, file)| (index, file)).collect()
 }
 
 /// Its name, where it is, and whether it is a type.
@@ -904,8 +943,11 @@ impl<'a> Pass<'a> {
     /// Of two declarations of one name, the first one in the order of `sorted_files` is the one that stays.
     fn declare_library(&mut self, library: usize, source: &'a Library, id: LibraryId) -> DeclaredLibrary {
         let mut types = HashMap::new();
+        let mut type_files = HashMap::new();
         let mut functions = HashMap::new();
-        for file in sorted_files(source, self.names) {
+        // The index of each file in its library, until `check` gives the one in `Checked::files`.
+        for (at, file) in sorted_files_at(source, self.names) {
+            let at = u32::try_from(at).ok();
             let Some(model) = &file.model else { continue };
             let scope = Scope { library, file, model, generic: false, function: None };
             let declared_name = name_of_decl(&model.file.decl).0;
@@ -915,17 +957,21 @@ impl<'a> Pass<'a> {
             {
                 if let Some(declared) = self.resolved.get(index).copied().flatten() {
                     types.insert(decl.name, declared);
+                    if let Some(at) = at {
+                        type_files.insert(decl.name, at);
+                    }
                 }
                 continue;
             }
             self.begin_declaration(model);
             let outcome = last_resort(|| match &model.file.decl {
                 Decl::Function(function) => {
-                    let declared = self.declare_function(function.name, &function.signature, scope, None);
+                    let declared = DeclaredFunction { file: at, ..self.declare_function(function.name, &function.signature, scope, None) };
                     keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 Decl::Extern(function) => {
-                    let declared = self.declare_function(function.name, &function.signature, scope, Some(function.id));
+                    let declared =
+                        DeclaredFunction { file: at, ..self.declare_function(function.name, &function.signature, scope, Some(function.id)) };
                     keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 // No program can name it, and its mistakes are still mistakes.
@@ -942,7 +988,21 @@ impl<'a> Pass<'a> {
             }
         }
         let broken = self.broken.get(library).copied().unwrap_or(true);
-        DeclaredLibrary { name: source.name.clone(), id, types, functions, broken }
+        let normalized = |list: &[String]| -> Vec<Name> { list.iter().filter_map(|text| self.names.find(text)).collect() };
+        let always = normalized(&source.manifest.always);
+        let resources = normalized(&source.manifest.resources);
+        DeclaredLibrary {
+            name: source.name.clone(),
+            id,
+            types,
+            functions,
+            type_files,
+            checked: source.checked,
+            always,
+            resources,
+            categories: source.manifest.categories.iter().map(|category| normalize(category).into_owned()).collect(),
+            broken,
+        }
     }
 
     /// The index of this very declaration: `None` when its name is refused, or when another one has it.
@@ -1034,7 +1094,7 @@ impl<'a> Pass<'a> {
                 self.error(&scope, Code::Lc4005, "an external function has an output `err: error` (R-13)".to_owned(), id);
             }
         }
-        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty }
+        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty, file: None }
     }
 
     fn signature_type(&mut self, expr: &TypeExpr, scope: &Scope<'_>, id: Id) -> TyId {
@@ -1223,7 +1283,11 @@ impl<'a> Pass<'a> {
                 }
                 TyId::ERROR
             }
-            Lookup::AlreadySaid => TyId::ERROR,
+            // What has its diagnostic, elsewhere.
+            Lookup::AlreadySaid => {
+                self.leaned = true;
+                TyId::ERROR
+            }
             Lookup::Opaque => {
                 let message = "`opaque` is only the whole type of a `type` declaration (3.2)".to_owned();
                 self.error(scope, Code::Lc2003, message, named.path.id);

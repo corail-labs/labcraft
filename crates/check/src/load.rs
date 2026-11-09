@@ -31,8 +31,9 @@ pub(crate) struct Library {
     /// The errors of a dependency, kept apart: several folders given can read one dependency.
     pub(crate) report: Report,
     pub(crate) checked_elsewhere: bool,
-    /// What its manifest declares as resources (8.1). Only a shipped library has one before M2.
-    pub(crate) resources: Vec<String>,
+    /// What its manifest says, once read: only a shipped library has one before M2, and a manifest that does not read says
+    /// nothing.
+    pub(crate) manifest: Manifest,
 }
 
 pub(crate) struct LoadedFile {
@@ -200,11 +201,11 @@ impl Loader<'_> {
             None
         } else {
             let files: Vec<LoadedFile> = files.into_iter().map(|file| self.read_file(file, checked, origin, budget, &mut sink)).collect();
-            let mut resources = Vec::new();
+            let mut read = Manifest::default();
             if origin == Origin::Shipped
                 && let Some(text) = manifest
             {
-                resources = self.read_manifest(&text, &shown, &name, &files, &mut sink);
+                read = self.read_manifest(&text, &shown, &name, &files, &mut sink);
             }
             Some(Library {
                 name,
@@ -215,7 +216,7 @@ impl Loader<'_> {
                 uses: Vec::new(),
                 report: Report::new(self.limits.max_report),
                 checked_elsewhere,
-                resources,
+                manifest: read,
             })
         };
         match (checked, library) {
@@ -272,14 +273,14 @@ impl Loader<'_> {
         LoadedFile { shown, model, imports: HashMap::new() }
     }
 
-    /// What it declares as resources.
-    fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) -> Vec<String> {
+    /// What it says, or nothing when it does not read.
+    fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) -> Manifest {
         let path = format!("{shown}/labcraft.toml");
         let manifest = match Manifest::parse(text) {
             Ok(manifest) => manifest,
             Err(why) => {
                 sink.push(Diagnostic::new(Code::Lc0105, format!("cannot read this manifest: {why}"), path));
-                return Vec::new();
+                return Manifest::default();
             }
         };
         if manifest.name != name {
@@ -288,7 +289,7 @@ impl Loader<'_> {
         }
         // A file that did not read has its own diagnostic, and may hold the native function named here.
         if files.iter().any(|file| file.model.is_none()) {
-            return manifest.resources;
+            return manifest;
         }
         let native: HashSet<&str> = files
             .iter()
@@ -312,7 +313,7 @@ impl Loader<'_> {
             let message = format!("`resources` can only name an opaque type of this library, and `{resource}` is none (spec 8.1)");
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
-        manifest.resources
+        manifest
     }
 
     /// The files of a library are set aside meanwhile, since what their `use` lines find joins the list of libraries.

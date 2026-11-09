@@ -1,7 +1,7 @@
 //! Canonical form, rule by rule (spec 5.2): what `fmt` makes of a file, line order and layout of the text.
 
-use labcraft_format::{Unorderable, canonical_order, format, read, write_line};
-use labcraft_graph::{Decl, Function};
+use labcraft_format::{Unorderable, canonical_order, canonical_orders, format, read, write_line};
+use labcraft_graph::{Body, Decl, Function, Id, Rhs, StatementKind};
 use labcraft_types::{Code, Interner, Limits};
 
 struct Formatted {
@@ -1013,4 +1013,66 @@ fn write_line_gives_the_line_of_a_statement() {
     };
     let lines: Vec<String> = inner.iter().map(|statement| write_line(statement, &names)).collect();
     assert_eq!(lines, ["next s = 2", "collect s", "until s"]);
+}
+
+/// Every body inside `body`, with what holds it, in no order that matters.
+fn every_body(body: &Body) -> Vec<(Id, &Body)> {
+    let mut found = Vec::new();
+    let mut pending = vec![body];
+    while let Some(body) = pending.pop() {
+        for statement in &body.statements {
+            let StatementKind::Binding { value, .. } = &statement.kind else { continue };
+            let inner: Vec<(Id, &Body)> = match value {
+                Rhs::Match(branching) | Rhs::Handle(branching) => branching.arms.iter().map(|arm| (arm.id, &arm.body)).collect(),
+                Rhs::For(structure) => vec![(statement.id, &structure.body)],
+                Rhs::Loop(structure) => vec![(statement.id, &structure.body)],
+                _ => Vec::new(),
+            };
+            pending.extend(inner.iter().map(|(_, body)| *body));
+            found.extend(inner);
+        }
+    }
+    found
+}
+
+#[test]
+fn canonical_orders_gives_each_body_what_canonical_order_gives_it() {
+    let lines = [
+        "y = g()",
+        "x = match c {",
+        "    1 => {",
+        "        b = f(a)",
+        "        a = g()",
+        "        yield b",
+        "    }",
+        "    _ => {",
+        "        q = g(p)",
+        "        p = g()",
+        "        yield q",
+        "    }",
+        "}",
+        "n = loop carry k = 0 {",
+        "    m = f(j)",
+        "    j = g()",
+        "    next k = m",
+        "    until m",
+        "}",
+        "w = match c {",
+        "    _ => {",
+        "        u = f(t)",
+        "        t = g(u)",
+        "        yield u",
+        "    }",
+        "}",
+    ];
+    let mut names = Interner::new();
+    let model = function_of(&function(&lines), &mut names);
+    let orders = canonical_orders(&model.body, &model.signature, &names);
+    assert_eq!(orders.of_function(), Some(canonical_order(&model.body, Some(&model.signature), &names).as_deref().map_err(|fault| *fault)));
+    let inner = every_body(&model.body);
+    assert_eq!(inner.len(), 4);
+    for (owner, body) in inner {
+        let alone = canonical_order(body, None, &names);
+        assert_eq!(orders.of(owner), Some(alone.as_deref().map_err(|fault| *fault)), "{owner:?}");
+    }
 }

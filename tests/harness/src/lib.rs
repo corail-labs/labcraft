@@ -27,8 +27,9 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
 
-    use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
-    use labcraft_format::{STACK_SIZE, canonicalize, format, read, write};
+    use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check, check_for_run};
+    use labcraft_format::{STACK_SIZE, canonical_order, canonicalize, format, read, write};
+    use labcraft_graph::Decl;
     use labcraft_types::{Code, Interner, Limits, MAX_NESTING, Report};
     #[cfg(target_arch = "wasm32")]
     use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -193,6 +194,66 @@ mod tests {
             let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
             assert_eq!(checked_codes(project(root, files)), BTreeSet::new(), "{root}");
         }
+    }
+
+    /// A run of any function of the repository reaches what it runs, in every library, and nothing refuses it
+    /// (`docs/architecture.md`, 10.1): the bodies of `scpi` are typed as the folder is, and every body has its order.
+    #[test]
+    fn every_function_of_the_repository_can_be_run() {
+        for root in ["examples/", "libs/"] {
+            let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+            let mut names = Interner::new();
+            let checked = check_for_run(project(root, files), &Shipped, &mut names, &Limits::default());
+            assert_eq!(checked.report.errors() + checked.report.warnings(), 0, "{root}: {:?}", checked.report.diagnostics());
+            assert_eq!(checked.bodies.errors() + checked.bodies.warnings(), 0, "{root}: {:?}", checked.bodies.diagnostics());
+            let mut runs = 0;
+            for (index, file) in checked.files.iter().enumerate() {
+                assert_eq!(checked.counts_of(index).errors + checked.counts_of(index).warnings, 0, "{}", file.shown);
+                let Decl::Function(function) = &file.file.decl else { continue };
+                // These files are canonical: each body has the order it is written in.
+                let orders = file.orders.as_ref().unwrap();
+                let written: Vec<usize> = (0..function.body.statements.len()).collect();
+                assert_eq!(orders.of_function(), Some(Ok(written.as_slice())), "{}", file.shown);
+                assert_eq!(canonical_order(&function.body, Some(&function.signature), &names).as_deref(), Ok(written.as_slice()));
+                if !checked.libraries[file.library as usize].checked {
+                    continue;
+                }
+                let reach = checked.reach(index);
+                assert!(reach.unresolved.is_empty() && !reach.refuses(&checked, true), "{}: {reach:?}", file.shown);
+                runs += 1;
+            }
+            assert!(runs >= 2, "{root}: {runs}");
+        }
+    }
+
+    /// Worked out by hand from the files: `check_voltage` calls `visa.open`, `scpi.query_f64` and `visa.close`, and
+    /// `scpi.query_f64` calls `visa.query`; it uses `Verdict`, and `visa.session` through the signatures of `visa`.
+    #[test]
+    fn a_run_of_check_voltage_reaches_what_its_files_say() {
+        let files = PROGRAMS.iter().filter(|program| program.path.starts_with("examples/"));
+        let mut names = Interner::new();
+        let checked = check_for_run(project("examples/", files), &Shipped, &mut names, &Limits::default());
+        let reach = checked.reach(checked.function_named("check_voltage", &names).unwrap());
+        let shown = |files: &[u32]| -> BTreeSet<&str> { files.iter().map(|file| checked.files[*file as usize].shown.as_str()).collect() };
+        let functions = [
+            "check_voltage.lcf",
+            "<labcraft>/visa/open.lcf",
+            "<labcraft>/scpi/query_f64.lcf",
+            "<labcraft>/visa/close.lcf",
+            "<labcraft>/visa/query.lcf",
+        ];
+        assert_eq!(shown(&reach.functions), functions.into_iter().collect());
+        assert_eq!(shown(&reach.types), ["Verdict.lct", "<labcraft>/visa/session.lct"].into_iter().collect());
+        // What the manifests say (`libs/visa/labcraft.toml`, `libs/scpi/labcraft.toml`).
+        let library = |name: &str| checked.libraries.iter().find(|library| library.name == name).unwrap();
+        let texts = |set: &[labcraft_types::Name]| -> BTreeSet<String> { set.iter().map(|name| names.resolve(*name).to_owned()).collect() };
+        let visa = library("visa");
+        assert_eq!(texts(&visa.always), ["close".to_owned()].into_iter().collect());
+        assert_eq!(texts(&visa.resources), ["session".to_owned()].into_iter().collect());
+        assert_eq!(visa.categories, ["io.timeout", "visa.invalid_session", "visa.resource_not_found"]);
+        let scpi = library("scpi");
+        assert!(scpi.always.is_empty() && scpi.resources.is_empty());
+        assert_eq!(scpi.categories, ["scpi.instrument_error"]);
     }
 
     /// Scenario 5, points 1 and 4, on what the WASM build embeds: every program is canonical (`libs/` and

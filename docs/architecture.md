@@ -63,7 +63,8 @@ What everything needs, with no knowledge of files.
   `Code` is an enumeration; each variant gives its text and its severity. `cargo xtask codes` checks
   that it equals the tables of cli.md, section 5. `Report` holds at most twice `--max-report`
   diagnostics while they arrive, with complete counts, since a file of 4 MiB can hold millions of
-  errors; which ones it keeps does not depend on when it prunes. The app calls `finish` last, once all
+  errors; which ones it keeps does not depend on when it prunes. Its counts are complete for each file too
+  (`counts_of`), since a run is refused for an error in a file it reaches (10.1). The app calls `finish` last, once all
   folders and `LC0009`, `LC0010` are merged.
 - `Limits`: file size, total size of a library (1 GiB *proposed*), nesting, report, with their defaults.
   `max_nesting` has a hard ceiling (cli.md, section 1), lower in WASM: a stack is sized from it (section 4).
@@ -126,6 +127,7 @@ Decisions:
 pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read;  // file, source map, diagnostics
 // `Name` is an index with no order, and numbers are names too: sorting and printing need the interner.
 pub fn canonical_order(body: &Body, signature: Option<&Signature>, names: &Interner) -> Result<Vec<usize>, Unorderable>;  // 5.2, public: M0b needs it (8); the signature, for the body of a function
+pub fn canonical_orders(body: &Body, signature: &Signature, names: &Interner) -> BodyOrders;  // every body of a function, in one walk (10.1)
 pub fn canonicalize(file: File, map: &SourceMap, names: &mut Interner, report: &mut Report) -> File;  // all the fixes of `fmt`; ids renumbered, so `map` no longer applies
 pub fn write(file: &File, names: &Interner, limits: &Limits) -> Result<String, TooLarge>;  // prints what is stored
 pub fn write_line(statement: &Statement, names: &Interner) -> String;      // `node.text` of a diagnostic
@@ -194,8 +196,10 @@ pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interne
              limits: &Limits) -> Checked;
 pub struct Checked { report: Report, dependencies: Vec<DependencyReport>, counts: CheckCounts,
                       files: Vec<CheckedFile>, types: TypeTable,
-                      libraries: Vec<DeclaredLibrary> }            // what each library declares, by name
-pub struct CheckedFile { shown: String, file: File, source_map: SourceMap, resolved: Resolved }
+                      libraries: Vec<DeclaredLibrary>,             // what each library declares, by name
+                      bodies: Report, for_run: bool }              // for a run (10.1)
+pub struct CheckedFile { shown: String, file: File, source_map: SourceMap, resolved: Resolved,
+                         library: u32, orders: Option<BodyOrders>, counts: FileCounts }
 pub struct DependencyReport { shown: String, report: Report }      // merged once per `shown`
 ```
 
@@ -221,7 +225,7 @@ Passes, each one over all the files, so that a bad file does not hide the others
    signatures, labels, `after:`, the bounds of each number of a body, a default value or a `default:` (the rest of a `panel`
    comes with pass 6), `LC5012`. Only what can be told without a type: a field of a value and
    the values of a variant wait for pass 4, and so does a `string.format` template, whose fields ask something of their types (`LC2106`). Only for the
-   libraries being checked: of a dependency, the others read the signatures.
+   libraries being checked: of a dependency, the others read the signatures, except for a run (10.1).
 4. **Types and units:** wire by wire, in dependency order, with `Ty::Error` to stop cascades. That order is one graph for
    the whole function, walked with a queue, since a chain of lines is as long as the file. A structure is two steps, one
    before its body and one after. What is left in a cycle stays unknown, and pass 5 says why. A panel element adds nothing to that
@@ -395,7 +399,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft, nothing implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; step 0 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -427,16 +431,49 @@ its crate (spec 4.1: a Rust crate linked into the application). Each depends on 
 
 ### 10.1 What `check` gives a run
 
-`check` was built to judge files; a run also needs what it found, in a form that lowering can read. Before `ir`, a
-step of work (10.11, step 0) gives `check` an interface for runs:
+*Status: implemented (step 0).* `check` was built to judge files; a run also needs what it found, in a form that
+lowering can read. So `check` has an interface for runs:
 
-- **The bodies of every library the run reaches**, those of `scpi` and of a `--lib-path` folder included. `check`
-  reads them for their signatures today; for a run, it resolves and types them as it does the folder given (cli.md
-  6.1 already requires a run to judge them).
-- **What the manifests say** (`always`, `resources`, categories), the **defaults** of inputs and outputs (spec 7.2),
-  and the **table of primitive signatures**, public, which `runtime` tests its bodies against.
+```rust
+pub fn check_for_run(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits) -> Checked;
+impl Checked {
+    pub fn function_named(&self, path: &str, names: &Interner) -> Option<usize>;  // `dmm_driver.measure`, from the root
+    pub fn reach(&self, function: usize) -> Reach;                                 // by index in `files`
+    pub fn counts_of(&self, file: usize) -> FileCounts;                            // its errors and warnings, complete
+}
+pub struct Reach { functions: Vec<u32>, types: Vec<u32>, unresolved: Vec<Unresolved> }  // `refuses(&checked, deny_warnings)`
+```
+
+- **The bodies of every library the folder uses**, those of `scpi` and of a `--lib-path` folder included, are resolved
+  and typed as the folder given is; `check` alone reads them for their signatures. What such a body says goes to
+  `Checked::bodies`, one report for all of them, bounded as one, so the report is the one `check` gives, and a run says
+  it only of what it reaches (cli.md 6.1). `Checked::files` then holds the files of every library, each with its
+  `library`, and `for_run` says so.
+- **What a run reaches**, by a work list: the functions it calls and names as references, in every library, and the
+  `.lct` files of the types they use, down through fields, items and variants. An error in one of them refuses the run,
+  and so does a warning in one of the folder given under `--deny-warnings`; a warning of a dependency never does.
+  **One error gives one diagnostic**, so what a reached file leans on can be broken with no word of its own: a name that
+  a file that did not read may declare (a call, a function reference, a construction, a variant), or a value whose type
+  an error left unknown, such as a struct with a field of an unknown type. Wherever passes 3 and 4 stay silent for that
+  reason, they mark the file (`Resolved::leans_elsewhere`); `Reach::unresolved` names it, with the calls that bind to
+  nothing, the values left without a type, and as a net under all of these the types that hold the error type (`[Place]`
+  with a `Place` that has an error); the run is refused, and the cause has its diagnostic elsewhere. The counts
+  of each file (`CheckedFile::counts`) come from `Report::counts_of`, complete whatever the lists keep, and are added up
+  once, when `check` ends.
+- **Limits:** a run of the CLI reaches a file of the folder given through a `--lib-path` copy of it as that dependency,
+  whose warnings do not count under `--deny-warnings`; `run` (step 7) maps the copy back to the folder. When
+  `Checked::bodies` lists fewer diagnostics than it counts, those of a reached file may be among the ones it left out:
+  the run is refused all the same, by the counts.
+- **What the manifests say**, normalized and in their order, in each `DeclaredLibrary`: `always`, `resources`,
+  `categories`; and `file`
+  for each function, `type_files` for each type, by index in `Checked::files`. The **defaults** of inputs are the
+  operands of the signatures, typed in `Resolved`; those of outputs are the defaults of their types (spec 7.2).
+- **The table of primitive signatures** is public (`check::primitives`), with the value of each default: `none`, `0`,
+  `""`, and `…` for the `length` of `array.slice`, which reaches the end of the array and is no constant. `runtime`
+  tests its bodies against it.
 - **The canonical order of every body**, in one walk: `format::canonical_order` called body by body is not linear
-  in a file of many bodies, so the order comes with what `check` already walks.
+  in a function nested deep, so `format::canonical_orders` gives them all from the walk that finds them, by the id of
+  the statement or arm that holds each body, in `CheckedFile::orders`.
 
 ### 10.2 `ir` (L4)
 
@@ -640,7 +677,7 @@ The proof of concept runs the corpus too, through a small runner, until the Rust
 
 Each step of work ends with something testable:
 
-0. **`check` for runs:** the interface of 10.1.
+0. **`check` for runs:** the interface of 10.1. *Done.*
 1. **`trace`**, with M0v: the events, the JSON form of values and its bounds, the writer and the reader.
 2. **`ir`:** the model, lowering of every construct, the verifier, the printer, the snapshots of `examples/`.
 3. **Values and primitives** in `runtime`, with their test of signatures.

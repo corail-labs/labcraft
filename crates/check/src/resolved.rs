@@ -92,12 +92,19 @@ pub struct Resolved {
     calls: Vec<ResolvedCall>,
     types: Vec<TyId>,
     coercions: Vec<Coercion>,
+    leans_elsewhere: bool,
 }
 
 impl Resolved {
     /// `places` is the length of the source map of the file.
     pub(crate) fn new(places: usize) -> Self {
-        Resolved { meanings: vec![Meaning::None; places], calls: Vec::new(), types: vec![TyId::ERROR; places], coercions: Vec::new() }
+        Resolved {
+            meanings: vec![Meaning::None; places],
+            calls: Vec::new(),
+            types: vec![TyId::ERROR; places],
+            coercions: Vec::new(),
+            leans_elsewhere: false,
+        }
     }
 
     pub(crate) fn set(&mut self, id: Id, meaning: Meaning) {
@@ -117,9 +124,29 @@ impl Resolved {
         self.meanings.get(id.index()).copied().unwrap_or_default()
     }
 
-    #[cfg(test)]
-    pub(crate) fn all(&self) -> &[Meaning] {
+    pub(crate) fn lean_elsewhere(&mut self) {
+        self.leans_elsewhere = true;
+    }
+
+    /// Something of this file stays unknown, without a word of its own, because of a mistake that has its diagnostic in another
+    /// file: a name that a file that did not read may declare, a type with an error. A run cannot lower it (`docs/cli.md`, 6.1).
+    pub fn leans_elsewhere(&self) -> bool {
+        self.leans_elsewhere
+    }
+
+    /// What each id of the file means, by the index of the id.
+    pub fn meanings(&self) -> &[Meaning] {
         &self.meanings
+    }
+
+    /// The calls of the file, which [`Meaning::Call`] numbers.
+    pub fn calls(&self) -> &[ResolvedCall] {
+        &self.calls
+    }
+
+    /// The type of each id of the file, by the index of the id: see [`Resolved::ty`].
+    pub fn types(&self) -> &[TyId] {
+        &self.types
     }
 
     pub(crate) fn set_type(&mut self, id: Id, ty: TyId) {

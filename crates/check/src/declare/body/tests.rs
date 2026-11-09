@@ -799,7 +799,7 @@ fn each_kind_of_item_has_its_meaning() {
     ));
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let file = checked.files.iter().find(|file| file.shown == "f.lcf").unwrap();
-    let count = |kind: fn(&Meaning) -> bool| file.resolved.all().iter().filter(|meaning| kind(meaning)).count();
+    let count = |kind: fn(&Meaning) -> bool| file.resolved.meanings().iter().filter(|meaning| kind(meaning)).count();
     assert_eq!(count(|meaning| matches!(meaning, Meaning::Label(_))), 1);
     assert_eq!(count(|meaning| matches!(meaning, Meaning::Element(_))), 1);
     assert_eq!(count(|meaning| matches!(meaning, Meaning::Category)), 2, "in an argument, and in a pattern");

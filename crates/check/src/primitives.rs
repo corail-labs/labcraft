@@ -1,6 +1,7 @@
 //! The signatures of the primitives, as data, in the form of appendix A of the spec (`docs/architecture.md`, section 5).
-//! Their bodies stay in `runtime` (M0b). Pass 3 reads what a call binds to: names, kinds, defaults, how many outputs. Pass 4
-//! reads their types and the rules of units. A test compares this table with appendix A.
+//! Their bodies stay in `runtime` (M0b), which tests that each signature has one. Pass 3 reads what a call binds to: names,
+//! kinds, defaults, how many outputs. Pass 4 reads their types and the rules of units. A test compares this table with
+//! appendix A, defaults included.
 
 /// A library of the language, which a `use` always finds and nothing replaces (`docs/cli.md`, section 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -26,8 +27,7 @@ impl PrimitiveLibrary {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             PrimitiveLibrary::Core => "core",
             PrimitiveLibrary::String => "string",
@@ -41,7 +41,7 @@ impl PrimitiveLibrary {
 
 /// What a parameter takes (R-1, R-5): a kind other than `Value` shows in place of a type in appendix A.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ParamKind {
+pub enum ParamKind {
     Value,
     /// `[V]`
     Unit,
@@ -53,7 +53,7 @@ pub(crate) enum ParamKind {
 
 /// The type of a parameter or an output, in the form of appendix A.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PrimitiveTy {
+pub enum PrimitiveTy {
     Bool,
     I32,
     F32,
@@ -79,7 +79,7 @@ pub(crate) enum PrimitiveTy {
 
 /// What an output is. A rule of 3.3 cannot be said by a type alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PrimitiveOutput {
+pub enum PrimitiveOutput {
     Is(PrimitiveTy),
     /// `A·B`: the exponents add.
     Product,
@@ -95,49 +95,62 @@ pub(crate) enum PrimitiveOutput {
     Slice,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct PrimitiveParam {
-    pub(crate) name: &'static str,
-    pub(crate) kind: ParamKind,
-    pub(crate) ty: PrimitiveTy,
-    pub(crate) has_default: bool,
-    pub(crate) variadic: bool,
+/// What a parameter takes when no wire reaches it, as appendix A writes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrimitiveDefault {
+    /// `none`, for an `err` input.
+    NoError,
+    /// `0`
+    Zero,
+    /// `""`
+    EmptyText,
+    /// `…`: the `length` of `array.slice`, which reaches the end of the array. It is no constant.
+    ToTheEnd,
 }
 
-const fn param(name: &'static str, kind: ParamKind, ty: PrimitiveTy, has_default: bool, variadic: bool) -> PrimitiveParam {
-    PrimitiveParam { name, kind, ty, has_default, variadic }
+#[derive(Clone, Copy, Debug)]
+pub struct PrimitiveParam {
+    pub name: &'static str,
+    pub kind: ParamKind,
+    pub ty: PrimitiveTy,
+    pub default: Option<PrimitiveDefault>,
+    pub variadic: bool,
+}
+
+const fn param(name: &'static str, kind: ParamKind, ty: PrimitiveTy, default: Option<PrimitiveDefault>, variadic: bool) -> PrimitiveParam {
+    PrimitiveParam { name, kind, ty, default, variadic }
 }
 
 const fn value(name: &'static str, ty: PrimitiveTy) -> PrimitiveParam {
-    param(name, ParamKind::Value, ty, false, false)
+    param(name, ParamKind::Value, ty, None, false)
 }
 
-const fn default(name: &'static str, ty: PrimitiveTy) -> PrimitiveParam {
-    param(name, ParamKind::Value, ty, true, false)
+const fn default(name: &'static str, ty: PrimitiveTy, value: PrimitiveDefault) -> PrimitiveParam {
+    param(name, ParamKind::Value, ty, Some(value), false)
 }
 
 const fn variadic(name: &'static str, ty: PrimitiveTy) -> PrimitiveParam {
-    param(name, ParamKind::Value, ty, false, true)
+    param(name, ParamKind::Value, ty, None, true)
 }
 
 const fn unit(name: &'static str) -> PrimitiveParam {
-    param(name, ParamKind::Unit, PrimitiveTy::None, false, false)
+    param(name, ParamKind::Unit, PrimitiveTy::None, None, false)
 }
 
 const fn category(name: &'static str) -> PrimitiveParam {
-    param(name, ParamKind::Category, PrimitiveTy::None, false, false)
+    param(name, ParamKind::Category, PrimitiveTy::None, None, false)
 }
 
 const fn element(name: &'static str) -> PrimitiveParam {
-    param(name, ParamKind::Element, PrimitiveTy::None, false, false)
+    param(name, ParamKind::Element, PrimitiveTy::None, None, false)
 }
 
 /// The type variables of a primitive, which a call can write: `array.len<f64>(values)`.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Variables {
-    pub(crate) names: &'static [&'static str],
+pub struct Variables {
+    pub names: &'static [&'static str],
     /// They are bound by `Number` (3.5).
-    pub(crate) numbers: bool,
+    pub numbers: bool,
 }
 
 const NO_VARIABLE: Variables = Variables { names: &[], numbers: false };
@@ -146,17 +159,22 @@ const AB_NUMBERS: Variables = Variables { names: &["A", "B"], numbers: true };
 const T: Variables = Variables { names: &["T"], numbers: false };
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Primitive {
-    pub(crate) library: PrimitiveLibrary,
-    pub(crate) name: &'static str,
-    pub(crate) variables: Variables,
-    pub(crate) params: &'static [PrimitiveParam],
+pub struct Primitive {
+    pub library: PrimitiveLibrary,
+    pub name: &'static str,
+    pub variables: Variables,
+    pub params: &'static [PrimitiveParam],
     /// `None` for `core.call`, whose outputs are those of the function it runs.
-    pub(crate) outputs: Option<&'static [&'static str]>,
+    pub outputs: Option<&'static [&'static str]>,
     /// One per output.
-    pub(crate) results: &'static [PrimitiveOutput],
+    pub results: &'static [PrimitiveOutput],
     /// It takes more than its parameters: an input per field of a template (5.4), or those of the function it runs.
-    pub(crate) open: bool,
+    pub open: bool,
+}
+
+/// The primitive of this library and this name, as [`crate::Meaning::Primitive`] names it once resolved.
+pub fn primitive(library: PrimitiveLibrary, name: &str) -> Option<&'static Primitive> {
+    PRIMITIVES.iter().find(|primitive| primitive.library == library && primitive.name == name)
 }
 
 const fn f(
@@ -170,6 +188,7 @@ const fn f(
     Primitive { library, name, variables, params, outputs: Some(outputs), results, open: false }
 }
 
+use PrimitiveDefault::{EmptyText, NoError, ToTheEnd, Zero};
 use PrimitiveLibrary::{Array, Core, Errors, String as Strings, Time, Ui};
 use PrimitiveOutput::{Is, Power, Product, Quotient, Root, Slice, WithUnit};
 use PrimitiveTy::{ArrayOf, Bool, Duration, Error, F32, F64, Function, I32, Rectangle, Rows, Text, Texts, Timestamp, Var};
@@ -185,7 +204,7 @@ const ARRAY: &[&str] = &["array"];
 const ARRAY_ERR: &[&str] = &["array", "err"];
 const ERR: &[&str] = &["err"];
 const VALUE_ERR: &[&str] = &["value", "err"];
-const TEXT_ERR: &[PrimitiveParam] = &[value("text", Text), default("err", Error)];
+const TEXT_ERR: &[PrimitiveParam] = &[value("text", Text), default("err", Error, NoError)];
 const GIVES_V0: &[PrimitiveOutput] = &[Is(V0)];
 const GIVES_BOOL: &[PrimitiveOutput] = &[Is(Bool)];
 const GIVES_F64: &[PrimitiveOutput] = &[Is(F64)];
@@ -193,7 +212,8 @@ const GIVES_I32: &[PrimitiveOutput] = &[Is(I32)];
 const GIVES_ERROR: &[PrimitiveOutput] = &[Is(Error)];
 const GIVES_TEXT: &[PrimitiveOutput] = &[Is(Text)];
 
-pub(crate) const PRIMITIVES: &[Primitive] = &[
+/// Every primitive of the language, in the order of appendix A.
+pub const PRIMITIVES: &[Primitive] = &[
     f(Core, "add", N, SAME_TWICE, RESULT, GIVES_V0),
     f(Core, "sub", N, SAME_TWICE, RESULT, GIVES_V0),
     f(Core, "mul", AB_NUMBERS, &[value("a", V0), value("b", Var(1))], RESULT, &[Product]),
@@ -229,27 +249,27 @@ pub(crate) const PRIMITIVES: &[Primitive] = &[
         open: true,
     },
     f(Array, "len", T, &[value("array", ArrayOf(0))], &["length"], GIVES_I32),
-    f(Array, "get", T, &[value("array", ArrayOf(0)), value("index", I32), default("err", Error)], &["item", "err"], &[Is(V0), Is(Error)]),
+    f(Array, "get", T, &[value("array", ArrayOf(0)), value("index", I32), default("err", Error, NoError)], &["item", "err"], &[Is(V0), Is(Error)]),
     f(
         Array,
         "set",
         T,
-        &[value("array", ArrayOf(0)), value("index", I32), value("item", V0), default("err", Error)],
+        &[value("array", ArrayOf(0)), value("index", I32), value("item", V0), default("err", Error, NoError)],
         ARRAY_ERR,
         &[Is(ArrayOf(0)), Is(Error)],
     ),
     f(Array, "push", T, &[value("array", ArrayOf(0)), value("item", V0)], ARRAY, &[Is(ArrayOf(0))]),
     f(Array, "concat", T, &[variadic("parts", ArrayOf(0))], ARRAY, &[Is(ArrayOf(0))]),
-    f(Array, "repeat", T, &[value("item", V0), value("count", I32), default("err", Error)], ARRAY_ERR, &[Is(ArrayOf(0)), Is(Error)]),
+    f(Array, "repeat", T, &[value("item", V0), value("count", I32), default("err", Error, NoError)], ARRAY_ERR, &[Is(ArrayOf(0)), Is(Error)]),
     f(
         Array,
         "slice",
         T,
-        &[value("array", ArrayOf(0)), default("start", I32), default("length", I32), default("err", Error)],
+        &[value("array", ArrayOf(0)), default("start", I32, Zero), default("length", I32, ToTheEnd), default("err", Error, NoError)],
         ARRAY_ERR,
         &[Slice, Is(Error)],
     ),
-    f(Array, "from_rows", T, &[value("rows", Rows(0)), default("err", Error)], ARRAY_ERR, &[Is(Rectangle(0)), Is(Error)]),
+    f(Array, "from_rows", T, &[value("rows", Rows(0)), default("err", Error, NoError)], ARRAY_ERR, &[Is(Rectangle(0)), Is(Error)]),
     f(Array, "to_rows", T, &[value("array", Rectangle(0))], &["rows"], &[Is(Rows(0))]),
     f(Array, "sum", N, &[value("values", ArrayOf(0))], &["sum"], GIVES_V0),
     f(Strings, "concat", NO_VARIABLE, &[variadic("parts", Text)], &["text"], GIVES_TEXT),
@@ -268,13 +288,13 @@ pub(crate) const PRIMITIVES: &[Primitive] = &[
     f(Strings, "to_i32", NO_VARIABLE, TEXT_ERR, VALUE_ERR, &[Is(I32), Is(Error)]),
     f(Time, "now", NO_VARIABLE, &[], &["timestamp"], &[Is(Timestamp)]),
     f(Time, "elapsed", NO_VARIABLE, &[value("since", Timestamp)], &["duration"], &[Is(Duration)]),
-    f(Time, "wait", NO_VARIABLE, &[value("duration", Duration), default("err", Error)], ERR, GIVES_ERROR),
-    f(Errors, "make", NO_VARIABLE, &[category("category"), default("code", I32), default("message", Text)], ERR, GIVES_ERROR),
+    f(Time, "wait", NO_VARIABLE, &[value("duration", Duration), default("err", Error, NoError)], ERR, GIVES_ERROR),
+    f(Errors, "make", NO_VARIABLE, &[category("category"), default("code", I32, Zero), default("message", Text, EmptyText)], ERR, GIVES_ERROR),
     f(
         Errors,
         "raise_if",
         NO_VARIABLE,
-        &[value("condition", Bool), category("category"), default("message", Text), default("err", Error)],
+        &[value("condition", Bool), category("category"), default("message", Text, EmptyText), default("err", Error, NoError)],
         ERR,
         GIVES_ERROR,
     ),
@@ -381,7 +401,14 @@ mod tests {
             ParamKind::Category => " kind category",
             ParamKind::Element => " kind element",
         };
-        format!("{}{kind}{}{}", param.name, if param.has_default { " =" } else { "" }, if param.variadic { " ..." } else { "" })
+        let default = match param.default {
+            None => "",
+            Some(NoError) => " = none",
+            Some(Zero) => " = 0",
+            Some(EmptyText) => " = \"\"",
+            Some(ToTheEnd) => " = …",
+        };
+        format!("{}{kind}{default}{}", param.name, if param.variadic { " ..." } else { "" })
     }
 
     fn type_text(ty: PrimitiveTy, variables: &[&str]) -> String {
@@ -432,7 +459,8 @@ mod tests {
         let (name, ty) = param.split_once(':').unwrap_or((param, ""));
         let ty = ty.trim();
         let kind = ty.strip_prefix("kind ").map_or(String::new(), |rest| format!(" kind {}", rest.split_whitespace().next().unwrap()));
-        format!("{}{kind}{}{}", name.trim(), if ty.contains('=') { " =" } else { "" }, if ty.ends_with("...") { " ..." } else { "" })
+        let default = ty.split_once('=').map_or(String::new(), |(_, value)| format!(" = {}", value.trim()));
+        format!("{}{kind}{default}{}", name.trim(), if ty.ends_with("...") { " ..." } else { "" })
     }
 
     #[test]

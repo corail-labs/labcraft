@@ -15,18 +15,22 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 
+use labcraft_format::{BodyOrders, canonical_orders};
 use labcraft_graph::{Decl, File, SourceMap};
-use labcraft_types::{CheckCounts, Diagnostic, Interner, Limits, Report, TypeTable};
+use labcraft_types::{CheckCounts, Diagnostic, FileCounts, Interner, Limits, Report, TypeTable};
 
 mod declare;
 mod file_name;
 mod load;
 pub mod manifest;
-mod primitives;
+pub mod primitives;
+mod reach;
 mod resolved;
 
 pub use declare::{DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType};
+pub use reach::{Reach, Unresolved};
 pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};
 
 /// Which rules of `docs/cli.md`, section 3, a library follows when it uses another: a library shipped with LabCraft
@@ -118,11 +122,18 @@ pub struct Checked {
     /// each one once, by `shown`: a dependency says the same whoever reads it.
     pub dependencies: Vec<DependencyReport>,
     pub counts: CheckCounts,
-    /// The files that read, of the folder given and its sub-libraries. Dropping one takes the stack that reading it did.
+    /// The files that read, of the folder given and its sub-libraries, and for a run those of every library it uses. Dropping
+    /// one takes the stack that reading it did.
     pub files: Vec<CheckedFile>,
     pub types: TypeTable,
     /// What each library of the run declares, dependencies included.
     pub libraries: Vec<DeclaredLibrary>,
+    /// For a run, what the bodies of the dependencies say, which the report does not: a run says it only of the files it
+    /// reaches (`docs/cli.md`, 6.1), and `check` never. One report for all of them, bounded as one; its counts by file are
+    /// complete. Empty for a check that is not for a run.
+    pub bodies: Report,
+    /// Made by [`check_for_run`]: the files of every library are in `files`, and [`Checked::reach`] can follow them.
+    pub for_run: bool,
     /// A budget of work or a limit made a pass say less than it would have: past them, what is said can depend on the order of
     /// the lines and entries, which `fmt` changes. Nothing that a user sees; the fuzzing of `check` reads it.
     pub cut_short: bool,
@@ -142,6 +153,14 @@ pub struct CheckedFile {
     pub source_map: SourceMap,
     /// What each path, call and bracket of it means.
     pub resolved: Resolved,
+    /// Its library, by its index in `Checked::libraries`.
+    pub library: u32,
+    /// For a run, the canonical order of every body of its function, found in one walk (spec 5.2): `None` for a type, an
+    /// `extern` declaration, or a check that is not for a run.
+    pub orders: Option<BodyOrders>,
+    /// Its errors and warnings when `check` ended, complete whatever the reports list: what the report says of it, what its
+    /// library says when it is a dependency, and what its body said apart (`Checked::bodies`).
+    pub counts: FileCounts,
 }
 
 /// Checks a folder and its sub-libraries (`docs/cli.md`, section 3). `root` includes its sub-libraries, which are
@@ -149,22 +168,104 @@ pub struct CheckedFile {
 ///
 /// It takes the stack that `format::read` does: see `format::STACK_SIZE`.
 pub fn check(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits) -> Checked {
+    check_with(root, libraries, names, limits, false)
+}
+
+/// What a run needs before it is lowered (`docs/architecture.md`, 10.1): [`check`], and also the bodies of every library
+/// that the folder uses, resolved and typed as the folder is, with the canonical order of every body. What a body of a
+/// dependency says stays apart ([`Checked::bodies`]), for the run that reaches it, so the report says
+/// what [`check`] would. [`Checked::reach`] gives what a run of one function reaches.
+pub fn check_for_run(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits) -> Checked {
+    check_with(root, libraries, names, limits, true)
+}
+
+fn check_with(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits, for_run: bool) -> Checked {
     let mut report = Report::new(limits.max_report);
     let (mut loaded, unreadable) = load::load(root, libraries, names, limits, &mut report);
-    let declared = declare::declare(&mut loaded, libraries, names, limits, &mut report);
+    let mut declared = declare::declare(&mut loaded, libraries, names, limits, &mut report, for_run);
     let dependencies = load::dependency_reports(&mut loaded, unreadable);
     let mut counts = CheckCounts::default();
     let mut files = Vec::new();
-    for (library, resolved) in loaded.into_iter().zip(declared.resolved).filter(|(library, _)| library.checked) {
-        counts.libraries += 1;
-        for (file, resolved) in library.files.into_iter().zip(resolved) {
-            let Some(model) = file.model else { continue };
-            match model.file.decl {
-                Decl::Function(_) | Decl::Extern(_) => counts.functions += 1,
-                Decl::Type(_) => counts.types += 1,
-            }
-            files.push(CheckedFile { shown: file.shown, file: model.file, source_map: model.source_map, resolved });
+    // By library, the index in `files` of each of its files, `None` for one that is not there.
+    let mut places: Vec<Vec<Option<u32>>> = Vec::with_capacity(loaded.len());
+    for (index, (library, resolved)) in loaded.into_iter().zip(declared.resolved).enumerate() {
+        let kept = library.checked || for_run;
+        let mut at = Vec::with_capacity(library.files.len());
+        if library.checked {
+            counts.libraries += 1;
         }
+        let library_index = u32::try_from(index).unwrap_or(u32::MAX);
+        for (file, resolved) in library.files.into_iter().zip(resolved) {
+            let Some(model) = file.model.filter(|_| kept) else {
+                at.push(None);
+                continue;
+            };
+            if library.checked {
+                match model.file.decl {
+                    Decl::Function(_) | Decl::Extern(_) => counts.functions += 1,
+                    Decl::Type(_) => counts.types += 1,
+                }
+            }
+            let orders = match &model.file.decl {
+                Decl::Function(function) if for_run => Some(canonical_orders(&function.body, &function.signature, names)),
+                _ => None,
+            };
+            at.push(u32::try_from(files.len()).ok());
+            files.push(CheckedFile {
+                shown: file.shown,
+                file: model.file,
+                source_map: model.source_map,
+                resolved,
+                library: library_index,
+                orders,
+                counts: FileCounts::default(),
+            });
+        }
+        places.push(at);
     }
-    Checked { report, dependencies, counts, files, types: declared.types, libraries: declared.libraries, cut_short: declared.cut_short }
+    // From the index of a file in its library to its index in `files`.
+    for (library, at) in declared.libraries.iter_mut().zip(&places) {
+        let place = |local: u32| at.get(local as usize).copied().flatten();
+        for function in library.functions.values_mut() {
+            function.file = function.file.and_then(place);
+        }
+        library.type_files = library.type_files.iter().filter_map(|(name, local)| Some((*name, place(*local)?))).collect();
+    }
+    // The counts of each file, from one table of what the dependencies say: looking through each of them for each file
+    // would be quadratic in a run that uses many.
+    let mut said: HashMap<&str, FileCounts> = HashMap::new();
+    for (file, more) in dependencies.iter().flat_map(|dependency| dependency.report.file_counts()).chain(declared.bodies.file_counts()) {
+        add(said.entry(file).or_default(), more);
+    }
+    for file in &mut files {
+        let mut counts = report.counts_of(&file.shown);
+        if let Some(more) = said.get(file.shown.as_str()) {
+            add(&mut counts, *more);
+        }
+        file.counts = counts;
+    }
+    drop(said);
+    Checked {
+        report,
+        dependencies,
+        counts,
+        files,
+        types: declared.types,
+        libraries: declared.libraries,
+        bodies: declared.bodies,
+        for_run,
+        cut_short: declared.cut_short,
+    }
+}
+
+fn add(counts: &mut FileCounts, more: FileCounts) {
+    counts.errors = counts.errors.saturating_add(more.errors);
+    counts.warnings = counts.warnings.saturating_add(more.warnings);
+}
+
+impl Checked {
+    /// [`CheckedFile::counts`] of the file at this index of `files`.
+    pub fn counts_of(&self, file: usize) -> FileCounts {
+        self.files.get(file).map_or_else(FileCounts::default, |file| file.counts)
+    }
 }
