@@ -102,7 +102,7 @@ fn bench() -> (Checked, Interner) {
 }
 
 fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
-    Terminal { name: name.to_owned(), ty, family: Family { base, dimensions: 0 }, unit: None, constant: None, ignored: false }
+    Terminal { name: name.to_owned(), ty, family: Family { base, dimensions: 0 }, unit: None, constant: None, ignored: false, reads: Vec::new() }
 }
 
 /// Notation 3.1: `visa.open` has `resource` and `dmm`, then `timeout` alone, then the pair `err`, `e1`; `scpi.query_f64`
@@ -541,27 +541,32 @@ fn a_call_written_alone_has_the_outputs_of_its_callee() {
     assert_eq!(outputs, [vec![], vec![Base::Number]]);
 }
 
-/// The caption of an arm keeps its number, its head cut to leave room for it.
+/// A `match` unfolded is a frame with its header, cut at 40 cells, and a box per arm titled by its patterns, `_` written
+/// `other` (notation 5.2).
 #[test]
-fn the_caption_of_an_arm_keeps_its_number() {
+fn a_match_is_a_frame_with_its_arms() {
     let main = "labcraft 1\n\nfn main(c: i32) -> (v: f64) {\n    v = match c {\n        1 => yield 1.0\n        _ => yield 2.0\n    }\n}\n";
     let long =
         main.replace("(c: i32)", "(a_very_long_name_for_a_channel_number: i32)").replace("match c", "match a_very_long_name_for_a_channel_number");
     let (checked, names) = checked(&[("main.lcf", &long)]);
     let file = index_of(&checked, "main.lcf");
     let Drawn::Drawing(drawing) = draw(&checked, file, &names, &ViewState::default(), &DiagramLimits::default()) else { panic!() };
-    let captions: Vec<String> = drawing
-        .loose
+    let group = drawing.groups.iter().find(|group| group.node == "v").unwrap();
+    let texts: Vec<String> = group
+        .shapes
         .iter()
         .filter_map(|shape| match shape {
             Shape::Text { runs, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect()),
             _ => None,
         })
         .collect();
-    // `v = match a_very_long_name_for_a_channel_number` is 47 cells; `, arm 1` is 7: the head is cut to 40 - 7 = 33
-    // cells, 32 of its text and `…`.
-    assert_eq!(captions[1], "v = match a_very_long_name_for_a\u{2026}, arm 1");
-    assert_eq!(captions[2], "v = match a_very_long_name_for_a\u{2026}, arm 2");
+    // `match a_very_long_name_for_a_channel_number` is 44 cells: 39 of them and `…`.
+    assert_eq!(texts[0], "match a_very_long_name_for_a_channel_nu\u{2026}");
+    // Each arm a group of its own, `data-arm`, written as its tab (cli.md 7.2).
+    let arms: Vec<&str> = drawing.groups.iter().filter_map(|group| group.arm.as_deref()).collect();
+    assert_eq!(arms, ["1", "other"]);
+    let svg = svg(&drawing, crate::Theme::Light);
+    assert!(svg.contains("<g data-arm=\"1\">") && svg.contains("<g data-arm=\"other\">"));
 }
 
 /// The grid of an icon is a number of the SVG like the others, in its shortest form.
@@ -586,4 +591,157 @@ fn a_value_too_many_for_a_variant_is_drawn() {
     assert!(!checked.report.diagnostics().is_empty());
     let graph = graph(&checked, &names, "main.lcf");
     assert_eq!(graph.nodes[0].inputs.iter().map(|input| input.name.as_str()).collect::<Vec<_>>(), ["0", "1"]);
+}
+
+// Placement (notation 2.1, and the numbers decided at step 3 of M0v: 24 between stacked nodes, 40 above the axis for a
+// column with no node of the chain, a frame at the margin of 16).
+
+fn placed_of(checked: &Checked, names: &Interner, shown: &str) -> std::collections::HashMap<String, crate::Placed> {
+    let Drawn::Drawing(drawing) = draw(checked, index_of(checked, shown), names, &ViewState::default(), &DiagramLimits::default()) else { panic!() };
+    drawing.placed.into_iter().map(|placed| (placed.key.clone(), placed)).collect()
+}
+
+const STEP: &str = "labcraft 1
+
+extern rust(crate: \"labcraft-dev\", function: \"step\")
+fn step(v: f64, err: error = none) -> (w: f64, err: error)
+";
+
+/// A node stands in the column after the last node that feeds it; one fed only by the inputs of the function in the
+/// first; a node with no input just before its leftmost reader, or in the last column when nothing reads it.
+#[test]
+fn a_node_stands_after_what_feeds_it() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.neg(x)\n    k = 2.0\n    b = core.mul(a, k)\n    c = core.abs(x)\n    y = core.add(b, c)\n    z = core.neg(c)\n    u = 5.0\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let columns: Vec<(&str, u32)> = ["a", "k", "b", "c", "y", "z", "u"].iter().map(|key| (*key, placed[*key].column)).collect();
+    assert_eq!(columns, [("a", 0), ("k", 0), ("b", 1), ("c", 0), ("y", 2), ("z", 1), ("u", 2)]);
+}
+
+/// A node with no input whose reader is in the first column opens a column before it.
+#[test]
+fn a_constant_before_the_first_column_opens_one() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    m = 3.0\n    y = core.add(m, x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    assert_eq!((placed["m"].column, placed["y"].column), (0, 1));
+}
+
+/// The error chain on one line: its nodes have their error pair on the axis; the others stand above, 24 apart, and a
+/// column with no node of the chain starts 40 above the axis.
+#[test]
+fn the_error_chain_is_one_straight_line() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64, err: error = none) -> (y: f64, err: error) {\n    a, e1 = step(x, err: err)\n    b, e2 = step(a, err: e1)\n    c = core.neg(x)\n    d = core.add(b, c)\n    y, e3 = step(d, err: e2)\n    err = e3\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("step.lcf", STEP)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let (a, b, y, c, d) = (&placed["a"], &placed["b"], &placed["y"], &placed["c"], &placed["d"]);
+    // `step` is a square as wide as its label, 4 cells at 12 (28.90) and 9 on each side, 46.90 on the grid: 48. Its lines
+    // are 16 apart, the last 8 from the bottom, at 24 and 40: its error pair at 40 from its top.
+    assert_eq!((a.height, b.y, y.y), (4800, a.y, a.y));
+    assert_eq!((a.column, b.column, d.column, y.column), (0, 1, 2, 3));
+    let axis = a.y + 4000;
+    // `c`, a circle of 28, in the column of `a`: 24 above it.
+    assert_eq!(c.y, a.y - 2400 - 2800);
+    // `d` is alone in its column: its bottom 40 above the axis.
+    assert_eq!(d.y + 2800, axis - 4000);
+}
+
+/// A node that the `layout` section places is there, from the top-left corner of the frame of the function; a node
+/// that would cover it moves up out of its way, 24 above it.
+#[test]
+fn a_placed_node_keeps_its_place() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.neg(x)\n    y = core.abs(x)\n}\n\nlayout {\n    node y at (80, 80)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let (a, y) = (&placed["a"], &placed["y"]);
+    // `a` stands in the first column: after the name `x` (one cell at 11, 6.62), 12 before it and 8 after it, the
+    // channel of 48 and the half terminal of 5: 95.62 from the corner of the frame. It reaches over `y`, at 80, so it
+    // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header and its margin (48). The frame
+    // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40.
+    // Across, the margin of 16 is around everything: the terminal of `x` reaches 5 left of the frame, at 21.
+    assert_eq!((y.x, y.y), (2100 + 8000, 4000 + 8000));
+    assert_eq!((a.x, a.y), (2100 + 1200 + 662 + 800 + 4800 + 500, 4000 + 2800));
+}
+
+/// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
+#[test]
+fn the_terminals_of_a_frame_keep_their_order() {
+    let heights = crate::place::resolve(&[Some(-5000), Some(-4900), None, Some(0)], &[false, false, false, true]);
+    // Down: -5000, then -4900 is pushed to -2600, the third goes 24 after it to -200, the last stays on the axis. Up:
+    // -200 rises to -2400, -2600 to -4800, -5000 to -7200.
+    assert_eq!(heights, [-7200, -4800, -2400, 0]);
+}
+
+/// The same file gives the same placement, whatever the order in which names were interned.
+#[test]
+fn placement_does_not_depend_on_the_interner() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64, err: error = none) -> (y: f64, err: error) {\n    a, e1 = step(x, err: err)\n    b, e2 = step(a, err: e1)\n    c = core.neg(x)\n    d = core.add(b, c)\n    y, e3 = step(d, err: e2)\n    err = e3\n}\n";
+    let files = [("main.lcf", main), ("step.lcf", STEP)];
+    let (checked, names) = checked(&files);
+    let mut other = Interner::new();
+    for name in ["zz", "e3", "d", "c", "b", "a", "y", "x"] {
+        other.intern(name);
+    }
+    let checked_other = checked_with(&files, &mut other);
+    let one = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default());
+    let two = draw(&checked_other, index_of(&checked_other, "main.lcf"), &other, &ViewState::default(), &DiagramLimits::default());
+    assert_eq!(one, two);
+}
+
+/// The chain goes through a loop on one straight line: the error register of the loop is on the axis, and the chain
+/// inside goes on along it (notation 2.1, 5.1).
+#[test]
+fn the_chain_goes_straight_through_a_loop() {
+    let main = "labcraft 1\n\nfn main(x: f64, err: error = none) -> (y: f64, err: error) {\n    a, e1 = step(x, err: err)\n    w, e3 = loop\n        carry v = a,\n        carry e = e1\n    {\n        b, e2 = step(v, err: e)\n        next v = b\n        next e = e2\n        until true\n    }\n    y, e4 = step(w, err: e3)\n    err = e4\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("step.lcf", STEP)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let placed = placed_of(&checked, &names, "main.lcf");
+    // Three blocks of `step`, 48 high, their error pair 40 from their top: one line, one top.
+    assert_eq!((placed["w/b"].y, placed["y"].y), (placed["a"].y, placed["a"].y));
+}
+
+/// The last arm of a `match` is on the axis: the error enters and leaves the `match` on that line, even when only an
+/// arm above reads it, so that the chain around stays straight (notation 5.2).
+#[test]
+fn the_chain_goes_straight_through_a_match() {
+    let main = "labcraft 1\n\nfn main(x: f64, c: i32, err: error = none) -> (z: f64, err: error) {\n    a, e0 = step(x, err: err)\n    y, e = match c {\n        1 => {\n            v, e1 = step(a, err: e0)\n            yield (v, e1)\n        }\n        _ => yield (a, none)\n    }\n    z, e9 = step(y, err: e)\n    err = e9\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("step.lcf", STEP)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let placed = placed_of(&checked, &names, "main.lcf");
+    assert_eq!(placed["z"].y, placed["a"].y);
+}
+
+/// Two arms can each have a line of one name: the arm is part of what follows a node (notation 2.1).
+#[test]
+fn a_node_is_followed_by_its_arm() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64, c: i32) -> (y: f64) {\n    y = match c {\n        1 => {\n            v = core.neg(x)\n            yield v\n        }\n        _ => {\n            v = core.abs(x)\n            yield v\n        }\n    }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    assert!(placed.contains_key("y:1/v") && placed.contains_key("y:2/v"), "{:?}", placed.keys().collect::<Vec<_>>());
+}
+
+/// A value that is also the selector enters by the selector, which serves as its notch: one wire outside (notation 5).
+#[test]
+fn the_selector_is_the_notch_of_its_value() {
+    let main = "labcraft 1\n\nfn main(c: i32) -> (y: i32) {\n    y = match c {\n        1 => yield c\n        _ => yield 0\n    }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let graph = graph(&checked, &names, "main.lcf");
+    assert_eq!(graph.nodes[0].inputs.len(), 1);
+    // Outside, one wire: from the input `c` of the function to the selector.
+    assert_eq!(graph.bodies[0].wires.len(), 2, "{:?}", graph.bodies[0].wires);
+}
+
+/// `LC7002` counts the notches: an input of the structure for each outer value, and a notch in each arm that reads it.
+#[test]
+fn the_notches_are_terminals() {
+    let main = "labcraft 1\n\nfn main(a: f64, b: f64, c: i32) -> (y: f64) {\n    y = match c {\n        1 => yield a\n        2 => yield b\n        _ => yield a\n    }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let file = &checked.files[index_of(&checked, "main.lcf")];
+    let function = function_of(file).unwrap();
+    let orders = orders_of(file, function, &names);
+    // The `match`: its selector and its output, 2; `a` and `b` enter it, 2 inputs; `a` has a notch in two arms, `b` in
+    // one, 3: 7 in all.
+    assert!(Builder::new(&checked, file, &names).graph(function, &orders, 6).is_err());
+    assert!(Builder::new(&checked, file, &names).graph(function, &orders, 7).is_ok());
 }

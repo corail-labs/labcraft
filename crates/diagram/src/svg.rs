@@ -114,10 +114,19 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
     }
     for group in &drawing.groups {
         out.push_str("<g");
-        attribute("data-node", &group.node, &mut out);
-        out.push_str("><title>");
-        escape(&group.title, &mut out);
-        out.push_str("</title>\n");
+        match &group.arm {
+            // A branch of a `match` or a `handle`, written as its tab (cli.md 7.2).
+            Some(arm) => {
+                attribute("data-arm", arm, &mut out);
+                out.push_str(">\n");
+            }
+            None => {
+                attribute("data-node", &group.node, &mut out);
+                out.push_str("><title>");
+                escape(&group.title, &mut out);
+                out.push_str("</title>\n");
+            }
+        }
         for shape in &group.shapes {
             write_shape(shape, &icons, &mut out);
         }

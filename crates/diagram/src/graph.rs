@@ -7,12 +7,17 @@ use std::rc::Rc;
 
 use labcraft_check::primitives::{ParamKind, primitive};
 use labcraft_check::{Checked, CheckedFile, DeclaredLibrary, Meaning, PrimitiveLibrary, Resolved, Terminal as Wiring, read_escapes};
-use labcraft_format::{BodyOrders, canonical_orders, write_line, write_operand};
-use labcraft_graph::{Arg, Body, Call, Decl, File, Function, Icon, LayoutKind, Operand, Rhs, Statement, StatementKind, StructLit, Target, View};
+use labcraft_format::{BodyOrders, canonical_orders, write_operand};
+use labcraft_graph::{
+    Arg, Body, Call, Decl, File, Function, Icon, Id, LayoutKind, Numeral, NumeralKind, Operand, Rhs, Signature, Statement, StatementKind, StructLit,
+    Target, View,
+};
 use labcraft_types::{Interner, LibraryId, Name, Ty, TyId, TypeTable, cut_text};
 
 /// How many bytes of a constant are written before it is cut: far more than the 40 cells a pill shows.
 const CONSTANT_BYTES: usize = 1024;
+
+mod flow;
 
 /// The family of a terminal, which its shape tells (notation 4.1). An array is the family of its element, with its
 /// dimensions.
@@ -34,10 +39,13 @@ pub enum Base {
     Function,
     /// A type that an error left unknown, or a type variable.
     Unknown,
+    /// An order wire (`after:`), which carries no value.
+    Order,
 }
 
 impl Family {
-    const ERROR: Family = Family { base: Base::Error, dimensions: 0 };
+    pub const ERROR: Family = Family { base: Base::Error, dimensions: 0 };
+    pub const ORDER: Family = Family { base: Base::Order, dimensions: 0 };
 
     /// The families whose input and output share a line when a node passes them through (notation 3.1).
     pub fn passes_through(self) -> bool {
@@ -58,6 +66,9 @@ pub struct Terminal {
     pub constant: Option<String>,
     /// An output that the line binds to `_` has no wire (notation 3.1).
     pub ignored: bool,
+    /// What an input reads: the paths of its operand that read a value, each the end of a wire, with the name that the
+    /// wire bears (`step.low`).
+    pub reads: Vec<(Id, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,8 +84,95 @@ pub enum Kind<'a> {
     Ui { operation: String, element: String },
     /// A named constant, or a construction whose fields are all constants, folded (notation 3.1).
     Constant { name: String, value: String },
-    /// A `loop`, a `for`, a `match` or a `handle`: counted, and drawn with placement (step 3).
-    Structure,
+    /// A `loop`, a `for`, a `match` or a `handle`: a frame around its bodies (notation 5).
+    Structure(Structure),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StructureKind {
+    Loop,
+    For,
+    Match,
+    Handle,
+}
+
+/// A structure: its header, and which terminal of its bodies each of its own terminals is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Structure {
+    pub kind: StructureKind,
+    /// The keyword of the text: `loop`, `for x in readings`, `match state`, `handle e6` (notation 5).
+    pub header: String,
+    /// `continue_on_error`, a badge in the header (notation 5.1).
+    pub badge: Option<&'static str>,
+    /// `for parallel`: a double frame (notation 5.1).
+    pub parallel: bool,
+    /// For each input of the node, its terminals on the left of its bodies (a register, an `in`, a notch), as the
+    /// index of the body among the node's bodies and the index of the terminal: only the bodies that have one, so that
+    /// a `match` of many arms costs its notches, not its inputs times its arms. Its outputs are the first terminals on
+    /// the right of each body, in order.
+    pub inputs_at: Vec<Vec<(usize, usize)>>,
+    /// The error pair of the structure, by its input and its output (notation 2.1).
+    pub pair: Option<(usize, usize)>,
+}
+
+/// What a terminal of the frame of a body is (notation 2, 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edge {
+    /// An input or an output of the function.
+    Input,
+    Output,
+    /// A `carry`: its box on the left (the current value) and on the right (`next`).
+    Register,
+    /// `x in values`: `]▸`.
+    In,
+    /// An outer value read inside, where its wire crosses the edge.
+    Notch,
+    /// A value that the pattern of an arm binds.
+    Bound,
+    Collect,
+    Until,
+    Yield,
+}
+
+/// A terminal of the frame of a body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrameTerminal {
+    pub terminal: Terminal,
+    pub edge: Edge,
+}
+
+/// A place on the edges of a frame, from the top: a register has a box on each side at one height (notation 5.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Slot {
+    pub left: Option<usize>,
+    pub right: Option<usize>,
+}
+
+/// Where a wire starts or ends, in the body that holds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum End {
+    /// A terminal of a node: an output where a wire starts, an input where it ends.
+    Node {
+        node: usize,
+        terminal: usize,
+    },
+    /// The order terminal of a node (`after:`), or the node itself where an order wire starts.
+    Order(usize),
+    /// A terminal of the frame of the body, on its left or its right edge.
+    Left(usize),
+    Right(usize),
+}
+
+/// A wire within one body: a value from outside a structure has one wire per frame it crosses (spec 11).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Wire {
+    pub from: End,
+    pub to: End,
+    pub family: Family,
+    /// The value it carries, as the diagram writes it on the wire: `dmm`, `step.low`.
+    pub name: String,
+    /// Where a line reads it, for a wire into a node.
+    pub read: Option<Id>,
 }
 
 /// The glyph of a primitive drawn as a circle (notation 3.2, closed list).
@@ -93,6 +191,17 @@ pub struct Node<'a> {
     pub kind: Kind<'a>,
     /// As the terminals of `docs/cli.md`, 4.3 name it: the name of its line, `#label`, or `@12`.
     pub key: String,
+    /// What follows it across a change of the file (notation 2.1): the body that holds it, then the name that
+    /// designates it in the `layout` section, or its rank among the nodes with no name of its body.
+    pub stable: String,
+    /// The index of the body that holds it, in `Graph::bodies`.
+    pub body: usize,
+    /// Its line.
+    pub statement: Id,
+    /// The bodies of a structure, in `Graph::bodies`: one, or one per arm.
+    pub bodies: Vec<usize>,
+    /// Where the `layout` section puts it, in hundredths, from the top-left corner of the frame that holds it.
+    pub at: Option<(i64, i64)>,
     /// `#close`, drawn above the node.
     pub label: Option<String>,
     pub always: bool,
@@ -105,14 +214,28 @@ pub struct Node<'a> {
     pub hidden: u32,
 }
 
-/// A body: the function's, or one that a structure holds, with what the drawing names it until it is placed.
+/// A body: the function's, or one that a structure holds, with its frame and its wires.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BodyOf {
+    /// The title of its frame: the name of the function, or the patterns of an arm; none for a loop body, whose frame
+    /// is the structure's.
     pub caption: String,
-    /// The number of its arm, from 1, written after the caption, which is cut so that it stays.
+    /// The number of its arm, from 0.
     pub arm: Option<usize>,
     /// Indices in `Graph::nodes`, in canonical order.
     pub nodes: Vec<usize>,
+    /// The structure that holds it.
+    pub owner: Option<usize>,
+    /// What its nodes are followed by (notation 2.1): empty for the function.
+    pub key: String,
+    pub left: Vec<FrameTerminal>,
+    pub right: Vec<FrameTerminal>,
+    /// The places of its terminals, from the top, in lists that are placed together: one list for both edges of a loop,
+    /// whose registers have a box on each, one per edge otherwise.
+    pub slots: Vec<Vec<Slot>>,
+    /// Where the error chain enters and leaves the body: a terminal on the left and one on the right (notation 2.1).
+    pub pair: (Option<usize>, Option<usize>),
+    pub wires: Vec<Wire>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -260,10 +383,12 @@ impl<'a> Builder<'a> {
         cut_text(self.names.resolve(name)).into_owned()
     }
 
-    /// The graph of a function with no body: an `extern` declaration.
-    pub fn empty(&self, name: Name) -> Graph<'a> {
+    /// The graph of a function with no body: an `extern` declaration, a frame with its terminals.
+    pub fn empty(&self, name: Name, signature: &Signature) -> Graph<'a> {
         let function = self.qualified(name);
-        Graph { bodies: vec![BodyOf { caption: function.clone(), arm: None, nodes: Vec::new() }], function, nodes: Vec::new() }
+        let mut body = self.function_frame(function.clone(), signature);
+        flow::finish_frame(&mut body, None);
+        Graph { bodies: vec![body], function, nodes: Vec::new() }
     }
 
     /// From the root, as `run` names it.
@@ -278,52 +403,104 @@ impl<'a> Builder<'a> {
     /// The graph, unless its terminals pass `max_terminals`: then what was counted when building stopped.
     pub fn graph(&mut self, function: &'a Function, orders: &BodyOrders, max_terminals: u64) -> Result<Graph<'a>, TooLarge> {
         let mut graph = Graph { function: self.qualified(function.name), bodies: Vec::new(), nodes: Vec::new() };
-        let standard = self.standard_nodes(&self.file.file);
+        let entries = self.layout_entries(&self.file.file);
         let mut counts = Counts::default();
-        // The head of a structure, written once for all its arms.
-        let mut heads: HashMap<labcraft_graph::Id, String> = HashMap::new();
-        for (owner, arm, body, order) in bodies(function, orders) {
-            let caption = match owner {
-                None => graph.function.clone(),
-                Some(statement) => heads.entry(statement.id).or_insert_with(|| head(statement, self.names)).clone(),
-            };
-            let mut nodes = Vec::new();
-            for &index in &order {
-                let Some(statement) = body.statements.get(index) else { continue };
-                if let Some(mut node) = self.node(statement) {
-                    node.standard = self.designated(statement, &standard);
-                    counts.nodes = counts.nodes.saturating_add(1);
-                    counts.terminals = counts.terminals.saturating_add((node.inputs.len() + node.outputs.len()) as u64);
-                    if counts.terminals > max_terminals {
-                        return Err(TooLarge(counts));
+        let mut flow = flow::Flow::default();
+        let walked = bodies(function, orders);
+        for (owner, arm, body, order) in &walked {
+            let index = graph.bodies.len();
+            let mut frame = match owner {
+                None => self.function_frame(graph.function.clone(), &function.signature),
+                Some(statement) => {
+                    let Some(&node) = flow.statement_node.get(&statement.id) else { continue };
+                    // An arm is part of what follows a node: two arms can each have a line of one name.
+                    let key = graph.nodes.get(node).map(|node| node.stable.clone()).unwrap_or_default();
+                    let key = match arm {
+                        Some(number) => format!("{key}:{}", number + 1),
+                        None => key,
+                    };
+                    let mut frame = self.structure_frame(statement, *arm, body, key);
+                    frame.owner = Some(node);
+                    if let Some(node) = graph.nodes.get_mut(node) {
+                        node.bodies.push(index);
                     }
-                    nodes.push(graph.nodes.len());
-                    graph.nodes.push(node);
+                    frame
                 }
+            };
+            let mut unnamed = 0usize;
+            for &line in order {
+                let Some(statement) = body.statements.get(line) else { continue };
+                let Some(mut node) = self.node(statement) else { continue };
+                node.body = index;
+                let designation = match (statement.label, first_name(statement)) {
+                    (Some(label), _) => format!("#{}", self.text(label.name)),
+                    (None, Some(name)) => self.text(name),
+                    (None, None) => {
+                        unnamed += 1;
+                        format!("~{unnamed}")
+                    }
+                };
+                node.stable = if frame.key.is_empty() { designation } else { format!("{}/{designation}", frame.key) };
+                counts.nodes = counts.nodes.saturating_add(1);
+                counts.terminals = counts.terminals.saturating_add((node.inputs.len() + node.outputs.len()) as u64);
+                if counts.terminals > max_terminals {
+                    return Err(TooLarge(counts));
+                }
+                let at = graph.nodes.len();
+                flow.statement_node.insert(statement.id, at);
+                if let Some(label) = statement.label {
+                    flow.label_node.insert(label.id, at);
+                }
+                if let Some(designation) = designation_of(statement) {
+                    flow.designations.entry(designation).or_default().push(at);
+                }
+                frame.nodes.push(at);
+                graph.nodes.push(node);
             }
-            graph.bodies.push(BodyOf { caption, arm: arm.map(|number| number + 1), nodes });
+            graph.bodies.push(frame);
         }
+        // A `node` entry designates a node only when it names one (spec 11): one that names several gives `LC5006`.
+        for ((is_label, name), (at, standard)) in entries {
+            let Some(&[node]) = flow.designations.get(&(is_label, name)).map(Vec::as_slice) else { continue };
+            if let Some(node) = graph.nodes.get_mut(node) {
+                node.at = at;
+                node.standard = standard;
+            }
+        }
+        self.wires(&mut graph, &walked, &mut flow, &mut counts, max_terminals)?;
+        for body in &mut graph.bodies {
+            let owner = body.owner.and_then(|owner| graph.nodes.get(owner)).and_then(|node| match &node.kind {
+                Kind::Structure(structure) => Some(structure.kind),
+                _ => None,
+            });
+            flow::finish_frame(body, owner);
+        }
+        flow::structure_pairs(&mut graph, &flow);
         Ok(graph)
     }
 
-    /// The nodes that the `layout` section shows in standard view, by how it designates them (spec 11): by label, and
-    /// by the name of a line.
-    fn standard_nodes(&self, file: &File) -> HashSet<(bool, Name)> {
-        let Some(layout) = &file.layout else { return HashSet::new() };
+    /// The entries of the `layout` section that place a node or set its view, by how they designate it (spec 11): a
+    /// position in hundredths, from the top-left corner of the frame that holds the node.
+    fn layout_entries(&self, file: &File) -> Vec<(Designation, Entry)> {
+        let Some(layout) = &file.layout else { return Vec::new() };
+        let coordinate = |numeral: &Numeral| -> Option<i64> {
+            let NumeralKind::Int(text) = numeral.kind else { return None };
+            let value = i64::from(labcraft_format::coordinate_value(self.names.resolve(text))?);
+            Some(if numeral.negative { -value } else { value } * 100)
+        };
+        let mut seen = HashSet::new();
         layout
             .items
             .iter()
             .filter_map(|item| match &item.kind {
-                LayoutKind::Node { node, view: Some(View::Standard), .. } => Some((node.is_label, node.name)),
+                // A second entry for one node is `LC5007`: the first one counts.
+                LayoutKind::Node { node, at, view } if seen.insert((node.is_label, node.name)) => {
+                    let at = at.as_ref().and_then(|point| Some((coordinate(&point.x)?, coordinate(&point.y)?)));
+                    Some(((node.is_label, node.name), (at, *view == Some(View::Standard))))
+                }
                 _ => None,
             })
             .collect()
-    }
-
-    /// Spec 11: by its label, or by the name of its line.
-    fn designated(&self, statement: &Statement, standard: &HashSet<(bool, Name)>) -> bool {
-        statement.label.is_some_and(|label| standard.contains(&(true, label.name)))
-            || first_name(statement).is_some_and(|name| standard.contains(&(false, name)))
     }
 
     /// `docs/cli.md`, 4.3: the name of its line, its label, or `@12`.
@@ -353,7 +530,10 @@ impl<'a> Builder<'a> {
                     (kind, Vec::new(), vec![self.output_of(targets, 0, "value")], 0, false, false)
                 }
                 Rhs::Operand(_) => return None,
-                Rhs::Loop(_) | Rhs::For(_) | Rhs::Match(_) | Rhs::Handle(_) => (Kind::Structure, Vec::new(), Vec::new(), 0, false, false),
+                Rhs::Loop(_) | Rhs::For(_) | Rhs::Match(_) | Rhs::Handle(_) => {
+                    let (kind, inputs, outputs) = self.structure(value, targets);
+                    (kind, inputs, outputs, 0, false, false)
+                }
             },
             StatementKind::Call(call) => {
                 let call = self.call(call, statement, &[]);
@@ -364,6 +544,11 @@ impl<'a> Builder<'a> {
         Some(Node {
             kind,
             key: self.key(statement),
+            stable: String::new(),
+            body: 0,
+            statement: statement.id,
+            bodies: Vec::new(),
+            at: None,
             label: statement.label.map(|label| format!("#{}", self.text(label.name))),
             always,
             after,
@@ -393,7 +578,15 @@ impl<'a> Builder<'a> {
     }
 
     fn terminal(&self, name: String, ty: TyId, constant: Option<String>, ignored: bool) -> Terminal {
-        Terminal { name, ty, family: family(self.types(), &self.checked.libraries, ty), unit: unit(self.types(), ty), constant, ignored }
+        Terminal {
+            name,
+            ty,
+            family: family(self.types(), &self.checked.libraries, ty),
+            unit: unit(self.types(), ty),
+            constant,
+            ignored,
+            reads: Vec::new(),
+        }
     }
 
     /// A call: its kind, its inputs and outputs in signature order, the unwired optional inputs, `always`, `after:`.
@@ -613,7 +806,29 @@ impl<'a> Builder<'a> {
             },
             _ => Some(self.constant_text(operand)),
         };
-        self.terminal(name, ty, constant, false)
+        let mut terminal = self.terminal(name, ty, constant, false);
+        terminal.reads = self.reads(operand);
+        terminal
+    }
+
+    /// The paths of an operand that read a value: a wire each.
+    fn reads(&self, operand: &Operand) -> Vec<(Id, String)> {
+        let mut found = Vec::new();
+        let mut stack = vec![operand];
+        while let Some(operand) = stack.pop() {
+            match operand {
+                Operand::Path(path) if matches!(self.resolved().of(path.id), Meaning::Value(_)) => {
+                    found.push((path.id, cut_text(&path_text(path, self.names)).into_owned()));
+                }
+                Operand::Bracket(id, _) if matches!(self.resolved().of(*id), Meaning::ArrayOfValue(_)) => {
+                    let text = write_operand(operand, self.names, CONSTANT_BYTES);
+                    found.push((*id, cut_text(text.trim_start_matches('[').trim_end_matches(']')).into_owned()));
+                }
+                Operand::Array(_, values) => stack.extend(values.iter().rev()),
+                _ => {}
+            }
+        }
+        found
     }
 
     /// An inline constant as the text writes it: a string in quotes with its escapes read, which the drawing shows by
@@ -687,12 +902,6 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// The head of a structure as the text writes it, without its `{`: `measured = match in_range`.
-fn head(statement: &Statement, names: &Interner) -> String {
-    let line = write_line(statement, names);
-    cut_text(line.trim_end_matches('{').trim_end()).into_owned()
-}
-
 /// A parameter of what a call calls: whether it has a default, whether it is a wire at all (not a unit, a category or an
 /// element), and its type when the signature gives one that does not depend on the call.
 struct Param {
@@ -700,6 +909,19 @@ struct Param {
     has_default: bool,
     is_wire: bool,
     ty: Option<TyId>,
+}
+
+/// How the `layout` section designates a node: by its label (`true`), or by the name of its line.
+type Designation = (bool, Name);
+/// What a `node` entry gives: a position, and whether the node is in standard view.
+type Entry = (Option<(i64, i64)>, bool);
+
+/// How the `layout` section designates the node of a line (spec 11): by its label, or by the name of its line.
+fn designation_of(statement: &Statement) -> Option<(bool, Name)> {
+    match statement.label {
+        Some(label) => Some((true, label.name)),
+        None => first_name(statement).map(|name| (false, name)),
+    }
 }
 
 /// The first name that a line binds: the name of its line (spec 5.2).

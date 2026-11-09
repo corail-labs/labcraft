@@ -25,6 +25,7 @@ commands:
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt and check of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
   wasm      format, check, trace and ir build for wasm32-unknown-unknown, and the harness passes there
+  figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
 ";
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
         Some("unicode") => unicode::generate(&root()),
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
+        Some("figures") => figures(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
@@ -92,6 +94,39 @@ fn bounds() -> Result<(), String> {
         "every_case_stays_within_the_bounds",
         "--nocapture",
     ])
+}
+
+/// The figures of the viewer (`docs/visual-notation.md`, 2.1 and 7), on standard output and nothing else, so that CI can
+/// add them to its summary: the test writes its table to a file, its own output goes to standard error.
+fn figures() -> Result<(), String> {
+    let path = root().join("target").join("figures.md");
+    let args = [
+        "test",
+        "--locked",
+        "--release",
+        "--package",
+        "labcraft-harness",
+        "--test",
+        "figures",
+        "--",
+        "--ignored",
+        "--exact",
+        "the_figures_of_the_examples",
+    ];
+    let what = format!("cargo {}", args.join(" "));
+    // A table left by an earlier run is never printed for this one.
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    eprintln!("$ {what}");
+    let output = cargo().args(args).env("LABCRAFT_FIGURES", &path).stderr(Stdio::inherit()).output().map_err(|error| format!("{what}: {error}"))?;
+    eprint!("{}", String::from_utf8_lossy(&output.stdout));
+    if !output.status.success() {
+        return Err(format!("{what}: {}", output.status));
+    }
+    let table = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    print!("{table}");
+    Ok(())
 }
 
 fn check_layers() -> Result<(), String> {
