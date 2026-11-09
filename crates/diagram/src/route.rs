@@ -104,6 +104,9 @@ struct NetPlan {
     drops: BTreeMap<usize, Option<usize>>,
 }
 
+/// A wire that goes back: the wire, its track, its vertical up and down, the net it joins.
+type Back = (usize, i64, Option<usize>, Option<usize>, Option<usize>);
+
 /// The plan of a body: how many slots each channel holds, how far the tracks go, and each net.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Plan {
@@ -116,8 +119,9 @@ pub struct Plan {
     nets: Vec<NetPlan>,
     /// Wires that go back to the left (a body that cannot be ordered, a position of the file): each up a vertical in the
     /// channel after its source, along a track over the columns from its reader to its source, and down a vertical in
-    /// the channel before its reader. By wire: the track, and the two verticals.
-    back: Vec<(usize, i64, Option<usize>, Option<usize>)>,
+    /// the channel before its reader. By wire: the track, the two verticals, and the net of its value when it has one,
+    /// which it joins.
+    back: Vec<Back>,
     /// The wires that go back, before they have their track.
     back_wires: Vec<usize>,
     /// Wires with waypoints, each routed through them on its own.
@@ -297,7 +301,7 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         let track = limit.min(ends.from.y - CLEAR).min(ends.to.approach - CLEAR);
         above.update(start, end, track);
         plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
-        plan.back.push((wire, track, None, None));
+        plan.back.push((wire, track, None, None, None));
     }
     // The verticals of each net.
     for (index, net) in nets.iter_mut().enumerate() {
@@ -323,12 +327,17 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
             net.drops.insert(column, made);
         }
     }
-    // The verticals of the wires that go back, each a net of its own.
+    // The verticals of the wires that go back: of the net of their value when it reads on to the right, so that the two
+    // share their start; of a net of their own otherwise.
+    let net_of: std::collections::HashMap<End, usize> =
+        nets.iter().enumerate().filter_map(|(index, net)| Some((body.sources.get(*net.wires.first()?)?.0, index))).collect();
     let first_back = nets.len();
     for (index, entry) in plan.back.iter_mut().enumerate() {
         let Some(ends) = body.ends.get(entry.0).copied().flatten() else { continue };
-        entry.2 = vertical(&mut plan.verticals, first_back + index, ends.from_column + 1, ends.from.y, &[entry.1]);
-        entry.3 = vertical(&mut plan.verticals, first_back + index, ends.to_column, entry.1, &[ends.to.approach]);
+        entry.4 = body.sources.get(entry.0).and_then(|(source, _)| net_of.get(source)).copied();
+        let net = entry.4.unwrap_or(first_back + index);
+        entry.2 = vertical(&mut plan.verticals, net, ends.from_column + 1, ends.from.y, &[entry.1]);
+        entry.3 = vertical(&mut plan.verticals, net, ends.to_column, entry.1, &[ends.to.approach]);
     }
     plan.nets = nets;
     jogs(&mut plan, channels, body.axis);
@@ -702,7 +711,7 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: true });
     }
     // Back to the left: up in the channel after the source, over the columns, down in the channel before the reader.
-    for &(wire, over, up, down) in &plan.back {
+    for &(wire, over, up, down, joins) in &plan.back {
         let Some(found) = ends.get(wire).copied().flatten() else { continue };
         let (from, to) = (found.from, found.to);
         let mut points = vec![(from.x, from.y)];
@@ -720,7 +729,17 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         }
         tail(&to, &mut points);
         let right = found.to_column == plan.slots.len().saturating_sub(1);
-        routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false });
+        match joins.and_then(|net| routed.get_mut(net)) {
+            Some(net) => {
+                net.wires.push(wire);
+                net.branches.push(simplify(points));
+                net.right.push(right);
+                net.junctions = junctions(&net.branches);
+            }
+            None => {
+                routed.push(Routed { wires: vec![wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: false })
+            }
+        }
     }
     routed
 }

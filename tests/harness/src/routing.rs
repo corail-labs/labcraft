@@ -274,10 +274,12 @@ mod tests {
 
     /// Programs that the review of M0v step 4 built to break the rules (`tests/harness/routing-cases/`): two values
     /// swapped between two calls, a cycle of three constraints in a channel, one in a loop, an order wire from a label,
-    /// an `after:` on the top edge of a labelled block. Each is drawn in both views and checked.
+    /// an `after:` on the top edge of a labelled block; and one that the fuzzing found, a node that reads its own error,
+    /// read on to the right too. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
+    /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 7] = [
+        const CASES: [(&str, &str); 8] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -285,6 +287,7 @@ mod tests {
             ("cycle_in_loop.lcf", include_str!("../routing-cases/cycle_in_loop.lcf")),
             ("order_from_label.lcf", include_str!("../routing-cases/order_from_label.lcf")),
             ("after_on_labelled.lcf", include_str!("../routing-cases/after_on_labelled.lcf")),
+            ("self_loop.lcf", include_str!("../routing-cases/self_loop.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {
@@ -292,9 +295,6 @@ mod tests {
         }
         let mut names = Interner::new();
         let checked = check(root, &Nothing, &mut names, &Limits::default());
-        // Warnings are what the generator left (an error wired nowhere); none is an error.
-        let errors: Vec<_> = checked.report.diagnostics().iter().filter(|found| found.severity() == labcraft_types::Severity::Error).collect();
-        assert!(errors.is_empty(), "{errors:?}");
         let mut faults = Vec::new();
         for (index, file) in checked.files.iter().enumerate() {
             for standard_everywhere in [false, true] {

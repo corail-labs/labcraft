@@ -1,0 +1,8 @@
+labcraft 1
+
+fn self_loop(x: f64, err: error = none) -> (y: f64, err: error) {
+    a, e1 = s(x, err: err)
+    b, e2 = s(a, err: e2)
+    y, e3 = s(b, err: e2)
+    err = e3
+}
