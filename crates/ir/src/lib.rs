@@ -30,12 +30,12 @@ mod tests;
 mod verify;
 
 pub use constant::{ConversionError, apply_scale, nanoseconds, scale_between};
-pub use lower::{LowerError, lower};
+pub use lower::{LowerError, MAX_RUN_PASSED_IN, MAX_RUN_TERMINALS, Refused, RunCount, lower, lower_for_run};
 pub use print::{print, print_function};
 pub use verify::{Violation, verify};
 
 /// The version of the IR that this crate makes (`docs/ir.md`, section 9).
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// A function of a [`Program`], by its index in `functions`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -483,8 +483,16 @@ pub enum ConstValue {
     },
     /// The default of an opaque type, on which the functions of its library fail (7.2).
     InvalidHandle,
+    /// Nanoseconds since 1970-01-01T00:00:00Z, where the clock of a deterministic run starts: the default of a `timestamp` is
+    /// 0 (Q-21, decision of the owner, 2026-11-10).
+    Timestamp(i64),
+    /// The default of a function type (Q-21, decision of the owner, 2026-11-10): a call of it runs nothing and fails. Its
+    /// outputs take these defaults, those of the outputs of its type, and an output of type `error` the error.
+    InvalidFunction {
+        defaults: Vec<ConstId>,
+    },
     /// The `length` of `array.slice` with no wire: it reaches the end of the array.
     ToTheEnd,
-    /// A default that Q-21 has not settled: a `timestamp`, a function reference.
+    /// A default that Q-21 has not settled: a `queue<T>`, a `ref<T>` (M2).
     Unsettled,
 }

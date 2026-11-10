@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check_for_run};
 use labcraft_types::{Interner, Limits};
 
-use crate::{ConstValue, NodeKind, Program, Source, lower, print_function, verify};
+use crate::{ConstValue, NodeKind, Program, Refused, RunCount, Source, lower, print_function, verify};
 
 struct Nothing;
 
@@ -843,4 +843,41 @@ fn q(x: f64, err: error = none) -> (y: f64, err: error)
     let program = lower(&checked, start, &mut names).unwrap();
     let crate::Body::Region(region) = &program.functions[0].body else { panic!("no region") };
     assert_eq!((counted, region.terminals()), (21, 21));
+}
+
+/// Counted by hand: `top` makes two calls of `mid`, each with one input and one output, 2 × 2; `mid` makes one call of
+/// `core.add`, two inputs and an output, 3. `mid` is lowered once: 7 terminals in all, and no structure passes anything in.
+/// The run is counted function by function, `top` first: 4, then 7.
+#[test]
+fn a_run_is_refused_past_its_bound_before_it_is_lowered_whole() {
+    let top = "labcraft 1
+
+fn top(x: f64) -> (y: f64) {
+    a = mid(x)
+    y = mid(a)
+}
+";
+    let mid = "labcraft 1
+
+use core
+
+fn mid(x: f64) -> (z: f64) {
+    z = core.add(x, 1.0)
+}
+";
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    for (shown, text) in [("top.lcf", top), ("mid.lcf", mid)] {
+        root.files.push(SourceFile { shown: shown.to_owned(), content: Content::Bytes(Cow::Owned(text.as_bytes().to_vec())) });
+    }
+    let mut names = Interner::new();
+    let checked = check_for_run(root, &Nothing, &mut names, &Limits::default());
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let start = checked.files.iter().position(|file| file.shown == "top.lcf").unwrap();
+    assert!(crate::lower::lower_within(&checked, start, &mut names, 7, 0).is_ok());
+    let refused = crate::lower::lower_within(&checked, start, &mut names, 6, 0);
+    let Err(Refused::TooLarge { count, counted, limit }) = refused else { panic!("not refused") };
+    assert_eq!((count, counted, limit), (RunCount::Terminals, 7, 6));
+    let refused = crate::lower::lower_within(&checked, start, &mut names, 3, 0);
+    let Err(Refused::TooLarge { counted, .. }) = refused else { panic!("not refused") };
+    assert_eq!(counted, 4, "stops at `top`, before `mid`");
 }

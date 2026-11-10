@@ -198,10 +198,13 @@ pub fn constant(env: Env<'_>, id: ConstId) -> Result<Value, Fault> {
             index: *variant,
             values: values.iter().map(|value| constant(env, *value)).collect::<Result<Vec<_>, _>>()?.into(),
         })),
-        ConstValue::Function(_) | ConstValue::Primitive { .. } => Value::Function(id),
+        ConstValue::Function(_) | ConstValue::Primitive { .. } | ConstValue::InvalidFunction { .. } => Value::Function(id),
         ConstValue::InvalidHandle => Value::Handle(Handle::INVALID),
+        ConstValue::Timestamp(ns) => Value::Timestamp(*ns),
         ConstValue::ToTheEnd => Value::ToTheEnd,
-        ConstValue::Unsettled => return Err(Fault::bug(format!("constant {} is a default that Q-21 has not settled", id.0))),
+        ConstValue::Unsettled => {
+            return Err(Fault::bug(format!("constant {} is a default that Q-21 has not settled: a queue or a reference (M2)", id.0)));
+        }
     })
 }
 

@@ -175,6 +175,7 @@ name = "labcraft-runtime"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+ "labcraft-graph",
  "labcraft-ir",
  "labcraft-trace",
  "labcraft-types",
