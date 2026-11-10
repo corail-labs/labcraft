@@ -777,10 +777,10 @@ where it is written: `engine` and the app decide.
 
 ### 10.8 `engine` (L6)
 
-*Status: implemented without runs (step 6a): the registry, the session, the commands of commands.md 6 but `run.*`,
-`diagram.svg`, `view.*` and `guide.read`, which are registered as `planned` (6b, M0v and step 9; decisions of the owner,
-2026-11-10), the kept check, `engine::Workspace` with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask
-commands`.*
+*Status: implemented (steps 6a and 6b): the registry, the session, the commands of commands.md 6 but
+`run.set_element`, `diagram.svg`, `view.*` and `guide.read`, which are registered as `planned` (step 8, M0v and step 9;
+decisions of the owner, 2026-11-10), the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
+with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask commands`.*
 
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
 
@@ -808,11 +808,42 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   in 2.7 s, reading included; reusing the work library by library waits for a measure that asks for it, with a test
   against a full check. The first check of the root runs on a thread of its own when the session starts, but in WASM,
   where the first command that needs it makes it.
-- **Runs** are long commands (commands.md 4): `run.start` starts one on a thread of its own and returns its report, or
-  `running` after `wait`; one run at a time per session; the last 16 reports are kept. **A caller waits on the run, not
-  in the session**: `run.wait`, and `run.start` until its `wait`, block the thread of their caller on the run's own
-  channel, so the session goes on answering, and `run.abort` reaches the run while another caller waits for it. `run.abort`, `run.set_element`
-  (real time only) and Ctrl-C reach the scheduler through a channel.
+- **Runs** are long commands (commands.md 4), in `engine::runs`: `run.start` judges the run on the caller's thread
+  (`prepare`: the parameters, the folder checked for a run, the function, the arguments, the settings, the simulation
+  file), then runs it on a thread of `format::STACK_SIZE` and returns its report, or `running` after `wait`; one run at a
+  time per session; the last 16 reports are kept. **A caller waits on the run, not in the session**: the runs are an
+  `engine::Runs`, shared, which `Session::runs` hands out, and `Runs::execute` answers `run.wait`, `run.status`,
+  `run.abort` and `run.trace` without the session, so the MCP server (10.9) answers them while another request holds it.
+  A waiter blocks on the condition of the runs; `run.abort`, and later `run.set_element` and Ctrl-C, reach the scheduler
+  through `runtime::run::Control`, which also asks the run where it is (`wants_progress`, `progress`): the scheduler
+  writes the `running` report, with its clock and its loops, only when someone waits for it. A run is going from the
+  moment its id is given, so `run.abort` reaches it while it is judged, and it never outlives its session: dropping the
+  session aborts it (commands.md 4). The kept reports are held as text. The app gives the real clock
+  (`engine::Clock`; `engine::Still` in tests, whose reports say `real_ms: 0`) and the id of the process, which names the
+  `.partial` of a trace.
+- **What a run is given** is converted by `engine::runs::convert` (cli.md 6.3, 6.4), a value read against its type as a
+  literal is: a number reads once in the kind of its type and converts as a wire does, through `ir::literal_number`, so
+  an argument has the bits of the literal it would be. `args` take the JSON form exactly (decision of the owner, 2026-11-10): a number
+  without a unit is a JSON number, but for `nan`, `inf`, `-inf` and a wide integer written as digits. The arguments and
+  the settings are judged on the lowered program, each problem at its name; when `check` refuses the run, it is not
+  lowered, and the arguments are judged against the signature that `check` found, without a position, so that one report
+  still gives every problem (cli.md 6.1, step 2), but the settings, which need the panel as lowering settles it, are not
+  judged. Every problem is found before the report is written: the codes of
+  cli.md 6.6, said as JSON, out of the enumeration `Code` (decision of the owner, 2026-11-10).
+- **The report** is written by `runtime::report`, which takes the `check` and the trace as parts that give way
+  (`runtime::report::Part`), in the order of commands.md 2: the values of the outputs first, then the diagnostics,
+  warnings before errors, then the commands of instruments and the logs, then the events of an inline trace.
+- **The trace** of `trace: file` goes to `<file>.<process>-<session>-<run>.partial` as the run goes, `<file>` being
+  `.labcraft/runs/<function>.trace.jsonl`, or `.labcraft/runs/<folder>/<function>.trace.jsonl` for a folder that is not
+  the root (decision of the owner, 2026-11-10), through `Workspace::create`, then is renamed over the last trace; the
+  session is numbered in its process, so two sessions never write one `.partial`. `.labcraft/.gitignore` is written when
+  `.labcraft` is made. A folder of traces that a link leads elsewhere is refused, for writing and for `run.trace`
+  (commands.md 2), and the report says so in `trace.error`. A run removes the `.partial` of its function that its own
+  session left; those of a process that
+  no longer runs wait for `labcraft-cli run` (step 7), which can tell (decision of the owner, 2026-11-10). `run.trace`
+  reads a trace through `Workspace::open`, one pass a page, keeping each `call` by its place in the file. The first line
+  names the files of the folder and of the shipped libraries that the run reaches; a file of a `--lib-path` library is
+  not named yet.
 - **Files** are reached through `engine::Workspace`, which the app implements: the disk with atomic writes for the CLI
   (`labcraft_cli::disk::Disk`), memory for tests and the web viewer (`engine::Memory`, with files, folders and links).
   So principle 1 holds: only an app touches the file system. Its operations are those of a walk, with the meaning of
@@ -827,7 +858,9 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
 - **The state of the viewer** (the folder open, the function shown, the view state that the file does not hold, the
   preference of the standard view, the trace shown) is held by the session too, and the `view.*` commands change it;
   the app reads it each frame, as in the Craft apps. M0v writes that part (`engine::view`, section 11).
-- **`engine` builds for `wasm32-unknown-unknown`** without runs, whose commands are not enabled there: the web viewer
+- **`engine` builds for `wasm32-unknown-unknown`**, where the commands of runs are not enabled, having no threads (D-22);
+  `engine::run_to_end` runs one there on the caller's thread, the same judging, run and report, which the corpus of runs
+  uses in WASM (decision of the owner, 2026-11-10). The web viewer
   runs a session in a worker and sends it commands as an id and parameters in JSON, so the boundary of the worker is
   that of the commands, and a trap restarts the worker with a new session. On the desktop, the session runs on a
   thread of `format::STACK_SIZE`, and the interface sends it commands through a channel.
@@ -847,7 +880,9 @@ headless in M0b. The instructions it gives point to `guide.read`.
 
 ### 10.10 `labcraft-cli`
 
-It gains `run` (cli.md 6) and `mcp`, both through `engine`. It implements `Workspace` and the real `Clock`, gives the
+It gains `run` (cli.md 6) and `mcp`, both through `engine`. It implements `Workspace` and the real `Clock`
+(`engine::Clock`), gives the id of its process, which names the `.partial` of a trace, and tells `engine` whether the
+process that left another `.partial` still runs (step 7; decision of the owner, 2026-11-10). It gives the
 session the native crates it links (`labcraft-visa`, `labcraft-results-log`), and turns Ctrl-C into an abort, a second
 one into the end of the grace period (cli.md 6.5), through the `ctrlc` crate. `run` is not in the WASM build of M0
 (D-22); the deterministic part of `runtime` still builds for `wasm32-unknown-unknown`, which `cargo xtask wasm`
@@ -875,9 +910,10 @@ The corpus starts with step 5b (decisions of the owner, 2026-11-10): scenario 1 
 scenario 3 on `two_benches`, one case for each fault of `LC80` that a deterministic run reaches, and runs refused by
 `check` or by the simulation file. A case is `run.json`, the parameters of `run.start` (commands.md 6.4), so that `engine`
 runs it as it is, and `expected.json`, the parts of the report it asserts. The values of noisy quantities are exact, given
-by `tests/acceptance/runs/noise.py`, written from libs/visa/simulation.md alone. `tests/harness` runs the corpus natively
-and in WASM, converting arguments and settings for the types the cases use until `engine` brings the converter of cli.md
-6.3, with `LC8101` to `LC8108`; `tools/lcf-poc/tests/test_runs.py` runs it through the proof of concept, which skips the
+by `tests/acceptance/runs/noise.py`, written from libs/visa/simulation.md alone. Its paths are those of `run.start`, from the
+root of the project, which is the repository (decision of the owner, 2026-11-10). `tests/harness` gives each `run.json`
+to `run.start` unchanged, on a session of `engine` on the repository in memory, natively through the command and in WASM
+through `engine::run_to_end`; `tools/lcf-poc/tests/test_runs.py` runs it through the proof of concept, which skips the
 cases of `poc-later.txt`, rules it does not follow, and must still give them a report.
 
 Each step of work ends with something testable:
@@ -899,7 +935,8 @@ Each step of work ends with something testable:
    xtask commands`. `fmt` and `check` move behind it. In two halves (decision of the owner, 2026-11-10): **6a**, the
    session, the registry, the workspace, the commands without runs, `cargo xtask commands`, the command line on `engine`,
    *done* (section 10.8); **6b**, runs as tasks, the converter of arguments of cli.md 6.3 (`LC8101` to `LC8108`), the
-   diagnostics of a report cut before its values, and the corpus of runs started through `engine` as it is.
+   diagnostics of a report cut before its values, and the corpus of runs started through `engine` as it is, *done*
+   (section 10.8).
 7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.
 8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2.
 9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.

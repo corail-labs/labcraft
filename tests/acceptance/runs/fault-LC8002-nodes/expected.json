@@ -5,7 +5,7 @@
   "fault": {
     "code": "LC8002",
     "function": "spin",
-    "file": "spin.lcf"
+    "file": "tests/acceptance/runs/fault-LC8002-nodes/spin.lcf"
   },
   "clock": {
     "simulated_ms": 0.0

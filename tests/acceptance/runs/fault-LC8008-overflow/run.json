@@ -1,4 +1,4 @@
 {
   "function": "overflow",
-  "folder": "."
+  "folder": "tests/acceptance/runs/fault-LC8008-overflow"
 }

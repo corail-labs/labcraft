@@ -127,7 +127,7 @@ fn digits_of(text: &str) -> String {
 
 /// A number literal written in the unit `written`, in the type it reaches: read once in the kind of that type, then
 /// converted as a wire would convert it (spec 3.3, 3.4). `check` accepted it, so what does not fit is a bug.
-pub(crate) fn literal_number(numeral: Numeral, written: &Unit, target: &Ty, names: &Interner) -> Result<ConstValue, ConversionError> {
+pub fn literal_number(numeral: Numeral, written: &Unit, target: &Ty, names: &Interner) -> Result<ConstValue, ConversionError> {
     match target {
         // In its own unit, it is read once in the kind it goes to. Otherwise it is read as an `f64`, then converted, and rounded
         // to its kind once: `1e39 mV` is an `f32[V]` of 1e36, which an `f32[mV]` could not hold (3.4).

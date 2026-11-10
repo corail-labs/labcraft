@@ -383,7 +383,7 @@ fn catalog() -> Vec<Command> {
             ],
             effects: &[Effect::Instruments, Effect::Run],
             long: true,
-            planned: Some("M0b, step 6b (runs as tasks)"),
+            planned: None,
         },
         Command {
             id: "run.wait",
@@ -401,7 +401,7 @@ fn catalog() -> Vec<Command> {
             errors: RUN_ERRORS,
             effects: &[],
             long: false,
-            planned: Some("M0b, step 6b (runs as tasks)"),
+            planned: None,
         },
         Command {
             id: "run.status",
@@ -413,7 +413,7 @@ fn catalog() -> Vec<Command> {
             errors: RUN_ERRORS,
             effects: &[],
             long: false,
-            planned: Some("M0b, step 6b (runs as tasks)"),
+            planned: None,
         },
         Command {
             id: "run.set_element",
@@ -444,7 +444,7 @@ fn catalog() -> Vec<Command> {
             errors: RUN_ERRORS,
             effects: &[Effect::Run],
             long: false,
-            planned: Some("M0b, step 6b (runs as tasks)"),
+            planned: None,
         },
         Command {
             id: "run.trace",
@@ -455,6 +455,7 @@ fn catalog() -> Vec<Command> {
                 &[
                     ("run", string(run)),
                     ("function", string("The last trace of this function, in place of `run`.")),
+                    ("folder", string("The folder `function` was run from; the root by default.")),
                     ("frame", integer("Only the events of this frame.", 0, u64::from(u32::MAX), None)),
                     ("node", string("Only the events of the nodes of this name.")),
                     (
@@ -466,11 +467,11 @@ fn catalog() -> Vec<Command> {
                 ],
                 &[],
             ),
-            result: "a small object: `header`, `events`, `next`",
+            result: "a small object: `file`, `header`, `calls`, `events`, `next`, and `truncated` when the page was cut",
             errors: RUN_ERRORS,
             effects: &[],
             long: false,
-            planned: Some("M0b, step 6b (runs as tasks)"),
+            planned: None,
         },
         // 6.5 Diagrams and the viewer
         Command {

@@ -1,5 +1,8 @@
 {
   "function": "check_voltage",
-  "folder": "../../../../examples",
-  "sim": "./broken.toml"
+  "folder": "examples",
+  "sim": "tests/acceptance/runs/refused-a-simulation-file-not-toml/broken.toml",
+  "args": {
+    "resource": "SIM::DMM0"
+  }
 }

@@ -1,4 +1,4 @@
 {
   "function": "power",
-  "folder": "."
+  "folder": "tests/acceptance/runs/refused-a-type-error"
 }

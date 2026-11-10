@@ -9,7 +9,7 @@ use labcraft_ir::{Program, lower_for_run};
 use labcraft_trace::{Header, WriteLimits};
 use labcraft_types::{Interner, Limits};
 
-use super::{RESULT_MAX, ReportOf, refused, report};
+use super::{RESULT_MAX, ReportOf, Whole, refused, report};
 use crate::convert::Env;
 use crate::run::{Control, Run, RunEnd, Settings, Unobserved, run};
 use crate::trace::TraceObserver;
@@ -44,7 +44,8 @@ fn checked(files: &[(&str, &str)], names: &mut Interner) -> (Checked, Program) {
 }
 
 fn report_of(end: &RunEnd, checked: &Checked, program: &Program, names: &Interner) -> String {
-    let of = ReportOf { run: "r1", program, names, files: &checked.files, natives: &[], real_ms: 0, check: "{}", trace: None, limit: RESULT_MAX };
+    let of =
+        ReportOf { run: "r1", program, names, files: &checked.files, natives: &[], real_ms: 0, check: &Whole("{}"), trace: None, limit: RESULT_MAX };
     report(end, &of)
 }
 
@@ -112,8 +113,17 @@ fn a_report_stays_within_its_bound() {
     let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs, settings: Settings::default() };
     let end = run(given, &mut Still, &mut Unobserved);
     let limit = 1 << 20;
-    let of =
-        ReportOf { run: "r1", program: &program, names: &names, files: &checked.files, natives: &[], real_ms: 0, check: "{}", trace: None, limit };
+    let of = ReportOf {
+        run: "r1",
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        real_ms: 0,
+        check: &Whole("{}"),
+        trace: None,
+        limit,
+    };
     let text = report(&end, &of);
     assert!(text.len() <= limit, "{} bytes", text.len());
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -138,8 +148,17 @@ fn a_report_of_many_outputs_counts_those_that_do_not_fit() {
         Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs: vec![Value::I8(0)], settings: Settings::default() };
     let end = run(given, &mut Still, &mut Unobserved);
     let limit = 64 << 10;
-    let of =
-        ReportOf { run: "r1", program: &program, names: &names, files: &checked.files, natives: &[], real_ms: 0, check: "{}", trace: None, limit };
+    let of = ReportOf {
+        run: "r1",
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        real_ms: 0,
+        check: &Whole("{}"),
+        trace: None,
+        limit,
+    };
     let text = report(&end, &of);
     assert!(text.len() <= limit, "{} bytes", text.len());
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -224,4 +243,52 @@ fn the_trace_gives_the_iteration_of_each_node_in_a_loop() {
     assert_eq!(*lines.last().unwrap(), format!(r#"{{"seq":{},"t_ms":0.0,"event":"end","status":"ok"}}"#, lines.len() - 1));
     assert_eq!(traced.events, lines.len() as u64 - 1);
     assert!(!traced.truncated && traced.error.is_none());
+}
+
+/// A `check` of many diagnostics, which gives them up to fit, as `engine` writes it.
+struct Diagnostics(usize);
+
+impl super::Part for Diagnostics {
+    fn least(&self) -> String {
+        "{\"summary\":{},\"diagnostics\":[]}".to_owned()
+    }
+
+    fn within(&self, bytes: usize) -> (String, bool) {
+        let one = "{\"code\":\"LC2001\"},";
+        let fit = (bytes.saturating_sub(self.least().len()) / one.len()).min(self.0);
+        let listed = one.repeat(fit);
+        (format!("{{\"summary\":{{}},\"diagnostics\":[{}]}}", listed.trim_end_matches(',')), fit < self.0)
+    }
+}
+
+/// commands.md 2: the diagnostics give way before the values of the outputs. A value of about 30 KB and 100,000
+/// diagnostics of 18 bytes, within 64 KiB: the value stays whole, the diagnostics take what is left.
+#[test]
+fn the_diagnostics_give_way_before_the_values() {
+    let source = "labcraft 1\n\nuse array\n\nfn f(s: string) -> (a: [string], err: error) {\n    a, err = array.repeat(s, 30)\n}\n";
+    let mut names = Interner::new();
+    let (checked, program) = checked(&[("f.lcf", source)], &mut names);
+    let inputs = vec![Value::string("x".repeat(990))];
+    let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs, settings: Settings::default() };
+    let end = run(given, &mut Still, &mut Unobserved);
+    let limit = 64 << 10;
+    let diagnostics = Diagnostics(100_000);
+    let of = ReportOf {
+        run: "r1",
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        real_ms: 0,
+        check: &diagnostics,
+        trace: None,
+        limit,
+    };
+    let text = report(&end, &of);
+    assert!(text.len() <= limit, "{} bytes", text.len());
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(json["outputs"][0]["value"].as_array().map(Vec::len), Some(30), "the value is whole");
+    let listed = json["check"]["diagnostics"].as_array().unwrap().len();
+    assert!(listed > 1000 && listed < 100_000, "{listed}");
+    assert_eq!(json["truncated"], true);
 }

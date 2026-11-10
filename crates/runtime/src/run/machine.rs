@@ -13,7 +13,9 @@ use labcraft_types::{Interner, Name, Ty};
 use super::memory::{Memory, NODE_COST};
 use super::plan::Plan;
 use super::position::{Pos, child, compare, root};
-use super::{AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, LoopAt, Observer, Outputs, Resource, Run, RunEnd, SetBy, Settings, Status};
+use super::{
+    AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, LoopAt, Observer, Outputs, Progress, Resource, Run, RunEnd, SetBy, Settings, Status,
+};
 use crate::convert::{Env, constant, read};
 use crate::fault::{Fault, FaultCode};
 use crate::json::Describe;
@@ -469,6 +471,10 @@ impl<'p, 'o> Machine<'p, 'o> {
             if let Some(by) = self.control.abort() {
                 self.abort(by);
                 return Ok(());
+            }
+            if self.control.wants_progress() {
+                let progress = Progress { clock: self.now, opened: self.opened.len(), loops: self.loops_going() };
+                self.control.progress(progress);
             }
             if let Some(ticket) = self.ready.pop() {
                 self.check_real_time(&ticket)?;

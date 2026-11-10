@@ -9,7 +9,7 @@ use std::ffi::OsString;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use labcraft_check::{Checked, Content, DependencyReport, Found as FoundLibrary, Libraries, LibrarySource, Origin, SourceFile, check};
+use labcraft_check::{Checked, Content, DependencyReport, Found as FoundLibrary, Libraries, LibrarySource, Origin, SourceFile, check, check_for_run};
 use labcraft_types::{CheckCounts, Code, Diagnostic, Interner, Limits, Report, Severity, normalize};
 
 use crate::kept::Seen;
@@ -84,6 +84,84 @@ pub fn check_folders_keeping(ws: &dyn Workspace, shipped: &Shipped, given: &Fold
         }
     }
     FoldersChecked { report, counts, checked: kept, seen: seen.into_inner() }
+}
+
+/// What a run checks before it is lowered (`docs/cli.md`, 6.1): the folder, as `library.check` checks it, and the bodies of
+/// every library it uses (`check::check_for_run`).
+pub struct RunChecked {
+    /// The report of the folder, what its walk and its dependencies said included; the bodies of the dependencies stay in
+    /// `Checked::bodies`, for the run that reaches them.
+    pub report: Report,
+    pub counts: CheckCounts,
+    /// `None` when the folder holds nothing to check, or `check` met a bug, which the report says.
+    pub checked: Option<(Checked, Interner)>,
+    /// The SHA-256 of the bytes of each file of the folder that read, by how reports show it, for the first line of a
+    /// trace (commands.md 8).
+    pub hashes: Vec<(String, String)>,
+}
+
+/// Checks one folder for a run, its paths shown from `current`.
+pub fn check_folder_for_run(
+    ws: &dyn Workspace,
+    shipped: &Shipped,
+    folder: &Path,
+    lib_paths: &[PathBuf],
+    current: &Path,
+    limits: &Limits,
+) -> RunChecked {
+    let folders = [folder.to_path_buf()];
+    let mut walked = walk::walk(ws, &folders, Some(current), limits);
+    let in_the_walk: HashSet<PathBuf> = if lib_paths.is_empty() {
+        HashSet::new()
+    } else {
+        walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect()
+    };
+    let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
+    let lib_paths = readable_lib_paths(ws, &folders, lib_paths, Some(current), &mut report);
+    let host = Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current: Some(current), limits, seen: None };
+    let mut counts = CheckCounts::default();
+    let mut checked = None;
+    let mut hashes = Vec::new();
+    for root in roots(ws, &folders, Some(current)) {
+        let Some(source) = library_of(ws, &root.real, &root.shown, &mut walked, limits, None) else { continue };
+        hash_files(&source, &mut hashes);
+        let work = || {
+            let mut names = Interner::new();
+            let mut found = check_for_run(source, &host, &mut names, limits);
+            let report = std::mem::replace(&mut found.report, Report::for_limits(limits));
+            let dependencies = std::mem::take(&mut found.dependencies);
+            (report, found.counts, dependencies, (found, names))
+        };
+        match panic::catch_unwind(AssertUnwindSafe(work)) {
+            Ok((folder_report, folder_counts, dependencies, found)) => {
+                report.merge(folder_report);
+                counts.libraries += folder_counts.libraries;
+                counts.functions += folder_counts.functions;
+                counts.types += folder_counts.types;
+                for DependencyReport { report: dependency, .. } in dependencies {
+                    report.merge(dependency);
+                }
+                checked = Some(found);
+            }
+            Err(_) => {
+                let message = format!("internal error, which is a bug of the tool: {}", last_panic());
+                report.push(Diagnostic::new(Code::Lc0099, message, root.shown.as_str()));
+            }
+        }
+    }
+    RunChecked { report, counts, checked, hashes }
+}
+
+fn hash_files(source: &LibrarySource, hashes: &mut Vec<(String, String)>) {
+    let mut pending = vec![source];
+    while let Some(library) = pending.pop() {
+        for file in &library.files {
+            if let Content::Bytes(bytes) = &file.content {
+                hashes.push((file.shown.clone(), labcraft_trace::sha256_hex(bytes)));
+            }
+        }
+        pending.extend(&library.sub_libraries);
+    }
 }
 
 /// A folder given with nothing around it among those given. One inside another is one of its sub-libraries.

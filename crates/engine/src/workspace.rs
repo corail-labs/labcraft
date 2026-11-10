@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// What a path names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,13 +66,49 @@ pub trait Workspace: Send + Sync {
     fn create_folders(&self, path: &Path) -> io::Result<()>;
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn remove_file(&self, path: &Path) -> io::Result<()>;
+    /// Creates a file, or empties it, to write as it goes: the `.partial` of a trace, which can be followed while a run
+    /// writes it (`docs/commands.md`, section 8). Not atomic. Its folder exists.
+    fn create(&self, _path: &Path) -> io::Result<Box<dyn io::Write + Send>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+    /// Opens a file to read from `offset` as it goes, a trace of 256 MiB being read in pieces; on Windows, so that it can be
+    /// replaced while it is open (commands.md 8).
+    fn open(&self, _path: &Path, _offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
 }
 
 /// A file system in memory, for tests and for the web viewer, with the meaning of the disk: files, folders and links,
 /// whose names are compared exactly. Paths are absolute from `/`; the current folder is `/`, or the one given.
 #[derive(Debug, Default)]
 pub struct Memory {
-    nodes: Mutex<Nodes>,
+    nodes: Arc<Mutex<Nodes>>,
+}
+
+/// A file of [`Memory`] written as it goes: each write lands at once, so that a reader sees it.
+struct MemoryFile {
+    nodes: Arc<Mutex<Nodes>>,
+    path: PathBuf,
+}
+
+impl io::Write for MemoryFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut nodes = self.nodes.lock().unwrap_or_else(PoisonError::into_inner);
+        nodes.clock += 1;
+        let clock = nodes.clock;
+        match nodes.by_path.get_mut(&self.path) {
+            Some(Node::File { bytes, modified, .. }) => {
+                bytes.extend_from_slice(buf);
+                *modified = clock;
+                Ok(buf.len())
+            }
+            _ => Err(not_found()),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -378,6 +414,25 @@ impl Workspace for Memory {
         }
         nodes.by_path.remove(&real);
         Ok(())
+    }
+
+    fn create(&self, path: &Path) -> io::Result<Box<dyn io::Write + Send>> {
+        self.write(path, b"")?;
+        let real = self.lock().resolve(path)?;
+        Ok(Box::new(MemoryFile { nodes: Arc::clone(&self.nodes), path: real }))
+    }
+
+    fn open(&self, path: &Path, offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        let nodes = self.lock();
+        let real = nodes.resolve(path)?;
+        match nodes.by_path.get(&real) {
+            Some(Node::File { bytes, .. }) => {
+                let from = usize::try_from(offset).unwrap_or(usize::MAX).min(bytes.len());
+                Ok(Box::new(io::Cursor::new(bytes.get(from..).unwrap_or_default().to_vec())))
+            }
+            Some(_) => Err(io::Error::other("is a directory")),
+            None => Err(not_found()),
+        }
     }
 }
 

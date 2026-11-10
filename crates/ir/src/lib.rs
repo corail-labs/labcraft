@@ -29,7 +29,7 @@ mod print;
 mod tests;
 mod verify;
 
-pub use constant::{ConversionError, apply_scale, nanoseconds, scale_between};
+pub use constant::{ConversionError, apply_scale, literal_number, nanoseconds, scale_between};
 pub use lower::{LowerError, MAX_RUN_PASSED_IN, MAX_RUN_TERMINALS, Refused, RunCount, lower, lower_for_run};
 pub use print::{print, print_function};
 pub use verify::{Violation, verify};

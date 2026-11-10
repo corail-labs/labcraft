@@ -1,5 +1,5 @@
 {
   "function": "two_benches",
-  "folder": "../../../../examples",
-  "sim": "../../../../libs/visa/sim/two-dmm.toml"
+  "folder": "examples",
+  "sim": "<labcraft>/visa/sim/two-dmm.toml"
 }

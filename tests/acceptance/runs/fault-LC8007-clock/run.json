@@ -1,4 +1,4 @@
 {
   "function": "forever",
-  "folder": "."
+  "folder": "tests/acceptance/runs/fault-LC8007-clock"
 }

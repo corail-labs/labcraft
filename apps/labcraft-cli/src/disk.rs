@@ -86,4 +86,19 @@ impl Workspace for Disk {
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         fs::remove_file(path)
     }
+
+    fn create(&self, path: &Path) -> io::Result<Box<dyn io::Write + Send>> {
+        Ok(Box::new(File::create(path)?))
+    }
+
+    fn open(&self, path: &Path, offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        // So that a run can rename its trace over the one being read (commands.md 8): read, write and delete shared.
+        #[cfg(windows)]
+        std::os::windows::fs::OpenOptionsExt::share_mode(&mut options, 0x7);
+        let mut file = options.open(path)?;
+        io::Seek::seek(&mut file, io::SeekFrom::Start(offset))?;
+        Ok(Box::new(file))
+    }
 }

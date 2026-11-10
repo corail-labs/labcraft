@@ -1,5 +1,5 @@
 {
   "function": "fill",
-  "folder": ".",
+  "folder": "tests/acceptance/runs/fault-LC8005-memory",
   "max_memory": 1048576
 }

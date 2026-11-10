@@ -138,6 +138,8 @@ fn session_on(ws: Arc<dyn Workspace>) -> Session {
         limits: Limits::default(),
         shipped: Shipped::default(),
         natives: vec![Arc::new(Fake)],
+        clock: Arc::new(crate::Still),
+        process: 0,
     };
     Session::new(ws, config, false).unwrap()
 }
@@ -227,6 +229,8 @@ fn a_library_under_lib_path_that_appears_or_changes_is_seen() {
         limits: Limits::default(),
         shipped: Shipped::default(),
         natives: vec![Arc::new(Fake)],
+        clock: Arc::new(crate::Still),
+        process: 0,
     };
     let mut session = Session::new(counting.clone(), config, false).unwrap();
     let missing = ok(&mut session, "library.check", json!({}));
@@ -387,12 +391,14 @@ fn an_unknown_command_or_parameter_names_the_nearest() {
 #[test]
 fn a_planned_command_is_listed_greyed_with_its_reason_and_refused() {
     let (mut session, _) = session();
-    let refused = error(&mut session, "run.start", json!({ "function": "double" }));
+    let refused = error(&mut session, "run.set_element", json!({ "element": "stop", "value": true }));
     assert_eq!(refused.code, "command.not_enabled");
-    assert!(refused.message.contains("step 6b"), "{}", refused.message);
+    assert!(refused.message.contains("step 8"), "{}", refused.message);
     let listed = ok(&mut session, "commands.list", json!({ "filter": "run." }));
-    let start = &listed["commands"][0];
-    assert_eq!((start["id"].as_str(), start["enabled"].as_bool(), start["long"].as_bool()), (Some("run.start"), Some(false), Some(true)));
+    let commands = listed["commands"].as_array().unwrap();
+    let of = |id: &str| commands.iter().find(|command| command["id"] == id).unwrap();
+    assert_eq!((of("run.start")["enabled"].as_bool(), of("run.start")["long"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(of("run.set_element")["enabled"], false);
     let described = ok(&mut session, "commands.describe", json!({ "id": "file.write" }));
     assert_eq!(described["enabled"], true);
     assert_eq!(described["effects"], json!(["files"]));

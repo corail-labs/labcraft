@@ -150,6 +150,11 @@ impl Params {
         self.values.get(name).filter(|value| !value.is_null())
     }
 
+    /// Whether the call gave `null` for the parameter: `max_iterations: null` removes the default (commands.md 6.4).
+    pub fn is_null(&self, name: &str) -> bool {
+        self.values.get(name).is_some_and(Value::is_null)
+    }
+
     pub fn str(&self, name: &str) -> Option<&str> {
         self.get(name).and_then(Value::as_str)
     }

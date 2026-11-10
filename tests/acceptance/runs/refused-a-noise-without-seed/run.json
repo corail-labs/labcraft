@@ -1,5 +1,8 @@
 {
   "function": "check_voltage",
-  "folder": "../../../../examples",
-  "sim": "./noise.toml"
+  "folder": "examples",
+  "sim": "tests/acceptance/runs/refused-a-noise-without-seed/noise.toml",
+  "args": {
+    "resource": "SIM::DMM0"
+  }
 }

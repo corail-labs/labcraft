@@ -306,7 +306,7 @@ How the session keeps its checks is written in the architecture of M0b (section 
 | `run.status` | *`run`* | The report so far, at once: `running` with the clock and where each loop is, or the final report |
 | `run.set_element` | *`run`*, `element`, `value` | Sets a panel element of the running top-level function (spec 10, Q-20), in real time only: in deterministic mode the time a call arrives would date the change, and a run would no longer replay, so a change is given to `run.start` by `set`, at its time on the simulated clock, and this command is not enabled. The element and its value follow the rules of `--set` (cli.md, section 6.4); the change is seen by the reads that start after it. The run is going, so a setting that `--set` would refuse is a command error, `params.invalid`, whose `message` gives the code of cli.md, section 6.6 (`LC8108`, `LC8104`…), and the run goes on |
 | `run.abort` | *`run`* | Aborts the run (spec 8.2) and returns its final report, status `aborted`. A run that has already ended is left as it is, and its final report is returned with its own status (section 4) |
-| `run.trace` | *`run`* or *`function`*, *`frame`*, *`node`*, *`event`*, *`from`* (1), *`limit`* (500) | Reads the trace written by a run (section 8), in pages: the events from number `from` that match the filters, at most `limit` (at most 2,000 *proposed*), with the first line of the trace, the `call` events of the frames they belong to, so that every value decodes, and `next`, the number to give as `from` for the next page, or `null`. `run` reads the trace of that run, or the one going; `function`, the last trace of that function; neither, the run of the session. `node` keeps the events of the nodes of that name, `frame` those of one frame, `event` those of one kind. A run with `trace: none`, or whose trace is no longer the last of its function, gives `run.unknown` with the reason |
+| `run.trace` | *`run`* or *`function`*, *`folder`* (the root), *`frame`*, *`node`*, *`event`*, *`from`* (1), *`limit`* (500) | Reads the trace written by a run (section 8), in pages: the events from number `from` that match the filters, at most `limit` (at most 2,000 *proposed*), with the first line of the trace, the `call` events of the frames they belong to, so that every value decodes, and `next`, the number to give as `from` for the next page, or `null`. `run` reads the trace of that run, or the one going; `function`, the last trace of that function run from `folder`; neither, the run of the session. `node` keeps the events of the nodes of that name, `frame` those of one frame, `event` those of one kind. A run with `trace: none`, or whose trace is no longer the last of its function, gives `run.unknown` with the reason |
 
 `run.trace` is how an agent debugs a run without reading the whole trace, which can reach 256 MiB:
 "what did `raw` bind in each iteration" is one call with `node: "raw"`. It reads the same file as the
@@ -321,10 +321,11 @@ section 1). `schedule_seed` is a number, or a string of digits beyond 2^53−1. 
 written once, in [cli.md](cli.md), section 6.2.
 
 **What `run.start` judges as the command line does.** An unknown function, a `folder` or a `sim` file
-that does not exist or does not read, an argument or a setting that does not convert, give the report of a
+that does not exist or does not read, a `sim` that is not a simulation file (not TOML, `LC8109`; a key of no library,
+`LC8110`; decision of the owner, 2026-11-10), an argument or a setting that does not convert, give the report of a
 `refused` run with the diagnostic of cli.md, section 6.6, as `labcraft-cli run` does, not a command error:
-an agent reads one answer, whichever way it calls. A call that breaks the rules of section 2 (a path out of
-the project, a `.toml` that is not a simulation file) is a command error, and so is what the command line
+an agent reads one answer, whichever way it calls. A call that breaks the other rules of section 2 (a path out of
+the project, a hidden one, a form that Windows reads otherwise) is a command error, and so is what the command line
 calls wrong usage (cli.md, section 6.2): a time of `set` below 0, an input name that is not a name, a
 `schedule_seed` or a `max_real_time` with `mode: "real_time"` are `params.invalid`. `null` removes the
 default of `max_iterations` and `max_nodes`, as `none` does on the command line.
@@ -395,7 +396,7 @@ prints. One example, then the fields.
 | `logs` | no | What libraries kept of the values a run gave them, such as `results_log.append_csv` (spec A.4), which writes no file in M0: `{ "entries": [ … ], "truncated": false }`, one entry per call, in the order of the calls, `{ "library": "results_log", "function": "append_csv", "t_ms": 0.0, "type": "[results_log.StepResult]", "value": … }`, the value as in section 5, with the type of the input of the signature it was given on. At most 1,000 entries for each library *(proposed)*, and what the libraries of a run keep for its report, the commands of `instruments` included, within 16 MiB *(proposed)*, or `--max-memory` when lower, a value counting its logical size (cli.md 6.2): the entries after them are counted, not kept, and `truncated` is then `true`, with their number in `more`, so that the log of each library, as the commands of each instrument, is the start of what it was given, and what they keep stays within that bound. Entries of two libraries come in the order of `t_ms`, then of the libraries. The bound of a result (section 2) can shorten it further |
 | `panel` | no | Each setting of `set` or `run.set_element`, in the order applied: `element`, `value`, `at_ms` on the clock of the run, `by` (`set`, `run.set_element`), and `applied` (`false` for a setting after the end of the run) |
 | `check` | yes | The `check` made before the run: its `summary`, which counts everything found in the folder, and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2): those of what the run can reach, and the errors found elsewhere in the folder, which do not refuse the run but are listed, so that the counts and the list agree |
-| `trace` | no | With `trace: file`: `{ "file": ".labcraft/runs/check_voltage.trace.jsonl", "events": 41, "truncated": false }`; with `trace: inline`: the events themselves (section 8), at most 2,000 *(proposed)*, and fewer if the bound of a result is reached (section 2). A trace that cannot be written (a read-only project, a full disk) does not stop the run: `trace` then gives `error`, a command error of section 3 (`file.unwritable`) |
+| `trace` | no | With `trace: file`: `{ "file": ".labcraft/runs/check_voltage.trace.jsonl", "events": 41, "truncated": false }`; with `trace: inline`: `{ "header": …, "events": […], "truncated": false }`, the first line and the events themselves (section 8), at most 2,000 *(proposed)*, and fewer if the bound of a result is reached (section 2). A trace that cannot be written (a read-only project, a full disk) does not stop the run: `trace` then gives `error`, a command error of section 3 (`file.unwritable`) |
 
 An argument that does not convert, an input with no value and no default, or an unknown input is a
 diagnostic in `check.diagnostics`, with the name of the input, and the status `refused`: like a type
@@ -456,11 +457,12 @@ The example leaves lines out, and files from the first line.
   or 256 MiB, a line `{"seq":…,"t_ms":…,"event":"truncated"}` is written, then only `end`. A run in real time that lasts a day traces if
   asked, within that bound.
 - **Where.** With `trace: file`, the trace of the last run of each function is
-  `.labcraft/runs/<function>.trace.jsonl` under the root of the project, the function named from the root
-  (`dmm_driver.measure`), so two functions never share a file. The folder starts with `.`, so no walk reads
-  it as a library, and LabCraft writes a `.gitignore` holding `*` in it when it creates it, so that runs
+  `.labcraft/runs/<function>.trace.jsonl` under the root of the project, the function named from its folder
+  (`dmm_driver.measure`), and `.labcraft/runs/<folder>/<function>.trace.jsonl` for a function run from a `folder` that is
+  not the root (decision of the owner, 2026-11-10), so two functions never share a file. The folder starts with `.`, so no walk reads
+  it as a library, and LabCraft writes a `.gitignore` holding `*` in `.labcraft/` when it creates that folder, so that runs
   leave nothing for git to see. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
-  `<id>` is unique to the run (the process and the run), which can be followed, and renames it over the
+  `<id>` is unique to the run (the process, the session and the run), which can be followed, and renames it over the
   last trace when it ends, so the trace of the last finished run is always whole, and two runs of one
   function at once never write the same file: the one that ends last stays. A run first removes the
   `.partial` files of its function left by a process that no longer runs, so a killed run leaves nothing

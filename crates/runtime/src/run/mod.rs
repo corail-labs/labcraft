@@ -106,6 +106,24 @@ pub trait Control {
     fn abort(&mut self) -> Option<AbortBy> {
         None
     }
+    /// Whether someone waits for where the run is (`run.status`, commands.md 4): asked between two nodes, it costs nothing
+    /// when it says no, and [`Control::progress`] follows when it says yes.
+    fn wants_progress(&mut self) -> bool {
+        false
+    }
+    /// Where the run is: its clock, the resources it opened so far, and each loop going.
+    fn progress(&mut self, _progress: Progress) {}
+}
+
+/// Where a run is while it goes on (commands.md 4, `running`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Progress {
+    /// Nanoseconds on the clock of the run.
+    pub clock: i64,
+    /// The resources opened so far.
+    pub opened: usize,
+    /// Each loop going, outermost first.
+    pub loops: Vec<LoopAt>,
 }
 
 /// A native library of the run, by the id of its library in the table of types, with what it judged of its section of the

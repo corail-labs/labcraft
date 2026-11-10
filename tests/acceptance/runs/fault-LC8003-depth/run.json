@@ -1,5 +1,5 @@
 {
   "function": "outer",
-  "folder": ".",
+  "folder": "tests/acceptance/runs/fault-LC8003-depth",
   "max_call_depth": 1
 }
