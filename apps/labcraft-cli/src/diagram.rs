@@ -4,34 +4,21 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
-use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use labcraft_check::{Checked, check};
-use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, Theme, ViewState, draw, mark, svg, undrawn};
+use labcraft_check::Checked;
+use labcraft_diagram::{DiagramLimits, Theme, ViewState, svg};
 use labcraft_types::{CheckCounts, CheckSummary, Code, Diagnostic, Fix, Interner, Report, Status, cut_text};
 use serde::Serialize;
 
 use crate::args::{self, DiagramOptions};
-use crate::check::{Host, Root, library_of, readable_lib_paths, roots};
-use crate::fmt::last_panic;
+use crate::folder::{self, Drawn3, Function, Loaded};
 use crate::output;
-use crate::walk::{self, io_text, shown_of, slashed};
+use crate::walk::{io_text, shown_of, slashed};
 
 /// The schema of the report, which the attributes of the SVG share (`docs/cli.md`, 7.2 and 7.5).
 const SCHEMA: &str = "labcraft-diagram/1";
-
-/// A function to draw: named from the root, as `run` names it, by the path of its file.
-struct Function {
-    name: String,
-    /// Its file, as reports show it.
-    shown: String,
-    /// The path of its file under the folder, as the SVG shows it.
-    source: String,
-    /// The path of its SVG under `DIR`: that of its file, with `.svg`.
-    relative: PathBuf,
-}
 
 /// What became of one function.
 struct Entry {
@@ -44,50 +31,12 @@ struct Entry {
 }
 
 pub fn run(options: &DiagramOptions) -> ExitCode {
-    // The SVG of a function shows its first diagnostics, whatever `--max-report` lists (`docs/cli.md`, 7.2).
-    let mut limits = options.check.limits.clone();
-    limits.keep_per_file = MAX_LINES;
-    let limits = &limits;
     let current = std::env::current_dir().ok();
-    let mut walked = walk::walk(&options.check.folders, current.as_deref(), limits);
-    let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
-    let lib_paths = readable_lib_paths(&options.check, current.as_deref(), &mut report);
-    let in_the_walk: HashSet<PathBuf> =
-        walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect();
-    let host = Host { lib_paths: &lib_paths, in_the_walk: &in_the_walk, current: current.as_deref(), limits };
-    let root = roots(&options.check.folders, current.as_deref()).into_iter().next();
+    let Loaded { mut report, counts, checked, names, functions, root } = folder::load(&options.check, current.as_deref());
     let Some(root) = root else {
         // The folder could not be read: the walk said why, and there is nothing to draw.
         return answer(options, report, CheckCounts::default(), Vec::new());
     };
-    let functions = functions_of(&root, &walked);
-    let has_types = walked.files.iter().any(|found| found.path.extension().is_some_and(|extension| extension == "lct"));
-    let mut names = Interner::new();
-    let mut counts = CheckCounts::default();
-    let checked = match library_of(&root.real, &root.shown, &mut walked, limits) {
-        Some(source) => {
-            let work = || check(source, &host, &mut names, limits);
-            match panic::catch_unwind(AssertUnwindSafe(work)) {
-                Ok(mut checked) => {
-                    report.merge(std::mem::replace(&mut checked.report, Report::for_limits(limits)));
-                    for dependency in std::mem::take(&mut checked.dependencies) {
-                        report.merge(dependency.report);
-                    }
-                    counts = checked.counts;
-                    Some(checked)
-                }
-                Err(_) => {
-                    let message = format!("internal error, which is a bug of the tool: {}", last_panic());
-                    report.push(Diagnostic::new(Code::Lc0099, message, root.shown.as_str()));
-                    None
-                }
-            }
-        }
-        None => None,
-    };
-    if functions.is_empty() && has_types {
-        report.push(Diagnostic::new(Code::Lc7003, "no function to draw here, only types", root.shown.as_str()));
-    }
     // The functions asked for, or every one; an unknown name gets `LC7001`, with the nearest names. Two files can give
     // one name (`a.b.lcf` and `a/b.lcf`): both are drawn, each at its path.
     let mut entries: Vec<Entry> = Vec::new();
@@ -99,7 +48,7 @@ pub fn run(options: &DiagramOptions) -> ExitCode {
             let before = asked.len();
             asked.extend(functions.iter().filter(|function| function.name == *name));
             if asked.len() == before {
-                report.push(unknown(name, &functions, &root.shown));
+                report.push(unknown(name, &functions, &root));
                 entries.push(Entry { function: name.clone(), file: None, svg: None, drawn: false, nodes: None, codes: vec![Code::Lc7001] });
             }
         }
@@ -116,23 +65,6 @@ pub fn run(options: &DiagramOptions) -> ExitCode {
     report.finish();
     entries.sort_by(|a, b| a.function.cmp(&b.function));
     answer(options, report, counts, entries)
-}
-
-/// Every `.lcf` file under the folder, read or not, named from the root by its path: `dmm_driver/measure.lcf` is
-/// `dmm_driver.measure`. A file whose name is not that of its function gets `LC2023`, which keeps it from being drawn.
-fn functions_of(root: &Root, walked: &walk::Walked) -> Vec<Function> {
-    let found =
-        walked.files.iter().map(|found| (&found.path, &found.shown)).chain(walked.refused.iter().map(|refused| (&refused.path, &refused.shown)));
-    let mut functions: Vec<Function> = found
-        .filter(|(path, _)| path.extension().is_some_and(|extension| extension == "lcf"))
-        .filter_map(|(path, shown)| {
-            let relative = path.strip_prefix(&root.real).ok()?;
-            let parts: Vec<String> = relative.with_extension("").components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect();
-            Some(Function { name: parts.join("."), shown: shown.clone(), source: slashed(relative), relative: relative.with_extension("svg") })
-        })
-        .collect();
-    functions.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.shown.cmp(&b.shown)));
-    functions
 }
 
 /// `LC7001`, at the folder, with the nearest names as fixes.
@@ -169,42 +101,10 @@ fn near(a: &str, b: &str) -> Option<usize> {
 
 /// The drawing of each function, or none when it is not drawable (`docs/cli.md`, 7.1); `LC7002` joins the report.
 fn drawings(asked: &[&Function], checked: Option<&Checked>, names: &Interner, options: &DiagramOptions, report: &mut Report) -> Vec<Drawn3> {
-    let files: HashMap<&str, usize> =
-        checked.map(|checked| checked.files.iter().enumerate().map(|(index, file)| (file.shown.as_str(), index)).collect()).unwrap_or_default();
+    let files = folder::files_of(checked);
     let limits = DiagramLimits { max_nodes: options.max_nodes };
-    asked
-        .iter()
-        .map(|function| {
-            let mut codes = report.keeping_from_drawing(&function.shown);
-            let (Some(checked), Some(&index)) = (checked, files.get(function.shown.as_str())) else { return (None, None, codes) };
-            let nodes = labcraft_diagram::count_nodes(checked, index, names);
-            if !codes.is_empty() {
-                return (None, nodes, codes);
-            }
-            let work = || draw(checked, index, names, &ViewState::default(), &limits);
-            match panic::catch_unwind(AssertUnwindSafe(work)) {
-                Ok(Drawn::Drawing(drawing)) => (Some(drawing), nodes, codes),
-                Ok(Drawn::NotDrawn(diagnostics)) => {
-                    for diagnostic in diagnostics {
-                        codes.push(diagnostic.code());
-                        report.push(diagnostic);
-                    }
-                    codes.sort();
-                    codes.dedup();
-                    (None, nodes, codes)
-                }
-                Err(_) => {
-                    let message = format!("internal error, which is a bug of the tool: {}", last_panic());
-                    report.push(Diagnostic::new(Code::Lc0099, message, function.shown.as_str()));
-                    (None, nodes, vec![Code::Lc0099])
-                }
-            }
-        })
-        .collect()
+    asked.iter().map(|function| folder::drawing_of(function, checked, &files, names, &ViewState::default(), &limits, report)).collect()
 }
-
-/// A drawing or none, the nodes counted, the codes that keep it from being drawn.
-type Drawn3 = (Option<Drawing>, Option<u64>, Vec<Code>);
 
 /// Each SVG, with the marks or the lines of its first diagnostics, written to its path under `DIR` through a temporary
 /// file. On a file system that ignores case, a path that names a file written before it, in another case, is not
@@ -228,26 +128,9 @@ fn write(
         .iter()
         .zip(drawings)
         .map(|(function, (drawing, nodes, codes))| {
-            let of_file = report.first_of(&function.shown);
             let drawn = drawing.is_some();
             let codes = if drawn { Vec::new() } else { codes };
-            let picture = match drawing {
-                Some(mut drawing) => {
-                    mark(&mut drawing, &of_file);
-                    drawing
-                }
-                None => {
-                    let shown: Vec<Diagnostic> = of_file
-                        .into_iter()
-                        .map(|mut diagnostic| {
-                            diagnostic.file.clone_from(&function.source);
-                            diagnostic
-                        })
-                        .collect();
-                    let counts = report.counts_of(&function.shown);
-                    undrawn(&cut_text(&function.name), &shown, counts.errors + counts.warnings)
-                }
-            };
+            let picture = folder::picture(function, drawing, report);
             let path = options.out.join(&function.relative);
             let mut entry = Entry { function: function.name.clone(), file: Some(function.shown.clone()), svg: None, drawn, nodes, codes };
             let lower = slashed(&path).to_lowercase();

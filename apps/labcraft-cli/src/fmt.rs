@@ -25,6 +25,18 @@ pub fn keep_panics_for_the_report() {
     }));
 }
 
+/// As [`keep_panics_for_the_report`], but the hook that was there still runs: the desktop viewer prints a panic of
+/// its window, as any program does, and keeps the message of one caught in its session for its `LC0099`.
+pub fn keep_panics_and_print_them() {
+    let before = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        if let Ok(mut last) = LAST_PANIC.lock() {
+            *last = Some(info.to_string());
+        }
+        before(info);
+    }));
+}
+
 pub fn last_panic() -> String {
     LAST_PANIC.lock().ok().and_then(|mut last| last.take()).unwrap_or_else(|| "a panic".to_owned())
 }

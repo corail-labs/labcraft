@@ -1079,6 +1079,16 @@ shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand befo
 **`apps/labcraft`**, the desktop viewer. eframe with wgpu (DX12, Vulkan or Metal), `craft-ui` for the window
 around the canvas, `craft-window`, `craft-settings` for the preferences (standard view everywhere, theme).
 
+*Status: implemented (step 6b of 11.7), without the trace (step 8) and without `craft-window`, the window keeping
+the frame of the system. Until M0b merges `engine`, the session is a module of the app (`apps/labcraft/src/session.rs`,
+decided at the start of step 6), with the four `view.*` commands of commands.md 6.5 but `view.open_trace`, and the
+folder is read, checked and drawn by the code that `labcraft-cli diagram` uses (`labcraft_cli::folder`): it moves into
+`engine::view` with the commands, and the files behind `engine::Workspace`. The command line is cli.md, section 8.
+Only a change of a program file (`.lcf`, `.lct`) or of a folder is a change: a log that a bench writes into its
+folder checks nothing again. The changes of the 50 ms after the first are taken together, a window that does not
+move. Each path is watched on its own, before it is read; a path that cannot be watched is the only one looked at
+every second.*
+
 - **The session** of `engine` runs on a thread of `format::STACK_SIZE`. It holds the state of the viewer: the
   folder open, the function shown, the view state that the file does not hold, the preference, the trace. The
   window sends it commands through a channel (`view.open`, `view.show_function`, `view.set_standard_view`,

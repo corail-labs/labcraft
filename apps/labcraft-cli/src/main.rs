@@ -11,12 +11,7 @@
 )]
 #![forbid(unsafe_code)]
 
-mod args;
-mod check;
-mod diagram;
-mod fmt;
-mod output;
-mod walk;
+use labcraft_cli::{args, check, diagram, fmt, walk};
 
 use std::ffi::OsString;
 use std::io::Write;

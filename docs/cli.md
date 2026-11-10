@@ -1,10 +1,11 @@
-# Command line: `fmt`, `check`, `run` and `diagram`
+# Command line: `fmt`, `check`, `run`, `diagram` and the viewer
 
 *Last updated: 2026-11-10. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
-M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` implemented for M0v without the values of a run (section 7).*
+M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` implemented for M0v without the values of a run (section 7);
+the desktop viewer `labcraft` implemented for M0v, without the values of a run (section 8).*
 
-This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run` and
-`labcraft-cli diagram`: their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
+This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
+`labcraft-cli diagram` and of the command line of the desktop viewer `labcraft` (section 8): their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
 so they are part of the interface and are tested (acceptance scenarios
 [2, 4 and 5](acceptance-m0.md)). Values marked *proposed* are starting points.
 
@@ -996,7 +997,30 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit (7.4): the values up to there, as in a cut trace. Gives the line and the limit |
 | `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored (7.4). Gives how many, and the line of the first |
 
-## 8. Left for later
+## 8. `labcraft`, the desktop viewer
+
+```text
+labcraft [--lib-path DIR]... [--theme light|dark] [FOLDER]
+```
+
+- It opens `FOLDER`, read-only, as `diagram` reads it (section 7.1): the functions named from it, `--lib-path` as
+  for `check`, the limits of section 1 at their defaults. It draws the function chosen in its window, and checks and
+  draws again when a program file (`.lcf`, `.lct`) or a folder of the folder or of a `--lib-path` changes
+  (scenario 6, point 3); a `--lib-path` that cannot be watched is looked at every second, and the window says so. Without `FOLDER`, the
+  window opens empty, with a button that chooses a folder.
+- `--theme light` or `--theme dark`: the theme of this window, instead of the one of the preferences. The viewer
+  keeps its preferences (the theme, every node in standard view, no glide) in the folder of settings of the
+  system. It writes no file of a program, and keeps no view state on the disk: the arm shown in tabs, a structure
+  unfolded, a node in standard view last as long as the window.
+- `--help` and `--version` print and exit with 0.
+- Exit codes: 0 when the window closes, 1 when it cannot open (no graphics device), 101 for a bug of the viewer, with
+  its message on stderr, 2 for wrong usage, with the
+  reason and the usage on stderr: an unknown option, a second folder, `--theme` given twice or with another value,
+  `--lib-path` without a folder.
+- What the window does goes through the commands of [commands.md](commands.md), section 6.5, which the session of
+  the viewer answers (`docs/architecture.md`, 11.5).
+
+## 9. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,
