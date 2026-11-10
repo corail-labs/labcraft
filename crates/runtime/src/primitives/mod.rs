@@ -16,6 +16,7 @@ use crate::value::Value;
 
 mod array;
 mod core;
+pub use self::core::equal;
 mod errors;
 #[cfg(test)]
 mod lowered;

@@ -20,12 +20,13 @@ mod convert;
 mod fault;
 pub mod native;
 pub mod primitives;
+pub mod run;
 pub mod simulation;
 mod text;
 mod value;
 
 pub use convert::{Env, constant, convert, duration_of_seconds, grid, read};
 pub use fault::{Fault, FaultCode};
-pub use primitives::{Call, Host, Outcome, outputs_on_error};
+pub use primitives::{Call, Host, Outcome, equal, outputs_on_error};
 pub use text::{Text, Writer, error_text, quoted};
 pub use value::{ErrorData, Grid, Handle, Items, Origin, Place, VALUE_COST, Value, VariantValue, logical_size};

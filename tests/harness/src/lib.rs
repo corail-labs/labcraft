@@ -26,6 +26,9 @@ mod deep;
 mod routing;
 
 #[cfg(test)]
+mod scenario3;
+
+#[cfg(test)]
 mod tests {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};

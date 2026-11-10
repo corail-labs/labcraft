@@ -2022,6 +2022,7 @@ dependencies = [
  "labcraft-runtime",
  "labcraft-trace",
  "labcraft-types",
+ "labcraft-visa",
  "serde_json",
  "wasm-bindgen-test",
 ]

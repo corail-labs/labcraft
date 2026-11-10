@@ -19,6 +19,7 @@ labcraft-ir = { workspace = true }
 labcraft-libs = { workspace = true }
 labcraft-runtime = { workspace = true }
 labcraft-trace = { workspace = true }
+labcraft-visa = { workspace = true }
 serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

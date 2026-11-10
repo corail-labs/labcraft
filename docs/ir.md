@@ -1,6 +1,6 @@
 # The dataflow IR
 
-*Last updated: 2026-11-09. Status: implemented for milestone M0b (the crate `ir`, step 2 of architecture 10.11). Version 1 of the IR.*
+*Last updated: 2026-11-10. Status: implemented for milestone M0b (the crate `ir`, step 2 of architecture 10.11). Version 2 of the IR.*
 
 The `ir` crate (L4, [roadmap](roadmap.md)) holds a program as a dataflow graph, after `check` has resolved and
 typed it and before anything runs it: the second of the three levels of D-09. It is the form that the
@@ -33,7 +33,12 @@ since a user debugs the diagram, not the IR.
 
 `ir::lower` takes the `Checked` of a run and the function to run, and gives a `Program`: that function and every
 function it can reach (what it calls, what those call, the functions named as references), each lowered once. It
-walks the calls with an explicit work list, never by recursion (architecture, section 1).
+walks the calls with an explicit work list, never by recursion (architecture, section 1). `ir::lower_for_run` does the
+same within the bounds of a run: before it lowers each function, it counts the terminals of its calls and the values its
+structures pass in on the source, as `LC4008` and `LC4007` do (section 4), and stops with `Refused::TooLarge` once
+either total passes 2,000,000 *(proposed)*, `LC8111` (cli.md 6.6, decision of the owner, 2026-11-10): a hundred
+functions just under the bounds of each took 12.8 s and 12.3 GB to lower. Version 2 (2026-11-10): the defaults of a
+`timestamp` and of a function type (section 3).
 
 ```rust
 pub struct Program {
@@ -123,8 +128,10 @@ pub enum Order { Value(Use), Node(u32) }   // a value of this region, or a node 
   R-21), a function reference: a `FunctionId`, or a primitive with the `Skip` of a call of it, by its function type
   (section 5). Two more have no value of their own: **the `length` of `array.slice` with no wire is the
   constant `…`, which reaches the end of the array** (decision of the owner, 2026-11-09: the diagram shows `…` on the
-  terminal, as appendix A writes it), and **a default that Q-21 has not settled** (a `timestamp`, a function reference)
-  is `Unsettled`. The default of an opaque type is `InvalidHandle` (7.2). **A literal takes the type of each use** (3.4): the line `k = 0.5` is a node whose output holds the
+  terminal, as appendix A writes it). **The default of a `timestamp`** is `Timestamp(0)`, 1970-01-01T00:00:00Z, and
+  **the default of a function type** is `InvalidFunction`, with the default of each output of its type, which a call of it
+  gives (spec 7.2; Q-21, decision of the owner, 2026-11-10). **A default that Q-21 has not settled** (a `queue<T>`, a
+  `ref<T>`, from M2) is `Unsettled`. The default of an opaque type is `InvalidHandle` (7.2). **A literal takes the type of each use** (3.4): the line `k = 0.5` is a node whose output holds the
   literal, and each use of `k` is the constant evaluated for the type it reaches, so `k` can feed an `f32` and an
   `f64`.
 - **An array written of wires as an argument** (`string.join([a, b])`, and `[x]` for a parameter of kind value,

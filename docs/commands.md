@@ -181,7 +181,7 @@ encoding stays short:
 | `c64`, `c128` | `{ "re": …, "im": … }`, each as above | `{ "re": "1.0 V", "im": "0.0 V" }` |
 | `string` | a string | `"MEAS:VOLT:DC?"` |
 | `bytes` | `{ "base64": "…" }` | |
-| `timestamp` | a string, RFC 3339, UTC, to the nanosecond. In deterministic mode, a time of the simulated clock, whose origin is Q-21, still open | `"2026-11-08T12:00:00.000000250Z"` in real time |
+| `timestamp` | a string, RFC 3339, UTC, to the nanosecond. In deterministic mode, a time of the simulated clock, which starts at 1970-01-01T00:00:00Z (Q-21, spec 7.2) | `"2026-11-08T12:00:00.000000250Z"` in real time, `"1970-01-01T00:00:00.100000000Z"` 100 ms into a deterministic run |
 | array | an array; an `[f64; 2]` is an array of rows | `[1, 2]`, `[[1, 2], [3, 4]]` |
 | struct, `waveform` | an object, fields in declared order | `{ "t0": …, "dt": "0.001 s", "samples": […] }` |
 | enumeration | a variant without values as a string, `Type.Variant`; with values, an object of one key | `"Verdict.Pass"`, `{ "Reading.Value": ["230.0 V"] }` |

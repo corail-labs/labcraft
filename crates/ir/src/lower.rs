@@ -30,20 +30,88 @@ impl std::fmt::Display for LowerError {
     }
 }
 
+/// What the functions that a run reaches may hold in all *(proposed)*: the terminals of their calls (`LC4008` bounds each
+/// function to [`labcraft_check::MAX_TERMINALS`]), and the values their structures pass in (`LC4007`,
+/// [`labcraft_check::MAX_PASSED_IN`]). Past either, the run is refused before it is lowered whole (`LC8111`, decision of the
+/// owner, 2026-11-10): a hundred functions just under the bounds of each took 12.8 s and 12.3 GB to lower, and a run just
+/// under 2,000,000 takes about 260 MB, which lets a function at its own bounds and its caller pass.
+pub const MAX_RUN_TERMINALS: u64 = 2_000_000;
+pub const MAX_RUN_PASSED_IN: u64 = 2_000_000;
+
+/// Which of the two counts of [`MAX_RUN_TERMINALS`] and [`MAX_RUN_PASSED_IN`] a run passes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunCount {
+    Terminals,
+    PassedIn,
+}
+
+/// Why a run cannot be lowered: what it reaches is too large, or a bug.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// The functions it reaches pass a bound of the run: `count` is what was counted when it stopped, at least `limit + 1`.
+    TooLarge {
+        count: RunCount,
+        counted: u64,
+        limit: u64,
+    },
+    Bug(LowerError),
+}
+
+impl From<LowerError> for Refused {
+    fn from(error: LowerError) -> Self {
+        Refused::Bug(error)
+    }
+}
+
 /// Lowers the function of the file at `start` in `checked.files`, and every function it reaches. `checked` comes from
 /// `check_for_run`, and its run is not refused (`Reach::refuses`). `names` is the interner `check` used: lowering adds
-/// the names it gives nodes (`#close`, `@12`).
+/// the names it gives nodes (`#close`, `@12`). It does not bound the run: [`lower_for_run`] does.
 pub fn lower(checked: &Checked, start: usize, names: &mut Interner) -> Result<Program, LowerError> {
+    match lower_within(checked, start, names, u64::MAX, u64::MAX) {
+        Ok(program) => Ok(program),
+        Err(Refused::Bug(error)) => Err(error),
+        Err(Refused::TooLarge { .. }) => Err(LowerError { file: String::new(), message: "a bound of u64::MAX passed".to_owned() }),
+    }
+}
+
+/// [`lower`], within [`MAX_RUN_TERMINALS`] and [`MAX_RUN_PASSED_IN`]: each function is counted on its source before it is
+/// lowered, so a run past them stops there.
+pub fn lower_for_run(checked: &Checked, start: usize, names: &mut Interner) -> Result<Program, Refused> {
+    lower_within(checked, start, names, MAX_RUN_TERMINALS, MAX_RUN_PASSED_IN)
+}
+
+pub(crate) fn lower_within(
+    checked: &Checked,
+    start: usize,
+    names: &mut Interner,
+    max_terminals: u64,
+    max_passed_in: u64,
+) -> Result<Program, Refused> {
     let mut lowering = Lowering::new(checked, names);
     let file = checked.files.get(start).ok_or_else(|| LowerError { file: String::new(), message: format!("no file at index {start}") })?;
     let name = match &file.file.decl {
         Decl::Function(function) => function.name,
         Decl::Extern(function) => function.name,
-        Decl::Type(_) => return Err(lowering.bug(file, "a run starts at a function, and this file declares a type")),
+        Decl::Type(_) => return Err(lowering.bug(file, "a run starts at a function, and this file declares a type").into()),
     };
     lowering.function_id(file.library, name, file)?;
     let mut functions = Vec::new();
+    let (mut terminals, mut passed_in) = (0_u64, 0_u64);
     while let Some(id) = lowering.queue.pop_front() {
+        let source = lowering.pending.get(id.0 as usize).and_then(Option::as_ref).and_then(|pending| checked.files.get(pending.file));
+        if let Some(CheckedFile { file: labcraft_graph::File { decl: Decl::Function(function), .. }, resolved, .. }) = source {
+            let names: &Interner = lowering.names;
+            let left = max_terminals.saturating_sub(terminals);
+            terminals = terminals.saturating_add(labcraft_check::terminals(function, resolved, &checked.libraries, names, left).count);
+            if terminals > max_terminals {
+                return Err(Refused::TooLarge { count: RunCount::Terminals, counted: terminals, limit: max_terminals });
+            }
+            let left = max_passed_in.saturating_sub(passed_in);
+            passed_in = passed_in.saturating_add(labcraft_check::passed_in(function, resolved, left).count);
+            if passed_in > max_passed_in {
+                return Err(Refused::TooLarge { count: RunCount::PassedIn, counted: passed_in, limit: max_passed_in });
+            }
+        }
         functions.push(lowering.function(id)?);
     }
     let mut definitions = HashMap::new();
@@ -72,6 +140,8 @@ enum Key {
     Function(FunctionId),
     Primitive(PrimitiveLibrary, Name),
     InvalidHandle,
+    Timestamp(i64),
+    InvalidFunction(Vec<ConstId>),
     ToTheEnd,
     Unsettled,
 }
@@ -92,6 +162,8 @@ fn key_of(value: &ConstValue) -> Key {
         ConstValue::Function(function) => Key::Function(*function),
         ConstValue::Primitive { library, name, .. } => Key::Primitive(*library, *name),
         ConstValue::InvalidHandle => Key::InvalidHandle,
+        ConstValue::Timestamp(ns) => Key::Timestamp(*ns),
+        ConstValue::InvalidFunction { defaults } => Key::InvalidFunction(defaults.clone()),
         ConstValue::ToTheEnd => Key::ToTheEnd,
         ConstValue::Unsettled => Key::Unsettled,
     }
@@ -443,14 +515,22 @@ impl<'c> Lowering<'c> {
                 let dt = self.plain(Ty::Duration, file)?;
                 let samples = self.plain(Ty::Array { element, dimensions: 1 }, file)?;
                 let fields = vec![
-                    self.intern(t0, ConstValue::Unsettled),
+                    self.intern(t0, ConstValue::Timestamp(0)),
                     self.intern(dt, ConstValue::Duration(0)),
                     self.intern(samples, ConstValue::Array(Vec::new())),
                 ];
                 ConstValue::Struct(fields)
             }
-            // Q-21.
-            Ty::Timestamp | Ty::Function { .. } | Ty::Queue(_) | Ty::Ref(_) => ConstValue::Unsettled,
+            // Q-21, decisions of the owner (2026-11-10): the origin of the clock, and a function that fails when called.
+            Ty::Timestamp => ConstValue::Timestamp(0),
+            Ty::Function { outputs, .. } => {
+                let mut defaults = Vec::with_capacity(outputs.len());
+                for output in outputs {
+                    defaults.push(self.default_of(output, file)?);
+                }
+                ConstValue::InvalidFunction { defaults }
+            }
+            Ty::Queue(_) | Ty::Ref(_) => ConstValue::Unsettled,
             Ty::Error | Ty::Variable(_) | Ty::Named { .. } => return Err(self.bug(file, "the default of a type that is not known")),
         };
         Ok(self.intern(ty, value))

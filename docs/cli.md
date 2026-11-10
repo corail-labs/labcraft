@@ -578,7 +578,8 @@ of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `
 twice that for a complex number, 16 for a `timestamp`, 8 for a function reference and for an opaque value), and the
 bytes of a `string` in UTF-8 and of `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
 and the limit stops it. A value counts once while some wire holds it, however many share it (D-11). Each
-node that runs or waits, and each frame of a call, counts 256 bytes *(proposed)*, so that a `for parallel` over
+region that runs (the body of a call, of an iteration, of an arm), each of its nodes, from when the region starts to
+when it ends, and each frame of a call, counts 256 bytes *(proposed)*, so that a `for parallel` over
 millions of elements reaches the limit as a fault rather than the memory of the process.
 
 **The clock of a run** counts whole nanoseconds from 0, and ends at 2^62 ns, about 146 years *(proposed)*: a wait or
@@ -698,14 +699,14 @@ ships its own format, and the tool does not read it.
 
 | Code | Severity | When |
 |---|---|---|
-| `LC8001` | error | Fault: the iteration limit of a `loop` is reached. Gives the loop and the iteration |
+| `LC8001` | error | Fault: the iteration limit of a `loop` is reached. Gives the loop and the iteration, which the message counts from 1 and the report from 0 |
 | `LC8002` | error | Fault: the limit of nodes run is reached |
 | `LC8003` | error | Fault: the call depth limit is reached. Gives the chain of calls, shortened |
 | `LC8004` | error | Fault: a bug of the runtime, caught. Gives where |
 | `LC8005` | error | Fault: the memory limit of the run is reached, at the node that would pass it |
 | `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
 | `LC8007` | error | Fault: the clock of the run would pass 2^62 ns, about 146 years: a wait or a timeout that long, or one that is not finite |
-| `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), or the empty separator of `string.split`. Gives the node and the values |
+| `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), or the empty separator of `string.split`, or a call of the default of a function type that has no output of type `error` to say that it designates no function (spec 7.2). Gives the node and the values |
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
 | `LC8103` | error | An input with no default has no `--arg` |
@@ -716,6 +717,7 @@ ships its own format, and the tool does not read it.
 | `LC8108` | error | A `--set` names no panel element of the function, an element that is an input or an output, or one whose type is not settled, or sets a `button` to `false` |
 | `LC8109` | error | The simulation file does not read as TOML (syntax, encoding, a key given twice, an integer that does not fit in 64 bits) |
 | `LC8110` | error | A key at the top level of the simulation file names no library that simulates; fix: the nearest name |
+| `LC8111` | error | The functions the run reaches hold more than 2,000,000 terminals of calls in all, or 2,000,000 values passed into structures *(proposed)*: each function is bounded by `LC4008` and `LC4007`, and the run as a whole by this, before anything is built for it (decision of the owner, 2026-11-10). At the function given |
 
 A value that its operation cannot take, a number that its type cannot hold first, is `LC8008` (spec 8.2, Q-25, settled
 2026-11-09).

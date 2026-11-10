@@ -178,7 +178,10 @@ impl Checker<'_> {
         for (index, constant) in self.program.constants.iter().enumerate() {
             self.known_ty(constant.ty, &format!("constant {index}"));
             let items: Vec<crate::ConstId> = match &constant.value {
-                ConstValue::Array(items) | ConstValue::Struct(items) | ConstValue::Variant { values: items, .. } => items.clone(),
+                ConstValue::Array(items)
+                | ConstValue::Struct(items)
+                | ConstValue::Variant { values: items, .. }
+                | ConstValue::InvalidFunction { defaults: items } => items.clone(),
                 _ => Vec::new(),
             };
             for item in items {
@@ -191,6 +194,13 @@ impl Checker<'_> {
                 && self.program.functions.get(function.0 as usize).is_none()
             {
                 self.say(format!("constant {index} names function {}, which does not exist", function.0));
+            }
+            if let ConstValue::InvalidFunction { defaults } = &constant.value {
+                let ty = self.definition(constant.ty);
+                match self.program.types.get(ty) {
+                    Ty::Function { outputs, .. } if outputs.len() == defaults.len() => {}
+                    _ => self.say(format!("constant {index} is the default of a function type without a default for each of its outputs")),
+                }
             }
             if let ConstValue::Primitive { skip, .. } = &constant.value {
                 let ty = self.definition(constant.ty);

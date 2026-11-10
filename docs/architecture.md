@@ -406,7 +406,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 4 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 4 of 10.11 implemented, and the first half of step 5 (5a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -520,8 +520,9 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
 - **A number is kept in the unit of its type** (3.3), and converted on a wire as spec 3.3 says, one rounding where the
   ratio of the two units allows it, so that the interpreter, the WASM build and Cranelift give the same bits (D-10).
 - **The logical size** of cli.md 6.2 is counted as values are made, not by asking the allocator, so a limit gives the
-  same fault on every platform. A value counts once while some wire holds it. Each node that runs or waits, and each
-  frame, counts too (cli.md 6.2), so that a `for parallel` over millions of elements reaches the limit as a fault
+  same fault on every platform. A value counts once while some wire holds it: what it holds behind an `Arc` is counted
+  by that `Arc`, once, however many wires share it. Each region that runs, each of its nodes, and each frame count too
+  (cli.md 6.2), so that a `for parallel` over millions of elements reaches the limit as a fault
   rather than exhausting the memory of the process.
 - **Operations are defined bit for bit**: the primitives of `core` use operations that IEEE 754 rounds correctly, and
   those it does not (`core.pow` with an integer exponent, for one) are written as a fixed sequence of such operations,
@@ -536,11 +537,12 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
   wire. `runtime::constant` gives each constant of the program its value, `runtime::read` what a wire delivers (its
   fields, then its conversion, by the steps that `ir` evaluates constants with: `ir::apply_scale`, `ir::nanoseconds`), and
   `runtime::Writer` its text (spec 5.4), with the number writers of `trace`, so that a report and `string.format` agree.
-  A default that Q-21 has not settled has no value yet: the interpreter decides it (step 5).
+  The default of a `timestamp` is the origin of the clock, and that of a function type a reference that fails when called
+  (spec 7.2, Q-21); a default that Q-21 has not settled (`queue<T>`, `ref<T>`, M2) has no value.
 
 ### 10.4 The scheduler
 
-What the prototype showed (scenario 3, the proof of concept): every point of spec 8 falls out of one design.
+*Status: implemented in deterministic mode (step 5a), in `runtime::run`; real time is step 8.* What the prototype showed (scenario 3, the proof of concept): every point of spec 8 falls out of one design.
 
 - **Each node that runs is a task**, and a structure is a task that starts the nodes of its region as their inputs
   arrive and waits for them. A task keeps its own context: the frames of its calls, the iterations of its loops, its
@@ -576,13 +578,13 @@ What the prototype showed (scenario 3, the proof of concept): every point of spe
   both paths now go through one function, and so will these.
 - **A panic** of a primitive or of a native body, on the thread of the run or on a thread of the pool, is caught there
   and ends the run with the fault `LC8004`, released as any fault is; the session goes on.
-- **Two clocks.** The app gives the runtime a `runtime::Clock`: the clock of the run, simulated or real, and the real
-  time that `--max-real-time` bounds in deterministic mode. The runtime never calls `Instant::now` itself, which
+- **Two clocks.** The app gives the runtime a `runtime::run::Control`: the real time that `--max-real-time` bounds in
+  deterministic mode, and an abort asked from outside; the clock of a deterministic run is the runtime's own. The runtime never calls `Instant::now` itself, which
   `clippy.toml` refuses and which traps in WASM.
 
 ### 10.5 The interpreter and the primitives
 
-*Status: the primitives are implemented (step 3); the interpreter is step 5.* A frame holds the values of a region instance and the state of the panel of its call (spec 10: a `switch` holds, a
+*Status: implemented (steps 3 and 5a).* A frame holds the values of a region instance and the state of the panel of its call (spec 10: a `switch` holds, a
 `button` is seen by one read). A node runs by its kind (ir.md, section 4), skips by its `Skip` (ir.md, section 5), and
 checks the limits of cli.md 6.2 as it goes: iterations of a loop, nodes run, depth, memory, the real time of a
 deterministic run. A limit reached is a fault at that node.
@@ -621,6 +623,29 @@ pub fn outputs_on_error(env: Env, skip: &Skip, inputs: &[Value], failed: Option<
   takes 153 MB, `array.repeat(true, 50000000)` counts 810 MB and takes 1.1 GB (measured on Windows, by the review of
   step 3); a run under the default limit of 1 GiB may hold about 2.5 times that. `cargo xtask codes` checks section 5 of
   cli.md, not the codes of `run` (6.6) that `FaultCode` gives.
+
+**`runtime::run`** (step 5a) runs `functions[0]` of a `Program` to its end and gives a `RunEnd`: the status of spec 8.2,
+the outputs, the fault or the abort and where it was, the clock, the resources each with what its library says of it, the
+commands of the instruments and the logs of the libraries, the settings of the panel and whether each applied. It is given
+the `Checked` files, which name where an error was made, the native libraries of the run with what they judged of the
+simulation file, the inputs, and the `Settings` of cli.md 6.2. A `Control` gives it the real time, which it never reads
+itself, and an abort asked from outside; an `Observer` hears each `call`, each node that `ran` or skipped, each `arm` and
+each `set`, which the trace will write (step 5b).
+
+- **An instance of a region** holds a slot per argument and per output of its nodes, how many reads each still has, and
+  how many nodes each node still waits for, from a plan made once per region. The last read of a wire takes its value, so
+  that a body can change it in place (D-11). A structure, a call, a wait and a native call are tasks, which wait for
+  their instances, the clock or their library.
+- **An `always` node** that ran passes on the error it received on its `err` output (spec 7.2), whatever its library gave
+  there.
+- **After an abort or a fault** no node starts and waits end; the native calls in progress go on, until the grace period
+  ends on the clock of the run; those still going are cancelled and their handles reported as leaked; then each handle the
+  run received from a native call and that its library still says open is released.
+- **A panic** of a primitive or of a library is caught where it happens and ends the run with `LC8004`.
+- **Tests:** in `crates/runtime/src/run/tests.rs`, programs through `check`, `ir` and the run, with a library `bench` of
+  the tests for native calls, keys, the grace period and leaks; in `tests/harness`, the six points of scenario 3 on
+  `two_benches` with `visa`, `scpi` and the simulation files of `libs/visa/sim/`, the times and the counts worked out by
+  hand. Not yet: the trace and the report written, the corpus of runs, the runner of the proof of concept (5b).
 
 ### 10.6 Native libraries
 
@@ -797,7 +822,9 @@ Each step of work ends with something testable:
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
    codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`. *Done* (section 10.6).
 5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the
-   report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner.
+   report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner. In two halves
+   (decision of the owner, 2026-11-10): **5a**, `runtime::run`, with scenario 3 run on `two_benches` by `tests/harness`,
+   *done* (sections 10.4, 10.5); **5b**, the trace and the report written, the corpus and its runner.
 6. **`engine`:** the session, the registry and the commands of commands.md 6, the kept `check`, runs as tasks; `cargo
    xtask commands`. `fmt` and `check` move behind it.
 7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.

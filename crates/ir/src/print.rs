@@ -421,6 +421,15 @@ impl<'p> Printer<'p> {
                 out.push("invalid ");
                 self.write_ty(constant.ty, out);
             }
+            ConstValue::Timestamp(ns) => {
+                out.push("timestamp ");
+                out.push(&ns.to_string());
+                out.push(" ns");
+            }
+            ConstValue::InvalidFunction { .. } => {
+                out.push("invalid ");
+                self.write_ty(constant.ty, out);
+            }
             ConstValue::ToTheEnd => out.push("…"),
             ConstValue::Unsettled => {
                 out.push("unsettled ");

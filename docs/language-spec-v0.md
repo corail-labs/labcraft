@@ -854,7 +854,11 @@ fields as a path in v0: `e.code` is rejected, and `handle` is how an error is to
   The default value of an opaque type is an invalid handle, on which the functions of its library
   fail with an error. The default value
   of a panel element is that of its type, unless the panel item gives `default: …` (section 10).
-  What `timestamp`, function references, `ref<T>` and `queue<T>` default to is Q-21.
+  The default value of a `timestamp` is 1970-01-01T00:00:00Z, where the clock of a deterministic run starts (8). The
+  default value of a function reference designates no function: a call of it runs nothing and fails, its outputs at
+  their default values and each output of type `error` with the error it received on an input of type `error`, or else
+  a new one of category `core.invalid_function`; a function type with no output of type `error` cannot say it, and the
+  call is a fault (8.2). What `ref<T>` and `queue<T>` default to is Q-21.
 - **Default values flow like data.** A node without an `err` input (arithmetic, `match`) runs on
   the default values of a skipped node: after a missing resource, `voltage` is `0 V`. Only the
   `err` output says whether a value was measured. **Writing rule: a verdict always depends on
@@ -1827,7 +1831,7 @@ What the grammar alone does not say:
 | Q-18 | Mini-language of `string.format` fields | Settled: the form of C++20, with a name and a display unit (5.4). Left open: the inverse reading `string.scan` |
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
 | Q-20 | Setting a panel element from the CLI or MCP | **Settled (2026-11-08): `--set ELEMENT=VALUE@TIME`** on the clock of the run, simulated in deterministic mode, for the elements of the function that is run; `set` in `run.start` and, in real time, `run.set_element` in MCP ([cli.md](cli.md), section 6.4; [commands.md](commands.md), section 6.4) |
-| Q-21 | Default values not covered by 7.2 | `timestamp` (the origin of the clock?), function references (a reference that fails when called?), `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?) |
+| Q-21 | Default values not covered by 7.2 | **Settled for `timestamp` and function references (2026-11-10, 7.2)**: 1970-01-01T00:00:00Z, the origin of the clock of a deterministic run; a reference that designates no function and fails when called (`core.invalid_function`). Open: `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?), with M2 |
 | Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
@@ -1890,7 +1894,8 @@ they were made), opaque values by what they designate, references by the functio
 of `nan` or of a value beyond the `i32` are a fault (8.2).
 
 `core.call` runs a function reference (section 4); its inputs after the first and its outputs are those
-of the referenced function. Not in the PoC.
+of the referenced function. A reference that designates no function, the default of its type, fails with
+`core.invalid_function` (7.2). Not in the PoC.
 
 ```text
 fn core.call(function: fn(…) -> (…), …) -> (…)
