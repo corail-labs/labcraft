@@ -67,7 +67,8 @@ are the nodes that a `layout` section does not place (spec 11).
 
 - **One drawing per file.** Placement and routing depend only on the file, on what it uses from other
   files (the signatures, type declarations, icons and bands of what it calls), on the font of the
-  notation (2.3), and on the view state: the view of each node, tabs or unfolded branches, folded or
+  notation (2.3), on the values of the notation (10), which are the defaults outside a viewer tuning them, and on
+  the view state: the view of each node, tabs or unfolded branches, folded or
   unfolded constructions, optional inputs shown, the branch shown in tabs (by default that of the run,
   6.1), which changes nothing around its frame, as large as its largest branch (5.2). With the same
   view state, the same file gives the same drawing on screen, when it is opened again, in an export and
@@ -831,3 +832,81 @@ IDE, the diagram takes its colors from this table.
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
 | N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1) |
+
+## 10. The values in one place
+
+The numbers that `crates/diagram` gives a drawing by name, with their default, the range that a file of values may
+give them, and the section that says what they are; the colours are those of section 8. Where the prose of a section
+gives one of these numbers, this table is the reference, and a test checks it against the code: another value is a
+reviewed change of both. Other numbers are still written in the code of a shape or of a size, and are not here yet;
+among them, the gaps between the lines of a compact block and between the inputs of a primitive (3.2), the room around
+the glyph of a primitive and between a block and its label, the height of an inline constant, the inset of a double
+frame, the brackets of a terminal of an array, the junctions, the core of a struct wire and the size of a chevron.
+
+The desktop viewer can try other values on the drawing it shows: `labcraft --style FILE` (`docs/cli.md`, 8) reads a file
+of values in TOML, a table per section of this list (`[place]`, `stack = 24`) and `[colors.light]`, `[colors.dark]` for
+section 8, and draws again each time it is saved. A value left out keeps its default; a value unknown or out of its range
+is refused, and the viewer says why; a colour below the contrasts of section 8 is said too. The ranges keep a drawing
+within a few times its work at the defaults. It is a tool to tune the notation, never a preference of the user: the same
+file places its nodes the same way on every screen (2.1), so the sizes and gaps are the notation's own, and an export
+always draws with the defaults. Only the colours may become a choice of the developer, in the IDE.
+
+| Value | Default | Range | Section | What it is |
+|---|---|---|---|---|
+| `canvas.grid` | 8 units | 4 to 16 | 2 | The grid of the canvas: positions and sizes round up to it. |
+| `canvas.margin` | 16 units | 0 to 64 | 2 | Around what an image shows (`docs/cli.md`, 7.2). |
+| `text.large` | 12 units | 6 to 24 | 2.3 | Titles of structures and of standard nodes. |
+| `text.medium` | 11 units | 6 to 24 | 2.3 | Labels, pills, names of wires. |
+| `text.small` | 9 units | 6 to 24 | 2.3 | Units of terminals, bands, marks. |
+| `text.any_text` | 40 cells | 4 to 160 | 2.3 | A text that no other rule cuts. |
+| `text.label_line` | 12 cells | 4 to 48 | 3.2 | A line of a label, a band. |
+| `text.compact_constant` | 8 cells | 2 to 32 | 3.2 | An inline constant in compact view. |
+| `node.terminal` | 10 units | 4 to 40 | 4.1 | The shape of a terminal. |
+| `node.pill_height` | 18 units | 8 to 72 | 3.2 | A pill of an inline constant. |
+| `node.band_height` | 12 units | 6 to 48 | 3.2 | The band of a library above a block. |
+| `node.padding` | 4 units | 0 to 16 | 3.2 | Inside a pill, on each side. |
+| `node.label_padding` | 9 units | 0 to 36 | 3.2 | Inside an oblong label, on each side. |
+| `node.square` | 40 units | 16 to 160 | 3.2 | A compact block. |
+| `node.circle` | 28 units | 12 to 112 | 3.2 | The circle of a primitive. |
+| `node.icon` | 28 units | 12 to 112 | 3.2 | An icon in a block. |
+| `node.outline` | 1 units | 0 to 4 | 3 | The outline of a node. |
+| `node.radius` | 4 units | 0 to 16 | 3 | The corners of a node. |
+| `standard.header` | 24 units | 12 to 96 | 3.1 | The title of a node in standard view. |
+| `standard.first_line` | 40 units | 16 to 160 | 3.1 | From its top to its first line of terminals. |
+| `standard.pitch` | 24 units | 12 to 96 | 3.1 | Between two lines of terminals. |
+| `standard.last_line` | 16 units | 0 to 64 | 3.1 | Below its last line. |
+| `standard.side` | 12 units | 0 to 48 | 3.1 | Between a name of a terminal and the edge. |
+| `standard.between` | 24 units | 0 to 96 | 3.1 | Between the names of an input and an output on a line. |
+| `standard.width` | 112 units | 40 to 448 | 3.1 | The least width of a node in standard view. |
+| `place.stack` | 24 units | 0 to 96 | 2.1 | Between nodes stacked in a column. |
+| `place.off_axis` | 40 units | 0 to 160 | 2.1 | Between the error chain and the nodes above it. |
+| `place.slot` | 24 units | 12 to 96 | 2.1 | Between two terminals of a frame, and above the error chain. |
+| `place.label_start` | 12 units | 0 to 48 | 2.1 | From a terminal of a frame to its label. |
+| `place.label_above` | 4 units | 0 to 16 | 2.1 | Between the label of a structure and its frame. |
+| `frame.header` | 32 units | 16 to 128 | 5 | The title of a structure. |
+| `frame.pad` | 16 units | 0 to 64 | 5 | Inside a frame, on each side. |
+| `frame.arm_header` | 24 units | 0 to 96 | 5.2 | The title of an arm of a `match` or `handle` unfolded. |
+| `frame.arm_gap` | 16 units | 0 to 64 | 5.2 | Between two arms unfolded. |
+| `tabs.row` | 24 units | 12 to 96 | 5.2 | The row of tabs of a `match` or `handle` in tabs. |
+| `tabs.height` | 20 units | 12 to 80 | 5.2 | A tab. |
+| `tabs.gap` | 4 units | 0 to 16 | 5.2 | Between two tabs. |
+| `tabs.arm_header` | 8 units | 0 to 32 | 5.2 | Under the row of tabs, above the arm shown. |
+| `wire.gap` | 8 units | 4 to 32 | 2.2 | Between two wires side by side. |
+| `wire.clear` | 16 units | 0 to 64 | 2.2 | Between a wire and a node it passes. |
+| `wire.min_channel` | 16 units | 8 to 64 | 2.2 | The narrowest channel between two columns. |
+| `wire.track_room` | 24 units | 0 to 96 | 4 | Above the highest track: room for the name of its wire. |
+| `wire.radius` | 6 units | 0 to 24 | 2 | The corners of a wire. |
+| `wire.chevron_step` | 24 units | 12 to 96 | 4.1 | Between two chevrons of an error wire. |
+| `wire.name_above` | 3 units | 0 to 12 | 4 | Between a wire and its name. |
+| `wire.name_side` | 4 units | 0 to 16 | 4 | On each side of the name of a wire. |
+| `wire.width_data` | 1.5 units | 0.5 to 6 | 4.1 | A wire of a number, a boolean, a text or an enum. |
+| `wire.width_struct` | 4 units | 3 to 16 | 4.1 | A wire of a struct, with a core of the fill under it. |
+| `wire.width_session` | 2.5 units | 0.5 to 10 | 4.1 | A wire of a session. |
+| `wire.width_error` | 2 units | 0.5 to 8 | 4.1 | A wire of an error. |
+| `wire.width_order` | 1 units | 0.5 to 4 | 4.1 | A wire of order (`after:`). |
+| `wire.width_function` | 1.5 units | 0.5 to 6 | 4.1 | A wire of a reference to a function. |
+| `marks.line_pitch` | 20 units | 10 to 80 | 4.2 | Between the lines of a function that is not drawn. |
+| `marks.around` | 3 units | 0 to 12 | 4.2 | Between a node marked and its mark. |
+| `marks.width` | 2 units | 0.5 to 8 | 4.2 | The stroke of a mark. |
+| `zoom.coarse` | 40 % | 10 to 100 | 7 | Below it, a node is a plain rectangle. |
+| `zoom.names` | 75 % | 10 to 200 | 7 | Below it, no name of a terminal. |

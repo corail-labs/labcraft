@@ -1002,7 +1002,7 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 ## 8. `labcraft`, the desktop viewer
 
 ```text
-labcraft [--lib-path DIR]... [--theme light|dark] [FOLDER]
+labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
 ```
 
 - It opens `FOLDER`, read-only, as `diagram` reads it (section 7.1): the functions named from it, `--lib-path` as
@@ -1014,11 +1014,16 @@ labcraft [--lib-path DIR]... [--theme light|dark] [FOLDER]
   keeps its preferences (the theme, every node in standard view, no glide) in the folder of settings of the
   system. It writes no file of a program, and keeps no view state on the disk: the arm shown in tabs, a structure
   unfolded, a node in standard view last as long as the window.
+- `--style FILE`: draw with the values of the notation in `FILE` (visual-notation, 10), a file of TOML, read again
+  each time it is saved; when it does not exist, the viewer writes the defaults into it, the one file it writes
+  besides its preferences. A value unknown or out of its range leaves the values before, and the window says why; colours below the
+  contrasts of visual-notation 8 are taken, and said. It is a tool to tune the notation, not a preference: nothing
+  else reads the file, and every export draws with the defaults.
 - `--help` and `--version` print and exit with 0.
 - Exit codes: 0 when the window closes, 1 when it cannot open (no graphics device), 101 for a bug of the viewer, with
   its message on stderr, 2 for wrong usage, with the
   reason and the usage on stderr: an unknown option, a second folder, `--theme` given twice or with another value,
-  `--lib-path` without a folder.
+  `--lib-path` without a folder, `--style` given twice or without a file.
 - What the window does goes through the commands of [commands.md](commands.md), section 6.5, which the session of
   the viewer answers (`docs/architecture.md`, 11.5).
 

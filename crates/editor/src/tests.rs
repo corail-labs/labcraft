@@ -104,6 +104,32 @@ fn a_theme_gives_the_colours_of_notation_8() {
     assert_eq!(Theme::Light.color("no.such"), Color32::from_rgb(255, 0, 255));
 }
 
+/// The canvas paints a drawing with the values it was drawn with, and only there: the colours of the thread are the
+/// defaults again after.
+#[test]
+fn the_canvas_paints_with_the_values_of_its_drawing() {
+    let background = |shapes: &[ClippedShape]| {
+        shapes.iter().find_map(|clipped| match &clipped.shape {
+            Painted::Rect(rect) => Some(rect.fill),
+            _ => None,
+        })
+    };
+    let ctx = context();
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawing(ARMS, &ViewState::default()), false);
+    let (before, _) = frame(&ctx, &mut canvas, &Shown::default(), input(0.0));
+    assert_eq!(background(&before), Some(Color32::from_rgb(0xF7, 0xF7, 0xF5)));
+    let mut style = labcraft_diagram::style::Style::default();
+    let fill = labcraft_diagram::theme::TOKENS.iter().position(|token| token.name == "canvas.fill").unwrap();
+    style.colors[fill].0 = 0x102030;
+    let mut other = (*drawing(ARMS, &ViewState::default())).clone();
+    other.style = Arc::new(style);
+    canvas.set_drawing(Arc::new(other), false);
+    let (after, _) = frame(&ctx, &mut canvas, &Shown::default(), input(0.1));
+    assert_eq!(background(&after), Some(Color32::from_rgb(0x10, 0x20, 0x30)));
+    assert_eq!(Theme::Light.color("canvas.fill"), Color32::from_rgb(0xF7, 0xF7, 0xF5));
+}
+
 /// A host that never installed the fonts of the notation: the first frame paints no text and installs them, the next
 /// paints its texts.
 #[test]

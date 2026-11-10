@@ -4,29 +4,23 @@
 use labcraft_types::{Diagnostic, MAX_TEXT, Severity, text};
 
 use crate::shape::{Drawing, Mark, Paint, Run, Shape, WireStyle, token_of};
-use crate::size::{GRID, LARGE, MEDIUM, OUTLINE, RADIUS, Text};
-use crate::{MARGIN, place};
+use crate::size::Text;
+use crate::style;
 
 /// The diagnostics that a function that is not drawn lists, at most *(proposed)*.
 pub const MAX_LINES: usize = 32;
-/// Between two lines of diagnostics.
-const LINE_PITCH: i64 = 2000;
-/// Around a node that a mark outlines.
-const AROUND: i64 = 300;
-/// The outline of a mark.
-const MARK_WIDTH: i64 = 200;
 
 /// A function that is not drawn: its frame with its name, and its diagnostics, one per line, as the first line of a
 /// report writes them (`docs/cli.md`, 4.1), each cut at 200 code points, at most [`MAX_LINES`], then how many are left
 /// out of `total`. The place is in `ink.muted`, the severity and the code in `mark.invalid` for an error and in
 /// `node.title` for a warning, the message in `node.title`. Each line carries its code.
 pub fn undrawn(function: &str, diagnostics: &[Diagnostic], total: u64) -> Drawing {
-    let title = Text::new(function, crate::size::ANY_TEXT, LARGE);
-    let (x, y) = (MARGIN, MARGIN);
+    let title = Text::new(function, crate::size::any_text(), crate::size::large());
+    let (x, y) = (style::margin(), style::margin());
     let mut lines: Vec<(String, Shape)> = Vec::new();
     for (index, diagnostic) in diagnostics.iter().take(MAX_LINES).enumerate() {
-        let middle = y + place::HEADER + GRID + LINE_PITCH * index as i64;
-        lines.push((diagnostic.code().as_str().to_owned(), line(diagnostic, x + place::LABEL_START, middle)));
+        let middle = y + style::frame_header() + style::grid() + style::mark_line() * index as i64;
+        lines.push((diagnostic.code().as_str().to_owned(), line(diagnostic, x + style::label_start(), middle)));
     }
     let left_out = total.saturating_sub(lines.len() as u64);
     let mut loose = Vec::new();
@@ -37,23 +31,24 @@ pub fn undrawn(function: &str, diagnostics: &[Diagnostic], total: u64) -> Drawin
         }
     }
     let more = (left_out > 0).then(|| {
-        let text = Text::new(&format!("{left_out} more"), u64::MAX, MEDIUM);
+        let text = Text::new(&format!("{left_out} more"), u64::MAX, crate::size::medium());
         widest = widest.max(text.width);
-        text.at(x + place::LABEL_START, y + place::HEADER + GRID + LINE_PITCH * lines.len() as i64, "ink.muted")
+        text.at(x + style::label_start(), y + style::frame_header() + style::grid() + style::mark_line() * lines.len() as i64, "ink.muted")
     });
     let rows = lines.len() as i64 + i64::from(more.is_some());
-    let width = widest + 2 * place::LABEL_START;
-    let height = place::HEADER + LINE_PITCH * rows.max(1) + GRID;
-    loose.push(Shape::Rect { x, y, width, height, radius: RADIUS, paint: Paint::both("frame.fill.1", "frame.stroke", OUTLINE) });
-    loose.push(title.at(x + place::LABEL_START, y + place::HEADER / 2, "node.title"));
+    let width = widest + 2 * style::label_start();
+    let height = style::frame_header() + style::mark_line() * rows.max(1) + style::grid();
+    loose.push(Shape::Rect { x, y, width, height, radius: style::radius(), paint: Paint::both("frame.fill.1", "frame.stroke", style::outline()) });
+    loose.push(title.at(x + style::label_start(), y + style::frame_header() / 2, "node.title"));
     loose.extend(more);
     Drawing {
         function: function.to_owned(),
-        width: x + width + MARGIN,
-        height: y + height + MARGIN,
+        width: x + width + style::margin(),
+        height: y + height + style::margin(),
         loose,
         marks: lines.into_iter().map(|(code, shape)| Mark { code, shapes: vec![shape] }).collect(),
         undrawn: true,
+        style: style::current(),
         ..Drawing::default()
     }
 }
@@ -87,9 +82,9 @@ fn line(diagnostic: &Diagnostic, x: i64, middle: i64) -> Shape {
         cells = cells.saturating_add(shown.cells);
         runs.extend(shown.runs.into_iter().map(|(ink, text)| Run { token: token_of(ink, token), text }));
     }
-    let width = text::width(cells, MEDIUM).unwrap_or(i64::MAX / 4);
-    let cap = text::scale(u64::from(text::CAP_HEIGHT), MEDIUM).unwrap_or(0);
-    Shape::Text { x, y: middle + (cap + 1) / 2, size: MEDIUM, width, runs, detail: crate::Detail::Title }
+    let width = text::width(cells, crate::size::medium()).unwrap_or(i64::MAX / 4);
+    let cap = text::scale(u64::from(text::CAP_HEIGHT), crate::size::medium()).unwrap_or(0);
+    Shape::Text { x, y: middle + (cap + 1) / 2, size: crate::size::medium(), width, runs, detail: crate::Detail::Title }
 }
 
 /// The marks of the errors of `diagnostics` on a drawing (`docs/cli.md`, 7.1): each wire at fault drawn again in
@@ -138,7 +133,7 @@ pub fn mark(drawing: &mut Drawing, diagnostics: &[Diagnostic]) {
                     width: *width,
                     height: *height,
                     radius: *radius,
-                    paint: Paint::stroke("mark.invalid", MARK_WIDTH),
+                    paint: Paint::stroke("mark.invalid", style::mark_width()),
                 }),
                 _ => None,
             }));
@@ -154,7 +149,8 @@ fn invalid(group: &crate::shape::Group) -> WireStyle {
         Shape::Wire { style, .. } => Some(*style),
         _ => None,
     });
-    let (width, pattern) = style.map_or((MARK_WIDTH, crate::shape::Pattern::Solid), |style| (style.width.max(MARK_WIDTH), style.pattern));
+    let (width, pattern) =
+        style.map_or((style::mark_width(), crate::shape::Pattern::Solid), |style| (style.width.max(style::mark_width()), style.pattern));
     WireStyle { token: "mark.invalid", width, pattern, core: None, ticks: 0 }
 }
 
@@ -163,12 +159,12 @@ fn outline(drawing: &Drawing, node: &str) -> Option<Shape> {
     let nodes = drawing.groups.iter().filter(|group| group.wire.is_none() && group.arm.is_none());
     let placed = nodes.zip(&drawing.placed).find(|(group, _)| group.node == node).map(|(_, placed)| placed)?;
     Some(Shape::Rect {
-        x: placed.x - AROUND,
-        y: placed.y - AROUND,
-        width: placed.width + 2 * AROUND,
-        height: placed.height + 2 * AROUND,
-        radius: RADIUS + AROUND,
-        paint: Paint::stroke("mark.invalid", MARK_WIDTH),
+        x: placed.x - style::mark_around(),
+        y: placed.y - style::mark_around(),
+        width: placed.width + 2 * style::mark_around(),
+        height: placed.height + 2 * style::mark_around(),
+        radius: style::radius() + style::mark_around(),
+        paint: Paint::stroke("mark.invalid", style::mark_width()),
     })
 }
 

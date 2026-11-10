@@ -17,13 +17,7 @@
 use std::collections::BTreeMap;
 
 use crate::graph::{End, Family};
-
-/// Between two parallel wires, and between a wire and the edge of its channel.
-pub const GAP: i64 = 800;
-/// Between a track and what it passes over.
-pub const CLEAR: i64 = 1600;
-/// The narrowest channel: a margin on each side (notation 2.2).
-pub const MIN_CHANNEL: i64 = 1600;
+use crate::style;
 
 /// The side of a terminal, which the wire leaves or reaches in that direction (notation 2.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,7 +130,7 @@ impl Plan {
     /// The width that channel `k` needs: its slots 8 apart, a margin of 8 on each side.
     pub fn channel(&self, k: usize) -> i64 {
         let slots = i64::from(self.slots.get(k).copied().unwrap_or(0));
-        (GAP * (slots + 1)).max(MIN_CHANNEL)
+        (style::wire_gap() * (slots + 1)).max(style::min_channel())
     }
 }
 
@@ -266,8 +260,8 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
     }
     let alone = |channel: usize, y: i64, net: usize| {
         let Some(list) = ends_in.get(channel) else { return true };
-        let low = list.partition_point(|&(other, _)| other <= y - GAP);
-        list.iter().skip(low).take_while(|&&(other, _)| other < y + GAP).all(|&(_, other)| other == net)
+        let low = list.partition_point(|&(other, _)| other <= y - style::wire_gap());
+        list.iter().skip(low).take_while(|&&(other, _)| other < y + style::wire_gap()).all(|&(_, other)| other == net)
     };
     // Positions of the skylines: channel `k` at `2k`, column `c` at `2c + 1`.
     let positions = 2 * channels;
@@ -282,12 +276,13 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         let columns = (from_column + 1, farthest.saturating_sub(1));
         if leaves_chain {
             let lowest = bottoms.query(columns.0, columns.1).max(body.axis.unwrap_or(i64::MIN));
-            let track = lowest.saturating_add(CLEAR).max(below.query(start, end).saturating_add(GAP));
+            let track = lowest.saturating_add(style::clear()).max(below.query(start, end).saturating_add(style::wire_gap()));
             below.update(start, end, track);
             net.track = Some(track);
             plan.lowest = Some(plan.lowest.map_or(track, |lowest| lowest.max(track)));
         } else {
-            let limit = tops.query(columns.0, columns.1).saturating_sub(CLEAR).min(above.query(start, end).saturating_sub(GAP));
+            let limit =
+                tops.query(columns.0, columns.1).saturating_sub(style::clear()).min(above.query(start, end).saturating_sub(style::wire_gap()));
             let track = if net.source.y <= limit && alone(from_column + 1, net.source.y, index) { net.source.y } else { limit };
             above.update(start, end, track);
             net.track = Some(track);
@@ -299,8 +294,8 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         let Some(ends) = body.ends.get(wire).copied().flatten() else { continue };
         let (low, high) = (ends.to_column.max(1), ends.from_column.max(ends.to_column));
         let (start, end) = (2 * low, 2 * (high + 1));
-        let limit = tops.query(low, high).saturating_sub(CLEAR).min(above.query(start, end).saturating_sub(GAP));
-        let track = limit.min(ends.from.y - CLEAR).min(ends.to.approach - CLEAR);
+        let limit = tops.query(low, high).saturating_sub(style::clear()).min(above.query(start, end).saturating_sub(style::wire_gap()));
+        let track = limit.min(ends.from.y - style::clear()).min(ends.to.approach - style::clear());
         above.update(start, end, track);
         plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
         plan.back.push((wire, track, None, None, None));
@@ -431,10 +426,10 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
         let mut blocked: BTreeMap<i64, i64> = BTreeMap::new();
         let heights = verticals.iter().flat_map(|vertical| vertical.outs.iter().copied().chain([vertical.entry]));
         for height in heights.chain(entering.get(channel).into_iter().flatten().copied()) {
-            block(&mut blocked, height - GAP + 1, height + GAP - 1);
+            block(&mut blocked, height - style::wire_gap() + 1, height + style::wire_gap() - 1);
         }
         if let Some(axis) = axis {
-            block(&mut blocked, axis - GAP + 1, i64::MAX / 4);
+            block(&mut blocked, axis - style::wire_gap() + 1, i64::MAX / 4);
         }
         for index in split {
             let Some(vertical) = plan.verticals.get(index).cloned() else { continue };
@@ -443,8 +438,8 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             let middle = (vertical.y0 + vertical.y1) / 2;
             let across = loop {
                 let candidate = nearest_free(&blocked, middle);
-                match over.range(candidate - GAP + 1..=candidate + GAP - 1).next() {
-                    Some((&track, _)) => block(&mut blocked, track - GAP + 1, track + GAP - 1),
+                match over.range(candidate - style::wire_gap() + 1..=candidate + style::wire_gap() - 1).next() {
+                    Some((&track, _)) => block(&mut blocked, track - style::wire_gap() + 1, track + style::wire_gap() - 1),
                     None => break candidate,
                 }
             };
@@ -466,7 +461,7 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
                 main.y1 = main.outs.iter().copied().chain([across]).max().unwrap_or(across);
                 main.lead = Some(lead_index);
             }
-            block(&mut blocked, across - GAP + 1, across + GAP - 1);
+            block(&mut blocked, across - style::wire_gap() + 1, across + style::wire_gap() - 1);
         }
     }
 }
@@ -489,21 +484,21 @@ fn block(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
 /// of what holds it, each way as far as the next height of the grid that nothing blocks, the upper one on a tie.
 fn nearest_free(blocked: &BTreeMap<i64, i64>, middle: i64) -> i64 {
     let holding = |y: i64| blocked.range(..=y).next_back().filter(|&(_, &end)| end >= y).map(|(&start, &end)| (start, end));
-    let on_grid = middle - middle.rem_euclid(GAP);
+    let on_grid = middle - middle.rem_euclid(style::wire_gap());
     let Some((start, end)) = holding(on_grid) else { return on_grid };
     // Up: below the start of each interval in the way, down to the grid.
     let mut up = start.saturating_sub(1);
-    up -= up.rem_euclid(GAP);
+    up -= up.rem_euclid(style::wire_gap());
     while let Some((start, _)) = holding(up) {
         up = start.saturating_sub(1);
-        up -= up.rem_euclid(GAP);
+        up -= up.rem_euclid(style::wire_gap());
     }
     // Down: past the end of each interval in the way, up to the grid.
     let mut down = end.saturating_add(1);
-    down += (GAP - down.rem_euclid(GAP)) % GAP;
+    down += (style::wire_gap() - down.rem_euclid(style::wire_gap())) % style::wire_gap();
     while let Some((_, end)) = holding(down) {
         down = end.saturating_add(1);
-        down += (GAP - down.rem_euclid(GAP)) % GAP;
+        down += (style::wire_gap() - down.rem_euclid(style::wire_gap())) % style::wire_gap();
     }
     if middle - up <= down - middle { up } else { down }
 }
@@ -528,8 +523,8 @@ fn constraints(verticals: &[&Vertical]) -> Vec<Vec<usize>> {
     verticals
         .iter()
         .map(|vertical| {
-            let low = outs.partition_point(|&(out, _)| out <= vertical.entry - GAP);
-            let high = outs.partition_point(|&(out, _)| out < vertical.entry + GAP);
+            let low = outs.partition_point(|&(out, _)| out <= vertical.entry - style::wire_gap());
+            let high = outs.partition_point(|&(out, _)| out < vertical.entry + style::wire_gap());
             let mut found: Vec<usize> = outs
                 .get(low..high)
                 .unwrap_or_default()
@@ -682,7 +677,7 @@ fn slots(plan: &mut Plan, channels: usize) {
             }
         }
         // Half-open intervals `[y0, y1 + 8)`.
-        let mut ys: Vec<i64> = verticals.iter().flat_map(|vertical| [vertical.y0, vertical.y1.saturating_add(GAP)]).collect();
+        let mut ys: Vec<i64> = verticals.iter().flat_map(|vertical| [vertical.y0, vertical.y1.saturating_add(style::wire_gap())]).collect();
         ys.sort_unstable();
         ys.dedup();
         let at = |y: i64| ys.partition_point(|&known| known < y);
@@ -691,7 +686,7 @@ fn slots(plan: &mut Plan, channels: usize) {
         let mut slots = vec![0u32; count];
         for &local in &order {
             let Some(vertical) = verticals.get(local) else { continue };
-            let (start, end) = (at(vertical.y0), at(vertical.y1.saturating_add(GAP)).saturating_sub(1));
+            let (start, end) = (at(vertical.y0), at(vertical.y1.saturating_add(style::wire_gap())).saturating_sub(1));
             let slot = (taken.query(start, end) + 1).max(floor.get(local).copied().unwrap_or(0));
             taken.update(start, end, slot);
             for &other in right_of.get(local).map_or(&[][..], Vec::as_slice) {
@@ -718,7 +713,7 @@ fn slots(plan: &mut Plan, channels: usize) {
 /// so that two verticals of one slot keep 8 between them.
 pub fn assign_slots(intervals: &[(i64, i64)]) -> Vec<u32> {
     // Half-open intervals `[y0, y1 + 8)`.
-    let mut ys: Vec<i64> = intervals.iter().flat_map(|&(y0, y1)| [y0, y1.saturating_add(GAP)]).collect();
+    let mut ys: Vec<i64> = intervals.iter().flat_map(|&(y0, y1)| [y0, y1.saturating_add(style::wire_gap())]).collect();
     ys.sort_unstable();
     ys.dedup();
     let at = |y: i64| ys.partition_point(|&known| known < y);
@@ -726,7 +721,7 @@ pub fn assign_slots(intervals: &[(i64, i64)]) -> Vec<u32> {
     intervals
         .iter()
         .map(|&(y0, y1)| {
-            let (start, end) = (at(y0), at(y1.saturating_add(GAP)).saturating_sub(1));
+            let (start, end) = (at(y0), at(y1.saturating_add(style::wire_gap())).saturating_sub(1));
             let slot = taken.query(start, end) + 1;
             taken.update(start, end, slot);
             u32::try_from(slot).unwrap_or(0)
@@ -738,7 +733,7 @@ pub fn assign_slots(intervals: &[(i64, i64)]) -> Vec<u32> {
 pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Routed> {
     let slot_x = |index: usize| -> Option<i64> {
         let vertical = plan.verticals.get(index)?;
-        Some(channels.get(vertical.channel)? + GAP + GAP * i64::from(vertical.slot))
+        Some(channels.get(vertical.channel)? + style::wire_gap() + style::wire_gap() * i64::from(vertical.slot))
     };
     // Into a vertical at the height `from`: by its lead first when it jogs.
     let enter = |index: usize, from: i64, points: &mut Vec<(i64, i64)>| {

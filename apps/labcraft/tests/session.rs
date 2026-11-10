@@ -211,7 +211,7 @@ fn contents(folder: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 #[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
 fn a_change_of_the_file_is_drawn_within_200_ms() {
     let folder = Folder::new(&[("main.lcf", ONE)]);
-    let session = Handle::spawn(false, Box::new(|| {})).unwrap();
+    let session = Handle::spawn(false, None, Box::new(|| {})).unwrap();
     let opened = session.send("view.open", json!({ "folder": folder.0.to_string_lossy() })).recv_timeout(Duration::from_secs(30)).unwrap();
     assert!(opened.is_ok(), "{opened:?}");
     assert!(session.published().notice.is_none(), "{:?}", session.published().notice);
@@ -247,7 +247,7 @@ fn a_change_of_the_file_is_drawn_within_200_ms() {
 fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
     let folder = Folder::new(&[("main.lcf", ONE)]);
     let missing = folder.0.join("no-such-library");
-    let session = Handle::spawn(false, Box::new(|| {})).unwrap();
+    let session = Handle::spawn(false, None, Box::new(|| {})).unwrap();
     let opened = session
         .send("view.open", json!({ "folder": folder.0.to_string_lossy(), "lib_path": [missing.to_string_lossy()] }))
         .recv_timeout(Duration::from_secs(30))
@@ -291,4 +291,96 @@ fn the_face_of_the_panels_is_inter_4_1() {
     let face = std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts/Inter-Regular.ttf")).unwrap();
     let digest: String = sha2::Sha256::digest(&face).iter().map(|byte| format!("{byte:02x}")).collect();
     assert_eq!(digest, "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82");
+}
+
+/// `--style` (cli.md 8, notation 10): a file that does not exist is written with the defaults, which draw as without it;
+/// its values draw again when it changes; values refused leave those before, and the notice says why; colours below
+/// notation 8 are taken, and said.
+#[test]
+fn a_file_of_values_starts_as_the_defaults_and_draws_again_with_what_it_says() {
+    use labcraft_diagram::style::{Style, file_of};
+    let folder = Folder::new(&[("main.lcf", TWO)]);
+    let values = Folder::new(&[]);
+    let path = values.0.join("notation.toml");
+    let mut plain = Session::new(false, None);
+    open(&mut plain, &folder.0);
+    let mut session = Session::new(false, None);
+    session.watch_style(path.clone());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), file_of(&Style::default()));
+    assert_eq!(session.published().style_notice, None);
+    open(&mut session, &folder.0);
+    let before = session.published().drawing.clone().unwrap();
+    assert_eq!(before, plain.published().drawing.clone().unwrap());
+    // 16 units more of margin on each side, by hand: 32 units wider and higher.
+    std::fs::write(&path, "[canvas]\nmargin = 32\n").unwrap();
+    let generation = session.published().drawing_generation;
+    session.style_changed();
+    let after = session.published().drawing.clone().unwrap();
+    assert_ne!(session.published().drawing_generation, generation);
+    assert!(session.published().glide);
+    assert_eq!((after.width, after.height), (before.width + 3200, before.height + 3200));
+    assert_eq!(session.published().drawing.as_ref().unwrap().style.numbers.margin, 3200);
+    assert_eq!(session.published().style_notice, None);
+    // Refused: the values before stay, and the drawing.
+    std::fs::write(&path, "[canvas]\nmargin = 1000\n").unwrap();
+    let generation = session.published().drawing_generation;
+    session.style_changed();
+    let notice = session.published().style_notice.clone().unwrap_or_default();
+    assert!(notice.contains("`canvas.margin`: 1000 is not between 0 and 64; the values before stay"), "{notice}");
+    assert_eq!(session.published().drawing_generation, generation);
+    assert_eq!(session.published().drawing.as_ref().unwrap().style.numbers.margin, 3200);
+    // Taken, and said: an error wire as light as the canvas.
+    std::fs::write(&path, "[colors.light]\n\"wire.error\" = \"#F7F7F5\"\n").unwrap();
+    session.style_changed();
+    let notice = session.published().style_notice.clone().unwrap_or_default();
+    assert!(notice.contains("colours below the contrasts of notation 8: `wire.error` on `canvas.fill` (light): 1.00:1"), "{notice}");
+    assert!(notice.contains("more"), "{notice}");
+    assert_eq!(session.published().drawing.as_ref().unwrap().style.numbers.margin, 800 * 2);
+    // A file gone: said, the values stay.
+    std::fs::remove_file(&path).unwrap();
+    session.style_changed();
+    assert!(session.published().style_notice.clone().unwrap_or_default().ends_with("the values before stay"));
+    // A drawing kept while its file is broken is painted with the values it was drawn with.
+    std::fs::write(folder.0.join("main.lcf"), BROKEN).unwrap();
+    session.files_changed();
+    assert!(session.published().kept);
+    let kept = session.published().drawing.clone().unwrap();
+    std::fs::write(&path, "[canvas]\nmargin = 48\n").unwrap();
+    session.style_changed();
+    assert_eq!(session.published().drawing.clone().unwrap(), kept);
+    assert_eq!(session.published().drawing.as_ref().unwrap().style.numbers.margin, 1600);
+}
+
+/// A file of values saved to a new drawing within 200 ms *(proposed)*, through its watcher and the thread of the session:
+/// the slowest of three saves.
+#[test]
+#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
+fn a_file_of_values_saved_is_drawn_within_200_ms() {
+    let folder = Folder::new(&[("main.lcf", TWO)]);
+    let values = Folder::new(&[]);
+    let path = values.0.join("notation.toml");
+    let session = Handle::spawn(false, Some(path.clone()), Box::new(|| {})).unwrap();
+    assert!(path.exists());
+    assert_eq!(session.published().style_notice, None);
+    let opened = session.send("view.open", json!({ "folder": folder.0.to_string_lossy() })).recv_timeout(Duration::from_secs(30)).unwrap();
+    assert!(opened.is_ok(), "{opened:?}");
+    std::thread::sleep(Duration::from_millis(300));
+    let mut slowest = Duration::ZERO;
+    for margin in [24, 40, 16] {
+        let before = session.published().drawing_generation;
+        let start = Instant::now();
+        std::fs::write(&path, format!("[canvas]\nmargin = {margin}\n")).unwrap();
+        loop {
+            if session.published().drawing_generation != before {
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        slowest = slowest.max(start.elapsed());
+        assert_eq!(session.published().drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    println!("file of values saved to new drawing: {} ms at most", slowest.as_millis());
+    assert!(slowest < Duration::from_millis(200), "{slowest:?}");
 }

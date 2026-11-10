@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, Sense, Ui, Vec2};
-use labcraft_diagram::{COARSE_NODE, COARSE_ZOOM, Drawing, Shape};
+use labcraft_diagram::style;
+use labcraft_diagram::{COARSE_NODE, Drawing, Shape};
 
 mod fonts;
 pub(crate) mod paint;
@@ -31,7 +32,7 @@ pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 use paint::{Painted, Painter};
 use view::{Glide, Grid, Viewport};
 
-/// The colours of the theme tokens (notation 8): those of `diagram`, light or dark.
+/// The colours of the theme tokens (notation 8): those of the style in force in `diagram`, light or dark.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Theme {
     #[default]
@@ -42,13 +43,9 @@ pub enum Theme {
 impl Theme {
     /// The colour of a token; an unknown token is magenta, which a test of every drawing keeps from happening.
     pub fn color(self, token: &str) -> Color32 {
-        let Some(found) = labcraft_diagram::theme::TOKENS.iter().find(|value| value.name == token) else { return Color32::from_rgb(255, 0, 255) };
-        let hex = match self {
-            Theme::Light => found.light,
-            Theme::Dark => found.dark,
-        };
-        let channel = |at: usize| hex.get(at..at + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok()).unwrap_or(0);
-        Color32::from_rgb(channel(1), channel(3), channel(5))
+        let Some(rgb) = style::color(token, self == Theme::Dark) else { return Color32::from_rgb(255, 0, 255) };
+        let [_, red, green, blue] = rgb.to_be_bytes();
+        Color32::from_rgb(red, green, blue)
     }
 }
 
@@ -154,6 +151,12 @@ impl Canvas {
     /// Paints the drawing in all the room that `ui` gives, and reads the pointer: drag to pan, the wheel with Ctrl or
     /// a pinch to zoom, the wheel alone to scroll, a click on a tab.
     pub fn show(&mut self, ui: &mut Ui, theme: Theme, shown: &Shown) -> CanvasResponse {
+        // With the values its drawing was drawn with (notation 10).
+        let style = self.drawing.as_ref().map(|drawing| drawing.style.clone()).unwrap_or_default();
+        style::scope(&style, || self.show_in_style(ui, theme, shown))
+    }
+
+    fn show_in_style(&mut self, ui: &mut Ui, theme: Theme, shown: &Shown) -> CanvasResponse {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, theme.color("canvas.fill"));
@@ -192,7 +195,7 @@ impl Canvas {
         let step = self.viewport.step(now);
         let key = paint::Key { generation: self.generation, theme, step: step.to_bits(), pixels: ctx.pixels_per_point().to_bits() };
         self.painter.begin(&ctx, key);
-        let coarse = zoom < COARSE_ZOOM;
+        let coarse = zoom < style::factor(style::coarse_zoom());
         let put = |painted: &Painted, offset: Vec2| painted.paint(&painter, to_screen(offset), zoom / step, zoom, texts);
         let offset_of = |placed: Option<usize>| match (&offsets, placed) {
             (Some(offsets), Some(placed)) => offsets.get(placed).copied().unwrap_or(Vec2::ZERO),

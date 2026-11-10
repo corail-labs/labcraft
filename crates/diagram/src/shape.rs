@@ -1,6 +1,7 @@
 //! What a drawing is made of (`docs/architecture.md`, 11.3): shapes with the name of their theme token, in integer
 //! hundredths of a unit of the canvas. The canvas and the SVG paint only these.
 
+use crate::style;
 use labcraft_types::text::Ink;
 
 /// A token of the theme (notation 8), by its name: `node.fill`.
@@ -46,18 +47,13 @@ impl Detail {
     pub fn shown_at(self, zoom: f32) -> bool {
         match self {
             Detail::Title => true,
-            Detail::Label => zoom >= COARSE_ZOOM,
-            Detail::Name => zoom >= NAMES_ZOOM,
+            Detail::Label => zoom >= style::factor(style::coarse_zoom()),
+            Detail::Name => zoom >= style::factor(style::names_zoom()),
         }
     }
 }
 
-/// Below it, the canvas shows shapes, wires and the titles of structures, and each node as a plain rectangle in
-/// [`COARSE_NODE`] (notation 7).
-pub const COARSE_ZOOM: f32 = 0.4;
-/// Below it, the canvas shows no name of a terminal (notation 7).
-pub const NAMES_ZOOM: f32 = 0.75;
-/// A node below [`COARSE_ZOOM`].
+/// A node below the coarse zoom (notation 7, `zoom.coarse` of [`crate::style`]).
 pub const COARSE_NODE: Paint = Paint::both("node.fill", "node.stroke", 100);
 
 /// A run of a text in one token.
@@ -139,24 +135,19 @@ pub enum Pattern {
     DashDot,
 }
 
-/// The radius of the corners of a wire (notation 2).
-pub const WIRE_RADIUS: i64 = 600;
-/// Between two chevrons of an error wire, and from its start to the first.
-pub const CHEVRON_STEP: i64 = 2400;
-
 /// The chevrons of an error wire along its polyline: each three points, pointing in the direction of the flow.
 pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
     let mut found = Vec::new();
-    let mut next = CHEVRON_STEP / 2;
+    let mut next = style::chevron_step() / 2;
     let mut walked = 0i64;
     for pair in points.windows(2) {
         let (Some(&(x0, y0)), Some(&(x1, y1))) = (pair.first(), pair.get(1)) else { continue };
         let (dx, dy) = ((x1 - x0).signum(), (y1 - y0).signum());
         let length = (x1 - x0).abs() + (y1 - y0).abs();
         // Not on a corner, where the wire bends.
-        while next <= walked + length - WIRE_RADIUS {
+        while next <= walked + length - style::wire_radius() {
             let along = next - walked;
-            if along >= WIRE_RADIUS {
+            if along >= style::wire_radius() {
                 let (x, y) = (x0 + dx * along, y0 + dy * along);
                 let (back, side) = (200, 300);
                 found.push([
@@ -165,10 +156,10 @@ pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
                     (x - dx * back + dy * side, y - dy * back - dx * side),
                 ]);
             }
-            next += CHEVRON_STEP;
+            next += style::chevron_step();
         }
         walked += length;
-        next = next.max(walked + WIRE_RADIUS);
+        next = next.max(walked + style::wire_radius());
     }
     found
 }
@@ -344,6 +335,8 @@ pub struct Drawing {
     /// The arms drawn in tabs, and their tabs; none in an export, which unfolds every arm (notation 5.2). Not in the SVG.
     pub arms: Vec<ArmOf>,
     pub tabs: Vec<Tab>,
+    /// The values of the notation it was drawn with (notation 10), which the SVG and the canvas paint it with.
+    pub style: std::sync::Arc<crate::style::Style>,
 }
 
 /// The mark of a diagnostic: what shows where it is, and its code.

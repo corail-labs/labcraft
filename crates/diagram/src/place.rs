@@ -16,30 +16,9 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 
 use crate::graph::{BodyOf, End, FrameTerminal, Graph, Kind, Node, StructureKind};
-use crate::route::{self, At, Ends, GAP, MIN_CHANNEL, Routed, Side};
-use crate::size::{self, ANY_TEXT, GRID, MEDIUM, PADDING, SMALL, Sized, Text, pill_width};
-/// Between two nodes stacked in a column, beyond what a band or a label adds above a node.
-pub const STACK: i64 = 2400;
-/// The bottom of a column with no node of the chain, above the axis.
-pub const OFF_AXIS: i64 = 4000;
-/// The header of a frame, its title, and the margin inside it.
-pub const HEADER: i64 = 3200;
-pub const PAD: i64 = 1600;
-/// The title of an arm, and the gap between two arms.
-pub const ARM_HEADER: i64 = 2400;
-pub const ARM_GAP: i64 = 1600;
-/// In tabs (notation 5.2): the row of the tabs under the header of the frame, a tab and the gap between two, and the top
-/// of the box of an arm, which has no title of its own *(proposed)*.
-pub const TAB_ROW: i64 = 2400;
-pub const TAB_HEIGHT: i64 = 2000;
-pub const TAB_GAP: i64 = 400;
-pub const TAB_ARM_HEADER: i64 = 800;
-/// Between two terminals of a frame.
-pub const SLOT: i64 = 2400;
-/// Where the name of a terminal of a frame starts, from the edge.
-pub const LABEL_START: i64 = 1200;
-/// Between a label and what it labels (notation 3.1).
-pub const LABEL_ABOVE: i64 = 400;
+use crate::route::{self, At, Ends, Routed, Side};
+use crate::size::{self, Sized, Text, pill_width};
+use crate::style;
 /// Sweeps of barycentres, each one way then the other.
 const SWEEPS: usize = 4;
 
@@ -54,14 +33,19 @@ impl TerminalLabel {
     pub fn of(terminal: &FrameTerminal) -> TerminalLabel {
         let terminal = &terminal.terminal;
         TerminalLabel {
-            name: Text::new(&terminal.name, ANY_TEXT, MEDIUM),
-            unit: terminal.unit.as_ref().map(|unit| Text::new(&format!("[{unit}]"), ANY_TEXT, SMALL)),
-            pill: terminal.constant.as_ref().map(|constant| Text::new(&format!("\u{25C2} {constant}"), ANY_TEXT, MEDIUM)),
+            name: Text::new(&terminal.name, crate::size::any_text(), crate::size::medium()),
+            unit: terminal.unit.as_ref().map(|unit| Text::new(&format!("[{unit}]"), crate::size::any_text(), crate::size::small())),
+            pill: terminal
+                .constant
+                .as_ref()
+                .map(|constant| Text::new(&format!("\u{25C2} {constant}"), crate::size::any_text(), crate::size::medium())),
         }
     }
 
     pub fn width(&self) -> i64 {
-        self.name.width + self.unit.as_ref().map_or(0, |unit| PADDING + unit.width) + self.pill.as_ref().map_or(0, |pill| GRID + pill_width(pill))
+        self.name.width
+            + self.unit.as_ref().map_or(0, |unit| style::padding() + unit.width)
+            + self.pill.as_ref().map_or(0, |pill| style::grid() + pill_width(pill))
     }
 }
 
@@ -166,11 +150,11 @@ pub fn place(graph: &Graph<'_>, sized: &mut [Sized], titles: &Titles, origin: (i
             }
         }
         let header = match body.owner.and_then(|owner| Some((owner, graph.nodes.get(owner)?))) {
-            Some((owner, _)) if titles.tabs.contains(&owner) => TAB_ARM_HEADER,
+            Some((owner, _)) if titles.tabs.contains(&owner) => style::tab_arm_header(),
             Some((_, found)) if matches!(&found.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Match | StructureKind::Handle)) => {
-                ARM_HEADER
+                style::arm_header()
             }
-            _ => HEADER,
+            _ => style::frame_header(),
         };
         let title = titles.bodies.get(index).copied().unwrap_or(0);
         if let Some(slot) = bodies.get_mut(index) {
@@ -257,7 +241,7 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let header_width = titles.structures.get(&node).copied().unwrap_or(0);
             let widest = found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| placed.width).max().unwrap_or(0);
             let width = size::up(widest.max(header_width));
-            let mut y = HEADER + PAD;
+            let mut y = style::frame_header() + style::frame_pad();
             let mut arms = Vec::new();
             let mut corners = Vec::new();
             for &body in &found.bodies {
@@ -265,9 +249,9 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
                 let corner = y + placed.rise;
                 corners.push((body, corner));
                 arms.push((corner, placed));
-                y = corner + placed.height + ARM_GAP;
+                y = corner + placed.height + style::arm_gap();
             }
-            let height = (y - ARM_GAP + PAD).max(HEADER + 2 * PAD);
+            let height = (y - style::arm_gap() + style::frame_pad()).max(style::frame_header() + 2 * style::frame_pad());
             let mut block = Sized::new(0, height, Vec::new());
             let last = arms.last();
             // The last arm is on the axis (notation 5.2): the error enters and leaves on that line, whichever arm reads it.
@@ -281,8 +265,8 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
                     if input == 0 {
                         // The selector of a `handle` is an error: on the bottom line, the axis when there is one.
                         let y = match structure.kind {
-                            StructureKind::Handle => axis.unwrap_or(height - PAD),
-                            _ => HEADER / 2,
+                            StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
+                            _ => style::frame_header() / 2,
                         };
                         return (0, y);
                     }
@@ -292,7 +276,7 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
                         let (y, placed) = arms.get(arm)?;
                         Some(y + placed.left.get(left).copied()?)
                     });
-                    (0, found.unwrap_or(HEADER / 2))
+                    (0, found.unwrap_or(style::frame_header() / 2))
                 })
                 .collect();
             let outer_outputs: Vec<i64> = (0..found.outputs.len())
@@ -329,14 +313,14 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let core = "frame.fill.2";
             for (input, ((outer, arms_at), slot)) in entering.iter().zip(&left_slots).enumerate() {
                 let family = found.inputs.get(input).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-                let x = GAP + GAP * i64::from(slot.unwrap_or(0));
+                let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
                 let branches: Vec<Vec<(i64, i64)>> =
                     arms_at.iter().map(|&arm_y| route::simplify(vec![(0, *outer), (x, *outer), (x, arm_y), (left_gap, arm_y)])).collect();
                 gap_shapes(&branches, family, core, &mut block.shapes);
             }
             for (output, ((outer, arms_at), slot)) in leaving.iter().zip(&right_slots).enumerate() {
                 let family = found.outputs.get(output).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-                let x = left_gap + width + GAP + GAP * i64::from(slot.unwrap_or(0));
+                let x = left_gap + width + style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
                 let branches: Vec<Vec<(i64, i64)>> = arms_at
                     .iter()
                     .map(|&arm_y| route::simplify(vec![(left_gap + width, arm_y), (x, arm_y), (x, *outer), (frame_width, *outer)]))
@@ -349,9 +333,9 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
     let mut block = block;
     // A label above the frame, as above a block (notation 3.1); an order wire from it starts right after it.
     if let Some(label) = &found.label {
-        block.above = LABEL_ABOVE + size::line_height(MEDIUM);
-        let width = Text::new(&format!("{label}:"), ANY_TEXT, MEDIUM).width;
-        block.label_end = Some((width + PADDING, -LABEL_ABOVE - size::line_height(MEDIUM) / 2));
+        block.above = style::label_above() + size::line_height(crate::size::medium());
+        let width = Text::new(&format!("{label}:"), crate::size::any_text(), crate::size::medium()).width;
+        block.label_end = Some((width + style::padding(), -style::label_above() - size::line_height(crate::size::medium()) / 2));
     }
     if let Some(slot) = sized.get_mut(node) {
         *slot = block;
@@ -372,7 +356,7 @@ fn tabs_block(
     let header_width = titles.structures.get(&node).copied().unwrap_or(0);
     let widest = found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| placed.width).max().unwrap_or(0);
     let width = size::up(widest.max(header_width));
-    let top = HEADER + TAB_ROW + PAD;
+    let top = style::frame_header() + style::tab_row() + style::frame_pad();
     // The highest axis, from the top of each box: every arm moves down until its axis meets it.
     let reach = found.bodies.iter().filter_map(|&body| bodies.get(body)).filter_map(|placed| Some(placed.rise + placed.axis?)).max();
     let mut arms = Vec::new();
@@ -384,7 +368,8 @@ fn tabs_block(
         };
         arms.push((body, corner, placed));
     }
-    let height = (arms.iter().map(|(_, corner, placed)| corner + placed.height).max().unwrap_or(top) + PAD).max(top + PAD);
+    let height =
+        (arms.iter().map(|(_, corner, placed)| corner + placed.height).max().unwrap_or(top) + style::frame_pad()).max(top + style::frame_pad());
     let axis = reach.map(|reach| top + reach);
     let last = arms.last();
     let entry = structure.pair.map(|(input, _)| input);
@@ -396,8 +381,8 @@ fn tabs_block(
             }
             if input == 0 {
                 let y = match structure.kind {
-                    StructureKind::Handle => axis.unwrap_or(height - PAD),
-                    _ => HEADER / 2,
+                    StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
+                    _ => style::frame_header() / 2,
                 };
                 return (0, y);
             }
@@ -407,7 +392,7 @@ fn tabs_block(
                 let (_, corner, placed) = arms.get(arm)?;
                 Some(corner + placed.left.get(left).copied()?)
             });
-            (0, found.unwrap_or(HEADER / 2))
+            (0, found.unwrap_or(style::frame_header() / 2))
         })
         .collect();
     let outer_outputs: Vec<i64> = (0..found.outputs.len())
@@ -444,8 +429,8 @@ fn tabs_block(
         .collect();
     let left: Vec<(Vec<Option<u32>>, i64)> = entering.iter().map(|lists| gap_slots(lists, |index| index)).collect();
     let right: Vec<(Vec<Option<u32>>, i64)> = leaving.iter().map(|lists| gap_slots(lists, |index| lists.len() - 1 - index)).collect();
-    let left_gap = left.iter().map(|(_, gap)| *gap).max().unwrap_or(PAD);
-    let right_gap = right.iter().map(|(_, gap)| *gap).max().unwrap_or(PAD);
+    let left_gap = left.iter().map(|(_, gap)| *gap).max().unwrap_or(style::frame_pad());
+    let right_gap = right.iter().map(|(_, gap)| *gap).max().unwrap_or(style::frame_pad());
     for &(body, corner, _) in &arms {
         if let Some(offset) = offsets.get_mut(body) {
             *offset = (left_gap, corner, width);
@@ -460,14 +445,14 @@ fn tabs_block(
         let inputs = slot_of.get(arm).map_or(&[][..], Vec::as_slice);
         for ((&input, (outer, arms_at)), slot) in inputs.iter().zip(lists).zip(slots) {
             let family = found.inputs.get(input).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-            let x = GAP + GAP * i64::from(slot.unwrap_or(0));
+            let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
             let branches: Vec<Vec<(i64, i64)>> =
                 arms_at.iter().map(|&arm_y| route::simplify(vec![(0, *outer), (x, *outer), (x, arm_y), (left_gap, arm_y)])).collect();
             gap_shapes(&branches, family, core, &mut shapes);
         }
         for (output, ((outer, arms_at), slot)) in out_lists.iter().zip(out_slots).enumerate() {
             let family = found.outputs.get(output).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-            let x = left_gap + width + GAP + GAP * i64::from(slot.unwrap_or(0));
+            let x = left_gap + width + style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
             let branches: Vec<Vec<(i64, i64)>> = arms_at
                 .iter()
                 .map(|&arm_y| route::simplify(vec![(left_gap + width, arm_y), (x, arm_y), (x, *outer), (frame_width, *outer)]))
@@ -507,7 +492,7 @@ fn gap_slots(lists: &[(i64, Vec<i64>)], rank: impl Fn(usize) -> usize) -> (Vec<O
         }
     }
     let count = i64::from(assigned.iter().map(|slot| slot + 1).max().unwrap_or(0));
-    (slots, (GAP * (count + 1)).max(PAD))
+    (slots, (style::wire_gap() * (count + 1)).max(style::frame_pad()))
 }
 
 /// The wires of a margin of a `match`, with their junction points.
@@ -524,7 +509,7 @@ fn gap_shapes(branches: &[Vec<(i64, i64)>], family: crate::graph::Family, core: 
 
 /// How far the pill of an inline constant reaches left of its terminal (notation 3.2).
 pub fn constant_reach(constant: &str) -> i64 {
-    size::TERMINAL / 2 + GRID + pill_width(&Text::new(constant, size::COMPACT_CONSTANT, MEDIUM))
+    style::terminal() / 2 + style::grid() + pill_width(&Text::new(constant, crate::size::compact_constant(), crate::size::medium()))
 }
 
 /// The height of a terminal of a node, from the top of its block.
@@ -600,9 +585,9 @@ impl Body<'_> {
                 if let Some(y) = self.y.get_mut(local) {
                     *y = top;
                 }
-                top - self.above(local) - STACK
+                top - self.above(local) - style::stack()
             }
-            None if has_axis => -OFF_AXIS,
+            None if has_axis => -style::off_axis(),
             None => 0,
         };
         for &member in members {
@@ -610,7 +595,7 @@ impl Body<'_> {
             if let Some(y) = self.y.get_mut(member) {
                 *y = top;
             }
-            limit = top - self.above(member) - STACK;
+            limit = top - self.above(member) - style::stack();
         }
     }
 
@@ -638,7 +623,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     for list in &frame.slots {
         let last = list.len().saturating_sub(1);
         for (place, slot) in list.iter().enumerate() {
-            let y = -((last - place) as i64) * SLOT;
+            let y = -((last - place) as i64) * style::slot();
             if let Some(at) = slot.left.and_then(|left| body.pseudo_left.get_mut(left)) {
                 *at = y;
             }
@@ -768,7 +753,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
                 let error =
                     |terminal: Option<&FrameTerminal>| terminal.is_some_and(|terminal| terminal.terminal.family == crate::graph::Family::ERROR);
                 let any_error = error(slot.left.and_then(|at| frame.left.get(at))) || error(slot.right.and_then(|at| frame.right.get(at)));
-                (has_axis && !any_error).then_some(-SLOT)
+                (has_axis && !any_error).then_some(-style::slot())
             })
             .collect();
         let heights = resolve(&prefer, &pinned, &caps);
@@ -790,14 +775,20 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let vias: Vec<Option<Vec<(i64, i64)>>> = (0..wires.len()).map(|wire| graph.vias.get(&(index, wire)).cloned()).collect();
     let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, extents: &extents, axis, vias: &vias });
     // Across: each column as wide as its widest node, its blocks aligned on the left, each channel as wide as its wires.
-    let left_zone = frame.left.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| LABEL_START + widest + GRID);
-    let mut right_zone = frame.right.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| LABEL_START + widest + GRID);
+    let left_zone =
+        frame.left.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| style::label_start() + widest + style::grid());
+    let mut right_zone = frame
+        .right
+        .iter()
+        .map(|terminal| TerminalLabel::of(terminal).width())
+        .max()
+        .map_or(0, |widest| style::label_start() + widest + style::grid());
     // The pill of a conversion into a terminal on the right, before its name.
     for (wire_index, wire) in wires.iter().enumerate() {
         if let (End::Right(at), Some(pill), Some(terminal)) = (wire.to, graph.pills.get(&(index, wire_index)), wire_right(frame, wire)) {
             let _ = at;
-            let reach = size::TERMINAL / 2 + GRID + pill_width(&Text::new(&pill.text, size::LABEL_LINE, MEDIUM));
-            right_zone = right_zone.max(LABEL_START + TerminalLabel::of(terminal).width() + PADDING + reach + GRID);
+            let reach = style::terminal() / 2 + style::grid() + pill_width(&Text::new(&pill.text, crate::size::label_line(), crate::size::medium()));
+            right_zone = right_zone.max(style::label_start() + TerminalLabel::of(terminal).width() + style::padding() + reach + style::grid());
         }
     }
     let mut x_of = vec![0i64; count];
@@ -831,22 +822,22 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     // Down: from the header, a margin, what is highest, what is lowest, a margin.
     let tops = (0..count)
         .map(|local| body.top(local) - body.above(local))
-        .chain(left.iter().chain(&right).map(|y| y - SLOT / 2))
-        .chain(plan.highest.map(|track| track - TRACK_ROOM));
+        .chain(left.iter().chain(&right).map(|y| y - style::slot() / 2))
+        .chain(plan.highest.map(|track| track - style::track_room()));
     let bottoms = (0..count)
         .map(|local| body.top(local) + body.height(local))
-        .chain(left.iter().chain(&right).map(|y| y + SLOT / 2))
-        .chain(plan.lowest.map(|track| track + GAP));
+        .chain(left.iter().chain(&right).map(|y| y + style::slot() / 2))
+        .chain(plan.lowest.map(|track| track + style::wire_gap()));
     let top = tops.min().unwrap_or(0);
     let bottom = bottoms.max().unwrap_or(0);
-    let mut shift = header + PAD - top;
+    let mut shift = header + style::frame_pad() - top;
     // The axis goes through the first node of the chain, where the file puts it (notation 2.1).
     if let Some(&first) = chain.first()
         && let Some(at) = nodes.get(first).and_then(|&node| graph.nodes.get(node)).and_then(|node| node.at)
     {
         shift = at.1 - body.top(first);
     }
-    let mut height = shift + bottom + PAD;
+    let mut height = shift + bottom + style::frame_pad();
     let mut placed: Vec<(usize, NodeAt)> = Vec::with_capacity(count);
     let ranks = ranks(&members, &chain_of);
     for local in 0..count {
@@ -857,14 +848,14 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     }
     let mut width = width;
     keep_placed(graph, &body, &mut placed, &members);
-    let mut highest = header + PAD;
+    let mut highest = header + style::frame_pad();
     for (local, (_, at)) in placed.iter().enumerate() {
         let Some(sized) = body.sized.get(local) else { continue };
         // Right of a node that the file places: the channel after its column, then the names of the terminals on the
         // right, as automatic placement leaves them (notation 2.1).
-        let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(MIN_CHANNEL);
+        let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(style::min_channel());
         width = width.max(size::up(at.x + sized.width + sized.right + after + right_zone));
-        height = height.max(at.y + sized.height + PAD);
+        height = height.max(at.y + sized.height + style::frame_pad());
         highest = highest.min(at.y - sized.above);
     }
     // The wires, where the nodes ended.
@@ -885,12 +876,12 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, extents: &placed_extents, axis, vias: &vias });
     let routes = route::geometry(&plan, &ends, &channel_at);
     if let Some(track) = plan.highest {
-        highest = highest.min(track - TRACK_ROOM);
+        highest = highest.min(track - style::track_room());
     }
     if let Some(track) = plan.lowest {
-        height = height.max(track + GAP + PAD);
+        height = height.max(track + style::wire_gap() + style::frame_pad());
     }
-    let rise = size::up(header + PAD - highest);
+    let rise = size::up(header + style::frame_pad() - highest);
     BodyPlace {
         width,
         height,
@@ -912,9 +903,6 @@ fn wire_right<'f>(frame: &'f BodyOf, wire: &crate::graph::Wire) -> Option<&'f Fr
         _ => None,
     }
 }
-
-/// Above the highest track: room for the name of its wire (notation 4).
-const TRACK_ROOM: i64 = 2400;
 
 /// The top and the bottom of what each column holds, by column from the left edge (0) to the right edge (`n + 1`).
 fn extents(body: &Body<'_>, columns: &[usize], column_count: usize) -> Vec<Option<(i64, i64)>> {
@@ -956,12 +944,12 @@ fn wire_ends(
             // An order wire from a label starts right after the label.
             End::Order(index) => {
                 let (column, sized, x, y) = node(index)?;
-                let (dx, dy) = sized.label_end.unwrap_or((sized.width, GRID));
+                let (dx, dy) = sized.label_end.unwrap_or((sized.width, style::grid()));
                 Some((column, At::side(x + dx, y + dy, Side::Right)))
             }
             End::Left(index) => {
                 let terminal = frame.left.get(index)?;
-                Some((0, At::side(LABEL_START + TerminalLabel::of(terminal).width() + PADDING, *left.get(index)?, Side::Right)))
+                Some((0, At::side(style::label_start() + TerminalLabel::of(terminal).width() + style::padding(), *left.get(index)?, Side::Right)))
             }
             End::Right(_) => None,
         }
@@ -978,7 +966,7 @@ fn wire_ends(
                 Some(match sized.order {
                     // On the top edge: reached from above, past what is above the node.
                     Some((dx, dy)) if dy <= 0 && dx > 0 => {
-                        (column, At { x: x + dx, y: y + dy, side: Side::Top, approach: y + dy - sized.above - GAP })
+                        (column, At { x: x + dx, y: y + dy, side: Side::Top, approach: y + dy - sized.above - style::wire_gap() })
                     }
                     Some((dx, dy)) => (column, At::side(x + dx, y + dy, Side::Left)),
                     None => (column, At::side(x, y + sized.height / 2, Side::Left)),
@@ -986,7 +974,7 @@ fn wire_ends(
             }
             End::Right(index) => {
                 let terminal = frame.right.get(index)?;
-                let x = width - LABEL_START - TerminalLabel::of(terminal).width() - PADDING;
+                let x = width - style::label_start() - TerminalLabel::of(terminal).width() - style::padding();
                 Some((column_count + 1, At::side(x, *right.get(index)?, Side::Left)))
             }
             End::Left(_) => None,
@@ -1181,9 +1169,9 @@ pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool], caps: &[Option<i6
         *slot = match prefer.get(index).copied().flatten() {
             Some(y) => y,
             None => match (before.get(index).copied().flatten(), after.get(index).copied().flatten()) {
-                (Some((at, y)), _) => y + (index - at) as i64 * SLOT,
-                (None, Some((at, y))) => y - (at - index) as i64 * SLOT,
-                (None, None) => -((count - 1 - index) as i64) * SLOT,
+                (Some((at, y)), _) => y + (index - at) as i64 * style::slot(),
+                (None, Some((at, y))) => y - (at - index) as i64 * style::slot(),
+                (None, None) => -((count - 1 - index) as i64) * style::slot(),
             },
         };
     }
@@ -1194,7 +1182,7 @@ pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool], caps: &[Option<i6
         if let Some(y) = heights.get_mut(index)
             && !pinned.get(index).copied().unwrap_or(false)
         {
-            *y = (*y).max(before + SLOT);
+            *y = (*y).max(before + style::slot());
         }
     }
     // None lower than its cap: those above it go up with it.
@@ -1206,7 +1194,7 @@ pub(crate) fn resolve(prefer: &[Option<i64>], pinned: &[bool], caps: &[Option<i6
     for index in (0..count.saturating_sub(1)).rev() {
         let after = heights.get(index + 1).copied().unwrap_or(0);
         if let Some(y) = heights.get_mut(index) {
-            *y = (*y).min(after - SLOT);
+            *y = (*y).min(after - style::slot());
         }
     }
     heights
@@ -1268,7 +1256,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
             reaching.pop();
         }
         // The placed nodes in the way of this column, the lowest first.
-        let mut obstacles: Vec<(i64, i64)> = reaching.iter().map(|Reverse((_, y0, y1))| (y0 - STACK, y1 + STACK)).collect();
+        let mut obstacles: Vec<(i64, i64)> = reaching.iter().map(|Reverse((_, y0, y1))| (y0 - style::stack(), y1 + style::stack())).collect();
         obstacles.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
         let mut next = 0;
         let mut limit = i64::MAX;
@@ -1294,7 +1282,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
             if let Some(slot) = placed.get_mut(local) {
                 slot.1.y = y;
             }
-            limit = y - sized.above - STACK;
+            limit = y - sized.above - style::stack();
         }
     }
 }

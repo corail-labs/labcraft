@@ -30,19 +30,20 @@ mod place;
 mod route;
 mod shape;
 mod size;
+pub mod style;
 mod svg;
 pub mod theme;
 
 pub use labcraft_check::PathSegment;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use shape::{
-    ArmOf, BodyDrawn, CHEVRON_STEP, COARSE_NODE, COARSE_ZOOM, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, NAMES_ZOOM,
-    Paint, Pattern, Placed, Run, Shape, Tab, Token, WIRE_RADIUS, WireOf, WireStyle, chevrons,
+    ArmOf, BodyDrawn, COARSE_NODE, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint, Pattern, Placed, Run, Shape,
+    Tab, Token, WireOf, WireStyle, chevrons,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
-use size::{ANY_TEXT, GRID, LABEL_LINE, LARGE, MEDIUM, SMALL, Sizer, Text};
+use size::{Sizer, Text};
 
 /// What placement depends on, of the view (notation 2.1): the preference of the IDE that shows every node in standard
 /// view (notation 3), and the view state that the file does not hold, which a viewer changes (commands.md 6.5,
@@ -91,9 +92,6 @@ pub enum Drawn {
     /// `LC7002`, or a file that declares no function.
     NotDrawn(Vec<Diagnostic>),
 }
-
-/// The margin around what is drawn: 16 units (`docs/cli.md`, 7.2).
-const MARGIN: i64 = 1600;
 
 /// The drawing of the function of `checked.files[file]`.
 pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, limits: &DiagramLimits) -> Drawn {
@@ -181,7 +179,7 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
     let mut distinct: Vec<&String> = libraries.iter().flatten().collect();
     distinct.sort();
     distinct.dedup();
-    let short = |library: &str| labcraft_types::text::cut(library.rsplit('.').next().unwrap_or(library), LABEL_LINE).into_owned();
+    let short = |library: &str| labcraft_types::text::cut(library.rsplit('.').next().unwrap_or(library), crate::size::label_line()).into_owned();
     let mut drawn: BTreeMap<&String, String> = distinct.iter().map(|&library| (library, short(library))).collect();
     for pass in 0..2 {
         let mut readers: BTreeMap<String, Vec<&String>> = BTreeMap::new();
@@ -191,9 +189,9 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
         for same in readers.values().filter(|libraries| libraries.len() > 1) {
             for &library in same {
                 let text = if pass == 0 {
-                    labcraft_types::text::cut(library, LABEL_LINE).into_owned()
+                    labcraft_types::text::cut(library, crate::size::label_line()).into_owned()
                 } else {
-                    cut_middle(library, LABEL_LINE).into_owned()
+                    cut_middle(library, crate::size::label_line()).into_owned()
                 };
                 drawn.insert(library, text);
             }
@@ -222,7 +220,7 @@ fn title(kind: &Kind<'_>) -> String {
 fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     let sizer = Sizer { names, standard_everywhere: view.standard_everywhere };
     let bands = bands(graph);
-    let mut drawing = Drawing { function: graph.function.clone(), ..Drawing::default() };
+    let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
     // Each icon once in the drawing, however many calls show it.
     let mut icons: HashMap<*const labcraft_graph::Icon, usize> = HashMap::new();
     let mut sized: Vec<size::Sized> = graph
@@ -250,7 +248,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         }
     }
     let titles = titles(graph, view);
-    let placement = place::place(graph, &mut sized, &titles, (MARGIN, MARGIN));
+    let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -280,7 +278,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     let within = |body: usize| inside.get(body).copied().flatten();
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
-        let mut shapes = frame_shapes(frame, &Text::new(&body.caption, ANY_TEXT, LARGE), None, false, "frame.stroke");
+        let mut shapes = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, false, "frame.stroke");
         frame_terminals(body, frame, true, &mut shapes);
         drawing.loose = shapes;
     }
@@ -363,10 +361,10 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         (left, top, right, bottom) = (left.min(x0), top.min(y0), right.max(x1), bottom.max(y1));
     }
     if left == i64::MAX {
-        (left, top) = (MARGIN, MARGIN);
+        (left, top) = (style::margin(), style::margin());
     }
     // A node that the file places left of the frame or above it moves the whole drawing.
-    let (dx, dy) = ((MARGIN - left).max(0), (MARGIN - top).max(0));
+    let (dx, dy) = ((style::margin() - left).max(0), (style::margin() - top).max(0));
     if dx > 0 || dy > 0 {
         drawing.loose = std::mem::take(&mut drawing.loose).into_iter().map(|shape| moved(shape, dx, dy)).collect();
         for group in &mut drawing.groups {
@@ -385,16 +383,16 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         }
     }
     drawing.bodies = placement.frames.iter().map(|frame| BodyDrawn { axis: frame.axis.map(|axis| axis + dy), from_file: frame.from_file }).collect();
-    drawing.width = right + dx + MARGIN;
-    drawing.height = bottom + dy + MARGIN;
+    drawing.width = right + dx + style::margin();
+    drawing.height = bottom + dy + style::margin();
     drawing
 }
 
 /// The label of a structure, above its frame (notation 3.1).
 fn sized_label(node: &graph::Node<'_>, at: &place::NodeAt) -> Option<Shape> {
     let label = node.label.as_ref()?;
-    let text = Text::new(&format!("{label}:"), ANY_TEXT, MEDIUM);
-    Some(text.at(at.x, at.y - place::LABEL_ABOVE - size::line_height(MEDIUM) / 2, "ink.muted"))
+    let text = Text::new(&format!("{label}:"), crate::size::any_text(), crate::size::medium());
+    Some(text.at(at.x, at.y - style::label_above() - size::line_height(crate::size::medium()) / 2, "ink.muted"))
 }
 
 /// The widths that titles need: the name of the function, a header and its badge, the patterns of an arm, the tabs of a
@@ -412,17 +410,19 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
         }
     }
     let header_width = |structure: &graph::Structure| {
-        let header = Text::new(&structure.header, ANY_TEXT, LARGE).width;
-        let badge = structure.badge.map_or(0, |badge| GRID + Text::new(badge, ANY_TEXT, MEDIUM).width + 2 * size::PADDING);
-        2 * place::LABEL_START + header + badge
+        let header = Text::new(&structure.header, crate::size::any_text(), crate::size::large()).width;
+        let badge = structure
+            .badge
+            .map_or(0, |badge| style::grid() + Text::new(badge, crate::size::any_text(), crate::size::medium()).width + 2 * style::padding());
+        2 * style::label_start() + header + badge
     };
     for (index, body) in graph.bodies.iter().enumerate() {
         let width = match body.owner.and_then(|owner| graph.nodes.get(owner)).map(|owner| &owner.kind) {
             // In tabs, an arm has no title: its tab names it.
             _ if body.owner.is_some_and(|owner| titles.tabs.contains(&owner)) => 0,
-            None => 2 * place::LABEL_START + Text::new(&body.caption, ANY_TEXT, LARGE).width,
+            None => 2 * style::label_start() + Text::new(&body.caption, crate::size::any_text(), crate::size::large()).width,
             Some(Kind::Structure(structure)) if matches!(structure.kind, StructureKind::Loop | StructureKind::For) => header_width(structure),
-            Some(_) => 2 * place::LABEL_START + Text::new(&body.caption, ANY_TEXT, MEDIUM).width,
+            Some(_) => 2 * style::label_start() + Text::new(&body.caption, crate::size::any_text(), crate::size::medium()).width,
         };
         if let Some(slot) = titles.bodies.get_mut(index) {
             *slot = width;
@@ -435,8 +435,8 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
             let mut width = header_width(structure);
             if titles.tabs.contains(&index) {
                 let row: i64 =
-                    node.bodies.iter().filter_map(|&body| graph.bodies.get(body)).map(|body| tab_width(&body.caption) + place::TAB_GAP).sum();
-                width = width.max(2 * place::LABEL_START + row - place::TAB_GAP);
+                    node.bodies.iter().filter_map(|&body| graph.bodies.get(body)).map(|body| tab_width(&body.caption) + style::tab_gap()).sum();
+                width = width.max(2 * style::label_start() + row - style::tab_gap());
             }
             titles.structures.insert(index, width);
         }
@@ -446,7 +446,7 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
 
 /// The width of the tab of an arm.
 fn tab_width(caption: &str) -> i64 {
-    Text::new(caption, ANY_TEXT, MEDIUM).width + 2 * size::PADDING
+    Text::new(caption, crate::size::any_text(), crate::size::medium()).width + 2 * style::padding()
 }
 
 /// An arm: its title, and its shapes.
@@ -469,8 +469,8 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
         y: frame.y,
         width: frame.width,
         height: frame.height,
-        radius: size::RADIUS,
-        paint: Paint::both(fill, stroke, size::OUTLINE),
+        radius: style::radius(),
+        paint: Paint::both(fill, stroke, style::outline()),
     }];
     if double {
         shapes.push(Shape::Rect {
@@ -478,24 +478,24 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
             y: frame.y + 300,
             width: frame.width - 600,
             height: frame.height - 600,
-            radius: size::RADIUS,
-            paint: Paint::stroke(stroke, size::OUTLINE),
+            radius: style::radius(),
+            paint: Paint::stroke(stroke, style::outline()),
         });
     }
     let middle = frame.y + frame.header / 2;
-    shapes.push(title.shown_from(frame.x + place::LABEL_START, middle, "node.title", shape::Detail::Title));
+    shapes.push(title.shown_from(frame.x + style::label_start(), middle, "node.title", shape::Detail::Title));
     if let Some(badge) = badge {
-        let text = Text::new(badge, ANY_TEXT, MEDIUM);
-        let x = frame.x + place::LABEL_START + title.width + GRID;
+        let text = Text::new(badge, crate::size::any_text(), crate::size::medium());
+        let x = frame.x + style::label_start() + title.width + style::grid();
         shapes.push(Shape::Rect {
             x,
-            y: middle - GRID,
-            width: text.width + 2 * size::PADDING,
-            height: 2 * GRID,
+            y: middle - style::grid(),
+            width: text.width + 2 * style::padding(),
+            height: 2 * style::grid(),
             radius: 300,
             paint: Paint::fill("badge.fill"),
         });
-        shapes.push(text.at(x + size::PADDING, middle, "badge.text"));
+        shapes.push(text.at(x + style::padding(), middle, "badge.text"));
     }
     shapes
 }
@@ -512,15 +512,15 @@ fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt, named: bool, sh
             }
             let label = place::TerminalLabel::of(terminal);
             let width = label.width();
-            let mut at = if side { x - place::LABEL_START - width } else { x + place::LABEL_START };
+            let mut at = if side { x - style::label_start() - width } else { x + style::label_start() };
             shapes.push(label.name.shown_from(at, y, "node.title", shape::Detail::Name));
             at += label.name.width;
             if let Some(unit) = &label.unit {
-                shapes.push(unit.shown_from(at + size::PADDING, y, "ink.muted", shape::Detail::Name));
-                at += size::PADDING + unit.width;
+                shapes.push(unit.shown_from(at + style::padding(), y, "ink.muted", shape::Detail::Name));
+                at += style::padding() + unit.width;
             }
             if let Some(pill) = &label.pill {
-                shapes.extend(size::pill(pill, at + GRID, y));
+                shapes.extend(size::pill(pill, at + style::grid(), y));
             }
         }
     }
@@ -532,7 +532,7 @@ fn edge_terminal(terminal: &graph::FrameTerminal, x: i64, y: i64) -> Vec<Shape> 
     match terminal.edge {
         graph::Edge::Register => {
             let token = size::wire_token(family);
-            let mark = Text::new("\u{21BB}", 1, SMALL);
+            let mark = Text::new("\u{21BB}", 1, crate::size::small());
             vec![
                 Shape::Rect { x: x - 700, y: y - 700, width: 1400, height: 1400, radius: 0, paint: Paint::both("node.fill", token, 150) },
                 mark.centred(x, y, "node.title"),
@@ -559,7 +559,7 @@ fn structure_shapes(
     (width, inputs, outputs): Terminals<'_>,
     in_tabs: bool,
 ) -> (Vec<Shape>, Vec<ArmShapes>, Vec<TabShapes>) {
-    let title = Text::new(&structure.header, ANY_TEXT, LARGE);
+    let title = Text::new(&structure.header, crate::size::any_text(), crate::size::large());
     let stroke = if structure.kind == StructureKind::Handle { "wire.error" } else { "frame.stroke" };
     match structure.kind {
         StructureKind::Loop | StructureKind::For => {
@@ -572,7 +572,7 @@ fn structure_shapes(
             }
             for (input, &(_, y)) in node.inputs.iter().zip(inputs) {
                 if let Some(constant) = &input.constant {
-                    let text = Text::new(constant, size::COMPACT_CONSTANT, MEDIUM);
+                    let text = Text::new(constant, crate::size::compact_constant(), crate::size::medium());
                     shapes.extend(size::pill(&text, at.x - place::constant_reach(constant), at.y + y));
                 }
             }
@@ -585,10 +585,10 @@ fn structure_shapes(
                 .bodies
                 .iter()
                 .filter_map(|index| placement.frames.get(*index))
-                .map(|frame| frame.y + frame.height - at.y + place::PAD)
+                .map(|frame| frame.y + frame.height - at.y + style::frame_pad())
                 .max()
-                .unwrap_or(place::HEADER + place::PAD);
-            let outer = place::FrameAt { x: at.x, y: at.y, width, height, header: place::HEADER, depth, ..place::FrameAt::default() };
+                .unwrap_or(style::frame_header() + style::frame_pad());
+            let outer = place::FrameAt { x: at.x, y: at.y, width, height, header: style::frame_header(), depth, ..place::FrameAt::default() };
             let mut shapes = frame_shapes(&outer, &title, structure.badge, false, stroke);
             // The selector, then the notches of the outer values that the arms read.
             for (index, (input, &(x, y))) in node.inputs.iter().zip(inputs).enumerate() {
@@ -600,26 +600,26 @@ fn structure_shapes(
             }
             let mut arms = Vec::new();
             let mut tabs = Vec::new();
-            let mut tab_x = at.x + place::LABEL_START;
+            let mut tab_x = at.x + style::label_start();
             for &index in &node.bodies {
                 let (Some(body), Some(frame)) = (graph.bodies.get(index), placement.frames.get(index)) else { continue };
                 let mut shapes = Vec::new();
-                let caption = Text::new(&body.caption, ANY_TEXT, MEDIUM);
+                let caption = Text::new(&body.caption, crate::size::any_text(), crate::size::medium());
                 if in_tabs {
                     // The tab of the arm, in the row under the header: the arm shown filled *(proposed)*.
-                    let (x, y, width, height) = (tab_x, at.y + place::HEADER, tab_width(&body.caption), place::TAB_HEIGHT);
+                    let (x, y, width, height) = (tab_x, at.y + style::frame_header(), tab_width(&body.caption), style::tab_height());
                     let middle = y + height / 2;
                     let rect = |paint| Shape::Rect { x, y, width, height, radius: 300, paint };
                     let shown = vec![
-                        rect(Paint::both("tab.fill", stroke, size::OUTLINE)),
-                        caption.shown_from(x + size::PADDING, middle, "node.title", shape::Detail::Title),
+                        rect(Paint::both("tab.fill", stroke, style::outline())),
+                        caption.shown_from(x + style::padding(), middle, "node.title", shape::Detail::Title),
                     ];
                     let other = vec![
-                        rect(Paint::stroke("frame.divider", size::OUTLINE)),
-                        caption.shown_from(x + size::PADDING, middle, "ink.muted", shape::Detail::Title),
+                        rect(Paint::stroke("frame.divider", style::outline())),
+                        caption.shown_from(x + style::padding(), middle, "ink.muted", shape::Detail::Title),
                     ];
                     tabs.push((x, y, width, height, shown, other));
-                    tab_x += width + place::TAB_GAP;
+                    tab_x += width + style::tab_gap();
                 }
                 let level = (frame.depth + 1).min(4);
                 let fill = match level {
@@ -633,11 +633,11 @@ fn structure_shapes(
                     y: frame.y,
                     width: frame.width,
                     height: frame.height,
-                    radius: size::RADIUS,
-                    paint: Paint::both(fill, stroke, size::OUTLINE),
+                    radius: style::radius(),
+                    paint: Paint::both(fill, stroke, style::outline()),
                 });
                 if !in_tabs {
-                    shapes.push(caption.shown_from(frame.x + place::LABEL_START, frame.y + frame.header / 2, "ink.muted", shape::Detail::Title));
+                    shapes.push(caption.shown_from(frame.x + style::label_start(), frame.y + frame.header / 2, "ink.muted", shape::Detail::Title));
                 }
                 frame_terminals(body, frame, true, &mut shapes);
                 arms.push((body.caption.clone(), shapes));
@@ -730,9 +730,9 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
     for routed in routes {
         for (&wire, branch) in routed.wires.iter().zip(&routed.branches) {
             let (Some(pill), Some(&(x, y))) = (graph.pills.get(&(body, wire)), branch.last()) else { continue };
-            let text = Text::new(&pill.text, size::LABEL_LINE, MEDIUM);
+            let text = Text::new(&pill.text, crate::size::label_line(), crate::size::medium());
             let start = x - pill_reach(pill);
-            obstacles.rect(start, y - size::PILL_HEIGHT / 2, start + size::pill_width(&text), y + size::PILL_HEIGHT / 2);
+            obstacles.rect(start, y - style::pill_height() / 2, start + size::pill_width(&text), y + style::pill_height() / 2);
             pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion));
         }
     }
@@ -792,23 +792,22 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
 
 /// How far the pill of a wire reaches left of the terminal it leads to.
 fn pill_reach(pill: &graph::Pill) -> i64 {
-    size::TERMINAL / 2 + GRID + size::pill_width(&Text::new(&pill.text, size::LABEL_LINE, MEDIUM))
+    style::terminal() / 2 + style::grid() + size::pill_width(&Text::new(&pill.text, crate::size::label_line(), crate::size::medium()))
 }
 
 /// Above a wire, its name (notation 4): on its first horizontal segment, 3 units above it, when the whole name fits there
 /// with 4 on each side and covers nothing; and again halfway along a long horizontal of the wire, by the same rule.
 fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::Obstacles) -> Vec<Shape> {
-    const ABOVE: i64 = 300;
-    const SIDE: i64 = 400;
-    let text = Text::new(value, ANY_TEXT, MEDIUM);
+    let (above, side) = (style::name_above(), style::name_side());
+    let text = Text::new(value, crate::size::any_text(), crate::size::medium());
     if text.width == 0 {
         return Vec::new();
     }
-    let height = size::line_height(MEDIUM);
+    let height = size::line_height(crate::size::medium());
     let across = |a: (i64, i64), b: (i64, i64)| (a.1 == b.1 && a.0 != b.0).then_some((a.0.min(b.0), a.0.max(b.0), a.1));
     let mut candidates = Vec::new();
     if let Some((x0, x1, y)) = branches.first().and_then(|branch| across(*branch.first()?, *branch.get(1)?)) {
-        candidates.push((x0 + SIDE, x1 - SIDE, y, false));
+        candidates.push((x0 + side, x1 - side, y, false));
     }
     // The longest horizontal of the net past its first segment, when it is long: three times what the name needs.
     let longest = branches
@@ -816,9 +815,9 @@ fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::
         .flat_map(|branch| branch.windows(2).skip(1).filter_map(|pair| across(*pair.first()?, *pair.get(1)?)))
         .max_by_key(|&(x0, x1, y)| (x1 - x0, -y, -x0));
     if let Some((x0, x1, y)) = longest
-        && x1 - x0 >= 3 * (text.width + 2 * SIDE)
+        && x1 - x0 >= 3 * (text.width + 2 * side)
     {
-        candidates.push((x0 + SIDE, x1 - SIDE, y, true));
+        candidates.push((x0 + side, x1 - side, y, true));
     }
     let mut shapes = Vec::new();
     for (start, end, y, centred) in candidates {
@@ -826,13 +825,13 @@ fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::
             continue;
         }
         let x = if centred { start + (end - start - text.width) / 2 } else { start };
-        let (top, bottom) = (y - ABOVE - height, y - ABOVE);
+        let (top, bottom) = (y - above - height, y - above);
         if !obstacles.free(x, top, x + text.width, bottom) {
             continue;
         }
         obstacles.rect(x, top, x + text.width, bottom);
         // Its baseline 3 above the wire, its line above that, as the extent of a text counts it.
-        let cap = labcraft_types::text::scale(u64::from(labcraft_types::text::CAP_HEIGHT), MEDIUM).unwrap_or(0);
+        let cap = labcraft_types::text::scale(u64::from(labcraft_types::text::CAP_HEIGHT), crate::size::medium()).unwrap_or(0);
         shapes.push(text.at(x, bottom - (cap + 1) / 2, "ink.muted"));
     }
     shapes

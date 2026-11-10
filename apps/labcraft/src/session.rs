@@ -3,7 +3,8 @@
 //! of `docs/commands.md`, 6.5, as an id and JSON parameters, and reads what it publishes. It runs on a thread of its
 //! own, as large as `format::STACK_SIZE`, and checks again when the files it watches change.
 //!
-//! It writes no file: the viewer is read-only (scenario 6, point 6).
+//! It writes no file of a folder: the viewer is read-only (scenario 6, point 6). The one file it may write is that of
+//! `--style`, given by name, with the defaults, when it does not exist yet (`docs/cli.md`, 8).
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use std::time::{Duration, Instant};
 use labcraft_cli::args::CheckOptions;
 use labcraft_cli::folder::{self, Function, Loaded};
 use labcraft_cli::output::diagnostics_text;
+use labcraft_diagram::style::{self, Style};
 use labcraft_diagram::{DiagramLimits, Drawing, ViewState};
 use labcraft_types::{Code, Limits};
 use serde_json::{Value, json};
@@ -99,6 +101,8 @@ pub struct Published {
     pub standard_everywhere: bool,
     /// What the viewer must say: a folder that cannot be watched.
     pub notice: Option<String>,
+    /// What the viewer must say of the file of `--style`.
+    pub style_notice: Option<String>,
 }
 
 /// The state of the viewer, and its commands.
@@ -111,7 +115,7 @@ pub struct Session {
     /// The file of the function shown: two files can give one name.
     file: Option<String>,
     opened: Vec<String>,
-    /// The last drawing of each file whose function was drawable.
+    /// The last drawing of each file whose function was drawable: it holds the values it was drawn with.
     last: HashMap<String, Arc<Drawing>>,
     /// The entry of the function shown in `labcraft-diagram/1`.
     entry: Value,
@@ -119,6 +123,10 @@ pub struct Session {
     /// Where the watcher sends the changes it sees: the thread of the session.
     changes: Option<Sender<Message>>,
     watching: Option<Watching>,
+    /// The values of the notation in force, and the file of `--style` they come from, watched.
+    style: Arc<Style>,
+    style_path: Option<PathBuf>,
+    style_watching: Option<notify::RecommendedWatcher>,
 }
 
 impl Session {
@@ -138,6 +146,45 @@ impl Session {
             published: Published { standard_everywhere, ..Published::default() },
             changes,
             watching: None,
+            style: Arc::new(Style::default()),
+            style_path: None,
+            style_watching: None,
+        }
+    }
+
+    /// Draws with the values of the file at `path` (`--style`): written with the defaults when it does not exist, then
+    /// watched, and read again each time it changes.
+    pub fn watch_style(&mut self, path: PathBuf) {
+        let mut notices = Vec::new();
+        if let Err(problem) = crate::style_file::prepare(&path) {
+            notices.push(problem);
+        }
+        if let Some(changes) = &self.changes {
+            match crate::style_file::watch(&path, changes.clone()) {
+                Ok(watcher) => self.style_watching = Some(watcher),
+                Err(problem) => notices.push(format!("{problem}: the values are read only once")),
+            }
+        }
+        self.style_path = Some(path);
+        self.style_changed();
+        if let Some(notice) = self.published.style_notice.take() {
+            notices.push(notice);
+        }
+        self.published.style_notice = (!notices.is_empty()).then(|| notices.join("; "));
+    }
+
+    /// The file of `--style` changed: reads it again, and draws again with its values when they are taken and differ.
+    pub fn style_changed(&mut self) {
+        let Some(path) = &self.style_path else { return };
+        let (read, notice) = crate::style_file::read(path);
+        self.published.style_notice = notice;
+        self.published.generation = self.published.generation.wrapping_add(1);
+        if let Some(read) = read
+            && read != *self.style
+        {
+            self.style = Arc::new(read);
+            // The nodes glide to their places in the new values.
+            self.draw(true);
         }
     }
 
@@ -391,11 +438,14 @@ impl Session {
         };
         let mut report = loaded.report.clone();
         let files = folder::files_of(loaded.checked.as_ref());
-        let (drawing, nodes, codes) =
-            folder::drawing_of(function, loaded.checked.as_ref(), &files, &loaded.names, &state, &DiagramLimits::default(), &mut report);
-        let drawn = drawing.is_some();
-        let picture = Arc::new(folder::picture(function, drawing, &report));
-        Some((picture, drawn, entry_of(name, file, drawn, nodes, &codes)))
+        // Drawn with the values in force (notation 10).
+        style::scope(&self.style, || {
+            let (drawing, nodes, codes) =
+                folder::drawing_of(function, loaded.checked.as_ref(), &files, &loaded.names, &state, &DiagramLimits::default(), &mut report);
+            let drawn = drawing.is_some();
+            let picture = Arc::new(folder::picture(function, drawing, &report));
+            Some((picture, drawn, entry_of(name, file, drawn, nodes, &codes)))
+        })
     }
 
     /// Draws the function shown; returns its entry of `diagrams` in `labcraft-diagram/1`.
@@ -472,6 +522,8 @@ pub enum Message {
     },
     /// A file watched changed.
     Changed,
+    /// The file of `--style` changed.
+    StyleChanged,
     Stop,
 }
 
@@ -484,10 +536,14 @@ pub struct Handle {
 
 impl Handle {
     /// Starts a session on its own thread. `wake` asks the window for a frame after each publication.
-    pub fn spawn(standard_everywhere: bool, wake: Box<dyn Fn() + Send>) -> std::io::Result<Handle> {
+    /// With `style`, the file of `--style`.
+    pub fn spawn(standard_everywhere: bool, style: Option<PathBuf>, wake: Box<dyn Fn() + Send>) -> std::io::Result<Handle> {
         let (sender, receiver) = mpsc::channel();
-        let published = Arc::new(Mutex::new(Published { standard_everywhere, ..Published::default() }));
-        let session = Session::new(standard_everywhere, Some(sender.clone()));
+        let mut session = Session::new(standard_everywhere, Some(sender.clone()));
+        if let Some(path) = style {
+            session.watch_style(path);
+        }
+        let published = Arc::new(Mutex::new(session.published().clone()));
         let shared = published.clone();
         let thread = std::thread::Builder::new()
             .name("labcraft-session".to_owned())
@@ -549,10 +605,11 @@ fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Pub
                     let _ = reply.send(result);
                 }
             }
-            Message::Changed => {
+            first @ (Message::Changed | Message::StyleChanged) => {
                 // The changes of the 50 ms after the first one, with it: a window that does not move, so that a file
                 // written without end still lets the folder be checked. A command that comes meanwhile waits for the
                 // check.
+                let (mut files, mut values) = (matches!(first, Message::Changed), matches!(first, Message::StyleChanged));
                 let deadline = Instant::now() + SETTLE;
                 loop {
                     let left = deadline.saturating_duration_since(Instant::now());
@@ -560,7 +617,8 @@ fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Pub
                         break;
                     }
                     match receiver.recv_timeout(left) {
-                        Ok(Message::Changed) => {}
+                        Ok(Message::Changed) => files = true,
+                        Ok(Message::StyleChanged) => values = true,
                         Ok(other) => {
                             waiting = Some(other);
                             break;
@@ -569,7 +627,12 @@ fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Pub
                         Err(RecvTimeoutError::Disconnected) => return,
                     }
                 }
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.files_changed()));
+                if values {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.style_changed()));
+                }
+                if files {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.files_changed()));
+                }
             }
         }
         *published.lock().unwrap_or_else(PoisonError::into_inner) = session.published().clone();

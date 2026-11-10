@@ -122,7 +122,7 @@ impl Viewer {
         };
         ctx.set_theme(if theme == Theme::Dark { egui::Theme::Dark } else { egui::Theme::Light });
         let wake_ctx = ctx.clone();
-        let session = Handle::spawn(prefs.get().standard_everywhere, Box::new(move || wake_ctx.request_repaint()))?;
+        let session = Handle::spawn(prefs.get().standard_everywhere, options.style.clone(), Box::new(move || wake_ctx.request_repaint()))?;
         let mut canvas = Canvas::new();
         canvas.set_reduced_motion(prefs.get().reduced_motion);
         let wake_ctx = ctx.clone();
@@ -188,7 +188,7 @@ impl Viewer {
                 }
             }
         });
-        if let Some(notice) = self.published.notice.as_ref().or(self.failure.as_ref()) {
+        for notice in [&self.published.notice, &self.failure, &self.published.style_notice].into_iter().flatten() {
             ui.colored_label(ui.visuals().warn_fg_color, notice);
         }
     }
