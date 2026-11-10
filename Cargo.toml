@@ -20,18 +20,24 @@ labcraft-ir = { path = "crates/ir" }
 labcraft-runtime = { path = "crates/runtime" }
 labcraft-diagram = { path = "crates/diagram" }
 labcraft-editor = { path = "crates/editor" }
+labcraft-cli = { path = "apps/labcraft-cli" }
 labcraft-libs = { path = "libs/embedded" }
 labcraft-visa = { path = "libs/visa" }
 labcraft-results-log = { path = "examples/results_log" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
+craft-dialogs = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
+craft-settings = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6", features = ["system_fonts"] }
 
 # The suite's fork of egui, at the revision that craft-libs pins (`[patch.crates-io]` below). No default fonts:
 # the canvas and the app install their own (architecture 11.5).
 egui = { version = "0.37", default-features = false }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "wayland", "wgpu", "x11"] }
 
 # foundation
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }
@@ -69,3 +75,7 @@ ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968157
 emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-winit = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui-wgpu = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }

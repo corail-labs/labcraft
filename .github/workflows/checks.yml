@@ -87,5 +87,5 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Command line tests
-        run: cargo test --locked -p labcraft-cli -p labcraft-libs -- --include-ignored
+      - name: Command line and viewer tests
+        run: cargo test --locked -p labcraft-cli -p labcraft-libs -p labcraft -- --include-ignored
