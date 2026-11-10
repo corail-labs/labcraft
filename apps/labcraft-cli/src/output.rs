@@ -26,6 +26,11 @@ fn printable(text: &str) -> Cow<'_, str> {
 }
 
 fn line(out: &mut String, text: &str) {
+    push_line(out, text);
+}
+
+/// A line of the report, what a file could hide in it escaped.
+pub fn push_line(out: &mut String, text: &str) {
     out.push_str(&printable(text));
     out.push('\n');
 }
@@ -81,7 +86,7 @@ fn where_it_is(diagnostic: &Diagnostic) -> Option<String> {
     }
 }
 
-fn counted(count: u64, one: &str, many: &str) -> String {
+pub fn counted(count: u64, one: &str, many: &str) -> String {
     format!("{count} {}", if count == 1 { one } else { many })
 }
 
@@ -105,6 +110,15 @@ pub fn fmt_text(report: &Report, files: &[FileEntry], changed: u64) -> String {
         let _ = write!(out, " ({} listed)", report.diagnostics().len());
     }
     out.push('\n');
+    out
+}
+
+/// The diagnostics, each as section 4.1 writes it.
+pub fn diagnostics_text(report: &Report) -> String {
+    let mut out = String::new();
+    for diagnostic in report.diagnostics() {
+        diagnostic_text(&mut out, diagnostic);
+    }
     out
 }
 

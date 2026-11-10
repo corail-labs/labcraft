@@ -514,7 +514,8 @@ first 12 from the start, none on a bend; an order wire is 1 wide, dotted 1.5 and
   wire, just before the terminal that receives it, in a `mV→V` or `i16→i32` pill (token
   `mark.coercion`). You read the conversion instead of guessing what a mark means.
 - Unit error at edit time (`V + A`): the wire is drawn in `mark.invalid`, interrupted at the
-  terminal, with the message in the tooltip.
+  terminal, with the message in the tooltip. An exported image draws the wire again in `mark.invalid`, over
+  itself and not interrupted, *(proposed)* ([cli.md](cli.md), 7.2).
 
 ## 5. Structures
 

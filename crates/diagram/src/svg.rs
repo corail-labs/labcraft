@@ -93,6 +93,9 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
     attribute("font-family", FONT_FAMILY, &mut out);
     attribute("data-schema", SCHEMA, &mut out);
     attribute("data-function", &drawing.function, &mut out);
+    if drawing.undrawn {
+        attribute("data-drawn", "false", &mut out);
+    }
     out.push_str(">\n<style>\n");
     match theme {
         Theme::Both => {
@@ -139,6 +142,15 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
             }
         }
         for shape in &group.shapes {
+            write_shape(shape, &icons, &mut out);
+        }
+        out.push_str("</g>\n");
+    }
+    for mark in &drawing.marks {
+        out.push_str("<g");
+        attribute("data-code", &mark.code, &mut out);
+        out.push_str(">\n");
+        for shape in &mark.shapes {
             write_shape(shape, &icons, &mut out);
         }
         out.push_str("</g>\n");

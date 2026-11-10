@@ -153,13 +153,23 @@ codes! {
     Lc6001 = "LC6001" Error,
     Lc6002 = "LC6002" Warning,
     Lc6003 = "LC6003" Error,
+    Lc7001 = "LC7001" Error,
     Lc7002 = "LC7002" Error,
+    Lc7003 = "LC7003" Error,
+    Lc7004 = "LC7004" Error,
 }
 
 impl Code {
     /// A file that gets this code is not read further, and gets no other diagnostic (`docs/cli.md`, section 1).
     pub fn stands_alone(self) -> bool {
         matches!(self, Code::Lc0001 | Code::Lc0003 | Code::Lc0004 | Code::Lc0006 | Code::Lc0007 | Code::Lc0101 | Code::Lc0102)
+    }
+
+    /// An error of this code in its file keeps a function from being drawn (`docs/cli.md`, 7.1): its file does not read
+    /// (`LC00`, `LC01`, `LC10`), a name does not resolve (`LC20`), or it has a cycle (`LC4001`).
+    pub fn keeps_from_drawing(self) -> bool {
+        let text = self.as_str();
+        self.severity() == Severity::Error && (["LC00", "LC01", "LC10", "LC20"].iter().any(|family| text.starts_with(family)) || self == Code::Lc4001)
     }
 }
 
@@ -198,6 +208,17 @@ mod tests {
     fn the_codes_that_stand_alone_are_those_of_the_command_line() {
         let alone: Vec<&str> = Code::ALL.iter().filter(|code| code.stands_alone()).map(|code| code.as_str()).collect();
         assert_eq!(alone, ["LC0001", "LC0003", "LC0004", "LC0006", "LC0007", "LC0101", "LC0102"]);
+    }
+
+    #[test]
+    fn what_keeps_a_function_from_being_drawn_is_reading_names_and_cycles() {
+        let kept: Vec<&str> = Code::ALL.iter().filter(|code| code.keeps_from_drawing()).map(|code| code.as_str()).collect();
+        assert!(kept.contains(&"LC0003") && kept.contains(&"LC0101") && kept.contains(&"LC1001") && kept.contains(&"LC2001"));
+        assert!(kept.contains(&"LC2025") && kept.contains(&"LC4001"));
+        // Warnings, types, the other errors of dataflow, and those of `diagram` itself, are marked on a drawing.
+        for drawn in ["LC0005", "LC0009", "LC2016", "LC2020", "LC2101", "LC3001", "LC4002", "LC5001", "LC7002"] {
+            assert!(!kept.contains(&drawn), "{drawn}");
+        }
     }
 
     #[test]

@@ -98,12 +98,113 @@ pub fn parse_check(args: &[OsString]) -> Result<CheckOptions, String> {
     Ok(CheckOptions { deny_warnings, json: common.json, lib_paths, limits: common.limits, folders: common.paths })
 }
 
-/// `check` takes folders (`docs/cli.md`, section 3), and a file is wrong usage. A path that does not exist is not: it is
+/// Which theme the SVG holds (`docs/cli.md`, 7.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Theme {
+    Both,
+    Light,
+    Dark,
+}
+
+/// `labcraft-cli diagram` (`docs/cli.md`, section 7). `check` holds what it checks: `FOLDER` alone, its `--lib-path`
+/// folders and the options of section 1.
+#[derive(Debug)]
+pub struct DiagramOptions {
+    pub check: CheckOptions,
+    pub out: PathBuf,
+    pub theme: Theme,
+    pub max_nodes: u64,
+    /// The functions asked for, each once, in the order given; none for every function.
+    pub functions: Vec<String>,
+}
+
+/// The default and the most of `--max-diagram-nodes` (`docs/cli.md`, 7.6).
+pub const DEFAULT_DIAGRAM_NODES: u64 = 20_000;
+pub const MAX_DIAGRAM_NODES: u64 = 100_000;
+
+/// The options that take one value, which `diagram` refuses twice (`docs/cli.md`, 7.1).
+const ONCE: [&str; 6] = ["--out", "--theme", "--max-diagram-nodes", "--max-report", "--max-file-size", "--max-nesting"];
+
+pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
+    // An option that takes one value, given twice; what follows `--` is a path, and the value of an option is not one.
+    let mut seen: Vec<&str> = Vec::new();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let text = arg.to_string_lossy();
+        if text == "--" {
+            break;
+        }
+        if let Some(&once) = ONCE.iter().find(|once| **once == text) {
+            if seen.contains(&once) {
+                return Err(format!("{once} is given twice"));
+            }
+            seen.push(once);
+            rest.next();
+        } else if text == "--lib-path" {
+            rest.next();
+        }
+    }
+    let (mut svg, mut out, mut theme, mut max_nodes) = (false, None, Theme::Both, DEFAULT_DIAGRAM_NODES);
+    let mut lib_paths = Vec::new();
+    let common = parse_common(args, |option, rest| match option {
+        "--svg" => {
+            svg = true;
+            Ok(true)
+        }
+        "--out" => {
+            out = Some(PathBuf::from(rest.next().ok_or("--out needs a folder")?));
+            Ok(true)
+        }
+        "--lib-path" => {
+            lib_paths.push(PathBuf::from(rest.next().ok_or("--lib-path needs a folder")?));
+            Ok(true)
+        }
+        "--theme" => {
+            theme = match rest.next().map(|value| value.to_string_lossy()).as_deref() {
+                Some("light") => Theme::Light,
+                Some("dark") => Theme::Dark,
+                _ => return Err("--theme is `light` or `dark`".to_owned()),
+            };
+            Ok(true)
+        }
+        "--max-diagram-nodes" => {
+            max_nodes = number("--max-diagram-nodes", rest.next())?;
+            if !(1..=MAX_DIAGRAM_NODES).contains(&max_nodes) {
+                return Err(format!("--max-diagram-nodes is from 1 to {MAX_DIAGRAM_NODES}"));
+            }
+            Ok(true)
+        }
+        // The values of a run come with a later version (`docs/cli.md`, 7.3).
+        "--trace" | "--max-trace-size" => Err(format!("{option}: this version does not draw the values of a run yet")),
+        _ => Ok(false),
+    })?;
+    if !svg {
+        return Err("diagram needs --svg".to_owned());
+    }
+    let out = out.ok_or("diagram needs --out DIR")?;
+    let mut paths = common.paths.into_iter();
+    let folder = paths.next().ok_or("no folder given")?;
+    let mut functions: Vec<String> = Vec::new();
+    for function in paths {
+        let text = function.to_string_lossy().into_owned();
+        // A name of the language, or that of a folder or a file that `check` reads: only an empty one is no name.
+        if text.split('.').any(str::is_empty) {
+            return Err(format!("`{text}` is not the name of a function: names joined by `.`"));
+        }
+        if !functions.contains(&text) {
+            functions.push(text);
+        }
+    }
+    let check = CheckOptions { deny_warnings: false, json: common.json, lib_paths, limits: common.limits, folders: vec![folder] };
+    Ok(DiagramOptions { check, out, theme, max_nodes, functions })
+}
+
+/// `check` and `diagram` take folders (`docs/cli.md`, sections 3 and 7), and a file is wrong usage. A path that does not exist is not: it is
 /// data, and gets a diagnostic.
 pub fn refuse_files(options: &CheckOptions) -> Result<(), String> {
     let is_a_file = |path: &&PathBuf| Path::metadata(path).is_ok_and(|metadata| !metadata.is_dir());
     match options.folders.iter().chain(&options.lib_paths).find(is_a_file) {
-        Some(file) => Err(format!("`{}` is a file, and `check` takes folders", file.display())),
+        Some(file) => Err(format!("`{}` is a file, and this command takes folders", file.display())),
         None => Ok(()),
     }
 }
@@ -197,6 +298,49 @@ mod tests {
         for args in cases {
             assert!(parse_check(&os(args)).is_err(), "{args:?}");
         }
+    }
+
+    fn diagram(args: &[&str]) -> Result<DiagramOptions, String> {
+        parse_diagram(&os(args))
+    }
+
+    #[test]
+    fn diagram_takes_its_options_and_those_of_section_1() {
+        let options = diagram(&["--svg", "--out", "d", ".", "check_voltage", "dmm.measure", "check_voltage", "--json", "--theme", "dark"]).unwrap();
+        assert_eq!(options.out, PathBuf::from("d"));
+        assert_eq!(options.check.folders, [PathBuf::from(".")]);
+        assert_eq!(options.functions, ["check_voltage", "dmm.measure"]);
+        assert!(options.check.json && options.theme == Theme::Dark);
+        assert_eq!(options.max_nodes, DEFAULT_DIAGRAM_NODES);
+        let plain = diagram(&["--svg", "--out", "d", "--lib-path", "x", "--max-diagram-nodes", "100000", "."]).unwrap();
+        assert!(plain.functions.is_empty() && plain.theme == Theme::Both && !plain.check.json);
+        assert_eq!((plain.max_nodes, plain.check.lib_paths.as_slice()), (MAX_DIAGRAM_NODES, [PathBuf::from("x")].as_slice()));
+    }
+
+    #[test]
+    fn diagram_refuses_wrong_usage() {
+        let cases: &[&[&str]] = &[
+            &["--out", "d", "."],
+            &["--svg", "."],
+            &["--svg", "--out", "d"],
+            &["--svg", "--out", "d", ".", "a..b"],
+            &["--svg", "--out", "d", ".", ".a"],
+            &["--svg", "--out", "d", ".", "a."],
+            &["--svg", "--out", "d", "--theme", "blue", "."],
+            &["--svg", "--out", "d", "--out", "e", "."],
+            &["--svg", "--out", "d", "--theme", "dark", "--theme", "dark", "."],
+            &["--svg", "--out", "d", "--max-report", "3", "--max-report", "3", "."],
+            &["--svg", "--out", "d", "--max-diagram-nodes", "0", "."],
+            &["--svg", "--out", "d", "--max-diagram-nodes", "100001", "."],
+            &["--svg", "--out", "d", "--trace", "t.jsonl", ".", "f"],
+            &["--svg", "--out", "d", "--max-trace-size", "9", "."],
+            &["--svg", "--out", "d", "--deny-warnings", "."],
+        ];
+        for args in cases {
+            assert!(diagram(args).is_err(), "{args:?}");
+        }
+        // After `--`, a path; and a value is not an option given twice.
+        assert_eq!(diagram(&["--svg", "--out", "--out", "--", "--theme"]).unwrap().check.folders, [PathBuf::from("--theme")]);
     }
 
     #[cfg(unix)]

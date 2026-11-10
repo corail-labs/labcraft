@@ -184,7 +184,7 @@ pub fn check_for_run(root: LibrarySource, libraries: &dyn Libraries, names: &mut
 }
 
 fn check_with(root: LibrarySource, libraries: &dyn Libraries, names: &mut Interner, limits: &Limits, for_run: bool) -> Checked {
-    let mut report = Report::new(limits.max_report);
+    let mut report = Report::for_limits(limits);
     let (mut loaded, unreadable) = load::load(root, libraries, names, limits, &mut report);
     let mut declared = declare::declare(&mut loaded, libraries, names, limits, &mut report, for_run);
     let dependencies = load::dependency_reports(&mut loaded, unreadable);

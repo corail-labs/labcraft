@@ -172,6 +172,7 @@ version = "0.1.0-m0a"
 dependencies = [
  "craft-atomic",
  "labcraft-check",
+ "labcraft-diagram",
  "labcraft-format",
  "labcraft-libs",
  "labcraft-types",

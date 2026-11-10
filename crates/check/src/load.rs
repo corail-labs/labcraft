@@ -191,7 +191,7 @@ impl Loader<'_> {
     /// `None` for a folder without files of its own, which is no library, though its sub-folders can be.
     fn add(&mut self, source: LibrarySource, name: String, checked: bool, budget: &mut Budget) -> Option<usize> {
         let LibrarySource { shown, files, manifest, origin, report: met, checked_elsewhere, .. } = source;
-        let mut sink = Report::new(self.limits.max_report);
+        let mut sink = Report::for_limits(self.limits);
         if checked {
             sink.merge(met);
         } else {
@@ -214,7 +214,7 @@ impl Loader<'_> {
                 shown,
                 origin,
                 uses: Vec::new(),
-                report: Report::new(self.limits.max_report),
+                report: Report::for_limits(self.limits),
                 checked_elsewhere,
                 manifest: read,
             })
@@ -321,7 +321,7 @@ impl Loader<'_> {
         let Some(library) = self.loaded.get_mut(index) else { return };
         let (checked, origin, checked_elsewhere) = (library.checked, library.origin, library.checked_elsewhere);
         let mut files = std::mem::take(&mut library.files);
-        let mut sink = std::mem::replace(&mut library.report, Report::new(self.limits.max_report));
+        let mut sink = std::mem::replace(&mut library.report, Report::for_limits(self.limits));
         let mut uses = Vec::new();
         for (file_index, file) in files.iter_mut().enumerate() {
             let Some(model) = &file.model else { continue };
@@ -329,9 +329,9 @@ impl Loader<'_> {
         }
         if checked {
             self.report.merge(sink);
-            sink = Report::new(self.limits.max_report);
+            sink = Report::for_limits(self.limits);
         } else if checked_elsewhere {
-            sink = Report::new(self.limits.max_report);
+            sink = Report::for_limits(self.limits);
         }
         if let Some(library) = self.loaded.get_mut(index) {
             library.files = files;
@@ -413,7 +413,7 @@ impl Loader<'_> {
         match self.libraries.find(name, by) {
             Found::NotFound => Target::Missing,
             Found::Unreadable(diagnostic) => {
-                let mut report = Report::new(self.limits.max_report);
+                let mut report = Report::for_limits(self.limits);
                 let shown = diagnostic.file.clone();
                 report.push(*diagnostic);
                 self.unreadable.push(DependencyReport { shown, report });

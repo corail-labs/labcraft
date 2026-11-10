@@ -24,6 +24,7 @@ use labcraft_types::text::{ShownText, cut_middle};
 use labcraft_types::{Code, Diagnostic, Interner};
 
 mod graph;
+mod marks;
 mod names;
 mod place;
 mod route;
@@ -32,7 +33,8 @@ mod size;
 mod svg;
 pub mod theme;
 
-pub use shape::{BodyDrawn, Drawing, Group, IconDrawing, IconItem, IconShape, Paint, Pattern, Placed, Run, Shape, Token, WireOf, WireStyle};
+pub use marks::{MAX_LINES, mark, undrawn};
+pub use shape::{BodyDrawn, Drawing, Group, IconDrawing, IconItem, IconShape, Mark, Paint, Pattern, Placed, Run, Shape, Token, WireOf, WireStyle};
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
@@ -294,6 +296,9 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         drawing.loose = std::mem::take(&mut drawing.loose).into_iter().map(|shape| moved(shape, dx, dy)).collect();
         for group in &mut drawing.groups {
             group.shapes = std::mem::take(&mut group.shapes).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+            for (_, points) in group.wire.iter_mut().flat_map(|wire| wire.readers.iter_mut()) {
+                points.iter_mut().for_each(|point| *point = (point.0 + dx, point.1 + dy));
+            }
         }
         for placed in &mut drawing.placed {
             (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
@@ -628,13 +633,22 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 .filter_map(|wire| terminal_form(graph, of, body, &wire.to, false, &ordinals))
                 .collect();
             to.dedup();
+            let readers = routed
+                .wires
+                .iter()
+                .zip(&routed.branches)
+                .map(|(&wire, branch)| {
+                    let form = of.wires.get(wire).and_then(|wire| terminal_form(graph, of, body, &wire.to, false, &ordinals));
+                    (form, branch.clone())
+                })
+                .collect();
             let error = routed.wires.iter().filter_map(|&wire| of.wires.get(wire)).any(|wire| wire.family == graph::Family::ERROR);
             Some(Group {
                 node: String::new(),
                 title: String::new(),
                 shapes,
                 arm: None,
-                wire: Some(WireOf { body, error, via: routed.via, value, from, to }),
+                wire: Some(WireOf { body, error, via: routed.via, value, from, to, readers }),
             })
         })
         .collect()
