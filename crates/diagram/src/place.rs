@@ -723,7 +723,10 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let mut highest = header + PAD;
     for (local, (_, at)) in placed.iter().enumerate() {
         let Some(sized) = body.sized.get(local) else { continue };
-        width = width.max(size::up(at.x + sized.width + sized.right + MIN_CHANNEL));
+        // Right of a node that the file places: the channel after its column, then the names of the terminals on the
+        // right, as automatic placement leaves them (notation 2.1).
+        let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(MIN_CHANNEL);
+        width = width.max(size::up(at.x + sized.width + sized.right + after + right_zone));
         height = height.max(at.y + sized.height + PAD);
         highest = highest.min(at.y - sized.above);
     }

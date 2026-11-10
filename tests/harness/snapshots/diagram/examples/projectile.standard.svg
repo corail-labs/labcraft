@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3010 932" width="3010" height="932" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="projectile">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3018 932" width="3018" height="932" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="projectile">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="3010" height="932" style="fill: var(--canvas-fill)"/>
-<rect x="21" y="16" width="2968" height="900" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect width="3018" height="932" style="fill: var(--canvas-fill)"/>
+<rect x="21" y="16" width="2976" height="900" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="33" y="36.38" font-size="12" style="fill: var(--node-title)">projectile</text>
 <circle cx="21" cy="728" r="5" style="fill: var(--wire-data)"/>
 <text x="33" y="732.01" font-size="11" style="fill: var(--node-title)">vx0</text>
@@ -26,15 +26,15 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="50.25" y="887.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
 <rect x="74.51" y="875" width="54.36" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="78.51" y="888.01" font-size="11" style="fill: var(--pill-text)">◂ 10 ms</text>
-<circle cx="2989" cy="288" r="5" style="fill: var(--wire-data)"/>
-<text x="2883.89" y="292.01" font-size="11" style="fill: var(--node-title)">flight_time</text>
-<text x="2960.74" y="291.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
-<circle cx="2989" cy="600" r="5" style="fill: var(--wire-data)"/>
-<text x="2923.63" y="604.01" font-size="11" style="fill: var(--node-title)">range</text>
-<text x="2960.74" y="603.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
-<circle cx="2989" cy="776" r="5" style="fill: var(--wire-data)"/>
-<text x="2930.25" y="780.01" font-size="11" style="fill: var(--node-title)">apex</text>
-<text x="2960.74" y="779.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="2997" cy="288" r="5" style="fill: var(--wire-data)"/>
+<text x="2891.89" y="292.01" font-size="11" style="fill: var(--node-title)">flight_time</text>
+<text x="2968.74" y="291.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
+<circle cx="2997" cy="600" r="5" style="fill: var(--wire-data)"/>
+<text x="2931.63" y="604.01" font-size="11" style="fill: var(--node-title)">range</text>
+<text x="2968.74" y="603.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="2997" cy="776" r="5" style="fill: var(--wire-data)"/>
+<text x="2938.25" y="780.01" font-size="11" style="fill: var(--node-title)">apex</text>
+<text x="2968.74" y="779.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
 <g data-wire="drag" data-from="fn.drag" data-to="k.a">
 <path d="M168.98 860 L198.98 860 Q204.98 860 204.98 854 L204.98 568.01 Q204.98 568 204.99 568 L205 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="172.98" y="857" font-size="11" style="fill: var(--ink-muted)">drag</text>
@@ -52,14 +52,14 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="91.96" y="749" font-size="11" style="fill: var(--ink-muted)">vy0</text>
 </g>
 <g data-wire="flight_time" data-from="flight_time.flight_time" data-to="fn.flight_time">
-<path d="M2861 288 L2879.89 288" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M2861 288 L2887.89 288" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="range" data-from="flight_time.range" data-to="fn.range">
-<path d="M2861 600 L2919.63 600" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M2861 600 L2927.63 600" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="2865" y="597" font-size="11" style="fill: var(--ink-muted)">range</text>
 </g>
 <g data-wire="apex" data-from="flight_time.apex" data-to="fn.apex">
-<path d="M2861 776 L2926.25 776" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M2861 776 L2934.25 776" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="2865" y="773" font-size="11" style="fill: var(--ink-muted)">apex</text>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
