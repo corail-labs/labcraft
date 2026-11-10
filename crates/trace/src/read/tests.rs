@@ -65,18 +65,18 @@ fn what_the_writer_writes_the_reader_reads() {
     writer.event(0, &Event::Call { frame: 0, caller: None, function: "f", inputs: &inputs, types: &types });
     let none = |w: &mut ValueWriter<'_>| w.null();
     let session = |w: &mut ValueWriter<'_>| w.string("SIM::DMM0");
-    writer.event(0, &Event::Ran { frame: 0, node: "dmm", iter: &[], out: &[("dmm", &session), ("e1", &none)], types: &[] });
+    writer.event(0, &Event::Ran { frame: 0, node: "dmm", loops: &[], iter: &[], out: &[("dmm", &session), ("e1", &none)], types: &[] });
     for iteration in 0..3u64 {
         let raw = move |w: &mut ValueWriter<'_>| w.f64(iteration as f64 + 0.5, None);
-        writer.event(0, &Event::Ran { frame: 0, node: "raw", iter: &[iteration], out: &[("raw", &raw)], types: &[] });
+        writer.event(0, &Event::Ran { frame: 0, node: "raw", loops: &[], iter: &[iteration], out: &[("raw", &raw)], types: &[] });
         let even = iteration % 2 == 0;
-        writer.event(0, &Event::Arm { frame: 0, node: "v", iter: &[iteration], arm: if even { "true" } else { "false" } });
+        writer.event(0, &Event::Arm { frame: 0, node: "v", loops: &[], iter: &[iteration], arm: if even { "true" } else { "false" } });
         let text = |w: &mut ValueWriter<'_>| w.string("even");
         let odd = move |w: &mut ValueWriter<'_>| w.i64(iteration as i64, None);
         if even {
-            writer.event(0, &Event::Ran { frame: 0, node: "x", iter: &[iteration], out: &[("x", &text)], types: &[("x", "string")] });
+            writer.event(0, &Event::Ran { frame: 0, node: "x", loops: &[], iter: &[iteration], out: &[("x", &text)], types: &[("x", "string")] });
         } else {
-            writer.event(0, &Event::Ran { frame: 0, node: "x", iter: &[iteration], out: &[("x", &odd)], types: &[("x", "i32")] });
+            writer.event(0, &Event::Ran { frame: 0, node: "x", loops: &[], iter: &[iteration], out: &[("x", &odd)], types: &[("x", "i32")] });
         }
     }
     let readings = |w: &mut ValueWriter<'_>| {
@@ -86,7 +86,7 @@ fn what_the_writer_writes_the_reader_reads() {
         }
         w.end();
     };
-    writer.event(0, &Event::Ran { frame: 0, node: "readings", iter: &[], out: &[("readings", &readings)], types: &[] });
+    writer.event(0, &Event::Ran { frame: 0, node: "readings", loops: &[], iter: &[], out: &[("readings", &readings)], types: &[] });
     writer.end(1_000_000, "ok");
     let bytes = writer.into_inner();
 
@@ -303,8 +303,8 @@ fn the_lines_the_writer_shortens_are_read() {
     let inputs: Vec<Input<'_>> = (0..20).map(|_| Input { name: &long, ty: "string", value: &none }).collect();
     writer.event(0, &Event::Call { frame: 0, caller: None, function: "f", inputs: &inputs, types: &[("e1", "error")] });
     let out: Vec<(&str, &dyn crate::value::WriteValue)> = (0..5).map(|_| (long.as_str(), &none as &dyn crate::value::WriteValue)).collect();
-    writer.event(0, &Event::Ran { frame: 0, node: "raw", iter: &[0], out: &out, types: &[] });
-    writer.event(0, &Event::Ran { frame: 0, node: "dmm", iter: &[], out: &[("e1", &none)], types: &[] });
+    writer.event(0, &Event::Ran { frame: 0, node: "raw", loops: &[], iter: &[0], out: &out, types: &[] });
+    writer.event(0, &Event::Ran { frame: 0, node: "dmm", loops: &[], iter: &[], out: &[("e1", &none)], types: &[] });
     writer.end(0, "ok");
     let bytes = writer.into_inner();
     let text = String::from_utf8(bytes.clone()).unwrap();

@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// Doubles its input.
+fn inner(x: f64) -> (y: f64) {
+    y = core.mul(x, 2.0)
+}

@@ -1,0 +1,100 @@
+{
+  "how": "Scenario 3, point 4. Each loop reads `stop_switch` after its wait, at 100, 200, 300, 400 and 500 ms; it is set at 450 ms, so the read at 500 ms sees it on, and both loops end after 5 readings, at 0 to 400 ms, and the run at 500 ms. The readings and the means come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1, the sum made in the order of the readings, as the carry `s` does, then divided by `n`. The program closes both sessions.",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "mean_a",
+      "type": "f64",
+      "value": 230.0223144
+    },
+    {
+      "name": "mean_b",
+      "type": "f64",
+      "value": 11.9977894
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": null
+    }
+  ],
+  "clock": {
+    "simulated_ms": 500.0
+  },
+  "resources": {
+    "opened": 2,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.969055"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.970462"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071648"
+        },
+        {
+          "t_ms": 400.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.029190"
+        }
+      ]
+    },
+    {
+      "resource": "SIM::DMM1",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.005803"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.985047"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.004267"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.001685"
+        },
+        {
+          "t_ms": 400.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.992145"
+        }
+      ]
+    }
+  ],
+  "panel": [
+    {
+      "element": "stop_switch",
+      "value": true,
+      "at_ms": 450.0,
+      "by": "set",
+      "applied": true
+    }
+  ]
+}

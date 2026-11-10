@@ -1,0 +1,14 @@
+{
+  "how": "2147483647 is the largest `i32`; adding 1 overflows, and an integer that overflows is a fault, `LC8008` (spec 8.2), at the node `y`, with no output.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8008",
+    "function": "overflow",
+    "node": "y",
+    "file": "overflow.lcf"
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  }
+}

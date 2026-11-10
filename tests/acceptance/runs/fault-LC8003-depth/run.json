@@ -1,0 +1,5 @@
+{
+  "function": "outer",
+  "folder": ".",
+  "max_call_depth": 1
+}

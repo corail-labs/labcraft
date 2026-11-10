@@ -1,0 +1,8 @@
+labcraft 1
+
+use array
+
+/// An array larger than the memory of the run.
+fn fill() -> (a: [f64], err: error) {
+    a, err = array.repeat(1.0, 100000)
+}

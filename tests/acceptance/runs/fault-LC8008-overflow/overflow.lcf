@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// One more than the largest `i32`.
+fn overflow(x: i32 = 2147483647) -> (y: i32) {
+    y = core.add(x, 1)
+}

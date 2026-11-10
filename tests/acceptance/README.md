@@ -27,6 +27,27 @@ runs them, through the program, and `tests/harness` with no command line, native
 [`agent/run.sh`](agent/run.sh) plays the agent half of scenario 2 on these cases, by hand: it needs Claude Code
 and is not part of the `checks` workflow.
 
+## `runs/`: the corpus of runs
+
+The reference of `run` ([architecture](../../docs/architecture.md), section 10.11), scenarios 1, 3 and 4. One folder
+per case:
+
+- `run.json` gives the parameters of `run.start` ([commands.md](../../docs/commands.md), section 6.4), its paths
+  (`folder`, `sim`) from the folder of the case: `../../../../examples` for the examples, `.` for the programs of the case;
+- `expected.json` gives the parts of `labcraft-run/1` (commands.md, section 7) that the case asserts, and `how`, which
+  says how its values were found. An object compares the keys it gives, an array every element in order, so an output
+  given by its name alone is not compared; numbers compare as numbers.
+
+The values of noisy quantities are exact: [`noise.py`](runs/noise.py), written from
+[simulation.md](../../libs/visa/simulation.md), sections 3 and 4, alone, gives the answers of an instrument and the means
+that `two_benches` makes (`python tests/acceptance/runs/noise.py 1 230 0.05 10`).
+
+`tests/harness` runs every case, natively and in WASM, writes its report and its trace, and checks that each line of the
+trace reads and that its last says the status of the report. Until `engine` (step 6), it converts arguments and settings
+only for the types the cases use. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
+through the proof of concept, which has a report of its own: it compares what that report gives, and runs the cases of
+[`poc-later.txt`](runs/poc-later.txt), rules the proof of concept does not follow, only to see that each gives a report.
+
 ## `hostile/`: scenario 4
 
 One folder per case; these files are stored byte for byte (`.gitattributes`). `expected.json` gives,

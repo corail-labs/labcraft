@@ -406,7 +406,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 4 of 10.11 implemented, and the first half of step 5 (5a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 5 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -630,7 +630,7 @@ commands of the instruments and the logs of the libraries, the settings of the p
 the `Checked` files, which name where an error was made, the native libraries of the run with what they judged of the
 simulation file, the inputs, and the `Settings` of cli.md 6.2. A `Control` gives it the real time, which it never reads
 itself, and an abort asked from outside; an `Observer` hears each `call`, each node that `ran` or skipped, each `arm` and
-each `set`, which the trace will write (step 5b).
+each `set`, which `runtime::trace` writes (10.7).
 
 - **An instance of a region** holds a slot per argument and per output of its nodes, how many reads each still has, and
   how many nodes each node still waits for, from a plan made once per region. The last read of a wire takes its value, so
@@ -645,7 +645,7 @@ each `set`, which the trace will write (step 5b).
 - **Tests:** in `crates/runtime/src/run/tests.rs`, programs through `check`, `ir` and the run, with a library `bench` of
   the tests for native calls, keys, the grace period and leaks; in `tests/harness`, the six points of scenario 3 on
   `two_benches` with `visa`, `scpi` and the simulation files of `libs/visa/sim/`, the times and the counts worked out by
-  hand. Not yet: the trace and the report written, the corpus of runs, the runner of the proof of concept (5b).
+  hand. The trace, the report and the corpus of runs: 10.7 and 10.11.
 
 ### 10.6 Native libraries
 
@@ -739,11 +739,35 @@ scheduler does, gets the error `results_log.not_in_progress`.
 
 ### 10.7 The trace and the report
 
-The runtime writes the trace (`labcraft-trace/1`, commands.md 8) as it runs, to a sink the caller gives, and the values
+*Status: implemented (step 5b).* The runtime writes the trace (`labcraft-trace/1`, commands.md 8) as it runs, to a sink the caller gives, and the values
 of its report (`labcraft-run/1`, commands.md 7), both through the crate `trace` (L1): the events, and the JSON form of
 values with its bounds (commands.md 5), so that the report, the trace and the reader of M0v cut a value the same way.
 The runtime turns its `Value` into that form; `trace` never sees `runtime`. Neither the trace nor the report knows
 where it is written: `engine` and the app decide.
+
+- **`runtime::json`** writes a `Value` against its type, through the `ValueWriter` of `trace`. A handle shows what its
+  library says of it when it is written (`Describe`): open in the trace while the run holds it, closed in the report once
+  the run released it.
+- **`runtime::trace::TraceObserver`** is an `Observer` of the run: the first line from a `Header` that the caller gives (the
+  files the run read and their SHA-256), one event per `call`, `ran`, `skipped`, `arm` and `set`, and `end` from the
+  `RunEnd`. What a frame binds, by name and type, and the text of each arm (its patterns as `format` writes them, as the
+  title of an arm in a diagram, never cut) are found once per function, by walks that keep their own stack. `types` holds the values
+  that the body binds, not the inputs, which `in` gives; a name bound with two types is left out, and each event that binds
+  it gives its type. `out` names each value by its first name: a second name that a line gives (`err = e3`) makes no event. Each event of a node in loops names them in `loops`, with its `iter`, from the same walk; the
+  reader of the viewer does not use them yet (M0v).
+- **`runtime::report`** writes `labcraft-run/1` from the `RunEnd`, with what the run does not know given by the caller: the
+  id of the run, the `check` made before it and what became of its trace, each already JSON, and the real time. `refused`
+  writes the report of a run that nothing ran.
+- **Tests:** in `runtime`, the values of each kind in a report and the events of a loop, worked out by hand; in
+  `tests/harness`, the corpus of runs (10.11), and the trace of `check_voltage` read back by the reader of the viewer
+  (`trace::Reader`), against an `Expected` written by hand from the nodes the function draws, with no event left over.
+- **A report is bounded** by `ReportOf::limit`, 4 MiB for a result (commands.md 2): what is never cut is written first,
+  then the values of the outputs and of the panel take what is left, each within its own budget, then the commands of the
+  instruments and the logs, which give way first, each list with its brackets counted. The outputs and the settings of
+  the panel that do not fit even with their value cut are counted in `outputs_more` and `panel_more`, and the loops of a
+  fault or an abort past 1,000 in `loops_more`. The `check` and the trace are given within their own bounds: in the order
+  of commands.md 2, the diagnostics give way before the values of the outputs, which `engine` (step 6) will do when it
+  makes them.
 
 ### 10.8 `engine` (L6)
 
@@ -811,6 +835,15 @@ instrument saw. Its expected values are worked out by hand, as the tests of the 
 The proof of concept runs the corpus too, through a small runner, until the Rust `run` passes all of it: then
 `tools/lcf-poc` is retired, and the corpus stays.
 
+The corpus starts with step 5b (decisions of the owner, 2026-11-10): scenario 1 on `check_voltage`, the six points of
+scenario 3 on `two_benches`, one case for each fault of `LC80` that a deterministic run reaches, and runs refused by
+`check` or by the simulation file. A case is `run.json`, the parameters of `run.start` (commands.md 6.4), so that `engine`
+runs it as it is, and `expected.json`, the parts of the report it asserts. The values of noisy quantities are exact, given
+by `tests/acceptance/runs/noise.py`, written from libs/visa/simulation.md alone. `tests/harness` runs the corpus natively
+and in WASM, converting arguments and settings for the types the cases use until `engine` brings the converter of cli.md
+6.3, with `LC8101` to `LC8108`; `tools/lcf-poc/tests/test_runs.py` runs it through the proof of concept, which skips the
+cases of `poc-later.txt`, rules it does not follow, and must still give them a report.
+
 Each step of work ends with something testable:
 
 0. **`check` for runs:** the interface of 10.1. *Done.*
@@ -824,7 +857,8 @@ Each step of work ends with something testable:
 5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the
    report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner. In two halves
    (decision of the owner, 2026-11-10): **5a**, `runtime::run`, with scenario 3 run on `two_benches` by `tests/harness`,
-   *done* (sections 10.4, 10.5); **5b**, the trace and the report written, the corpus and its runner.
+   *done* (sections 10.4, 10.5); **5b**, the trace and the report written, the corpus and its runner, *done* (sections
+   10.7, 10.11).
 6. **`engine`:** the session, the registry and the commands of commands.md 6, the kept `check`, runs as tasks; `cargo
    xtask commands`. `fmt` and `check` move behind it.
 7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.

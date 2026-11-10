@@ -75,8 +75,8 @@ fn each_type_has_its_form() {
 fn an_error_lists_at_most_32_others_flat() {
     let place = Place { function: "scpi.query_f64", node: "text", file: "<labcraft>/scpi/query_f64.lcf", line: 12 };
     let caller = Place { function: "check_voltage", node: "raw", file: "check_voltage.lcf", line: 15 };
-    let inner = [ErrorValue { category: "x", code: 0, message: "", origin: None, others: &[] }];
-    let other = ErrorValue { category: "io.timeout", code: 1, message: "m", origin: None, others: &inner };
+    let inner = [ErrorValue { category: "x", code: 0, message: "", origin: None, others: &[], others_left: 0 }];
+    let other = ErrorValue { category: "io.timeout", code: 1, message: "m", origin: None, others: &inner, others_left: 0 };
     let others = vec![other; 34];
     let error = ErrorValue {
         category: "io.timeout",
@@ -84,6 +84,7 @@ fn an_error_lists_at_most_32_others_flat() {
         message: "no answer",
         origin: Some(Origin { place, callers: std::slice::from_ref(&caller) }),
         others: &others,
+        others_left: 0,
     };
     let json: serde_json::Value = serde_json::from_str(&text(|w| w.error(&error))).unwrap();
     assert_eq!(json["code"], -1_073_807_339);
@@ -92,6 +93,10 @@ fn an_error_lists_at_most_32_others_flat() {
     assert_eq!(json["others"].as_array().unwrap().len(), 32);
     assert_eq!(json["others_more"], 2);
     assert!(json["others"][0].get("others").is_none(), "flat");
+    // The others the caller left out count in `others_more` with those past 32: 2 + 5.
+    let left_out = ErrorValue { others_left: 5, ..error.clone() };
+    let json: serde_json::Value = serde_json::from_str(&text(|w| w.error(&left_out))).unwrap();
+    assert_eq!(json["others_more"], 7);
     let none = ErrorValue { others: &[], origin: None, ..error.clone() };
     assert_eq!(text(|w| w.error(&none)), r#"{"category":"io.timeout","code":-1073807339,"message":"no answer","others":[]}"#);
 }

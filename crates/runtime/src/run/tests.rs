@@ -171,8 +171,8 @@ struct Heard<'a> {
 }
 
 impl Observer for Heard<'_> {
-    fn ran(&mut self, at: i64, _: u64, node: &Node, iter: &[u64], _: &[Value], skipped: bool) {
-        let what = if skipped { "skipped" } else { "ran" };
+    fn ran(&mut self, at: i64, _: u64, node: &Node, iter: &[u64], outputs: super::Outputs<'_>, _: &dyn crate::json::Describe) {
+        let what = if outputs.skipped { "skipped" } else { "ran" };
         self.events.push(format!("{what} {}{iter:?} at {}", self.names.resolve(node.name), at / MS));
     }
 }

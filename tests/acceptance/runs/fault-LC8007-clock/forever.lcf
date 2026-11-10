@@ -1,0 +1,8 @@
+labcraft 1
+
+use time
+
+/// Waits past the end of the clock of the run.
+fn forever() -> (err: error) {
+    err = time.wait(5000000000 s)
+}

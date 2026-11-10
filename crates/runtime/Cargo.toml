@@ -1,6 +1,6 @@
 [package]
 name = "labcraft-runtime"
-description = "LabCraft L5: values of a run and the bodies of the primitives; the scheduler and the interpreter come next"
+description = "LabCraft L5: values, primitives, the scheduler and the interpreter, the trace and the report of a run"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 labcraft-check = { workspace = true }
+labcraft-format = { workspace = true }
 labcraft-graph = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-trace = { workspace = true }
@@ -16,6 +17,9 @@ labcraft-types = { workspace = true }
 toml = { workspace = true }
 toml_parser = { workspace = true }
 
+[dev-dependencies]
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
+

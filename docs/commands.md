@@ -186,7 +186,7 @@ encoding stays short:
 | struct, `waveform` | an object, fields in declared order | `{ "t0": …, "dt": "0.001 s", "samples": […] }` |
 | enumeration | a variant without values as a string, `Type.Variant`; with values, an object of one key | `"Verdict.Pass"`, `{ "Reading.Value": ["230.0 V"] }` |
 | `error` | `null` for `none`; otherwise an object (spec 7.1) | below |
-| opaque, function reference | an object that names it, read-only | `{ "opaque": "visa.session", "resource": "SIM::DMM0", "open": false }`, `{ "function": "measure" }` |
+| opaque, function reference | an object that names it, read-only; the default of an opaque type designates nothing, and that of a function type no function (Q-21) | `{ "opaque": "visa.session", "resource": "SIM::DMM0", "open": false }`, `{ "opaque": "visa.session", "open": false }`, `{ "function": "measure" }`, `{ "function": "core.add" }`, `{ "function": null }` |
 
 ```json
 {
@@ -373,14 +373,14 @@ prints. One example, then the fields.
 |---|---|---|
 | `schema`, `run`, `function`, `mode` | yes | `mode`: `deterministic` or `real_time` |
 | `status` | yes | `ok`, `error`, `aborted`, `fault` (spec 8.2); `running` while it goes on (section 4); `refused` when `check` found an error in what the run can reach (or, under `deny_warnings`, a warning in a file of the folder that the run can reach), or the function is unknown, or an argument, a setting or the simulation file was refused, and nothing ran (cli.md, section 6.1). `labcraft-cli run` exits with 1 on `refused`, as `check` does on an error |
-| `outputs` | yes | The outputs of the function, in the order of its signature, each with its type and its value (section 5); `[]` when it did not finish (`aborted`, `fault`, `refused`) |
+| `outputs` | yes | The outputs of the function, in the order of its signature, each with its type and its value (section 5); `[]` when it did not finish (`aborted`, `fault`, `refused`). Those that the bound of a result leaves no room for, even with their value cut, are counted in `outputs_more` (section 2) |
 | `error` | no | When `status` is `error`: the error on the `err` output, as in section 5, repeated here so that it is found without looking for the output |
-| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `file`, `span`, `function`, `node`, and the iteration of each loop around it |
+| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `function`, `node` (`null` for a fault at no node), `file`, `span`, `loops`, the loops around it as below, at most 1,000 *(proposed)*, then `loops_more`, and for `LC8001` `iteration`, that of the loop itself which would pass the limit, from 0 |
 | `abort` | no | When `status` is `aborted`: `by` (`request`, `timeout`, `interrupt`), `at_ms` on the clock of the run, `loops` (as below, when the abort came), and `warning`: the instruments are in an unknown state. When a native call was in progress, the run ends after `at_ms`: when that call ends, or when the grace period ends if it is abandoned (spec 8.2); `clock` says when |
 | `loops` | no | When `status` is `running`: each loop going, outermost first, with its `function`, its `node` (section 8) and its `iteration`, from 0 |
 | `clock` | yes | `simulated_ms` in deterministic mode; `real_ms` always |
-| `resources` | yes | The resources the run opened (spec 8.1: a session of `visa`, or any opaque type a library declares as one). `opened`: how many; `open`: those still open at its end, each with its type (`visa.session`), what it designates (`SIM::DMM0`) and where it was opened, which scenario 1 wants empty; `leaked`: those an abort could not release (spec 8.2) |
-| `instruments` | no | With a simulation: per resource, in code point order of the resource names so that two seeds give the same list, the commands it received in order, dated, with their answers, each text cut as a string is (section 5). At most 64 resources and 1,000 commands per resource in the report *(proposed)*, then `truncated`; the bound of a result (section 2) can shorten it further |
+| `resources` | yes | The resources the run opened (spec 8.1: a session of `visa`, or any opaque type a library declares as one). `opened`: how many; `open`: those still open at its end, each with its `type` (`visa.session`), what it designates (`resource`: `SIM::DMM0`) and where it was opened (`function`, `node`, `file`, `span`), which scenario 1 wants empty; `leaked`: those an abort could not release (spec 8.2), the same way. At most 1,000 of each *(proposed)*, then `"truncated": true` |
+| `instruments` | no | With a simulation: per resource, in code point order of the resource names so that two seeds give the same list, the commands it received in order, dated, with their answers, each text cut as a string is (section 5). At most 64 resources and 1,000 commands per resource in the report *(proposed)*: past them, a resource says `"truncated": true` and how many commands it leaves out in `more`, and `instruments_more` after the list how many resources; the bound of a result (section 2) can shorten it further |
 | `logs` | no | What libraries kept of the values a run gave them, such as `results_log.append_csv` (spec A.4), which writes no file in M0: `{ "entries": [ … ], "truncated": false }`, one entry per call, in the order of the calls, `{ "library": "results_log", "function": "append_csv", "t_ms": 0.0, "type": "[results_log.StepResult]", "value": … }`, the value as in section 5, with the type of the input of the signature it was given on. At most 1,000 entries for each library *(proposed)*, and what the libraries of a run keep for its report, the commands of `instruments` included, within 16 MiB *(proposed)*, or `--max-memory` when lower, a value counting its logical size (cli.md 6.2): the entries after them are counted, not kept, and `truncated` is then `true`, with their number in `more`, so that the log of each library, as the commands of each instrument, is the start of what it was given, and what they keep stays within that bound. Entries of two libraries come in the order of `t_ms`, then of the libraries. The bound of a result (section 2) can shorten it further |
 | `panel` | no | Each setting of `set` or `run.set_element`, in the order applied: `element`, `value`, `at_ms` on the clock of the run, `by` (`set`, `run.set_element`), and `applied` (`false` for a setting after the end of the run) |
 | `check` | yes | The `check` made before the run: its `summary`, which counts everything found in the folder, and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2): those of what the run can reach, and the errors found elsewhere in the folder, which do not refuse the run but are listed, so that the counts and the list agree |
@@ -422,10 +422,12 @@ The example leaves lines out, and files from the first line.
   `types`, and each `ran` that binds it gives its type in a `types` of its own. Frame 0 is the top-level
   function. Every other event names its frame by number, so a line stays short however deep the calls are.
 - **`node`** names the line as a terminal does (cli.md, section 4.3): its first output, its label
-  (`#close`), or `@12` for a line with neither. A name that several bodies bind is told apart by the `arm`
-  event that came before it in its frame and iteration.
-- **`iter`**, when the node is in loops of its function: the iteration of each, outermost first, from 0.
-  With the `iter` of each `call` up the chain of frames, a value inside a subfunction is placed in the
+  (`#close`), or `@12` for a line with neither. A name that several bodies bind is told apart by `loops`, for
+  bodies of two loops, and by the `arm` event that came before it in its frame and iteration, for two arms.
+- **`iter`**, when the node is in loops of its function: the iteration of each, outermost first, from 0,
+  after **`loops`**, the loop of each level, named as `node` names it (`"loops":["n_a"],"iter":[3]`), so that two
+  loops that bind the same names (the two branches of `two_benches`) are told apart (decision of the owner,
+  2026-11-10). A `for` is a loop here. With the `iter` of each `call` up the chain of frames, a value inside a subfunction is placed in the
   iteration of every loop around it.
 - **`event`**: `ran` (the node ran; `out` gives each value it bound, by the name of the value, which is
   the name of its wire); `skipped` (an error on its `err` input, spec 7.2; `out` gives the defaults and the

@@ -1,0 +1,8 @@
+{
+  "function": "check_voltage",
+  "folder": "../../../../examples",
+  "sim": "../../../../libs/visa/sim/dmm-250V.toml",
+  "args": {
+    "resource": "SIM::DMM0"
+  }
+}

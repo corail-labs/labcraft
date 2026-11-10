@@ -1,0 +1,8 @@
+# Cases of the corpus of runs that the proof of concept does not follow (tools/lcf-poc/tests/test_runs.py runs them
+# all the same, and they must give a report). One per line: the case, then why.
+fault-LC8002-nodes the proof of concept has no limit of nodes run (--max-nodes)
+fault-LC8003-depth the proof of concept has no limit of call depth (--max-call-depth), only that of Python
+fault-LC8005-memory the proof of concept counts no logical size (--max-memory)
+fault-LC8008-overflow the proof of concept computes integers without bounds: an `i32` does not overflow there
+refused-a-type-error the proof of concept has no static type checking: the error is found as the run goes
+s3-6-a-limit-of-iterations the fault of the proof of concept does not give the iteration of the loop itself

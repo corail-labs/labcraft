@@ -1,0 +1,24 @@
+{
+  "how": "The top-level key `vias` names no library that simulates: `LC8110`, with `visa` as the nearest name (cli.md 6.6).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC8110",
+        "severity": "error"
+      }
+    ]
+  }
+}

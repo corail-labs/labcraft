@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// Adds a voltage to a current.
+fn power(v: f64[V] = 1.0 V, i: f64[A] = 1.0 A) -> (p: f64[V]) {
+    p = core.add(v, i)
+}

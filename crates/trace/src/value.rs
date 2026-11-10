@@ -403,9 +403,10 @@ impl<'a> ValueWriter<'a> {
                 self.error_fields(other, false);
             }
             self.end();
-            if error.others.len() > OTHERS_MAX {
+            let more = (error.others.len().saturating_sub(OTHERS_MAX) as u64).saturating_add(error.others_left);
+            if more > 0 {
                 self.key("others_more");
-                self.u64((error.others.len() - OTHERS_MAX) as u64, None);
+                self.u64(more, None);
             }
         }
         self.end();
@@ -430,8 +431,11 @@ pub struct ErrorValue<'a> {
     pub code: i64,
     pub message: &'a str,
     pub origin: Option<Origin<'a>>,
-    /// The errors that `errors.merge` gathered; their own `others` are not written.
+    /// The errors that `errors.merge` gathered, or the first of them; their own `others` are not written.
     pub others: &'a [ErrorValue<'a>],
+    /// The errors gathered past those of `others`, which the caller did not give: so that it gives only the first
+    /// [`OTHERS_MAX`] of a long merge, and writing it costs no more than what is written.
+    pub others_left: u64,
 }
 
 /// Where an error was made, and the chain of its callers, innermost first.
