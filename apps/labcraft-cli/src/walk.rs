@@ -163,7 +163,7 @@ fn walk_within(paths: &[PathBuf], current: Option<&Path>, limits: &Limits, bound
     });
     let mut said = Said { paths: HashSet::new(), in_walks };
     let mut folders = HashSet::new();
-    let mut walked = Walked { files: Vec::new(), refused: Vec::new(), report: Report::new(limits.max_report) };
+    let mut walked = Walked { files: Vec::new(), refused: Vec::new(), report: Report::for_limits(limits) };
     for Named { given, shown, real } in named {
         let (real, metadata) = match real.and_then(|real| fs::metadata(&real).map(|metadata| (real, metadata))) {
             Ok(found) => found,

@@ -13,6 +13,7 @@
 
 mod args;
 mod check;
+mod diagram;
 mod fmt;
 mod output;
 mod walk;
@@ -29,6 +30,9 @@ commands:
   check [--json] [options] FOLDER...          read each library, find what it uses, and check what it
                                               declares, each body, its types, its dataflow, and its
                                               `panel`, `layout` and `icon` sections
+  diagram --svg --out DIR [--json] [options] FOLDER [FUNCTION]...
+                                              draw each function of FOLDER, or those named, as an SVG
+                                              under DIR, at the path of its file
   version                                     print the version
   --help                                      print this text
 
@@ -39,7 +43,12 @@ options of check:
   --deny-warnings        warnings count for the status and the exit code
   --lib-path DIR         also look for libraries in this folder; can be given several times
 
-options of both:
+options of diagram:
+  --lib-path DIR         as for check
+  --theme light|dark     one theme only, instead of both under prefers-color-scheme
+  --max-diagram-nodes N  a function with more nodes is not drawn, default 20000, at most 100000
+
+options of all:
   --json                 one JSON document on stdout, nothing else
   --max-report N         diagnostics listed, default 1000; the counts stay complete
   --max-file-size BYTES  limit of a file and of what is written, default 4 MiB, at most 1 GiB
@@ -68,6 +77,10 @@ fn main() -> ExitCode {
             Ok(options) => run_check(&options),
             Err(message) => usage_error(&message),
         },
+        (Some("diagram"), _) => match args::parse_diagram(rest).and_then(|options| args::refuse_files(&options.check).map(|()| options)) {
+            Ok(options) => run_diagram(&options),
+            Err(message) => usage_error(&message),
+        },
         _ => usage_error("unknown command"),
     }
 }
@@ -78,6 +91,10 @@ fn run_fmt(options: &args::FmtOptions) -> ExitCode {
 
 fn run_check(options: &args::CheckOptions) -> ExitCode {
     on_the_stack_of_the_work(|| check::run(options), |what| check::internal_failure(options, what))
+}
+
+fn run_diagram(options: &args::DiagramOptions) -> ExitCode {
+    on_the_stack_of_the_work(|| diagram::run(options), |what| diagram::internal_failure(options, what))
 }
 
 /// Reading takes the stack of the deepest nesting that an option can ask for (`format::STACK_SIZE`). The work has a

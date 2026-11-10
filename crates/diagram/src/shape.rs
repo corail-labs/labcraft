@@ -200,6 +200,9 @@ pub struct Group {
     pub wire: Option<WireOf>,
 }
 
+/// A reader of a wire: the form of the terminal it reaches, if it has one, and the path from the source to it.
+pub type Reader = (Option<String>, Vec<(i64, i64)>);
+
 /// What a wire stands for (`docs/cli.md`, 7.2): `data-wire`, `data-from`, `data-to`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WireOf {
@@ -214,6 +217,9 @@ pub struct WireOf {
     pub from: Option<String>,
     /// The terminals it reaches that have one.
     pub to: Vec<String>,
+    /// Each reader: the form of the terminal it reaches, if it has one, and the whole path from the source to it, for
+    /// the mark of a diagnostic that names it (`docs/cli.md`, 7.2). Not in the SVG.
+    pub readers: Vec<Reader>,
 }
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
@@ -233,6 +239,17 @@ pub struct Drawing {
     pub placed: Vec<Placed>,
     /// What the checker of the rules of routing needs of each body (notation 2.2). Not in the SVG.
     pub bodies: Vec<BodyDrawn>,
+    /// The marks of diagnostics, drawn over everything else, each in a `<g data-code>` (`docs/cli.md`, 7.2).
+    pub marks: Vec<Mark>,
+    /// A function that is not drawn: its frame and its diagnostics only, `data-drawn="false"` (`docs/cli.md`, 7.2).
+    pub undrawn: bool,
+}
+
+/// The mark of a diagnostic: what shows where it is, and its code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Mark {
+    pub code: String,
+    pub shapes: Vec<Shape>,
 }
 
 /// A body drawn: the height of its main error chain, and whether its file places a node of it.

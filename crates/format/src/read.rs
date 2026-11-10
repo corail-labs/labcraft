@@ -26,7 +26,7 @@ pub struct Read {
 ///
 /// The stack it takes depends on `Limits::max_nesting`, and the caller provides it: see [`STACK_SIZE`].
 pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read {
-    let mut report = Report::new(limits.max_report);
+    let mut report = Report::for_limits(limits);
     let text = match decode(bytes, limits) {
         Ok(text) => text,
         Err(diagnostic) => {
@@ -39,7 +39,7 @@ pub fn read(bytes: &[u8], names: &mut Interner, limits: &Limits) -> Read {
         Ok(file) => Some(file),
         Err(diagnostic) => {
             if diagnostic.code().stands_alone() {
-                report = Report::new(limits.max_report);
+                report = Report::for_limits(limits);
             }
             report.push(*diagnostic);
             None

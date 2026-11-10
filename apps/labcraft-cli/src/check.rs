@@ -31,7 +31,7 @@ pub fn run(options: &CheckOptions) -> ExitCode {
     } else {
         walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect()
     };
-    let mut report = std::mem::replace(&mut walked.report, Report::new(limits.max_report));
+    let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
     let roots = roots(&options.folders, current.as_deref());
     let lib_paths = readable_lib_paths(options, current.as_deref(), &mut report);
     let host = Host { lib_paths: &lib_paths, in_the_walk: &in_the_walk, current: current.as_deref(), limits };
@@ -73,12 +73,12 @@ fn answer(options: &CheckOptions, mut report: Report, counts: CheckCounts) -> Ex
 }
 
 /// A folder given with nothing around it among those given. One inside another is one of its sub-libraries.
-struct Root {
-    real: PathBuf,
-    shown: String,
+pub(crate) struct Root {
+    pub(crate) real: PathBuf,
+    pub(crate) shown: String,
 }
 
-fn roots(folders: &[PathBuf], current: Option<&Path>) -> Vec<Root> {
+pub(crate) fn roots(folders: &[PathBuf], current: Option<&Path>) -> Vec<Root> {
     let current = current.and_then(|current| fs::canonicalize(current).ok());
     let mut known: Vec<Root> = folders
         .iter()
@@ -100,7 +100,7 @@ fn roots(folders: &[PathBuf], current: Option<&Path>) -> Vec<Root> {
 
 /// A `--lib-path` that cannot be listed is reported once, and is no place to look for a library: it must not hide the
 /// next one, nor those shipped. One that also names a folder given has been reported by the walk.
-fn readable_lib_paths(options: &CheckOptions, current: Option<&Path>, report: &mut Report) -> Vec<PathBuf> {
+pub(crate) fn readable_lib_paths(options: &CheckOptions, current: Option<&Path>, report: &mut Report) -> Vec<PathBuf> {
     let canonical_current = current.and_then(|current| fs::canonicalize(current).ok());
     let shown = |path: &Path| shown_of(path, fs::canonicalize(path).ok().as_deref(), canonical_current.as_deref());
     let mut said: HashSet<String> = options.folders.iter().map(|folder| shown(folder)).collect();
@@ -124,7 +124,7 @@ fn readable_lib_paths(options: &CheckOptions, current: Option<&Path>, report: &m
 }
 
 /// The files that the walk found under this folder, in the shape of its folders.
-fn library_of(real: &Path, shown: &str, walked: &mut Walked, limits: &Limits) -> Option<LibrarySource> {
+pub(crate) fn library_of(real: &Path, shown: &str, walked: &mut Walked, limits: &Limits) -> Option<LibrarySource> {
     let (mine, others): (Vec<Found>, Vec<Found>) = std::mem::take(&mut walked.files).into_iter().partition(|found| found.path.starts_with(real));
     walked.files = others;
     let (refused, others): (Vec<Refused>, Vec<Refused>) =
@@ -134,7 +134,7 @@ fn library_of(real: &Path, shown: &str, walked: &mut Walked, limits: &Limits) ->
         return None;
     }
     let mut tree = Tree::default();
-    let mut report = Report::new(limits.max_report);
+    let mut report = Report::for_limits(limits);
     for found in mine {
         let content = match read_program(&found.path, limits) {
             Ok(bytes) => Content::Bytes(Cow::Owned(bytes)),
@@ -197,19 +197,19 @@ fn check_folder(source: LibrarySource, host: &Host<'_>, limits: &Limits, shown: 
         (checked.report, checked.counts, checked.dependencies)
     };
     panic::catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| {
-        let mut report = Report::new(limits.max_report);
+        let mut report = Report::for_limits(limits);
         report.push(Diagnostic::new(Code::Lc0099, format!("internal error, which is a bug of the tool: {}", last_panic()), shown));
         (report, CheckCounts::default(), Vec::new())
     })
 }
 
 /// Rules 3 and 4 of `docs/cli.md`, section 3.
-struct Host<'a> {
-    lib_paths: &'a [PathBuf],
+pub(crate) struct Host<'a> {
+    pub(crate) lib_paths: &'a [PathBuf],
     /// The files that a folder given has reached: they say what they have to say there.
-    in_the_walk: &'a HashSet<PathBuf>,
-    current: Option<&'a Path>,
-    limits: &'a Limits,
+    pub(crate) in_the_walk: &'a HashSet<PathBuf>,
+    pub(crate) current: Option<&'a Path>,
+    pub(crate) limits: &'a Limits,
 }
 
 impl Libraries for Host<'_> {

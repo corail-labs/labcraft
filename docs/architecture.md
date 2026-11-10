@@ -939,7 +939,8 @@ with the SVG of the frames, the nodes and the wires, their names and their pills
 `tests/harness/src/routing.rs` on every drawing of the repository, on cases built to break the rules
 (`tests/harness/routing-cases/`) and, by the fuzz target `diagram`, on the drawings it makes; their time and memory
 are bounded by `cargo xtask bounds`. Structures are unfolded, as an export shows them; tabs come with the canvas that
-clicks them (step 6).* `draw` takes the index of the file of the
+clicks them (step 6). With step 5 of 11.7, the marks of diagnostics on a drawing and the SVG of a function that is
+not drawn (`mark`, `undrawn`), which `labcraft-cli diagram` uses.* `draw` takes the index of the file of the
 function in `Checked::files`, as `ir::lower` does, and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate

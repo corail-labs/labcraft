@@ -258,7 +258,7 @@ pub(crate) fn declare(
         names: &*names,
         limits,
         table,
-        reports: loaded.iter().map(|_| Report::new(limits.max_report)).collect(),
+        reports: loaded.iter().map(|_| Report::for_limits(limits)).collect(),
         ids,
         types: Vec::new(),
         index: Vec::new(),
@@ -279,7 +279,7 @@ pub(crate) fn declare(
         cut_short: false,
         for_run,
         leaned: false,
-        bodies: Report::new(limits.max_report),
+        bodies: Report::for_limits(limits),
         function_outputs: HashMap::new(),
         type_outputs: HashMap::new(),
     };

@@ -2,11 +2,12 @@
 //! absent, not `null`.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
 
 use crate::code::{Code, Severity};
+use crate::limits::Limits;
 
 /// Long texts are cut at this many code points and end with `…`, so that a hostile file cannot make
 /// the report huge.
@@ -211,6 +212,19 @@ pub struct Report {
     /// and made at the first diagnostic: a report is part of what a host hands over for each library.
     #[expect(clippy::box_collection, reason = "one pointer in each report until a diagnostic comes: `Found::Library` holds one")]
     by_file: Option<Box<HashMap<Box<str>, FileCounts>>>,
+    /// What a drawing needs of each file, kept apart from the list: one pointer in each report until it is needed.
+    apart: Option<Box<Apart>>,
+}
+
+/// What the SVG of a function needs of its file (`docs/cli.md`, 7.1 and 7.2), whatever the list keeps.
+#[derive(Clone, Debug, Default)]
+struct Apart {
+    /// The codes that keep its function from being drawn, complete: at most one entry per code.
+    undrawn: HashMap<Box<str>, BTreeSet<Code>>,
+    /// `Limits::keep_per_file`.
+    per_file: usize,
+    /// Its first diagnostics, at most twice `per_file`, in no order.
+    kept: HashMap<Box<str>, Vec<Diagnostic>>,
 }
 
 /// The errors and warnings of one file.
@@ -243,7 +257,7 @@ fn keep_order(a: &Diagnostic, b: &Diagnostic) -> std::cmp::Ordering {
 
 impl Report {
     pub fn new(max_report: usize) -> Self {
-        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0, last_kept: None, by_file: None }
+        Report { max_report, diagnostics: Vec::new(), errors: 0, warnings: 0, last_kept: None, by_file: None, apart: None }
     }
 
     fn count(&mut self, file: &str, counts: FileCounts) {
@@ -266,9 +280,68 @@ impl Report {
         self.by_file.as_ref().and_then(|by_file| by_file.get(file)).copied().unwrap_or_default()
     }
 
+    /// A report as these limits make it: its list, and the first diagnostics of each file kept apart.
+    pub fn for_limits(limits: &Limits) -> Self {
+        let apart = (limits.keep_per_file > 0).then(|| Box::new(Apart { per_file: limits.keep_per_file, ..Apart::default() }));
+        Report { apart, ..Report::new(limits.max_report) }
+    }
+
+    fn per_file(&self) -> usize {
+        self.apart.as_ref().map_or(0, |apart| apart.per_file)
+    }
+
+    fn keep_of_file(&mut self, file: &str, diagnostics: impl IntoIterator<Item = Diagnostic>) {
+        let apart = self.apart.get_or_insert_with(Box::default);
+        let per_file = apart.per_file;
+        let kept = &mut apart.kept;
+        let list = match kept.get_mut(file) {
+            Some(list) => list,
+            None => kept.entry(file.into()).or_default(),
+        };
+        list.extend(diagnostics);
+        if list.len() > per_file.saturating_mul(2) {
+            list.sort_by(keep_order);
+            list.truncate(per_file);
+        }
+    }
+
+    /// The first diagnostics of this file, at most `Limits::keep_per_file`, in the order of a cut, then in that of the
+    /// report: those that a report of that size would list, whatever this one lists.
+    pub fn first_of(&self, file: &str) -> Vec<Diagnostic> {
+        let mut list = self.apart.as_ref().and_then(|apart| apart.kept.get(file)).cloned().unwrap_or_default();
+        list.sort_by(keep_order);
+        list.truncate(self.per_file());
+        list.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()).then_with(|| a.cmp(b)));
+        list
+    }
+
+    fn keep_from_drawing(&mut self, file: &str, codes: impl IntoIterator<Item = Code>) {
+        let undrawn = &mut self.apart.get_or_insert_with(Box::default).undrawn;
+        match undrawn.get_mut(file) {
+            Some(slot) => slot.extend(codes),
+            None => {
+                undrawn.insert(file.into(), codes.into_iter().collect());
+            }
+        }
+    }
+
+    /// The codes of this file that keep its function from being drawn, in their order, complete whatever the list
+    /// keeps (`docs/cli.md`, 7.1).
+    pub fn keeping_from_drawing(&self, file: &str) -> Vec<Code> {
+        self.apart.as_ref().and_then(|apart| apart.undrawn.get(file)).map(|codes| codes.iter().copied().collect()).unwrap_or_default()
+    }
+
     /// Every diagnostic enters here, so its long texts and lists are always bounded.
     pub fn push(&mut self, mut diagnostic: Diagnostic) {
         diagnostic.bound_texts_and_lists();
+        if diagnostic.code.keeps_from_drawing() {
+            let file = diagnostic.file.clone();
+            self.keep_from_drawing(&file, [diagnostic.code]);
+        }
+        if self.per_file() > 0 {
+            let file = diagnostic.file.clone();
+            self.keep_of_file(&file, [diagnostic.clone()]);
+        }
         let counts = match diagnostic.severity {
             Severity::Error => {
                 self.errors += 1;
@@ -295,6 +368,13 @@ impl Report {
         if let Some(counts) = self.by_file.as_mut().and_then(|by_file| by_file.remove("")) {
             self.count(file, counts);
         }
+        if let Some(codes) = self.apart.as_mut().and_then(|apart| apart.undrawn.remove("")) {
+            self.keep_from_drawing(file, codes);
+        }
+        if let Some(mut list) = self.apart.as_mut().and_then(|apart| apart.kept.remove("")) {
+            list.iter_mut().for_each(|diagnostic| diagnostic.file = file.to_owned());
+            self.keep_of_file(file, list);
+        }
         for diagnostic in self.diagnostics.iter_mut().chain(self.last_kept.as_deref_mut()).filter(|diagnostic| diagnostic.file.is_empty()) {
             diagnostic.file = file.to_owned();
         }
@@ -306,6 +386,7 @@ impl Report {
         for (file, counts) in other.by_file.into_iter().flat_map(|by_file| *by_file) {
             self.count(&file, counts);
         }
+        self.merge_apart(other.apart, false);
         self.diagnostics.extend(other.diagnostics);
         self.prune_when_full();
     }
@@ -316,8 +397,24 @@ impl Report {
         for (file, counts) in other.by_file.into_iter().flat_map(|by_file| *by_file).filter(|(_, counts)| counts.errors > 0) {
             self.count(&file, FileCounts { errors: counts.errors, warnings: 0 });
         }
+        self.merge_apart(other.apart, true);
         self.diagnostics.extend(other.diagnostics.into_iter().filter(|diagnostic| diagnostic.severity == Severity::Error));
         self.prune_when_full();
+    }
+
+    /// What another report kept apart: its errors only, for a dependency.
+    fn merge_apart(&mut self, other: Option<Box<Apart>>, errors_only: bool) {
+        let Some(other) = other else { return };
+        let other = *other;
+        for (file, codes) in other.undrawn {
+            self.keep_from_drawing(&file, codes);
+        }
+        if other.per_file > self.per_file() {
+            self.apart.get_or_insert_with(Box::default).per_file = other.per_file;
+        }
+        for (file, list) in other.kept {
+            self.keep_of_file(&file, list.into_iter().filter(|diagnostic| !errors_only || diagnostic.severity == Severity::Error));
+        }
     }
 
     fn prune_when_full(&mut self) {
@@ -503,6 +600,27 @@ mod tests {
         assert_eq!(report.counts_of("d.lcf"), counts(1, 0));
         assert_eq!(report.counts_of("e.lcf"), counts(0, 0));
         assert_eq!(report.counts_of(""), counts(0, 0), "named, they are no longer counted without a file");
+    }
+
+    #[test]
+    fn what_keeps_a_function_from_being_drawn_stays_complete_when_the_list_is_cut() {
+        let mut report = Report::new(1);
+        for line in 1..=5 {
+            report.push(diagnostic(Code::Lc0005, "a.lcf", at(line, 1), "w"));
+        }
+        report.push(diagnostic(Code::Lc3002, "a.lcf", at(9, 1), "e"));
+        report.push(diagnostic(Code::Lc2001, "a.lcf", at(8, 1), "e"));
+        report.push(diagnostic(Code::Lc2001, "a.lcf", at(7, 1), "e"));
+        let mut read = Report::new(1);
+        read.push(diagnostic(Code::Lc4001, "", at(1, 1), "e"));
+        read.push(diagnostic(Code::Lc1001, "", at(2, 1), "e"));
+        read.set_file("b.lcf");
+        report.merge(read);
+        report.finish();
+        assert_eq!(report.diagnostics().len(), 1);
+        assert_eq!(report.keeping_from_drawing("a.lcf"), [Code::Lc2001]);
+        assert_eq!(report.keeping_from_drawing("b.lcf"), [Code::Lc1001, Code::Lc4001]);
+        assert!(report.keeping_from_drawing("").is_empty() && report.keeping_from_drawing("c.lcf").is_empty());
     }
 
     /// The example of `docs/cli.md`, section 4.2.

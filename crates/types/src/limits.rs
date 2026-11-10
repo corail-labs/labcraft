@@ -19,13 +19,16 @@ pub struct Limits {
     pub max_library_size: u64,
     /// Diagnostics listed in a report; the counts stay complete.
     pub max_report: usize,
+    /// The first diagnostics of each file that a report keeps apart from its list, whatever `max_report` keeps: what the
+    /// SVG of a function shows (`docs/cli.md`, 7.2). None by default.
+    pub keep_per_file: usize,
     max_nesting: u32,
 }
 
 impl Default for Limits {
     /// The defaults proposed by `docs/cli.md`, section 1, and `docs/architecture.md`, section 2.
     fn default() -> Self {
-        Limits { max_file_size: 4 * MIB, max_library_size: 1024 * MIB, max_report: 1000, max_nesting: 256 }
+        Limits { max_file_size: 4 * MIB, max_library_size: 1024 * MIB, max_report: 1000, keep_per_file: 0, max_nesting: 256 }
     }
 }
 
