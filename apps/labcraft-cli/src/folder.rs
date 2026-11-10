@@ -11,9 +11,11 @@ use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, ViewState, draw
 use labcraft_types::{CheckCounts, Code, Diagnostic, Interner, Report, cut_text};
 
 use crate::args::CheckOptions;
-use crate::check::{Host, library_of, readable_lib_paths, roots};
-use crate::fmt::last_panic;
-use crate::walk::{self, slashed};
+use labcraft_engine::folders::{Host, library_of, readable_lib_paths, roots};
+use labcraft_engine::panics::last_panic;
+use labcraft_engine::walk::{self, slashed};
+
+use crate::disk::Disk;
 
 /// A function: named from the root, as `run` names it, by the path of its file.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,20 +46,21 @@ pub fn load(options: &CheckOptions, current: Option<&Path>) -> Loaded {
     let mut limits = options.limits.clone();
     limits.keep_per_file = MAX_LINES;
     let limits = &limits;
-    let mut walked = walk::walk(&options.folders, current, limits);
+    let mut walked = walk::walk(&Disk, &options.folders, current, limits);
     let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
-    let lib_paths = readable_lib_paths(options, current, &mut report);
+    let lib_paths = readable_lib_paths(&Disk, &options.folders, &options.lib_paths, current, &mut report);
     let in_the_walk: HashSet<PathBuf> =
         walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect();
-    let host = Host { lib_paths: &lib_paths, in_the_walk: &in_the_walk, current, limits };
+    let shipped = crate::shipped();
+    let host = Host { ws: &Disk, shipped: &shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current, limits, seen: None };
     let mut names = Interner::new();
-    let Some(root) = roots(&options.folders, current).into_iter().next() else {
+    let Some(root) = roots(&Disk, &options.folders, current).into_iter().next() else {
         return Loaded { report, counts: CheckCounts::default(), checked: None, names, functions: Vec::new(), root: None };
     };
     let functions = functions_of(&root.real, &walked);
     let has_types = walked.files.iter().any(|found| found.path.extension().is_some_and(|extension| extension == "lct"));
     let mut counts = CheckCounts::default();
-    let checked = match library_of(&root.real, &root.shown, &mut walked, limits) {
+    let checked = match library_of(&Disk, &root.real, &root.shown, &mut walked, limits, None) {
         Some(source) => {
             let work = || check(source, &host, &mut names, limits);
             match panic::catch_unwind(AssertUnwindSafe(work)) {

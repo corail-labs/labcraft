@@ -52,6 +52,38 @@ pub fn write_operand(operand: &Operand, names: &Interner, limit: usize) -> Strin
     writer.out
 }
 
+/// A declaration on one line, without its comments, under the name given, which may be qualified: `fn visa.open(resource:
+/// string, timeout: duration = 2 s, err: error = none) -> (session: visa.session, err: error)`, `type Verdict = enum { Pass,
+/// Fail, Error }`. Stopped once it passes `limit` bytes; what is stopped ends with `…`. The entries of `functions.list`.
+pub fn write_declaration(decl: &Decl, name: &str, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    let signature = |writer: &mut Writer<'_>, signature: &Signature| {
+        writer.push("fn ");
+        writer.push(name);
+        writer.generics(&signature.generics);
+        writer.push("(");
+        writer.list(&signature.params, ", ", |writer, param| writer.param(param, true));
+        writer.push(") -> (");
+        writer.list(&signature.outputs, ", ", |writer, output| writer.output(output, true));
+        writer.push(")");
+    };
+    match decl {
+        Decl::Function(function) => signature(&mut writer, &function.signature),
+        Decl::Extern(function) => signature(&mut writer, &function.signature),
+        Decl::Type(ty) => {
+            writer.push("type ");
+            writer.push(name);
+            writer.generics(&ty.generics);
+            writer.push(" = ");
+            writer.type_expr(&ty.ty, 0, true);
+        }
+    }
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
 /// A pattern of an arm as the text writes it (`Reading.Value(v)`, `io.timeout(err)`), stopped once it passes `limit` bytes:
 /// the title of an arm in a diagram (`docs/visual-notation.md`, section 5.2).
 pub fn write_pattern(pattern: &Pattern, names: &Interner, limit: usize) -> String {

@@ -87,7 +87,7 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 ## Rust code
 
 `cargo xtask ci` must pass: formatting, layers, licences, the `libs/` boundary, the diagnostic codes
-against `docs/cli.md`, clippy, tests, WASM.
+against `docs/cli.md`, the commands against `docs/commands.md`, clippy, tests, WASM.
 It needs the `wasm32-unknown-unknown` target and `wasm-bindgen-test-runner`; `cargo xtask wasm` gives
 the command that installs the runner.
 

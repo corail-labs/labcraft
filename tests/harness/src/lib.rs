@@ -32,6 +32,9 @@ include!(concat!(env!("OUT_DIR"), "/corpus.rs"));
 mod deep;
 
 #[cfg(test)]
+mod engine;
+
+#[cfg(test)]
 mod routing;
 
 #[cfg(test)]

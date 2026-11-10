@@ -1,7 +1,8 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-10. Status: draft for milestone M0b, not implemented yet, but for the `view.*` commands of
-section 6.5, which the desktop viewer of M0v answers through a session of its own until `engine` holds them
+*Last updated: 2026-11-10. Status: draft for milestone M0b, implemented in `engine` but for the runs of section 6.4
+(step 6b), `guide.read` (step 9) and the commands of section 6.5, which are registered as `planned`. The desktop viewer
+of M0v answers the `view.*` commands through a session of its own until they move into `engine`
 (`docs/architecture.md`, 11.5): all of them but `view.open_trace`, which comes with the values of a run.*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,
@@ -62,8 +63,9 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   as `no-instrument.toml` may be, is one. The name `labcraft.toml` is refused whatever it holds, since it
   names the manifest of a library. So `Cargo.toml`, `pyproject.toml` and the manifests of the shipped
   libraries are out of reach, and so is a user library's manifest when M2 brings it.
-- **On Windows**, these are refused before any call to the file system, as SolidCraft does, then checked
-  again once the path is resolved, so that a link or a junction cannot lead to them: UNC and device paths
+- **On every system**, these are refused before any call to the file system, as SolidCraft does on Windows, then
+  checked again once the path is resolved, so that a link or a junction cannot lead to them, and a project behaves the
+  same wherever it is opened: UNC and device paths
   in any spelling (`\\server\share`, `//server/share`, `\\?\UNC\…`, `\\.\…`, `\??\…`), a drive-relative
   path (`C:file`), a `:` in a name (a stream), a name that Windows reserves with any extension (`NUL`,
   `com1.lcf`, as `LC2025` does for a program), a short 8.3 name (`PROGRA~1`). Each is `path.invalid`.
@@ -78,7 +80,10 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   the reader least gives way first, until it fits: the SVGs of `diagram.svg` (6.5), then the events of an
   inline trace, then the commands seen by instruments, then the diagnostics (warnings before errors), then the values of the outputs, each shown
   as `{ "$cut": true }`. Each list shortened says `truncated`, and the result carries `"truncated": true`
-  at its top level. The status, the run id, the error, the fault and the counts are never cut. MCP sends a
+  at its top level. In M0b, `engine` cuts what still passes the bound once each command has bounded its own lists, as
+  section 5 cuts a value, what comes first in the result staying. The message of an error, which can repeat a path or
+  an id the caller sent, is cut past 200 code points, as a message of a diagnostic is (cli.md 4.2). A path of a command
+  holds at most 64 names and 4,096 bytes *(proposed)*, `path.invalid` otherwise. The status, the run id, the error, the fault and the counts are never cut. MCP sends a
   result twice ([mcp.md](mcp.md), section 3), so a reply on the wire stays under about three times the
   bound, quoting included.
 - **A program with errors is not a failed command.** `library.check` on a library that does not check
@@ -245,16 +250,20 @@ MCP tool ([mcp.md](mcp.md), section 2). Parameters in *italics* are optional.
 `functions.list` answers "what can I call" in one call: an agent writing its first program calls it
 once, with no filter. The project's own entries come from the last `check`, so they agree with it. It
 lists at most 1,000 entries *(proposed)*, primitives and shipped libraries first, then says `truncated`:
-`library` or `filter` narrow it.
+`library` or `filter` narrow it. Each entry is `{ "name", "library", "kind", "signature" }`, `kind` being
+`function` or `type`, with `always`, `categories` and `doc` when they have something to say, each line of `doc` cut
+past 200 code points, as a message is; `library` is `""` for the root, whose functions are named without one; a type of a
+library is named by it in the signatures (`session: visa.session`), as a program that uses it writes it. The
+categories of a function of a library are those its manifest declares for the library, which say no more.
 
 ### 6.2 Files and libraries
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `project.describe` | | The root, its libraries (folders, sub-libraries), their `.lcf` and `.lct` files with what each declares, the simulation files with the resources they define (those of the project, and those shipped with `visa`, as `<labcraft>/visa/sim/…`), and the summary of a `check` of the root (cli.md, section 4.2), without its diagnostics. At most 1,000 files listed *(proposed)*, then `truncated` |
-| `file.read` | `path`, *`from`* (1), *`lines`* (all) | The text of a `.lcf`, `.lct` or simulation file of the project or of a shipped library, from line `from`: `{ "text": …, "from": 1, "lines": 120, "lines_total": 120, "truncated": false }`. At most 1 MiB of text per call *(proposed)*, cut at the end of a line, then `truncated`: the next call starts at `from + lines` |
+| `project.describe` | | The root, its libraries (folders, sub-libraries), their `.lcf` and `.lct` files with what each declares, the simulation files with the resources they define (those of the project, and those shipped with `visa`, as `<labcraft>/visa/sim/…`), and the summary of a `check` of the root (cli.md, section 4.2), without its diagnostics: `{ "root", "libraries": [{ "library", "folder", "files": [{ "file", "declares" }] }], "simulations": [{ "file", "resources", "valid" }], "summary", "truncated" }`, the root being the library `""` in the folder `.`. At most 1,000 files listed *(proposed)*, and at most 8 MiB of `.toml` files read to find the simulation files *(proposed)*, those over `--max-file-size` not counted, then `truncated` |
+| `file.read` | `path`, *`from`* (1), *`lines`* (all) | The text of a `.lcf`, `.lct` or simulation file of the project or of a shipped library, from line `from`: `{ "file": …, "text": …, "from": 1, "lines": 120, "lines_total": 120, "truncated": false }`. At most 1 MiB of text per call *(proposed)*, counted as JSON writes it, cut at the end of a line, then `truncated`: the next call starts at `from + lines`. A line longer than that is cut at the end of a character, and counts as read |
 | `file.write` | `path`, `text`, *`check`* (`true`) | Writes the file, atomically, creating its folder if needed. With `check`, then checks the root and returns its report (`labcraft-check/1`), as `library.check` would: one call writes and checks. `text` holds at most 4 MiB *(proposed)*, whatever `--max-file-size`, so that a request stays within the bound of [mcp.md](mcp.md), section 5; a larger file is `file.too_large` |
-| `file.rename` | `from`, `to` | Renames a file in the project, a change of case alone included (R-22: the fix of `LC2023` can be a new name), then checks as `file.write` does |
+| `file.rename` | `from`, `to` | Renames a file in the project, a change of case alone included (R-22: the fix of `LC2023` can be a new name), then checks as `file.write` does. A final `/` or `.` of `to` names no file: `b.lcf/` is `b.lcf` |
 | `file.delete` | `path` | Deletes a `.lcf`, `.lct` or simulation file of the project, then checks |
 | `library.check` | *`folder`* (the root), *`deny_warnings`* (`false`) | `labcraft-check/1`, exactly what `labcraft-cli check --json` gives (cli.md, section 4.2) |
 | `file.format` | `path` (a file or a folder), *`check_only`* (`false`) | `labcraft-fmt/1`, exactly what `labcraft-cli fmt --json` gives |
@@ -270,21 +279,23 @@ an agent inside what LabCraft knows; other files are written by the client's own
 whatever the size of the project, well under the timeouts of clients ([mcp.md](mcp.md), section 1):
 
 - When the session starts, it checks the root in the background and keeps the result.
-- A command that changes a file (`file.write`, `file.rename`, `file.delete`, `file.format`) then checks
-  again only the library of that file and the libraries that use it.
-- Before a command that reports a check, the session compares the files with those it read (size and time
-  of change) and checks again those that changed, so that a file written by the client's own tools is seen.
+- Before a command that reports a check, the session reads the files again and compares them with those the check
+  read (their content, and the files each folder holds), so that a file written by the client's own tools is seen,
+  even one rewritten with the same size within one tick of the clock of the file system. When nothing changed, the
+  kept report is given at once; when something did, the folder is checked again, whole
+  (decision of the owner, 2026-11-10: `examples/` takes 45 ms, 21,000 files 2.7 s). Checking again only the
+  library of a change and those that use it is for later, when a measure asks for it.
 - The report is always the one a full `check` of the root would give: keeping work is a speed, never a
   different answer. A command that needs the first check before it has ended waits for it, except
-  `project.describe`, whose summary then says `"pending": true`.
+  `project.describe`, whose summary then says `"pending": true`, with no file saying what it declares.
 
-How `check` keeps and reuses its work is written in the architecture of M0b.
+How the session keeps its checks is written in the architecture of M0b (section 10.8).
 
 ### 6.3 Instruments
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `simulation.describe` | `path` | What a simulation file of the project or of `<labcraft>/visa/sim/` defines, part by part: for each library that simulates, the description that library gives of its part (for `visa`, each instrument with its resource, its `*IDN?` answer, its latency, the queries it answers and what each one reads, the writes it accepts, the faults it injects: [libs/visa/simulation.md](../libs/visa/simulation.md), section 9); or the diagnostics of the file, those of the tool (`LC0006`, `LC0007`, `LC8109`, `LC8110`) and those of each library |
+| `simulation.describe` | `path` | What a simulation file of the project or of `<labcraft>/visa/sim/` defines, part by part, `{ "file": …, "parts": [{ "library": "visa", "description": … }] }`: for each library that simulates, the description that library gives of its part (for `visa`, each instrument with its resource, its `*IDN?` answer, its latency, the queries it answers and what each one reads, the writes it accepts, the faults it injects: [libs/visa/simulation.md](../libs/visa/simulation.md), section 9); or `{ "file": …, "diagnostics": […] }`, the diagnostics of each library. A file that is not a simulation file at all (not TOML, nested too deep, a key that no library claims: `LC8109`, `LC0007`, `LC8110`) is `file.not_simulation` by the rule of section 2, whose message gives that diagnostic; one over `--max-file-size` is `file.too_large` |
 
 ### 6.4 Runs
 

@@ -25,6 +25,17 @@ fn main() {
                 write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
             }
         }
+        // The simulation files it ships, read by `simulation.describe` and `run` as `<labcraft>/visa/sim/bench.toml`.
+        write!(out, "], simulations: &[").unwrap();
+        let sim = folder.join("sim");
+        if sim.is_dir() {
+            for file in sorted_entries(&sim) {
+                if file.extension().is_some_and(|extension| extension == "toml") {
+                    let name = format!("sim/{}", file.file_name().unwrap().to_str().unwrap());
+                    write!(out, "File {{ name: {name:?}, bytes: include_bytes!({file:?}) }},").unwrap();
+                }
+            }
+        }
         writeln!(out, "] }},").unwrap();
     }
     writeln!(out, "];").unwrap();
