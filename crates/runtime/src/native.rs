@@ -55,10 +55,34 @@ pub trait NativeLibrary: Send + Sync {
         let _ = section;
         Err(Vec::new())
     }
+    /// What its judged section of a simulation file defines, for `simulation.describe` (commands.md 6.3): for `visa`, each
+    /// instrument, its resource, its answers and its faults (simulation.md 9).
+    fn describe(&self, simulation: &Simulation) -> Option<Described> {
+        let _ = simulation;
+        None
+    }
+    /// The resources its section defines, in the order of the file, for `project.describe`: `SIM::DMM0`.
+    fn resources(&self, simulation: &Simulation) -> Vec<String> {
+        let _ = simulation;
+        Vec::new()
+    }
     /// What one run of it holds, from its simulation if it has one. `library` is its index among the libraries of the run,
     /// which its handles and its keys carry.
     /// What one run of it holds. `budget` is the memory that every library of the run shares for what it keeps for the report.
     fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun>;
+}
+
+/// What a library says of its part of a simulation file, in the shape JSON gives it, which `engine` writes as it is.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Described {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Number(f64),
+    Text(String),
+    List(Vec<Described>),
+    /// Its fields in the order to show them.
+    Map(Vec<(String, Described)>),
 }
 
 /// A call in progress, by its number in its run.

@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use labcraft_runtime::native::{LibraryCode, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, Section, Simulation};
+use labcraft_runtime::native::{Described, LibraryCode, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, Section, Simulation};
 use labcraft_types::Severity;
 
 mod file;
@@ -71,6 +71,17 @@ impl NativeLibrary for Visa {
 
     fn simulate(&self, section: &Section<'_>) -> Result<Simulation, Vec<LibraryDiagnostic>> {
         file::read(section).map(|bench| Box::new(Arc::new(bench)) as Simulation)
+    }
+
+    fn describe(&self, simulation: &Simulation) -> Option<Described> {
+        simulation.downcast_ref::<Arc<Bench>>().map(|bench| bench.describe())
+    }
+
+    fn resources(&self, simulation: &Simulation) -> Vec<String> {
+        simulation
+            .downcast_ref::<Arc<Bench>>()
+            .map(|bench| bench.commands().into_iter().map(|commands| commands.resource).collect())
+            .unwrap_or_default()
     }
 
     fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun> {

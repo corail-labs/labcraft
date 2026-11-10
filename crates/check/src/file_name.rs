@@ -25,12 +25,13 @@ pub(crate) fn stem(shown: &str) -> Cow<'_, str> {
 /// Two names with one key cannot be two files of one folder where case does not count (Windows, macOS). Character by
 /// character, so that a final sigma is a sigma, as for NTFS; normalized again, since a capital mu becomes a mu, which R-20
 /// spells as the micro sign.
-pub(crate) fn case_key(text: &str) -> String {
+pub fn case_key(text: &str) -> String {
     let lower: String = normalize(text).chars().flat_map(char::to_lowercase).collect();
     normalize(&lower).into_owned()
 }
 
-pub(crate) fn kept_by_windows(text: &str) -> bool {
+/// Whether Windows keeps this name, without its extension, for a device.
+pub fn kept_by_windows(text: &str) -> bool {
     KEPT_BY_WINDOWS.contains(&case_key(text).as_str())
 }
 

@@ -286,9 +286,15 @@ crates, where WASM reaches it.
   walk reads.
 - **The work** runs on a thread of `format::STACK_SIZE`. A panic on one file is a bug, reported as `LC0099` on
   that file while the others go on; a hook keeps it out of stderr, which is for wrong usage alone.
-- `fmt` and `check` become engine commands when `engine` arrives (M0b, D-18, section 10.8), and the last resort
-  moves to `Session::execute`, as in the Craft apps. Until then the app calls the library functions directly;
-  nothing here should make that move hard.
+- **Since M0b (step 6a)**, the walk, the check of folders and the formatting of files live in `engine`, over its
+  `Workspace` (section 10.8), and the app gives it the disk (`labcraft_cli::disk::Disk`): `std::fs`, and writes through
+  `craft-atomic`. `check` and `fmt` call `engine::folders::check_folders` and `engine::fmt::format_paths`, the code behind
+  the commands `library.check` and `file.format`, not the commands themselves: the command line takes folders and files
+  anywhere on the disk, named from the current folder, which a command never reaches (commands.md, section 2).
+- **The bound of a result** (commands.md 2) is kept by each command for its own lists, then by `Session::execute`,
+  which cuts what still passes 4 MiB as section 5 of commands.md cuts a value, and marks it `truncated`
+  (`engine::bound`): the small fields of the top level (the schema, the status, the summary, the counts) are kept whole
+  first, then the large ones take what is left.
 
 ## 7. `xtask` and the workspace
 
@@ -406,7 +412,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 5 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 5 of 10.11 implemented, and the first half of step 6.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -771,6 +777,11 @@ where it is written: `engine` and the app decide.
 
 ### 10.8 `engine` (L6)
 
+*Status: implemented without runs (step 6a): the registry, the session, the commands of commands.md 6 but `run.*`,
+`diagram.svg`, `view.*` and `guide.read`, which are registered as `planned` (6b, M0v and step 9; decisions of the owner,
+2026-11-10), the kept check, `engine::Workspace` with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask
+commands`.*
+
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
 
 - **The registry** holds each command as the data of commands.md 1: id, label, summary, description, schema of its
@@ -778,16 +789,41 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   the MCP server and later the IDE call it. A panic in a command is caught there and returned as `internal`, the last
   resort that the app holds in M0a (section 6). `cargo xtask commands` checks the registry against the tables of
   commands.md 6.
-- **The session** holds the root of the project, the interner, the libraries (shipped, embedded, and those of
-  `--lib-path`), the native libraries the app gave it, its last `check` (checked at start, then again only for the
-  library a change touched: commands.md 6.2), and its runs.
+- **The session** holds the root of the project, the libraries (those shipped, which the app hands it as files, and
+  the folders of `--lib-path`), the native libraries the app gave it, its kept checks, and its runs. The parameters of
+  a call are judged against the schema of its command before it runs (`params.unknown` with the nearest name,
+  `params.missing`, `params.invalid`), and its paths by the rules of commands.md 2, which `engine::paths` applies on every
+  system, the forms that Windows reads otherwise included, so that a project behaves the same wherever it is opened.
+- **The kept check** (commands.md 6.2; decisions of the owner, 2026-11-10): the session keeps the last report of each
+  folder it checked, at most 8, with what that check saw, noted while it ran: the files that the walk of the folder
+  found or refused and what it said, the folders of `--lib-path` that could be listed, for each library looked for the
+  folder found under each and its files, and for each file read the SHA-256 of its bytes (or the size that refused it,
+  or the error of the system). A command that reports a check looks again the same way, reading every file but parsing
+  none, and compares: equal, the report is given at once; different, the whole folder is checked again, so that the
+  answer is always the one a full check gives. Size and time of change were not enough: the review of 6a found a file
+  rewritten with the same size within one tick of NTFS, which keeps both. A command that writes also drops what is
+  kept. Measured in release on one machine, files in the cache of the system: a first check, then a kept one, of
+  `examples/` 4 ms and 1 ms, of 2,100 files 311 ms and 200 ms, of 21,000 files 3.1 s and 2.1 s: reading the files is
+  most of the cost, and keeping saves what parsing and typing take. The command line notes nothing of what it reads. Measured in release on one machine: `examples/` in 45 ms, 2,100 files in 0.4 s, 21,000
+  in 2.7 s, reading included; reusing the work library by library waits for a measure that asks for it, with a test
+  against a full check. The first check of the root runs on a thread of its own when the session starts, but in WASM,
+  where the first command that needs it makes it.
 - **Runs** are long commands (commands.md 4): `run.start` starts one on a thread of its own and returns its report, or
   `running` after `wait`; one run at a time per session; the last 16 reports are kept. **A caller waits on the run, not
   in the session**: `run.wait`, and `run.start` until its `wait`, block the thread of their caller on the run's own
   channel, so the session goes on answering, and `run.abort` reaches the run while another caller waits for it. `run.abort`, `run.set_element`
   (real time only) and Ctrl-C reach the scheduler through a channel.
-- **Files** are reached through `engine::Workspace`, which the app implements: the disk with atomic writes for the CLI,
-  memory for tests. So principle 1 holds: only an app touches the file system.
+- **Files** are reached through `engine::Workspace`, which the app implements: the disk with atomic writes for the CLI
+  (`labcraft_cli::disk::Disk`), memory for tests and the web viewer (`engine::Memory`, with files, folders and links).
+  So principle 1 holds: only an app touches the file system. Its operations are those of a walk, with the meaning of
+  `std::fs`: a folder is listed one entry at a time, since it can hold millions, and a read is bounded before it reads.
+- **The libraries shipped with LabCraft** reach the session as files (`engine::Shipped`), which the app takes from
+  `labcraft-libs`, the simulation files of `libs/visa/sim/` included: no crate of `crates/` sees `labcraft-libs`
+  (`cargo xtask libs`).
+- **What a library that simulates says of its part** of a simulation file, for `simulation.describe` and the resources
+  of `project.describe`, comes through two methods of `runtime::native::NativeLibrary`, `describe` and `resources`: a
+  tree of plain values (`Described`), which `engine` writes as JSON as it is. `visa` describes each instrument as
+  simulation.md 9 says.
 - **The state of the viewer** (the folder open, the function shown, the view state that the file does not hold, the
   preference of the standard view, the trace shown) is held by the session too, and the `view.*` commands change it;
   the app reads it each frame, as in the Craft apps. M0v writes that part (`engine::view`, section 11).
@@ -860,7 +896,10 @@ Each step of work ends with something testable:
    *done* (sections 10.4, 10.5); **5b**, the trace and the report written, the corpus and its runner, *done* (sections
    10.7, 10.11).
 6. **`engine`:** the session, the registry and the commands of commands.md 6, the kept `check`, runs as tasks; `cargo
-   xtask commands`. `fmt` and `check` move behind it.
+   xtask commands`. `fmt` and `check` move behind it. In two halves (decision of the owner, 2026-11-10): **6a**, the
+   session, the registry, the workspace, the commands without runs, `cargo xtask commands`, the command line on `engine`,
+   *done* (section 10.8); **6b**, runs as tasks, the converter of arguments of cli.md 6.3 (`LC8101` to `LC8108`), the
+   diagnostics of a report cut before its values, and the corpus of runs started through `engine` as it is.
 7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.
 8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2.
 9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.

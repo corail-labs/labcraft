@@ -15,6 +15,7 @@ labcraft-types = { workspace = true }
 
 [dev-dependencies]
 labcraft-diagram = { workspace = true }
+labcraft-engine = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-libs = { workspace = true }
 labcraft-runtime = { workspace = true }

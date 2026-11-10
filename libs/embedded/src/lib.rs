@@ -30,6 +30,8 @@ pub struct Library {
     /// The text of its `labcraft.toml`.
     pub manifest: &'static str,
     pub files: &'static [File],
+    /// The simulation files under `sim/`, named `sim/bench.toml`.
+    pub simulations: &'static [File],
 }
 
 include!(concat!(env!("OUT_DIR"), "/libraries.rs"));

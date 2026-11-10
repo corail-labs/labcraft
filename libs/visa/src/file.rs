@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
-use labcraft_runtime::native::{LibraryDiagnostic, Section};
+use labcraft_runtime::native::{Described, LibraryDiagnostic, Section};
 use labcraft_runtime::simulation::{Places, float_of, integer_of, nearest};
 use labcraft_types::Severity;
 use toml::Spanned;
@@ -65,6 +65,80 @@ impl Bench {
     }
 }
 
+impl Bench {
+    /// What the bench defines (simulation.md 9): each instrument in the order of the file, its resource, `idn` and latency,
+    /// the queries it answers and what each one reads, the writes of `set` and `accept`, and its faults; each list in code
+    /// point order.
+    pub fn describe(&self) -> Described {
+        let text = |text: &str| Described::Text(text.to_owned());
+        let texts = |items: Vec<&String>| {
+            let mut items: Vec<&String> = items;
+            items.sort();
+            Described::List(items.into_iter().map(|item| text(item)).collect())
+        };
+        let map = |fields: Vec<(&str, Described)>| Described::Map(fields.into_iter().map(|(key, value)| (key.to_owned(), value)).collect());
+        let instruments = self
+            .instruments
+            .iter()
+            .map(|spec| {
+                let mut queries: Vec<(&String, Described)> =
+                    spec.commands.iter().map(|(query, answer)| (query, map(vec![("query", text(query)), ("answer", text(answer))]))).collect();
+                for (query, quantity) in &spec.measure {
+                    queries.push((query, map(vec![("query", text(query)), ("reads", self.quantity(*quantity))])));
+                }
+                queries.sort_by(|a, b| a.0.cmp(b.0));
+                let mut set: Vec<(&String, &usize)> = spec.set.iter().collect();
+                set.sort();
+                let set = set.into_iter().map(|(header, quantity)| map(vec![("header", text(header)), ("sets", self.quantity(*quantity))])).collect();
+                let mut error_on: Vec<(&String, &(i64, String))> = spec.error_on.iter().collect();
+                error_on.sort();
+                let error = |code: i64, message: &str| vec![("code", Described::Integer(code)), ("message", text(message))];
+                let error_on = error_on
+                    .into_iter()
+                    .map(|(command, (code, message))| {
+                        let mut fields = vec![("command", text(command))];
+                        fields.extend(error(*code, message));
+                        map(fields)
+                    })
+                    .collect();
+                let error_queue = spec.error_queue.iter().map(|(code, message)| map(error(*code, message))).collect();
+                map(vec![
+                    ("resource", text(&spec.resource)),
+                    ("idn", text(&spec.idn)),
+                    ("latency_ms", Described::Number(spec.latency as f64 / 1e6)),
+                    ("queries", Described::List(queries.into_iter().map(|(_, query)| query).collect())),
+                    ("set", Described::List(set)),
+                    ("accept", texts(spec.accept.iter().collect())),
+                    (
+                        "faults",
+                        map(vec![
+                            ("timeout", texts(spec.timeouts.iter().collect())),
+                            ("error_on", Described::List(error_on)),
+                            ("error_queue", Described::List(error_queue)),
+                        ]),
+                    ),
+                ])
+            })
+            .collect();
+        map(vec![("instruments", Described::List(instruments))])
+    }
+
+    /// A quantity: its name, its true value at 0 ms or the source it takes it from, its noise.
+    fn quantity(&self, id: usize) -> Described {
+        let Some(spec) = self.quantities.get(id) else { return Described::Null };
+        let mut fields = vec![("quantity".to_owned(), Described::Text(spec.name.clone()))];
+        if let Some(source) = &spec.source {
+            fields.push(("source".to_owned(), Described::Text(source.clone())));
+        }
+        let root = self.quantities.get(spec.root).unwrap_or(spec);
+        // At 0 ms, a quantity that starts later, or moves from 0 ms, still has its initial value (simulation.md 3).
+        let at_zero = if root.start > 0 || root.settle > 0 { root.initial } else { root.value };
+        fields.push(("value_at_0_ms".to_owned(), Described::Number(at_zero)));
+        fields.push(("noise".to_owned(), Described::Number(spec.noise)));
+        Described::Map(fields)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct InstrumentSpec {
     pub(crate) resource: String,
@@ -91,6 +165,9 @@ pub(crate) struct QuantitySpec {
     pub(crate) seed: u64,
     /// The quantity whose true value it takes: itself, or the end of its chain of sources.
     pub(crate) root: usize,
+    /// Its name in its instrument, and the `source` it names, for `simulation.describe`.
+    pub(crate) name: String,
+    pub(crate) source: Option<String>,
 }
 
 const MAX_TEXT: usize = 1000;
@@ -357,6 +434,10 @@ fn instrument(reader: &mut Reader<'_>, item: &Value<'_>, bench: &mut Bench, writ
                     if source.is_some() {
                         with_source.insert(id);
                     }
+                    if let Some(spec) = bench.quantities.get_mut(id) {
+                        spec.name = name.to_owned();
+                        spec.source = source.as_ref().map(|(text, _)| text.clone());
+                    }
                     names.insert(name.to_owned(), id);
                     written.push(Written { instrument: index, name: name.to_owned(), source });
                 }
@@ -481,7 +562,7 @@ fn quantity(reader: &mut Reader<'_>, value: &Value<'_>, what: &str, bench: &mut 
         },
     };
     let id = bench.quantities.len();
-    bench.quantities.push(QuantitySpec { value: target, initial, start, settle, noise, seed, root: id });
+    bench.quantities.push(QuantitySpec { value: target, initial, start, settle, noise, seed, root: id, name: String::new(), source: None });
     Some(id)
 }
 

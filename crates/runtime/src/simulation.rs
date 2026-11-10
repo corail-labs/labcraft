@@ -251,6 +251,11 @@ impl<'a> SimulationFile<'a> {
         self.text
     }
 
+    /// The keys at its top level, in the order of the file.
+    pub fn keys(&self) -> Vec<&str> {
+        self.root.get_ref().iter().map(|(key, _)| key.get_ref().as_ref()).collect()
+    }
+
     /// The table of the library of this name, if the file has one.
     pub fn section(&self, library: &str) -> Option<Section<'_>> {
         self.root.get_ref().iter().find(|(key, _)| key.get_ref().as_ref() == library).map(|(_, value)| Section { value, places: &self.places })

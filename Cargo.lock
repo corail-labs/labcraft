@@ -1962,9 +1962,11 @@ dependencies = [
  "craft-atomic",
  "labcraft-check",
  "labcraft-diagram",
+ "labcraft-engine",
  "labcraft-format",
  "labcraft-libs",
  "labcraft-types",
+ "labcraft-visa",
  "serde",
  "serde_json",
 ]
@@ -1992,6 +1994,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "labcraft-engine"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-check",
+ "labcraft-format",
+ "labcraft-graph",
+ "labcraft-runtime",
+ "labcraft-types",
+ "serde_json",
+ "sha2",
+ "toml",
+]
+
+[[package]]
 name = "labcraft-format"
 version = "0.1.0-m0a"
 dependencies = [
@@ -2016,6 +2032,7 @@ dependencies = [
  "labcraft-check",
  "labcraft-diagram",
  "labcraft-editor",
+ "labcraft-engine",
  "labcraft-format",
  "labcraft-graph",
  "labcraft-ir",
@@ -4786,6 +4803,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 name = "xtask"
 version = "0.1.0-m0a"
 dependencies = [
+ "labcraft-engine",
  "labcraft-runtime",
  "labcraft-types",
  "labcraft-visa",

@@ -13,6 +13,7 @@ use labcraft_types::{CheckCounts, CheckSummary, Code, Diagnostic, Fix, Interner,
 use serde::Serialize;
 
 use crate::args::{self, DiagramOptions};
+use crate::disk::Disk;
 use crate::folder::{self, Drawn3, Function, Loaded};
 use crate::output;
 use crate::walk::{io_text, shown_of, slashed};
@@ -143,7 +144,7 @@ fn write(
             }
             let written =
                 path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|()| craft_atomic::atomic_write(&path, svg(&picture, theme).as_bytes()));
-            let shown = shown_of(&path, fs::canonicalize(&path).ok().as_deref(), current.as_deref());
+            let shown = shown_of(&Disk, &path, fs::canonicalize(&path).ok().as_deref(), current.as_deref());
             match written {
                 Ok(()) => {
                     if let Ok(real) = fs::canonicalize(&path) {

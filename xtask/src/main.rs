@@ -3,6 +3,7 @@
 
 mod assets;
 mod codes;
+mod commands;
 mod layers;
 mod libs;
 mod licences;
@@ -17,14 +18,15 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci        fmt --check, layers, licences, libs, codes, assets, clippy -D warnings, tests, bounds, wasm; stops at the first failure
+  ci        fmt --check, layers, licences, libs, codes, commands, assets, clippy -D warnings, tests, bounds, wasm; stops at the first failure
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/ or on a native crate of examples/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
+  commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime, visa, results_log and diagram build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine and editor build for wasm32-unknown-unknown, and the harness passes there
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -45,6 +47,7 @@ fn main() -> ExitCode {
         Some("fuzz-licences") => check_fuzz_licences(),
         Some("libs") => check_libs(),
         Some("codes") => check_codes(),
+        Some("commands") => check_commands(),
         Some("assets") => check_assets(),
         Some("unicode") => unicode::generate(&root()),
         Some("wasm") => wasm(),
@@ -71,6 +74,7 @@ fn ci() -> Result<(), String> {
     check_licences()?;
     check_libs()?;
     check_codes()?;
+    check_commands()?;
     check_assets()?;
     run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
     run(&["test", "--locked", "--workspace"])?;
@@ -180,6 +184,13 @@ fn check_codes() -> Result<(), String> {
     report("codes of the simulation file", labcraft_runtime::simulation::CODES.len(), "codes", codes::of_the_simulation_file(&document))
 }
 
+fn check_commands() -> Result<(), String> {
+    let path = root().join("docs").join("commands.md");
+    let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let registered = commands::in_registry();
+    report("commands", registered.len(), "commands", commands::check(&commands::from_document(&document)?, &registered))
+}
+
 fn check_assets() -> Result<(), String> {
     let root = root();
     let path = root.join("ATTRIBUTION.md");
@@ -215,6 +226,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-results-log",
         "--package",
         "labcraft-diagram",
+        "--package",
+        "labcraft-engine",
         "--package",
         "labcraft-editor",
     ])?;
