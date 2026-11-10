@@ -1,5 +1,6 @@
 //! The desktop viewer of M0v (`docs/architecture.md`, 11.5), read-only: its command line, its session, which holds the
-//! state of the viewer and answers the `view.*` commands (`docs/commands.md`, 6.5), and the watching of the folder.
+//! state of the viewer and answers the `view.*` commands (`docs/commands.md`, 6.5), the watching of the folder, and the
+//! file of values of `--style`.
 //! The window around the canvas is the binary.
 //!
 //! The session is provisional (decided at the start of step 6): it goes into `engine::view` once M0b merges `engine`,
@@ -18,4 +19,5 @@
 
 pub mod args;
 pub mod session;
+pub mod style_file;
 pub mod watch;

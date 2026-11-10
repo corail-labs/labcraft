@@ -3,7 +3,8 @@
 
 use std::fmt::Write as _;
 
-use crate::shape::{Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WIRE_RADIUS, WireStyle, chevrons};
+use crate::shape::{Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons};
+use crate::style;
 use crate::theme::{TOKENS, variable};
 
 /// The schema of the attributes, stable under this name (`docs/cli.md`, 4.4).
@@ -78,8 +79,14 @@ fn style(paint: &Paint) -> String {
     }
 }
 
-fn values(theme: impl Fn(&crate::theme::TokenValue) -> &'static str) -> String {
-    TOKENS.iter().map(|token| format!("{}: {};", variable(token.name), theme(token))).collect::<Vec<_>>().join(" ")
+/// The values of the tokens of a drawing (`crate::style`), light or dark.
+fn values(style: &style::Style, dark: bool) -> String {
+    TOKENS
+        .iter()
+        .zip(&style.colors)
+        .map(|(token, (light, night))| format!("{}: {};", variable(token.name), style::written(if dark { *night } else { *light })))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The SVG of a drawing.
@@ -99,14 +106,14 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
     out.push_str(">\n<style>\n");
     match theme {
         Theme::Both => {
-            let _ = writeln!(out, "svg {{ {} }}", values(|token| token.light));
-            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(|token| token.dark));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, false));
+            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(&drawing.style, true));
         }
         Theme::Light => {
-            let _ = writeln!(out, "svg {{ {} }}", values(|token| token.light));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, false));
         }
         Theme::Dark => {
-            let _ = writeln!(out, "svg {{ {} }}", values(|token| token.dark));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, true));
         }
     }
     out.push_str("text { direction: ltr; unicode-bidi: isolate; white-space: pre; }\n</style>\n");
@@ -262,7 +269,7 @@ fn rounded(points: &[(i64, i64)]) -> String {
         let (nx, ny) = *next;
         let before = (x - px).abs() + (y - py).abs();
         let after = (nx - x).abs() + (ny - y).abs();
-        let radius = WIRE_RADIUS.min(before / 2).min(after / 2);
+        let radius = style::wire_radius().min(before / 2).min(after / 2);
         let (ax, ay) = (x - (x - px).signum() * radius, y - (y - py).signum() * radius);
         let (bx, by) = (x + (nx - x).signum() * radius, y + (ny - y).signum() * radius);
         let _ = write!(data, " L{} {} Q{} {} {} {}", n(ax), n(ay), n(x), n(y), n(bx), n(by));

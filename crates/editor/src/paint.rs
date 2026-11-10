@@ -10,9 +10,7 @@ use egui::epaint::{
     TextShape,
 };
 use egui::{Color32, FontId, Galley, Pos2, Rect, Vec2};
-use labcraft_diagram::{
-    CHEVRON_STEP, Detail, Drawing, IconDrawing, IconDrawn, IconShape, Paint, PathSegment, Pattern, Run, Shape, WIRE_RADIUS, WireStyle, chevrons,
-};
+use labcraft_diagram::{Detail, Drawing, IconDrawing, IconDrawn, IconShape, Paint, PathSegment, Pattern, Run, Shape, WireStyle, chevrons};
 
 use crate::Theme;
 use crate::fonts::family;
@@ -237,7 +235,7 @@ fn rounded(points: &[(i64, i64)], step: f32) -> Vec<Pos2> {
         };
         let before = (x - px).abs() + (y - py).abs();
         let after = (nx - x).abs() + (ny - y).abs();
-        let radius = WIRE_RADIUS.min(before / 2).min(after / 2);
+        let radius = labcraft_diagram::style::wire_radius().min(before / 2).min(after / 2);
         let a = point(x - (x - px).signum() * radius, y - (y - py).signum() * radius, step);
         let c = point(x, y, step);
         let b = point(x + (nx - x).signum() * radius, y + (ny - y).signum() * radius, step);
@@ -280,7 +278,7 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, theme: Theme, step: f32) -> Ve
         let gaps: Vec<f32> = gaps.iter().map(|gap| gap * unit).collect();
         Painted2::dashed_line_many_with_offset(&path, Stroke::new(6.0 * unit, color), &dashes, &gaps, 0.0, &mut out);
     }
-    if style.pattern == Pattern::Chevrons && CHEVRON_STEP > 0 {
+    if style.pattern == Pattern::Chevrons && labcraft_diagram::style::chevron_step() > 0 {
         let thin = Stroke::new(1.5 * unit, color);
         for [a, b, c] in chevrons(points) {
             out.push(Painted2::line(vec![point(a.0, a.1, step), point(b.0, b.1, step), point(c.0, c.1, step)], thin));

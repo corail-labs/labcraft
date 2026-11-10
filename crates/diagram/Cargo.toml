@@ -12,6 +12,7 @@ labcraft-check = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-graph = { workspace = true }
 labcraft-types = { workspace = true }
+toml = { workspace = true }
 
 [lints]
 workspace = true

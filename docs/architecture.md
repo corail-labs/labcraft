@@ -996,6 +996,18 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
   (cli.md 7.2). With it come a stable key for each node, from the body that holds it and the name that designates
   it (notation 2.1), so that the canvas can make it glide, and an index of where each node, wire and terminal is,
   for hovering.
+- **The values of the notation** are in one place, the module `style` (notation 10): sizes, gaps, widths of the
+  wires, zooms and the colours of each token. `size`, `place`, `route`, the marks, the SVG and the canvas read them
+  there, never as constants of their own. The values in force are those of the thread, for the time of
+  `style::scope`, and the defaults everywhere else, so that `labcraft-cli`, the snapshots, the fuzz and the bounds
+  draw with the defaults; the desktop viewer draws and paints with the values of `--style` (cli.md 8), in the
+  thread of its session and in the canvas. A value is read through a thread-local, which costs a few nanoseconds:
+  the snapshots of the repository are unchanged and `cargo xtask bounds` holds. The numbers that are still written in the
+  code of a shape or of a size (notation 10 lists some) are not in it yet. A `Drawing` holds the values it was drawn
+  with (`Drawing::style`), and the SVG and the canvas paint it with them, so that nothing that paints a drawing can
+  take other values. A thread-local does not follow work to another thread: **before drawing on several threads**
+  (a pool, tasks that move between threads), or if values of placement ever became those of a document, pass the
+  values as a parameter (`&Style`) instead (decided with the owner, 2026-11-10).
 - **Every branch is placed.** A structure shown in tabs is as large as its largest branch (2.1, 5.2), so the
   `Drawing` holds the shapes of every branch, and the tab shown is chosen when painting, from `Shown`: picking a
   tab, choosing an iteration (the tab follows the branch the run took, 6.1) or hiding the values places nothing.
@@ -1114,7 +1126,8 @@ folder is read, checked and drawn by the code that `labcraft-cli diagram` uses (
 Only a change of a program file (`.lcf`, `.lct`) or of a folder is a change: a log that a bench writes into its
 folder checks nothing again. The changes of the 50 ms after the first are taken together, a window that does not
 move. Each path is watched on its own, before it is read; a path that cannot be watched is the only one looked at
-every second.*
+every second. With `--style FILE`, the session draws with the values of `FILE` (notation 10), watched in its folder
+and read again within the same 50 ms, and publishes them with the drawing, which the canvas paints with.*
 
 - **The session** of `engine` runs on a thread of `format::STACK_SIZE`. It holds the state of the viewer: the
   folder open, the function shown, the view state that the file does not hold, the preference, the trace. The

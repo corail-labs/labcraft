@@ -54,30 +54,62 @@ pub fn variable(token: &str) -> String {
     format!("--{}", token.replace('.', "-"))
 }
 
+/// The contrasts of notation 8: every wire, mark and text token at 4.5:1 on the canvas and every frame level, every text
+/// on its own fill at 4.5:1, every outline at 3:1; each as (ink, background, least ratio), for both themes.
+pub fn contrasts() -> Vec<(&'static str, &'static str, f64)> {
+    const BACKGROUNDS: [&str; 5] = ["canvas.fill", "frame.fill.1", "frame.fill.2", "frame.fill.3", "frame.fill.4"];
+    const INKS: [&str; 10] = [
+        "wire.data",
+        "wire.resource",
+        "wire.error",
+        "wire.order",
+        "mark.coercion",
+        "mark.invalid",
+        "node.title",
+        "ink.muted",
+        "ink.faint",
+        "pill.text",
+    ];
+    const OUTLINES: [&str; 5] = ["node.stroke", "frame.stroke", "pill.stroke", "probe.stroke", "node.active"];
+    const OWN: [(&str, &str); 11] = [
+        ("node.title", "node.fill"),
+        ("ink.muted", "node.fill"),
+        ("ink.faint", "node.fill"),
+        ("pill.text", "pill.fill"),
+        ("badge.text", "badge.fill"),
+        ("band.text", "band.fill"),
+        ("node.title", "tab.fill"),
+        ("node.title", "probe.fill"),
+        ("ink.muted", "probe.fill"),
+        ("wire.error", "probe.fill"),
+        ("mark.invalid", "probe.fill"),
+    ];
+    let mut pairs = Vec::new();
+    for background in BACKGROUNDS {
+        pairs.extend(INKS.iter().map(|ink| (*ink, background, 4.5)));
+        pairs.extend(OUTLINES.iter().map(|outline| (*outline, background, 3.0)));
+    }
+    pairs.extend(OWN.iter().map(|(ink, fill)| (*ink, *fill, 4.5)));
+    pairs
+}
+
+/// The WCAG 2 contrast ratio of two colours `0xRRGGBB`, from its definition.
+pub fn contrast(a: crate::style::Rgb, b: crate::style::Rgb) -> f64 {
+    let luminance = |rgb: crate::style::Rgb| {
+        let channel = |shift: u32| {
+            let c = f64::from((rgb >> shift) & 0xFF) / 255.0;
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    };
+    let (a, b) = (luminance(a), luminance(b));
+    let (light, dark) = if a > b { (a, b) } else { (b, a) };
+    (light + 0.05) / (dark + 0.05)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn value(name: &str, dark: bool) -> &'static str {
-        let found = TOKENS.iter().find(|token| token.name == name).unwrap_or_else(|| panic!("{name}"));
-        if dark { found.dark } else { found.light }
-    }
-
-    /// WCAG 2 relative luminance and contrast ratio, from their definitions.
-    fn luminance(hex: &str) -> f64 {
-        let channel = |at: usize| {
-            let byte = u8::from_str_radix(hex.get(at..at + 2).unwrap(), 16).unwrap();
-            let c = f64::from(byte) / 255.0;
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-        };
-        0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5)
-    }
-
-    fn contrast(a: &str, b: &str) -> f64 {
-        let (a, b) = (luminance(a), luminance(b));
-        let (light, dark) = if a > b { (a, b) } else { (b, a) };
-        (light + 0.05) / (dark + 0.05)
-    }
 
     /// The table is that of notation 8, read from the document: another value is a reviewed change of both.
     #[test]
@@ -97,53 +129,19 @@ mod tests {
         assert_eq!(ours, rows);
     }
 
-    /// Notation 8: every wire, mark and text token at 4.5:1 on the canvas and every frame level, every text on its own fill
-    /// at 4.5:1, every outline at 3:1, in both themes.
+    /// Notation 8, in both themes, on the defaults.
     #[test]
     fn the_contrasts_of_notation_8_hold() {
-        let backgrounds = ["canvas.fill", "frame.fill.1", "frame.fill.2", "frame.fill.3", "frame.fill.4"];
-        let inks = [
-            "wire.data",
-            "wire.resource",
-            "wire.error",
-            "wire.order",
-            "mark.coercion",
-            "mark.invalid",
-            "node.title",
-            "ink.muted",
-            "ink.faint",
-            "pill.text",
-        ];
-        let outlines = ["node.stroke", "frame.stroke", "pill.stroke", "probe.stroke", "node.active"];
-        let own = [
-            ("node.title", "node.fill"),
-            ("ink.muted", "node.fill"),
-            ("ink.faint", "node.fill"),
-            ("pill.text", "pill.fill"),
-            ("badge.text", "badge.fill"),
-            ("band.text", "band.fill"),
-            ("node.title", "tab.fill"),
-            ("node.title", "probe.fill"),
-            ("ink.muted", "probe.fill"),
-            ("wire.error", "probe.fill"),
-            ("mark.invalid", "probe.fill"),
-        ];
-        for dark in [false, true] {
-            for background in backgrounds {
-                for ink in inks {
-                    let ratio = contrast(value(ink, dark), value(background, dark));
-                    assert!(ratio >= 4.5, "{ink} on {background}, dark {dark}: {ratio:.2}");
-                }
-                for outline in outlines {
-                    let ratio = contrast(value(outline, dark), value(background, dark));
-                    assert!(ratio >= 3.0, "{outline} on {background}, dark {dark}: {ratio:.2}");
-                }
-            }
-            for (ink, fill) in own {
-                let ratio = contrast(value(ink, dark), value(fill, dark));
-                assert!(ratio >= 4.5, "{ink} on {fill}, dark {dark}: {ratio:.2}");
-            }
-        }
+        assert_eq!(crate::style::contrast_problems(&crate::style::Style::default()), Vec::<String>::new());
+        assert_eq!(contrasts().len(), 5 * 15 + 11);
+    }
+
+    /// The ratio of WCAG 2, by hand: white on black 21:1, a colour on itself 1:1, `#777777` on white 4.48:1.
+    #[test]
+    fn a_contrast_is_that_of_wcag() {
+        assert!((contrast(0xFFFFFF, 0x000000) - 21.0).abs() < 1e-9);
+        assert!((contrast(0x3D4148, 0x3D4148) - 1.0).abs() < 1e-9);
+        assert!((contrast(0x777777, 0xFFFFFF) - 4.478).abs() < 0.001);
     }
 
     #[test]

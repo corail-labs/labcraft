@@ -1977,6 +1977,7 @@ dependencies = [
  "labcraft-format",
  "labcraft-graph",
  "labcraft-types",
+ "toml",
 ]
 
 [[package]]

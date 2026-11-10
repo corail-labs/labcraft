@@ -11,7 +11,7 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
 fn help_and_version_print_and_exit_with_0() {
     let (code, out, _) = run(&["--help"]);
     assert_eq!(code, Some(0));
-    assert!(out.starts_with("usage: labcraft [--lib-path DIR]... [--theme light|dark] [FOLDER]"), "{out}");
+    assert!(out.starts_with("usage: labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]"), "{out}");
     let (code, out, _) = run(&["--version"]);
     assert_eq!((code, out.trim()), (Some(0), concat!("labcraft ", env!("CARGO_PKG_VERSION"))));
 }
