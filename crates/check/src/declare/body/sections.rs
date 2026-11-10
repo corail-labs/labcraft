@@ -22,6 +22,8 @@ use crate::primitives::PrimitiveLibrary;
 use crate::resolved::{Meaning, Resolved, Terminal};
 
 mod icon;
+
+pub use icon::{PathSegment, path_segments};
 #[cfg(test)]
 mod tests;
 

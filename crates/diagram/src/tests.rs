@@ -858,3 +858,121 @@ fn a_via_is_kept() {
     assert!(wire_of(&drawing, "x").wire.as_ref().unwrap().via);
     assert!(!drawing.bodies[0].from_file);
 }
+
+// The view state of the viewer (notation 5.2, commands.md 6.5): arms in tabs, a structure unfolded, a node in standard
+// view.
+
+const ARMS: &str = "labcraft 1
+
+use core
+
+fn main(x: f64, n: i64) -> (y: f64) {
+    y = match n {
+        0 => yield x
+        1 => {
+            a = core.add(x, 1.0)
+            b = core.mul(a, 2.0)
+            yield b
+        }
+        _ => yield 0.0
+    }
+}
+";
+
+fn drawn_with(view: &ViewState) -> crate::Drawing {
+    let (checked, names) = checked(&[("main.lcf", ARMS)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, view, &DiagramLimits::default()) else { panic!() };
+    drawing
+}
+
+#[test]
+fn an_export_unfolds_every_arm() {
+    let drawing = drawn_with(&ViewState::default());
+    assert!(drawing.arms.is_empty() && drawing.tabs.is_empty());
+    assert!(drawing.groups.iter().all(|group| group.within.is_none()));
+}
+
+#[test]
+fn in_tabs_the_arms_lie_on_one_another_in_a_frame_as_large_as_the_largest() {
+    let unfolded = drawn_with(&ViewState::default());
+    let tabs = drawn_with(&ViewState { tabs: true, ..ViewState::default() });
+    let structure = tabs.placed.iter().position(|placed| !placed.holds.is_empty()).unwrap();
+    let key = tabs.placed[structure].key.clone();
+    assert_eq!(
+        tabs.arms.iter().map(|arm| (arm.structure.as_str(), arm.arm, arm.within)).collect::<Vec<_>>(),
+        [(key.as_str(), 0, None), (key.as_str(), 1, None), (key.as_str(), 2, None)]
+    );
+    assert_eq!(tabs.tabs.iter().map(|tab| tab.arm).collect::<Vec<_>>(), [0, 1, 2]);
+    // The tabs side by side in one row, inside the frame.
+    let frame = &tabs.placed[structure];
+    assert!(tabs.tabs.windows(2).all(|pair| pair[0].y == pair[1].y && pair[0].x + pair[0].width < pair[1].x));
+    assert!(tabs.tabs.iter().all(|tab| tab.x > frame.x && tab.x + tab.width < frame.x + frame.width));
+    // Each arm its box, all from one corner, and the frame holds the largest; the nodes of the second arm are within it.
+    let boxes: Vec<(i64, i64, i64, i64)> = tabs
+        .groups
+        .iter()
+        .filter(|group| group.arm.is_some())
+        .map(|group| match group.shapes.first() {
+            Some(Shape::Rect { x, y, width, height, .. }) => (*x, *y, *width, *height),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(boxes.len(), 3);
+    assert!(boxes.iter().all(|&(x, y, width, _)| (x, y, width) == (boxes[0].0, boxes[0].1, boxes[0].2)));
+    let deepest = boxes.iter().map(|&(_, y, _, height)| y + height).max().unwrap();
+    assert!(deepest < frame.y + frame.height);
+    assert!(boxes[1].3 > boxes[0].3);
+    let inner: Vec<&crate::Placed> = tabs.placed.iter().filter(|placed| placed.body == frame.holds[1]).collect();
+    assert_eq!(inner.len(), 2);
+    assert!(inner.iter().all(|placed| placed.y > boxes[1].1 && placed.y + placed.height < boxes[1].1 + boxes[1].3));
+    // Lower than unfolded, where the three arms stand one above the other.
+    assert!(frame.height < unfolded.placed[structure].height);
+    // Every group inside an arm says which; the others none.
+    for group in &tabs.groups {
+        let body = match (&group.wire, group.placed.map(|placed| &tabs.placed[placed])) {
+            (Some(wire), _) => wire.body,
+            (None, Some(placed)) if group.arm.is_none() => placed.body,
+            (None, Some(_)) => continue,
+            (None, None) => panic!("a group with neither a node nor a wire"),
+        };
+        let arm = frame.holds.iter().position(|&held| held == body);
+        assert_eq!(group.within, arm, "{}", group.node);
+    }
+}
+
+#[test]
+fn a_structure_unfolded_or_a_node_in_standard_view_is_a_state_of_the_view() {
+    let tabs = drawn_with(&ViewState { tabs: true, ..ViewState::default() });
+    let key = tabs.arms[0].structure.clone();
+    let unfolded = drawn_with(&ViewState { tabs: true, unfolded: [key].into(), ..ViewState::default() });
+    assert_eq!(unfolded, drawn_with(&ViewState::default()));
+    let add = tabs.placed.iter().find(|placed| placed.holds.is_empty() && placed.body != 0).unwrap();
+    let standard = drawn_with(&ViewState { tabs: true, standard: [add.key.clone()].into(), ..ViewState::default() });
+    let wider = standard.placed.iter().find(|placed| placed.key == add.key).unwrap();
+    assert!(wider.width > add.width, "{} {}", wider.width, add.width);
+}
+
+#[test]
+fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
+    let drawing = drawn_with(&ViewState::default());
+    let details: Vec<(String, crate::Detail)> = drawing
+        .loose
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, detail, .. } => Some((runs.iter().map(|run| run.text.as_str()).collect(), *detail)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        details,
+        [
+            ("main".to_owned(), crate::Detail::Title),
+            ("x".to_owned(), crate::Detail::Name),
+            ("n".to_owned(), crate::Detail::Name),
+            ("y".to_owned(), crate::Detail::Name)
+        ]
+    );
+    assert!(crate::Detail::Name.shown_at(0.75) && !crate::Detail::Name.shown_at(0.74));
+    assert!(crate::Detail::Label.shown_at(0.4) && !crate::Detail::Label.shown_at(0.39) && crate::Detail::Title.shown_at(0.01));
+}

@@ -131,7 +131,10 @@ fn figures() -> Result<(), String> {
 
 fn check_layers() -> Result<(), String> {
     let crates = layers::from_metadata(&metadata(false)?)?;
-    report("layers", crates.len(), "packages", layers::check(&crates))
+    report("layers", crates.len(), "packages", layers::check(&crates))?;
+    let resolved = metadata(true)?;
+    let count = resolved["packages"].as_array().map_or(0, Vec::len);
+    report("fonts", count, "packages", layers::default_fonts(&resolved)?)
 }
 
 fn check_licences() -> Result<(), String> {
@@ -212,6 +215,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-results-log",
         "--package",
         "labcraft-diagram",
+        "--package",
+        "labcraft-editor",
     ])?;
     wasm_tests()
 }

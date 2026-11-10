@@ -549,6 +549,87 @@ mod tests {
         });
     }
 
+    /// Every function of the repository on the canvas of `editor` (architecture 11.4), without a window: light and dark,
+    /// its arms unfolded and in tabs, each arm shown, at the three levels of zoom of notation 7. Nothing panics, and no
+    /// colour is that of an unknown token.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn every_function_of_the_repository_paints_on_the_canvas() {
+        use labcraft_diagram::{DiagramLimits, Drawn, ViewState, draw};
+        use labcraft_editor::{Canvas, Shown, Theme};
+        on_the_stack_of_a_host(|| {
+            let unknown = egui::Color32::from_rgb(255, 0, 255);
+            let ctx = egui::Context::default();
+            let mut fonts = egui::FontDefinitions::empty();
+            fonts.font_data.insert(
+                "hack".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_static(include_bytes!("../../../assets/fonts/Hack-Regular.ttf"))),
+            );
+            for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                fonts.families.insert(family, vec!["hack".to_owned()]);
+            }
+            ctx.set_fonts(fonts);
+            labcraft_editor::install_fonts(&ctx);
+            let mut time = 0.0;
+            let mut frames = 0usize;
+            for root in ["examples/", "libs/", "docs/rfc/"] {
+                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+                let mut names = Interner::new();
+                let checked = check(project(root, files), &Shipped, &mut names, &Limits::default());
+                for (index, file) in checked.files.iter().enumerate() {
+                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                        continue;
+                    }
+                    for tabs in [false, true] {
+                        let view = ViewState { tabs, ..ViewState::default() };
+                        let Drawn::Drawing(drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else {
+                            panic!("{root}{}: not drawn", file.shown)
+                        };
+                        let drawing = std::sync::Arc::new(drawing);
+                        let mut choices = vec![Shown::default()];
+                        for arm in &drawing.arms {
+                            choices.push(Shown { arms: [(arm.structure.clone(), arm.arm)].into() });
+                        }
+                        for theme in [Theme::Light, Theme::Dark] {
+                            for shown in &choices {
+                                for zoom in [1.0, 0.5, 0.3] {
+                                    let mut canvas = Canvas::new();
+                                    canvas.set_drawing(drawing.clone(), false);
+                                    canvas.set_viewport(zoom, egui::Vec2::ZERO);
+                                    time += 1.0;
+                                    let input = egui::RawInput {
+                                        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(4000.0, 4000.0))),
+                                        time: Some(time),
+                                        ..egui::RawInput::default()
+                                    };
+                                    let mut output = ctx.run_ui(input, |ui| {
+                                        canvas.show(ui, theme, shown);
+                                    });
+                                    let primitives = ctx.tessellate(std::mem::take(&mut output.shapes), output.pixels_per_point);
+                                    output.drop_without_applying_deltas();
+                                    let mut painted = 0usize;
+                                    for primitive in &primitives {
+                                        if let egui::epaint::Primitive::Mesh(mesh) = &primitive.primitive {
+                                            painted += mesh.vertices.len();
+                                            assert!(
+                                                mesh.vertices.iter().all(|vertex| vertex.color != unknown),
+                                                "{root}{}: a colour of an unknown token",
+                                                file.shown
+                                            );
+                                        }
+                                    }
+                                    assert!(painted > 0, "{root}{}: nothing painted", file.shown);
+                                    frames += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            assert!(frames > 200, "{frames} frames");
+        });
+    }
+
     /// The trace of a run, natively and in WASM, where the viewer reads it: what the writer writes the reader reads, the
     /// cuts and the numbers of commands.md 5 are the same text, and the SHA-256 of FIPS 180-2 (B.1) is the same digest.
     #[test]

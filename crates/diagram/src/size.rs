@@ -9,7 +9,7 @@ use labcraft_types::text::{self, ShownText};
 use labcraft_types::{Interner, TyId, cut_text};
 
 use crate::graph::{Base, Family, Glyph, Kind, Node, Terminal};
-use crate::shape::{IconDrawing, IconItem, IconShape, Paint, Run, Shape, Token, token_of};
+use crate::shape::{Detail, IconDrawing, IconDrawn, IconItem, IconShape, Paint, Run, Shape, Token, token_of};
 
 /// The grid of the canvas, 8 units (notation 2).
 pub const GRID: i64 = 800;
@@ -72,7 +72,17 @@ impl Text {
             size: self.size,
             width: self.width,
             runs: self.shown.runs.iter().map(|(ink, run)| Run { token: token_of(*ink, token), text: run.clone() }).collect(),
+            detail: Detail::Label,
         }
+    }
+
+    /// The same, shown from the zoom of `detail` on the canvas (notation 7).
+    pub fn shown_from(&self, x: i64, middle: i64, token: Token, detail: Detail) -> Shape {
+        let mut shape = self.at(x, middle, token);
+        if let Shape::Text { detail: slot, .. } = &mut shape {
+            *slot = detail;
+        }
+        shape
     }
 
     pub fn centred(&self, centre: i64, middle: i64, token: Token) -> Shape {
@@ -195,11 +205,25 @@ pub struct Sized {
     pub order: Option<(i64, i64)>,
     /// Where an order wire from its label starts: right after the label, at its middle.
     pub label_end: Option<(i64, i64)>,
+    /// A `match` or a `handle` in tabs: the wires in its margins that each arm draws, from the top-left of the block.
+    pub arms: Vec<Vec<Shape>>,
 }
 
 impl Sized {
     pub fn new(width: i64, height: i64, shapes: Vec<Shape>) -> Sized {
-        Sized { width, height, above: 0, left: 0, right: 0, shapes, inputs: Vec::new(), outputs: Vec::new(), order: None, label_end: None }
+        Sized {
+            width,
+            height,
+            above: 0,
+            left: 0,
+            right: 0,
+            shapes,
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            order: None,
+            label_end: None,
+            arms: Vec::new(),
+        }
     }
 }
 
@@ -514,7 +538,7 @@ impl Sizer<'_> {
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, if shrunk { 70 } else { 100 }, &mut shapes);
         let order = self.compact_marks(node, width, side, band.is_some(), &mut shapes);
-        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
+        Sized { width, height: side, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None, arms: Vec::new() }
     }
 
     /// The terminals of a block on its lines, and the pills of its constants; how far the pills reach to the left, and
@@ -598,7 +622,7 @@ impl Sizer<'_> {
         }
         let (left, inputs, outputs) = self.terminals(node, &lines, &ys, width, 100, &mut shapes);
         let order = self.compact_marks(node, width, height, band.is_some(), &mut shapes);
-        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None }
+        Sized { width, height, above, left, right: TERMINAL / 2, shapes, inputs, outputs, order, label_end: None, arms: Vec::new() }
     }
 
     /// A primitive of `core` with a glyph: a circle of 28, or a capsule (notation 3.2).
@@ -780,10 +804,10 @@ impl Sizer<'_> {
             }
             if let (Some(terminal_of), Some((name, unit, pill_text))) = (line.0.and_then(|at| node.inputs.get(at)), input) {
                 shapes.extend(terminal(terminal_of.family, 0, y, 100, false));
-                shapes.push(name.at(SIDE, y, "node.title"));
+                shapes.push(name.shown_from(SIDE, y, "node.title", Detail::Name));
                 let mut x = SIDE + name.width;
                 if let Some(unit) = unit {
-                    shapes.push(unit.at(x + PADDING, y, "ink.muted"));
+                    shapes.push(unit.shown_from(x + PADDING, y, "ink.muted", Detail::Name));
                     x += PADDING + unit.width;
                 }
                 if let Some(pill_text) = pill_text {
@@ -795,10 +819,10 @@ impl Sizer<'_> {
                 let mut x = width - SIDE;
                 if let Some(unit) = unit {
                     x -= unit.width;
-                    shapes.push(unit.at(x, y, "ink.muted"));
+                    shapes.push(unit.shown_from(x, y, "ink.muted", Detail::Name));
                     x -= PADDING;
                 }
-                shapes.push(name.at(x - name.width, y, "node.title"));
+                shapes.push(name.shown_from(x - name.width, y, "node.title", Detail::Name));
             }
         }
         let order = node.after.then_some((0, HEADER / 2));
@@ -815,45 +839,69 @@ impl Sizer<'_> {
             }
         };
         let text_of = |value: i64| crate::svg::decimal(i128::from(value), ICON_DECIMALS);
+        // In hundredths, exact in an f64 within the limit of a coordinate.
+        let float = |value: i64| value as f64 / 100.0;
         let items = icon
             .items
             .iter()
             .map(|item| {
                 let token = item.accent.as_ref().and_then(|path| accent(path, self.names)).unwrap_or("node.title");
-                let shape = match &item.shape {
+                let (shape, drawn) = match &item.shape {
                     Written::Rect { from, to, radius } => {
                         // A rect is written by its corners, the SVG wants a corner and a size.
                         let (x1, x2, y1, y2) = (number(&from.x), number(&to.x), number(&from.y), number(&to.y));
-                        IconShape::Rect {
-                            x: text_of(x1.min(x2)),
-                            y: text_of(y1.min(y2)),
-                            width: text_of(x1.abs_diff(x2).try_into().unwrap_or(i64::MAX)),
-                            height: text_of(y1.abs_diff(y2).try_into().unwrap_or(i64::MAX)),
-                            radius: radius.as_ref().map(|radius| text_of(number(radius))),
-                        }
+                        let (width, height) = (x1.abs_diff(x2).try_into().unwrap_or(i64::MAX), y1.abs_diff(y2).try_into().unwrap_or(i64::MAX));
+                        let radius = radius.as_ref().map(number);
+                        (
+                            IconShape::Rect {
+                                x: text_of(x1.min(x2)),
+                                y: text_of(y1.min(y2)),
+                                width: text_of(width),
+                                height: text_of(height),
+                                radius: radius.map(text_of),
+                            },
+                            IconDrawn::Rect {
+                                x: float(x1.min(x2)),
+                                y: float(y1.min(y2)),
+                                width: float(width),
+                                height: float(height),
+                                radius: float(radius.unwrap_or(0)),
+                            },
+                        )
                     }
                     Written::Circle { center, radius } => {
-                        IconShape::Circle { x: text_of(number(&center.x)), y: text_of(number(&center.y)), radius: text_of(number(radius)) }
+                        let (x, y, radius) = (number(&center.x), number(&center.y), number(radius));
+                        (
+                            IconShape::Circle { x: text_of(x), y: text_of(y), radius: text_of(radius) },
+                            IconDrawn::Circle { x: float(x), y: float(y), radius: float(radius) },
+                        )
                     }
-                    Written::Line { from, to } => IconShape::Line {
-                        x1: text_of(number(&from.x)),
-                        y1: text_of(number(&from.y)),
-                        x2: text_of(number(&to.x)),
-                        y2: text_of(number(&to.y)),
-                    },
+                    Written::Line { from, to } => {
+                        let (x1, y1, x2, y2) = (number(&from.x), number(&from.y), number(&to.x), number(&to.y));
+                        (
+                            IconShape::Line { x1: text_of(x1), y1: text_of(y1), x2: text_of(x2), y2: text_of(y2) },
+                            IconDrawn::Line { from: (float(x1), float(y1)), to: (float(x2), float(y2)) },
+                        )
+                    }
                     // As written: `check` has read its syntax (`LC5008`), and the icon is drawn once per SVG.
-                    Written::Path { data } => IconShape::Path { data: data.to_string() },
+                    Written::Path { data } => {
+                        (IconShape::Path { data: data.to_string() }, IconDrawn::Path(labcraft_check::path_segments(data).unwrap_or_default()))
+                    }
                     Written::Text { text: written, at, size } => {
                         let shown = text::show(&labcraft_check::read_escapes(written), ANY_TEXT);
-                        IconShape::Text {
-                            x: text_of(number(&at.x)),
-                            y: text_of(number(&at.y)),
-                            size: size.as_ref().map_or_else(|| "10".to_owned(), |size| text_of(number(size))),
-                            runs: shown.runs.iter().map(|(ink, run)| Run { token: token_of(*ink, token), text: run.clone() }).collect(),
-                        }
+                        let (x, y, size) = (number(&at.x), number(&at.y), size.as_ref().map_or(1000, number));
+                        (
+                            IconShape::Text {
+                                x: text_of(x),
+                                y: text_of(y),
+                                size: text_of(size),
+                                runs: shown.runs.iter().map(|(ink, run)| Run { token: token_of(*ink, token), text: run.clone() }).collect(),
+                            },
+                            IconDrawn::Text { x: float(x), y: float(y), size: float(size) },
+                        )
                     }
                 };
-                IconItem { shape, fill: item.fill, token }
+                IconItem { shape, drawn, fill: item.fill, token }
             })
             .collect();
         let grid = text_of(icon_number(self.names.resolve(icon.grid), false));

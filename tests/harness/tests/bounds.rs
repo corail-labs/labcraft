@@ -196,6 +196,7 @@ const CASES: &[Case] = &[
     },
     Case { name: "drawn-chain-of-structures", folders: drawn_chain_of_structures, fmt: false, diagram: true, seconds: SECONDS, codes: None },
     Case { name: "drawn-waypoints-for-every-wire", folders: drawn_waypoints, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case { name: "drawn-match-of-many-arms", folders: drawn_match_of_many_arms, fmt: false, diagram: true, seconds: SECONDS, codes: None },
     Case {
         name: "drawn-1000-nodes-2000-wires",
         folders: drawn_1000_nodes_2000_wires,
@@ -326,17 +327,22 @@ fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'stati
             let mut names = Interner::new();
             let checked = check(root, &Shipped, &mut names, &limits);
             codes.extend(checked.report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()));
-            // Only the drawing counts: placed, routed and written.
-            let start = Instant::now();
-            for (index, file) in checked.files.iter().enumerate() {
-                match draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) {
-                    Drawn::Drawing(drawing) => {
-                        std::hint::black_box(svg(&drawing, Theme::Both));
+            // Only the drawing counts: placed, routed and written; as an export draws it, and in the tabs of the viewer,
+            // each within the bound.
+            let mut longest = Duration::ZERO;
+            for view in [ViewState::default(), ViewState { tabs: true, ..ViewState::default() }] {
+                let start = Instant::now();
+                for (index, file) in checked.files.iter().enumerate() {
+                    match draw(&checked, index, &names, &view, &DiagramLimits::default()) {
+                        Drawn::Drawing(drawing) => {
+                            std::hint::black_box(svg(&drawing, Theme::Both));
+                        }
+                        Drawn::NotDrawn(_) => assert!(!drawn || !matches!(file.file.decl, Decl::Function(_)), "{} is not drawn", file.shown),
                     }
-                    Drawn::NotDrawn(_) => assert!(!drawn || !matches!(file.file.decl, Decl::Function(_)), "{} is not drawn", file.shown),
                 }
+                longest = longest.max(start.elapsed());
             }
-            return start.elapsed();
+            return longest;
         }
     }
     start.elapsed()
@@ -627,6 +633,36 @@ fn drawn_chain_of_structures() -> Vec<Folder> {
         })
         .collect();
     alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n{lines}}}\n"))
+}
+
+/// A `match` whose arms all read two values from outside: unfolded, and in the tabs of the viewer, where each arm
+/// draws its own margins.
+fn drawn_match_of_many_arms() -> Vec<Folder> {
+    let arms: String = (0..DRAWN / 2)
+        .map(|arm| {
+            format!(
+                "        {arm} => {{
+            a = core.add(x, y)
+            yield a
+        }}
+"
+            )
+        })
+        .collect();
+    let body = format!(
+        "    r = match n {{
+{arms}        _ => yield x
+    }}
+"
+    );
+    alone(
+        "f.lcf",
+        format!(
+            "{HEAD}fn f(x: f64, y: f64, n: i64) -> (r: f64) {{
+{body}}}
+"
+        ),
+    )
 }
 
 /// A waypoint for every wire, from the `layout` section.

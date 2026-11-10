@@ -809,7 +809,8 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 
 ## 11. M0v: the viewer
 
-*Status: draft; `text` (11.1) and `trace` (11.2) implemented, `diagram` (11.3) up to placement.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: draft; `text` (11.1), `trace` (11.2), `diagram` (11.3) and the canvas of `editor` (11.4) implemented, the
+values of a run aside; the apps (11.5) to come.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
@@ -938,8 +939,8 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
 with the SVG of the frames, the nodes and the wires, their names and their pills, checked by
 `tests/harness/src/routing.rs` on every drawing of the repository, on cases built to break the rules
 (`tests/harness/routing-cases/`) and, by the fuzz target `diagram`, on the drawings it makes; their time and memory
-are bounded by `cargo xtask bounds`. Structures are unfolded, as an export shows them; tabs come with the canvas that
-clicks them (step 6). With step 5 of 11.7, the marks of diagnostics on a drawing and the SVG of a function that is
+are bounded by `cargo xtask bounds`. Structures are unfolded, as an export shows them, unless `ViewState::tabs` asks for
+the tabs of the viewer (step 6). With step 5 of 11.7, the marks of diagnostics on a drawing and the SVG of a function that is
 not drawn (`mark`, `undrawn`), which `labcraft-cli diagram` uses.* `draw` takes the index of the file of the
 function in `Checked::files`, as `ir::lower` does, and the `Interner`.
 
@@ -951,8 +952,9 @@ names its terminals (cli.md 4.3); the trace names it by its first output (comman
 
 ```rust
 pub struct ViewState { standard_everywhere: bool,   // the preference of the IDE (notation 3)
-                       unfolded: ..., constructions: ..., optional_inputs: ... }   // what placement depends on (2.1)
-pub struct Shown { tabs: ..., iterations: ..., values_hidden: bool }  // what it does not depend on (5.2, 6.1)
+                       fold_constructions: bool, tabs: bool,          // the viewer's defaults (3.1, 5.2)
+                       unfolded: BTreeSet<String>, standard: BTreeSet<String> }  // by key: what placement depends on (2.1)
+pub struct Shown { arms: HashMap<String, usize>, ... }  // in `editor`: what it does not depend on (5.2, 6.1)
 pub fn draw(checked: &Checked, function: &FunctionRef, view: &ViewState, limits: &DiagramLimits) -> Drawn;
 pub enum Drawn { Drawing(Drawing), NotDrawn(Vec<Diagnostic>) }      // LC7002, or a function that is not drawable
 pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the reader keeps (11.2)
@@ -970,6 +972,16 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
 - **Every branch is placed.** A structure shown in tabs is as large as its largest branch (2.1, 5.2), so the
   `Drawing` holds the shapes of every branch, and the tab shown is chosen when painting, from `Shown`: picking a
   tab, choosing an iteration (the tab follows the branch the run took, 6.1) or hiding the values places nothing.
+  In tabs, the boxes of the arms start from one corner, moved down so that their error chains meet on one axis, and
+  each arm draws its own wires in the margins of the frame. `Drawing::arms` lists the arms in tabs, each with the
+  key of its structure and the arm in tabs around it; each `Group` names the innermost arm that holds it
+  (`within`) and the node it draws (`placed`), which glides with it; `Drawing::tabs` gives each tab, its place for a
+  click and its shapes shown or not.
+- **What shows at each zoom** (notation 7) is in the `Drawing` too: each text has a `Detail` (a title at every zoom,
+  a label from 40 %, the name of a terminal or its unit from 75 %), and below 40 % a node is the rectangle of its
+  `Placed` in `COARSE_NODE`.
+- **An icon** comes in two forms: its numbers as its file writes them, for the SVG, and in numbers of its grid, a
+  path in absolute segments read by `check` (`check::path_segments`, the reader of `LC5008`), for the canvas.
 - **Coordinates are integers**, in hundredths of a unit, in `i64`: every text is cut before it is measured, and
   `LC7002` bounds the nodes and the terminals, so a text of millions of cells cannot wrap a position. No floating point decides a position, and no map is walked in an order that a
   hash gives: the native and the WASM builds give the same bytes of SVG (scenario 6, point 2).
@@ -1018,12 +1030,20 @@ looks, at each frame, whether the family is there, and when it is not (a host th
 `install_fonts`, or set its fonts again without it), installs it and paints that frame without text.
 
 ```rust
-pub struct Canvas { /* the drawing shown, its overlay, the viewport, caches, the glide */ }
+pub struct Canvas { /* the drawing shown, the viewport, caches, the glide; the overlay with step 8 */ }
 impl Canvas {
-    pub fn set_drawing(&mut self, drawing: Arc<Drawing>, overlay: Option<Arc<Overlay>>);
-    pub fn show(&mut self, ui: &mut egui::Ui, theme: &Theme, shown: &Shown) -> CanvasResponse;  // hover, a click on a tab, a fold, a selector
+    pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool);   // glide: the file of the function shown changed
+    pub fn show(&mut self, ui: &mut egui::Ui, theme: Theme, shown: &Shown) -> CanvasResponse;  // hover, a click on a tab
+    pub fn set_reduced_motion(&mut self, reduced: bool);
+    pub fn set_viewport(&mut self, zoom: f32, origin: Vec2); pub fn fit(&mut self);
 }
 ```
+
+*Status: implemented (step 6a of 11.7), without the values of a run (step 8), the folds and the selectors of
+iterations. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
+400 %; the first drawing is fitted, at 100 % at most (notation 7), and a new one keeps the viewport. Tested without a
+window (`editor` tests, and every function of the repository painted in both themes, unfolded and in tabs, each arm
+shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand before the tag (11.6).*
 
 - **It paints, and decides nothing of the notation.** Every position, text and colour comes from the `Drawing`.
   What a click asks for (a tab, a fold, an iteration) comes back in `CanvasResponse`, and the host makes it a
@@ -1035,18 +1055,24 @@ impl Canvas {
   times the zoom, with `direction: LeftToRight`, in logical order; epaint applies UAX #9, joins Arabic, and sets
   fallback glyphs on the baseline. The canvas never gives it a text already reordered, which would be reordered
   twice. A text that a fallback font makes wider than its cells is drawn smaller, as a whole, to fit them.
-- **60 frames/s with 1,000 nodes and 2,000 wires** (notation 7). The shapes are tessellated once per drawing
-  and per step of zoom, and kept; panning and zooming within a step is a transform of the layer. egui still copies
+- **60 frames/s with 1,000 nodes and 2,000 wires** (notation 7). The shapes of each group are tessellated once per
+  drawing and per step of zoom (a sixteenth of an octave while the zoom moves, the zoom itself once it has not
+  changed for 120 ms), and kept; panning and zooming within a step is a transform of the mesh. egui still copies
   and transforms each mesh it paints, every frame, so only what the viewport shows is painted, found through a
-  grid; if that does not reach 60 frames/s, the meshes go to the GPU once, through a paint callback of wgpu, and
-  only the transform changes. The galleys of the texts are kept by text and size, and laid out again when a zoom
-  ends, so that a text is never shown scaled for long.
+  grid of cells of 256 units; if that does not reach 60 frames/s, the meshes go to the GPU once, through a paint
+  callback of wgpu, and only the transform changes. The galleys of the texts are kept with the meshes, laid out
+  again at the end of a zoom, so that a text is never shown scaled for long, and dropped when the atlas of the fonts
+  is reset. An icon is tessellated with its group, cut to its square when painted: a text of an icon at twice its grid
+  at most, a path at `check::MAX_PATH_SEGMENTS` segments *(proposed)*, a filled path closed for its fill and cut into
+  triangles one ear at a time, as the SVG fills it, up to 512 points. The tabs are culled as the groups are.
 - **The glide** (2.1): when a new drawing comes, each node goes from its old place to its new one in about 150 ms,
-  found by its key; the new wires show at the end. No glide when the system asks for reduced motion:
+  eased, found by its key; the new wires and the marks show at the end. The host asks for it when the file of the
+  function shown changed, not for another function. No glide when the system asks for reduced motion:
   `prefers-reduced-motion` in the browser; on the desktop, where egui does not report it, a preference of the
   viewer, until the platform gives it.
 - **Tooltips** come from the index of the `Drawing`: the full name of what a node calls, the value of a wire,
-  the values over the iterations of a loop (6.1), each cut at 200 code points (notation 2.3).
+  the values over the iterations of a loop (6.1), each cut at 200 code points (notation 2.3). In 6a, the name of
+  what the innermost node under the pointer calls.
 
 ### 11.5 The apps
 
@@ -1104,6 +1130,7 @@ MCP, keeps. Both give the same SVG, from the same function of `diagram`.
 | The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | the same | — |
 | The SVG of `diagram --trace` for the runs of `examples/`, as a snapshot, *with M0b* | `tests/harness` | 6.7 |
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
+| Every function of the repository painted on the canvas without a window: both themes, unfolded and in tabs, each arm shown, at the three zooms of notation 7; no colour of an unknown token. The tabs, the glide, the zoom, the font installed by the canvas, the grid | `tests/harness`, `editor` tests | 6.1 |
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
 | Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |

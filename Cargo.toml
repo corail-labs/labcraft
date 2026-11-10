@@ -19,12 +19,17 @@ labcraft-trace = { path = "crates/trace" }
 labcraft-ir = { path = "crates/ir" }
 labcraft-runtime = { path = "crates/runtime" }
 labcraft-diagram = { path = "crates/diagram" }
+labcraft-editor = { path = "crates/editor" }
 labcraft-libs = { path = "libs/embedded" }
 labcraft-visa = { path = "libs/visa" }
 labcraft-results-log = { path = "examples/results_log" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
+
+# The suite's fork of egui, at the revision that craft-libs pins (`[patch.crates-io]` below). No default fonts:
+# the canvas and the app install their own (architecture 11.5).
+egui = { version = "0.37", default-features = false }
 
 # foundation
 serde = { version = "1", features = ["derive"] }
@@ -57,3 +62,10 @@ debug = "line-tables-only"
 # `check` reports a bug on one function as LC0099 and goes on, under catch_unwind (architecture, 5).
 panic = "unwind"
 lto = "thin"
+
+# The egui of the Craft suite: the fork at the revision of craft-libs (architecture 11.4).
+[patch.crates-io]
+ecolor = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+emath = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+epaint = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+egui = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }

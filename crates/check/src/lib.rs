@@ -32,6 +32,7 @@ mod resolved;
 mod terminals;
 
 pub use declare::{Align, DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType, Format as FieldFormat, Piece};
+pub use declare::{PathSegment, path_segments};
 pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};
 pub use resolved::{Coercion, Meaning, PrimitiveLibrary, Resolved, ResolvedCall, Terminal};

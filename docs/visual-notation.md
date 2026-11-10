@@ -575,7 +575,11 @@ chain crosses the frame in a straight line (2.1).
 - **One branch at a time**: the frame is as large as its largest branch, so that showing another
   branch moves nothing around it. A tab bar in the header lists the branches (`true`, `false`;
   `State.Init`, `State.WaitDut` …; `_` is written `other`). A branch with several patterns is one
-  tab, which lists them (`1, other`). The displayed branch is highlighted.
+  tab, which lists them (`1, other`). The displayed branch is highlighted. *(proposed)* The tabs stand in a row
+  of 24 under the title, each 20 high and 4 apart, from the start of the title: the branch shown filled with
+  `tab.fill` and outlined like the frame, the others outlined with `frame.divider`, their text in `ink.muted`. The
+  box of a branch has no title of its own, 8 at its top, and the boxes of all the branches start from one corner,
+  moved down so that their error chains meet on one line: the frame is as high as the lowest.
   A bound value (`Reading.Value(v)`, `io.timeout(err)`) appears as a terminal on the inner left
   edge of that branch.
 - **`yield`**: each branch wires the same output terminals on the right edge. A terminal that a
@@ -720,7 +724,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 | Zoom | Shown |
 |---|---|
 | ≥ 75% | everything |
-| 40 to 75% | no terminal names; the values of a run (6.1) down to 50 %, only on hover below |
+| 40 to 75% | no terminal names or units; the names of the wires stay; the values of a run (6.1) down to 50 %, only on hover below |
 | < 40% | shapes, wires, structure titles; nodes as plain rectangles; no values |
 
 ## 8. Theme tokens

@@ -23,7 +23,7 @@ use crate::{Libraries, Origin};
 
 mod body;
 
-pub use self::body::{Align, Format, Piece};
+pub use self::body::{Align, Format, PathSegment, Piece, path_segments};
 pub(crate) use self::body::{read_escapes, template_fields, template_pieces};
 #[cfg(test)]
 mod tests;

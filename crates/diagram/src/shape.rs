@@ -29,6 +29,37 @@ impl Paint {
     }
 }
 
+/// From which zoom a text is shown on the canvas (notation 7). The SVG shows every text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Detail {
+    /// A title of a frame, an arm or a tab: at every zoom.
+    Title,
+    /// From 40 %.
+    #[default]
+    Label,
+    /// The name of a terminal, its unit: from 75 %.
+    Name,
+}
+
+impl Detail {
+    /// Whether a text of this detail is shown at `zoom` (1 for 100 %).
+    pub fn shown_at(self, zoom: f32) -> bool {
+        match self {
+            Detail::Title => true,
+            Detail::Label => zoom >= COARSE_ZOOM,
+            Detail::Name => zoom >= NAMES_ZOOM,
+        }
+    }
+}
+
+/// Below it, the canvas shows shapes, wires and the titles of structures, and each node as a plain rectangle in
+/// [`COARSE_NODE`] (notation 7).
+pub const COARSE_ZOOM: f32 = 0.4;
+/// Below it, the canvas shows no name of a terminal (notation 7).
+pub const NAMES_ZOOM: f32 = 0.75;
+/// A node below [`COARSE_ZOOM`].
+pub const COARSE_NODE: Paint = Paint::both("node.fill", "node.stroke", 100);
+
 /// A run of a text in one token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Run {
@@ -66,6 +97,8 @@ pub enum Shape {
         size: u32,
         width: i64,
         runs: Vec<Run>,
+        /// Not in the SVG.
+        detail: Detail,
     },
     /// The icon of a function (spec 11.1), drawn in a square of `side` and cut to its grid: `icon` is its index in
     /// `Drawing::icons`, where each icon is once, however many calls show it.
@@ -150,6 +183,8 @@ pub struct IconDrawing {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IconItem {
     pub shape: IconShape,
+    /// The same shape in numbers of its grid, a path in segments: what a canvas draws (decided at step 2 of M0v).
+    pub drawn: IconDrawn,
     pub fill: bool,
     pub token: Token,
 }
@@ -186,6 +221,36 @@ pub enum IconShape {
     },
 }
 
+/// An item of an icon in numbers of its grid. A text keeps its runs in [`IconShape::Text`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum IconDrawn {
+    Rect {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        radius: f64,
+    },
+    Circle {
+        x: f64,
+        y: f64,
+        radius: f64,
+    },
+    Line {
+        from: (f64, f64),
+        to: (f64, f64),
+    },
+    Path(Vec<labcraft_check::PathSegment>),
+    /// Centred on `x`, its baseline at `y`.
+    Text {
+        x: f64,
+        y: f64,
+        size: f64,
+    },
+}
+
+impl Eq for IconDrawn {}
+
 /// What a group of shapes stands for, in the forms of the reports (`docs/cli.md`, 7.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Group {
@@ -198,6 +263,39 @@ pub struct Group {
     pub arm: Option<String>,
     /// A wire, instead of a node.
     pub wire: Option<WireOf>,
+    /// The node it draws, or the structure whose arm it draws, by its index in [`Drawing::placed`]: what glides with
+    /// it (notation 2.1). Not in the SVG.
+    pub placed: Option<usize>,
+    /// The innermost arm shown in tabs that holds it, by its index in [`Drawing::arms`]: it shows only when that arm and
+    /// every arm around it are shown (notation 5.2). Not in the SVG.
+    pub within: Option<usize>,
+}
+
+/// An arm of a `match` or a `handle` drawn in tabs (notation 5.2): its arms lie on one another, in one frame as large
+/// as the largest, and the canvas shows the one that the view state chooses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArmOf {
+    /// The structure, by the key that follows it across a change of the file ([`Placed::key`]).
+    pub structure: String,
+    /// Its rank among the arms of its structure, in the order of the text.
+    pub arm: usize,
+    /// The arm in tabs that holds its structure, by its index in [`Drawing::arms`].
+    pub within: Option<usize>,
+}
+
+/// The tab of an arm in the header of its structure: where a click chooses it, and how it is drawn, shown or not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tab {
+    /// Its arm, by its index in [`Drawing::arms`].
+    pub arm: usize,
+    /// Its structure, by its index in [`Drawing::placed`]: it glides with it.
+    pub structure: usize,
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+    pub shown: Vec<Shape>,
+    pub other: Vec<Shape>,
 }
 
 /// A reader of a wire: the form of the terminal it reaches, if it has one, and the path from the source to it.
@@ -243,6 +341,9 @@ pub struct Drawing {
     pub marks: Vec<Mark>,
     /// A function that is not drawn: its frame and its diagnostics only, `data-drawn="false"` (`docs/cli.md`, 7.2).
     pub undrawn: bool,
+    /// The arms drawn in tabs, and their tabs; none in an export, which unfolds every arm (notation 5.2). Not in the SVG.
+    pub arms: Vec<ArmOf>,
+    pub tabs: Vec<Tab>,
 }
 
 /// The mark of a diagnostic: what shows where it is, and its code.
