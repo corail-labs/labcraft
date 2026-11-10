@@ -17,7 +17,7 @@
 )]
 #![forbid(unsafe_code)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use labcraft_check::Checked;
 use labcraft_types::text::{ShownText, cut_middle};
@@ -33,23 +33,36 @@ mod size;
 mod svg;
 pub mod theme;
 
+pub use labcraft_check::PathSegment;
 pub use marks::{MAX_LINES, mark, undrawn};
-pub use shape::{BodyDrawn, Drawing, Group, IconDrawing, IconItem, IconShape, Mark, Paint, Pattern, Placed, Run, Shape, Token, WireOf, WireStyle};
+pub use shape::{
+    ArmOf, BodyDrawn, CHEVRON_STEP, COARSE_NODE, COARSE_ZOOM, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, NAMES_ZOOM,
+    Paint, Pattern, Placed, Run, Shape, Tab, Token, WIRE_RADIUS, WireOf, WireStyle, chevrons,
+};
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
 use size::{ANY_TEXT, GRID, LABEL_LINE, LARGE, MEDIUM, SMALL, Sizer, Text};
 
-/// What placement depends on, of the view (notation 2.1). So far, the preference of the IDE that shows every node in
-/// standard view (notation 3); the view of each node is in its file.
+/// What placement depends on, of the view (notation 2.1): the preference of the IDE that shows every node in standard
+/// view (notation 3), and the view state that the file does not hold, which a viewer changes (commands.md 6.5,
+/// `view.set_state`).
 ///
-/// The default is the view state of every exported image (cli.md 7.2): constructions as their block.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The default is the view state of every exported image (cli.md 7.2): constructions as their block, every arm
+/// unfolded.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ViewState {
     pub standard_everywhere: bool,
     /// A construction whose fields are all constants drawn folded, as a small node (notation 3.1): the default of the
     /// viewer, never of an export.
     pub fold_constructions: bool,
+    /// The arms of each `match` and `handle` in tabs, one shown at a time (notation 5.2): the default of the viewer,
+    /// never of an export. Which arm shows is not placement: the canvas chooses it from [`Drawing::arms`].
+    pub tabs: bool,
+    /// The structures drawn unfolded all the same, by the key that follows them ([`Placed::key`]).
+    pub unfolded: BTreeSet<String>,
+    /// The nodes drawn in standard view besides those that their file puts in it, by their key.
+    pub standard: BTreeSet<String>,
 }
 
 /// `--max-diagram-nodes` (`docs/cli.md`, 7.6).
@@ -72,6 +85,7 @@ impl Default for DiagramLimits {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[expect(clippy::large_enum_variant, reason = "one per function drawn, and most are drawings")]
 pub enum Drawn {
     Drawing(Drawing),
     /// `LC7002`, or a file that declares no function.
@@ -99,7 +113,12 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
     let max_terminals = limits.max_nodes.saturating_mul(5);
     let mut builder = Builder::new(checked, checked_file, names).folding(view.fold_constructions);
     match builder.graph(function, &orders, max_terminals) {
-        Ok(graph) => Drawn::Drawing(drawing(&graph, names, view)),
+        Ok(mut graph) => {
+            for node in &mut graph.nodes {
+                node.standard |= view.standard.contains(&node.stable);
+            }
+            Drawn::Drawing(drawing(&graph, names, view))
+        }
         Err(graph::TooLarge(counts)) => too_large(format!(
             "the function is too large to draw: more than {max_terminals} terminals, counted on its first {} nodes, for at most five \
              times {} (--max-diagram-nodes)",
@@ -230,8 +249,35 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             found.left = found.left.max(pill_reach(pill));
         }
     }
-    let titles = titles(graph);
+    let titles = titles(graph, view);
     let placement = place::place(graph, &mut sized, &titles, (MARGIN, MARGIN));
+    // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
+    let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
+    // The rank of each body among the arms of its structure.
+    let mut rank: Vec<usize> = vec![0; graph.bodies.len()];
+    for node in &graph.nodes {
+        for (arm, &body) in node.bodies.iter().enumerate() {
+            if let Some(slot) = rank.get_mut(body) {
+                *slot = arm;
+            }
+        }
+    }
+    for (index, body) in graph.bodies.iter().enumerate() {
+        let Some(owner) = body.owner else { continue };
+        let Some(found) = graph.nodes.get(owner) else { continue };
+        let around = inside.get(found.body).copied().flatten();
+        let held = if titles.tabs.contains(&owner) {
+            let arm = rank.get(index).copied().unwrap_or(0);
+            drawing.arms.push(ArmOf { structure: found.stable.clone(), arm, within: around });
+            Some(drawing.arms.len() - 1)
+        } else {
+            around
+        };
+        if let Some(slot) = inside.get_mut(index) {
+            *slot = held;
+        }
+    }
+    let within = |body: usize| inside.get(body).copied().flatten();
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
         let mut shapes = frame_shapes(frame, &Text::new(&body.caption, ANY_TEXT, LARGE), None, false, "frame.stroke");
@@ -239,7 +285,13 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         drawing.loose = shapes;
     }
     // The wires of each body, drawn over its frame and under its nodes.
-    let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len()).map(|body| wire_groups(graph, body, &placement, &sized)).collect();
+    let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
+        .map(|body| {
+            let mut groups = wire_groups(graph, body, &placement, &sized);
+            groups.iter_mut().for_each(|group| group.within = within(body));
+            groups
+        })
+        .collect();
     if let Some(first) = wires.first_mut() {
         drawing.groups.append(first);
     }
@@ -247,12 +299,18 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         let Some(Some(at)) = placement.nodes.get(index) else { continue };
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
         let mut arms = Vec::new();
+        let mut tabs = Vec::new();
         if let Kind::Structure(structure) = &node.kind {
             // The frame, then the wires in the margins of a `match`.
             let margins = std::mem::take(&mut shapes);
-            (shapes, arms) = structure_shapes(graph, node, structure, &placement, at, (sized.width, &sized.inputs, &sized.outputs));
+            let in_tabs = titles.tabs.contains(&index);
+            (shapes, arms, tabs) = structure_shapes(graph, node, structure, &placement, at, (sized.width, &sized.inputs, &sized.outputs), in_tabs);
             shapes.extend(margins);
             shapes.extend(sized_label(node, at));
+            // In tabs, each arm draws its own margins.
+            for ((_, arm), margins) in arms.iter_mut().zip(sized.arms) {
+                arm.extend(margins.into_iter().map(|shape| moved(shape, at.x, at.y)));
+            }
         }
         let (width, height) = (sized.width, sized.height);
         drawing.placed.push(Placed {
@@ -266,14 +324,31 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             body: node.body,
             holds: node.bodies.clone(),
         });
-        drawing.groups.push(Group { node: node.key.clone(), title: title(&node.kind), shapes, arm: None, wire: None });
-        drawing.groups.extend(arms.into_iter().map(|(arm, shapes)| Group {
-            node: String::new(),
-            title: String::new(),
+        let placed = Some(drawing.placed.len() - 1);
+        drawing.groups.push(Group {
+            node: node.key.clone(),
+            title: title(&node.kind),
             shapes,
-            arm: Some(arm),
+            arm: None,
             wire: None,
-        }));
+            placed,
+            within: within(node.body),
+        });
+        for ((arm, shapes), &body) in arms.into_iter().zip(&node.bodies) {
+            drawing.groups.push(Group {
+                node: String::new(),
+                title: String::new(),
+                shapes,
+                arm: Some(arm),
+                wire: None,
+                placed,
+                within: within(body),
+            });
+        }
+        for ((x, y, width, height, shown, other), &body) in tabs.into_iter().zip(&node.bodies) {
+            let Some(arm) = within(body) else { continue };
+            drawing.tabs.push(Tab { arm, structure: drawing.placed.len() - 1, x, y, width, height, shown, other });
+        }
         for &body in &node.bodies {
             if let Some(list) = wires.get_mut(body) {
                 drawing.groups.append(list);
@@ -303,6 +378,11 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         for placed in &mut drawing.placed {
             (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
         }
+        for tab in &mut drawing.tabs {
+            (tab.x, tab.y) = (tab.x + dx, tab.y + dy);
+            tab.shown = std::mem::take(&mut tab.shown).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+            tab.other = std::mem::take(&mut tab.other).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+        }
     }
     drawing.bodies = placement.frames.iter().map(|frame| BodyDrawn { axis: frame.axis.map(|axis| axis + dy), from_file: frame.from_file }).collect();
     drawing.width = right + dx + MARGIN;
@@ -317,9 +397,20 @@ fn sized_label(node: &graph::Node<'_>, at: &place::NodeAt) -> Option<Shape> {
     Some(text.at(at.x, at.y - place::LABEL_ABOVE - size::line_height(MEDIUM) / 2, "ink.muted"))
 }
 
-/// The widths that titles need: the name of the function, a header and its badge, the patterns of an arm.
-fn titles(graph: &Graph<'_>) -> place::Titles {
-    let mut titles = place::Titles { bodies: vec![0; graph.bodies.len()], structures: HashMap::new() };
+/// The widths that titles need: the name of the function, a header and its badge, the patterns of an arm, the tabs of a
+/// structure in tabs; and which structures are in tabs.
+fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
+    let mut titles = place::Titles { bodies: vec![0; graph.bodies.len()], structures: HashMap::new(), tabs: HashSet::new() };
+    if view.tabs {
+        for (index, node) in graph.nodes.iter().enumerate() {
+            if let Kind::Structure(structure) = &node.kind
+                && matches!(structure.kind, StructureKind::Match | StructureKind::Handle)
+                && !view.unfolded.contains(&node.stable)
+            {
+                titles.tabs.insert(index);
+            }
+        }
+    }
     let header_width = |structure: &graph::Structure| {
         let header = Text::new(&structure.header, ANY_TEXT, LARGE).width;
         let badge = structure.badge.map_or(0, |badge| GRID + Text::new(badge, ANY_TEXT, MEDIUM).width + 2 * size::PADDING);
@@ -327,6 +418,8 @@ fn titles(graph: &Graph<'_>) -> place::Titles {
     };
     for (index, body) in graph.bodies.iter().enumerate() {
         let width = match body.owner.and_then(|owner| graph.nodes.get(owner)).map(|owner| &owner.kind) {
+            // In tabs, an arm has no title: its tab names it.
+            _ if body.owner.is_some_and(|owner| titles.tabs.contains(&owner)) => 0,
             None => 2 * place::LABEL_START + Text::new(&body.caption, ANY_TEXT, LARGE).width,
             Some(Kind::Structure(structure)) if matches!(structure.kind, StructureKind::Loop | StructureKind::For) => header_width(structure),
             Some(_) => 2 * place::LABEL_START + Text::new(&body.caption, ANY_TEXT, MEDIUM).width,
@@ -339,11 +432,28 @@ fn titles(graph: &Graph<'_>) -> place::Titles {
         if let Kind::Structure(structure) = &node.kind
             && matches!(structure.kind, StructureKind::Match | StructureKind::Handle)
         {
-            titles.structures.insert(index, header_width(structure));
+            let mut width = header_width(structure);
+            if titles.tabs.contains(&index) {
+                let row: i64 =
+                    node.bodies.iter().filter_map(|&body| graph.bodies.get(body)).map(|body| tab_width(&body.caption) + place::TAB_GAP).sum();
+                width = width.max(2 * place::LABEL_START + row - place::TAB_GAP);
+            }
+            titles.structures.insert(index, width);
         }
     }
     titles
 }
+
+/// The width of the tab of an arm.
+fn tab_width(caption: &str) -> i64 {
+    Text::new(caption, ANY_TEXT, MEDIUM).width + 2 * size::PADDING
+}
+
+/// An arm: its title, and its shapes.
+type ArmShapes = (String, Vec<Shape>);
+
+/// A tab: where it is, and its shapes, shown and not.
+type TabShapes = (i64, i64, i64, i64, Vec<Shape>, Vec<Shape>);
 
 /// A frame: its box, its title in its header, a badge.
 fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, double: bool, stroke: Token) -> Vec<Shape> {
@@ -373,7 +483,7 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
         });
     }
     let middle = frame.y + frame.header / 2;
-    shapes.push(title.at(frame.x + place::LABEL_START, middle, "node.title"));
+    shapes.push(title.shown_from(frame.x + place::LABEL_START, middle, "node.title", shape::Detail::Title));
     if let Some(badge) = badge {
         let text = Text::new(badge, ANY_TEXT, MEDIUM);
         let x = frame.x + place::LABEL_START + title.width + GRID;
@@ -403,10 +513,10 @@ fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt, named: bool, sh
             let label = place::TerminalLabel::of(terminal);
             let width = label.width();
             let mut at = if side { x - place::LABEL_START - width } else { x + place::LABEL_START };
-            shapes.push(label.name.at(at, y, "node.title"));
+            shapes.push(label.name.shown_from(at, y, "node.title", shape::Detail::Name));
             at += label.name.width;
             if let Some(unit) = &label.unit {
-                shapes.push(unit.at(at + size::PADDING, y, "ink.muted"));
+                shapes.push(unit.shown_from(at + size::PADDING, y, "ink.muted", shape::Detail::Name));
                 at += size::PADDING + unit.width;
             }
             if let Some(pill) = &label.pill {
@@ -447,13 +557,14 @@ fn structure_shapes(
     placement: &place::Placement,
     at: &place::NodeAt,
     (width, inputs, outputs): Terminals<'_>,
-) -> (Vec<Shape>, Vec<(String, Vec<Shape>)>) {
+    in_tabs: bool,
+) -> (Vec<Shape>, Vec<ArmShapes>, Vec<TabShapes>) {
     let title = Text::new(&structure.header, ANY_TEXT, LARGE);
     let stroke = if structure.kind == StructureKind::Handle { "wire.error" } else { "frame.stroke" };
     match structure.kind {
         StructureKind::Loop | StructureKind::For => {
             let Some((&index, frame)) = node.bodies.first().and_then(|index| Some((index, placement.frames.get(*index)?))) else {
-                return (Vec::new(), Vec::new());
+                return (Vec::new(), Vec::new(), Vec::new());
             };
             let mut shapes = frame_shapes(frame, &title, structure.badge, structure.parallel, stroke);
             if let Some(body) = graph.bodies.get(index) {
@@ -465,15 +576,18 @@ fn structure_shapes(
                     shapes.extend(size::pill(&text, at.x - place::constant_reach(constant), at.y + y));
                 }
             }
-            (shapes, Vec::new())
+            (shapes, Vec::new(), Vec::new())
         }
         StructureKind::Match | StructureKind::Handle => {
             let depth = node.bodies.first().and_then(|index| placement.frames.get(*index)).map_or(1, |frame| frame.depth.saturating_sub(1));
+            // Below its lowest arm, which is the last unfolded.
             let height = node
                 .bodies
-                .last()
-                .and_then(|index| placement.frames.get(*index))
-                .map_or(place::HEADER + place::PAD, |frame| frame.y + frame.height - at.y + place::PAD);
+                .iter()
+                .filter_map(|index| placement.frames.get(*index))
+                .map(|frame| frame.y + frame.height - at.y + place::PAD)
+                .max()
+                .unwrap_or(place::HEADER + place::PAD);
             let outer = place::FrameAt { x: at.x, y: at.y, width, height, header: place::HEADER, depth, ..place::FrameAt::default() };
             let mut shapes = frame_shapes(&outer, &title, structure.badge, false, stroke);
             // The selector, then the notches of the outer values that the arms read.
@@ -485,10 +599,28 @@ fn structure_shapes(
                 shapes.extend(size::terminal(output.family, at.x + x, at.y + y, 100, output.ignored));
             }
             let mut arms = Vec::new();
+            let mut tabs = Vec::new();
+            let mut tab_x = at.x + place::LABEL_START;
             for &index in &node.bodies {
                 let (Some(body), Some(frame)) = (graph.bodies.get(index), placement.frames.get(index)) else { continue };
                 let mut shapes = Vec::new();
                 let caption = Text::new(&body.caption, ANY_TEXT, MEDIUM);
+                if in_tabs {
+                    // The tab of the arm, in the row under the header: the arm shown filled *(proposed)*.
+                    let (x, y, width, height) = (tab_x, at.y + place::HEADER, tab_width(&body.caption), place::TAB_HEIGHT);
+                    let middle = y + height / 2;
+                    let rect = |paint| Shape::Rect { x, y, width, height, radius: 300, paint };
+                    let shown = vec![
+                        rect(Paint::both("tab.fill", stroke, size::OUTLINE)),
+                        caption.shown_from(x + size::PADDING, middle, "node.title", shape::Detail::Title),
+                    ];
+                    let other = vec![
+                        rect(Paint::stroke("frame.divider", size::OUTLINE)),
+                        caption.shown_from(x + size::PADDING, middle, "ink.muted", shape::Detail::Title),
+                    ];
+                    tabs.push((x, y, width, height, shown, other));
+                    tab_x += width + place::TAB_GAP;
+                }
                 let level = (frame.depth + 1).min(4);
                 let fill = match level {
                     1 => "frame.fill.1",
@@ -504,11 +636,13 @@ fn structure_shapes(
                     radius: size::RADIUS,
                     paint: Paint::both(fill, stroke, size::OUTLINE),
                 });
-                shapes.push(caption.at(frame.x + place::LABEL_START, frame.y + frame.header / 2, "ink.muted"));
+                if !in_tabs {
+                    shapes.push(caption.shown_from(frame.x + place::LABEL_START, frame.y + frame.header / 2, "ink.muted", shape::Detail::Title));
+                }
                 frame_terminals(body, frame, true, &mut shapes);
                 arms.push((body.caption.clone(), shapes));
             }
-            (shapes, arms)
+            (shapes, arms, tabs)
         }
     }
 }
@@ -538,7 +672,7 @@ fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
         Shape::Rect { x, y, width, height, radius, paint } => Shape::Rect { x: x + dx, y: y + dy, width, height, radius, paint },
         Shape::Circle { x, y, radius, paint } => Shape::Circle { x: x + dx, y: y + dy, radius, paint },
         Shape::Poly { points, closed, paint } => Shape::Poly { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), closed, paint },
-        Shape::Text { x, y, size, width, runs } => Shape::Text { x: x + dx, y: y + dy, size, width, runs },
+        Shape::Text { x, y, size, width, runs, detail } => Shape::Text { x: x + dx, y: y + dy, size, width, runs, detail },
         Shape::Icon { x, y, side, icon } => Shape::Icon { x: x + dx, y: y + dy, side, icon },
         Shape::Wire { points, style } => Shape::Wire { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), style },
     }
@@ -649,6 +783,8 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 shapes,
                 arm: None,
                 wire: Some(WireOf { body, error, via: routed.via, value, from, to, readers }),
+                placed: None,
+                within: None,
             })
         })
         .collect()

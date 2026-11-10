@@ -19,8 +19,10 @@ use labcraft_types::{Code, Diagnostic, Edit, Fix, Interner, LibraryId, Name, Nod
 
 use super::{DeclaredFunction, DeclaredLibrary, DeclaredType, Pass, Scope, add_use, path_text, unit_of};
 use crate::load::{Target, at, cycles, last_resort};
+
 use crate::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
+pub use sections::{PathSegment, path_segments};
 
 pub(super) mod flow;
 pub(super) mod sections;

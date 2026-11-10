@@ -109,6 +109,27 @@ pub fn check(crates: &[Crate]) -> Vec<String> {
     violations
 }
 
+/// egui and eframe are built without their default fonts (architecture 11.5): the canvas and the app install theirs,
+/// each with its line in `ATTRIBUTION.md`. A crate that enables them, through any feature of the graph, would embed
+/// faces that no line names.
+pub fn default_fonts(metadata: &Value) -> Result<Vec<String>, String> {
+    let packages = metadata["packages"].as_array().ok_or("metadata: no packages")?;
+    let mut violations = Vec::new();
+    for package in packages {
+        if package["name"] == "epaint_default_fonts" {
+            violations.push("epaint_default_fonts is in the graph: a crate builds egui, epaint or eframe with `default_fonts`".to_owned());
+        }
+    }
+    for node in metadata["resolve"]["nodes"].as_array().into_iter().flatten() {
+        let id = node["id"].as_str().unwrap_or_default();
+        let features: Vec<&str> = node["features"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+        if features.contains(&"default_fonts") {
+            violations.push(format!("{id}: built with `default_fonts`"));
+        }
+    }
+    Ok(violations)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +141,17 @@ mod tests {
 
     fn violations(name: &str, dependencies: &[(&str, bool)]) -> Vec<String> {
         check(&[krate(name, dependencies)])
+    }
+
+    #[test]
+    fn the_default_fonts_of_egui_are_refused() {
+        let clean = serde_json::json!({ "packages": [{ "name": "egui" }], "resolve": { "nodes": [{ "id": "egui 0.37", "features": ["serde"] }] } });
+        assert_eq!(default_fonts(&clean), Ok(Vec::new()));
+        let fonts = serde_json::json!({
+            "packages": [{ "name": "egui" }, { "name": "epaint_default_fonts" }],
+            "resolve": { "nodes": [{ "id": "egui 0.37", "features": ["default_fonts"] }] }
+        });
+        assert_eq!(default_fonts(&fonts).map(|found| found.len()), Ok(2));
     }
 
     #[test]

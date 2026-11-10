@@ -1,0 +1,20 @@
+[package]
+name = "labcraft-editor"
+description = "LabCraft L7: the egui canvas that paints the drawings of `diagram`, read-only in M0v"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+egui = { workspace = true }
+labcraft-diagram = { workspace = true }
+labcraft-types = { workspace = true }
+
+[dev-dependencies]
+labcraft-check = { workspace = true }
+labcraft-format = { workspace = true }
+
+[lints]
+workspace = true

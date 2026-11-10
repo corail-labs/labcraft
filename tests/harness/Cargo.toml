@@ -21,6 +21,10 @@ labcraft-runtime = { workspace = true }
 labcraft-trace = { workspace = true }
 serde_json = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+egui = { workspace = true }
+labcraft-editor = { workspace = true }
+
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }
 

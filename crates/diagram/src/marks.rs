@@ -89,7 +89,7 @@ fn line(diagnostic: &Diagnostic, x: i64, middle: i64) -> Shape {
     }
     let width = text::width(cells, MEDIUM).unwrap_or(i64::MAX / 4);
     let cap = text::scale(u64::from(text::CAP_HEIGHT), MEDIUM).unwrap_or(0);
-    Shape::Text { x, y: middle + (cap + 1) / 2, size: MEDIUM, width, runs }
+    Shape::Text { x, y: middle + (cap + 1) / 2, size: MEDIUM, width, runs, detail: crate::Detail::Title }
 }
 
 /// The marks of the errors of `diagnostics` on a drawing (`docs/cli.md`, 7.1): each wire at fault drawn again in
