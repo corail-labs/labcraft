@@ -7,12 +7,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use labcraft_runtime::native::{CallContext, CallId, HandleInfo, InstrumentLog, Key, LibraryRun, NativeOutcome, Step};
+use labcraft_runtime::native::{CallContext, CallId, HandleInfo, InstrumentLog, Key, LibraryRun, LogBudget, NativeOutcome, Step};
 use labcraft_runtime::{Handle, Value};
 use labcraft_trace::number::duration_text;
 
 use crate::file::Bench;
-use crate::instrument::{Instrument, LOG_BUDGET, QuantityState, execute};
+use crate::instrument::{Instrument, QuantityState, execute};
 
 const VI_ERROR_TMO: i64 = -1_073_807_339;
 const VI_ERROR_RSRC_NFOUND: i64 = -1_073_807_343;
@@ -76,12 +76,12 @@ pub struct VisaRun {
     sessions: Vec<Session>,
     calls: HashMap<CallId, VisaCall>,
     next_call: u64,
-    /// What the log of all its instruments may still hold, in bytes.
-    log_budget: u64,
+    /// What the log of all its instruments may still hold: the budget of the run, shared with its other libraries.
+    log_budget: LogBudget,
 }
 
 impl VisaRun {
-    pub fn new(library: u32, bench: Option<Arc<Bench>>) -> Self {
+    pub fn new(library: u32, bench: Option<Arc<Bench>>, budget: LogBudget) -> Self {
         let (instruments, quantities, by_resource) = match &bench {
             Some(bench) => (
                 bench.instruments.iter().map(Instrument::new).collect(),
@@ -99,7 +99,7 @@ impl VisaRun {
             sessions: Vec::new(),
             calls: HashMap::new(),
             next_call: 0,
-            log_budget: LOG_BUDGET,
+            log_budget: budget,
         }
     }
 
@@ -248,7 +248,7 @@ impl VisaRun {
                 }
                 let answer = match (&self.bench, self.instruments.get_mut(instrument)) {
                     (Some(bench), Some(state)) => match bench.instruments.get(instrument) {
-                        Some(spec) => execute(spec, state, &mut self.quantities, bench, &mut self.log_budget, &call.command, cx.now),
+                        Some(spec) => execute(spec, state, &mut self.quantities, bench, &self.log_budget, &call.command, cx.now),
                         None => None,
                     },
                     _ => None,

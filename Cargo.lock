@@ -241,6 +241,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "labcraft-results-log"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-runtime",
+]
+
+[[package]]
 name = "labcraft-runtime"
 version = "0.1.0-m0a"
 dependencies = [

@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 
-use labcraft_runtime::native::{LibraryCode, LibraryDiagnostic, LibraryRun, NativeLibrary, Section, Simulation};
+use labcraft_runtime::native::{LibraryCode, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, Section, Simulation};
 use labcraft_types::Severity;
 
 mod file;
@@ -26,7 +26,7 @@ mod run;
 #[cfg(test)]
 mod tests;
 
-pub use file::Bench;
+pub use file::{Bench, Commands};
 pub use run::VisaRun;
 
 /// The codes of `visa` for its part of a simulation file: the table of `libs/visa/simulation.md`, section 7, which
@@ -73,8 +73,8 @@ impl NativeLibrary for Visa {
         file::read(section).map(|bench| Box::new(Arc::new(bench)) as Simulation)
     }
 
-    fn start_run(&self, library: u32, simulation: Option<&Simulation>) -> Box<dyn LibraryRun> {
+    fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun> {
         let bench = simulation.and_then(|simulation| simulation.downcast_ref::<Arc<Bench>>()).cloned();
-        Box::new(VisaRun::new(library, bench))
+        Box::new(VisaRun::new(library, bench, budget))
     }
 }

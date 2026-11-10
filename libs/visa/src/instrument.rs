@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 
-use labcraft_runtime::native::CommandLog;
+use labcraft_runtime::native::{CommandLog, LogBudget};
 
 use crate::file::{Bench, InstrumentSpec, QUEUE_SIZE};
 
@@ -105,11 +105,6 @@ fn set(quantities: &mut [QuantityState], id: usize, target: f64, t: i64, settle:
 /// How many commands an instrument keeps for the report (commands.md 7) *(proposed)*.
 pub(crate) const KEPT_COMMANDS: usize = 1000;
 
-/// What the log of all the instruments of a run may hold, in bytes *(proposed)*: past it, commands are counted, not kept, so
-/// that the log never grows a run beyond `--max-memory`, whatever the number of instruments. Each command kept costs its two
-/// texts and 64 bytes.
-pub(crate) const LOG_BUDGET: u64 = 16 * 1024 * 1024;
-
 /// An instrument in one run.
 #[derive(Debug)]
 pub(crate) struct Instrument {
@@ -132,10 +127,12 @@ impl Instrument {
         }
     }
 
-    fn log(&mut self, budget: &mut u64, at: i64, sent: &str, answer: Option<&str>) {
+    /// Each command kept costs its two texts, as kept, and 64 bytes, from the budget of the run (`LogBudget`): from the first
+    /// command that does not fit, commands are counted, not kept, whatever the number of instruments, so that the log of an
+    /// instrument is the start of what it received.
+    fn log(&mut self, budget: &LogBudget, at: i64, sent: &str, answer: Option<&str>) {
         let cost = (sent.len().min(4 * KEPT_TEXT) + answer.map_or(0, |answer| answer.len().min(4 * KEPT_TEXT)) + 64) as u64;
-        if self.log.len() < KEPT_COMMANDS && cost <= *budget {
-            *budget -= cost;
+        if self.more == 0 && self.log.len() < KEPT_COMMANDS && budget.take(cost) {
             let (sent, sent_length) = head(sent);
             let (answer, answer_length) = answer.map_or((None, 0), |answer| {
                 let (text, length) = head(answer);
@@ -187,7 +184,7 @@ pub(crate) fn execute(
     state: &mut Instrument,
     quantities: &mut [QuantityState],
     bench: &Bench,
-    budget: &mut u64,
+    budget: &LogBudget,
     command: &str,
     t: i64,
 ) -> Option<String> {

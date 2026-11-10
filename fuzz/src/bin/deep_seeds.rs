@@ -4,13 +4,16 @@
 //!   seeds, the deepest input is 4 levels deep. Generated, so that the grammar cannot leave them behind;
 //! - the libraries of the repository for the targets `check` and `diagram`: the files of each folder of `examples/`,
 //!   `libs/`, `docs/rfc/`, `tests/acceptance/` and `tests/harness/routing-cases/` (the drawings built to break the rules of
-//!   routing), as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types cross files.
+//!   routing), as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types cross files;
+//! - for the target `simulation`, simulation files of arrays and of inline tables nested at the limit of the reader of `toml`
+//!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2).
 //!
 //! Run from `fuzz/`.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+use labcraft_runtime::simulation::TOML_NESTING;
 use labcraft_types::Limits;
 
 #[path = "../../../crates/format/tests/deep/mod.rs"]
@@ -31,6 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let kind = kind.replace(' ', "-");
         fs::write(folder.join(format!("{kind}-at-the-limit.lcf")), program(limit))?;
         fs::write(folder.join(format!("{kind}-above-the-limit.lcf")), program(limit + 1))?;
+    }
+    // A key of one segment adds no level, and each array or inline table one (cli.md 6.2).
+    let toml = usize::try_from(TOML_NESTING)?;
+    for depth in [toml, toml + 1] {
+        let arrays = format!("a = {}{}\n", "[".repeat(depth), "]".repeat(depth));
+        let tables = format!("a = {}1{}\n", "{ b = ".repeat(depth), " }".repeat(depth));
+        fs::write(folder.join(format!("simulation-arrays-{depth}.toml")), arrays)?;
+        fs::write(folder.join(format!("simulation-tables-{depth}.toml")), tables)?;
     }
     let mut libraries = Vec::new();
     for root in ["../examples", "../libs", "../docs/rfc", "../tests/acceptance", "../tests/harness/routing-cases"] {

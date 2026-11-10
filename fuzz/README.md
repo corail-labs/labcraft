@@ -10,6 +10,7 @@ workspace, with its own `Cargo.lock`: nothing here reaches the product, which bu
 | `round_trip` | On any input up to 64 KiB that parses, what `fmt` writes holds every line of the declaration and reads again, to the same model and the same text (scenario 5), every comment is still there, nothing is left to remove, a body that cannot be ordered still gets its warning, and the text ends with one line feed, with no CR and no space at the end of a line |
 | `check` | On a library of up to 32 files, separated by two NUL bytes, each named by its length: for two lengths in four after what it declares (R-22), for one `f<N>`, for one after what it declares with the other extension (`LC0103`), and `f<N>` when it does not read or a file before it took the name, with the shipped libraries, `check` ends without `LC0099`, places each diagnostic in a file of the library or of a shipped one, with a well-formed span, gives the same report whatever the order of the files, and the same codes after `fmt` of each file, but for a duplicate `use` (`LC2020`), when `fmt` removes an entry (`LC5004`), and when a budget or a limit of `check` made it say less (`Checked::cut_short`), since what it says then depends on the order of lines and entries |
 | `diagram` | On a library as for `check`, each file named after what it declares, `diagram` draws every function that `check` lets it draw, in both views, without an internal error, gives the same SVG when it draws it again, refuses under a limit of 3 nodes what has more (`LC7002`), and keeps the rules of routing of notation 2.2 as `tests/harness/src/routing.rs` reads them, but in a body whose file places a node and for a wire that the file gives waypoints |
+| `simulation` | On any simulation file up to 64 KiB, `runtime::simulation::read` and the judgement of `visa` end, with the codes they declare, errors at well-formed spans, and the same judgement twice; on a file they accept, each instrument opens, is sent every command its section names (each query of `commands`, which answers as the file says, each of `measure`, which answers a finite number, each `set` with a number in range, out of range and not a number, each prefix of `accept`, each command of `faults`, a query of `timeout` timing out), the error queue and the reserved commands (`*IDN?` answers its `idn`), and closes, after which its session is refused; on the first instrument a second session leaves an answer unread (`-410`), reads, has a call cancelled and is released, which are run and not compared with what they should give; at most 4,000 calls in a run, past which the run makes no other call; every call ends in a few steps, the clock does not overflow, the log keeps its bounds and its order, and two runs of the file give the same answers and the same log (`libs/visa/simulation.md`) |
 
 Larger inputs belong to the Size family of the corpus (`LC0006`), and their time and memory to `cargo xtask bounds`
 (`tests/harness/tests/bounds.rs`).
@@ -25,6 +26,7 @@ bash fuzz/run.sh read 60
 bash fuzz/run.sh round_trip 60
 bash fuzz/run.sh check 60
 bash fuzz/run.sh diagram 60
+bash fuzz/run.sh simulation 60
 ```
 
 `run.sh` is what the workflow `fuzz` runs (`.github/workflows/fuzz.yml`), for 60 s. It also fails, with exit 3, when
@@ -33,8 +35,9 @@ libFuzzer stopped before 90% of the time, which it calls a success when its cloc
 cannot see a jump. `bash fuzz/run.sh <target> --replay <file>` runs one input again, alone, with the same limits. `--release` with debug assertions and AddressSanitizer are the defaults of `cargo fuzz`.
 
 **The seeds** are every file of `examples/`, `libs/`, `docs/rfc/` and `tests/acceptance/`, some of which are not
-programs, plus what `deep_seeds` generates: the Nesting family, from `crates/format/tests/deep`, and the files of each
-folder of those four joined, as many as fit in 64 KiB, for `check`. libFuzzer writes
+programs, the simulation files of `libs/visa/sim/` among them, plus what `deep_seeds` generates: the Nesting family, from
+`crates/format/tests/deep`, the files of each folder of those four joined, as many as fit in 64 KiB, for `check`, and
+simulation files nested at the limit of the reader of TOML and one level above it, for `simulation`. libFuzzer writes
 what it finds to `corpus/<target>`, ignored by git. Each run of the job starts again from the seeds.
 
 **In Docker Desktop**, add `--security-opt seccomp=unconfined`: the sanitizer may need `personality`, which the
@@ -69,6 +72,8 @@ a thread of `format::STACK_SIZE`, as the program does. With the sanitizer `read`
 at most 1 MiB there (measured, every kind of nesting of `crates/format/tests/deep`), and a Linux main thread
 has 8 MiB. `round_trip` reads the same deep seeds on that thread; the parser takes the most stack of what it runs
 (`crates/format/tests/stack.rs`). The ceiling of nesting and `format::STACK_SIZE` are the business of `crates/format/tests/stack.rs`.
+`simulation` runs on the main thread: the reader of TOML recurses at most 80 levels deep, and the count of
+`runtime::simulation` before it does not recurse (cli.md 6.2).
 
 ## When it finds something
 

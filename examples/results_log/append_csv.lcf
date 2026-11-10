@@ -1,5 +1,6 @@
 labcraft 1
 
-/// Appends results to a CSV file. Native, since it writes a file.
+/// Appends results to a CSV file. Native, since it writes a file. In M0 the results stay in memory, and the report of the run
+/// shows them (`logs`).
 extern rust(crate: "labcraft-results-log", function: "append_csv")
 fn append_csv(results: [StepResult], err: error = none) -> (err: error)

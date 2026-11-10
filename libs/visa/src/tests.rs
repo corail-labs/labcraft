@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use labcraft_runtime::native::{CallContext, CallId, Key, LibraryDiagnostic, LibraryRun, NativeLibrary, NativeOutcome, Step};
+use labcraft_runtime::native::{CallContext, CallId, Key, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, NativeOutcome, Step};
 use labcraft_runtime::simulation::read;
 use labcraft_runtime::{Handle, Value};
 
@@ -22,7 +22,7 @@ fn shipped(name: &str) -> String {
 fn judged(text: &str) -> Result<Box<dyn LibraryRun>, Vec<LibraryDiagnostic>> {
     let file = read(text, 64).map_err(|diagnostic| vec![diagnostic])?;
     let simulations = file.judge(&[&Visa])?;
-    Ok(Visa.start_run(0, simulations.first().and_then(Option::as_ref)))
+    Ok(Visa.start_run(0, simulations.first().and_then(Option::as_ref), LogBudget::new(LOG_BUDGET)))
 }
 
 fn codes(text: &str) -> Vec<(&'static str, u32, u32)> {
@@ -54,8 +54,15 @@ impl Driver {
         Driver { run: judged(text).unwrap(), now: 0, tasks: Vec::new(), holders: HashMap::new() }
     }
 
+    fn with_budget(text: &str, bytes: u64) -> Self {
+        let file = read(text, 64).unwrap();
+        let simulations = file.judge(&[&Visa]).unwrap();
+        let run = Visa.start_run(0, simulations.first().and_then(Option::as_ref), LogBudget::new(bytes));
+        Driver { run, now: 0, tasks: Vec::new(), holders: HashMap::new() }
+    }
+
     fn without_simulation() -> Self {
-        Driver { run: Visa.start_run(0, None), now: 0, tasks: Vec::new(), holders: HashMap::new() }
+        Driver { run: Visa.start_run(0, None, LogBudget::new(LOG_BUDGET)), now: 0, tasks: Vec::new(), holders: HashMap::new() }
     }
 
     fn start(&mut self, function: &str, inputs: Vec<Value>) -> usize {
@@ -577,4 +584,55 @@ fn the_log_of_all_the_instruments_has_one_budget() {
     let kept: usize = logs.iter().map(|log| log.commands.len()).sum();
     let more: u64 = logs.iter().map(|log| log.more).sum();
     assert_eq!((kept, more), (4128, 1872));
+}
+
+#[test]
+fn a_bench_says_what_each_instrument_answers_to() {
+    // By hand, from `sim/bench.toml`, a file of two instruments out of code point order, and a file that has two entries in
+    // every list but `measure`.
+    let bench = |text: &str| {
+        let file = read(text, 64).unwrap();
+        let simulations = file.judge(&[&Visa]).unwrap();
+        simulations[0].as_ref().unwrap().downcast_ref::<std::sync::Arc<crate::Bench>>().unwrap().commands()
+    };
+    let shipped = bench(&shipped("bench.toml"));
+    let resources: Vec<&str> = shipped.iter().map(|commands| commands.resource.as_str()).collect();
+    assert_eq!(resources, ["SIM::DMM0", "SIM::PSU0", "SIM::RELAY0"], "in the order of the file");
+    let backwards = bench("[[visa.instrument]]\nresource = \"SIM::B\"\n[[visa.instrument]]\nresource = \"SIM::A\"\n");
+    let resources: Vec<&str> = backwards.iter().map(|commands| commands.resource.as_str()).collect();
+    assert_eq!(resources, ["SIM::B", "SIM::A"], "in the order of the file, not of the resources");
+    assert_eq!((shipped[1].set.as_slice(), shipped[2].accept.as_slice()), (&["VOLT".to_owned()][..], &["ROUT:CLOS".to_owned()][..]));
+    // Two entries in each list, written out of order: each comes back in code point order.
+    let every = bench(
+        "[[visa.instrument]]\nresource = \"SIM::X\"\nidn = \"SIM,X\"\nmeasure = { \"MEAS?\" = \"v\" }\n\
+         commands = { \"B?\" = \"1\", \"A?\" = \"2\" }\nset = { \"VOLT\" = \"v\", \"CURR\" = \"w\" }\naccept = [\"ZAP\", \"ARM\"]\n\
+         quantity.v = { value = 1.0 }\nquantity.w = { value = 2.0 }\n\
+         faults = { timeout = [\"HANG?\", \"FREEZE?\"], error_on = { \"BAD\" = [-100, \"Command error\"], \"AWFUL\" = [-200, \"Execution error\"] } }\n",
+    );
+    let words = |list: &[&str]| list.iter().map(|word| (*word).to_owned()).collect::<Vec<_>>();
+    assert_eq!(
+        every,
+        vec![crate::Commands {
+            resource: "SIM::X".to_owned(),
+            idn: "SIM,X".to_owned(),
+            commands: vec![("A?".to_owned(), "2".to_owned()), ("B?".to_owned(), "1".to_owned())],
+            measure: words(&["MEAS?"]),
+            set: words(&["CURR", "VOLT"]),
+            accept: words(&["ARM", "ZAP"]),
+            timeout: words(&["FREEZE?", "HANG?"]),
+            error_on: words(&["AWFUL", "BAD"]),
+        }]
+    );
+}
+
+#[test]
+fn the_log_of_an_instrument_is_the_start_of_what_it_received() {
+    // By hand: a budget of 100 bytes; a write of 100 characters costs 100 + 64 = 164 bytes and is counted, and `*RST` after it,
+    // 4 + 64 = 68 bytes, which would fit, is counted too.
+    let mut driver = Driver::with_budget("[[visa.instrument]]\nresource = \"SIM::DMM0\"\n", 100);
+    let dmm = driver.open("SIM::DMM0", MS);
+    driver.write(dmm, &"X".repeat(100));
+    driver.write(dmm, "*RST");
+    let logs = driver.run.instruments();
+    assert_eq!((logs[0].commands.len(), logs[0].more), (0, 2));
 }

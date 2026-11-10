@@ -1,0 +1,14 @@
+[package]
+name = "labcraft-results-log"
+description = "The native body of results_log.append_csv, a library of the LabCraft examples: the results stay in memory for the report"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-runtime = { workspace = true }
+
+[lints]
+workspace = true

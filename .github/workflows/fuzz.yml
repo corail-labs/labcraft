@@ -49,6 +49,8 @@ jobs:
         run: bash fuzz/run.sh check 60
       - name: Fuzz diagram
         run: bash fuzz/run.sh diagram 60
+      - name: Fuzz the simulation files
+        run: bash fuzz/run.sh simulation 60
       - name: Keep what crashed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

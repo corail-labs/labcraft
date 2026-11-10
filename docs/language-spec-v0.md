@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-09. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-10. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -1983,8 +1983,9 @@ crate of `visa`.
 `dmm_driver`, `relays`, `psu` and `results_log` belong to the examples (section 13), not to the
 libraries shipped with LabCraft. They are sub-folders of `examples/`: `dmm_driver`, `relays` and
 `psu` written in LabCraft over `visa` and `scpi`, like real drivers; `results_log`, which writes a
-file, as an `extern rust` function, whose native body in the proof of concept keeps the results in
-memory.
+file, as an `extern rust` function, whose native body, in the proof of concept as in its crate
+`labcraft-results-log`, keeps the results in memory, and the report of the run shows them (`logs`,
+commands.md 7).
 
 ```text
 fn dmm_driver.read_dc_volts(session: visa.session,

@@ -4,6 +4,8 @@
 //! call can wait in its middle (a simulated instrument that is busy) and a replay is exact.
 
 use std::any::Any;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use labcraft_types::{Severity, Span};
 
@@ -55,7 +57,8 @@ pub trait NativeLibrary: Send + Sync {
     }
     /// What one run of it holds, from its simulation if it has one. `library` is its index among the libraries of the run,
     /// which its handles and its keys carry.
-    fn start_run(&self, library: u32, simulation: Option<&Simulation>) -> Box<dyn LibraryRun>;
+    /// What one run of it holds. `budget` is the memory that every library of the run shares for what it keeps for the report.
+    fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun>;
 }
 
 /// A call in progress, by its number in its run.
@@ -129,6 +132,64 @@ pub struct CommandLog {
     pub answer_length: u64,
 }
 
+/// What the libraries of a run may keep for its report (commands.md 7, `instruments` and `logs`), in bytes: one budget for the
+/// run, which each of its libraries takes from, so that what a program sends or logs stays within 16 MiB and `--max-memory`. A
+/// library that finds it spent counts what it no longer keeps, from the first entry that does not fit.
+#[derive(Clone, Debug)]
+pub struct LogBudget(Arc<AtomicU64>);
+
+/// The budget of a run whose `--max-memory` is higher *(proposed)*.
+pub const LOG_BUDGET: u64 = 16 * 1024 * 1024;
+
+impl LogBudget {
+    pub fn new(bytes: u64) -> Self {
+        LogBudget(Arc::new(AtomicU64::new(bytes)))
+    }
+
+    /// The budget of a run: 16 MiB, or `--max-memory` when lower.
+    pub fn of_run(max_memory: u64) -> Self {
+        LogBudget::new(LOG_BUDGET.min(max_memory))
+    }
+
+    /// Takes `cost` bytes, or nothing when fewer are left.
+    pub fn take(&self, cost: u64) -> bool {
+        let mut left = self.0.load(Ordering::Relaxed);
+        loop {
+            let Some(after) = left.checked_sub(cost) else { return false };
+            match self.0.compare_exchange_weak(left, after, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => return true,
+                Err(now) => left = now,
+            }
+        }
+    }
+
+    pub fn left(&self) -> u64 {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+/// What a library kept of a run for the report (commands.md 7, `logs`): its entries, in the order of its calls, and a count of
+/// the entries past its bounds.
+#[derive(Clone, Debug, Default)]
+pub struct Logs {
+    pub entries: Vec<LogEntry>,
+    /// Entries counted, not kept.
+    pub more: u64,
+}
+
+/// One entry of the log of a library: the call that wrote it, when, and the value it was given.
+#[derive(Clone, Debug)]
+pub struct LogEntry {
+    /// The `extern rust` function of the call.
+    pub function: String,
+    /// Which input of the call it holds, by its place in the signature: a value carries no type, so the host writes it against
+    /// the type of that input (commands.md 5).
+    pub input: usize,
+    /// In nanoseconds on the clock of the run.
+    pub at: i64,
+    pub value: Value,
+}
+
 /// What one run of a library holds: its sessions and its simulated instruments live and end with the run.
 pub trait LibraryRun: Send {
     /// Starts a call of its `extern rust` function `function`, with the inputs of its node in the order of its signature.
@@ -147,5 +208,9 @@ pub trait LibraryRun: Send {
     /// The commands of its simulated instruments, in code point order of their resources.
     fn instruments(&self) -> Vec<InstrumentLog> {
         Vec::new()
+    }
+    /// What it kept of the values it was given, for the report.
+    fn logs(&self) -> Logs {
+        Logs::default()
     }
 }

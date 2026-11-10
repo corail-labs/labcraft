@@ -24,6 +24,7 @@ const TABLE: &[(&str, Class)] = &[
     ("labcraft-interop", Class::Layer(5)),
     ("labcraft-engine", Class::Layer(6)),
     ("labcraft-visa", Class::Layer(6)),
+    ("labcraft-results-log", Class::Layer(6)),
     ("labcraft-editor", Class::Layer(7)),
     ("labcraft-ui-egui", Class::Layer(7)),
     ("labcraft-mcp", Class::Layer(7)),

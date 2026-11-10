@@ -20,11 +20,11 @@ commands:
   ci        fmt --check, layers, licences, libs, codes, assets, clippy -D warnings, tests, bounds, wasm; stops at the first failure
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
-  libs      no crate of crates/ depends on libs/
+  libs      no crate of crates/ depends on libs/ or on a native crate of examples/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime, visa and diagram build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check, trace, ir, runtime, visa, results_log and diagram build for wasm32-unknown-unknown, and the harness passes there
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -208,6 +208,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-runtime",
         "--package",
         "labcraft-visa",
+        "--package",
+        "labcraft-results-log",
         "--package",
         "labcraft-diagram",
     ])?;

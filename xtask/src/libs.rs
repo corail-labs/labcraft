@@ -1,5 +1,6 @@
-//! `cargo xtask libs`: no crate of `crates/` depends on `libs/`; only the apps link the libraries
-//! shipped with LabCraft (`docs/roadmap.md`). The boundary that packages will use is tried from M0.
+//! `cargo xtask libs`: no crate of `crates/` depends on `libs/`, nor on a native crate of `examples/`; only the apps and the
+//! harness link the libraries shipped with LabCraft and those of the examples (`docs/roadmap.md`, architecture 7). The
+//! boundary that packages will use is tried from M0.
 
 use std::path::{Path, PathBuf};
 
@@ -30,11 +31,15 @@ pub fn from_metadata(metadata: &Value) -> Result<Vec<Package>, String> {
 }
 
 pub fn check(root: &Path, packages: &[Package]) -> Vec<String> {
-    let (crates, libs) = (root.join("crates"), root.join("libs"));
+    let crates = root.join("crates");
     let mut violations = Vec::new();
     for package in packages.iter().filter(|package| package.manifest.starts_with(&crates)) {
-        for (name, _) in package.dependencies.iter().filter(|(_, path)| path.starts_with(&libs)) {
-            violations.push(format!("{} -> {name}: no crate of crates/ depends on libs/", package.name));
+        for (name, path) in &package.dependencies {
+            for folder in ["libs", "examples"] {
+                if path.starts_with(root.join(folder)) {
+                    violations.push(format!("{} -> {name}: no crate of crates/ depends on {folder}/", package.name));
+                }
+            }
         }
     }
     violations
@@ -52,6 +57,12 @@ mod tests {
     fn a_crate_cannot_depend_on_libs() {
         let found = check(Path::new("/repo"), &[package("/repo/crates/check/Cargo.toml", "/repo/libs/embedded")]);
         assert_eq!(found.len(), 1);
+    }
+
+    #[test]
+    fn a_crate_cannot_depend_on_a_crate_of_the_examples() {
+        let found = check(Path::new("/repo"), &[package("/repo/crates/runtime/Cargo.toml", "/repo/examples/results_log")]);
+        assert_eq!(found, vec!["tested -> dependency: no crate of crates/ depends on examples/".to_owned()]);
     }
 
     #[test]

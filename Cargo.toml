@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "apps/*", "libs/embedded", "libs/visa", "tests/harness", "xtask"]
+members = ["crates/*", "apps/*", "libs/embedded", "libs/visa", "examples/results_log", "tests/harness", "xtask"]
 
 [workspace.package]
 version = "0.1.0-m0a"
@@ -21,6 +21,7 @@ labcraft-runtime = { path = "crates/runtime" }
 labcraft-diagram = { path = "crates/diagram" }
 labcraft-libs = { path = "libs/embedded" }
 labcraft-visa = { path = "libs/visa" }
+labcraft-results-log = { path = "examples/results_log" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
 craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
