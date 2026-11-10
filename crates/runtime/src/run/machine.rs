@@ -13,10 +13,11 @@ use labcraft_types::{Interner, Name, Ty};
 use super::memory::{Memory, NODE_COST};
 use super::plan::Plan;
 use super::position::{Pos, child, compare, root};
-use super::{AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, LoopAt, Observer, Resource, Run, RunEnd, SetBy, Settings, Status};
+use super::{AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, LoopAt, Observer, Outputs, Resource, Run, RunEnd, SetBy, Settings, Status};
 use crate::convert::{Env, constant, read};
 use crate::fault::{Fault, FaultCode};
-use crate::native::{CallContext, CallId, Key, LibraryRun, LogBudget, NativeOutcome, Step};
+use crate::json::Describe;
+use crate::native::{CallContext, CallId, HandleInfo, Key, LibraryRun, LogBudget, NativeOutcome, Step};
 use crate::value::{ErrorData, Handle, Origin, Place, Value};
 
 pub(super) type InstanceId = usize;
@@ -262,9 +263,20 @@ pub(super) struct ForState<'p> {
     pub(super) collects: Vec<Vec<Option<Value>>>,
 }
 
-struct NativeSlot {
+pub(super) struct NativeSlot {
     name: String,
     run: Box<dyn LibraryRun>,
+}
+
+/// The libraries of the run, which say what a handle is when the trace writes it. A panic of one is caught: the handle then
+/// shows only its type.
+pub(super) struct Described<'a>(pub(super) &'a [NativeSlot]);
+
+impl Describe for Described<'_> {
+    fn describe(&self, handle: Handle) -> Option<HandleInfo> {
+        let slot = self.0.get(handle.library as usize)?;
+        catch_unwind(AssertUnwindSafe(|| slot.run.describe(handle))).ok().flatten()
+    }
 }
 
 struct Opened {
@@ -302,7 +314,7 @@ pub(super) struct Machine<'p, 'o> {
     plans: HashMap<*const Region, Rc<Plan>>,
     pub(super) memory: Memory,
     pub(super) nodes_run: u64,
-    natives: Vec<NativeSlot>,
+    pub(super) natives: Vec<NativeSlot>,
     pub(super) native_of: HashMap<labcraft_types::LibraryId, usize>,
     holders: HashMap<Key, TaskId>,
     waiting: HashMap<Key, BinaryHeap<Waiter>>,
@@ -442,7 +454,7 @@ impl<'p, 'o> Machine<'p, 'o> {
         }
         let frame = self.new_frame(top, None, None, 1, &inputs).map_err(|fault| self.halt_at(None, fault))?;
         let number = self.frame(frame).map_or(0, |frame| frame.number);
-        self.observer.call(self.now, number, None, top, &inputs);
+        self.observer.call(self.now, number, None, top, &inputs, &Described(&self.natives));
         self.new_instance(region, inputs, frame, root(), Rc::from([]), None, Parent::Top).map_err(|fault| self.halt_at(None, fault))?;
         Ok(())
     }
@@ -928,7 +940,7 @@ impl<'p, 'o> Machine<'p, 'o> {
                 return Err(self.halt(instance, node, memory_fault("the outputs of this node", size)));
             }
         }
-        self.observer.ran(self.now, frame_number, the_node, &iter, &outputs, skipped);
+        self.observer.ran(self.now, frame_number, the_node, &iter, Outputs { values: &outputs, skipped }, &Described(&self.natives));
         let start = plan.outputs(node).unwrap_or(0);
         for (index, value) in outputs.into_iter().enumerate() {
             let slot = start + index;
@@ -1297,7 +1309,7 @@ impl<'p, 'o> Machine<'p, 'o> {
         if let Some(old) = old {
             self.memory.release(&old);
         }
-        self.observer.set(now, number, element, &value, by);
+        self.observer.set(now, number, element, &value, by, &Described(&self.natives));
         Ok(())
     }
 

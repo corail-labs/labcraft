@@ -1,0 +1,46 @@
+{
+  "how": "Scenario 1, point 2. The answer is the first reading of seed 1 in dmm-230V.toml, from `python tests/acceptance/runs/noise.py 1 230 0.05 1`; the program reads it as an `f64` and gives it the unit V, within 220 V to 240 V. The multimeter has no latency, so the clock stays at 0. The program opens one session and closes it.",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "verdict",
+      "type": "Verdict",
+      "value": "Verdict.Pass"
+    },
+    {
+      "name": "voltage",
+      "type": "f64[V]",
+      "value": "230.071217 V"
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": null
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 1,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "summary": {
+      "errors": 0
+    }
+  }
+}

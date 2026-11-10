@@ -1,0 +1,9 @@
+[[visa.instrument]]
+resource = "SIM::DMM0"
+
+[visa.instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[visa.instrument.quantity.voltage]
+value = 230.0
+noise = 0.05

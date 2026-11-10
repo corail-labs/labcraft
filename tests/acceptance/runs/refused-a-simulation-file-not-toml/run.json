@@ -1,0 +1,5 @@
+{
+  "function": "check_voltage",
+  "folder": "../../../../examples",
+  "sim": "./broken.toml"
+}

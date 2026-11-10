@@ -12,6 +12,7 @@ use labcraft_ir::{ElementId, FunctionId, Node, Program};
 use labcraft_types::{Interner, LibraryId, Name};
 
 use crate::fault::Fault;
+use crate::json::Describe;
 use crate::native::{HandleInfo, InstrumentLog, Logs, NativeLibrary, Simulation};
 use crate::value::{Handle, Value};
 
@@ -125,20 +126,28 @@ pub struct Caller<'a> {
 /// What the run tells as it goes: the trace hears it (commands.md 8). `iter` gives the iteration of each loop of the function
 /// around the node, outermost first, from 0. Frame 0 is the top-level function.
 pub trait Observer {
-    fn call(&mut self, at: i64, frame: u64, caller: Option<Caller<'_>>, function: FunctionId, inputs: &[Value]) {
-        let _ = (at, frame, caller, function, inputs);
+    fn call(&mut self, at: i64, frame: u64, caller: Option<Caller<'_>>, function: FunctionId, inputs: &[Value], handles: &dyn Describe) {
+        let _ = (at, frame, caller, function, inputs, handles);
     }
     /// A node ended: it ran, or it skipped on an error of its `err` input (spec 7.2).
-    fn ran(&mut self, at: i64, frame: u64, node: &Node, iter: &[u64], outputs: &[Value], skipped: bool) {
-        let _ = (at, frame, node, iter, outputs, skipped);
+    fn ran(&mut self, at: i64, frame: u64, node: &Node, iter: &[u64], outputs: Outputs<'_>, handles: &dyn Describe) {
+        let _ = (at, frame, node, iter, outputs, handles);
     }
     /// A `match` or a `handle` took the arm at this index.
     fn arm(&mut self, at: i64, frame: u64, node: &Node, iter: &[u64], arm: usize) {
         let _ = (at, frame, node, iter, arm);
     }
-    fn set(&mut self, at: i64, frame: u64, element: ElementId, value: &Value, by: SetBy) {
-        let _ = (at, frame, element, value, by);
+    fn set(&mut self, at: i64, frame: u64, element: ElementId, value: &Value, by: SetBy, handles: &dyn Describe) {
+        let _ = (at, frame, element, value, by, handles);
     }
+}
+
+/// What a node gave when it ended: its outputs, in the order of its signature, and whether it skipped (spec 7.2), when they
+/// are its defaults and the error passed on.
+#[derive(Clone, Copy, Debug)]
+pub struct Outputs<'a> {
+    pub values: &'a [Value],
+    pub skipped: bool,
 }
 
 /// An observer that hears nothing.

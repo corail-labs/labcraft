@@ -1,0 +1,20 @@
+{
+  "how": "`outer` is at depth 1; its call of `inner` would be at depth 2, past the limit of 1: the fault `LC8003` at the node `y` of `outer`, before `inner` runs. The statement `y = inner(x)` is line 5 of outer.lcf, and starts at column 5, after its indentation of four spaces.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8003",
+    "function": "outer",
+    "node": "y",
+    "file": "outer.lcf",
+    "span": {
+      "start": {
+        "line": 5,
+        "column": 5
+      }
+    }
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  }
+}

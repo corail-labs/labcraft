@@ -49,6 +49,33 @@ fn main() {
         writeln!(out, "];").unwrap();
     }
 
+    // The corpus of runs (`tests/acceptance/runs/`): each case its `run.json` and `expected.json`, its own programs and
+    // simulation files if it has some, and the simulation files shipped with `visa`, which most cases name.
+    let sims = root.join("libs/visa/sim");
+    let mut shipped = Vec::new();
+    walk_with(&sims, &mut shipped, "toml");
+    writeln!(out, "pub static SIMS: &[Embedded] = &[{}];", embedded(&root, &shipped)).unwrap();
+    let corpus = root.join("tests/acceptance/runs");
+    println!("cargo::rerun-if-changed={}", corpus.display());
+    let mut cases: Vec<PathBuf> =
+        fs::read_dir(&corpus).unwrap().map(|entry| entry.unwrap().path()).filter(|path| path.join("run.json").is_file()).collect();
+    cases.sort();
+    writeln!(out, "pub static RUNS: &[RunCase] = &[").unwrap();
+    for case in cases {
+        let mut files = Vec::new();
+        walk(&case, &mut files);
+        walk_with(&case, &mut files, "toml");
+        let name = case.file_name().unwrap().to_str().unwrap();
+        let (run, expected) = (case.join("run.json"), case.join("expected.json"));
+        writeln!(
+            out,
+            "RunCase {{ name: {name:?}, files: &[{}], run: include_str!({run:?}), expected: include_str!({expected:?}) }},",
+            embedded(&root, &files)
+        )
+        .unwrap();
+    }
+    writeln!(out, "];").unwrap();
+
     fs::write(PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("corpus.rs"), out).unwrap();
 }
 

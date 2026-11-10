@@ -16,6 +16,15 @@ pub struct Case {
     pub expected: &'static str,
 }
 
+/// A case of the corpus of runs (`tests/acceptance/runs/`): the parameters of `run.start` in `run.json`, the parts of its
+/// report that it asserts in `expected.json`, and the programs and simulation files of its own folder.
+pub struct RunCase {
+    pub name: &'static str,
+    pub files: &'static [Embedded],
+    pub run: &'static str,
+    pub expected: &'static str,
+}
+
 include!(concat!(env!("OUT_DIR"), "/corpus.rs"));
 
 #[cfg(test)]
@@ -24,6 +33,9 @@ mod deep;
 
 #[cfg(test)]
 mod routing;
+
+#[cfg(test)]
+mod runs;
 
 #[cfg(test)]
 mod scenario3;
@@ -655,7 +667,7 @@ mod tests {
             }
             w.end();
         };
-        writer.event(250, &Event::Ran { frame: 0, node: "raw", iter: &[], out: &[("raw", &raw)], types: &[] });
+        writer.event(250, &Event::Ran { frame: 0, node: "raw", loops: &[], iter: &[], out: &[("raw", &raw)], types: &[] });
         writer.end(1_000, "ok");
         let bytes = writer.into_inner();
 

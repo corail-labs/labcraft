@@ -1,0 +1,81 @@
+{
+  "how": "Scenario 3, point 5. At 350 ms both loops are in their iteration 3, from 0, waiting until 400 ms; the waits end at once and no native call is in progress, so the run ends at 350 ms, with no output. Each multimeter got 4 readings, at 0 to 300 ms. The program did not close its sessions: the runtime released both, and none leaked. The readings and the means come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1, the sum made in the order of the readings, as the carry `s` does, then divided by `n`. ",
+  "status": "aborted",
+  "outputs": [],
+  "abort": {
+    "by": "timeout",
+    "at_ms": 350.0,
+    "loops": [
+      {
+        "function": "two_benches",
+        "node": "n_a",
+        "iteration": 3
+      },
+      {
+        "function": "two_benches",
+        "node": "n_b",
+        "iteration": 3
+      }
+    ]
+  },
+  "clock": {
+    "simulated_ms": 350.0
+  },
+  "resources": {
+    "opened": 2,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.969055"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.970462"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071648"
+        }
+      ]
+    },
+    {
+      "resource": "SIM::DMM1",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.005803"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.985047"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.004267"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.001685"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+labcraft 1
+
+/// Calls `inner` once.
+fn outer(x: f64 = 1.0) -> (y: f64) {
+    y = inner(x)
+}

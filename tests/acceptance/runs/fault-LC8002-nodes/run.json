@@ -1,0 +1,5 @@
+{
+  "function": "spin",
+  "folder": ".",
+  "max_nodes": 10
+}

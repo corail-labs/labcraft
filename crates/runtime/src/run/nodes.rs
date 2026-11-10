@@ -609,7 +609,8 @@ fn call_function<'p>(
     let site = machine.place(caller_function, node);
     let frame = machine.new_frame(function, Some(parent), Some(site), depth, &inputs).map_err(|fault| fail(machine, fault))?;
     let number = machine.frame(frame).map_or(0, |frame| frame.number);
-    machine.observer.call(machine.now, number, Some(Caller { frame: caller_number, node, iter: &iter }), function, &inputs);
+    let handles = super::machine::Described(&machine.natives);
+    machine.observer.call(machine.now, number, Some(Caller { frame: caller_number, node, iter: &iter }), function, &inputs, &handles);
     let task = machine.new_task(Task { instance, node: index, pos: Rc::clone(&pos), state: State::Call { frame } });
     machine.new_instance(region, inputs, frame, pos, Rc::from([]), loops, Parent::Task(task)).map_err(|fault| fail(machine, fault))?;
     Ok(())

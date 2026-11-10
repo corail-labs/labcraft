@@ -1,6 +1,6 @@
-//! L5: what runs a program (`docs/architecture.md`, section 10). So far its values (10.3), what a wire does to them, the
-//! value of each constant, and the bodies of the primitives (10.5); the scheduler, the interpreter and native libraries come
-//! next (10.11, steps 4 and 5).
+//! L5: what runs a program (`docs/architecture.md`, section 10): its values (10.3), what a wire does to them, the value of
+//! each constant, the bodies of the primitives (10.5), the interface of native libraries (10.6), the scheduler and the
+//! interpreter in deterministic mode (10.4, 10.5), and the trace and the report of a run (10.7).
 //!
 //! Nothing here recurses on what a run can make deep but a type: a value nests as deep as its type, as `check` and `ir`
 //! allow it, on the stack of the thread of the run (`format::STACK_SIZE`).
@@ -18,11 +18,14 @@
 
 mod convert;
 mod fault;
+pub mod json;
 pub mod native;
 pub mod primitives;
+pub mod report;
 pub mod run;
 pub mod simulation;
 mod text;
+pub mod trace;
 mod value;
 
 pub use convert::{Env, constant, convert, duration_of_seconds, grid, read};

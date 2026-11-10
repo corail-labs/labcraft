@@ -1,0 +1,16 @@
+{
+  "how": "`array.repeat(1.0, 100000)` makes an array of 100,000 `f64`, whose logical size is 16 + 100,000 x (16 + 8) = 2,400,016 bytes (cli.md 6.2), past the limit of 1 MiB: the fault `LC8005` at the node `a`, with no output.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8005",
+    "function": "fill",
+    "node": "a",
+    "file": "fill.lcf"
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

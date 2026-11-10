@@ -1,0 +1,18 @@
+{
+  "how": "A loop of 100 iterations runs at least its two calls in each, so 10 nodes are passed before its sixth iteration ends: the fault `LC8002` in `spin`, at 0 ms, with no output.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8002",
+    "function": "spin",
+    "file": "spin.lcf"
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

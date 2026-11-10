@@ -17,8 +17,8 @@ since a user debugs the diagram, not the IR.
 
 ## 1. What it is, and is not
 
-- **Versioned and documented** (D-09): this document is its definition, and `ir::VERSION` its version, raised by
-  any change of section 9. Tools and agents will read it through its text form (section 8): a command that prints
+- **Versioned and documented** (D-09): this document is its definition, and `ir::VERSION` its version, which section 9
+  says when to raise. Tools and agents will read it through its text form (section 8): a command that prints
   it is left for later (section 10).
 - **Run directly in M0.** D-10 has the interpreter run the linear IR, which comes with Cranelift in M7. Until then
   the interpreter runs this IR, where the trace and the debugger speak in nodes and wires; the corpus of runs
@@ -327,12 +327,16 @@ that changes them is read with them.
 The IR will grow: generic functions (M2), queues, events and timed loops (M2 and later), `ref<T>`, probes (M5),
 the linear IR beside it (M7). A change to it is one pull request that changes together:
 
-- this document, and `ir::VERSION`;
+- this document;
 - the verifier, so that every new rule is checked;
 - the printer, and the snapshots it changes;
 - the lowering tests, with one case per new construct;
 - the runtime, and the corpus of runs (`tests/acceptance/runs/`, architecture, section 10.11), when what a program
   does changes.
+
+`ir::VERSION` stays 1 until the IR is written or sent outside the process that made it (a cache on disk, a WASM
+worker or a remote bench, a compiled program kept, M7); from then on, every change raises it. Until then only `verify`
+compares it, in memory (decision of the owner, 2026-11-10).
 
 What this document defines (the nodes of the diagram, regions that read only their arguments, origins, positions,
 section 5) does not change without the owner's agreement, since the trace, the viewer and the debugger build on it.

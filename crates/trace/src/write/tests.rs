@@ -34,13 +34,13 @@ fn the_example_of_the_catalog_writes_as_it_reads() {
     ];
     let types = [("dmm", "visa.session"), ("e1", "error"), ("raw", "f64")];
     writer.event(0, &Event::Call { frame: 0, caller: None, function: "check_voltage", inputs: &inputs, types: &types });
-    let caller = Caller { frame: 0, node: "dmm", iter: &[] };
+    let caller = Caller { frame: 0, node: "dmm", loops: &[], iter: &[] };
     writer.event(0, &Event::Call { frame: 1, caller: Some(caller), function: "visa.open", inputs: &inputs[..1], types: &[] });
-    writer.event(0, &Event::Ran { frame: 0, node: "dmm", iter: &[], out: &[("dmm", &session), ("e1", &none)], types: &[] });
-    writer.event(1_500_000, &Event::Ran { frame: 0, node: "raw", iter: &[2, 0], out: &[("raw", &raw)], types: &[("raw", "f64")] });
-    writer.event(1_500_000, &Event::Arm { frame: 0, node: "measured", iter: &[], arm: "true" });
+    writer.event(0, &Event::Ran { frame: 0, node: "dmm", loops: &[], iter: &[], out: &[("dmm", &session), ("e1", &none)], types: &[] });
+    writer.event(1_500_000, &Event::Ran { frame: 0, node: "raw", loops: &[], iter: &[2, 0], out: &[("raw", &raw)], types: &[("raw", "f64")] });
+    writer.event(1_500_000, &Event::Arm { frame: 0, node: "measured", loops: &[], iter: &[], arm: "true" });
     writer.event(2_000_000, &Event::Set { frame: 0, element: "stop", value: &|w: &mut ValueWriter<'_>| w.bool(true), by: "set" });
-    writer.event(2_000_000, &Event::Skipped { frame: 0, node: "#close", iter: &[], out: &[("e2", &none)], types: &[] });
+    writer.event(2_000_000, &Event::Skipped { frame: 0, node: "#close", loops: &[], iter: &[], out: &[("e2", &none)], types: &[] });
     writer.end(2_000_250, "ok");
     assert_eq!(writer.events(), 8);
     assert!(!writer.truncated());
@@ -71,7 +71,7 @@ fn a_line_past_its_bound_cuts_its_values_then_drops_its_entries() {
     let mut writer = TraceWriter::with_limits(Vec::new(), &HEADER, limits);
     let ty = "t".repeat(50);
     let types = [("a", ty.as_str()), ("b", ty.as_str())];
-    writer.event(0, &Event::Ran { frame: 0, node: "a", iter: &[], out: &[("a", &big), ("b", &big)], types: &types });
+    writer.event(0, &Event::Ran { frame: 0, node: "a", loops: &[], iter: &[], out: &[("a", &big), ("b", &big)], types: &types });
     let written = lines(&writer.into_inner());
     let line = &written[1];
     assert_eq!(line.len(), 1016);
@@ -90,7 +90,7 @@ fn a_line_that_cannot_fit_keeps_only_what_places_it() {
     let long = "n".repeat(100);
     let none = |w: &mut ValueWriter<'_>| w.null();
     let out: Vec<(&str, &dyn WriteValue)> = (0..5).map(|_| (long.as_str(), &none as &dyn WriteValue)).collect();
-    writer.event(0, &Event::Ran { frame: 3, node: "y", iter: &[1], out: &out, types: &[] });
+    writer.event(0, &Event::Ran { frame: 3, node: "y", loops: &[], iter: &[1], out: &out, types: &[] });
     let written = lines(&writer.into_inner());
     assert_eq!(written[1], r#"{"seq":1,"t_ms":0.0,"event":"ran","frame":3,"node":"y","truncated":true}"#);
 }
@@ -113,7 +113,7 @@ fn past_its_events_a_trace_says_truncated_then_only_its_end() {
     let limits = WriteLimits { events: 2, ..WriteLimits::default() };
     let mut writer = TraceWriter::with_limits(Vec::new(), &HEADER, limits);
     for _ in 0..5 {
-        writer.event(0, &Event::Arm { frame: 0, node: "m", iter: &[], arm: "_" });
+        writer.event(0, &Event::Arm { frame: 0, node: "m", loops: &[], iter: &[], arm: "_" });
     }
     writer.end(0, "ok");
     writer.end(0, "ok");
@@ -130,7 +130,7 @@ fn past_its_bytes_a_trace_says_truncated() {
     let limits = WriteLimits { file: 2400, ..WriteLimits::default() };
     let mut writer = TraceWriter::with_limits(Vec::new(), &HEADER, limits);
     for _ in 0..10 {
-        writer.event(0, &Event::Ran { frame: 0, node: "a", iter: &[], out: &[("a", &big)], types: &[] });
+        writer.event(0, &Event::Ran { frame: 0, node: "a", loops: &[], iter: &[], out: &[("a", &big)], types: &[] });
     }
     writer.end(0, "ok");
     let bytes = writer.into_inner();
@@ -157,7 +157,7 @@ impl io::Write for Broken {
 #[test]
 fn a_sink_that_fails_stops_the_trace_and_nothing_else() {
     let mut writer = TraceWriter::new(Broken, &HEADER);
-    writer.event(0, &Event::Arm { frame: 0, node: "m", iter: &[], arm: "_" });
+    writer.event(0, &Event::Arm { frame: 0, node: "m", loops: &[], iter: &[], arm: "_" });
     writer.end(0, "ok");
     assert_eq!(writer.error().map(ToString::to_string).as_deref(), Some("disk full"));
 }

@@ -2057,10 +2057,12 @@ name = "labcraft-runtime"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+ "labcraft-format",
  "labcraft-graph",
  "labcraft-ir",
  "labcraft-trace",
  "labcraft-types",
+ "serde_json",
  "toml",
  "toml_parser",
 ]

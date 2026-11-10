@@ -1,0 +1,35 @@
+{
+  "how": "Scenario 1, point 3. `visa.open` of a resource that the file does not define fails with `visa.resource_not_found`, code -1073807343, after the timeout of the open, 2 s (libs/visa/simulation.md, section 6). The query skips on the error, `handle e2` takes `_`, so the verdict is `Verdict.Error`; `visa.close`, `always`, passes the error on to `err`. No session is opened.",
+  "status": "error",
+  "outputs": [
+    {
+      "name": "verdict",
+      "type": "Verdict",
+      "value": "Verdict.Error"
+    },
+    {
+      "name": "voltage",
+      "type": "f64[V]"
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": {
+        "category": "visa.resource_not_found",
+        "code": -1073807343
+      }
+    }
+  ],
+  "error": {
+    "category": "visa.resource_not_found",
+    "code": -1073807343
+  },
+  "clock": {
+    "simulated_ms": 2000.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

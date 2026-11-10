@@ -51,6 +51,8 @@ pub struct Input<'a> {
 pub struct Caller<'a> {
     pub frame: u64,
     pub node: &'a str,
+    /// The loop of each level of `iter`, by its name as the trace names a node, outermost first.
+    pub loops: &'a [&'a str],
     pub iter: &'a [u64],
 }
 
@@ -68,11 +70,27 @@ pub enum Event<'a> {
         types: &'a [(&'a str, &'a str)],
     },
     /// A node ran: each value it bound, by the name of its wire.
-    Ran { frame: u64, node: &'a str, iter: &'a [u64], out: &'a [(&'a str, &'a dyn WriteValue)], types: &'a [(&'a str, &'a str)] },
+    /// `loops` names the loop of each level of `iter`, outermost first, so that two nodes of one name in two loops are
+    /// told apart.
+    Ran {
+        frame: u64,
+        node: &'a str,
+        loops: &'a [&'a str],
+        iter: &'a [u64],
+        out: &'a [(&'a str, &'a dyn WriteValue)],
+        types: &'a [(&'a str, &'a str)],
+    },
     /// A node was skipped (spec 7.2): its defaults and the error passed on.
-    Skipped { frame: u64, node: &'a str, iter: &'a [u64], out: &'a [(&'a str, &'a dyn WriteValue)], types: &'a [(&'a str, &'a str)] },
+    Skipped {
+        frame: u64,
+        node: &'a str,
+        loops: &'a [&'a str],
+        iter: &'a [u64],
+        out: &'a [(&'a str, &'a dyn WriteValue)],
+        types: &'a [(&'a str, &'a str)],
+    },
     /// A `match` or a `handle` took this arm, written as its pattern.
-    Arm { frame: u64, node: &'a str, iter: &'a [u64], arm: &'a str },
+    Arm { frame: u64, node: &'a str, loops: &'a [&'a str], iter: &'a [u64], arm: &'a str },
     /// A panel element changed: by `ui.set`, `set` or `run.set_element`.
     Set { frame: u64, element: &'a str, value: &'a dyn WriteValue, by: &'a str },
 }
@@ -338,7 +356,7 @@ impl<W: io::Write> TraceWriter<W> {
                     line.needed(&format!(",\"parent\":{}", caller.frame))?;
                     line.needed(",\"node\":")?;
                     line.string(caller.node)?;
-                    iter(&mut line, caller.iter)?;
+                    iter(&mut line, caller.loops, caller.iter)?;
                 }
                 line.needed(",\"function\":")?;
                 line.string(function)?;
@@ -355,10 +373,10 @@ impl<W: io::Write> TraceWriter<W> {
                 line.text.push(']');
                 line.entries(",\"types\":", types, true)?;
             }
-            Event::Ran { node, iter: at, out, types, .. } | Event::Skipped { node, iter: at, out, types, .. } => {
+            Event::Ran { node, loops, iter: at, out, types, .. } | Event::Skipped { node, loops, iter: at, out, types, .. } => {
                 line.needed(",\"node\":")?;
                 line.string(node)?;
-                iter(&mut line, at)?;
+                iter(&mut line, loops, at)?;
                 line.needed(",\"out\":{")?;
                 for (index, (name, value)) in out.iter().enumerate() {
                     if index > 0 {
@@ -373,10 +391,10 @@ impl<W: io::Write> TraceWriter<W> {
                     line.entries(",\"types\":", types, true)?;
                 }
             }
-            Event::Arm { node, iter: at, arm, .. } => {
+            Event::Arm { node, loops, iter: at, arm, .. } => {
                 line.needed(",\"node\":")?;
                 line.string(node)?;
-                iter(&mut line, at)?;
+                iter(&mut line, loops, at)?;
                 line.needed(",\"arm\":")?;
                 line.string(arm)?;
             }
@@ -411,12 +429,23 @@ impl<W: io::Write> TraceWriter<W> {
     }
 }
 
-/// `,"iter":[…]`, when the node is in loops of its function.
-fn iter(line: &mut Line<'_>, iter: &[u64]) -> Result<(), Overflow> {
+/// `,"loops":[…],"iter":[…]`, when the node is in loops of its function: the loop of each level, then its iteration.
+fn iter(line: &mut Line<'_>, loops: &[&str], iter: &[u64]) -> Result<(), Overflow> {
     if iter.is_empty() {
         return Ok(());
     }
-    let mut text = String::from(",\"iter\":[");
+    let mut text = String::new();
+    if !loops.is_empty() {
+        text.push_str(",\"loops\":[");
+        for (index, name) in loops.iter().enumerate() {
+            if index > 0 {
+                text.push(',');
+            }
+            push_string(&mut text, name);
+        }
+        text.push(']');
+    }
+    text.push_str(",\"iter\":[");
     for (index, iteration) in iter.iter().enumerate() {
         if index > 0 {
             text.push(',');

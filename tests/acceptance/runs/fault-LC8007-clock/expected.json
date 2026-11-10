@@ -1,0 +1,14 @@
+{
+  "how": "A wait of 5,000,000,000 s is 5 x 10^18 ns, past the end of the clock, 2^62 ns (about 4.6 x 10^18): the fault `LC8007` at the node `err`, when the wait starts at 0 ms.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8007",
+    "function": "forever",
+    "node": "err",
+    "file": "forever.lcf"
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  }
+}

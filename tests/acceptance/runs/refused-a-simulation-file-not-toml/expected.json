@@ -1,0 +1,24 @@
+{
+  "how": "The simulation file does not read as TOML (an array of tables that does not close), so the run is refused before `visa` judges it (cli.md 6.6).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC8109",
+        "severity": "error"
+      }
+    ]
+  }
+}

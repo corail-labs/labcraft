@@ -1,0 +1,73 @@
+{
+  "how": "Scenario 3, point 6. Both loops end their iteration 3 at 400 ms; `n_a` comes before `n_b` in the order of the lines (spec 5.2), so the loop of branch A is the first to start a fifth iteration, its iteration 4 from 0, past the limit of 4: the fault `LC8001`, at 400 ms. No loop is around it. Each multimeter got 4 readings, at 0 to 300 ms, and the runtime released both sessions. The readings and the means come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1, the sum made in the order of the readings, as the carry `s` does, then divided by `n`. ",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8001",
+    "function": "two_benches",
+    "node": "n_a",
+    "file": "two_benches.lcf",
+    "loops": [],
+    "iteration": 4
+  },
+  "clock": {
+    "simulated_ms": 400.0
+  },
+  "resources": {
+    "opened": 2,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.969055"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.970462"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071648"
+        }
+      ]
+    },
+    {
+      "resource": "SIM::DMM1",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.005803"
+        },
+        {
+          "t_ms": 100.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.985047"
+        },
+        {
+          "t_ms": 200.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.004267"
+        },
+        {
+          "t_ms": 300.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.001685"
+        }
+      ]
+    }
+  ]
+}

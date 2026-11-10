@@ -1,0 +1,13 @@
+labcraft 1
+
+use core
+
+/// Counts to 100.
+fn spin() -> (n: f64) {
+    n = loop carry i = 0.0 {
+        m = core.add(i, 1.0)
+        done = core.ge(m, 100.0)
+        next i = m
+        until done
+    }
+}

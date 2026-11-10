@@ -1,0 +1,24 @@
+{
+  "how": "`core.add` of an `f64[V]` and an `f64[A]`: different dimensions, an error of `check` (LC3002), so the run is refused and nothing runs.",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC3002",
+        "severity": "error"
+      }
+    ]
+  }
+}

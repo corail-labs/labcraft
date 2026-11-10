@@ -35,7 +35,7 @@ pub use print::{print, print_function};
 pub use verify::{Violation, verify};
 
 /// The version of the IR that this crate makes (`docs/ir.md`, section 9).
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 1;
 
 /// A function of a [`Program`], by its index in `functions`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
