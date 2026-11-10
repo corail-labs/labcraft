@@ -1,6 +1,6 @@
 # Simulated instruments of `visa`
 
-*Last updated: 2026-11-09. Status: draft for milestone M0b. The proof of concept (`tools/lcf-poc`) and the crate
+*Last updated: 2026-11-10. Status: draft for milestone M0b. The proof of concept (`tools/lcf-poc`) and the crate
 `labcraft-visa` (`src/`) implement it, the refusals of section 7 included. Values marked *proposed* are starting points.*
 
 `visa` answers for the resources `SIM::…` as the instruments of a simulation file describe them, so a
@@ -227,5 +227,5 @@ without reading the file.
 A simulation file is read as hostile as a program is (scenario 4, family Instruments): it never crashes the
 tool, and every problem is a diagnostic. Its size and its nesting are bounded by `--max-file-size` and
 `--max-nesting`, and its nesting by 80 levels at most, as the reader of TOML goes (cli.md 6.2), its tables by section 7, and a chain of sources is followed without recursion, once, when
-the file is read. When the Rust body of `visa` exists, a fuzz target reads simulation files, run as the
-other targets are (`fuzz/README.md`, `fuzz/run.sh`, `fuzz/long.sh`), seeded with the files of section 8.
+the file is read. The fuzz target `simulation` reads and judges simulation files, and runs every instrument of a file it
+accepts, as the other targets are run (`fuzz/README.md`, `fuzz/run.sh`, `fuzz/long.sh`), seeded with the files of section 8.

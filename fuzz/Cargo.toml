@@ -18,7 +18,9 @@ labcraft-diagram = { path = "../crates/diagram" }
 labcraft-format = { path = "../crates/format" }
 labcraft-graph = { path = "../crates/graph" }
 labcraft-libs = { path = "../libs/embedded" }
+labcraft-runtime = { path = "../crates/runtime" }
 labcraft-types = { path = "../crates/types" }
+labcraft-visa = { path = "../libs/visa" }
 libfuzzer-sys = "0.4"
 
 [[bin]]
@@ -45,6 +47,13 @@ bench = false
 [[bin]]
 name = "diagram"
 path = "fuzz_targets/diagram.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "simulation"
+path = "fuzz_targets/simulation.rs"
 test = false
 doc = false
 bench = false

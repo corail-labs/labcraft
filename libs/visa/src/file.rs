@@ -18,6 +18,53 @@ pub struct Bench {
     pub(crate) quantities: Vec<QuantitySpec>,
 }
 
+/// What an instrument of a bench answers to, each list in code point order, for the fuzz target of simulation files, which
+/// sends each command and compares what it can with the file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Commands {
+    pub resource: String,
+    pub idn: String,
+    /// Each query of `commands`, with its answer.
+    pub commands: Vec<(String, String)>,
+    /// The queries of `measure`.
+    pub measure: Vec<String>,
+    /// The headers of `set`, which take a number.
+    pub set: Vec<String>,
+    /// The prefixes of `accept`.
+    pub accept: Vec<String>,
+    /// The commands of `faults.timeout` and of `faults.error_on`.
+    pub timeout: Vec<String>,
+    pub error_on: Vec<String>,
+}
+
+impl Bench {
+    /// Its instruments, in the order of the file.
+    pub fn commands(&self) -> Vec<Commands> {
+        let sorted = |keys: Vec<&String>| {
+            let mut keys: Vec<String> = keys.into_iter().cloned().collect();
+            keys.sort();
+            keys
+        };
+        self.instruments
+            .iter()
+            .map(|spec| Commands {
+                resource: spec.resource.clone(),
+                idn: spec.idn.clone(),
+                commands: {
+                    let mut commands: Vec<(String, String)> = spec.commands.iter().map(|(query, answer)| (query.clone(), answer.clone())).collect();
+                    commands.sort();
+                    commands
+                },
+                measure: sorted(spec.measure.keys().collect()),
+                set: sorted(spec.set.keys().collect()),
+                accept: sorted(spec.accept.iter().collect()),
+                timeout: sorted(spec.timeouts.iter().collect()),
+                error_on: sorted(spec.error_on.keys().collect()),
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct InstrumentSpec {
     pub(crate) resource: String,
