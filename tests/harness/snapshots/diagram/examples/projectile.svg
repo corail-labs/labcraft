@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1538 690" width="1538" height="690" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="projectile">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1546 690" width="1546" height="690" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="projectile">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="1538" height="690" style="fill: var(--canvas-fill)"/>
-<rect x="21" y="16" width="1496" height="658" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<rect width="1546" height="690" style="fill: var(--canvas-fill)"/>
+<rect x="21" y="16" width="1504" height="658" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="33" y="36.38" font-size="12" style="fill: var(--node-title)">projectile</text>
 <circle cx="21" cy="486" r="5" style="fill: var(--wire-data)"/>
 <text x="33" y="490.01" font-size="11" style="fill: var(--node-title)">vx0</text>
@@ -26,15 +26,15 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="50.25" y="645.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
 <rect x="74.51" y="633" width="54.36" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="78.51" y="646.01" font-size="11" style="fill: var(--pill-text)">◂ 10 ms</text>
-<circle cx="1517" cy="254" r="5" style="fill: var(--wire-data)"/>
-<text x="1411.89" y="258.01" font-size="11" style="fill: var(--node-title)">flight_time</text>
-<text x="1488.74" y="257.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
-<circle cx="1517" cy="410" r="5" style="fill: var(--wire-data)"/>
-<text x="1451.63" y="414.01" font-size="11" style="fill: var(--node-title)">range</text>
-<text x="1488.74" y="413.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
-<circle cx="1517" cy="534" r="5" style="fill: var(--wire-data)"/>
-<text x="1458.25" y="538.01" font-size="11" style="fill: var(--node-title)">apex</text>
-<text x="1488.74" y="537.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="1525" cy="254" r="5" style="fill: var(--wire-data)"/>
+<text x="1419.89" y="258.01" font-size="11" style="fill: var(--node-title)">flight_time</text>
+<text x="1496.74" y="257.28" font-size="9" style="fill: var(--ink-muted)">[s]</text>
+<circle cx="1525" cy="410" r="5" style="fill: var(--wire-data)"/>
+<text x="1459.63" y="414.01" font-size="11" style="fill: var(--node-title)">range</text>
+<text x="1496.74" y="413.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
+<circle cx="1525" cy="534" r="5" style="fill: var(--wire-data)"/>
+<text x="1466.25" y="538.01" font-size="11" style="fill: var(--node-title)">apex</text>
+<text x="1496.74" y="537.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
 <g data-wire="drag" data-from="fn.drag" data-to="k.a">
 <path d="M168.98 618 L182.98 618 Q188.98 618 188.98 612 L188.98 574 Q188.98 568 194.98 568 L205 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
@@ -51,14 +51,14 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="91.96" y="507" font-size="11" style="fill: var(--ink-muted)">vy0</text>
 </g>
 <g data-wire="flight_time" data-from="flight_time.flight_time" data-to="fn.flight_time">
-<path d="M1389 254 L1407.89 254" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1389 254 L1415.89 254" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="range" data-from="flight_time.range" data-to="fn.range">
-<path d="M1389 410 L1447.63 410" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1389 410 L1455.63 410" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="1393" y="407" font-size="11" style="fill: var(--ink-muted)">range</text>
 </g>
 <g data-wire="apex" data-from="flight_time.apex" data-to="fn.apex">
-<path d="M1389 534 L1454.25 534" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M1389 534 L1462.25 534" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="1393" y="531" font-size="11" style="fill: var(--ink-muted)">apex</text>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
