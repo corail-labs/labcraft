@@ -6,7 +6,7 @@
     "code": "LC8005",
     "function": "fill",
     "node": "a",
-    "file": "fill.lcf"
+    "file": "tests/acceptance/runs/fault-LC8005-memory/fill.lcf"
   },
   "resources": {
     "opened": 0,

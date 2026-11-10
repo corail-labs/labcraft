@@ -692,7 +692,9 @@ terminal stops a run with Ctrl-C.
 
 ### 6.6 Codes of `run`
 
-These codes join the tables of section 5 when they are implemented, as `cargo xtask codes` requires. The
+This table is the reference of these codes, which stay out of the tables of section 5 and of the enumeration `Code`:
+they are said by a run, not by `check` (decision of the owner, 2026-11-10); a test of `engine` checks that each code a
+run gives for its arguments, settings and simulation file is a row here. The
 family `LC80` is for faults, `LC81` for arguments, panel settings and the simulation file as a whole. What a
 library finds in its own part of the simulation file has a code of that library, not of the tool: a library
 ships its own format, and the tool does not read it.

@@ -19,7 +19,9 @@ sys.path.insert(0, str(HERE.parent))
 
 from lcfpoc import api  # noqa: E402
 
-CORPUS = HERE.parents[2] / "tests" / "acceptance" / "runs"
+ROOT = HERE.parents[2]
+CORPUS = ROOT / "tests" / "acceptance" / "runs"
+SHIPPED = "<labcraft>/"
 NOT_COMPARED = {"how", "check", "type", "opened", "file", "span", "trace", "real_ms", "warning"}
 
 
@@ -43,8 +45,12 @@ def as_text(value):
 
 def run_case(case):
     params = json.loads((case / "run.json").read_text(encoding="utf-8"))
-    folder = (case / params.get("folder", ".")).resolve()
-    sim = str((case / params["sim"]).resolve()) if "sim" in params else None
+    # Paths are those of `run.start`, from the root of the project, the repository (commands.md 2).
+    folder = (ROOT / params.get("folder", ".")).resolve()
+    sim = None
+    if "sim" in params:
+        given = params["sim"]
+        sim = str((ROOT / "libs" / given[len(SHIPPED):]) if given.startswith(SHIPPED) else (ROOT / given).resolve())
     args = {name: as_text(value) for name, value in params.get("args", {}).items()}
     settings = [{"element": s["element"], "value": as_text(s["value"]), "at": s["at"]} for s in params.get("set", [])]
     limits = {}

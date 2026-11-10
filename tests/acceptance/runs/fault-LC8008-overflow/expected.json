@@ -6,7 +6,7 @@
     "code": "LC8008",
     "function": "overflow",
     "node": "y",
-    "file": "overflow.lcf"
+    "file": "tests/acceptance/runs/fault-LC8008-overflow/overflow.lcf"
   },
   "clock": {
     "simulated_ms": 0.0

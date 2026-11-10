@@ -6,7 +6,7 @@
     "code": "LC8007",
     "function": "forever",
     "node": "err",
-    "file": "forever.lcf"
+    "file": "tests/acceptance/runs/fault-LC8007-clock/forever.lcf"
   },
   "clock": {
     "simulated_ms": 0.0

@@ -32,8 +32,10 @@ and is not part of the `checks` workflow.
 The reference of `run` ([architecture](../../docs/architecture.md), section 10.11), scenarios 1, 3 and 4. One folder
 per case:
 
-- `run.json` gives the parameters of `run.start` ([commands.md](../../docs/commands.md), section 6.4), its paths
-  (`folder`, `sim`) from the folder of the case: `../../../../examples` for the examples, `.` for the programs of the case;
+- `run.json` gives the parameters of `run.start` ([commands.md](../../docs/commands.md), section 6.4), as `run.start`
+  takes them: its paths (`folder`, `sim`) from the root of the project, which is the repository (decision of the owner,
+  2026-11-10): `examples` for the examples, `tests/acceptance/runs/<case>` for the programs of a case, and
+  `<labcraft>/visa/sim/two-dmm.toml` for a simulation file shipped with `visa`;
 - `expected.json` gives the parts of `labcraft-run/1` (commands.md, section 7) that the case asserts, and `how`, which
   says how its values were found. An object compares the keys it gives, an array every element in order, so an output
   given by its name alone is not compared; numbers compare as numbers.
@@ -42,9 +44,10 @@ The values of noisy quantities are exact: [`noise.py`](runs/noise.py), written f
 [simulation.md](../../libs/visa/simulation.md), sections 3 and 4, alone, gives the answers of an instrument and the means
 that `two_benches` makes (`python tests/acceptance/runs/noise.py 1 230 0.05 10`).
 
-`tests/harness` runs every case, natively and in WASM, writes its report and its trace, and checks that each line of the
-trace reads and that its last says the status of the report. Until `engine` (step 6), it converts arguments and settings
-only for the types the cases use. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
+`tests/harness` gives every `run.json` to `run.start` unchanged, on a session of `engine` whose root is the repository
+held in memory: natively through the command, in WASM, which has no threads, through `engine::run_to_end`, the same
+judging, run and report. It reads back the trace that the run wrote to `.labcraft/runs/`, and checks that each line reads
+and that its last says the status of the report. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
 through the proof of concept, which has a report of its own: it compares what that report gives, and runs the cases of
 [`poc-later.txt`](runs/poc-later.txt), rules the proof of concept does not follow, only to see that each gives a report.
 

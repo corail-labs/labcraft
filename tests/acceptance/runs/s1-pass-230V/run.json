@@ -1,7 +1,7 @@
 {
   "function": "check_voltage",
-  "folder": "../../../../examples",
-  "sim": "../../../../libs/visa/sim/dmm-230V.toml",
+  "folder": "examples",
+  "sim": "<labcraft>/visa/sim/dmm-230V.toml",
   "args": {
     "resource": "SIM::DMM0"
   }

@@ -22,7 +22,7 @@ use labcraft_types::{Interner, Name, TyId};
 use crate::convert::Env;
 use crate::json::{Describe, Json};
 use crate::native::{HandleInfo, LogEntry};
-use crate::run::{AbortBy, LoopAt, Native, Resource, RunEnd, SetBy, Status};
+use crate::run::{AbortBy, LoopAt, Native, Progress, Resource, RunEnd, SetBy, Status};
 use crate::trace::status_text;
 use crate::value::Handle;
 
@@ -60,18 +60,41 @@ pub struct ReportOf<'a> {
     pub natives: &'a [Native<'a>],
     pub real_ms: u64,
     /// The `check` made before the run: `{"summary":…,"diagnostics":[…]}`, the fields of `labcraft-check/1`, its
-    /// diagnostics already within their own bound.
-    pub check: &'a str,
-    /// What became of the trace: `{"file":…,"events":41,"truncated":false}`, or none without one.
-    pub trace: Option<&'a str>,
+    /// diagnostics already within their own bound. It gives way after the values, before the commands of instruments.
+    pub check: &'a dyn Part,
+    /// What became of the trace: `{"file":…,"events":41,"truncated":false}`, or the events of an inline trace, or none
+    /// without one. It gives way first.
+    pub trace: Option<&'a dyn Part>,
     /// The bytes the report may take: [`RESULT_MAX`], or less.
     pub limit: usize,
+}
+
+/// A part of a report that another crate writes, cut to fit what the report leaves it (commands.md 2): the `check`, whose
+/// diagnostics give way after the values of the outputs, and the trace, whose inline events give way first.
+pub trait Part {
+    /// The part at its smallest, which is never cut: for a `check`, its summary.
+    fn least(&self) -> String;
+    /// The part within `bytes`, or [`Part::least`] when it is larger; whether something was left out.
+    fn within(&self, bytes: usize) -> (String, bool);
+}
+
+/// A part that is never cut: a `check` with no diagnostics, the file of a trace.
+pub struct Whole<'a>(pub &'a str);
+
+impl Part for Whole<'_> {
+    fn least(&self) -> String {
+        self.0.to_owned()
+    }
+
+    fn within(&self, _: usize) -> (String, bool) {
+        (self.0.to_owned(), false)
+    }
 }
 
 /// The report of a run that ended. Its function is `functions[0]` of the program.
 pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
     let env = Env { program: of.program, names: of.names };
-    let Some(top) = of.program.functions.first() else { return refused(of.run, "", 0, of.check) };
+    let Some(top) = of.program.functions.first() else { return refused(of.run, "", 0, &of.check.least()) };
     let handles = Ended(end.resources.iter().filter_map(|resource| Some((resource.handle, resource.info.clone()?))).collect());
     let json = Json { env, viewer: top.library, handles: &handles };
 
@@ -113,13 +136,10 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
         fixed.push_str(",\"truncated\":true");
     }
     fixed.push('}');
-    let mut closing = String::new();
-    if let Some(trace) = of.trace {
-        closing.push_str(",\"trace\":");
-        closing.push_str(trace);
-    }
-    closing.push_str(",\"check\":");
-    closing.push_str(of.check);
+    // The trace and the check at their smallest; each takes more once the values are written.
+    let least_trace = of.trace.map(Part::least);
+    let least_check = of.check.least();
+    let closing_least = least_trace.as_ref().map_or(0, |trace| trace.len() + 9) + least_check.len() + 9;
 
     // Each output and each setting of the panel, without its value: never cut, so counted before any value is written.
     let by_text = |by: SetBy| match by {
@@ -148,7 +168,7 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
     head(&mut head_text, status_text(end.status), of.run, &top.shown);
     // The outputs and the settings that fit, each without its value, which takes at least the mark of a cut: those past them
     // are counted in `outputs_more` and `panel_more` (64 bytes kept for the two).
-    let mut room = of.limit.saturating_sub(head_text.len() + fixed.len() + closing.len() + TAIL + 64);
+    let mut room = of.limit.saturating_sub(head_text.len() + fixed.len() + closing_least + TAIL + 64);
     let mut fits = |cost: usize| {
         let fit = cost <= room;
         if fit {
@@ -197,9 +217,20 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
             truncated = true;
         }
     }
+    // The diagnostics give way after the values, before the commands of the instruments and the logs.
+    let (check, cut_check) = of.check.within(least_check.len() + left);
+    left = left.saturating_sub(check.len().saturating_sub(least_check.len()));
+    truncated |= cut_check;
     truncated |= instruments(&mut out, end, &mut left);
     truncated |= logs(&mut out, end, of, json, &mut left);
-    out.push_str(&closing);
+    if let (Some(trace), Some(least)) = (of.trace, &least_trace) {
+        let (text, cut_trace) = trace.within(least.len() + left);
+        truncated |= cut_trace;
+        out.push_str(",\"trace\":");
+        out.push_str(&text);
+    }
+    out.push_str(",\"check\":");
+    out.push_str(&check);
     if truncated {
         out.push_str(",\"truncated\":true");
     }
@@ -216,6 +247,30 @@ pub fn refused(run: &str, function: &str, real_ms: u64, check: &str) -> String {
         out,
         ",\"outputs\":[],\"clock\":{{\"simulated_ms\":0.0,\"real_ms\":{real_ms}}},\"resources\":{{\"opened\":0,\"open\":[],\"leaked\":[]}},\"check\":{check}}}"
     );
+    out
+}
+
+/// The report of a run that goes on (commands.md 4): its clock, the resources it opened so far, and where each loop is.
+/// `simulated_ms` only in deterministic mode, which is the only one in M0b so far.
+pub fn running(progress: &Progress, of: &ReportOf<'_>) -> String {
+    let function = of.program.functions.first().map_or("", |function| &*function.shown);
+    let mut out = String::new();
+    head(&mut out, "running", of.run, function);
+    let _ = write!(
+        out,
+        ",\"outputs\":[],\"clock\":{{\"simulated_ms\":{},\"real_ms\":{}}},\"resources\":{{\"opened\":{},\"open\":[],\"leaked\":[]}}",
+        ms(progress.clock),
+        of.real_ms,
+        progress.opened
+    );
+    loops(&mut out, of, &progress.loops);
+    let (check, cut) = of.check.within(of.limit.saturating_sub(out.len() + TAIL));
+    out.push_str(",\"check\":");
+    out.push_str(&check);
+    if cut {
+        out.push_str(",\"truncated\":true");
+    }
+    out.push('}');
     out
 }
 

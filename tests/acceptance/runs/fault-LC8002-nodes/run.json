@@ -1,5 +1,5 @@
 {
   "function": "spin",
-  "folder": ".",
+  "folder": "tests/acceptance/runs/fault-LC8002-nodes",
   "max_nodes": 10
 }

@@ -18,6 +18,7 @@ use crate::kept::Kept;
 use crate::panics::last_panic;
 use crate::params::{self, Params};
 use crate::registry::{self, Command};
+use crate::runs::{Clock, Runs};
 use crate::shipped::Shipped;
 use crate::workspace::Workspace;
 use crate::{catalog, files, functions, project, simulations};
@@ -35,6 +36,10 @@ pub struct Config {
     pub shipped: Shipped,
     /// The native libraries the app links (`labcraft-visa`, `labcraft-results-log`).
     pub natives: Vec<Arc<dyn NativeLibrary>>,
+    /// The real clock, which a run reads through `Control` (`docs/architecture.md`, 10.10): `runs::Still` in tests.
+    pub clock: Arc<dyn Clock>,
+    /// The id of the process, which names the `.partial` of a trace (`docs/commands.md`, section 8): 0 where there is none.
+    pub process: u32,
 }
 
 pub struct Session {
@@ -44,6 +49,8 @@ pub struct Session {
     pub(crate) config: Config,
     /// The kept checks, by folder without links, the last used at the end.
     kept: Vec<(PathBuf, Kept)>,
+    /// Its runs, shared with whoever waits for them.
+    runs: Runs,
     /// The first check of the root, made in the background when the session starts.
     #[cfg(not(target_arch = "wasm32"))]
     first: Option<std::thread::JoinHandle<Option<Kept>>>,
@@ -64,6 +71,7 @@ impl Session {
             root,
             config,
             kept: Vec::new(),
+            runs: Runs::default(),
             #[cfg(not(target_arch = "wasm32"))]
             first: None,
         };
@@ -125,6 +133,12 @@ impl Session {
         &self.config
     }
 
+    /// The runs of the session, which `run.wait`, `run.status`, `run.abort` and `run.trace` reach without it
+    /// ([`Runs::execute`]), so that a caller that waits for a run never holds the session.
+    pub fn runs(&self) -> Runs {
+        self.runs.clone()
+    }
+
     /// Runs a command: the only way in.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         let Some(command) = registry::command(id) else {
@@ -146,7 +160,13 @@ impl Session {
 
     /// Why a command cannot run now, if it cannot.
     pub fn not_enabled(&self, command: &Command) -> Option<String> {
-        command.planned.map(|planned| format!("it is planned, and comes with {planned}"))
+        if let Some(planned) = command.planned {
+            return Some(format!("it is planned, and comes with {planned}"));
+        }
+        if command.id.starts_with("run.") {
+            return crate::runs::not_enabled_here().map(str::to_owned);
+        }
+        None
     }
 
     fn dispatch(&mut self, command: &Command, params: &Params) -> Result<Value, CommandError> {
@@ -162,6 +182,12 @@ impl Session {
             "project.describe" => project::describe(self),
             "functions.list" => functions::list(self, params),
             "simulation.describe" => simulations::describe(self, params),
+            #[cfg(not(target_arch = "wasm32"))]
+            "run.start" => self.runs.start(self, params),
+            "run.wait" | "run.status" | "run.abort" | "run.trace" => {
+                let max_nesting = self.config.limits.max_nesting();
+                self.runs.dispatch(&*self.ws, &self.root, command.id, params, max_nesting)
+            }
             other => Err(CommandError::internal(format!("`{other}` is registered and enabled, with no code behind it"))),
         }
     }
@@ -208,6 +234,13 @@ impl Session {
     pub(crate) fn root_check_document(&mut self) -> Result<Value, CommandError> {
         let root = self.root.clone();
         self.check_document(&root, false)
+    }
+}
+
+/// A run never outlives its session (commands.md 4): the run going is aborted when the session goes away.
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.runs.abort_going();
     }
 }
 

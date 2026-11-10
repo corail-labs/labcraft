@@ -12,7 +12,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 
 use crate::PROGRAMS;
 
-fn shipped() -> Shipped {
+pub(crate) fn shipped() -> Shipped {
     let files = |files: &'static [labcraft_libs::File]| files.iter().map(|file| ShippedFile { name: file.name, bytes: file.bytes }).collect();
     Shipped::new(
         labcraft_libs::LIBRARIES
@@ -57,9 +57,14 @@ fn a_session_in_memory_checks_the_examples_and_lists_what_they_declare() {
             limits: Limits::default(),
             shipped: shipped(),
             natives: vec![Arc::new(labcraft_visa::Visa)],
+            clock: Arc::new(labcraft_engine::Still),
+            process: 0,
         };
         let mut session = Session::new(Arc::new(memory), config, true).unwrap();
         let report = session.execute("library.check", &json!({})).unwrap();
+        // Runs need threads: in WASM their commands are not enabled, and the corpus of runs goes through `run_to_end`.
+        #[cfg(target_arch = "wasm32")]
+        assert_eq!(session.execute("run.start", &json!({ "function": "check_voltage" })).unwrap_err().code, "command.not_enabled");
         assert_eq!(report["status"], "ok", "{report}");
         assert_eq!(report["summary"]["functions"], functions);
         let listed = session.execute("functions.list", &json!({ "filter": "check_voltage" })).unwrap();

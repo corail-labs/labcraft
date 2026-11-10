@@ -27,6 +27,8 @@ fn on_examples<T: Send>(work: impl FnOnce(&mut Session) -> T + Send) -> T {
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
                     natives: vec![Arc::new(labcraft_visa::Visa)],
+                    clock: Arc::new(labcraft_engine::Still),
+                    process: 0,
                 };
                 let mut session = Session::new(Arc::new(Disk), config, true).unwrap();
                 work(&mut session)
@@ -119,4 +121,54 @@ fn project_describe_lists_the_shipped_simulation_files_with_their_resources() {
     let root = described["libraries"].as_array().unwrap().iter().find(|library| library["folder"] == ".").unwrap();
     let check_voltage = root["files"].as_array().unwrap().iter().find(|file| file["file"] == "check_voltage.lcf").unwrap();
     assert_eq!(check_voltage["declares"], json!({ "function": "check_voltage" }));
+}
+
+/// A run on the disk (commands.md 7 and 8), in a folder of its own, out of the repository: the report of scenario 1 on
+/// `check_voltage` against `dmm-230V.toml`, whose reading `tests/acceptance/runs/noise.py` gives (`230.071217`), and a
+/// second run whose trace replaces the first while a reader holds it open, as the viewer does.
+#[test]
+fn a_run_on_the_disk_writes_its_trace_and_replaces_one_being_read() {
+    let folder = std::env::temp_dir().join(format!("labcraft-cli-run-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    std::fs::create_dir_all(&folder).unwrap();
+    for file in ["check_voltage.lcf", "Verdict.lct"] {
+        std::fs::copy(repository().join("examples").join(file), folder.join(file)).unwrap();
+    }
+    let root = folder.clone();
+    let reports = std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(labcraft_format::STACK_SIZE)
+            .spawn_scoped(scope, || {
+                let config = Config {
+                    root,
+                    lib_paths: Vec::new(),
+                    limits: Limits::default(),
+                    shipped: labcraft_cli::shipped(),
+                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    clock: Arc::new(labcraft_engine::Still),
+                    process: std::process::id(),
+                };
+                let mut session = Session::new(Arc::new(Disk), config, false).unwrap();
+                let params = json!({ "function": "check_voltage", "sim": "<labcraft>/visa/sim/dmm-230V.toml", "args": { "resource": "SIM::DMM0" } });
+                let first = ok(&mut session, "run.start", params.clone());
+                let reader = labcraft_engine::Workspace::open(&Disk, &session.root().join(".labcraft/runs/check_voltage.trace.jsonl"), 0).unwrap();
+                let second = ok(&mut session, "run.start", params);
+                drop(reader);
+                (first, second)
+            })
+            .unwrap()
+            .join()
+            .unwrap()
+    });
+    let (first, second) = reports;
+    assert_eq!(first["status"], "ok", "{first}");
+    assert_eq!(first["outputs"][1], json!({ "name": "voltage", "type": "f64[V]", "value": "230.071217 V" }));
+    assert_eq!(second["trace"]["file"], ".labcraft/runs/check_voltage.trace.jsonl");
+    assert!(second["trace"].get("error").is_none(), "renamed over the trace held open: {second}");
+    let trace = std::fs::read_to_string(folder.join(".labcraft/runs/check_voltage.trace.jsonl")).unwrap();
+    assert!(trace.starts_with("{\"schema\":\"labcraft-trace/1\",\"run\":\"r2\""), "the last run's trace");
+    assert_eq!(std::fs::read_to_string(folder.join(".labcraft/.gitignore")).unwrap(), "*\n");
+    let left: Vec<_> = std::fs::read_dir(folder.join(".labcraft/runs")).unwrap().map(|entry| entry.unwrap().file_name()).collect();
+    assert_eq!(left.len(), 1, "no `.partial` left: {left:?}");
+    std::fs::remove_dir_all(&folder).unwrap();
 }

@@ -28,7 +28,7 @@ mod text;
 pub mod trace;
 mod value;
 
-pub use convert::{Env, constant, convert, duration_of_seconds, grid, read};
+pub use convert::{Env, constant, convert, duration_of_seconds, grid, integer, read};
 pub use fault::{Fault, FaultCode};
 pub use primitives::{Call, Host, Outcome, equal, outputs_on_error};
 pub use text::{Text, Writer, error_text, quoted};

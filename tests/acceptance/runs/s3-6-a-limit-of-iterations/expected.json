@@ -6,7 +6,7 @@
     "code": "LC8001",
     "function": "two_benches",
     "node": "n_a",
-    "file": "two_benches.lcf",
+    "file": "examples/two_benches.lcf",
     "loops": [],
     "iteration": 4
   },

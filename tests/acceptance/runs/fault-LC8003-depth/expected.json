@@ -6,7 +6,7 @@
     "code": "LC8003",
     "function": "outer",
     "node": "y",
-    "file": "outer.lcf",
+    "file": "tests/acceptance/runs/fault-LC8003-depth/outer.lcf",
     "span": {
       "start": {
         "line": 5,
