@@ -270,18 +270,18 @@ fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
         })
     };
     std::thread::sleep(Duration::from_millis(200));
-    let before = session.published().drawing_generation;
     let start = Instant::now();
     std::fs::write(folder.0.join("main.lcf"), TWO).unwrap();
-    while session.published().drawing_generation == before {
-        assert!(start.elapsed() < Duration::from_secs(5), "no new drawing while the log is written");
+    // Each write of `other.lcf` draws again too, sometimes before `main.lcf` is read: what counts is the first drawing
+    // that shows the change of `main.lcf`, its two nodes, not the first new drawing.
+    while session.published().drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
+        assert!(start.elapsed() < Duration::from_secs(5), "`main.lcf` not drawn again while the log is written");
         std::thread::sleep(Duration::from_millis(2));
     }
     let took = start.elapsed();
     stop.store(true, Ordering::Relaxed);
     let _ = writer.join();
     assert!(took < Duration::from_millis(200), "{took:?}");
-    assert_eq!(session.published().drawing.as_ref().unwrap().placed.len(), 2);
 }
 
 /// Inter as `ATTRIBUTION.md` names it (architecture 11.6).

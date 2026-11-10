@@ -427,6 +427,31 @@ fn a_text_counts_the_cells_it_is_drawn_with() {
     assert_eq!(icon("text \"VVVV\" at (16, 16) size 1e308"), ["LC5009"]);
 }
 
+/// 11.1: at most 256 shapes, and 4 096 segments for all the paths of an icon; one more, and its calls show the label.
+/// A path `M0 0` followed by `k` times `L1 1` has 1 + k segments: two of 2 048 make 4 096.
+#[test]
+fn an_icon_has_at_most_256_shapes_and_4096_segments_of_path() {
+    let circles = |count: usize| vec!["circle (16, 16) 8"; count].join("\n");
+    assert_eq!(icon(&circles(256)), NOTHING);
+    assert_eq!(icon(&circles(257)), ["LC5008"]);
+    let path = |lines: usize| format!("path \"M0 0{}\"", " L1 1".repeat(lines));
+    assert_eq!(icon(&format!("{}\n{}", path(2047), path(2047))), NOTHING);
+    assert_eq!(icon(&format!("{}\n{}", path(2047), path(2048))), ["LC5008"]);
+}
+
+/// 11.1: at most 64 KiB for the `path` strings of an icon together, whatever their segments: `M0 0` and spaces, a path of
+/// one segment, at 65 536 bytes and at one more. An arc that ends where it starts counts as a segment too: `M0 0`, then
+/// 4 095 such arcs, make 4 096, one more is past the bound.
+#[test]
+fn the_paths_of_an_icon_have_at_most_64_kib_and_every_arc_counts() {
+    let spaces = |bytes: usize| format!("path \"M0 0{}\"", " ".repeat(bytes - 4));
+    assert_eq!(icon(&spaces(65_536)), NOTHING);
+    assert_eq!(icon(&spaces(65_537)), ["LC5008"]);
+    let arcs = |count: usize| format!("path \"M0 0{}\"", " A1 1 0 0 0 0 0".repeat(count));
+    assert_eq!(icon(&arcs(4095)), NOTHING);
+    assert_eq!(icon(&arcs(4096)), ["LC5008"]);
+}
+
 #[test]
 fn the_icon_of_an_extern_is_judged_too() {
     let function = "extern rust(crate: \"c\", function: \"f\")\nfn f(a: f64) -> (err: error)";

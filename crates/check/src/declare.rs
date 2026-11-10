@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use labcraft_format::is_name;
-use labcraft_graph::{Decl, EnumType, FnType, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
+use labcraft_graph::{Decl, EnumType, FnType, Icon, Id, NamedType, Path, Signature, StructType, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm};
 use labcraft_types::{
     Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, Limits, MAX_ARRAY_DIMENSIONS, MAX_NESTING, Name, Node, NumberKind, Position, Related,
     Report, Span, Ty, TyId, TypeTable, Unit, UnitError, Variant, cut_text, normalize,
@@ -23,7 +23,7 @@ use crate::{Libraries, Origin};
 
 mod body;
 
-pub use self::body::{Align, Format, PathSegment, Piece, path_segments};
+pub use self::body::{Align, Format, MAX_ICON_SHAPES, PathSegment, Piece, icon_refused, path_segments};
 pub(crate) use self::body::{read_escapes, template_fields, template_pieces};
 #[cfg(test)]
 mod tests;
@@ -75,6 +75,9 @@ pub struct DeclaredFunction {
     pub faulty: bool,
     /// Its file, by its index in `Checked::files`: for a run, in every library; otherwise in the folder given only.
     pub file: Option<u32>,
+    /// The `icon` section of its file (spec 11.1) when that file is not kept (a library that is not checked, outside a
+    /// run): moved here, so that each call still draws it. A kept file holds its own.
+    pub icon: Option<Icon>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -976,12 +979,16 @@ impl<'a> Pass<'a> {
             self.begin_declaration(model);
             let outcome = last_resort(|| match &model.file.decl {
                 Decl::Function(function) => {
-                    let declared = DeclaredFunction { file: at, ..self.declare_function(function.name, &function.signature, scope, None) };
+                    let declared =
+                        DeclaredFunction { file: at, icon: None, ..self.declare_function(function.name, &function.signature, scope, None) };
                     keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 Decl::Extern(function) => {
-                    let declared =
-                        DeclaredFunction { file: at, ..self.declare_function(function.name, &function.signature, scope, Some(function.id)) };
+                    let declared = DeclaredFunction {
+                        file: at,
+                        icon: None,
+                        ..self.declare_function(function.name, &function.signature, scope, Some(function.id))
+                    };
                     keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 // No program can name it, and its mistakes are still mistakes.
@@ -1104,7 +1111,7 @@ impl<'a> Pass<'a> {
                 self.error(&scope, Code::Lc4005, "an external function has an output `err: error` (R-13)".to_owned(), id);
             }
         }
-        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty, file: None }
+        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty, file: None, icon: None }
     }
 
     fn signature_type(&mut self, expr: &TypeExpr, scope: &Scope<'_>, id: Id) -> TyId {

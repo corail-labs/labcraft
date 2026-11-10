@@ -23,7 +23,7 @@ use crate::resolved::{Meaning, Resolved, Terminal};
 
 mod icon;
 
-pub use icon::{PathSegment, path_segments};
+pub use icon::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
 #[cfg(test)]
 mod tests;
 
