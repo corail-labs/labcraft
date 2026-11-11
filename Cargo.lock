@@ -1978,6 +1978,7 @@ dependencies = [
  "labcraft-engine",
  "labcraft-format",
  "labcraft-libs",
+ "labcraft-mcp",
  "labcraft-results-log",
  "labcraft-types",
  "labcraft-visa",
@@ -2078,6 +2079,16 @@ name = "labcraft-libs"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+]
+
+[[package]]
+name = "labcraft-mcp"
+version = "0.1.0-m0a"
+dependencies = [
+ "labcraft-engine",
+ "labcraft-format",
+ "labcraft-types",
+ "serde_json",
 ]
 
 [[package]]

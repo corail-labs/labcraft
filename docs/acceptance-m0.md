@@ -84,8 +84,8 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
 `dmm-220V-exact` and `dmm-240V-exact`, *proposed*), canonical form, number of tool calls, number of
 `check` failures before the first clean `check`.
 
-**Verification.** By hand for the agent part. In CI, a scripted client (like
-`tools/lcf-poc/tests/mcp_smoke.py`) plays a fixed loop over real stdio MCP: write a draft with one
+**Verification.** By hand for the agent part. In CI, a scripted client, `apps/labcraft-cli/tests/mcp.rs` (step 9a
+of M0b, after `tools/lcf-poc/tests/mcp_smoke.py`), plays a fixed loop over real stdio MCP: write a draft with one
 error, read the diagnostic, fix it, run against both multimeters and against `no-instrument.toml`.
 
 **Proof of concept today.** Points 1 to 4 pass with `examples/check_voltage.lcf` (point 3 with

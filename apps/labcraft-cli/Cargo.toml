@@ -15,6 +15,7 @@ labcraft-diagram = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-libs = { workspace = true }
+labcraft-mcp = { workspace = true }
 labcraft-types = { workspace = true }
 labcraft-visa = { workspace = true }
 labcraft-results-log = { workspace = true }

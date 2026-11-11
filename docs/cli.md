@@ -1,7 +1,7 @@
 # Command line: `fmt`, `check`, `run`, `diagram` and the viewer
 
 *Last updated: 2026-11-10. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
-M0b (section 6), and `mcp` in [mcp.md](mcp.md); `diagram` implemented for M0v without the values of a run (section 7);
+M0b (section 6), and `mcp` in [mcp.md](mcp.md), implemented but `guide_read` (step 9a of M0b); `diagram` implemented for M0v without the values of a run (section 7);
 the desktop viewer `labcraft` implemented for M0v, without the values of a run (section 8).*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
@@ -22,6 +22,7 @@ labcraft-cli fmt   [--check] [--json] [options] PATH...
 labcraft-cli check [--json] [--deny-warnings] [--lib-path DIR]... [options] FOLDER...
 labcraft-cli run   [--json] [run options] [options] FOLDER FUNCTION
 labcraft-cli diagram --svg --out DIR [--json] [diagram options] [options] FOLDER [FUNCTION]...
+labcraft-cli mcp  [--project DIR] [--lib-path DIR]... [options]
 labcraft-cli version
 labcraft-cli --help
 ```
@@ -32,6 +33,7 @@ labcraft-cli --help
 | 1 | An error was found: a diagnostic of severity `error`, or a file that is not canonical under `fmt --check` |
 | 2 | Wrong usage: unknown option, no path, a file given to `check`. A plain message on stderr, nothing on stdout, nothing read or written |
 
+`mcp` ([mcp.md](mcp.md)) takes no `--json`, since stdout is MCP's, and ends with 0 when stdin closes.
 `run` adds 3 (`aborted`) and 4 (`fault`), and uses 1 for the statuses `error` (spec 8.2) and `refused`
 ([commands.md](commands.md), section 7). `diagram` uses 1 when a function is not drawn, and not for the errors that
 it marks on a drawing (section 7.1). A missing

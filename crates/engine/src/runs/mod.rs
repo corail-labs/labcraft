@@ -46,6 +46,33 @@ const PROGRESS_WAIT_MS: u64 = 250;
 /// Numbers the sessions of a process, so that two of them never name a `.partial` alike (commands.md 8).
 static SESSIONS: AtomicU64 = AtomicU64::new(1);
 
+/// Whoever waits for a run in `run.start` or `run.wait`, as the MCP server does for a client (`docs/mcp.md`, 4): told
+/// where the run is each second of the wait, if it asks, and able to stop waiting, the run going on. The wait asks
+/// [`Waiter::stopped`] each time the runs change and each second; [`Runs::wake_waiters`] makes it ask at once.
+pub trait Waiter: Sync {
+    /// The caller no longer waits (a cancelled request): the wait ends with where the run is.
+    fn stopped(&self) -> bool {
+        false
+    }
+
+    /// Whether [`Waiter::progress`] is wanted, which costs asking the run where it is.
+    fn wants_progress(&self) -> bool {
+        false
+    }
+
+    /// Each second of the wait, where the run is: the report `running` of `run.status`.
+    fn progress(&self, _report: &Json) {}
+}
+
+/// A caller that waits to the end of `wait`, and is told nothing.
+pub struct Patient;
+
+impl Waiter for Patient {}
+
+/// How long the wait goes before it tells a [`Waiter`] where the run is, in milliseconds.
+#[cfg(not(target_arch = "wasm32"))]
+const PROGRESS_EVERY_MS: u64 = 1000;
+
 /// The runs of a session, shared with whoever waits for them.
 #[derive(Clone, Default)]
 pub struct Runs {
@@ -307,8 +334,20 @@ impl Runs {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {planned}")));
         }
         let params = params::judge(command, params)?;
-        let result = self.dispatch(ws, root, command.id, &params, 64)?;
-        Ok(crate::bound::fit(result, crate::bound::MAX_RESULT))
+        // A panic is caught here as the session catches one (commands.md 3): the caller holds no session to do it.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.dispatch(ws, root, command.id, &params, 64, &Patient)));
+        match outcome {
+            Ok(result) => Ok(crate::bound::fit(result?, crate::bound::MAX_RESULT)),
+            Err(_) => Err(CommandError::internal(format!("a bug of LabCraft in `{id}`, caught: {}", crate::panics::last_panic()))),
+        }
+    }
+
+    /// Makes every wait ask its [`Waiter`] at once whether it still waits: a request was cancelled. The lock is taken
+    /// first, so that a wait that has just found its waiter still waiting is waiting on the condition when it is told.
+    pub fn wake_waiters(&self) {
+        let state = self.shared.lock();
+        drop(state);
+        self.shared.changed.notify_all();
     }
 
     pub(crate) fn dispatch(
@@ -318,10 +357,11 @@ impl Runs {
         id: &str,
         params: &Params,
         max_nesting: u32,
+        waiter: &dyn Waiter,
     ) -> Result<Json, CommandError> {
         let run = params.str("run");
         match id {
-            "run.wait" => self.wait(run, wait_param(params, max_nesting)?),
+            "run.wait" => self.wait(run, wait_param(params, max_nesting)?, waiter),
             "run.status" => self.status(run),
             "run.abort" => self.abort(run),
             "run.set_element" => self.set_element(run, params),
@@ -331,33 +371,54 @@ impl Runs {
     }
 
     /// The report of the run when it ends within `wait_ns`, or `running`.
-    fn wait(&self, id: Option<&str>, wait_ns: i64) -> Result<Json, CommandError> {
+    fn wait(&self, id: Option<&str>, wait_ns: i64, waiter: &dyn Waiter) -> Result<Json, CommandError> {
         let found = self.shared.lock().find(id)?;
         match found {
             Found::Ended(report) => Ok(parsed(&report)),
-            Found::Going(going) => Ok(self.wait_for(&going, wait_ns)),
+            Found::Going(going) => Ok(self.wait_for(&going, wait_ns, waiter)),
         }
     }
 
-    /// Waits for a run going, on its own condition: the session goes on answering meanwhile.
+    /// Waits for a run going, on its own condition, up to `wait_ns` of real time: the session goes on answering meanwhile.
+    /// Each second from the start, the waiter is told where the run is if it asks, and the wait ends early if it stopped
+    /// waiting. A run that went away without a report, refused as it was judged, ends the wait with what it last said.
     #[cfg(not(target_arch = "wasm32"))]
-    fn wait_for(&self, going: &Arc<Going>, wait_ns: i64) -> Json {
-        let wait = std::time::Duration::from_nanos(u64::try_from(wait_ns).unwrap_or(0));
-        let state = self.shared.lock();
-        let (state, _) = self
-            .shared
-            .changed
-            .wait_timeout_while(state, wait, |state| state.going.as_ref().is_some_and(|current| current.id == going.id))
-            .unwrap_or_else(PoisonError::into_inner);
-        if let Some(ended) = state.ended.iter().find(|ended| ended.id == going.id) {
-            return parsed(&ended.report);
+    #[expect(clippy::disallowed_methods, reason = "the wait of a run, never built for WASM, where the clock traps")]
+    fn wait_for(&self, going: &Arc<Going>, wait_ns: i64, waiter: &dyn Waiter) -> Json {
+        let start = std::time::Instant::now();
+        let deadline = start + std::time::Duration::from_nanos(u64::try_from(wait_ns).unwrap_or(0));
+        let every = std::time::Duration::from_millis(PROGRESS_EVERY_MS);
+        let mut tick = start + every;
+        loop {
+            let now = std::time::Instant::now();
+            let slice = deadline.min(tick).saturating_duration_since(now);
+            let state = self.shared.lock();
+            let going_on = |state: &mut State| state.going.as_ref().is_some_and(|current| current.id == going.id) && !waiter.stopped();
+            let (state, _) = self.shared.changed.wait_timeout_while(state, slice, going_on).unwrap_or_else(PoisonError::into_inner);
+            if let Some(ended) = state.ended.iter().find(|ended| ended.id == going.id) {
+                return parsed(&ended.report);
+            }
+            let gone = !state.going.as_ref().is_some_and(|current| current.id == going.id);
+            drop(state);
+            if gone || waiter.stopped() || std::time::Instant::now() >= deadline {
+                return self.progress_of(going);
+            }
+            if std::time::Instant::now() < tick {
+                continue;
+            }
+            tick += every;
+            if waiter.wants_progress() {
+                let report = self.progress_of(going);
+                if report.get("status").and_then(Json::as_str) != Some("running") {
+                    return report;
+                }
+                waiter.progress(&report);
+            }
         }
-        drop(state);
-        self.progress_of(going)
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn wait_for(&self, going: &Arc<Going>, _: i64) -> Json {
+    fn wait_for(&self, going: &Arc<Going>, _: i64, _: &dyn Waiter) -> Json {
         self.progress_of(going)
     }
 
@@ -402,9 +463,15 @@ impl Runs {
                 *going.abort.lock().unwrap_or_else(PoisonError::into_inner) = Some(AbortBy::Request);
                 going.wake.wake();
                 loop {
-                    let report = self.wait_for(&going, prepare::WAIT_MAX_NS);
+                    let report = self.wait_for(&going, prepare::WAIT_MAX_NS, &Patient);
                     if report.get("status").and_then(Json::as_str) != Some("running") {
                         return Ok(report);
+                    }
+                    // Refused as it was judged, after this abort found it: it never ran, and has no report.
+                    let state = self.shared.lock();
+                    let gone = !state.going.as_ref().is_some_and(|current| current.id == going.id);
+                    if gone && !state.ended.iter().any(|ended| ended.id == going.id) {
+                        return Err(unknown(format!("`{}` was refused before it ran, and has no report: `run.start` gave why", going.id)));
                     }
                 }
             }
@@ -523,15 +590,15 @@ impl Runs {
 
     /// Starts a run on a thread of its own, and waits for it up to `wait`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn start(&self, session: &Session, params: &Params) -> Result<Json, CommandError> {
-        self.start_with(session, params, CommandLine::default())
+    pub(crate) fn start(&self, session: &Session, params: &Params, waiter: &dyn Waiter) -> Result<Json, CommandError> {
+        self.start_with(session, params, CommandLine::default(), waiter)
     }
 
     /// As [`Runs::start`], with what the command line gives beyond the parameters.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn start_with(&self, session: &Session, params: &Params, line: CommandLine) -> Result<Json, CommandError> {
+    pub(crate) fn start_with(&self, session: &Session, params: &Params, line: CommandLine, waiter: &dyn Waiter) -> Result<Json, CommandError> {
         let max_nesting = session.config.limits.max_nesting();
-        let given = with_line(given(params, max_nesting)?, line, max_nesting)?;
+        let given = with_line(given(params, max_nesting, session.config.limits.max_file_size)?, line, max_nesting)?;
         if given.real_time && !session.config.clock.moves() {
             return Err(CommandError::of("command.not_enabled", "mode", "a run in real time needs a clock that moves, which this session has not"));
         }
@@ -599,12 +666,32 @@ impl Runs {
             self.shared.changed.notify_all();
             return Err(CommandError::internal(format!("the thread of the run could not start: {error}")));
         }
-        Ok(self.wait_for(&going, given.wait))
+        Ok(self.wait_for(&going, given.wait, waiter))
     }
 
     fn tag(&self, process: u32) -> Tag {
         Tag { process, session: self.shared.session }
     }
+}
+
+/// Why a text is not the JSON it should be.
+#[derive(Debug, PartialEq, Eq)]
+pub enum JsonProblem {
+    /// Not JSON, a key given twice, or a number that no `f64` holds: why, in a sentence.
+    Malformed(String),
+    /// Nested deeper than the bound.
+    TooDeep,
+}
+
+/// Reads `text` as one JSON value, nested at most `max_nesting` levels, without recursion, a key given twice refused at
+/// any depth: as the command line reads `--args`, and the MCP server a request (`docs/mcp.md`, 5).
+pub fn read_json(text: &str, max_nesting: u32) -> Result<Json, JsonProblem> {
+    json_text::parse(text, max_nesting).map(|parsed| parsed.value).map_err(|bad| match bad {
+        json_text::Bad::TooDeep => JsonProblem::TooDeep,
+        json_text::Bad::Syntax(at) => JsonProblem::Malformed(format!("not JSON at byte {at}")),
+        json_text::Bad::Twice(key, _) => JsonProblem::Malformed(format!("the key `{}` is given twice", labcraft_types::cut_text(&key))),
+        json_text::Bad::OutOfRange(range) => JsonProblem::Malformed(format!("the number at byte {} is out of range", range.start)),
+    })
 }
 
 /// A duration of the command line, `30s`, `"500 ms"`, `@0s` (cli.md 6.2), in nanoseconds; why it is none otherwise.
@@ -627,7 +714,7 @@ pub(crate) fn not_enabled_here() -> Option<&'static str> {
 pub fn run_to_end(session: &Session, params: &Json) -> Result<Json, CommandError> {
     let Some(command) = registry::command("run.start") else { return Err(CommandError::internal("`run.start` is not registered")) };
     let params = params::judge(command, params)?;
-    let given = given(&params, session.config.limits.max_nesting())?;
+    let given = given(&params, session.config.limits.max_nesting(), session.config.limits.max_file_size)?;
     if given.real_time {
         return Err(CommandError::of(
             "command.not_enabled",

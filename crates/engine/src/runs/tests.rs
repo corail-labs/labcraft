@@ -816,3 +816,112 @@ fn a_run_in_real_time_on_a_clock_that_never_moves_is_not_enabled() {
     let error = session.execute("run.start", &json!({ "function": "forever", "mode": "real_time", "timeout": "50 ms" })).unwrap_err();
     assert_eq!((error.code, error.parameter.as_deref()), ("command.not_enabled", Some("mode")));
 }
+
+/// The memory, slow to name the paths under `/slow`: a network share, where judging a run takes time.
+struct Slow(Memory);
+
+impl crate::Workspace for Slow {
+    fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<PathBuf> {
+        if path.starts_with("/slow") {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        self.0.canonicalize(path)
+    }
+    fn absolute(&self, path: &std::path::Path) -> std::io::Result<PathBuf> {
+        self.0.absolute(path)
+    }
+    fn current(&self) -> Option<PathBuf> {
+        self.0.current()
+    }
+    fn metadata(&self, path: &std::path::Path) -> std::io::Result<crate::workspace::Metadata> {
+        self.0.metadata(path)
+    }
+    fn link_metadata(&self, path: &std::path::Path) -> std::io::Result<crate::workspace::Metadata> {
+        self.0.link_metadata(path)
+    }
+    fn read_dir(&self, path: &std::path::Path, each: &mut dyn FnMut(std::io::Result<crate::workspace::Entry>)) -> std::io::Result<()> {
+        self.0.read_dir(path, each)
+    }
+    fn read(&self, path: &std::path::Path, max: u64) -> std::io::Result<crate::workspace::Read> {
+        self.0.read(path, max)
+    }
+    fn write(&self, path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        self.0.write(path, bytes)
+    }
+    fn create_folders(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.0.create_folders(path)
+    }
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        self.0.rename(from, to)
+    }
+    fn remove_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.0.remove_file(path)
+    }
+}
+
+#[test]
+fn an_abort_of_a_run_refused_as_it_is_judged_ends() {
+    let memory = Memory::new();
+    memory.put("/p/double.lcf", DOUBLE);
+    let ws: Arc<dyn Workspace> = Arc::new(Slow(memory));
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 7,
+    };
+    let mut session = Session::new(Arc::clone(&ws), config, false).unwrap();
+    let runs = session.runs();
+    let (done, answered) = std::sync::mpsc::channel();
+    let aborting = {
+        let ws = Arc::clone(&ws);
+        std::thread::spawn(move || {
+            // While `run.start` judges its `folder`, the run is going, and this abort finds it.
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = done.send(runs.execute(&*ws, std::path::Path::new("/p"), "run.abort", &json!({})));
+        })
+    };
+    let refused = session.execute("run.start", &json!({ "function": "double", "folder": "/slow/elsewhere", "args": { "x": 1 } })).unwrap_err();
+    assert!(refused.code.starts_with("path."), "{refused:?}");
+    // Before the fix, the abort waited for ever on a run that had gone without a report.
+    let abort = answered.recv_timeout(std::time::Duration::from_secs(10)).expect("the abort ends");
+    let abort = abort.unwrap_err();
+    // Not "has run nothing yet": the abort found the run, so this checks the fix even on a slow machine.
+    assert_eq!(abort.code, "run.unknown");
+    assert!(abort.message.contains("refused before it ran"), "the abort came before the run existed: {}", abort.message);
+    aborting.join().unwrap();
+}
+
+#[test]
+fn args_and_set_hold_at_most_the_bytes_of_a_file_of_args() {
+    let memory = project();
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: {
+            let mut limits = Limits::default();
+            limits.max_file_size = 1024;
+            limits
+        },
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 7,
+    };
+    let mut session = Session::new(Arc::clone(&memory) as Arc<dyn Workspace>, config, false).unwrap();
+    // `{"x":[0,…,0]}` of n elements: `{"x":[` 6 bytes, n digits, n - 1 commas, `]}` 2, so 2n + 7 bytes. With a bound of
+    // 1,024: 508 elements (1,023 bytes) pass to the run, which refuses an array for `x`; 509 (1,025 bytes) do not.
+    let args = |count: usize| json!({ "function": "double", "args": { "x": vec![0; count] }, "trace": "none" });
+    assert_eq!(serde_json::to_string(&args(508)["args"]).unwrap().len(), 1023);
+    let refused = session.execute("run.start", &args(509)).unwrap_err();
+    assert_eq!((refused.code, refused.parameter.as_deref()), ("params.invalid", Some("args")), "{}", refused.message);
+    assert!(refused.message.contains("more than 1024 bytes"), "{}", refused.message);
+    let passed = ok(&mut session, "run.start", args(508));
+    assert_eq!(passed["status"], "refused", "judged against the input, not refused for its size: {passed}");
+    let set = json!({ "function": "double", "args": { "x": 1 }, "set": [{ "element": "e", "value": "v".repeat(1100), "at": "0 s" }] });
+    let refused = session.execute("run.start", &set).unwrap_err();
+    assert_eq!((refused.code, refused.parameter.as_deref()), ("params.invalid", Some("set")), "{}", refused.message);
+}

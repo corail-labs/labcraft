@@ -413,7 +413,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 8 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 8 of 10.11 implemented, and the server of step 9 (9a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -913,7 +913,19 @@ gives `run_start`), its schema from the registry, a command error returned with 
 requests run in order on another thread, while `ping`, `run_status`, `run_set_element` and `run_abort` answer at once
 from the reading thread, so an agent can always stop what it started; progress and cancellation are notifications
 on the same stdout, written one whole line at a time. `labcraft-cli mcp` starts it on a session of its own (D-18),
-headless in M0b. The instructions it gives point to `guide.read`.
+headless in M0b. The instructions it gives point to `guide.read`, once it is a tool (step 9b).
+
+*Status: implemented (step 9a).* `labcraft_mcp::serve` takes the session and the two ends of stdio. The caller's
+thread reads: a line is read within 16 MiB and dropped as it comes past that, then read as JSON by
+`engine::read_json`, the reader of `--args`, without recursion; it answers `initialize`, `ping`, `tools/list`,
+and `run_status`, `run_set_element` and `run_abort` through `Runs::execute`, which needs no session. A worker
+thread of `format::STACK_SIZE` holds the session and runs the other calls of the queue in order (each kept as the
+text of its request, at most 16 of them and 16 MiB in all, read again when its turn comes), through
+`Session::execute_waiting`: `run.start` and `run.wait` wait on the run with an `engine::Waiter`, told where the
+run at each second from the start of the wait, and stopped by a cancellation, which `Runs::wake_waiters` makes it see at once. The tools are those the
+registry enables, less `view.*` when no viewer serves the session. When stdin closes, the queue is dropped,
+the call going stops waiting, the worker ends, `run.abort` waits for the final report of a run still going,
+and `labcraft-cli` lets go of the locks of the process (`runs::let_go`), whose one session ends with it.
 
 ### 10.10 `labcraft-cli`
 
@@ -997,7 +1009,10 @@ Each step of work ends with something testable:
 8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2. *Done* (sections 10.4,
    10.6, 10.8): `s3-2-real-time` in the corpus of runs, on the real clock, and point 2 in `tests/harness` on a clock that
    jumps.
-9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.
+9. **`mcp`:** the server, the guide, the scripted loop of scenario 1. In two halves (decision of the owner,
+   2026-11-11): **9a**, `labcraft-mcp` and `labcraft-cli mcp`, the bounds of mcp.md 5, progress and
+   cancellation, the scripted loop through a real stdio client (`apps/labcraft-cli/tests/mcp.rs`), *done*
+   (section 10.9); **9b**, the skills of `skills/`, `guide.read` and their code blocks checked as the spec's.
 10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.
 
 Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).

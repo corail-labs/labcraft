@@ -41,7 +41,7 @@ pub mod walk;
 pub mod workspace;
 
 pub use error::CommandError;
-pub use runs::{Clock, Runs, Still, run_to_end};
+pub use runs::{Clock, JsonProblem, Patient, Runs, Still, Waiter, read_json, run_to_end};
 pub use session::{Config, Session};
 pub use shipped::{Shipped, ShippedFile, ShippedLibrary};
 pub use workspace::{Memory, ReadOnly, Workspace};

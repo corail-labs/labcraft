@@ -18,7 +18,7 @@ use crate::kept::Kept;
 use crate::panics::last_panic;
 use crate::params::{self, Params};
 use crate::registry::{self, Command};
-use crate::runs::{Clock, Runs};
+use crate::runs::{Clock, Patient, Runs, Waiter};
 use crate::shipped::Shipped;
 use crate::workspace::Workspace;
 use crate::{catalog, files, functions, project, simulations};
@@ -132,6 +132,11 @@ impl Session {
         &*self.ws
     }
 
+    /// The workspace, shared: for [`Runs::execute`] on a thread that does not hold the session.
+    pub fn shared_workspace(&self) -> Arc<dyn Workspace> {
+        Arc::clone(&self.ws)
+    }
+
     pub fn config(&self) -> &Config {
         &self.config
     }
@@ -162,6 +167,12 @@ impl Session {
 
     /// Runs a command: the only way in.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
+        self.execute_waiting(id, params, &Patient)
+    }
+
+    /// As [`Session::execute`], with whoever waits for the run in `run.start` and `run.wait`: told where it is each
+    /// second, and able to stop waiting (`docs/mcp.md`, 4).
+    pub fn execute_waiting(&mut self, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         let Some(command) = registry::command(id) else {
             let ids: Vec<&str> = registry::commands().iter().map(|command| command.id).collect();
             let near: Vec<&str> = labcraft_runtime::simulation::nearest(id, &ids).into_iter().collect();
@@ -171,7 +182,7 @@ impl Session {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
         }
         let params = params::judge(command, params)?;
-        let outcome = panic::catch_unwind(AssertUnwindSafe(|| self.dispatch(command, &params)));
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| self.dispatch(command, &params, waiter)));
         outcome.map(|result| result.map(|value| crate::bound::fit(value, crate::bound::MAX_RESULT))).unwrap_or_else(|_| {
             // What the command was changing may be half done: nothing kept is trusted after it.
             self.kept.clear();
@@ -188,7 +199,7 @@ impl Session {
         let params = params::judge(command, params)?;
         let runs = self.runs.clone();
         let session = &*self;
-        let outcome = panic::catch_unwind(AssertUnwindSafe(|| runs.start_with(session, &params, line)));
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| runs.start_with(session, &params, line, &Patient)));
         outcome
             .map(|result| result.map(|value| crate::bound::fit(value, crate::bound::MAX_RESULT)))
             .unwrap_or_else(|_| Err(CommandError::internal(format!("a bug of LabCraft in `run.start`, caught: {}", last_panic()))))
@@ -205,7 +216,7 @@ impl Session {
         None
     }
 
-    fn dispatch(&mut self, command: &Command, params: &Params) -> Result<Value, CommandError> {
+    fn dispatch(&mut self, command: &Command, params: &Params, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         match command.id {
             "commands.list" => Ok(catalog::list(self, params)),
             "commands.describe" => catalog::describe(self, params),
@@ -224,10 +235,10 @@ impl Session {
             "view.set_standard_view" => crate::view::set_standard_view(self, params),
             "view.set_state" => crate::view::set_state(self, params),
             #[cfg(not(target_arch = "wasm32"))]
-            "run.start" => self.runs.start(self, params),
+            "run.start" => self.runs.start(self, params, waiter),
             "run.wait" | "run.status" | "run.abort" | "run.set_element" | "run.trace" => {
                 let max_nesting = self.config.limits.max_nesting();
-                self.runs.dispatch(&*self.ws, &self.root, command.id, params, max_nesting)
+                self.runs.dispatch(&*self.ws, &self.root, command.id, params, max_nesting, waiter)
             }
             other => Err(CommandError::internal(format!("`{other}` is registered and enabled, with no code behind it"))),
         }

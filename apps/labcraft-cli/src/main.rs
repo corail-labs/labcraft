@@ -11,7 +11,7 @@
 )]
 #![forbid(unsafe_code)]
 
-use labcraft_cli::{args, check, diagram, fmt, run, walk};
+use labcraft_cli::{args, check, diagram, fmt, mcp, run, walk};
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -31,6 +31,8 @@ commands:
   run [--json] [options] FOLDER FUNCTION      check FOLDER, then run FUNCTION against simulated
                                               instruments, deterministically or in real time, and
                                               report what it did
+  mcp [options]                               serve the commands of LabCraft to an agent over MCP,
+                                              on stdio, until stdin closes
   version                                     print the version
   --help                                      print this text
 
@@ -68,6 +70,12 @@ options of run:
   --no-trace             write no trace
   exit codes: 0 ok, 1 error or refused, 2 wrong usage, 3 aborted (Ctrl-C, --timeout), 4 fault
 
+options of mcp:
+  --project DIR          the root of the project, the current folder by default; not the home folder,
+                         a folder above it or the root of a drive
+  --lib-path DIR         as for check
+  --json is not taken: stdout is MCP's
+
 options of all:
   --json                 one JSON document on stdout, nothing else
   --max-report N         diagnostics listed, default 1000; the counts stay complete
@@ -103,6 +111,10 @@ fn main() -> ExitCode {
         },
         (Some("run"), _) => match args::parse_run(rest).and_then(|options| args::refuse_a_file_as_folder(&options).map(|()| options)) {
             Ok(options) => run_run(&options),
+            Err(message) => usage_error(&message),
+        },
+        (Some("mcp"), _) => match args::parse_mcp(rest).and_then(|options| mcp::session(&options)) {
+            Ok(session) => on_the_stack_of_the_work(|| mcp::serve(session), mcp::internal_failure),
             Err(message) => usage_error(&message),
         },
         _ => usage_error("unknown command"),
