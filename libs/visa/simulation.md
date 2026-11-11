@@ -151,6 +151,13 @@ a session during a call; two sessions on one instrument still meet here). A comm
 has passed: a read that waits for an answer, or for its timeout, waits in its session and does not hold the
 instrument.
 
+**In real time** (`--real-time`, spec 8; decision of the owner, 2026-11-11), an instrument is the same machine on
+the clock of the run, which is then the real one: `latency_ms`, the move of a quantity (`start_ms`, `settle_ms`) and the
+timeout of a session take that much real time, from the start of the run. The noise, the answers and the error queue do
+not change: the noise of a quantity depends on how many times it is read, not on when, so a program whose order of reads
+does not depend on time reads the same values in both modes. Only the times differ, by what the machine adds. A simulated
+call never blocks a thread: it waits as a node does, so the other branches go on.
+
 ## 5. Faults
 
 | Key | Value |

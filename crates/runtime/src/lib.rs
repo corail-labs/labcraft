@@ -20,6 +20,7 @@ mod convert;
 mod fault;
 pub mod json;
 pub mod native;
+mod pool;
 pub mod primitives;
 pub mod report;
 pub mod run;

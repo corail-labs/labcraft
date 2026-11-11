@@ -27,13 +27,17 @@ fn repository() -> Arc<Memory> {
 }
 
 fn session(memory: &Arc<Memory>) -> Session {
+    session_with(memory, Arc::new(labcraft_engine::Still))
+}
+
+fn session_with(memory: &Arc<Memory>, clock: Arc<dyn labcraft_engine::Clock>) -> Session {
     let config = Config {
         root: "/".into(),
         lib_paths: Vec::new(),
         limits: Limits::default(),
         shipped: crate::engine::shipped(),
         natives: vec![Arc::new(labcraft_visa::Visa)],
-        clock: Arc::new(labcraft_engine::Still),
+        clock,
         process: 0,
     };
     Session::new(Arc::clone(memory) as Arc<dyn labcraft_engine::Workspace>, config, false).unwrap()
@@ -45,11 +49,36 @@ struct Ran {
     trace: Option<Vec<u8>>,
 }
 
+/// The real clock, for a case in real time, which the scheduler waits on.
+#[cfg(not(target_arch = "wasm32"))]
+struct Real(std::time::Instant);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl labcraft_engine::Clock for Real {
+    fn real_ns(&self) -> u64 {
+        u64::try_from(self.0.elapsed().as_nanos()).unwrap_or(u64::MAX)
+    }
+    /// From 1970: no test here asserts the time of day.
+    fn utc_ns(&self) -> i64 {
+        0
+    }
+}
+
+fn real_time(params: &Json) -> bool {
+    params["mode"] == "real_time"
+}
+
 fn run_case(case: &RunCase) -> Ran {
     let params: Json = serde_json::from_str(case.run).unwrap_or_else(|error| panic!("{}: run.json: {error}", case.name));
     let memory = repository();
     #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
     let mut session = session(&memory);
+    #[cfg(not(target_arch = "wasm32"))]
+    if real_time(&params) {
+        #[expect(clippy::disallowed_methods, reason = "a test of real time, natively only")]
+        let clock = Real(std::time::Instant::now());
+        session = session_with(&memory, Arc::new(clock));
+    }
     #[cfg(not(target_arch = "wasm32"))]
     let report = session.execute("run.start", &params);
     #[cfg(target_arch = "wasm32")]
@@ -60,8 +89,17 @@ fn run_case(case: &RunCase) -> Ran {
 }
 
 /// What `expected` gives and `actual` does not hold: an object compares the keys it gives (`how` says how the values were
-/// found, and is not compared), an array every element, in order; numbers compare as numbers.
+/// found, and is not compared), an array every element, in order; numbers compare as numbers, and a range
+/// `{"at_least": a, "below": b}` takes a number from `a` to below `b`.
 fn differences(expected: &Json, actual: &Json, at: &str, found: &mut Vec<String>) {
+    if let (Some(range), Some(number)) = (range_of(expected), actual.as_f64()) {
+        if number < range.0 {
+            found.push(format!("{at}: {number}, expected at least {}", range.0));
+        } else if number >= range.1 {
+            found.push(format!("{at}: {number}, {PAST_THE_UPPER_BOUND} {}", range.1));
+        }
+        return;
+    }
     match (expected, actual) {
         (Json::Object(wanted), Json::Object(held)) => {
             for (key, value) in wanted {
@@ -89,6 +127,15 @@ fn differences(expected: &Json, actual: &Json, at: &str, found: &mut Vec<String>
     }
 }
 
+/// What a difference past the upper bound of a range says: the only one a run in real time is given more tries for.
+const PAST_THE_UPPER_BOUND: &str = "expected below";
+
+/// A range of a number that depends on the machine: from `at_least` to below `below`.
+fn range_of(expected: &Json) -> Option<(f64, f64)> {
+    let object = expected.as_object().filter(|object| object.len() == 2)?;
+    Some((object.get("at_least")?.as_f64()?, object.get("below")?.as_f64()?))
+}
+
 /// Each line of a trace reads as JSON, its events are numbered in order, and the last says the status of the report.
 fn check_trace(name: &str, trace: &[u8], report: &Json) {
     let text = std::str::from_utf8(trace).unwrap();
@@ -114,11 +161,27 @@ fn the_corpus_of_runs_gives_its_expected_reports() {
     assert!(RUNS.len() >= 18, "the corpus of runs is embedded");
     let mut failed = Vec::new();
     for case in RUNS {
-        let ran = run_case(case);
+        let params: Json = serde_json::from_str(case.run).unwrap_or_else(|error| panic!("{}: run.json: {error}", case.name));
+        // Without threads, no run in real time (D-22): the scheduler in real time is tested apart, without the real clock.
+        if cfg!(target_arch = "wasm32") && real_time(&params) {
+            continue;
+        }
         let expected: Json = serde_json::from_str(case.expected).unwrap_or_else(|error| panic!("{}: expected.json: {error}", case.name));
         assert!(expected.get("how").is_some(), "{}: expected.json says how its values were found", case.name);
+        // A run in real time is given three tries for what depends on the speed of the machine, the bound of `clock`, and only
+        // for that: the rest must hold on each try (decision of the owner, 2026-11-11).
+        let tries = if real_time(&params) { 3 } else { 1 };
+        let mut ran = run_case(case);
         let mut found = Vec::new();
-        differences(&expected, &ran.report, "", &mut found);
+        for attempt in 1..=tries {
+            found.clear();
+            differences(&expected, &ran.report, "", &mut found);
+            let only_too_slow = !found.is_empty() && found.iter().all(|found| found.contains(PAST_THE_UPPER_BOUND));
+            if attempt == tries || !only_too_slow {
+                break;
+            }
+            ran = run_case(case);
+        }
         // A field that says how the run ended, or that it was cut, is asserted absent when the case does not give it.
         for key in ["error", "fault", "abort", "truncated"] {
             if expected.get(key).is_none() && ran.report.get(key).is_some() {

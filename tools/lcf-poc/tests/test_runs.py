@@ -22,6 +22,7 @@ from lcfpoc import api  # noqa: E402
 ROOT = HERE.parents[2]
 CORPUS = ROOT / "tests" / "acceptance" / "runs"
 SHIPPED = "<labcraft>/"
+# `real_ms` depends on the machine, and the proof of concept does not measure it as the Rust runtime does.
 NOT_COMPARED = {"how", "check", "type", "opened", "file", "span", "trace", "real_ms", "warning"}
 
 
@@ -60,6 +61,8 @@ def run_case(case):
         limits["schedule_seed"] = params["schedule_seed"]
     if "timeout" in params:
         limits["timeout"] = params["timeout"]
+    if params.get("mode") == "real_time":
+        limits["real_time"] = True
     return api.run(str(folder), params["function"], sim, args, False, settings, **limits)
 
 
@@ -78,7 +81,7 @@ def value_of(value):
 
 def translated(poc, expected):
     """The parts of `labcraft-run/1` that the report of the proof of concept gives."""
-    out = {"status": poc["status"]}
+    out = {"status": poc["status"], "mode": poc.get("mode")}
     names = [output["name"] for output in expected.get("outputs", [])]
     out["outputs"] = [{"name": name, "value": value_of(poc["outputs"][name])} for name in names if name in poc["outputs"]]
     if poc.get("error") is not None:

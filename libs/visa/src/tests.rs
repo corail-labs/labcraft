@@ -103,6 +103,7 @@ impl Driver {
                     self.tasks[index].held.retain(|held| *held != key);
                     self.give(key);
                 }
+                Step::Blocking(_) => panic!("a simulated call never blocks"),
                 Step::Done(outcome) => {
                     self.tasks[index].done = Some((outcome, self.now));
                     for key in std::mem::take(&mut self.tasks[index].held) {
@@ -143,6 +144,7 @@ impl Driver {
                 self.tasks[index].held.retain(|held| *held != key);
                 self.give(key);
             }
+            Step::Blocking(_) => panic!("a simulated call never blocks"),
             Step::Done(outcome) => {
                 self.tasks[index].done = Some((outcome, self.now));
                 for key in std::mem::take(&mut self.tasks[index].held) {

@@ -56,7 +56,7 @@ struct NodeHost<'m, 'p, 'o> {
 
 impl Host for NodeHost<'_, '_, '_> {
     fn now(&mut self) -> i64 {
-        self.machine.now
+        self.machine.time()
     }
     fn element(&mut self, element: labcraft_ir::ElementId) -> Result<Value, Fault> {
         self.machine.element(self.frame, element)

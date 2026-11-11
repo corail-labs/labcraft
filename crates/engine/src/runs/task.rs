@@ -13,15 +13,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use labcraft_runtime::Env;
-use labcraft_runtime::report::{Part, RESULT_MAX, ReportOf, Whole, report, running};
-use labcraft_runtime::run::{AbortBy, Control, Native, Progress, Run, RunEnd, Unobserved, run};
+use labcraft_runtime::report::{Part, RESULT_MAX, ReportOf, Whole, panel_entry, report, running};
+use labcraft_runtime::run::{
+    AbortBy, Applied, Control, Live, Native, PanelSetting, Pool, Progress, RealTime, Run, RunEnd, SetBy, Unobserved, Wake, run,
+};
 use labcraft_runtime::trace::TraceObserver;
 use labcraft_trace::{Header, WriteLimits};
 use serde_json::{Value as Json, json};
 
 use super::Tag;
+use super::convert::{Converter, Types};
 use super::parts::InlineTrace;
-use super::prepare::{Prepared, TraceMode};
+use super::prepare::{Prepared, Supplied, TraceMode, judge_setting};
+use crate::error::CommandError;
 use crate::walk::io_text;
 use crate::workspace::{Held, Kind, Workspace};
 
@@ -39,6 +43,14 @@ pub(crate) const RUNS_FOLDER: &str = ".labcraft/runs";
 /// itself (`docs/architecture.md`, 10.4), nor does `engine`, which builds for WASM.
 pub trait Clock: Send + Sync {
     fn real_ns(&self) -> u64;
+    /// The UTC time now, in nanoseconds since 1970-01-01T00:00:00Z: where `time.now` starts in real time (spec 8). Without a
+    /// default, so that an app's clock cannot forget it and give times of 1970.
+    fn utc_ns(&self) -> i64;
+    /// Whether it moves: a run in real time on a clock that never moves would never end, and is refused (decision of the
+    /// owner, 2026-11-11).
+    fn moves(&self) -> bool {
+        true
+    }
 }
 
 /// A clock that never moves: tests and the corpus of runs, whose reports then say `real_ms: 0`.
@@ -48,6 +60,12 @@ pub struct Still;
 impl Clock for Still {
     fn real_ns(&self) -> u64 {
         0
+    }
+    fn utc_ns(&self) -> i64 {
+        0
+    }
+    fn moves(&self) -> bool {
+        false
     }
 }
 
@@ -64,6 +82,30 @@ pub(crate) trait Steer: Sync {
     fn grace_over(&self) -> bool {
         false
     }
+    /// What wakes the scheduler of a run in real time, which what reaches the run from outside wakes.
+    fn wake(&self) -> Wake {
+        Wake::default()
+    }
+    /// The settings of `run.set_element` given since the last time it was asked.
+    fn live(&self) -> Vec<Request> {
+        Vec::new()
+    }
+    /// As the run ends: the settings given that it did not take, and no more of them.
+    fn close_live(&self) -> Vec<Request> {
+        Vec::new()
+    }
+    /// What `run.set_element` answers for a setting: its entry of `panel`, or why it was refused.
+    fn reply(&self, tag: u64, reply: Result<Json, CommandError>) {
+        let _ = (tag, reply);
+    }
+}
+
+/// A setting of `run.set_element`, as it was given: the run judges it against its panel.
+#[derive(Clone, Debug)]
+pub(crate) struct Request {
+    pub tag: u64,
+    pub element: String,
+    pub value: Json,
 }
 
 /// Nobody steers: a run to its end on the caller's thread.
@@ -94,6 +136,40 @@ struct Steering<'a> {
     start: u64,
     steer: &'a dyn Steer,
     of: ReportOf<'a>,
+    /// What judges a setting of `run.set_element`, as `prepare` judges `set`.
+    converter: Option<Converter<'a>>,
+    function: &'a str,
+    /// The settings handed to the run, by tag, until it says whether they applied.
+    handed: HashMap<u64, PanelSetting>,
+}
+
+impl Steering<'_> {
+    /// Judges the settings of `run.set_element` against the panel: a setting that `--set` would refuse is `params.invalid`,
+    /// whose message gives its code (commands.md 6.4), and the run goes on.
+    fn judged(&mut self, requests: Vec<Request>) -> Vec<Live> {
+        let mut live = Vec::new();
+        let (Some(converter), Some(top)) = (&self.converter, self.of.program.functions.first()) else {
+            // A program with no function to run: each setting still gets an answer.
+            for Request { tag, .. } in requests {
+                self.steer.reply(tag, Err(CommandError::internal("the run has no top-level function whose panel to set")));
+            }
+            return live;
+        };
+        for Request { tag, element, value } in requests {
+            match judge_setting(top, self.of.names, converter, &element, &Supplied::Json(value), self.function) {
+                Ok((id, value)) => {
+                    self.handed.insert(tag, PanelSetting { element: id, value: value.clone(), at: 0, by: SetBy::RunSetElement });
+                    live.push(Live { tag, element: id, value });
+                }
+                Err(refused) => {
+                    let parameter = if refused.problem.code == "LC8108" { "element" } else { "value" };
+                    let message = format!("{}: {}", refused.problem.code, refused.problem.message);
+                    self.steer.reply(tag, Err(CommandError::of("params.invalid", parameter, message)));
+                }
+            }
+        }
+        live
+    }
 }
 
 impl Control for Steering<'_> {
@@ -113,6 +189,29 @@ impl Control for Steering<'_> {
         self.steer.grace_over()
     }
 
+    fn live(&mut self) -> Vec<Live> {
+        let requests = self.steer.live();
+        if requests.is_empty() { Vec::new() } else { self.judged(requests) }
+    }
+
+    fn close_live(&mut self) -> Vec<Live> {
+        let requests = self.steer.close_live();
+        self.judged(requests)
+    }
+
+    fn applied(&mut self, tag: u64, at: Option<i64>) {
+        let Some(mut setting) = self.handed.remove(&tag) else { return };
+        setting.at = at.unwrap_or(0);
+        let entry = panel_entry(&self.of, &Applied { setting, applied: at.is_some() });
+        self.steer.reply(tag, Ok(serde_json::from_str(&entry).unwrap_or(Json::Null)));
+    }
+
+    fn refused(&mut self, tag: u64, fault: &labcraft_runtime::Fault) {
+        self.handed.remove(&tag);
+        let message = format!("{}: {}", fault.code.as_str(), fault.message);
+        self.steer.reply(tag, Err(CommandError::of("params.invalid", "value", message)));
+    }
+
     fn progress(&mut self, progress: Progress) {
         let real_ms = self.real_ns() / 1_000_000;
         let of = ReportOf { real_ms, ..copy_of(&self.of) };
@@ -129,6 +228,7 @@ fn copy_of<'a>(of: &ReportOf<'a>) -> ReportOf<'a> {
         files: of.files,
         natives: of.natives,
         real_ms: of.real_ms,
+        real_time: of.real_time,
         check: of.check,
         trace: of.trace,
         limit: of.limit,
@@ -356,7 +456,15 @@ fn trace_file_at(ws: &Arc<dyn Workspace>, at: &super::prepare::Outside, tag: Tag
 }
 
 /// Runs what `prepare` judged, to its end.
-pub(crate) fn execute(prepared: Prepared, ws: &Arc<dyn Workspace>, root: &Path, clock: &dyn Clock, steer: &dyn Steer, tag: Tag) -> Finished {
+pub(crate) fn execute(
+    prepared: Prepared,
+    ws: &Arc<dyn Workspace>,
+    root: &Path,
+    clock: &dyn Clock,
+    steer: &dyn Steer,
+    tag: Tag,
+    pool: &Pool,
+) -> Finished {
     let start = clock.real_ns();
     let Prepared {
         id,
@@ -374,13 +482,16 @@ pub(crate) fn execute(prepared: Prepared, ws: &Arc<dyn Workspace>, root: &Path, 
         trace_shown,
         trace_to,
         texts: want_texts,
+        real_time,
+        max_nesting,
     } = prepared;
     let env = Env { program: &program, names: &names };
     let natives: Vec<Native<'_>> =
         natives.iter().map(|native| Native { library: native.library, native: &*native.native, simulation: native.simulation.as_ref() }).collect();
     let header_files: Vec<(&str, &str)> = files.iter().map(|(file, sha)| (file.as_str(), sha.as_str())).collect();
     let shown = program.functions.first().map_or(function.as_str(), |top| &*top.shown);
-    let header = Header { run: &id, function: shown, mode: "deterministic", files: &header_files };
+    let mode = if real_time { "real_time" } else { "deterministic" };
+    let header = Header { run: &id, function: shown, mode, files: &header_files };
     let of = ReportOf {
         run: &id,
         program: &program,
@@ -388,13 +499,22 @@ pub(crate) fn execute(prepared: Prepared, ws: &Arc<dyn Workspace>, root: &Path, 
         files: &checked.files,
         natives: &natives,
         real_ms: 0,
+        real_time,
         check: &check,
         trace: None,
         limit: RESULT_MAX,
     };
     // What the run says before its first node, so that `run.status` always has an answer.
     steer.progress(serde_json::from_str(&running(&Progress::default(), &of)).unwrap_or(Json::Null));
-    let mut control = Steering { clock, start, steer, of: copy_of(&of) };
+    let converter = program.functions.first().map(|top| Converter {
+        types: Types { table: &program.types, definitions: &program.definitions, names: &names, viewer: top.library },
+        max_nesting,
+    });
+    let mut control = Steering { clock, start, steer, of: copy_of(&of), converter, function: &function, handed: HashMap::new() };
+    let mut settings = settings;
+    if real_time {
+        settings.real_time = Some(RealTime { pool: pool.clone(), wake: steer.wake(), epoch: clock.utc_ns() });
+    }
     let given = Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings };
 
     let (end, trace_json, trace_file): (RunEnd, Option<Box<dyn Part + '_>>, Option<String>) = match trace {

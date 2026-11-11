@@ -29,6 +29,12 @@ impl Clock for Real {
     fn real_ns(&self) -> u64 {
         u64::try_from(self.0.elapsed().as_nanos()).unwrap_or(u64::MAX)
     }
+
+    #[expect(clippy::disallowed_methods, reason = "the command line, whose `run` is never built for WASM, where the clock traps")]
+    fn utc_ns(&self) -> i64 {
+        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
+    }
 }
 
 /// How often the run is asked where it is, and the line of stderr written again.
@@ -64,6 +70,7 @@ fn params_of(options: &RunOptions) -> Json {
         "function": options.function,
         "deny_warnings": options.deny_warnings,
         "trace": if options.trace == TraceTo::None { "none" } else { "file" },
+        "mode": if options.real_time { "real_time" } else { "deterministic" },
         "wait": EVERY,
     });
     let Some(object) = params.as_object_mut() else { return params };
@@ -131,7 +138,7 @@ pub fn run(options: &RunOptions) -> Result<ExitCode, String> {
             let folder = shown(&options.folder, current);
             let diagnostic =
                 json!({ "code": "LC0001", "severity": "error", "message": format!("cannot read this path: {}", error.message), "file": folder });
-            return Ok(answer(options, &labcraft_engine::runs::refused_report(&options.function, vec![diagnostic]), &[]));
+            return Ok(answer(options, &labcraft_engine::runs::refused_report(&options.function, options.real_time, vec![diagnostic]), &[]));
         }
     };
     let runs = session.runs();
@@ -200,7 +207,7 @@ fn show_progress(report: &Json, before: usize) -> usize {
 pub fn internal_failure(options: &RunOptions, what: &str) -> ExitCode {
     let diagnostic =
         json!({ "code": "LC0099", "severity": "error", "message": format!("the tool could not finish: {what}"), "file": "labcraft-cli" });
-    answer(options, &labcraft_engine::runs::refused_report(&options.function, vec![diagnostic]), &[])
+    answer(options, &labcraft_engine::runs::refused_report(&options.function, options.real_time, vec![diagnostic]), &[])
 }
 
 fn answer(options: &RunOptions, report: &Json, texts: &[Option<String>]) -> ExitCode {

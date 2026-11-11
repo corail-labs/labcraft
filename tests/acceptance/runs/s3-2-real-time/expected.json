@@ -1,0 +1,125 @@
+{
+  "how": "Scenario 3, point 2, in real time (spec 8; decision of the owner, 2026-11-11): the program and the simulation file of `s3-2-the-waits-overlap`, whose noise depends on how many times each quantity is read, not on time, so the readings, the means and the commands are those of that case, from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1; their times, on the real clock, are not compared. Each branch waits 10 times 100 ms of real time, so the run takes at least 1000 ms; the waits of the two branches overlap, so it ends below 1500 ms, best of three runs (scenario 3, point 2, proposed), where one after the other would take 2000 ms.",
+  "status": "ok",
+  "mode": "real_time",
+  "outputs": [
+    {
+      "name": "mean_a",
+      "type": "f64",
+      "value": 230.01649310000002
+    },
+    {
+      "name": "mean_b",
+      "type": "f64",
+      "value": 12.001212
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": null
+    }
+  ],
+  "clock": {
+    "real_ms": {
+      "at_least": 1000,
+      "below": 1500
+    }
+  },
+  "resources": {
+    "opened": 2,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.969055"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.970462"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071648"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.029190"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "229.930728"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.063959"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.016368"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.030193"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.012111"
+        }
+      ]
+    },
+    {
+      "resource": "SIM::DMM1",
+      "commands": [
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.005803"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.985047"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.004267"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.001685"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.992145"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.996581"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "11.998850"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.009549"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.013025"
+        },
+        {
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "12.005168"
+        }
+      ]
+    }
+  ]
+}

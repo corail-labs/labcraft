@@ -29,7 +29,8 @@ commands:
                                               draw each function of FOLDER, or those named, as an SVG
                                               under DIR, at the path of its file
   run [--json] [options] FOLDER FUNCTION      check FOLDER, then run FUNCTION against simulated
-                                              instruments, deterministically, and report what it did
+                                              instruments, deterministically or in real time, and
+                                              report what it did
   version                                     print the version
   --help                                      print this text
 
@@ -52,14 +53,17 @@ options of run:
   --arg NAME=VALUE       the value of an input: 230V, \"0.1 s\", Fast, '[1, 2]'; can be given several times
   --set ELEMENT=VALUE@TIME
                          set a panel element at a time of the run: stop=true@5s; can be given several times
+  --real-time            run on the real clock, not a simulated one; not with --schedule-seed or
+                         --max-real-time
   --schedule-seed N      draw the order of the nodes ready at one time from N
   --timeout DURATION     abort the run after DURATION on its clock: 30s
   --max-iterations N|none, --max-nodes N|none
-                         iterations of each loop (default 10000), nodes run in all (default 1000000)
+                         iterations of each loop (default 10000), nodes run in all (default 1000000);
+                         in real time, no limit by default
   --max-call-depth N     depth of calls, default 1024, at most 4096
   --max-memory BYTES     what the values of the run hold at once, default 1 GiB, at least 1 MiB
   --max-real-time DURATION
-                         the real time the run may take, default 10 min
+                         the real time a deterministic run may take, default 10 min
   --trace FILE           write the trace to FILE instead of .labcraft/runs/
   --no-trace             write no trace
   exit codes: 0 ok, 1 error or refused, 2 wrong usage, 3 aborted (Ctrl-C, --timeout), 4 fault

@@ -225,7 +225,7 @@ impl Session {
             "view.set_state" => crate::view::set_state(self, params),
             #[cfg(not(target_arch = "wasm32"))]
             "run.start" => self.runs.start(self, params),
-            "run.wait" | "run.status" | "run.abort" | "run.trace" => {
+            "run.wait" | "run.status" | "run.abort" | "run.set_element" | "run.trace" => {
                 let max_nesting = self.config.limits.max_nesting();
                 self.runs.dispatch(&*self.ws, &self.root, command.id, params, max_nesting)
             }

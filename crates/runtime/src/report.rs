@@ -22,7 +22,7 @@ use labcraft_types::{Interner, Name, TyId};
 use crate::convert::Env;
 use crate::json::{Describe, Json};
 use crate::native::{HandleInfo, LogEntry};
-use crate::run::{AbortBy, LoopAt, Native, Progress, Resource, RunEnd, SetBy, Status};
+use crate::run::{AbortBy, Applied, LoopAt, Native, Progress, Resource, RunEnd, SetBy, Status};
 use crate::trace::status_text;
 use crate::value::Handle;
 
@@ -59,6 +59,8 @@ pub struct ReportOf<'a> {
     /// The native libraries of the run, in the order it was given them.
     pub natives: &'a [Native<'a>],
     pub real_ms: u64,
+    /// A run in real time: `mode` says `real_time`, and `clock` gives `real_ms` only (commands.md 7).
+    pub real_time: bool,
     /// The `check` made before the run: `{"summary":…,"diagnostics":[…]}`, the fields of `labcraft-check/1`, its
     /// diagnostics already within their own bound. It gives way after the values, before the commands of instruments.
     pub check: &'a dyn Part,
@@ -94,7 +96,7 @@ impl Part for Whole<'_> {
 /// The report of a run that ended. Its function is `functions[0]` of the program.
 pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
     let env = Env { program: of.program, names: of.names };
-    let Some(top) = of.program.functions.first() else { return refused(of.run, "", 0, &of.check.least()) };
+    let Some(top) = of.program.functions.first() else { return refused(of.run, "", 0, of.real_time, &of.check.least()) };
     let handles = Ended(end.resources.iter().filter_map(|resource| Some((resource.handle, resource.info.clone()?))).collect());
     let json = Json { env, viewer: top.library, handles: &handles };
 
@@ -126,7 +128,7 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
         loops(&mut fixed, of, &abort.loops);
         fixed.push_str(",\"warning\":\"the instruments are in an unknown state\"}");
     }
-    let _ = write!(fixed, ",\"clock\":{{\"simulated_ms\":{},\"real_ms\":{}}}", ms(end.clock), of.real_ms);
+    clock(&mut fixed, of.real_time, end.clock, of.real_ms);
     let mut truncated = false;
     let _ = write!(fixed, ",\"resources\":{{\"opened\":{},\"open\":", end.resources.len());
     truncated |= resource_list(&mut fixed, of, end.resources.iter().filter(|resource| resource.info.as_ref().is_some_and(|info| info.open)));
@@ -142,11 +144,6 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
     let closing_least = least_trace.as_ref().map_or(0, |trace| trace.len() + 9) + least_check.len() + 9;
 
     // Each output and each setting of the panel, without its value: never cut, so counted before any value is written.
-    let by_text = |by: SetBy| match by {
-        SetBy::Program => "ui.set",
-        SetBy::Set => "set",
-        SetBy::RunSetElement => "run.set_element",
-    };
     let shown_outputs: Vec<(String, TyId)> = top
         .outputs
         .iter()
@@ -160,12 +157,14 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
             let element = top.elements.get(setting.element.0 as usize);
             let name = element.map_or("", |element| of.names.resolve(element.name));
             let ty = element.and_then(|element| element.ty).unwrap_or(TyId::ERROR);
-            let after = format!(",\"at_ms\":{},\"by\":{},\"applied\":{}}}", ms(setting.at), quoted(by_text(setting.by)), applied.applied);
+            // A setting of `run.set_element` that the run never took has no time.
+            let at = if setting.by == SetBy::RunSetElement && !applied.applied { "null".to_owned() } else { ms(setting.at) };
+            let after = format!(",\"at_ms\":{at},\"by\":{},\"applied\":{}}}", quoted(set_by_text(setting.by)), applied.applied);
             (format!("{{\"element\":{}, \"value\":", quoted(name)).replace(", \"value", ",\"value"), after, ty)
         })
         .collect();
     let mut head_text = String::new();
-    head(&mut head_text, status_text(end.status), of.run, &top.shown);
+    head(&mut head_text, status_text(end.status), of.run, &top.shown, of.real_time);
     // The outputs and the settings that fit, each without its value, which takes at least the mark of a cut: those past them
     // are counted in `outputs_more` and `panel_more` (64 bytes kept for the two).
     let mut room = of.limit.saturating_sub(head_text.len() + fixed.len() + closing_least + TAIL + 64);
@@ -240,29 +239,23 @@ pub fn report(end: &RunEnd, of: &ReportOf<'_>) -> String {
 
 /// The report of a run that nothing ran: the function is unknown, or `check`, an argument, a setting or the simulation file
 /// was refused (commands.md 7). Its diagnostics are in `check`.
-pub fn refused(run: &str, function: &str, real_ms: u64, check: &str) -> String {
+pub fn refused(run: &str, function: &str, real_ms: u64, real_time: bool, check: &str) -> String {
     let mut out = String::new();
-    head(&mut out, "refused", run, function);
-    let _ = write!(
-        out,
-        ",\"outputs\":[],\"clock\":{{\"simulated_ms\":0.0,\"real_ms\":{real_ms}}},\"resources\":{{\"opened\":0,\"open\":[],\"leaked\":[]}},\"check\":{check}}}"
-    );
+    head(&mut out, "refused", run, function, real_time);
+    out.push_str(",\"outputs\":[]");
+    clock(&mut out, real_time, 0, real_ms);
+    let _ = write!(out, ",\"resources\":{{\"opened\":0,\"open\":[],\"leaked\":[]}},\"check\":{check}}}");
     out
 }
 
 /// The report of a run that goes on (commands.md 4): its clock, the resources it opened so far, and where each loop is.
-/// `simulated_ms` only in deterministic mode, which is the only one in M0b so far.
 pub fn running(progress: &Progress, of: &ReportOf<'_>) -> String {
     let function = of.program.functions.first().map_or("", |function| &*function.shown);
     let mut out = String::new();
-    head(&mut out, "running", of.run, function);
-    let _ = write!(
-        out,
-        ",\"outputs\":[],\"clock\":{{\"simulated_ms\":{},\"real_ms\":{}}},\"resources\":{{\"opened\":{},\"open\":[],\"leaked\":[]}}",
-        ms(progress.clock),
-        of.real_ms,
-        progress.opened
-    );
+    head(&mut out, "running", of.run, function, of.real_time);
+    out.push_str(",\"outputs\":[]");
+    clock(&mut out, of.real_time, progress.clock, of.real_ms);
+    let _ = write!(out, ",\"resources\":{{\"opened\":{},\"open\":[],\"leaked\":[]}}", progress.opened);
     loops(&mut out, of, &progress.loops);
     let (check, cut) = of.check.within(of.limit.saturating_sub(out.len() + TAIL));
     out.push_str(",\"check\":");
@@ -274,15 +267,48 @@ pub fn running(progress: &Progress, of: &ReportOf<'_>) -> String {
     out
 }
 
-fn head(out: &mut String, status: &str, run: &str, function: &str) {
+/// One entry of `panel` (commands.md 7), its value within the bound of a value: what `run.set_element` returns, with its run.
+pub fn panel_entry(of: &ReportOf<'_>, applied: &Applied) -> String {
+    let Some(top) = of.program.functions.first() else { return "{}".to_owned() };
+    let json = Json { env: Env { program: of.program, names: of.names }, viewer: top.library, handles: &crate::json::NoHandles };
+    let setting = &applied.setting;
+    let element = top.elements.get(setting.element.0 as usize);
+    let name = element.map_or("", |element| of.names.resolve(element.name));
+    let ty = element.and_then(|element| element.ty).unwrap_or(TyId::ERROR);
+    let mut out = format!("{{\"run\":{},\"element\":{},\"value\":", quoted(of.run), quoted(name));
+    value_within(&mut out, &json.typed(&setting.value, ty), VALUE_BUDGET);
+    let at = if applied.applied { ms(setting.at) } else { "null".to_owned() };
+    let _ = write!(out, ",\"at_ms\":{at},\"by\":{},\"applied\":{}}}", quoted(set_by_text(setting.by)), applied.applied);
+    out
+}
+
+fn set_by_text(by: SetBy) -> &'static str {
+    match by {
+        SetBy::Program => "ui.set",
+        SetBy::Set => "set",
+        SetBy::RunSetElement => "run.set_element",
+    }
+}
+
+fn head(out: &mut String, status: &str, run: &str, function: &str, real_time: bool) {
     let _ = write!(
         out,
-        "{{\"schema\":{},\"status\":{},\"run\":{},\"function\":{},\"mode\":\"deterministic\"",
+        "{{\"schema\":{},\"status\":{},\"run\":{},\"function\":{},\"mode\":{}",
         quoted(SCHEMA),
         quoted(status),
         quoted(run),
-        quoted(function)
+        quoted(function),
+        quoted(if real_time { "real_time" } else { "deterministic" })
     );
+}
+
+/// `clock` (commands.md 7): `simulated_ms` in deterministic mode, `real_ms` always.
+fn clock(out: &mut String, real_time: bool, clock: i64, real_ms: u64) {
+    if real_time {
+        let _ = write!(out, ",\"clock\":{{\"real_ms\":{real_ms}}}");
+    } else {
+        let _ = write!(out, ",\"clock\":{{\"simulated_ms\":{},\"real_ms\":{real_ms}}}", ms(clock));
+    }
 }
 
 /// One value within `budget` bytes, at least [`VALUE_MIN`], so that a short value (`0`, `null`) is never replaced by the mark

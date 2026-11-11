@@ -1,10 +1,16 @@
-//! A run of a program, in deterministic mode (`docs/architecture.md`, 10.4 and 10.5; spec 8): the scheduler, which runs the
-//! ready node first in the global order on a simulated clock, and the interpreter, which runs each node by its kind. It
-//! ends in one of the statuses of spec 8.2: `ok` or `error` when the function finishes, `aborted`, `fault`.
+//! A run of a program (`docs/architecture.md`, 10.4 and 10.5; spec 8): the scheduler, which runs the ready node first in the
+//! global order, on a simulated clock in deterministic mode or on the real one in real time, and the interpreter, which runs
+//! each node by its kind. It ends in one of the statuses of spec 8.2: `ok` or `error` when the function finishes, `aborted`,
+//! `fault`.
 //!
 //! **One thread runs the diagram**: the scheduler and the nodes share it. A native call does not block in deterministic
 //! mode: it says how long it waits, and its node sleeps that long, so the waits of parallel branches overlap and a replay is
-//! exact. Calls are frames on the heap, not calls of the interpreter on the stack.
+//! exact. In real time the same sleeps wait on the real clock, and the work of a call that blocks runs on a thread of the
+//! [`Pool`], its end coming back to the scheduler, which [`Wake`] wakes. Calls are frames on the heap, not calls of the
+//! interpreter on the stack.
+
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 
 use labcraft_check::CheckedFile;
 use labcraft_graph::Id;
@@ -14,6 +20,7 @@ use labcraft_types::{Interner, LibraryId, Name};
 use crate::fault::Fault;
 use crate::json::Describe;
 use crate::native::{HandleInfo, InstrumentLog, Logs, NativeLibrary, Simulation};
+pub use crate::pool::Pool;
 use crate::value::{Handle, Value};
 
 mod machine;
@@ -28,6 +35,9 @@ pub use memory::NODE_COST;
 
 /// The end of the clock of a run, 2^62 ns, about 146 years *(proposed, cli.md 6.2)*: past it, `LC8007`.
 pub const CLOCK_END: i64 = 1 << 62;
+
+/// What a wait in real time leaves to the high-resolution timer: a little more than the tick of Windows.
+pub const COARSE: u64 = 16_000_000;
 
 /// How a run is bounded and what it is given besides its inputs (cli.md 6.2). The defaults are those of a deterministic run.
 #[derive(Clone, Debug)]
@@ -50,6 +60,73 @@ pub struct Settings {
     pub grace: i64,
     /// The settings of panel elements of the top-level function (`--set`, `set` of `run.start`), in the order given.
     pub panel: Vec<PanelSetting>,
+    /// A run in real time; deterministic mode without it.
+    pub real_time: Option<RealTime>,
+}
+
+/// What a run in real time is given (spec 8, cli.md 6.2): the pool for the work that blocks, what wakes its scheduler, and the
+/// time of its start, on which `time.now` counts.
+#[derive(Clone, Debug)]
+pub struct RealTime {
+    pub pool: Pool,
+    pub wake: Wake,
+    /// The UTC time of the start of the run, in nanoseconds since 1970-01-01T00:00:00Z: `time.now` gives it plus the clock
+    /// of the run, which is monotonic, so that it never goes back when the system sets its time.
+    pub epoch: i64,
+}
+
+/// What wakes the scheduler of a run in real time while it waits for the clock: the end of work on the pool, and what
+/// [`Control`] reaches it with from outside (an abort, `run.set_element`, `run.status`), which wakes it after it is given.
+#[derive(Clone, Default)]
+pub struct Wake(Arc<Woken>);
+
+#[derive(Default)]
+struct Woken {
+    count: Mutex<u64>,
+    changed: Condvar,
+}
+
+impl std::fmt::Debug for Wake {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Wake").field(&self.seen()).finish()
+    }
+}
+
+impl Wake {
+    /// Wakes the scheduler, now or at its next wait.
+    pub fn wake(&self) {
+        let mut count = self.0.count.lock().unwrap_or_else(PoisonError::into_inner);
+        *count = count.wrapping_add(1);
+        drop(count);
+        self.0.changed.notify_all();
+    }
+
+    /// How many times it was woken: what a wait starts from, so that a wake given before the wait is not lost.
+    pub fn seen(&self) -> u64 {
+        *self.0.count.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Waits until it is woken after `seen`, or `timeout` has passed.
+    pub fn wait(&self, seen: u64, timeout: Option<Duration>) {
+        let count = self.0.count.lock().unwrap_or_else(PoisonError::into_inner);
+        match timeout {
+            Some(timeout) => {
+                let (held, _) = self.0.changed.wait_timeout_while(count, timeout, |count| *count == seen).unwrap_or_else(PoisonError::into_inner);
+                drop(held);
+            }
+            None => drop(self.0.changed.wait_while(count, |count| *count == seen).unwrap_or_else(PoisonError::into_inner)),
+        }
+    }
+}
+
+/// A setting of `run.set_element`, judged by the app, which the scheduler applies when it takes it (commands.md 6.4). `tag`
+/// tells the app which one applied.
+#[derive(Clone, Debug)]
+pub struct Live {
+    pub tag: u64,
+    pub element: ElementId,
+    /// In the type of the element.
+    pub value: Value,
 }
 
 impl Default for Settings {
@@ -64,6 +141,7 @@ impl Default for Settings {
             max_real_time: Some(600_000_000_000),
             grace: 5_000_000_000,
             panel: Vec::new(),
+            real_time: None,
         }
     }
 }
@@ -118,6 +196,38 @@ pub trait Control {
     }
     /// Where the run is: its clock, the resources it opened so far, and each loop going.
     fn progress(&mut self, _progress: Progress) {}
+    /// In real time, waits until the real time `until` (from the start of the run, as [`Control::real_ns`] counts) or until
+    /// `wake` is woken after `seen`; without `until`, until it is woken. It may return early: the scheduler asks again.
+    ///
+    /// A condition variable wakes on the tick of the system, 15.6 ms on Windows by default, so it waits until [`COARSE`]
+    /// before `until`, and a sleep of the high-resolution timer does the rest, which a wake reaches after it: at most
+    /// [`COARSE`] late.
+    fn wait(&mut self, wake: &Wake, seen: u64, until: Option<u64>) {
+        let Some(until) = until else { return wake.wait(seen, None) };
+        let left = until.saturating_sub(self.real_ns());
+        if left > COARSE {
+            wake.wait(seen, Some(Duration::from_nanos(left - COARSE)));
+        } else if left > 0 {
+            std::thread::sleep(Duration::from_nanos(left));
+        }
+    }
+    /// The settings of `run.set_element` given since the last time it was asked, in the order given (real time only).
+    fn live(&mut self) -> Vec<Live> {
+        Vec::new()
+    }
+    /// A setting of [`Control::live`] applied at `at` on the clock of the run, or never, when the run ended first.
+    fn applied(&mut self, tag: u64, at: Option<i64>) {
+        let _ = (tag, at);
+    }
+    /// A setting of [`Control::live`] that the run refused, and goes on: its value does not fit in the memory of the run
+    /// (`LC8005`; decision of the owner, 2026-11-11).
+    fn refused(&mut self, tag: u64, fault: &Fault) {
+        let _ = (tag, fault);
+    }
+    /// As the run ends: the settings given that it did not take, and no more of them.
+    fn close_live(&mut self) -> Vec<Live> {
+        Vec::new()
+    }
 }
 
 /// Where a run is while it goes on (commands.md 4, `running`).
@@ -277,7 +387,8 @@ pub struct Run<'a> {
     pub settings: Settings,
 }
 
-/// Runs `functions[0]` of the program to its end, in deterministic mode. It never panics: a panic of a primitive or of a
+/// Runs `functions[0]` of the program to its end, in deterministic mode, or in real time with [`Settings::real_time`]. It
+/// never panics: a panic of a primitive or of a
 /// native library is caught and ends the run with the fault `LC8004`.
 pub fn run(run: Run<'_>, control: &mut dyn Control, observer: &mut dyn Observer) -> RunEnd {
     machine::Machine::new(run, control, observer).go()
