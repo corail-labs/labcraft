@@ -121,7 +121,13 @@ fn the_scripted_loop_of_scenario_1() {
     let stdin = client.stdin.as_mut().unwrap();
     writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).unwrap();
     let tools = client.request("tools/list", json!({}));
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 18, "mcp.md 2, less `guide_read` until 9b");
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 19, "mcp.md 2");
+    assert!(init["result"]["instructions"].as_str().unwrap().contains("`guide_read` once"));
+
+    // mcp.md 8, call 1: the skills, and the one that writes a program, built into the binary.
+    let guide = client.call("guide_read", json!({}));
+    assert_eq!(guide["skill"], "labcraft-writing", "{guide}");
+    assert!(guide["text"].as_str().unwrap().contains("`functions_list`"));
 
     // The simulation files shipped with `visa`, and their resources.
     let project = client.call("project_describe", json!({}));
@@ -170,8 +176,8 @@ fn the_scripted_loop_of_scenario_1() {
     }
     assert_eq!(pass["resources"]["opened"], 1);
     assert_eq!(absent["resources"]["opened"], 0);
-    // Point 5: at most 20 calls to the tools; this loop takes 7, and the comparison with the command line one more.
-    assert_eq!(client.calls, 8);
+    // Point 5: at most 20 calls to the tools; this loop takes 8, and the comparison with the command line one more.
+    assert_eq!(client.calls, 9);
     let ended = client.end();
     assert!(ended.success(), "{ended:?}");
 }

@@ -43,7 +43,7 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 
 - Run `cargo xtask spec` (needs `pip install -r tools/lcf-poc/requirements.txt`). It runs every
   Python check of the workflow `checks`, prints `ok` or `FAIL` for each, and the output of those that
-  fail: every complete code block of the spec and every file of `examples/`, `libs/` and `docs/rfc/`
+  fail: every complete code block of the spec and of `skills/`, and every file of `examples/`, `libs/` and `docs/rfc/`
   must parse and be in canonical form (spec 5.2: order of lines and layout of the text), `examples/`,
   `docs/rfc/`, `libs/visa` and `libs/scpi` must check, and the tests of the proof of concept must
   pass. A new library of `libs/` is added to the list in `xtask/src/spec.rs`. It is not part of

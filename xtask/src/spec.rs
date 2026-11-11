@@ -6,12 +6,18 @@ use std::process::{Command, Output};
 
 /// The checks, in the order they run. This is the only list: the workflow `checks` and AGENTS.md call `cargo xtask spec`.
 const CHECKS: &[(&str, &[&str])] = &[
-    ("grammar, examples and spec code blocks", &["tools/lcf-view/lcf_view.py", "examples", "libs", "--spec", "docs/language-spec-v0.md"]),
+    (
+        "grammar, examples, spec and skills code blocks",
+        &["tools/lcf-view/lcf_view.py", "examples", "libs", "--spec", "docs/language-spec-v0.md", "--spec", "skills"],
+    ),
     ("check examples", &["tools/lcf-poc/lcf.py", "check", "examples"]),
     ("check docs/rfc", &["tools/lcf-poc/lcf.py", "check", "docs/rfc"]),
     ("check libs/visa", &["tools/lcf-poc/lcf.py", "check", "libs/visa"]),
     ("check libs/scpi", &["tools/lcf-poc/lcf.py", "check", "libs/scpi"]),
-    ("canonical form", &["tools/lcf-poc/lcf.py", "fmt", "--check", "--spec", "docs/language-spec-v0.md", "examples", "docs/rfc", "libs"]),
+    (
+        "canonical form",
+        &["tools/lcf-poc/lcf.py", "fmt", "--check", "--spec", "docs/language-spec-v0.md", "--spec", "skills", "examples", "docs/rfc", "libs"],
+    ),
     ("proof of concept tests", &["-m", "unittest", "discover", "tools/lcf-poc/tests"]),
     ("MCP round trip", &["tools/lcf-poc/tests/mcp_smoke.py"]),
 ];

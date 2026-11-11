@@ -1,7 +1,7 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-11. Status: draft for milestone M0b, implemented in `engine` but `guide.read` (step 9) and
-`view.open_trace`, which comes with the values of a run (step 8 of M0v): they are registered as `planned`. The commands
+*Last updated: 2026-11-11. Status: draft for milestone M0b, implemented in `engine` but `view.open_trace`, which
+comes with the values of a run (step 8 of M0v): it is registered as `planned`. The commands
 of section 6.5 are in `engine::view` and `engine::drawings` (`docs/architecture.md`, 10.8 and 11.5).*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,
@@ -245,6 +245,11 @@ MCP tool ([mcp.md](mcp.md), section 2). Parameters in *italics* are optional.
 |---|---|---|
 | `guide.read` | *`skill`*, *`file`* (`SKILL.md`) | The skills of `skills/`, from the copies built into LabCraft: without `skill`, each skill with its name and the line that says when to use it, followed by the `SKILL.md` of the skill that writes a program, so that one call starts the loop; with one, that file of it, in Markdown. The same files that a client which supports skills installs, so there is one text to keep right. Never reads a path from disk; an unknown skill or file is `params.invalid`, with the choices in `expected`. No skill holds the programs of the acceptance scenarios |
 | `functions.list` | *`library`*, *`filter`*, *`docs`* (`false`) | Every function and type the project can call: primitives (`core`, `string`, `array`, `errors`, `time`, `ui`), shipped libraries (`visa`, `scpi`), and the project's own. Each as a signature written in the language, as appendix A writes it (`fn visa.open(resource: string, timeout: duration = 2 s, err: error = none) -> (session: visa.session, err: error)`), with `always`, its error categories, and the first line of its documentation, or all of it with `docs`. `filter` keeps the names that contain it |
+
+`guide.read` returns, without `skill`, `{ "skills": [{ "name", "description", "files" }], "skill", "file", "text" }`:
+each skill with the `description` of its `SKILL.md` and the paths of its files, then the `SKILL.md` of
+`labcraft-writing`; with `skill`, `{ "skill", "file", "text" }`. The schema of `skill` lists the skills (`enum`), so
+an agent sees them before its first call. The text is the file as `skills/` holds it, front matter included.
 
 `functions.list` answers "what can I call" in one call: an agent writing its first program calls it
 once, with no filter. The project's own entries come from the last `check`, so they agree with it. It

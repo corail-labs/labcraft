@@ -391,9 +391,9 @@ fn an_unknown_command_or_parameter_names_the_nearest() {
 #[test]
 fn a_planned_command_is_listed_greyed_with_its_reason_and_refused() {
     let (mut session, _) = session();
-    let refused = error(&mut session, "guide.read", json!({}));
+    let refused = error(&mut session, "view.open_trace", json!({ "file": "a.trace.jsonl" }));
     assert_eq!(refused.code, "command.not_enabled");
-    assert!(refused.message.contains("step 9"), "{}", refused.message);
+    assert!(refused.message.contains("step 8"), "{}", refused.message);
     let listed = ok(&mut session, "commands.list", json!({ "filter": "run." }));
     let commands = listed["commands"].as_array().unwrap();
     let of = |id: &str| commands.iter().find(|command| command["id"] == id).unwrap();
@@ -604,4 +604,45 @@ fn a_session_on_a_read_only_workspace_writes_nothing() {
     assert_eq!(memory.get("/p/double.lcf").as_deref(), Some(MAIN.as_bytes()));
     assert_eq!(error(&mut session, "file.delete", json!({ "path": "double.lcf" })).code, "file.unwritable");
     assert!(memory.get("/p/double.lcf").is_some());
+}
+
+#[test]
+fn guide_read_lists_the_skills_then_gives_the_one_that_writes_a_program() {
+    let (mut session, _) = session();
+    let first = ok(&mut session, "guide.read", json!({}));
+    let names: Vec<&str> = first["skills"].as_array().unwrap().iter().map(|skill| skill["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["labcraft-debugging", "labcraft-testing", "labcraft-writing"]);
+    let writing = first["skills"].as_array().unwrap().iter().find(|skill| skill["name"] == "labcraft-writing").unwrap();
+    assert!(writing["description"].as_str().unwrap().starts_with("Use when writing"), "{writing}");
+    assert_eq!(writing["files"], json!(["SKILL.md", "reference.md"]));
+    assert_eq!((first["skill"].as_str(), first["file"].as_str()), (Some("labcraft-writing"), Some("SKILL.md")));
+    assert!(first["text"].as_str().unwrap().starts_with("---\nname: labcraft-writing\n"));
+    // The same text as the file a client that supports skills installs.
+    let installed = include_str!("../../../skills/labcraft-writing/reference.md");
+    let reference = ok(&mut session, "guide.read", json!({ "skill": "labcraft-writing", "file": "reference.md" }));
+    assert_eq!(reference, json!({ "skill": "labcraft-writing", "file": "reference.md", "text": installed }));
+    let debugging = ok(&mut session, "guide.read", json!({ "skill": "labcraft-debugging" }));
+    assert_eq!(debugging["file"], "SKILL.md");
+}
+
+#[test]
+fn guide_read_refuses_what_it_does_not_hold_with_the_choices() {
+    let (mut session, _) = session();
+    let skill = error(&mut session, "guide.read", json!({ "skill": "labcraft-writng" }));
+    assert_eq!((skill.code, skill.parameter.as_deref()), ("params.invalid", Some("skill")));
+    // The schema lists the skills (`enum`), so the agent sees them before it calls, and the error gives them.
+    assert!(skill.message.contains("`labcraft-writing`"), "{}", skill.message);
+    let described = ok(&mut session, "commands.describe", json!({ "id": "guide.read" }));
+    assert_eq!(described["params"]["properties"]["skill"]["enum"], json!(["labcraft-debugging", "labcraft-testing", "labcraft-writing"]));
+    assert_eq!(skill.expected, ["labcraft-debugging", "labcraft-testing", "labcraft-writing"]);
+    // Never a path: `..`, a folder or a file of the disk are names that no skill holds.
+    for path in ["../SKILL.md", "/etc/passwd", "reference", "README.md", "labcraft-writing/SKILL.md"] {
+        let file = error(&mut session, "guide.read", json!({ "skill": "labcraft-writing", "file": path }));
+        assert_eq!((file.code, file.parameter.as_deref()), ("params.invalid", Some("file")), "{path}");
+        assert_eq!(file.expected, ["SKILL.md", "reference.md"], "{path}");
+    }
+    let alone = error(&mut session, "guide.read", json!({ "file": "reference.md" }));
+    assert_eq!((alone.code, alone.parameter.as_deref()), ("params.invalid", Some("skill")));
+    assert_eq!(error(&mut session, "guide.read", json!({ "skill": 3 })).code, "params.invalid");
+    assert_eq!(error(&mut session, "guide.read", json!({ "skil": "labcraft-writing" })).code, "params.unknown");
 }

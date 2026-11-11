@@ -1,7 +1,7 @@
 # The MCP server
 
 *Last updated: 2026-11-11. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
-but `guide_read` and the skills it serves (step 9b).*
+with `guide_read` and the skills of [skills/](../skills/README.md) it serves (step 9b).*
 
 `labcraft-cli mcp` lets an agent write, check, run and fix LabCraft programs on its own (D-18). It is a
 thin layer over the commands of [commands.md](commands.md): each tool is one command, with its
@@ -52,8 +52,7 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   `openWorldHint`, since it reaches instruments; every other hint is false.
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
-- **Nineteen tools in M0b**, `diagram_svg` among them, few enough for each to be read; eighteen until
-  `guide_read` comes with its skills (step 9b). The `view.*` commands serve a session that has a viewer, and
+- **Nineteen tools in M0b**, `guide_read` and `diagram_svg` among them, few enough for each to be read. The `view.*` commands serve a session that has a viewer, and
   reach an agent when the server is attached to the open IDE (D-18): a headless server does not give them
   (decision of the owner, 2026-11-11), and an agent sees a diagram through `diagram_svg`. When the catalog grows (the commands of the
   viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through
@@ -90,7 +89,7 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
 They name no example and no file of the repository: in scenario 1 the agent has only the server and the
 skills shipped with LabCraft, and `examples/` holds the answer.
 
-**The skills** of `skills/` (roadmap) are what the agent learns the language from: syntax, types and
+**The skills** of [skills/](../skills/README.md) are what the agent learns the language from: syntax, types and
 units, errors and the error wire, the order of side effects, `match`, loops, the panel, how to read a
 diagnostic. A client that supports skills installs them; `guide_read` serves the same files from copies
 built into the binary, as SolidCraft's `skill_reference` does, so that every MCP client reads them, and

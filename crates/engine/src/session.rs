@@ -218,6 +218,7 @@ impl Session {
 
     fn dispatch(&mut self, command: &Command, params: &Params, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         match command.id {
+            "guide.read" => crate::guide::read(params),
             "commands.list" => Ok(catalog::list(self, params)),
             "commands.describe" => catalog::describe(self, params),
             "library.check" => files::library_check(self, params),

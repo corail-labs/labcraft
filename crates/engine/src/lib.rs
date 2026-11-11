@@ -26,6 +26,7 @@ mod files;
 pub mod fmt;
 pub mod folders;
 mod functions;
+pub mod guide;
 mod kept;
 pub mod panics;
 mod params;
