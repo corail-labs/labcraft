@@ -1,9 +1,9 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-10. Status: draft for milestone M0b, implemented in `engine` but for the runs of section 6.4
-(step 6b), `guide.read` (step 9) and the commands of section 6.5, which are registered as `planned`. The desktop viewer
-of M0v answers the `view.*` commands through a session of its own until they move into `engine`
-(`docs/architecture.md`, 11.5): all of them but `view.open_trace`, which comes with the values of a run.*
+*Last updated: 2026-11-11. Status: draft for milestone M0b, implemented in `engine` but `run.set_element` (step 8 of
+M0b), `guide.read` (step 9) and `view.open_trace`, which comes with the values of a run (step 8 of M0v): they are
+registered as `planned`. The commands of section 6.5 are in `engine::view` and `engine::drawings`
+(`docs/architecture.md`, 10.8 and 11.5).*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,
 the IDE, scripts and plugins call the same ones, with the same parameters, results and errors. This
@@ -332,15 +332,20 @@ default of `max_iterations` and `max_nodes`, as `none` does on the command line.
 
 ### 6.5 Diagrams and the viewer
 
-Registered as `planned` until M0v brings them (section 1), then enabled. None writes a file; the `view.*` commands
-change only the state of the viewer, which the session holds.
+Enabled with M0v, but `view.open_trace`, registered as `planned` until the values of a run (section 1). None writes a
+file; the `view.*` commands change only the state of the viewer, which the session holds. The files they read are those
+of the session's root, and the libraries those of its `--lib-path`, as for `library.check`: the desktop viewer makes a
+session for each folder it opens, whose root that folder is (decision of the owner, 2026-11-11). A command that writes
+a file (section 6.2) leaves the viewer to read its folder again at its next command, so that what a command of the
+viewer returns is never a drawing its files no longer give; a change made outside the session is drawn when the app that
+watches the files says so.
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives when it fits, and its report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote (D-18). An SVG that does not fit in the bound of a result (section 2) is `{ "$cut": true }`, and the result says `truncated`: an agent can ask for one function at a time, or use `labcraft-cli diagram`, which writes files and has no such bound |
-| `view.open` | `folder` (a library folder, as the `FOLDER` of `check`), *`lib_path`* | The functions of the folder, each with its file and whether it is drawable, and the report of `check` (`labcraft-check/1`). The viewer shows it in place of the folder open before, and watches its files |
+| `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to and the folders of `--lib-path`, which are the session's: `folder`, *`functions`* (all by default), *`theme`* (`both`), *`max_diagram_nodes`* (20,000) | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` writes, in the field `image` of its entry, and its report `labcraft-diagram/1` without `svg`, since no file is written, so that an agent sees the drawing of what it wrote (D-18). When the result would pass the bound of a result (section 2), the SVGs give way from the last function to the first, each `image` as `{ "$cut": true }`, until it fits, and the result says `truncated` (decision of the owner, 2026-11-11): an agent can ask for one function at a time, or use `labcraft-cli diagram`, which writes files and has no such bound |
+| `view.open` | `folder` (a library folder of the project, as the `folder` of `library.check`: `.` for its root) | The functions of the folder, each with its file and whether it is drawable, and the report of `check` (`labcraft-check/1`). The viewer shows it in place of the folder open before, and watches its files |
 | `view.show_function` | `function` (a function of the open folder, named as the `FUNCTION` of `diagram`, cli.md 7) | Draws it in the viewer, as its file gives it (cli.md 7.1); returns its entry of `diagrams` in `labcraft-diagram/1` (function, file, drawn, nodes, codes). An unknown function is an error of the command |
-| `view.set_standard_view` | `on` (boolean) | The preference of the IDE that shows every node in standard view (notation 3), kept with the preferences; returns the value it had. Changes no file |
+| `view.set_standard_view` | `on` (boolean) | The preference of the IDE that shows every node in standard view (notation 3), kept with the preferences; returns the value it had, as `{ "before": false }`. Changes no file |
 | `view.set_state` | `function`, `state`: the view state of notation 2.1 that the file does not hold, in part, as `{ "arms": { KEY: N }, "unfolded": { KEY: true }, "standard": { KEY: false } }`, each part optional, `KEY` the key of a node of the drawing that follows it across a change of the file (per structure: the branch shown in tabs or unfolded; per construction: folded or not; per node: standard view or not; per loop: the iteration chosen, notation 6.1) | The drawing's entry of `diagrams` in `labcraft-diagram/1`. A click on a tab, a fold or an iteration selector goes through it |
 | `view.open_trace` | `file` (a trace, `labcraft-trace/1`) | Shows the values of that run on the function shown (notation 6.1), read with the limits of cli.md 7.4; returns the `trace` part of `labcraft-diagram/1` (file, events, status, cut, stale, ignored) |
 

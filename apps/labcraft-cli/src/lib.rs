@@ -1,5 +1,5 @@
-//! The command line (`docs/cli.md`), as a library too: the viewer (`apps/labcraft`) reads and checks a folder, and draws
-//! its functions, as `diagram` does (`folder`), until the session of `engine` does it for both (architecture 11.5).
+//! The command line (`docs/cli.md`), as a library too: the viewer (`apps/labcraft`) takes from it the disk as a
+//! workspace (`disk`), the libraries shipped (`shipped`), the text of a report (`output`) and its options (`args`).
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -17,7 +17,6 @@ pub mod check;
 pub mod diagram;
 pub mod disk;
 pub mod fmt;
-pub mod folder;
 pub mod output;
 pub mod run;
 pub mod walk;

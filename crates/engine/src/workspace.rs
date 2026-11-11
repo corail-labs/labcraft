@@ -87,6 +87,59 @@ pub trait Workspace: Send + Sync {
 /// A lock that [`Workspace::try_lock`] took: dropping it lets it go.
 pub type Held = Box<dyn std::any::Any + Send + Sync>;
 
+/// A workspace that reads through another and refuses every write: that of the viewer, which is read-only (scenario 6,
+/// point 6; `docs/architecture.md`, 11.5). A command that writes fails with the error of the system, `file.unwritable`.
+pub struct ReadOnly(pub Arc<dyn Workspace>);
+
+fn refused() -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, "the viewer is read-only")
+}
+
+impl Workspace for ReadOnly {
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        self.0.canonicalize(path)
+    }
+    fn absolute(&self, path: &Path) -> io::Result<PathBuf> {
+        self.0.absolute(path)
+    }
+    fn current(&self) -> Option<PathBuf> {
+        self.0.current()
+    }
+    fn metadata(&self, path: &Path) -> io::Result<Metadata> {
+        self.0.metadata(path)
+    }
+    fn link_metadata(&self, path: &Path) -> io::Result<Metadata> {
+        self.0.link_metadata(path)
+    }
+    fn read_dir(&self, path: &Path, each: &mut dyn FnMut(io::Result<Entry>)) -> io::Result<()> {
+        self.0.read_dir(path, each)
+    }
+    fn read(&self, path: &Path, max: u64) -> io::Result<Read> {
+        self.0.read(path, max)
+    }
+    fn write(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
+        Err(refused())
+    }
+    fn create_folders(&self, _path: &Path) -> io::Result<()> {
+        Err(refused())
+    }
+    fn rename(&self, _from: &Path, _to: &Path) -> io::Result<()> {
+        Err(refused())
+    }
+    fn remove_file(&self, _path: &Path) -> io::Result<()> {
+        Err(refused())
+    }
+    fn create(&self, _path: &Path) -> io::Result<Box<dyn io::Write + Send>> {
+        Err(refused())
+    }
+    fn open(&self, path: &Path, offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        self.0.open(path, offset)
+    }
+    fn try_lock(&self, _path: &Path) -> io::Result<Option<Held>> {
+        Err(refused())
+    }
+}
+
 /// A file system in memory, for tests and for the web viewer, with the meaning of the disk: files, folders and links,
 /// whose names are compared exactly. Paths are absolute from `/`; the current folder is `/`, or the one given.
 #[derive(Debug, Default)]

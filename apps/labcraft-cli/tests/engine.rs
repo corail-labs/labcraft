@@ -176,3 +176,34 @@ fn a_run_on_the_disk_writes_its_trace_and_replaces_one_being_read() {
     assert_eq!(left.len(), 1, "no `.partial` and no lock left: {left:?}");
     std::fs::remove_dir_all(&folder).unwrap();
 }
+
+/// `diagram.svg` gives, in `image`, the SVG that `labcraft-cli diagram --svg` writes, and its report less the paths of
+/// the files (commands.md 6.5; decision of the owner, 2026-11-11). The expected SVGs are those that the command line
+/// wrote, which other tests compare to the snapshots.
+#[test]
+fn diagram_svg_gives_the_svgs_that_labcraft_cli_diagram_writes() {
+    let out = std::env::temp_dir().join(format!("labcraft-diagram-svg-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&out);
+    let output = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
+        .args(["diagram", "--svg", "--json", "--out"])
+        .arg(&out)
+        .arg(".")
+        .current_dir(repository().join("examples"))
+        .output()
+        .unwrap();
+    let mut from_the_command_line: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut from_the_session = on_examples(|session| ok(session, "diagram.svg", json!({ "folder": "." })));
+    let written = from_the_command_line["diagrams"].as_array_mut().unwrap();
+    let given = from_the_session["diagrams"].as_array_mut().unwrap();
+    assert_eq!(written.len(), given.len());
+    assert!(given.len() > 10, "{}", given.len());
+    for (written, given) in written.iter_mut().zip(given.iter_mut()) {
+        let file = out.join(written["file"].as_str().unwrap()).with_extension("svg");
+        let svg = std::fs::read_to_string(&file).unwrap();
+        assert_eq!(given["image"].as_str(), Some(svg.as_str()), "{}", written["function"]);
+        written.as_object_mut().unwrap().remove("svg");
+        given.as_object_mut().unwrap().remove("image");
+    }
+    assert_eq!(from_the_session, from_the_command_line);
+    let _ = std::fs::remove_dir_all(&out);
+}

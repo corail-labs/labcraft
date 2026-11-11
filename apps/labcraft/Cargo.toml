@@ -17,6 +17,7 @@ labcraft-check = { workspace = true }
 labcraft-cli = { workspace = true }
 labcraft-diagram = { workspace = true }
 labcraft-editor = { workspace = true }
+labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-types = { workspace = true }
 notify = { workspace = true }

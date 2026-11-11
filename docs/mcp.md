@@ -50,7 +50,7 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   `openWorldHint`, since it reaches instruments; every other hint is false.
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
-- **Eighteen tools in M0b**, few enough for each to be read; nineteen when `diagram.svg` is enabled, with the
+- **Eighteen tools in M0b**, few enough for each to be read; nineteen with `diagram.svg`, enabled with the
   `diagram` crate of M0v. The `view.*` commands serve a session that has a viewer, and reach an agent when the
   server is attached to the open IDE (D-18). When the catalog grows (the commands of the
   viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through

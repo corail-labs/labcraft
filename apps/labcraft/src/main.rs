@@ -103,7 +103,6 @@ struct Viewer {
     prefs: SettingsStore<Prefs>,
     theme: Theme,
     dialogs: Dialogs<Ask>,
-    lib_paths: Vec<std::path::PathBuf>,
     /// A command that failed, said in the window.
     failure: Option<String>,
     /// The answer of `view.open`, which the window does not wait for: checking a folder takes time.
@@ -122,7 +121,12 @@ impl Viewer {
         };
         ctx.set_theme(if theme == Theme::Dark { egui::Theme::Dark } else { egui::Theme::Light });
         let wake_ctx = ctx.clone();
-        let session = Handle::spawn(prefs.get().standard_everywhere, options.style.clone(), Box::new(move || wake_ctx.request_repaint()))?;
+        let session = Handle::spawn(
+            prefs.get().standard_everywhere,
+            options.lib_paths.clone(),
+            options.style.clone(),
+            Box::new(move || wake_ctx.request_repaint()),
+        )?;
         let mut canvas = Canvas::new();
         canvas.set_reduced_motion(prefs.get().reduced_motion);
         let wake_ctx = ctx.clone();
@@ -135,7 +139,6 @@ impl Viewer {
             prefs,
             theme,
             dialogs,
-            lib_paths: options.lib_paths,
             failure: None,
             opening: None,
             fit_at: None,
@@ -147,8 +150,7 @@ impl Viewer {
     }
 
     fn open(&mut self, folder: &std::path::Path) {
-        let lib_path: Vec<String> = self.lib_paths.iter().map(|path| path.to_string_lossy().into_owned()).collect();
-        self.opening = Some(self.session.send("view.open", json!({ "folder": folder.to_string_lossy(), "lib_path": lib_path })));
+        self.opening = Some(self.session.open(folder));
         self.failure = None;
     }
 
@@ -165,7 +167,7 @@ impl Viewer {
                 ui.ctx().set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
                 self.prefs.update(|prefs| prefs.theme = if dark { "dark" } else { "light" }.to_owned());
             }
-            let mut standard = self.published.standard_everywhere;
+            let mut standard = self.published.view.standard_everywhere;
             if ui.checkbox(&mut standard, "Standard view everywhere").changed() {
                 self.session.post("view.set_standard_view", json!({ "on": standard }));
                 self.prefs.update(|prefs| prefs.standard_everywhere = standard);
@@ -181,8 +183,8 @@ impl Viewer {
         });
         // A tab per function opened.
         ui.horizontal_wrapped(|ui| {
-            for name in self.published.opened.clone() {
-                let shown = self.published.function.as_deref() == Some(name.as_str());
+            for name in self.published.view.opened.clone() {
+                let shown = self.published.view.function.as_deref() == Some(name.as_str());
                 if ui.selectable_label(shown, &name).clicked() && !shown {
                     self.session.post("view.show_function", json!({ "function": name }));
                 }
@@ -196,8 +198,8 @@ impl Viewer {
     fn functions(&mut self, ui: &mut egui::Ui) {
         ui.heading("Functions");
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for listed in self.published.functions.clone() {
-                let shown = self.published.function.as_deref() == Some(listed.function.as_str());
+            for listed in self.published.view.functions.clone() {
+                let shown = self.published.view.function.as_deref() == Some(listed.function.as_str());
                 // A function that is not drawn gives the number of errors of its file (architecture 11.5).
                 let text = if listed.drawable || listed.errors == 0 {
                     listed.function.clone()
@@ -212,9 +214,9 @@ impl Viewer {
     }
 
     fn problems(&self, ui: &mut egui::Ui) {
-        let title = format!("Problems: {} errors, {} warnings", self.published.errors, self.published.warnings);
+        let title = format!("Problems: {} errors, {} warnings", self.published.view.errors, self.published.view.warnings);
         ui.label(egui::RichText::new(title).strong());
-        if self.published.kept {
+        if self.published.view.kept {
             ui.label("This function is not drawable now: its last drawing stays, with the diagnostics of its file.");
         }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -231,17 +233,17 @@ impl eframe::App for Viewer {
             self.opening = None;
             match answer {
                 // The session publishes before it answers: its drawing is this one or a later one.
-                Ok(_) => self.fit_at = Some(self.session.published().drawing_generation),
+                Ok(_) => self.fit_at = Some(self.session.published().view.drawing_generation),
                 Err(error) => self.failure = Some(error.message),
             }
         }
-        if published.drawing_generation != self.shown_generation {
-            self.shown_generation = published.drawing_generation;
-            if let Some(drawing) = &published.drawing {
+        if published.view.drawing_generation != self.shown_generation {
+            self.shown_generation = published.view.drawing_generation;
+            if let Some(drawing) = &published.view.drawing {
                 // The glide when the file of the function shown changed; the viewport stays (scenario 6, point 3), but
                 // for a folder just opened.
-                self.canvas.set_drawing(drawing.clone(), published.glide);
-                if self.fit_at.is_some_and(|at| published.drawing_generation >= at) {
+                self.canvas.set_drawing(drawing.clone(), published.view.glide);
+                if self.fit_at.is_some_and(|at| published.view.drawing_generation >= at) {
                     self.canvas.fit();
                     self.fit_at = None;
                 }
@@ -263,13 +265,13 @@ impl eframe::App for Viewer {
         egui::Panel::bottom("labcraft-problems").resizable(true).default_size(160.0).show(ui, |ui| self.problems(ui));
         egui::Panel::left("labcraft-functions").resizable(true).default_size(240.0).show(ui, |ui| self.functions(ui));
         egui::CentralPanel::default().show(ui, |ui| {
-            if self.published.drawing.is_none() {
+            if self.published.view.drawing.is_none() {
                 ui.centered_and_justified(|ui| ui.label("Open a folder to see its functions."));
                 return;
             }
-            let shown = Shown { arms: self.published.arms.clone() };
+            let shown = Shown { arms: self.published.view.arms.clone() };
             let response = self.canvas.show(ui, self.theme, &shown);
-            if let (Some((structure, arm)), Some(function)) = (response.tab, self.published.function.clone()) {
+            if let (Some((structure, arm)), Some(function)) = (response.tab, self.published.view.function.clone()) {
                 self.session.post("view.set_state", json!({ "function": function, "state": { "arms": { structure: arm } } }));
             }
         });

@@ -9,12 +9,14 @@ publish.workspace = true
 
 [dependencies]
 labcraft-check = { workspace = true }
+labcraft-diagram = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-graph = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-runtime = { workspace = true }
 labcraft-trace = { workspace = true }
 labcraft-types = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 
