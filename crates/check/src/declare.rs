@@ -78,6 +78,9 @@ pub struct DeclaredFunction {
     /// The `icon` section of its file (spec 11.1) when that file is not kept (a library that is not checked, outside a
     /// run): moved here, so that each call still draws it. A kept file holds its own.
     pub icon: Option<Icon>,
+    /// The default of each parameter as the text writes it, stopped past 200 bytes: what the tooltip of a terminal that
+    /// no argument wires says (notation 3.2), whichever library declares it.
+    pub defaults: Vec<Option<String>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1111,7 +1114,21 @@ impl<'a> Pass<'a> {
                 self.error(&scope, Code::Lc4005, "an external function has an output `err: error` (R-13)".to_owned(), id);
             }
         }
-        DeclaredFunction { params, outputs, external: external.is_some(), generic: !signature.generics.is_empty(), faulty, file: None, icon: None }
+        let defaults = signature
+            .params
+            .iter()
+            .map(|param| param.default.as_ref().map(|default| labcraft_format::write_constant(default, self.names, labcraft_types::MAX_TEXT)))
+            .collect();
+        DeclaredFunction {
+            params,
+            outputs,
+            external: external.is_some(),
+            generic: !signature.generics.is_empty(),
+            faulty,
+            file: None,
+            icon: None,
+            defaults,
+        }
     }
 
     fn signature_type(&mut self, expr: &TypeExpr, scope: &Scope<'_>, id: Id) -> TyId {

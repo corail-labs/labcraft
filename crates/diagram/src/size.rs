@@ -120,6 +120,7 @@ impl Text {
             width: self.width,
             runs: self.shown.runs.iter().map(|(ink, run)| Run { token: token_of(*ink, token), text: run.clone() }).collect(),
             detail: Detail::Label,
+            ground: None,
         }
     }
 

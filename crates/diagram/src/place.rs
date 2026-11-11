@@ -310,7 +310,7 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let frame_width = left_gap + width + right_gap;
             block.width = frame_width;
             block.outputs = outer_outputs.iter().map(|&y| (frame_width, y)).collect();
-            let core = "frame.fill.2";
+            let core = "frame.fill.1";
             for (input, ((outer, arms_at), slot)) in entering.iter().zip(&left_slots).enumerate() {
                 let family = found.inputs.get(input).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
                 let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
@@ -439,7 +439,7 @@ fn tabs_block(
     let frame_width = left_gap + width + right_gap;
     block.width = frame_width;
     block.outputs = outer_outputs.iter().map(|&y| (frame_width, y)).collect();
-    let core = "frame.fill.2";
+    let core = "frame.fill.1";
     for (arm, ((lists, (slots, _)), (out_lists, (out_slots, _)))) in entering.iter().zip(&left).zip(leaving.iter().zip(&right)).enumerate() {
         let mut shapes = Vec::new();
         let inputs = slot_of.get(arm).map_or(&[][..], Vec::as_slice);

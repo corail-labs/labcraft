@@ -111,6 +111,8 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         ignored: false,
         reads: Vec::new(),
         pill: None,
+        ty_text: String::new(),
+        default: None,
     }
 }
 
@@ -219,8 +221,8 @@ fn a_compact_block_has_the_width_of_the_square() {
 /// `…`.
 #[test]
 fn a_name_holds_on_two_lines_of_the_block() {
-    // 40 less a terminal of 8: 32. At 10 a cell is 1233 × 10 / 2048 = 6.02: 5 cells are 30.10, 6 are 36.12.
-    assert_eq!(crate::size::name_cells(), 5);
+    // 40 less a terminal of 6: 34. At 9 a cell is 1233 × 9 / 2048 = 5.42: 6 cells are 32.51, 7 are 37.93.
+    assert_eq!(crate::size::name_cells(), 6);
     let cut_of = |name: &str| -> Vec<String> {
         let source = format!("labcraft 1\n\nfn main(x: f64) -> (y: f64) {{\n    y = {name}(x)\n}}\n");
         let callee = format!("labcraft 1\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = x\n}}\n");
@@ -232,22 +234,25 @@ fn a_name_holds_on_two_lines_of_the_block() {
     assert_eq!(cut_of("a_b"), ["a_b"]);
     // Both parts hold: `query` (5) and `f64` (3).
     assert_eq!(cut_of("query_f64"), ["query", "f64"]);
-    // No part pair holds: the first line takes `bench`, the underscore after it is the cut, `selftest` is cut to 4 and `…`.
-    assert_eq!(cut_of("bench_selftest"), ["bench", "self\u{2026}"]);
-    // `read_` holds: cut at its underscore.
-    assert_eq!(cut_of("read_dc_volts"), ["read", "dc_v\u{2026}"]);
-    assert_eq!(cut_of("count_to_fixed"), ["count", "to_f\u{2026}"]);
+    // No part pair holds: the first line takes `bench`, the underscore after it is the cut, `selftest` is cut to 5 and `…`.
+    assert_eq!(cut_of("bench_selftest"), ["bench", "selft\u{2026}"]);
+    // `read_` holds, `read_dc_` does not: cut at the first underscore.
+    assert_eq!(cut_of("read_dc_volts"), ["read", "dc_vo\u{2026}"]);
+    assert_eq!(cut_of("count_to_fixed"), ["count", "to_fi\u{2026}"]);
     // A single word of two lines at most: two halves, the first the longer: 7 cells give 4 and 3, 6 give 3 and 3.
     assert_eq!(cut_of("elapsed"), ["elap", "sed"]);
     assert_eq!(cut_of("measure"), ["meas", "ure"]);
-    assert_eq!(cut_of("settle"), ["set", "tle"]);
-    // The first word does not hold (`append`, 6) and no underscore is in what holds: each part on its line, `append`
-    // cut to 4 and `…`.
-    assert_eq!(cut_of("append_csv"), ["appe\u{2026}", "csv"]);
-    // A grapheme of 2 cells: `ab一cd` is 1 + 1 + 2 + 1 + 1 = 6 cells; the shortest first line of 3 or more is `ab一`, 4.
-    assert_eq!(cut_of("ab\u{4E00}cd"), ["ab\u{4E00}", "cd"]);
+    // 6 cells hold on one line.
+    assert_eq!(cut_of("settle"), ["settle"]);
+    // Both parts hold: `append` (6) and `csv` (3).
+    assert_eq!(cut_of("append_csv"), ["append", "csv"]);
+    // The first word does not hold (`average`, 7) and no underscore is in what holds: each part on its line, `average`
+    // cut to 5 and `…`.
+    assert_eq!(cut_of("average_csv"), ["avera\u{2026}", "csv"]);
+    // A grapheme of 2 cells: `ab一cde` is 1 + 1 + 2 + 1 + 1 + 1 = 7 cells; the shortest first line of 4 or more is `ab一`.
+    assert_eq!(cut_of("ab\u{4E00}cde"), ["ab\u{4E00}", "cde"]);
     // More than two lines: 13 cells, as far as the first line holds, the rest cut.
-    assert_eq!(cut_of("abcdefghijklm"), ["abcde", "fghi\u{2026}"]);
+    assert_eq!(cut_of("abcdefghijklm"), ["abcdef", "ghijk\u{2026}"]);
     // An underscore that would leave a line empty is no cut: a single word of 9 cells, halves of 5 and 4.
     assert_eq!(cut_of("abcdefgh_"), ["abcde", "fgh_"]);
     assert_eq!(cut_of("abcd_e_"), ["abcd", "e_"]);
@@ -296,8 +301,8 @@ fn a_block_grows_by_its_lines_only() {
             _ => None,
         })
         .collect();
-    // From the bottom: 40 - 8 = 32, then 24, 16, 8; a terminal of 8 has a radius of 4.
-    assert_eq!(inputs, [(800, 400), (1600, 400), (2400, 400), (3200, 400)]);
+    // From the bottom: 40 - 8 = 32, then 24, 16, 8; a terminal of 6 has a radius of 3.
+    assert_eq!(inputs, [(800, 300), (1600, 300), (2400, 300), (3200, 300)]);
     // Five lines need 8 + 32 + 8 = 48.
     let five = size_of(5);
     assert_eq!((five.width, five.height), (4000, 4800));
@@ -313,11 +318,11 @@ fn neighbouring_pills_step_outward() {
     let graph = graph(&checked, &names, "main.lcf");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
     // Lines at 16, 24 and 32. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
-    // end 8 left of the half terminal: -12; it starts at -38.06. The second, 8 lower, under 14, ends 8 left of that,
-    // -46.06, and starts at -72.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
+    // end 8 left of the half terminal of 6: -11; it starts at -37.06. The second, 8 lower, under 14, ends 8 left of that,
+    // -45.06, and starts at -71.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
     // its place.
-    assert_eq!(sized.reaches, [Some(3806), Some(7212), Some(3806)]);
-    assert_eq!(sized.left, 7212);
+    assert_eq!(sized.reaches, [Some(3706), Some(7112), Some(3706)]);
+    assert_eq!(sized.left, 7112);
     let leads: Vec<&Vec<(i64, i64)>> = sized
         .shapes
         .iter()
@@ -326,7 +331,7 @@ fn neighbouring_pills_step_outward() {
             _ => None,
         })
         .collect();
-    assert_eq!(leads, [&vec![(-4606, 2400), (-400, 2400)]]);
+    assert_eq!(leads, [&vec![(-4506, 2400), (-300, 2400)]]);
 }
 
 /// Notation 3.2: a circle of 28; two inputs at 8 above and below the middle, on the edge; `select` with two constants
@@ -345,7 +350,8 @@ fn a_primitive_is_a_circle() {
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Circle { x, y, radius: 400, .. } if *x < 1400 => Some((*x, *y)),
+            // A terminal of 6: a radius of 3.
+            Shape::Circle { x, y, radius: 300, .. } if *x < 1400 => Some((*x, *y)),
             _ => None,
         })
         .collect();
@@ -472,7 +478,7 @@ fn a_name_is_centred_on_its_block() {
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(node, Some(&wide), None);
-    // 40 wide; `open`, 4 cells at 10, 4 × 1233 × 10 / 2048 = 24.08: it starts at 20 - 12.04.
+    // 40 wide; `open`, 4 cells at 9, 4 × 1233 × 9 / 2048 = 21.674, 2167 hundredths: it starts at 2000 - 2167 / 2, 917.
     let starts: Vec<i64> = sized
         .shapes
         .iter()
@@ -481,7 +487,7 @@ fn a_name_is_centred_on_its_block() {
             _ => None,
         })
         .collect();
-    assert_eq!(starts, [796]);
+    assert_eq!(starts, [917]);
 }
 
 const ICON_OF_F: &str = "labcraft 1
@@ -619,7 +625,8 @@ fn a_circle_holds_all_its_inputs() {
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Circle { y, radius: 400, x, .. } if *x < 1400 => Some(*y),
+            // A terminal of 6: a radius of 3.
+            Shape::Circle { y, radius: 300, x, .. } if *x < 1400 => Some(*y),
             _ => None,
         })
         .collect();
@@ -656,9 +663,9 @@ fn a_band_is_cut_to_the_width_of_its_block() {
     };
     // A block of 40 holds 5 cells at 9 (above): `resu…`.
     assert_eq!(band_of("y"), "resu\u{2026}");
-    // `StepResult`, 10 cells at 10 (60.21) and 2 on each side, 64.21: 72 on the grid. 72 less 8 is 64, which holds 11
-    // cells at 9 (59.60), not 12 (65.02): `results_log` whole.
-    assert_eq!(band_of("r"), "results_log");
+    // `StepResult`, 10 cells at 9 (54.19) and 2 on each side, 58.19: 64 on the grid. 64 less 8 is 56, which holds 10
+    // cells at 9 (54.19), not 11 (59.60): `results_l…`.
+    assert_eq!(band_of("r"), "results_l\u{2026}");
 }
 
 /// A terminal shows the type of its parameter, not that of its argument: `timeout: duration` given `5 s` has no unit
@@ -836,18 +843,19 @@ fn the_error_chain_is_one_straight_line() {
 /// that would cover it moves up out of its way, 24 above it.
 #[test]
 fn a_placed_node_keeps_its_place() {
-    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.neg(x)\n    y = core.abs(x)\n}\n\nlayout {\n    node y at (80, 80)\n}\n";
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.neg(x)\n    y = core.abs(x)\n}\n\nlayout {\n    node y at (78, 80)\n}\n";
     let (checked, names) = checked(&[("main.lcf", main)]);
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, y) = (&placed["a"], &placed["y"]);
     // `a` stands in the first column: after the name `x` (one cell at 10, 6.02), 12 before it and 8 after it, the
-    // narrowest channel, 16, its wire being straight, and the half terminal of 4: 62.02 from the corner of the frame.
-    // It reaches over `y`, at 80, so it
+    // narrowest channel, 16, its wire being straight, and the half terminal of 3: 45.02 from the corner of the frame,
+    // its right terminal reaching 76.02. It reaches over `y`, at 78, so it
     // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header and its margin (48). The frame
-    // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40.
-    // Across, the margin of 16 is around everything: the terminal of `x` reaches 4 left of the frame, at 20.
-    assert_eq!((y.x, y.y), (2000 + 8000, 4000 + 8000));
-    assert_eq!((a.x, a.y), (2000 + 1200 + 602 + 800 + 1600 + 400, 4000 + 2800));
+    // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40. The
+    // frame of the function is not drawn, and still counts for the extent (notation 5).
+    // Across, the margin of 16 is around everything: the terminal of `x` reaches 3 left of the frame, at 19.
+    assert_eq!((y.x, y.y), (1900 + 7800, 4000 + 8000));
+    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 4000 + 2800));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
@@ -1027,7 +1035,7 @@ fn a_value_read_twice_is_one_wire_with_a_junction() {
 fn a_via_is_kept() {
     let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.neg(x)\n}\n\nlayout {\n    wire x -> y via (100, 40)\n}\n";
     let drawing = drawing_of(main);
-    let Some(Shape::Rect { x: frame, .. }) = drawing.loose.first() else { panic!() };
+    let (frame, ..) = drawing.bodies[0].frame;
     let found = branches(wire_of(&drawing, "x"));
     assert!(found[0].iter().any(|&(x, _)| x == frame + 10_000), "{found:?}");
     // The wire is marked as the file's; the body is not, since no node of it is placed.
@@ -1108,8 +1116,15 @@ fn in_tabs_the_arms_lie_on_one_another_in_a_frame_as_large_as_the_largest() {
     for group in &tabs.groups {
         let body = match (&group.wire, group.placed.map(|placed| &tabs.placed[placed])) {
             (Some(wire), _) => wire.body,
+            // The terminals of the frame of an arm, over its wires: in that arm.
+            (None, Some(placed)) if group.arm.is_none() && group.node.is_empty() => {
+                assert!(group.within.is_some_and(|arm| placed.holds.contains(&frame.holds[arm])), "{:?}", group.within);
+                continue;
+            }
             (None, Some(placed)) if group.arm.is_none() => placed.body,
             (None, Some(_)) => continue,
+            // The terminals of the function, over its wires.
+            (None, None) if group.node.is_empty() => 0,
             (None, None) => panic!("a group with neither a node nor a wire"),
         };
         let arm = frame.holds.iter().position(|&held| held == body);
@@ -1132,9 +1147,12 @@ fn a_structure_unfolded_or_a_node_in_standard_view_is_a_state_of_the_view() {
 #[test]
 fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
     let drawing = drawn_with(&ViewState::default());
+    // The title alone, then the terminals of the function over its wires (notation 5).
+    let edges = drawing.groups.iter().filter(|group| group.wire.is_none() && group.placed.is_none()).flat_map(|group| group.shapes.iter());
     let details: Vec<(String, crate::Detail)> = drawing
         .loose
         .iter()
+        .chain(edges)
         .filter_map(|shape| match shape {
             Shape::Text { runs, detail, .. } => Some((runs.iter().map(|run| run.text.as_str()).collect(), *detail)),
             _ => None,
@@ -1214,4 +1232,126 @@ fn a_wire_has_no_name_beside_a_terminal_that_shows_it() {
     let first = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000)];
     let second = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000), (30000, 3000)];
     assert_eq!(crate::wire_names("period", &[first, second], (false, &[false, false]), &mut obstacles).len(), 1);
+}
+
+/// Notation 5, 7: the function has no frame; a wire leaves the centre of a terminal of a frame, under its name, which lies
+/// on a ground of the fill of its frame, so that the wire shows when the name does not.
+#[test]
+fn the_function_has_no_frame_and_its_wires_leave_the_centre_of_its_terminals() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.neg(x)\n}\n";
+    let drawing = drawing_of(main);
+    // The title alone: no box.
+    assert!(drawing.loose.iter().all(|shape| matches!(shape, Shape::Text { .. })), "{:?}", drawing.loose);
+    let (left, _, width, _) = drawing.bodies[0].frame;
+    assert_eq!(branches(wire_of(&drawing, "x"))[0].first().map(|point| point.0), Some(left));
+    assert_eq!(branches(wire_of(&drawing, "y"))[0].last().map(|point| point.0), Some(left + width));
+    let ground_of = |name: &str| {
+        drawing
+            .groups
+            .iter()
+            .flat_map(|group| group.shapes.iter())
+            .find_map(|shape| match shape {
+                Shape::Text { runs, ground, .. } if runs.iter().map(|run| run.text.as_str()).collect::<String>() == name => *ground,
+                _ => None,
+            })
+            .unwrap()
+    };
+    // `x`: from the half terminal of 6, 3 inside, to where its route starts: 12 before the name, one cell at 10 (6.02)
+    // and 4 after it, 22.02 from the edge; a line at 10 high, 11.64.
+    let ground = ground_of("x");
+    assert_eq!((ground.token, ground.x, ground.width, ground.height), ("canvas.fill", left + 300, 2202 - 300, 1164));
+    // `y` on the right, from where its route ends to the half terminal.
+    let ground = ground_of("y");
+    assert_eq!((ground.token, ground.x + ground.width), ("canvas.fill", left + width - 300));
+    // The terminals of the arms of a `match`, two levels down, on the fill of their frames.
+    let arms = drawn_with(&ViewState::default());
+    let tokens: std::collections::BTreeSet<&str> = arms
+        .groups
+        .iter()
+        .filter(|group| group.wire.is_none() && group.node.is_empty() && group.placed.is_some())
+        .flat_map(|group| group.shapes.iter())
+        .filter_map(|shape| match shape {
+            Shape::Text { ground: Some(ground), .. } => Some(ground.token),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tokens.into_iter().collect::<Vec<_>>(), ["frame.fill.2"]);
+}
+
+/// Notation 5.2: the number of arms never sets the width of the frame. Nine arms that each yield a constant: their row of
+/// tabs would be wider than the frame, so a selector stands for it, its parts each shown with its arm.
+#[test]
+fn tabs_that_do_not_hold_give_way_to_a_selector() {
+    let ty = "labcraft 1\n\ntype Range = enum { Millivolts, Volts, TenVolts, HundredVolts, Kilovolts, Milliamps, Amps, Ohms, Kiloohms }\n";
+    let arms: String = ["Millivolts", "Volts", "TenVolts", "HundredVolts", "Kilovolts", "Milliamps", "Amps", "Ohms", "Kiloohms"]
+        .iter()
+        .map(|variant| format!("        Range.{variant} => yield 1.0\n"))
+        .collect();
+    let main = format!("labcraft 1\n\nfn main(range: Range) -> (scale: f64) {{\n    scale = match range {{\n{arms}    }}\n}}\n");
+    let (checked, names) = checked(&[("main.lcf", &main), ("Range.lct", ty)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let Drawn::Drawing(drawing) =
+        draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState { tabs: true, ..ViewState::default() }, &DiagramLimits::default())
+    else {
+        panic!()
+    };
+    let structure = drawing.placed.iter().position(|placed| !placed.holds.is_empty()).unwrap();
+    let frame = &drawing.placed[structure];
+    // The tabs alone, at 10 a cell and 4 on each side, 4 apart: `Range.Millivolts` is 16 cells, 96.33 + 8; the nine far
+    // past the frame, whose width they no longer set.
+    assert!(drawing.tabs.iter().all(|tab| tab.kind != crate::TabKind::Tab));
+    let names_of: Vec<&str> = drawing.tabs.iter().filter(|tab| tab.kind == crate::TabKind::Name).map(|tab| tab.caption.as_str()).collect();
+    assert_eq!(names_of.len(), 9);
+    assert_eq!(names_of[1], "Range.Volts");
+    // Each title shows with its arm, between its two steps, round: from the first, `‹` goes to the last.
+    for tab in &drawing.tabs {
+        assert!(tab.when.is_some());
+        assert!(tab.x >= frame.x && tab.x + tab.width <= frame.x + frame.width, "{tab:?} {frame:?}");
+    }
+    let first = drawing.tabs.iter().find(|tab| tab.kind == crate::TabKind::Name).unwrap();
+    let steps: Vec<usize> = drawing.tabs.iter().filter(|tab| tab.kind == crate::TabKind::Step && tab.when == first.when).map(|tab| tab.arm).collect();
+    let rank = |arm: usize| drawing.arms[arm].arm;
+    assert_eq!(steps.iter().map(|&arm| rank(arm)).collect::<Vec<_>>(), [8, 1]);
+}
+
+/// Notation 3.2, 4.1: the tooltip of a terminal says its name and its exact type, and the default of an input that no
+/// argument wires; that of a wire, its name and its type.
+#[test]
+fn a_terminal_tells_its_type_and_its_default() {
+    let f = "labcraft 1\n\nfn f(x: f64[V], k: f64 = 2.0, err: error = none) -> (y: f64[V], err: error) {\n    y = x\n    err = err\n}\n";
+    let main = "labcraft 1\n\nuse core\nuse time\n\nfn main(x: f64[V]) -> (y: f64[V], e: error, w: error, s: f64[V]) {\n    y, e1 = f(x)\n    e = time.wait(1 s, err: e1)\n    w = time.wait(2 s)\n    s = core.add(x, y)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("f.lcf", f)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    let texts: Vec<&str> = drawing.hints.iter().map(|hint| hint.text.as_str()).collect();
+    // A parameter of a primitive whose type in the table has no variable says it, wired or not: `duration`, not the
+    // `f64[s]` that the constant settles. One with a variable says what the call settles: `a: f64[V]` for `core.add`.
+    for expected in ["x: f64[V]", "k: f64\ndefault: 2.0", "y: f64[V]", "duration: duration", "a: f64[V]", "b: f64[V]"] {
+        assert!(texts.contains(&expected), "{expected:?} in {texts:?}");
+    }
+    // The `err` of `f`, and that of the second `time.wait`, which the table of the primitive gives (spec appendix A).
+    assert_eq!(texts.iter().filter(|text| **text == "err: error\ndefault: none").count(), 2, "{texts:?}");
+    assert_eq!(wire_of(&drawing, "x").wire.as_ref().unwrap().ty, "f64[V]");
+    assert_eq!(wire_of(&drawing, "e1").wire.as_ref().unwrap().ty, "error");
+}
+
+/// `docs/cli.md` 7.2: an error that names a node is outlined around that node, though the groups of the terminals of the
+/// frames come between the groups of the nodes; and the SVG has no node without a name.
+#[test]
+fn a_mark_outlines_its_own_node_and_the_svg_has_no_unnamed_node() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64[V], n: i32) -> (y: f64[V], z: f64) {\n    a = core.neg(x)\n    y = match n {\n        0 => yield a\n        _ => yield x\n    }\n    z = core.neg(2.0)\n}\n";
+    let mut drawing = drawing_of(main);
+    let mut diagnostic = labcraft_types::Diagnostic::new(labcraft_types::Code::Lc2102, "m", "main.lcf");
+    diagnostic.node = Some(labcraft_types::Node { name: Some("a".to_owned()), text: "a = core.neg(x)".to_owned() });
+    crate::mark(&mut drawing, &[diagnostic]);
+    let placed = drawing.placed.iter().zip(drawing.groups.iter().filter(|group| group.is_node())).find(|(_, group)| group.node == "a").unwrap().0;
+    let Some(Shape::Rect { x, y, .. }) = drawing.marks[0].shapes.first() else { panic!("{:?}", drawing.marks) };
+    // 3 around its block (notation 4.2).
+    assert_eq!((*x, *y), (placed.x - 300, placed.y - 300));
+    let svg = crate::svg(&drawing, crate::Theme::Light);
+    assert!(!svg.contains("data-node=\"\""), "{svg}");
+    // The terminals of the arms are in their `data-arm`: each arm has its frame and its terminals.
+    assert_eq!(svg.matches("data-arm=\"0\"").count(), 2);
 }

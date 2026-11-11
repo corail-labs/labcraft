@@ -1,7 +1,8 @@
 //! The rules of routing (`docs/visual-notation.md`, 2.2), checked on a drawing by a checker of their own, not by
 //! comparing with an output (`docs/architecture.md`, 11.6). It reads only the shapes of the drawing:
 //!
-//! - no wire crosses a node, a label, a pill, a band or a wire name of its body, but its own pill and its own name;
+//! - no wire crosses a node, a label, a pill, a band or a wire name of its body, but its own pill and its own name, and the
+//!   name of the terminal of a frame that it leaves or reaches, which lies over it on a ground (notation 5);
 //! - parallel wires of two values keep 8 units apart: no two share a segment, but the last one of two values that reach
 //!   the same terminal;
 //! - nothing but error wires below the main chain of a body, which no other wire crosses.
@@ -25,6 +26,9 @@ struct Segment {
     net: usize,
     /// The terminal it reaches, for the last segment of a wire.
     reaches: Option<(i64, i64)>,
+    /// Whether it is the first or the last segment of its wire: the one that may run under the name of a terminal of a
+    /// frame.
+    end: bool,
 }
 
 /// A box, its edges excluded.
@@ -37,6 +41,9 @@ struct Box {
     /// The net it belongs to: a pill or a name of a wire.
     net: Option<usize>,
     what: &'static str,
+    /// A text of the label of a terminal of a frame: the span of the ground of that label, which the wire of that
+    /// terminal, and no other, runs along from the terminal, under the label.
+    grounded: Option<(i64, i64)>,
     /// Whether a wire on its edge crosses it too: the block of a node.
     edges: bool,
 }
@@ -65,10 +72,28 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
     // kept from the wires of its body by its boxes. A wire of another body meets a text only where the positions of the
     // file make two nodes overlap, and what the file writes wins (notation 2.1).
     let mut frames: Vec<(Box, Option<Vec<usize>>)> = Vec::new();
-    let mut texts = |shapes: &[Shape], inside: Option<&labcraft_diagram::Placed>, owners: Option<Vec<usize>>| {
+    // `terminals`: the names of the terminals of a frame, their units and the texts of their pills, which the wire of
+    // each terminal runs under.
+    let mut texts = |shapes: &[Shape], inside: Option<&labcraft_diagram::Placed>, owners: Option<Vec<usize>>, terminals: bool| {
+        // The ground of each label, its span across and its height: its unit and the text of its pill go with it.
+        let grounds: Vec<((i64, i64), (i64, i64))> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Text { ground: Some(ground), .. } => Some(((ground.y, ground.y + ground.height), (ground.x, ground.x + ground.width))),
+                _ => None,
+            })
+            .collect();
         for shape in shapes {
             if let Shape::Text { x, y, size, width, .. } = shape {
-                let area = text_box(*x, *y, *size, *width, None, "a label of a frame");
+                let mut area = text_box(*x, *y, *size, *width, None, "a label of a frame");
+                // On its line, the nearest ground: an input and an output of a frame can share a line.
+                let distance = |(x0, x1): (i64, i64)| (x0 - area.x1).max(area.x0 - x1).max(0);
+                let middle = (area.y0 + area.y1) / 2;
+                area.grounded = if terminals {
+                    grounds.iter().filter(|((y0, y1), _)| (*y0..=*y1).contains(&middle)).map(|&(_, span)| span).min_by_key(|&span| distance(span))
+                } else {
+                    None
+                };
                 if inside.is_none_or(|placed| {
                     area.x0 >= placed.x && area.x1 <= placed.x + placed.width && area.y0 >= placed.y && area.y1 <= placed.y + placed.height
                 }) {
@@ -77,7 +102,7 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
             }
         }
     };
-    texts(&drawing.loose, None, None);
+    texts(&drawing.loose, None, None, false);
     let mut nodes = drawing.placed.iter();
     // The arms that follow a structure, in the order of the bodies it holds.
     let mut arms: std::vec::IntoIter<usize> = Vec::new().into_iter();
@@ -86,13 +111,19 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
             (Some(_), _) => {}
             (None, Some(_)) => {
                 let owner = arms.next();
-                texts(&group.shapes, None, Some(owner.into_iter().collect()));
+                texts(&group.shapes, None, Some(owner.into_iter().collect()), false);
+            }
+            // The terminals of a frame and their names, over its wires: those of the function for every body, those of
+            // a structure for the bodies it holds.
+            (None, None) if group.terminals.is_some() => {
+                let structure = group.placed.and_then(|placed| drawing.placed.get(placed));
+                texts(&group.shapes, structure, structure.map(|placed| placed.holds.clone()), true);
             }
             (None, None) => {
                 if let Some(placed) = nodes.next()
                     && !placed.holds.is_empty()
                 {
-                    texts(&group.shapes, Some(placed), Some(placed.holds.clone()));
+                    texts(&group.shapes, Some(placed), Some(placed.holds.clone()), false);
                     arms = placed.holds.clone().into_iter();
                 }
             }
@@ -130,19 +161,26 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
                                     let into = index + 1 == last || (from_above && index + 2 == last);
                                     let reaches = if into { end } else { None };
                                     let b = if index + 1 == last { toward(b, a, TERMINAL) } else { b };
-                                    segments.push(Segment { a, b, net, reaches });
+                                    segments.push(Segment { a, b, net, reaches, end: index == 0 || index + 1 == last });
                                 }
                             }
-                            Shape::Rect { x, y, width, height, .. } => {
-                                boxes.push(Box { x0: *x, y0: *y, x1: x + width, y1: y + height, net: Some(net), what: "a pill", edges: false })
-                            }
+                            Shape::Rect { x, y, width, height, .. } => boxes.push(Box {
+                                x0: *x,
+                                y0: *y,
+                                x1: x + width,
+                                y1: y + height,
+                                net: Some(net),
+                                what: "a pill",
+                                grounded: None,
+                                edges: false,
+                            }),
                             Shape::Text { x, y, size, width, .. } => boxes.push(text_box(*x, *y, *size, *width, Some(net), "a wire name")),
                             _ => {}
                         }
                     }
                 }
                 Some(_) => {}
-                None if group.arm.is_some() => {}
+                None if !group.is_node() => {}
                 None => {
                     if let Some(node) = placed.next()
                         && node.body == body
@@ -156,7 +194,16 @@ pub fn faults(drawing: &Drawing) -> Vec<String> {
         for segment in &segments {
             let theirs = frames.iter().filter(|(_, owners)| owners.as_ref().is_none_or(|owners| owners.contains(&body))).map(|(area, _)| area);
             for area in boxes.iter().chain(theirs) {
-                if area.net != Some(segment.net) && segment.crosses(area) {
+                // The first or last segment of a wire, level along the name of a terminal of a frame: its own.
+                // It runs along the whole ground of that line, from within a terminal of its end: the wire of that
+                // terminal.
+                let (left, right) = (segment.a.0.min(segment.b.0), segment.a.0.max(segment.b.0));
+                let under_its_name = area.grounded.is_some_and(|(x0, x1)| left <= x0 + TERMINAL && right >= x1 - TERMINAL)
+                    && segment.end
+                    && segment.a.1 == segment.b.1
+                    && segment.a.1 > area.y0
+                    && segment.a.1 < area.y1;
+                if area.net != Some(segment.net) && !under_its_name && segment.crosses(area) {
                     found.push(format!("{}: the wire `{}` crosses {}", drawing.function, value(segment.net), area.what));
                     break;
                 }
@@ -201,13 +248,22 @@ fn toward(from: (i64, i64), to: (i64, i64), by: i64) -> (i64, i64) {
 
 fn text_box(x: i64, y: i64, size: u32, width: i64, net: Option<usize>, what: &'static str) -> Box {
     let height = scale(u64::from(ASCENT + DESCENT), size).unwrap_or(0);
-    Box { x0: x, y0: y - height, x1: x + width, y1: y, net, what, edges: false }
+    Box { x0: x, y0: y - height, x1: x + width, y1: y, net, what, grounded: None, edges: false }
 }
 
 /// What a node of the body shows that no wire may cross: its block, its texts outside it (a label, a band), its pills
 /// and its band. The frame of a structure is its block: what it holds is in other bodies.
 fn node_boxes(placed: &labcraft_diagram::Placed, group: &Group) -> Vec<Box> {
-    let block = Box { x0: placed.x, y0: placed.y, x1: placed.x + placed.width, y1: placed.y + placed.height, net: None, what: "a node", edges: true };
+    let block = Box {
+        x0: placed.x,
+        y0: placed.y,
+        x1: placed.x + placed.width,
+        y1: placed.y + placed.height,
+        net: None,
+        what: "a node",
+        grounded: None,
+        edges: true,
+    };
     let mut boxes = vec![block];
     let inside =
         |x0: i64, y0: i64, x1: i64, y1: i64| x0 >= placed.x && x1 <= placed.x + placed.width && y0 >= placed.y && y1 <= placed.y + placed.height;
@@ -223,7 +279,7 @@ fn node_boxes(placed: &labcraft_diagram::Placed, group: &Group) -> Vec<Box> {
             Shape::Rect { x, y, width, height, paint, .. }
                 if !inside(*x, *y, x + width, y + height) && matches!(paint.fill, Some("pill.fill" | "band.fill" | "badge.fill")) =>
             {
-                boxes.push(Box { x0: *x, y0: *y, x1: x + width, y1: y + height, net: None, what: "a pill or a band", edges: false })
+                boxes.push(Box { x0: *x, y0: *y, x1: x + width, y1: y + height, net: None, what: "a pill or a band", grounded: None, edges: false })
             }
             _ => {}
         }

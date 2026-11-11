@@ -77,6 +77,30 @@ pub enum PrimitiveTy {
     None,
 }
 
+impl PrimitiveTy {
+    /// As appendix A writes it, its type variables named by `variables` (`T` past them); empty for [`PrimitiveTy::None`].
+    pub fn text(self, variables: &[&str]) -> String {
+        let variable = |index: usize| variables.get(index).copied().unwrap_or("T").to_owned();
+        match self {
+            PrimitiveTy::Bool => "bool".to_owned(),
+            PrimitiveTy::I32 => "i32".to_owned(),
+            PrimitiveTy::F32 => "f32".to_owned(),
+            PrimitiveTy::F64 => "f64".to_owned(),
+            PrimitiveTy::Text => "string".to_owned(),
+            PrimitiveTy::Texts => "[string]".to_owned(),
+            PrimitiveTy::Timestamp => "timestamp".to_owned(),
+            PrimitiveTy::Duration => "duration".to_owned(),
+            PrimitiveTy::Error => "error".to_owned(),
+            PrimitiveTy::Var(index) => variable(index),
+            PrimitiveTy::ArrayOf(index) => format!("[{}]", variable(index)),
+            PrimitiveTy::Rows(index) => format!("[[{}]]", variable(index)),
+            PrimitiveTy::Rectangle(index) => format!("[{}; 2]", variable(index)),
+            PrimitiveTy::Function => "fn(\u{2026}) -> (\u{2026})".to_owned(),
+            PrimitiveTy::None => String::new(),
+        }
+    }
+}
+
 /// What an output is. A rule of 3.3 cannot be said by a type alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PrimitiveOutput {
@@ -106,6 +130,18 @@ pub enum PrimitiveDefault {
     EmptyText,
     /// `…`: the `length` of `array.slice`, which reaches the end of the array. It is no constant.
     ToTheEnd,
+}
+
+impl PrimitiveDefault {
+    /// As appendix A writes it: `none`, `0`, `""`, `…`.
+    pub fn text(self) -> &'static str {
+        match self {
+            PrimitiveDefault::NoError => "none",
+            PrimitiveDefault::Zero => "0",
+            PrimitiveDefault::EmptyText => "\"\"",
+            PrimitiveDefault::ToTheEnd => "\u{2026}",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

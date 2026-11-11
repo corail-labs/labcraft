@@ -72,6 +72,10 @@ pub struct Terminal {
     /// The text of the pill of the wire that reaches it (a field, a conversion): it stands left of the input, as an
     /// inline constant does (notation 3.2).
     pub pill: Option<String>,
+    /// Its exact type as the language writes it (`f64[V]`, `visa.session`), for its tooltip (notation 4.1).
+    pub ty_text: String,
+    /// The default of a parameter that no argument wires, as the text writes it, for its tooltip (notation 3.2).
+    pub default: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -748,6 +752,8 @@ impl<'a> Builder<'a> {
             ignored,
             reads: Vec::new(),
             pill: None,
+            ty_text: self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names)),
+            default: None,
         }
     }
 
@@ -838,7 +844,17 @@ impl<'a> Builder<'a> {
                     found.params = function
                         .params
                         .iter()
-                        .map(|param| Param { name: self.text(param.name), is_wire: true, ty: Some(param.ty), family: None, variadic: false })
+                        .enumerate()
+                        .map(|(position, param)| Param {
+                            name: self.text(param.name),
+                            is_wire: true,
+                            ty: Some(param.ty),
+                            family: None,
+                            variadic: false,
+                            ty_text: None,
+                            fixed: false,
+                            default: function.defaults.get(position).cloned().flatten(),
+                        })
                         .collect();
                     found.outputs = function.outputs.iter().map(|output| self.text(output.name)).collect();
                 }
@@ -869,6 +885,16 @@ impl<'a> Builder<'a> {
                             ty: None,
                             family: Some(primitive_family(param.ty)),
                             variadic: param.variadic,
+                            ty_text: Some(param.ty.text(primitive.variables.names)),
+                            fixed: !matches!(
+                                param.ty,
+                                PrimitiveTy::Var(_)
+                                    | PrimitiveTy::ArrayOf(_)
+                                    | PrimitiveTy::Rows(_)
+                                    | PrimitiveTy::Rectangle(_)
+                                    | PrimitiveTy::Function
+                            ),
+                            default: param.default.map(|default| default.text().to_owned()),
                         })
                         .collect();
                     found.outputs = primitive.outputs.map_or_else(Vec::new, |outputs| outputs.iter().map(|&output| output.to_owned()).collect());
@@ -880,7 +906,16 @@ impl<'a> Builder<'a> {
                     .variant_values(ty, variant)
                     .iter()
                     .enumerate()
-                    .map(|(index, &ty)| Param { name: index.to_string(), is_wire: true, ty: Some(ty), family: None, variadic: false })
+                    .map(|(index, &ty)| Param {
+                        name: index.to_string(),
+                        is_wire: true,
+                        ty: Some(ty),
+                        family: None,
+                        variadic: false,
+                        ty_text: None,
+                        fixed: false,
+                        default: None,
+                    })
                     .collect();
             }
             _ => {}
@@ -922,7 +957,11 @@ impl<'a> Builder<'a> {
                 continue;
             };
             if param.is_wire {
-                inputs.push(self.input(param.name.clone(), operand, param.ty));
+                let mut input = self.input(param.name.clone(), operand, param.ty);
+                if let (true, Some(text)) = (param.fixed, &param.ty_text) {
+                    input.ty_text.clone_from(text);
+                }
+                inputs.push(input);
             }
         }
         for free in unwired {
@@ -943,6 +982,10 @@ impl<'a> Builder<'a> {
         if let (None, Some(family)) = (param.ty, param.family) {
             terminal.family = family;
         }
+        if let (None, Some(text)) = (param.ty, &param.ty_text) {
+            terminal.ty_text.clone_from(text);
+        }
+        terminal.default.clone_from(&param.default);
         inputs.push(terminal);
     }
 
@@ -1062,6 +1105,12 @@ struct Param {
     ty: Option<TyId>,
     family: Option<Family>,
     variadic: bool,
+    /// The type of a parameter of a primitive, as appendix A writes it (`duration`, `[T]`).
+    ty_text: Option<String>,
+    /// Whether that type has no type variable: the tooltip says it even when an argument wires the parameter, rather
+    /// than the type that the call settles (`duration` rather than `f64[s]`).
+    fixed: bool,
+    default: Option<String>,
 }
 
 /// The family of a parameter of a primitive, as its table gives it (spec appendix A): what a terminal that no argument

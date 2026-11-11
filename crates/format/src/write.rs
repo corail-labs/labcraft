@@ -95,6 +95,17 @@ pub fn write_pattern(pattern: &Pattern, names: &Interner, limit: usize) -> Strin
     writer.out
 }
 
+/// A constant as the text writes it (the default of a parameter: `2 s`, `none`, `Limits { low: 1 V }`), stopped once it
+/// passes `limit` bytes: the tooltip of a terminal that no argument wires (`docs/visual-notation.md`, section 3.2).
+pub fn write_constant(constant: &Constant, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    writer.constant(constant);
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
 /// The text of a reference of the `layout` section: `#close`, `mean.b`.
 pub(crate) fn reference_text(node: NodeRef, terminal: Option<Name>, names: &Interner) -> String {
     let mut text = String::new();
@@ -404,17 +415,21 @@ impl<'a> Writer<'a> {
         self.push(")");
     }
 
+    fn constant(&mut self, constant: &Constant) {
+        match constant {
+            Constant::Operand(operand) => self.operand(operand),
+            Constant::Call(call) => self.call(call),
+            Constant::Struct(literal) => self.struct_literal(literal),
+        }
+    }
+
     fn param(&mut self, param: &Param, flat: bool) {
         self.name(param.name);
         self.push(": ");
         self.type_expr(&param.ty, 1, flat);
         if let Some(default) = &param.default {
             self.push(" = ");
-            match default {
-                Constant::Operand(operand) => self.operand(operand),
-                Constant::Call(call) => self.call(call),
-                Constant::Struct(literal) => self.struct_literal(literal),
-            }
+            self.constant(default);
         }
         if param.variadic {
             self.push("...");

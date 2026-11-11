@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, Sense, Ui, Vec2};
 use labcraft_diagram::style;
-use labcraft_diagram::{COARSE_NODE, Drawing, Shape};
+use labcraft_diagram::{COARSE_NODE, Drawing, Shape, TabKind};
 
 mod fonts;
 pub(crate) mod paint;
@@ -81,6 +81,9 @@ pub struct Canvas {
     glide: Option<Glide>,
     reduced_motion: bool,
     painter: Painter,
+    /// The list of the arms of a selector, open: its structure, by its index in [`Drawing::placed`], and the corner it
+    /// opens from, in units, so that it follows a pan and a zoom (notation 5.2).
+    list: Option<(usize, Pos2)>,
 }
 
 impl Default for Canvas {
@@ -98,6 +101,7 @@ impl Canvas {
             grid: Grid::default(),
             glide: None,
             reduced_motion: false,
+            list: None,
             painter: Painter::default(),
         }
     }
@@ -111,6 +115,8 @@ impl Canvas {
             _ => None,
         };
         self.grid = Grid::of(&drawing);
+        // A list open on the drawing before: its structure may be another one now.
+        self.list = None;
         self.generation = self.generation.wrapping_add(1);
         self.drawing = Some(drawing);
     }
@@ -210,10 +216,11 @@ impl Canvas {
             groups.sort_unstable();
             groups.dedup();
         }
-        // The frame of the function, then each group in the order of drawing, then the tabs, then the marks.
+        // The title of the function, then each group in the order of drawing, then the tabs, then the marks.
         if let Some(painted) = self.painter.loose(&ctx, &drawing, theme, step) {
             put(&painted, Vec2::ZERO);
         }
+        let painted_groups = groups.clone();
         for index in groups {
             let Some(group) = drawing.groups.get(index) else { continue };
             if !visible_arm(group.within) {
@@ -240,10 +247,13 @@ impl Canvas {
             }
         }
         let mut tab = None;
+        let mut opened = false;
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked());
         for (index, found) in drawing.tabs.iter().enumerate() {
             let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible_arm(arm.within));
-            if !structure_shown {
+            // A part of a selector shows with the arm it stands for.
+            let with_its_arm = found.when.is_none_or(|when| arms.get(when).copied().unwrap_or(false));
+            if !structure_shown || !with_its_arm {
                 continue;
             }
             let offset = offset_of(Some(found.structure));
@@ -262,7 +272,45 @@ impl Canvas {
             if pointer.is_some_and(|at| area.contains(at))
                 && let Some(arm) = drawing.arms.get(found.arm)
             {
+                if found.kind == TabKind::Name {
+                    self.list = Some((found.structure, Pos2::new(unit.min.x, unit.max.y)));
+                    opened = true;
+                } else {
+                    tab = Some((arm.structure.clone(), arm.arm));
+                }
+            }
+        }
+        // The list of the arms of a selector: one line per arm, the one shown selected; a choice, or a click elsewhere,
+        // closes it.
+        if let Some((structure, anchor)) = self.list {
+            let corner = to_screen(anchor.to_vec2() + offset_of(Some(structure)));
+            let entries: Vec<(&str, usize, bool)> = drawing
+                .tabs
+                .iter()
+                .filter(|found| found.kind == TabKind::Name && found.structure == structure)
+                .map(|found| (found.caption.as_str(), found.arm, arms.get(found.arm).copied().unwrap_or(false)))
+                .collect();
+            let mut chosen = None;
+            let area = egui::Area::new(egui::Id::unique("labcraft-arms-list")).order(egui::Order::Foreground).fixed_pos(corner).show(&ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                        for &(caption, arm, is_shown) in &entries {
+                            if ui.selectable_label(is_shown, caption).clicked() {
+                                chosen = Some(arm);
+                            }
+                        }
+                    });
+                });
+            });
+            if let Some(arm) = chosen.and_then(|arm| drawing.arms.get(arm)) {
                 tab = Some((arm.structure.clone(), arm.arm));
+                self.list = None;
+            } else {
+                let clicked_at = ctx.input(|input| input.pointer.any_click().then(|| input.pointer.interact_pos()).flatten());
+                let elsewhere = clicked_at.is_some_and(|at| !area.response.rect.contains(at));
+                if entries.is_empty() || (elsewhere && !opened) {
+                    self.list = None;
+                }
             }
         }
         if offsets.is_none() {
@@ -272,22 +320,57 @@ impl Canvas {
                 }
             }
         }
-        // The tooltip of the node under the pointer: the full name of what it calls (notation 3.2).
-        let hovered = response.hover_pos().and_then(|at| {
-            let unit = self.viewport.origin + (at - rect.min) / zoom;
-            self.grid.node_at(&drawing, unit.to_pos2(), &visible_arm)
+        // The tooltip under the pointer: a terminal, its name, its exact type and the default of an input that no argument
+        // wires (notation 3.2, 4.1); else the node, the full name of what it calls (notation 3.2); else a wire, its name
+        // and its exact type (notation 4.1).
+        let at = response.hover_pos().map(|at| (self.viewport.origin + (at - rect.min) / zoom).to_pos2());
+        let hovered = at.and_then(|unit| self.grid.node_at(&drawing, unit, &visible_arm));
+        let hint = at.and_then(|unit| {
+            drawing.hints.iter().rev().filter(|hint| visible_arm(hint.within)).find_map(|hint| {
+                let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + offset_of(hint.placed);
+                Rect::from_min_size(corner, Vec2::new(hint.width as f32, hint.height as f32) / 100.0).contains(unit).then(|| hint.text.clone())
+            })
         });
-        let title = hovered
-            .and_then(|placed| self.grid.group_of(placed))
-            .and_then(|group| drawing.groups.get(group))
-            .map(|group| group.title.clone())
-            .filter(|title| !title.is_empty());
-        let response = match title {
-            Some(title) => response.on_hover_text_at_pointer(title),
+        let title = || {
+            hovered
+                .and_then(|placed| self.grid.group_of(placed))
+                .and_then(|group| drawing.groups.get(group))
+                .map(|group| group.title.clone())
+                .filter(|title| !title.is_empty())
+        };
+        // A wire within 3 units, or 5 points on the screen when that is more; none while nodes glide, as wires do not show.
+        let wire = || {
+            let unit = at?;
+            if offsets.is_some() {
+                return None;
+            }
+            let reach = (5.0 / zoom).max(3.0);
+            painted_groups.iter().filter_map(|&index| drawing.groups.get(index)).filter(|group| visible_arm(group.within)).find_map(|group| {
+                let wire = group.wire.as_ref()?;
+                let near = wire.readers.iter().any(|(_, points)| {
+                    points.windows(2).any(|pair| match pair {
+                        [a, b] => near_segment(unit, *a, *b, reach),
+                        _ => false,
+                    })
+                });
+                let value = labcraft_types::cut_text(&wire.value);
+                near.then(|| if wire.ty.is_empty() { value.into_owned() } else { format!("{value}: {}", wire.ty) })
+            })
+        };
+        let response = match hint.or_else(title).or_else(wire) {
+            Some(text) => response.on_hover_text_at_pointer(text),
             None => response,
         };
         CanvasResponse { response, tab, hovered }
     }
+}
+
+/// Whether `at`, in units, is within `reach` of the orthogonal segment from `a` to `b`, in hundredths.
+fn near_segment(at: Pos2, a: (i64, i64), b: (i64, i64), reach: f32) -> bool {
+    let (ax, ay, bx, by) = (a.0 as f32 / 100.0, a.1 as f32 / 100.0, b.0 as f32 / 100.0, b.1 as f32 / 100.0);
+    let x = at.x.clamp(ax.min(bx), ax.max(bx));
+    let y = at.y.clamp(ay.min(by), ay.max(by));
+    (at.x - x).abs() <= reach && (at.y - y).abs() <= reach
 }
 
 /// Whether each arm in tabs is shown: the arm that `shown` chooses for its structure, inside an arm shown.

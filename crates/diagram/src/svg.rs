@@ -141,6 +141,13 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
                 }
                 out.push_str(">\n");
             }
+            // The terminals of a frame and their names, over its wires: in the `data-arm` of their arm, if any.
+            (None, None) if group.terminals.is_some() => {
+                if let Some(arm) = group.terminals.as_ref().and_then(|of| of.arm.as_ref()) {
+                    attribute("data-arm", arm, &mut out);
+                }
+                out.push_str(">\n");
+            }
             (None, None) => {
                 attribute("data-node", &group.node, &mut out);
                 out.push_str("><title>");
@@ -240,9 +247,17 @@ fn write_shape(shape: &Shape, icons: &[String], out: &mut String) {
             let element = if *closed { "polygon" } else { "polyline" };
             let _ = writeln!(out, "<{element} points=\"{}\" style=\"{}\"/>", points.join(" "), style(paint));
         }
-        Shape::Text { x, y, size, runs: text, .. } => {
+        Shape::Text { x, y, size, runs: text, ground, .. } => {
             if text.is_empty() {
                 return;
+            }
+            if let Some(ground) = ground {
+                let (x, y, width, height) = (n(ground.x), n(ground.y), n(ground.width), n(ground.height));
+                let _ = writeln!(
+                    out,
+                    "<rect x=\"{x}\" y=\"{y}\" width=\"{width}\" height=\"{height}\" style=\"{}\"/>",
+                    style(&Paint::fill(ground.token))
+                );
             }
             let _ = write!(out, "<text x=\"{}\" y=\"{}\" font-size=\"{}\"", n(*x), n(*y), decimal(i128::from(*size), 2));
             runs(text, out);

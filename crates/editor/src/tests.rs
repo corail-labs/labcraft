@@ -305,7 +305,16 @@ fn the_zoom_decides_what_shows() {
     let nodes = drawn.placed.iter().filter(|placed| placed.holds.is_empty()).count();
     assert!(nodes >= 2);
     assert_eq!(count(&far, |shape| matches!(shape, Painted::Rect(_))), 1 + nodes);
-    assert_eq!(count(&at(1.0, 30.0), |shape| matches!(shape, Painted::Rect(_))), 1);
+    // At 100 %, the background and the ground of each name of a terminal of a frame (notation 5), which the far zoom
+    // hides with the name.
+    let grounds = drawn
+        .groups
+        .iter()
+        .flat_map(|group| group.shapes.iter())
+        .filter(|shape| matches!(shape, labcraft_diagram::Shape::Text { ground: Some(_), .. }))
+        .count();
+    assert!(grounds >= 3, "{grounds}");
+    assert_eq!(count(&at(1.0, 30.0), |shape| matches!(shape, Painted::Rect(_))), 1 + grounds);
 }
 
 /// An icon that `check` only warns about (`LC5009`) draws within its square, quickly: a text of size 100,000, at the
