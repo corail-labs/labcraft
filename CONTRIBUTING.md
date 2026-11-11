@@ -46,19 +46,12 @@ canonical form (spec 5.2), and the proof of concept must stay green:
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
-python tools/lcf-view/lcf_view.py examples libs --spec docs/language-spec-v0.md
-python tools/lcf-poc/lcf.py check examples
-python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples
-python tools/lcf-poc/lcf.py check docs/rfc
-python tools/lcf-poc/lcf.py fmt --check docs/rfc
-python tools/lcf-poc/lcf.py check libs/visa
-python tools/lcf-poc/lcf.py check libs/scpi
-python tools/lcf-poc/lcf.py fmt --check libs
-python -m unittest discover tools/lcf-poc/tests
-python tools/lcf-poc/tests/mcp_smoke.py
+cargo xtask spec
 ```
 
-The `checks` workflow runs the same commands on every pull request, with `cargo xtask ci` (below).
+`cargo xtask spec` runs each check, prints `ok` or `FAIL` for it, and the output of those that fail; the
+list is in `xtask/src/spec.rs`. The `checks` workflow runs it on every pull request, with `cargo xtask ci`
+(below), which needs no Python.
 The tests include the corpora of `tests/acceptance/`, which say what `check` and `fmt` must report.
 An expected value in a test or a corpus never comes from the output of the program under test: work it
 out by hand or with another tool, and say how.

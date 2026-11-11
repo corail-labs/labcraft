@@ -7,6 +7,7 @@ mod commands;
 mod layers;
 mod libs;
 mod licences;
+mod spec;
 mod unicode;
 
 use std::path::{Path, PathBuf};
@@ -27,6 +28,7 @@ commands:
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine and editor build for wasm32-unknown-unknown, and the harness passes there
+  spec      the Python checks of the spec, examples, docs/rfc and libs, and the proof of concept's tests; ok or FAIL for each, the output of failures only; not part of ci
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -53,6 +55,7 @@ fn main() -> ExitCode {
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
         Some("figures") => figures(),
+        Some("spec") => spec::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
