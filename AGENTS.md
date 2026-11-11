@@ -41,31 +41,25 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 
 ## When you change the spec or the examples
 
+- Run `cargo xtask spec` (needs `pip install -r tools/lcf-poc/requirements.txt`). It runs every
+  Python check of the workflow `checks`, prints `ok` or `FAIL` for each, and the output of those that
+  fail: every complete code block of the spec and every file of `examples/`, `libs/` and `docs/rfc/`
+  must parse and be in canonical form (spec 5.2: order of lines and layout of the text), `examples/`,
+  `docs/rfc/`, `libs/visa` and `libs/scpi` must check, and the tests of the proof of concept must
+  pass. A new library of `libs/` is added to the list in `xtask/src/spec.rs`. It is not part of
+  `cargo xtask ci`, which needs no Python. Code blocks containing `…` are illustrative fragments and
+  are skipped.
 - The grammar exists twice: spec section 14 (EBNF) and `tools/lcf-view/lcf_view.py` (Lark). Keep
   them in sync.
-- Every complete code block of the spec and every file in `examples/` must parse:
-
-  ```sh
-  python tools/lcf-view/lcf_view.py examples --spec docs/language-spec-v0.md
-  ```
-
-  Blocks containing `…` are illustrative fragments and are skipped. Requires `pip install lark`.
 - An expected value in a test or a corpus never comes from the output of the program under test: work
   it out by hand or with another tool, and say how.
-- `examples/` is also a library for the Python proof of concept: while these checks pass, it must pass
-  `python tools/lcf-poc/lcf.py check examples`, and `python -m unittest discover tools/lcf-poc/tests`
-  must stay green (needs `pip install -r tools/lcf-poc/requirements.txt`). The proof of concept is the
-  executable reference for running a program until M0b. It no longer follows every rule of `check`:
-  there the corpora of `tests/acceptance/` and the Rust `labcraft-cli check` are the reference, and the
-  spec decides where they differ. A proof-of-concept check that fails only because it lags behind a
-  rule is dropped, in the pull request that brings the rule.
-- Examples and spec code blocks must be in canonical form (spec 5.2: order of lines and layout of
-  the text): `python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples`.
-- `libs/visa` and `libs/scpi` (libraries shipped with LabCraft) follow the same rules: `check` each
-  one, `fmt --check libs`, and `lcf_view.py` with `libs` next to `examples`.
-- `docs/rfc/` (programs discussed in the RFCs) follows the same rules: `check docs/rfc` and
-  `fmt --check docs/rfc`. Its diagrams in `docs/images/rfc/` are rendered by `tools/lcf-figcraft`;
-  rerender them when a file changes.
+- The proof of concept is the executable reference for running a program until M0b. It no longer
+  follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
+  `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept
+  check that fails only because it lags behind a rule is dropped, in the pull request that brings the
+  rule.
+- The diagrams of `docs/rfc/` in `docs/images/rfc/` are rendered by `tools/lcf-figcraft`; rerender
+  them when a file changes.
 - `lcf_view.py` also writes `lcf-view.html` (diagrams of `examples/`), which is ignored by git.
 - `.lcf` and `.lct` files use LF line endings (`.gitattributes`).
 

@@ -29,20 +29,6 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r tools/lcf-poc/requirements.txt
-      - name: Grammar, examples and spec code blocks
-        run: python tools/lcf-view/lcf_view.py examples libs --spec docs/language-spec-v0.md
-      - name: Check the libraries
-        run: |
-          python tools/lcf-poc/lcf.py check examples
-          python tools/lcf-poc/lcf.py check docs/rfc
-          python tools/lcf-poc/lcf.py check libs/visa
-          python tools/lcf-poc/lcf.py check libs/scpi
-      - name: Canonical form
-        run: python tools/lcf-poc/lcf.py fmt --check --spec docs/language-spec-v0.md examples docs/rfc libs
-      - name: Proof of concept tests
-        run: python -m unittest discover tools/lcf-poc/tests
-      - name: MCP round trip
-        run: python tools/lcf-poc/tests/mcp_smoke.py
       - name: Install Rust
         run: |
           rustup toolchain install stable --profile minimal --no-self-update \
@@ -52,6 +38,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The list of the Python checks is in xtask/src/spec.rs.
+      - name: Python checks
+        run: cargo xtask spec
       # The runner must have the version of wasm-bindgen that Cargo.lock gives the tests.
       - name: Version of the WASM test runner
         id: wasm-bindgen

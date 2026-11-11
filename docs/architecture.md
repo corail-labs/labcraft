@@ -328,7 +328,7 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | Everything below but `unicode` and `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
+| `ci` | Everything below but `spec`, `figures`, `unicode` and `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
@@ -337,6 +337,7 @@ character boundary, and these crates hold little numerical code.
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
+| `spec` | The Python checks of the spec, `examples/`, `docs/rfc/` and `libs/`: `lcf_view.py`, `check` and `fmt --check` of the proof of concept, and its tests. Runs them all, prints `ok` or `FAIL` for each and the output of those that fail; the interpreter is `python`, then `python3`, and a missing interpreter or requirement is an error that says what to install. Not part of `ci`, which needs no Python: the workflow `checks` runs it |
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
