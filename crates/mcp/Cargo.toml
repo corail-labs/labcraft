@@ -1,0 +1,17 @@
+[package]
+name = "labcraft-mcp"
+description = "LabCraft L7: the MCP server over stdio, one tool per command of the registry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-engine = { workspace = true }
+labcraft-format = { workspace = true }
+labcraft-types = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,6 +1,7 @@
 # The MCP server
 
-*Last updated: 2026-11-08. Status: draft for milestone M0b, nothing implemented.*
+*Last updated: 2026-11-11. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
+but `guide_read` and the skills it serves (step 9b).*
 
 `labcraft-cli mcp` lets an agent write, check, run and fix LabCraft programs on its own (D-18). It is a
 thin layer over the commands of [commands.md](commands.md): each tool is one command, with its
@@ -29,7 +30,8 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   folder with no option works on that folder. A root that is the user's home folder, a folder above it,
   or the root of a drive is refused at start (wrong usage, exit 2): an agent started from its home folder
   would otherwise reach every program under it. A folder inside it is named with `--project`.
-- **The options** are those of `check` (cli.md, section 1), applied to every command of the session.
+- **The options** are `--lib-path` and the limits of cli.md, section 1, applied to every command of the
+  session. Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
 - **Headless in M0b.** The session lives in the process. It checks the root as it starts and keeps the
   result, so that a tool that checks answers in the time of the libraries it touched
   ([commands.md](commands.md), section 6.2). When the IDE exists, the same server will
@@ -50,9 +52,10 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   `openWorldHint`, since it reaches instruments; every other hint is false.
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
-- **Eighteen tools in M0b**, few enough for each to be read; nineteen with `diagram.svg`, enabled with the
-  `diagram` crate of M0v. The `view.*` commands serve a session that has a viewer, and reach an agent when the
-  server is attached to the open IDE (D-18). When the catalog grows (the commands of the
+- **Nineteen tools in M0b**, `diagram_svg` among them, few enough for each to be read; eighteen until
+  `guide_read` comes with its skills (step 9b). The `view.*` commands serve a session that has a viewer, and
+  reach an agent when the server is attached to the open IDE (D-18): a headless server does not give them
+  (decision of the owner, 2026-11-11), and an agent sees a diagram through `diagram_svg`. When the catalog grows (the commands of the
   viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through
   `commands_list`, `commands_describe` and a `commands_execute`, as SolidCraft does *(proposed)*.
 
@@ -94,9 +97,12 @@ built into the binary, as SolidCraft's `skill_reference` does, so that every MCP
 they always match the version of the tool. Their code blocks are checked like those of the spec. They
 hold no program of the acceptance scenarios.
 
-**Progress.** A `run_start` that carries a `progressToken` gets a progress notification each second of
-real time, with the clock and the iterations so far *(proposed)*. A cancellation (`notifications/cancelled`)
-of a `run_start` or a `run_wait` stops the wait, not the run, which `run_abort` stops.
+**Progress.** A `run_start` or a `run_wait` that carries a `progressToken` gets a progress notification each
+second of real time that it waits *(proposed)*: `progress` counts them from 1, and `message` gives the clock
+and where each loop is, its iteration counted from 1 as the command line shows it (cli.md 6.7). A
+cancellation (`notifications/cancelled`) of a `run_start` or a `run_wait` stops the wait, not the run, which
+`run_abort` stops. A cancelled request gets no answer, whether it waited its turn or ran; one that waited is
+dropped unrun.
 
 ## 5. Bounds
 
@@ -107,13 +113,20 @@ The server reads hostile requests as `check` reads hostile files (scenario 4, fa
   parsed, so its `id` is unknown: the answer is the JSON-RPC error `-32600` with `id: null`, and the server
   drops what follows, without keeping it, up to the next line feed, then reads on.
 - **Nesting** of a JSON request is bounded at `--max-nesting` plus 16 levels *(proposed)*, so that an
-  argument of any type that `check` accepts can be sent, and a deeper request is malformed. The values of a
+  argument of any type that `check` accepts can be sent. A deeper request is refused as a larger one is,
+  `-32600` with `id: null`, since its `id` is not read. A request is read without recursion, and a key given
+  twice is refused at any depth, as in `--args` (cli.md 6.3): `-32700`, as for a line that is not JSON or not
+  UTF-8. A batch (a JSON array) is `-32600`. The values of a
   report are cut at 64 levels ([commands.md](commands.md), section 5).
 - **Requests run in order**, except that `ping`, `run_status`, `run_set_element` and `run_abort` answer
   while a `run_start` or a `run_wait` is waiting: an agent can always stop what it started. These never
   wait in the queue. At most 16 other requests wait their turn *(proposed)*; one more gets the JSON-RPC
-  error `-32000` ("server busy") at once.
-- **A panic** in a command is caught by the session and returned as `internal`; the server goes on.
+  error `-32000` ("server busy") at once. Those that wait hold at most the bytes of one request in all,
+  16 MiB: a request of many small values takes far more memory read than as text, so a request that waits
+  is kept as its text, and read again when its turn comes; one that would pass these bytes is "server busy"
+  too.
+- **A panic** in a command is caught by the session, or by the runs for the tools answered at once, and
+  returned as `internal`; the server goes on.
 - **A report** is bounded by `--max-report` (cli.md, section 1) and by the rules of commands.md, sections 5
   and 7.
 

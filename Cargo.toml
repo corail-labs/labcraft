@@ -20,6 +20,7 @@ labcraft-ir = { path = "crates/ir" }
 labcraft-runtime = { path = "crates/runtime" }
 labcraft-diagram = { path = "crates/diagram" }
 labcraft-engine = { path = "crates/engine" }
+labcraft-mcp = { path = "crates/mcp" }
 labcraft-editor = { path = "crates/editor" }
 labcraft-cli = { path = "apps/labcraft-cli" }
 labcraft-libs = { path = "libs/embedded" }

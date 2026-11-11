@@ -45,20 +45,8 @@ fn parse_common<'a>(args: &'a [OsString], mut own: impl FnMut(&str, &mut Iter<'a
         } else {
             match text.as_ref() {
                 "--json" => common.json = true,
-                "--max-report" => common.limits.max_report = number("--max-report", args.next())?,
-                "--max-file-size" => {
-                    let size = number("--max-file-size", args.next())?;
-                    if size > MAX_FILE_SIZE {
-                        return Err(format!("--max-file-size is at most {MAX_FILE_SIZE}"));
-                    }
-                    common.limits.max_file_size = size;
-                }
-                "--max-nesting" => {
-                    let nesting = number("--max-nesting", args.next())?;
-                    common.limits = common.limits.with_max_nesting(nesting).ok_or_else(|| format!("--max-nesting is at most {MAX_NESTING}"))?;
-                }
                 _ => {
-                    if !own(&text, &mut args)? {
+                    if !limit(&text, &mut args, &mut common.limits)? && !own(&text, &mut args)? {
                         return Err(format!("unknown option `{text}`"));
                     }
                 }
@@ -69,6 +57,56 @@ fn parse_common<'a>(args: &'a [OsString], mut own: impl FnMut(&str, &mut Iter<'a
         return Err("no path given".to_owned());
     }
     Ok(common)
+}
+
+/// The limits of `docs/cli.md`, section 1, which every command takes: whether `option` is one of them.
+fn limit(option: &str, args: &mut Iter<'_, OsString>, limits: &mut Limits) -> Result<bool, String> {
+    match option {
+        "--max-report" => limits.max_report = number("--max-report", args.next())?,
+        "--max-file-size" => {
+            let size = number("--max-file-size", args.next())?;
+            if size > MAX_FILE_SIZE {
+                return Err(format!("--max-file-size is at most {MAX_FILE_SIZE}"));
+            }
+            limits.max_file_size = size;
+        }
+        "--max-nesting" => {
+            let nesting = number("--max-nesting", args.next())?;
+            *limits = limits.clone().with_max_nesting(nesting).ok_or_else(|| format!("--max-nesting is at most {MAX_NESTING}"))?;
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+/// `labcraft-cli mcp` (`docs/mcp.md`, 1).
+#[derive(Debug)]
+pub struct McpOptions {
+    /// `--project`, or the current folder.
+    pub project: Option<PathBuf>,
+    pub lib_paths: Vec<PathBuf>,
+    pub limits: Limits,
+}
+
+pub fn parse_mcp(args: &[OsString]) -> Result<McpOptions, String> {
+    let mut options = McpOptions { project: None, lib_paths: Vec::new(), limits: Limits::default() };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let text = arg.to_string_lossy();
+        match text.as_ref() {
+            "--project" => {
+                if options.project.is_some() {
+                    return Err("--project is given once".to_owned());
+                }
+                options.project = Some(PathBuf::from(args.next().ok_or("--project needs a folder")?));
+            }
+            "--lib-path" => options.lib_paths.push(PathBuf::from(args.next().ok_or("--lib-path needs a folder")?)),
+            _ if limit(&text, &mut args, &mut options.limits)? => {}
+            _ if text.starts_with('-') => return Err(format!("unknown option `{text}`")),
+            _ => return Err(format!("`mcp` takes no path but that of --project, not `{text}`")),
+        }
+    }
+    Ok(options)
 }
 
 pub fn parse_fmt(args: &[OsString]) -> Result<FmtOptions, String> {

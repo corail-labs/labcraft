@@ -14,9 +14,11 @@
 
 pub mod args;
 pub mod check;
+pub mod clock;
 pub mod diagram;
 pub mod disk;
 pub mod fmt;
+pub mod mcp;
 pub mod output;
 pub mod run;
 pub mod walk;

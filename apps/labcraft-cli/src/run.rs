@@ -11,31 +11,15 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Instant;
 
 use labcraft_engine::runs::{CommandLine, Outside};
 use labcraft_engine::workspace::Workspace;
-use labcraft_engine::{Clock, Config, Runs, Session};
+use labcraft_engine::{Config, Runs, Session};
 use serde_json::{Value as Json, json};
 
 use crate::args::{Limit, RunOptions, TraceTo};
 use crate::disk::Disk;
 use crate::output::{counted, push_line, write_json, write_text};
-
-/// The real clock, monotonic, from the start of the process.
-struct Real(Instant);
-
-impl Clock for Real {
-    fn real_ns(&self) -> u64 {
-        u64::try_from(self.0.elapsed().as_nanos()).unwrap_or(u64::MAX)
-    }
-
-    #[expect(clippy::disallowed_methods, reason = "the command line, whose `run` is never built for WASM, where the clock traps")]
-    fn utc_ns(&self) -> i64 {
-        let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-        i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
-    }
-}
 
 /// How often the run is asked where it is, and the line of stderr written again.
 const EVERY: &str = "1 s";
@@ -118,7 +102,6 @@ fn on_interrupt(runs: &Runs) -> Arc<AtomicU32> {
 }
 
 /// The exit code of the run, or the message of a wrong usage that `run.start` found.
-#[expect(clippy::disallowed_methods, reason = "the command line, whose `run` is never built for WASM, where the clock traps")]
 pub fn run(options: &RunOptions) -> Result<ExitCode, String> {
     let current = Disk.current().and_then(|current| std::fs::canonicalize(current).ok());
     let current = current.as_deref();
@@ -128,7 +111,7 @@ pub fn run(options: &RunOptions) -> Result<ExitCode, String> {
         limits: options.limits.clone(),
         shipped: crate::shipped(),
         natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_results_log::ResultsLog)],
-        clock: Arc::new(Real(Instant::now())),
+        clock: Arc::new(crate::clock::Real::new()),
         process: std::process::id(),
     };
     // A path is data: a `FOLDER` that does not read is a refused run, not wrong usage (cli.md 6.1).

@@ -186,8 +186,43 @@ fn is_function_path(text: &str) -> bool {
     !text.is_empty() && text.split('.').all(labcraft_format::is_name)
 }
 
+/// Counts the bytes that JSON writes, and stops past a bound.
+struct Counted {
+    bytes: u64,
+    max: u64,
+}
+
+impl std::io::Write for Counted {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes = self.bytes.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
+        if self.bytes > self.max {
+            return Err(std::io::Error::other("past the bound"));
+        }
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// `args` and `set` hold at most `max` bytes each, written as JSON: the bound of a file of `--args` (cli.md 6.3,
+/// `--max-file-size`), so that what an MCP request gives costs no more to judge than what the command line reads.
+fn bounded(params: &Params, name: &str, max: u64) -> Result<(), CommandError> {
+    let Some(value) = params.get(name) else { return Ok(()) };
+    if serde_json::to_writer(Counted { bytes: 0, max }, value).is_err() {
+        return Err(invalid(
+            name,
+            format!("`{name}` holds more than {max} bytes written as JSON, the bound of a file of `--args` (--max-file-size)"),
+        ));
+    }
+    Ok(())
+}
+
 /// Judges what can be judged without the program.
-pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandError> {
+pub(crate) fn given(params: &Params, max_nesting: u32, max_file_size: u64) -> Result<Given, CommandError> {
+    bounded(params, "args", max_file_size)?;
+    bounded(params, "set", max_file_size)?;
     let function = params.text("function")?.to_owned();
     if !is_function_path(&function) {
         return Err(invalid("function", format!("`{function}` is not names joined by `.`: `check_voltage`, `dmm_driver.measure`")));
