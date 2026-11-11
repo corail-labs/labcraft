@@ -44,6 +44,9 @@ mod runs;
 mod scenario3;
 
 #[cfg(test)]
+mod skills;
+
+#[cfg(test)]
 mod tests {
     use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};

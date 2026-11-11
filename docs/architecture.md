@@ -804,9 +804,9 @@ where it is written: `engine` and the app decide.
 
 ### 10.8 `engine` (L6)
 
-*Status: implemented (steps 6a, 6b and 8): the registry, the session, the commands of commands.md 6 but
-`view.open_trace` and `guide.read`, which are registered as `planned` (step 8 of M0v and step 9; decisions of the owner,
-2026-11-10), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
+*Status: implemented (steps 6a, 6b, 8 and 9b): the registry, the session, the commands of commands.md 6 but
+`view.open_trace`, which is registered as `planned` (step 8 of M0v; decision of the owner, 2026-11-10), `guide.read`
+having come with the skills (step 9b), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
 with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask commands`.*
 
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
@@ -888,6 +888,11 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
 - **The libraries shipped with LabCraft** reach the session as files (`engine::Shipped`), which the app takes from
   `labcraft-libs`, the simulation files of `libs/visa/sim/` included: no crate of `crates/` sees `labcraft-libs`
   (`cargo xtask libs`).
+- **The skills of `skills/`** are built into `engine` by its `build.rs` (step 9b): a folder with a `SKILL.md` is a
+  skill, and each Markdown file of it is served by its path in the folder, so a new file needs nothing declared.
+  `engine::guide` holds them and `guide.read` serves them, by exact names, never as paths: they are the documentation
+  of the tool, of its version, and not programs that a library ships, so they need no app to hand them over.
+  `tests/harness` checks their code blocks (`skills/README.md`), and `cargo xtask spec` parses them as the spec's.
 - **What a library that simulates says of its part** of a simulation file, for `simulation.describe` and the resources
   of `project.describe`, comes through two methods of `runtime::native::NativeLibrary`, `describe` and `resources`: a
   tree of plain values (`Described`), which `engine` writes as JSON as it is. `visa` describes each instrument as
@@ -913,7 +918,7 @@ gives `run_start`), its schema from the registry, a command error returned with 
 requests run in order on another thread, while `ping`, `run_status`, `run_set_element` and `run_abort` answer at once
 from the reading thread, so an agent can always stop what it started; progress and cancellation are notifications
 on the same stdout, written one whole line at a time. `labcraft-cli mcp` starts it on a session of its own (D-18),
-headless in M0b. The instructions it gives point to `guide.read`, once it is a tool (step 9b).
+headless in M0b. The instructions it gives point to `guide.read`, the first call of an agent (mcp.md 8).
 
 *Status: implemented (step 9a).* `labcraft_mcp::serve` takes the session and the two ends of stdio. The caller's
 thread reads: a line is read within 16 MiB and dropped as it comes past that, then read as JSON by
@@ -958,6 +963,7 @@ checks, for the web simulation of M10.
 | A body for every primitive signature, and no other | `runtime` tests | |
 | **The corpus of runs**: each case a program, a simulation file, arguments and settings, and the expected report | `tests/acceptance/runs/` | 1, 3, 4 |
 | The MCP loop of scenario 1, scripted, through a real stdio client | `apps/labcraft-cli/tests` | 1 |
+| The skills: their whole files checked, their simulation files read, none that holds an acceptance program | `tests/harness` (`skills.rs`) | 1 |
 | Limits of a run: each fault of cli.md 6.6 reached, hostile simulation files, programs built to cost the most | `tests/acceptance/runs/`, `xtask bounds` | 4 |
 | Fuzzing simulation files, and runs of fuzzed programs under small limits: no crash, every outcome a report | `fuzz/` | 4 |
 
@@ -1012,7 +1018,11 @@ Each step of work ends with something testable:
 9. **`mcp`:** the server, the guide, the scripted loop of scenario 1. In two halves (decision of the owner,
    2026-11-11): **9a**, `labcraft-mcp` and `labcraft-cli mcp`, the bounds of mcp.md 5, progress and
    cancellation, the scripted loop through a real stdio client (`apps/labcraft-cli/tests/mcp.rs`), *done*
-   (section 10.9); **9b**, the skills of `skills/`, `guide.read` and their code blocks checked as the spec's.
+   (section 10.9); **9b**, the skills of `skills/`, `guide.read` and their code blocks checked as the spec's, *done*
+   (section 10.8; decisions of the owner, 2026-11-11: three skills, `labcraft-writing` with its `reference.md`,
+   `labcraft-debugging` and `labcraft-testing`; no example that measures, compares to limits and gives a verdict; the
+   whole files of a skill checked by `check` with no warning, besides the Python checks of the spec; installed by
+   copying, as `skills/README.md` says).
 10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.
 
 Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).

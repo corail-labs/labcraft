@@ -28,9 +28,10 @@ def main(argv=None):
                                        "and of the code blocks of the spec (spec 5.2); the PoC only checks, "
                                        "it never rewrites; messages give FILE:LINE")
     f.add_argument("paths", nargs="*", help="files (.lcf, .lct) or folders")
-    f.add_argument("--spec", metavar="FILE", help="also check the layout of the complete code blocks of a spec "
-                                                  "markdown file (blocks with `…` and the reference listings "
-                                                  "are skipped)")
+    f.add_argument("--spec", metavar="PATH", action="append", default=[],
+                   help="also check the layout of the complete code blocks of a Markdown file, or of each .md "
+                        "file of a folder (blocks with `…` and the reference listings are skipped); can be "
+                        "given several times")
     f.add_argument("--check", action="store_true", required=True, help="report the order of lines and the layout rules that are broken")
     s = sub.add_parser("list", help="functions and types of a library")
     s.add_argument("folder")
@@ -63,7 +64,7 @@ def main(argv=None):
         return 0 if rep["ok"] else 1
     if a.cmd == "fmt":
         if not a.paths and not a.spec:
-            ap.error("fmt: give files or folders, or --spec FILE")
+            ap.error("fmt: give files or folders, or --spec PATH")
         return fmt_check(a.paths, a.spec)
     if a.cmd == "list":
         print(json.dumps(api.list_functions(a.folder, a.builtins), ensure_ascii=False, indent=2))
@@ -95,8 +96,8 @@ def main(argv=None):
 EXIT = {"ok": 0, "error": 1, "refused": 1, "aborted": 3, "fault": 4}  # cli.md, section 6
 
 
-def fmt_check(paths, spec=None):
-    """Print the problems of each file (and of the code blocks of `spec`); 1 if any, else 0."""
+def fmt_check(paths, specs=()):
+    """Print the problems of each file (and of the code blocks of each Markdown file of `specs`); 1 if any, else 0."""
     from lcfpoc.canon import check_fn
     from lcfpoc.layout import check_layout, check_spec_layout
     from lcfpoc.ir import LowerError, lower_file
@@ -158,7 +159,12 @@ def fmt_check(paths, spec=None):
         bad += bool(problems)
         if not problems:
             print(f"ok    {name}")
-    if spec:
+    if isinstance(specs, (str, Path)):
+        specs = [specs]
+    markdown = []
+    for spec in specs:
+        markdown += sorted(Path(spec).rglob("*.md")) if Path(spec).is_dir() else [Path(spec)]
+    for spec in markdown:
         sp = Path(spec).as_posix()
         try:
             if Path(spec).stat().st_size > MAX_FILE:

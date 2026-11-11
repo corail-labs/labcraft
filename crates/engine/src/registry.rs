@@ -167,7 +167,14 @@ fn catalog() -> Vec<Command> {
             description: "Without `skill`, lists each skill with the line that says when to use it, followed by the SKILL.md of the skill that writes a program, so that one call starts the loop; with one, returns that file of it, in Markdown. Read once at the start of a session.",
             params: object(
                 &[
-                    ("skill", string("The name of a skill, as the list gives it.")),
+                    (
+                        "skill",
+                        json!({
+                            "type": "string",
+                            "description": "The name of a skill, as the list gives it.",
+                            "enum": crate::guide::skills().iter().map(|skill| skill.name).collect::<Vec<_>>(),
+                        }),
+                    ),
                     ("file", json!({ "type": "string", "description": "A file of the skill.", "default": "SKILL.md" })),
                 ],
                 &[],
@@ -176,7 +183,7 @@ fn catalog() -> Vec<Command> {
             errors: &["params.unknown", "params.invalid", "internal"],
             effects: &[],
             long: false,
-            planned: Some("M0b, step 9 (the MCP server and its skills)"),
+            planned: None,
         },
         Command {
             id: "functions.list",

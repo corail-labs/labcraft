@@ -569,6 +569,14 @@ def spec_units(path):
     return units, skipped
 
 
+def markdown_files(paths):
+    """Each path, a folder giving its .md files at any depth, in a fixed order."""
+    files = []
+    for p in paths:
+        files += sorted(p.rglob("*.md")) if p.is_dir() else [p]
+    return files
+
+
 def check_spec(path):
     units, skipped = spec_units(path)
     errors = 0
@@ -579,7 +587,7 @@ def check_spec(path):
             errors += 1
             line = getattr(e, "line", None)
             where = f"line {start + line - 1 - offset}" if line else f"block at line {start}"
-            print(f"ERROR {path.name} {where}: {str(e).strip().splitlines()[0]}")
+            print(f"ERROR {path.as_posix()} {where}: {str(e).strip().splitlines()[0]}")
     print(f"spec: {len(units)} blocks checked, {errors} with errors, {skipped} fragments skipped")
     return errors
 
@@ -652,10 +660,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("paths", nargs="*", help="files (.lcf/.lct) or folders")
     ap.add_argument("-o", "--out", default="lcf-view.html")
-    ap.add_argument("--spec", type=Path, help="also check the code blocks of the spec (.md)")
+    ap.add_argument("--spec", type=Path, action="append", default=[],
+                    help="also check the code blocks of a Markdown file, or of each .md file of a folder "
+                         "(the spec, the skills); can be given several times")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    spec_errors = check_spec(args.spec) if args.spec else 0
+    spec_errors = sum(check_spec(md) for md in markdown_files(args.spec))
     if not args.paths:
         sys.exit(1 if spec_errors else 0)
     files = []

@@ -8,6 +8,9 @@
 # The snapshots of diagrams are compared byte for byte with what `diagram::svg` writes (docs/cli.md, 7.2)
 tests/harness/snapshots/diagram/** text eol=lf
 
+# The skills are built into the binary (`guide.read`): the same bytes whatever system builds it, and the tests compare them
+skills/** text eol=lf
+
 # A CR breaks a shell script, on Windows too
 *.sh text eol=lf
 

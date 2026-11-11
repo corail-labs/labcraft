@@ -172,7 +172,7 @@ fn initialize_gives_the_revision_asked_for_or_the_latest() {
     assert_eq!(first["serverInfo"]["version"], "0.0.0-test");
     let instructions = first["instructions"].as_str().unwrap();
     assert!(instructions.contains("`functions_list`") && instructions.contains("`run_start`"), "{instructions}");
-    assert!(!instructions.contains("guide_read"), "`guide.read` is planned until 9b: {instructions}");
+    assert!(instructions.contains("Loop: `guide_read` once, `functions_list`"), "{instructions}");
     assert!(!instructions.contains("examples"), "scenario 1: the agent is not pointed to the answer");
     server.request(2, "initialize", json!({ "protocolVersion": "2025-03-26" }));
     assert_eq!(server.out.answer(2)["result"]["protocolVersion"], "2025-11-25");
@@ -186,10 +186,11 @@ fn the_tools_are_the_enabled_commands_without_the_viewer() {
     server.request(1, "tools/list", json!({}));
     let tools = server.out.answer(1)["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|tool| tool["name"].as_str().unwrap()).collect();
-    // commands.md 6 in its order, less `guide.read` (planned until 9b) and `view.*` (decision of the owner, 2026-11-11).
+    // commands.md 6 in its order, less `view.*` (decision of the owner, 2026-11-11).
     assert_eq!(
         names,
         [
+            "guide_read",
             "functions_list",
             "project_describe",
             "file_read",
@@ -215,6 +216,7 @@ fn the_tools_are_the_enabled_commands_without_the_viewer() {
         let annotations = tool(name)["annotations"].clone();
         ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"].map(|hint| annotations[hint].as_bool().unwrap())
     };
+    assert_eq!(hints("guide_read"), [true, false, false, false]);
     assert_eq!(hints("functions_list"), [true, false, false, false]);
     assert_eq!(hints("file_write"), [false, true, false, false]);
     assert_eq!(hints("file_format"), [false, true, false, false]);
@@ -251,6 +253,23 @@ fn a_call_gives_its_object_twice_and_a_failed_one_is_an_error_the_model_reads() 
     assert_eq!(server.out.answer(3)["result"]["isError"], true, "arguments that are no object");
     server.call(4, "file_read", json!({ "path": "missing.lcf" }));
     assert_eq!(server.out.answer(4)["result"]["structuredContent"]["error"]["code"], "path.not_found");
+}
+
+#[test]
+fn guide_read_starts_an_agent_with_the_skills_built_in() {
+    let server = Server::start(crate::MAX_REQUEST);
+    server.call(1, "guide_read", json!({}));
+    let first = server.out.answer(1)["result"]["structuredContent"].clone();
+    assert_eq!(first["skill"], "labcraft-writing", "{first}");
+    assert!(first["text"].as_str().unwrap().contains("## The loop"));
+    assert!(first["skills"].as_array().unwrap().len() >= 3);
+    server.call(2, "guide_read", json!({ "skill": "labcraft-testing" }));
+    let testing = server.out.answer(2)["result"]["structuredContent"].clone();
+    let text = testing["text"].as_str().unwrap();
+    assert!(text.starts_with("---\nname: labcraft-testing\n"), "{testing}");
+    server.call(3, "guide_read", json!({ "skill": "examples" }));
+    let refused = server.out.answer(3)["result"].clone();
+    assert_eq!((refused["isError"].as_bool(), &refused["structuredContent"]["error"]["code"]), (Some(true), &json!("params.invalid")));
 }
 
 #[test]

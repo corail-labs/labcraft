@@ -1,7 +1,7 @@
 # Command line: `fmt`, `check`, `run`, `diagram` and the viewer
 
-*Last updated: 2026-11-10. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
-M0b (section 6), and `mcp` in [mcp.md](mcp.md), implemented but `guide_read` (step 9a of M0b); `diagram` implemented for M0v without the values of a run (section 7);
+*Last updated: 2026-11-11. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
+M0b (section 6), and `mcp` in [mcp.md](mcp.md), implemented (steps 9a and 9b of M0b); `diagram` implemented for M0v without the values of a run (section 7);
 the desktop viewer `labcraft` implemented for M0v, without the values of a run (section 8).*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
