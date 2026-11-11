@@ -365,7 +365,7 @@ fn catalog() -> Vec<Command> {
                     (
                         "max_made",
                         limit(
-                            "The bytes of the values the nodes make, in all; default 2 GiB in deterministic mode, none in real time; `null` removes it.",
+                            "The bytes of the values the nodes make, in all; default 1 GiB in deterministic mode, none in real time; `null` removes it.",
                         ),
                     ),
                     ("max_real_time", string("Deterministic mode: the real time the run may take; default `10 min`.")),

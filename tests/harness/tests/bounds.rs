@@ -268,7 +268,8 @@ const RUN_BOUNDS: &[RunBound] = &[
         name: "run-text-that-doubles",
         files: text_that_doubles,
         function: "double",
-        params: "{}",
+        // Without the limit of the bytes made, which a text that doubles reaches first at 1 GiB: the memory of the run fills.
+        params: r#"{"max_made": null}"#,
         code: "LC8005",
         seconds: SECONDS,
         bytes: FILLED_BYTES,

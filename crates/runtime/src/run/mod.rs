@@ -36,9 +36,9 @@ pub use memory::NODE_COST;
 /// The end of the clock of a run, 2^62 ns, about 146 years *(proposed, cli.md 6.2)*: past it, `LC8007`.
 pub const CLOCK_END: i64 = 1 << 62;
 
-/// The default of `--max-made` in deterministic mode, 2 GiB *(proposed, cli.md 6.2)*: about 1.4 s of copies of a large array
-/// on a desktop machine, where 4 GiB took 2.8 s (decision of the owner, 2026-11-11).
-pub const MAX_MADE: u64 = 1 << 31;
+/// The default of `--max-made` in deterministic mode, 1 GiB *(proposed, cli.md 6.2)*: about 1 s of copies of a large array
+/// on a runner of CI, where 2 GiB took up to 2.09 s and 4 GiB 2.8 s on a desktop machine (decisions of the owner, 2026-11-11).
+pub const MAX_MADE: u64 = 1 << 30;
 
 /// What a wait in real time leaves to the high-resolution timer: a little more than the tick of Windows.
 pub const COARSE: u64 = 16_000_000;
