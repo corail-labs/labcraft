@@ -38,15 +38,22 @@ per case:
   `<labcraft>/visa/sim/two-dmm.toml` for a simulation file shipped with `visa`;
 - `expected.json` gives the parts of `labcraft-run/1` (commands.md, section 7) that the case asserts, and `how`, which
   says how its values were found. An object compares the keys it gives, an array every element in order, so an output
-  given by its name alone is not compared; numbers compare as numbers.
+  given by its name alone is not compared; numbers compare as numbers. A number of a run in real time, which depends on
+  the machine, is given as a range, `{"at_least": 1000, "below": 1500}`.
+
+**A run in real time** (`"mode": "real_time"`, decision of the owner, 2026-11-11) asserts what does not depend on the
+speed of the machine: the status, the outputs, the resources, the commands and answers of each instrument in order but
+not their times, and `clock.real_ms` within a range. The lower bound is a fact (a wait waits at least its time); the upper
+one is given three tries, and only it: everything else must hold on each run. WASM, which has no threads, skips these
+cases; the scheduler in real time is tested without the real clock in `crates/runtime` and `tests/harness`.
 
 The values of noisy quantities are exact: [`noise.py`](runs/noise.py), written from
 [simulation.md](../../libs/visa/simulation.md), sections 3 and 4, alone, gives the answers of an instrument and the means
 that `two_benches` makes (`python tests/acceptance/runs/noise.py 1 230 0.05 10`).
 
 `tests/harness` gives every `run.json` to `run.start` unchanged, on a session of `engine` whose root is the repository
-held in memory: natively through the command, in WASM, which has no threads, through `engine::run_to_end`, the same
-judging, run and report. It reads back the trace that the run wrote to `.labcraft/runs/`, and checks that each line reads
+held in memory: natively through the command, with the real clock for a case in real time, in WASM, which has no
+threads, through `engine::run_to_end`, the same judging, run and report. It reads back the trace that the run wrote to `.labcraft/runs/`, and checks that each line reads
 and that its last says the status of the report. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
 through the proof of concept, which has a report of its own: it compares what that report gives, and runs the cases of
 [`poc-later.txt`](runs/poc-later.txt), rules the proof of concept does not follow, only to see that each gives a report.

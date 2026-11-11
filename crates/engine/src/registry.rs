@@ -152,6 +152,8 @@ const FILE_ERRORS: &[&str] = &[
 ];
 const RUN_ERRORS: &[&str] =
     &["params.unknown", "params.missing", "params.invalid", "path.outside_project", "path.invalid", "run.unknown", "internal"];
+/// `run.set_element` on a deterministic run is not enabled (commands.md 6.4).
+const SET_ELEMENT_ERRORS: &[&str] = &["command.not_enabled", "params.unknown", "params.missing", "params.invalid", "run.unknown", "internal"];
 
 #[allow(clippy::too_many_lines)]
 fn catalog() -> Vec<Command> {
@@ -346,8 +348,8 @@ fn catalog() -> Vec<Command> {
                         json!({ "type": ["integer", "string"], "description": "Deterministic mode: the seed of the order among ready nodes, 0 to 2^64-1; a string of digits beyond 2^53-1." }),
                     ),
                     ("timeout", string("Aborts the run after this duration on its clock: `30 s`.")),
-                    ("max_iterations", limit("Iterations of each loop; default 10,000 in deterministic mode; `null` removes it.")),
-                    ("max_nodes", limit("Nodes run in all; default 1,000,000 in deterministic mode; `null` removes it.")),
+                    ("max_iterations", limit("Iterations of each loop; default 10,000 in deterministic mode, none in real time; `null` removes it.")),
+                    ("max_nodes", limit("Nodes run in all; default 1,000,000 in deterministic mode, none in real time; `null` removes it.")),
                     ("max_call_depth", integer("Depth of calls.", 1, 4096, Some(1024))),
                     (
                         "max_memory",
@@ -428,11 +430,11 @@ fn catalog() -> Vec<Command> {
                 ],
                 &["element", "value"],
             ),
-            result: "a small object: the setting and when it applied",
-            errors: RUN_ERRORS,
+            result: "its entry of `panel` in labcraft-run/1, with `run`: `element`, `value`, `at_ms` (`null` when the run ended first), `by`, `applied`",
+            errors: SET_ELEMENT_ERRORS,
             effects: &[Effect::Run],
             long: false,
-            planned: Some("M0b, step 8 (real time)"),
+            planned: None,
         },
         Command {
             id: "run.abort",

@@ -1,11 +1,12 @@
 //! The scheduler (`docs/architecture.md`, 10.4): the ready nodes by their position, the sleepers by their time, the keys of
 //! native calls, the frames of calls and the instances of regions, and how a run winds down after an abort or a fault.
 
+use std::any::Any;
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use labcraft_ir::{FunctionId, Node, Program, Region, Skip};
 use labcraft_types::{Interner, Name, Ty};
@@ -14,12 +15,14 @@ use super::memory::{Memory, NODE_COST};
 use super::plan::Plan;
 use super::position::{Pos, child, compare, root};
 use super::{
-    AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, LoopAt, Observer, Outputs, Progress, Resource, Run, RunEnd, SetBy, Settings, Status,
+    AbortAt, AbortBy, Applied, CLOCK_END, Control, FaultAt, Live, LoopAt, Observer, Outputs, PanelSetting, Progress, RealTime, Resource, Run, RunEnd,
+    SetBy, Settings, Status,
 };
 use crate::convert::{Env, constant, read};
 use crate::fault::{Fault, FaultCode};
 use crate::json::Describe;
-use crate::native::{CallContext, CallId, HandleInfo, Key, LibraryRun, LogBudget, NativeOutcome, Step};
+use crate::native::{CallContext, CallId, HandleInfo, Job, Key, LibraryRun, LogBudget, NativeOutcome, Step};
+use crate::pool::Work;
 use crate::value::{ErrorData, Handle, Origin, Place, Value};
 
 pub(super) type InstanceId = usize;
@@ -227,6 +230,8 @@ pub(super) enum State<'p> {
 pub(super) struct NativeCall<'p> {
     pub(super) library: usize,
     pub(super) call: CallId,
+    /// The number of the work it gave the pool, while that work goes on.
+    pub(super) blocked: Option<u64>,
     pub(super) held: Vec<Key>,
     /// The inputs as the skip reads them, for the outputs of a call that fails (spec 7.2).
     pub(super) inputs: Vec<Value>,
@@ -290,6 +295,13 @@ struct Opened {
     leaked: bool,
 }
 
+/// Work of the pool that ended: what it returned, or nothing when it panicked.
+struct JobDone {
+    task: TaskId,
+    serial: u64,
+    out: Option<Box<dyn Any + Send>>,
+}
+
 enum Ending {
     Finished(Vec<Value>),
     Aborted(AbortAt),
@@ -322,8 +334,20 @@ pub(super) struct Machine<'p, 'o> {
     waiting: HashMap<Key, BinaryHeap<Waiter>>,
     opened: Vec<Opened>,
     opened_index: HashMap<Handle, usize>,
+    /// The settings of `set`, by time, of which those before `next_setting` have applied.
     panel: Vec<Applied>,
     next_setting: usize,
+    /// The settings that applied, in the order they applied: those of `set` and of `run.set_element`.
+    applied: Vec<Applied>,
+    /// The settings of `run.set_element` taken that never applied, a fault ending the run first.
+    never: Vec<Applied>,
+    /// In real time: the pool, what wakes the scheduler, and the time of the start.
+    real_time: Option<RealTime>,
+    /// The work of the pool that ended, which the scheduler takes when it wakes.
+    jobs: Arc<Mutex<Vec<JobDone>>>,
+    /// Calls whose work is on the pool.
+    blocked: usize,
+    serial: u64,
     done: Vec<InstanceId>,
     ending: Option<Ending>,
     stopping: bool,
@@ -346,6 +370,7 @@ impl ForState<'_> {
 impl<'p, 'o> Machine<'p, 'o> {
     pub(super) fn new(run: Run<'p>, control: &'o mut dyn Control, observer: &'o mut dyn Observer) -> Self {
         let Run { program, names, files, natives, inputs, mut settings } = run;
+        let real_time = settings.real_time.take();
         let budget = LogBudget::of_run(settings.max_memory);
         let mut native_of = HashMap::new();
         let mut slots = Vec::with_capacity(natives.len());
@@ -407,6 +432,12 @@ impl<'p, 'o> Machine<'p, 'o> {
             opened_index: HashMap::new(),
             panel,
             next_setting: 0,
+            applied: Vec::new(),
+            never: Vec::new(),
+            real_time,
+            jobs: Arc::default(),
+            blocked: 0,
+            serial: 0,
             done: Vec::new(),
             ending: None,
             stopping: false,
@@ -461,16 +492,32 @@ impl<'p, 'o> Machine<'p, 'o> {
         Ok(())
     }
 
-    /// Runs until the function ends, an abort, or a fault.
+    /// Runs until the function ends, an abort, or a fault. In real time the clock is read between two nodes, and what is due
+    /// by then (the settings, the timeout, the sleepers, the work of the pool, the settings of `run.set_element`) is taken
+    /// before the next node; with no node ready, the scheduler waits until the next time it knows of, or until it is woken.
     fn schedule(&mut self) -> Result<(), Halt> {
+        self.tick();
         self.at_this_time()?;
         loop {
             if self.ending.is_some() {
                 return Ok(());
             }
+            // Taken before what can wake it is looked at, so that a wake that comes in between ends the wait at once.
+            let seen = self.real_time.as_ref().map(|real| real.wake.seen());
+            // The clock first, so that an abort is dated when it is seen.
+            self.tick();
             if let Some(by) = self.control.abort() {
                 self.abort(by);
                 return Ok(());
+            }
+            if seen.is_some() {
+                self.take_live()?;
+                self.jobs_done()?;
+                self.at_this_time()?;
+                if self.ending.is_some() {
+                    return Ok(());
+                }
+                self.wake_sleepers();
             }
             if self.control.wants_progress() {
                 let progress = Progress { clock: self.now, opened: self.opened.len(), loops: self.loops_going() };
@@ -482,10 +529,19 @@ impl<'p, 'o> Machine<'p, 'o> {
                 self.drain()?;
                 continue;
             }
-            let Some(Reverse((wake, _, _))) = self.sleepers.peek().copied() else {
+            let wake = self.sleepers.peek().map(|Reverse((wake, _, _))| *wake);
+            let next_setting = self.panel.get(self.next_setting).map(|applied| applied.setting.at);
+            if let Some(seen) = seen {
+                let until = [wake, next_setting, self.settings.timeout].into_iter().flatten().min();
+                if until.is_none() && self.blocked == 0 {
+                    return Err(self.halt_at(None, Fault::bug("the run waits for nothing, and its function has not ended")));
+                }
+                self.wait(seen, until);
+                continue;
+            }
+            let Some(wake) = wake else {
                 return Err(self.halt_at(None, Fault::bug("the run waits for nothing, and its function has not ended")));
             };
-            let next_setting = self.panel.get(self.next_setting).map(|applied| applied.setting.at);
             let next = [Some(wake), next_setting, self.settings.timeout].into_iter().flatten().min().unwrap_or(wake);
             self.now = self.now.max(next);
             self.at_this_time()?;
@@ -496,17 +552,110 @@ impl<'p, 'o> Machine<'p, 'o> {
         }
     }
 
+    /// In real time, the clock of the run follows the real one, never back, and never past its end.
+    fn tick(&mut self) {
+        if self.real_time.is_some() {
+            let real = i64::try_from(self.control.real_ns()).unwrap_or(i64::MAX).min(CLOCK_END);
+            self.now = self.now.max(real);
+        }
+    }
+
+    /// In real time, waits until `until` on the clock of the run, or until something wakes the scheduler.
+    fn wait(&mut self, seen: u64, until: Option<i64>) {
+        let Some(wake) = self.real_time.as_ref().map(|real| real.wake.clone()) else { return };
+        self.control.wait(&wake, seen, until.map(|until| u64::try_from(until).unwrap_or(0)));
+    }
+
+    /// The time `time.now` gives: the clock of the run, from 1970-01-01T00:00:00Z in deterministic mode (Q-21), from the
+    /// start of the run in real time.
+    pub(super) fn time(&self) -> i64 {
+        let epoch = self.real_time.as_ref().map_or(0, |real| real.epoch);
+        epoch.saturating_add(self.now)
+    }
+
+    /// The settings of `run.set_element`, applied now, before the nodes ready now: the reads that start after it see it. A
+    /// value that does not fit in the memory of the run is refused and the run goes on (decision of the owner, 2026-11-11);
+    /// every setting taken gets its answer, those after a fault that they never applied.
+    fn take_live(&mut self) -> Result<(), Halt> {
+        let mut taken = self.control.live().into_iter();
+        while let Some(Live { tag, element, value }) = taken.next() {
+            let setting = PanelSetting { element, value, at: self.now, by: SetBy::RunSetElement };
+            match self.apply(setting.clone()) {
+                Ok(()) => self.control.applied(tag, Some(self.now)),
+                Err(fault) if fault.code == FaultCode::Memory => self.control.refused(tag, &fault),
+                Err(fault) => {
+                    // That one and those after it never apply, and `panel` of the report says so, as their answers do.
+                    self.never.push(Applied { setting, applied: false });
+                    self.control.applied(tag, None);
+                    for Live { tag, element, value } in taken {
+                        let setting = PanelSetting { element, value, at: self.now, by: SetBy::RunSetElement };
+                        self.never.push(Applied { setting, applied: false });
+                        self.control.applied(tag, None);
+                    }
+                    return Err(self.halt_at(None, fault));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Applies a setting of the top-level panel now, and keeps it for `panel` of the report, where its value counts in the
+    /// memory of the run until the run ends, as a wire's does: once, however many hold it.
+    fn apply(&mut self, mut setting: PanelSetting) -> Result<(), Fault> {
+        if !self.memory.hold(&setting.value) {
+            return Err(memory_fault("a panel element", crate::value::logical_size(&setting.value)));
+        }
+        if let Err(fault) = self.set_element(0, setting.element, setting.value.clone(), setting.by) {
+            self.memory.release(&setting.value);
+            return Err(fault);
+        }
+        setting.at = self.now;
+        self.applied.push(Applied { setting, applied: true });
+        Ok(())
+    }
+
+    /// The work of the pool that ended: each call is given what its work returned, and steps on in its place among the ready
+    /// nodes. Work that panicked is the fault `LC8004` at its node, after every other has been taken.
+    fn jobs_done(&mut self) -> Result<(), Halt> {
+        if self.blocked == 0 {
+            return Ok(());
+        }
+        let done = std::mem::take(&mut *self.jobs.lock().unwrap_or_else(PoisonError::into_inner));
+        let mut fault = None;
+        for JobDone { task, serial, out } in done {
+            let Some(Task { instance, node, pos, state: State::Native(call) }) = self.task_mut(task) else { continue };
+            if call.blocked != Some(serial) {
+                continue;
+            }
+            call.blocked = None;
+            let (instance, node, pos, library, id) = (*instance, *node, Rc::clone(pos), call.library, call.call);
+            self.blocked = self.blocked.saturating_sub(1);
+            let resumed = match (out, self.natives.get_mut(library)) {
+                (Some(out), Some(slot)) => catch_unwind(AssertUnwindSafe(|| slot.run.resume(id, out))).is_ok(),
+                _ => false,
+            };
+            if resumed {
+                self.push_ready(pos, Ready::Resume(task));
+                continue;
+            }
+            self.drop_call(task);
+            if !self.stopping && fault.is_none() {
+                let name = self.natives.get(library).map_or_else(String::new, |slot| slot.name.clone());
+                fault = Some(self.halt(instance, node, panicked(&name)));
+            }
+        }
+        fault.map_or(Ok(()), Err)
+    }
+
     /// At one time on the clock: the settings of that time, then the timeout, before the nodes (cli.md 6.2).
     fn at_this_time(&mut self) -> Result<(), Halt> {
         while let Some(applied) = self.panel.get(self.next_setting) {
             if applied.setting.at > self.now {
                 break;
             }
-            let (element, value, by) = (applied.setting.element, applied.setting.value.clone(), applied.setting.by);
-            self.set_element(0, element, value, by).map_err(|fault| self.halt_at(None, fault))?;
-            if let Some(applied) = self.panel.get_mut(self.next_setting) {
-                applied.applied = true;
-            }
+            // Dated when it applies, which in real time can be a little after the time it was given for.
+            let setting = applied.setting.clone();
+            self.apply(setting).map_err(|fault| self.halt_at(None, fault))?;
             self.next_setting += 1;
         }
         if self.settings.timeout.is_some_and(|timeout| timeout <= self.now) {
@@ -623,6 +772,8 @@ impl<'p, 'o> Machine<'p, 'o> {
         // Ended from outside, the grace period ends now, not at its deadline.
         let mut cut = false;
         loop {
+            let seen = self.real_time.as_ref().map(|real| real.wake.seen());
+            self.tick();
             // A library that never ends a call, asking to wait 0 ns again and again, is stopped by the real time of the run.
             if self.settings.max_real_time.is_some_and(|limit| self.control.real_ns() > limit) {
                 break;
@@ -631,18 +782,34 @@ impl<'p, 'o> Machine<'p, 'o> {
                 cut = true;
                 break;
             }
+            if seen.is_some() {
+                let _ = self.jobs_done();
+                if self.now >= deadline {
+                    break;
+                }
+                self.wake_sleepers();
+            }
             if let Some(ticket) = self.ready.pop() {
                 if let Ready::Resume(task) = ticket.what {
                     let _ = self.step_native(task);
                 }
                 continue;
             }
-            match self.sleepers.peek().copied() {
-                Some(Reverse((wake, _, _))) if wake <= deadline => {
+            let wake = self.sleepers.peek().map(|Reverse((wake, _, _))| *wake).filter(|wake| *wake <= deadline);
+            if let Some(seen) = seen {
+                // A call that sleeps past the deadline, or whose work is on the pool, is waited for until the deadline.
+                if self.sleepers.is_empty() && self.blocked == 0 {
+                    break;
+                }
+                self.wait(seen, Some(wake.unwrap_or(deadline)));
+                continue;
+            }
+            match wake {
+                Some(wake) => {
                     self.now = self.now.max(wake);
                     self.wake_sleepers();
                 }
-                _ => break,
+                None => break,
             }
         }
         let abandoned: Vec<TaskId> = (0..self.tasks.len()).filter(|task| self.is_native(Ready::Resume(*task))).collect();
@@ -736,6 +903,19 @@ impl<'p, 'o> Machine<'p, 'o> {
             }
         }
         instruments.sort_by(|a, b| a.resource.cmp(&b.resource));
+        // The settings in the order they applied, then those that never did: `set` after the end, and `run.set_element`
+        // given as the run ended.
+        let mut panel = std::mem::take(&mut self.applied);
+        for applied in &panel {
+            self.memory.release(&applied.setting.value);
+        }
+        let pending = std::mem::take(&mut self.panel);
+        panel.extend(pending.into_iter().skip(self.next_setting));
+        panel.append(&mut self.never);
+        for Live { tag, element, value } in self.control.close_live() {
+            self.control.applied(tag, None);
+            panel.push(Applied { setting: PanelSetting { element, value, at: self.now, by: SetBy::RunSetElement }, applied: false });
+        }
         RunEnd {
             status,
             outputs,
@@ -745,7 +925,7 @@ impl<'p, 'o> Machine<'p, 'o> {
             resources,
             instruments,
             logs,
-            panel: std::mem::take(&mut self.panel),
+            panel,
             nodes: self.nodes_run,
             held: self.memory.held(),
         }
@@ -1090,7 +1270,12 @@ impl<'p, 'o> Machine<'p, 'o> {
                 return Err(self.halt(instance, node, memory_fault("the inputs of a native call", crate::value::logical_size(value))));
             }
         }
-        let task = self.new_task(Task { instance, node, pos, state: State::Native(NativeCall { library, call, held: Vec::new(), inputs, skip }) });
+        let task = self.new_task(Task {
+            instance,
+            node,
+            pos,
+            state: State::Native(NativeCall { library, call, blocked: None, held: Vec::new(), inputs, skip }),
+        });
         self.step_native(task)
     }
 
@@ -1105,6 +1290,7 @@ impl<'p, 'o> Machine<'p, 'o> {
                 Ok(step) => step,
                 Err(_) => {
                     let fault = panicked(&slot.name);
+                    self.drop_call(task);
                     if self.stopping {
                         return Ok(());
                     }
@@ -1137,6 +1323,11 @@ impl<'p, 'o> Machine<'p, 'o> {
                     }
                     self.give(key);
                 }
+                Step::Blocking(job) => {
+                    if !self.block(task, job)? {
+                        return Ok(());
+                    }
+                }
                 Step::Done(outcome) => {
                     let Some(Task { state: State::Native(call), .. }) = self.take_task(task) else { return Ok(()) };
                     for key in &call.held {
@@ -1148,6 +1339,62 @@ impl<'p, 'o> Machine<'p, 'o> {
                     return self.native_done(instance, node, call, outcome);
                 }
             }
+        }
+    }
+
+    /// The work of a call that blocks: on the pool in real time, its call waiting for it; at once on this thread otherwise,
+    /// the call then given what it returned. Whether the call steps on at once.
+    fn block(&mut self, task: TaskId, job: Job) -> Result<bool, Halt> {
+        let Some(Task { instance, node, state: State::Native(call), .. }) = self.task(task) else { return Ok(false) };
+        let (instance, node, library, id) = (*instance, *node, call.library, call.call);
+        if let Some((pool, wake)) = self.real_time.as_ref().map(|real| (real.pool.clone(), real.wake.clone())) {
+            self.serial = self.serial.wrapping_add(1);
+            let serial = self.serial;
+            if let Some(Task { state: State::Native(call), .. }) = self.task_mut(task) {
+                call.blocked = Some(serial);
+            }
+            self.blocked += 1;
+            let jobs = Arc::clone(&self.jobs);
+            let work: Work = Box::new(move || {
+                let out = catch_unwind(AssertUnwindSafe(job)).ok();
+                jobs.lock().unwrap_or_else(PoisonError::into_inner).push(JobDone { task, serial, out });
+                wake.wake();
+            });
+            // No thread could start: the work runs here, and the scheduler takes its end as any other.
+            if let Err(work) = pool.submit(work) {
+                work();
+            }
+            return Ok(false);
+        }
+        let out = catch_unwind(AssertUnwindSafe(job));
+        let Some(slot) = self.natives.get_mut(library) else { return Err(self.halt(instance, node, Fault::bug("a native call of no library"))) };
+        let resumed = match out {
+            Ok(out) => catch_unwind(AssertUnwindSafe(|| slot.run.resume(id, out))).is_ok(),
+            Err(_) => false,
+        };
+        if resumed {
+            return Ok(true);
+        }
+        let fault = panicked(&slot.name);
+        self.drop_call(task);
+        if self.stopping {
+            return Ok(false);
+        }
+        Err(self.halt(instance, node, fault))
+    }
+
+    /// A call whose library panicked ends there: it gives back its keys and what it held, and the resources it was given are
+    /// released with the others, as after any fault (10.4), rather than left as leaked.
+    fn drop_call(&mut self, task: TaskId) {
+        let Some(Task { state: State::Native(call), .. }) = self.take_task(task) else { return };
+        if call.blocked.is_some() {
+            self.blocked = self.blocked.saturating_sub(1);
+        }
+        for key in &call.held {
+            self.give(*key);
+        }
+        for value in &call.inputs {
+            self.memory.release(value);
         }
     }
 

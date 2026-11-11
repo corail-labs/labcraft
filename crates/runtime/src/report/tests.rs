@@ -44,8 +44,18 @@ fn checked(files: &[(&str, &str)], names: &mut Interner) -> (Checked, Program) {
 }
 
 fn report_of(end: &RunEnd, checked: &Checked, program: &Program, names: &Interner) -> String {
-    let of =
-        ReportOf { run: "r1", program, names, files: &checked.files, natives: &[], real_ms: 0, check: &Whole("{}"), trace: None, limit: RESULT_MAX };
+    let of = ReportOf {
+        run: "r1",
+        program,
+        names,
+        files: &checked.files,
+        natives: &[],
+        real_ms: 0,
+        real_time: false,
+        check: &Whole("{}"),
+        trace: None,
+        limit: RESULT_MAX,
+    };
     report(end, &of)
 }
 
@@ -120,6 +130,7 @@ fn a_report_stays_within_its_bound() {
         files: &checked.files,
         natives: &[],
         real_ms: 0,
+        real_time: false,
         check: &Whole("{}"),
         trace: None,
         limit,
@@ -155,6 +166,7 @@ fn a_report_of_many_outputs_counts_those_that_do_not_fit() {
         files: &checked.files,
         natives: &[],
         real_ms: 0,
+        real_time: false,
         check: &Whole("{}"),
         trace: None,
         limit,
@@ -198,7 +210,7 @@ fn the_error_of_a_report_is_that_of_err() {
 
 #[test]
 fn a_refused_report_gives_no_outputs_and_its_check() {
-    let text = refused("r1", "f", 3, r#"{"summary":{"errors":1},"diagnostics":[]}"#);
+    let text = refused("r1", "f", 3, false, r#"{"summary":{"errors":1},"diagnostics":[]}"#);
     assert_eq!(
         text,
         r#"{"schema":"labcraft-run/1","status":"refused","run":"r1","function":"f","mode":"deterministic","outputs":[],"clock":{"simulated_ms":0.0,"real_ms":3},"resources":{"opened":0,"open":[],"leaked":[]},"check":{"summary":{"errors":1},"diagnostics":[]}}"#
@@ -280,6 +292,7 @@ fn the_diagnostics_give_way_before_the_values() {
         files: &checked.files,
         natives: &[],
         real_ms: 0,
+        real_time: false,
         check: &diagnostics,
         trace: None,
         limit,

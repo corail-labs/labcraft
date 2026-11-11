@@ -72,6 +72,10 @@ pub(crate) struct Prepared {
     pub trace_to: Option<Outside>,
     /// Whether to keep the text of each output (`CommandLine::texts`).
     pub texts: bool,
+    /// `mode: "real_time"`.
+    pub real_time: bool,
+    /// `--max-nesting`, for the values of `run.set_element`.
+    pub max_nesting: u32,
 }
 
 /// A file of the command line, outside the rules of paths of commands (commands.md 2): named from the current folder,
@@ -145,6 +149,8 @@ pub(crate) struct Given {
     pub args: serde_json::Map<String, Json>,
     pub set: Vec<(String, Supplied, i64)>,
     pub settings: Settings,
+    /// `mode: "real_time"` (spec 8): the limits of iterations and nodes have no default there.
+    pub real_time: bool,
     pub deny_warnings: bool,
     pub trace: TraceMode,
     /// How long `run.start` waits, in nanoseconds.
@@ -187,12 +193,15 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
         return Err(invalid("function", format!("`{function}` is not names joined by `.`: `check_voltage`, `dmm_driver.measure`")));
     }
     let real_time = params.str("mode") == Some("real_time");
-    if real_time {
-        return Err(CommandError::of(
-            "command.not_enabled",
-            "mode",
-            "a run in real time is planned, and comes with M0b, step 8 (real time): give `mode: \"deterministic\"`",
-        ));
+    // What only deterministic mode has (cli.md 6.2): wrong usage on the command line, `params.invalid` here.
+    for name in ["schedule_seed", "max_real_time"] {
+        if real_time && params.get(name).is_some_and(|value| !value.is_null()) {
+            let message = match name {
+                "schedule_seed" => "`schedule_seed` orders a deterministic run: a run in real time takes its nodes as they are ready",
+                _ => "`max_real_time` bounds a deterministic run: in real time, `timeout` counts real time already",
+            };
+            return Err(invalid(name, message));
+        }
     }
     let args = match params.get("args") {
         Some(Json::Object(args)) => args.clone(),
@@ -224,6 +233,11 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
         Some(_) => return Err(invalid("schedule_seed", "a seed is an integer, or a string of digits beyond 2^53-1")),
     };
     let mut settings = Settings { schedule_seed, ..Settings::default() };
+    // In real time a loop runs as long as the program says, unless the run is given a limit (spec 8.2).
+    if real_time {
+        settings.max_iterations = None;
+        settings.max_nodes = None;
+    }
     settings.timeout = match duration_param(params, "timeout", max_nesting)? {
         Some(0) => return Err(invalid("timeout", "a timeout is above 0")),
         other => other,
@@ -244,6 +258,7 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
     settings.max_real_time = match duration_param(params, "max_real_time", max_nesting)? {
         Some(0) => return Err(invalid("max_real_time", "`max_real_time` is above 0")),
         Some(ns) => Some(u64::try_from(ns).unwrap_or(MAX_REAL_TIME_NS)),
+        None if real_time => None,
         None => Some(MAX_REAL_TIME_NS),
     };
     let trace = match params.str("trace") {
@@ -258,6 +273,7 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
         args,
         set,
         settings,
+        real_time,
         deny_warnings: params.bool("deny_warnings"),
         trace,
         wait: wait_param(params, max_nesting)?,
@@ -563,9 +579,10 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     }
     let arguments = arguments(session, given, max_nesting, &mut problems);
     let Some((folder, folder_shown)) = folder else {
-        return Ok(Ready::Refused(refused(
+        return Ok(Ready::Refused(refused_in(
             id,
             &given.function,
+            given.real_time,
             CheckPart::of_problems(by_place(problems)).with_unlisted(arguments.unknown_counted.get()),
         )));
     };
@@ -576,7 +593,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         report.finish();
         let check =
             CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
-        return Ok(Ready::Refused(refused(id, &given.function, check)));
+        return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
     };
 
     // The function, named from the folder.
@@ -597,7 +614,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         report.finish();
         let check =
             CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
-        return Ok(Ready::Refused(refused(id, &given.function, check)));
+        return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
     };
 
     // What the run reaches: the diagnostics of the bodies of its dependencies join the report.
@@ -623,7 +640,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         problems.extend(judge_signature(&checked, &names, start, &arguments, &given.function, file_shown, max_nesting));
         let check =
             CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
-        return Ok(Ready::Refused(refused(id, &given.function, check)));
+        return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
     }
 
     // Lowered for the run: the bounds of the run as a whole (`LC8111`).
@@ -641,7 +658,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
             problems.extend(judge_signature(&checked, &names, start, &arguments, &given.function, file_shown, max_nesting));
             let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems))
                 .with_unlisted(arguments.unknown_counted.get());
-            return Ok(Ready::Refused(refused(id, &given.function, check)));
+            return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
         }
     };
     let env = Env { program: &program, names: &names };
@@ -692,47 +709,18 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     // The settings of panel elements (cli.md 6.4).
     let mut settings = given.settings.clone();
     for (element, value, at) in &given.set {
-        let found = top.elements.iter().enumerate().find(|(_, declared)| names.resolve(declared.name) == element);
-        let Some((index, declared)) = found else {
-            let known: Vec<&str> =
-                top.elements.iter().filter(|declared| declared.port.is_none()).map(|declared| names.resolve(declared.name)).collect();
-            let message = format!("`{element}` names no panel element of `{}`{}", given.function, did_you_mean(element, &known));
-            problems.push(diagnostic("LC8108", &message, file_shown, None, None));
-            continue;
-        };
-        let span = span_of(declared.origin);
-        if declared.port.is_some() {
-            let message =
-                format!("`{element}` is the element of an input or an output: an input is given by `args`, an output is written by the function");
-            problems.push(diagnostic("LC8108", &message, file_shown, span, None));
-            continue;
-        }
-        let Some(ty) = declared.ty else {
-            problems.push(diagnostic("LC8108", &format!("the type of `{element}` is not settled, so it cannot be set"), file_shown, span, None));
-            continue;
-        };
-        let off = match value {
-            Supplied::Json(json) => *json == Json::Bool(false),
-            Supplied::Text(text) => text.trim() == "false",
-        };
-        if names.resolve(declared.kind) == "button" && off {
-            let message = format!("`{element}` is a button: setting it to `false` is not taken in M0, the modes of a button being open (spec, Q-30)");
-            problems.push(diagnostic("LC8108", &message, file_shown, span, None));
-            continue;
-        }
-        match converter.supplied(value, ty) {
-            Ok(value) => {
-                let element = ElementId(u32::try_from(index).map_err(|_| CommandError::internal("an element beyond u32"))?);
-                settings.panel.push(PanelSetting { element, value, at: *at, by: SetBy::Set });
+        match judge_setting(top, &names, &converter, element, value, &given.function) {
+            Ok((element, value)) => settings.panel.push(PanelSetting { element, value, at: *at, by: SetBy::Set }),
+            Err(refused) => {
+                problems.push(diagnostic(refused.problem.code, &refused.problem.message, file_shown, refused.origin.and_then(span_of), None))
             }
-            Err(Problem { code, message }) => problems.push(diagnostic(code, &format!("the element `{element}`: {message}"), file_shown, span, None)),
         }
     }
 
     if !problems.is_empty() {
         let check =
             CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
-        return Ok(Ready::Refused(refused(id, &given.function, check)));
+        return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
     }
     // The native libraries the program uses, each with its part of the simulation file.
     let used: Vec<(LibraryId, Arc<dyn NativeLibrary>)> = session
@@ -787,6 +775,8 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         trace_shown,
         trace_to: given.line.trace.clone(),
         texts: given.line.texts,
+        real_time: given.real_time,
+        max_nesting,
     })))
 }
 
@@ -855,9 +845,56 @@ fn sim_shown(session: &Session, given: &str) -> String {
     }
 }
 
-/// The report of a refused run (commands.md 7).
-pub(crate) fn refused(id: &str, function: &str, check: CheckPart) -> Json {
-    let text = labcraft_runtime::report::refused(id, function, 0, &check.within(labcraft_runtime::report::RESULT_MAX / 2).0);
+/// Why a setting of a panel element is refused: its code and message, and the element when it names one.
+pub(crate) struct SettingRefused {
+    pub problem: Problem,
+    pub origin: Option<labcraft_graph::Id>,
+}
+
+/// A setting of a panel element of the top-level function, by `--set`, `set` or `run.set_element` (cli.md 6.4): its element
+/// and its value in the type of the element, or why not (`LC8108`, or the code of a value that does not convert).
+pub(crate) fn judge_setting(
+    top: &labcraft_ir::Function,
+    names: &Interner,
+    converter: &Converter<'_>,
+    element: &str,
+    value: &Supplied,
+    function: &str,
+) -> Result<(ElementId, Value), SettingRefused> {
+    let refused = |code: &'static str, message: String, origin| Err(SettingRefused { problem: Problem { code, message }, origin });
+    let found = top.elements.iter().enumerate().find(|(_, declared)| names.resolve(declared.name) == element);
+    let Some((index, declared)) = found else {
+        let known: Vec<&str> = top.elements.iter().filter(|declared| declared.port.is_none()).map(|declared| names.resolve(declared.name)).collect();
+        return refused("LC8108", format!("`{element}` names no panel element of `{function}`{}", did_you_mean(element, &known)), None);
+    };
+    let origin = Some(declared.origin);
+    if declared.port.is_some() {
+        let message =
+            format!("`{element}` is the element of an input or an output: an input is given by `args`, an output is written by the function");
+        return refused("LC8108", message, origin);
+    }
+    let Some(ty) = declared.ty else { return refused("LC8108", format!("the type of `{element}` is not settled, so it cannot be set"), origin) };
+    let off = match value {
+        Supplied::Json(json) => *json == Json::Bool(false),
+        Supplied::Text(text) => text.trim() == "false",
+    };
+    if names.resolve(declared.kind) == "button" && off {
+        let message = format!("`{element}` is a button: setting it to `false` is not taken in M0, the modes of a button being open (spec, Q-30)");
+        return refused("LC8108", message, origin);
+    }
+    let element_id = ElementId(
+        u32::try_from(index)
+            .map_err(|_| SettingRefused { problem: Problem { code: "LC0099", message: "an element beyond u32".to_owned() }, origin: None })?,
+    );
+    match converter.supplied(value, ty) {
+        Ok(value) => Ok((element_id, value)),
+        Err(Problem { code, message }) => refused(code, format!("the element `{element}`: {message}"), origin),
+    }
+}
+
+/// The report of a refused run (commands.md 7), in its mode.
+pub(crate) fn refused_in(id: &str, function: &str, real_time: bool, check: CheckPart) -> Json {
+    let text = labcraft_runtime::report::refused(id, function, 0, real_time, &check.within(labcraft_runtime::report::RESULT_MAX / 2).0);
     serde_json::from_str(&text)
         .unwrap_or_else(|error| json!({ "schema": "labcraft-run/1", "status": "refused", "run": id, "error": error.to_string() }))
 }

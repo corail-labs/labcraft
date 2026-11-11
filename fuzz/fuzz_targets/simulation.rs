@@ -243,6 +243,8 @@ impl Driver<'_> {
                     self.now = now;
                 }
                 Step::Exclusive(_) | Step::Release(_) => {}
+                // libs/visa/simulation.md 4: a simulated call never blocks a thread.
+                Step::Blocking(_) => panic!("{function} of a simulated instrument blocks a thread"),
                 Step::Done(outcome) => {
                     if let NativeOutcome::Fail { category, message, .. } = &outcome {
                         assert!(!category.is_empty() && !message.is_empty(), "{outcome:?}");

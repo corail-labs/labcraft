@@ -11,7 +11,7 @@ use labcraft_check::{Checked, Content, Found, Libraries, LibrarySource, Origin, 
 use labcraft_ir::{ElementId, Program, lower_for_run};
 use labcraft_runtime::Value;
 use labcraft_runtime::native::NativeLibrary;
-use labcraft_runtime::run::{AbortBy, Control, Native, PanelSetting, Run, RunEnd, SetBy, Settings, Status, Unobserved, run};
+use labcraft_runtime::run::{AbortBy, Control, Native, PanelSetting, Pool, RealTime, Run, RunEnd, SetBy, Settings, Status, Unobserved, Wake, run};
 use labcraft_runtime::{FaultCode, simulation};
 use labcraft_types::{Interner, Limits};
 use labcraft_visa::Visa;
@@ -71,12 +71,34 @@ fn defaults() -> Vec<Value> {
 }
 
 fn run_on(bench: &Bench, sim: &str, settings: Settings) -> RunEnd {
+    run_controlled(bench, sim, settings, &mut Still)
+}
+
+fn run_controlled(bench: &Bench, sim: &str, settings: Settings, control: &mut dyn Control) -> RunEnd {
     let file = simulation::read(sim, 64).unwrap();
     let simulations = file.judge(&[&Visa as &dyn NativeLibrary]).unwrap();
     let visa = bench.checked.libraries.iter().find(|library| library.name == "visa").unwrap();
     let natives = [Native { library: visa.id, native: &Visa, simulation: simulations.first().and_then(Option::as_ref) }];
     let given = Run { program: &bench.program, names: &bench.names, files: &bench.checked.files, natives: &natives, inputs: defaults(), settings };
-    run(given, &mut Still, &mut Unobserved)
+    run(given, control, &mut Unobserved)
+}
+
+/// Real time on a clock of the test: a wait of the scheduler jumps to the time it waits for, so that what is asserted does
+/// not depend on the speed of the machine. The corpus of runs runs the same on the real clock (`s3-2-real-time`).
+struct Jumps(u64);
+
+impl Control for Jumps {
+    fn real_ns(&mut self) -> u64 {
+        self.0
+    }
+
+    fn wait(&mut self, wake: &Wake, seen: u64, until: Option<u64>) {
+        if wake.seen() == seen
+            && let Some(until) = until
+        {
+            self.0 = self.0.max(until);
+        }
+    }
 }
 
 fn number(value: &Value) -> f64 {
@@ -115,6 +137,22 @@ fn point_2_the_waits_of_the_two_branches_overlap() {
     // Both sessions were opened, and the program closed them.
     assert_eq!(end.resources.len(), 2);
     assert!(end.resources.iter().all(|resource| !resource.info.as_ref().unwrap().open && !resource.released));
+}
+
+#[test]
+fn point_2_in_real_time_the_waits_overlap_on_the_real_clock() {
+    let bench = two_benches();
+    let real_time = RealTime { pool: Pool::default(), wake: Wake::default(), epoch: 0 };
+    let settings = Settings { max_iterations: None, max_nodes: None, max_real_time: None, real_time: Some(real_time), ..Settings::default() };
+    let end = run_controlled(&bench, TWO_DMM, settings, &mut Jumps(0));
+    assert_eq!(end.status, Status::Ok, "{:?}", end.fault);
+    // The same waits on the real clock: 1 s, not 2 s. Each wait ends when it is due, so the readings, their times and the
+    // means are those of deterministic mode, whose noise depends on how many times a quantity is read (simulation.md 3).
+    assert_eq!(end.clock, 1000 * MS);
+    let deterministic = run_on(&bench, TWO_DMM, Settings::default());
+    assert_eq!(commands(&end), commands(&deterministic));
+    assert_eq!(end.outputs.iter().take(2).map(number).collect::<Vec<_>>(), deterministic.outputs.iter().take(2).map(number).collect::<Vec<_>>());
+    assert!(end.resources.iter().all(|resource| !resource.info.as_ref().unwrap().open));
 }
 
 #[test]

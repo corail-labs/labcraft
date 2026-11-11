@@ -413,7 +413,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 5 of 10.11 implemented, and the first half of step 6.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 8 of 10.11 implemented.* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -549,7 +549,7 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
 
 ### 10.4 The scheduler
 
-*Status: implemented in deterministic mode (step 5a), in `runtime::run`; real time is step 8.* What the prototype showed (scenario 3, the proof of concept): every point of spec 8 falls out of one design.
+*Status: implemented, in `runtime::run`: deterministic mode (step 5a) and real time (step 8).* What the prototype showed (scenario 3, the proof of concept): every point of spec 8 falls out of one design.
 
 - **Each node that runs is a task**, and a structure is a task that starts the nodes of its region as their inputs
   arrive and waits for them. A task keeps its own context: the frames of its calls, the iterations of its loops, its
@@ -564,13 +564,30 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
 - **Time.** A task that takes time sleeps until a time on the clock of the run, in a heap of wake-ups. When no task is
   ready, the clock jumps to the next wake-up in deterministic mode, or the scheduler waits until then in real time. At
   one time, the settings of `--set` apply first, then the timeout, then the tasks (cli.md 6.2).
+- **Real time** (step 8) is the same scheduler on the real clock, which the `Control` gives (`real_ns`): it is read
+  between two nodes, never back and never past the end of the clock, and what is due by then (the settings, the
+  timeout, the sleepers whose time has come, the native calls whose work has ended, the settings of `run.set_element`)
+  is taken before the next node, in that order. With no node ready, the scheduler waits on a `runtime::run::Wake` until
+  the next time it knows of, or until it is woken: by the end of work on the pool, or by what reaches the run from
+  outside (an abort, a second Ctrl-C, `run.set_element`, `run.status`), which the app wakes it for. A condition variable
+  wakes on the tick of the system, 15.6 ms on Windows by default, which made each wait of 100 ms last about 113 ms: it
+  waits until 16 ms before its time (`COARSE`), and a sleep of the high-resolution timer does the rest, so that a wake
+  comes at most 16 ms late. Measured on Windows, debug build: two loops of 10 × 100 ms end in 1,005 to 1,009 ms.
+  `time.now` gives the UTC time of the start, which the app's clock gives (`engine::Clock::utc_ns`), plus the clock of
+  the run, which is monotonic, so that it never goes back when the system sets its time (spec 8; decision of the owner,
+  2026-11-11). A run in real time has no limit of iterations, nodes or real time unless it is given one (cli.md 6.2).
 - **One thread runs the diagram.** The scheduler and the nodes it runs share one thread: the interpreter is cheap, and
   a single thread keeps the order of spec 8 a fact of the code rather than of locks. What can block is a **native
-  call** (a VISA read, later a file): in real time it runs on a thread of a pool of the runtime, and its end comes back
-  to the scheduler as an event on a channel, so a call that waits for an instrument does not stop the other loops
-  (D-12). In deterministic mode a simulated call does not block: it does its work at once and says how long it took,
-  and its task sleeps that long, so the waits of parallel branches overlap and the run replays exactly. The two modes
-  share all the code but the clock and where a native call runs.
+  call** (a VISA read, later a file): in real time its work (`Step::Blocking`, 10.6) runs on a thread of the pool, and
+  its end comes back to the scheduler, which `Wake` wakes, so a call that waits for an instrument does not stop the
+  other loops (D-12). **The pool** (`runtime::run::Pool`; decision of the owner, 2026-11-11) is one per session of
+  `engine`: its threads start when work comes and no thread is idle, at most 64 at once *(proposed)*, and each ends after
+  10 s without work. Work beyond that waits its turn, never a fault; work that a run abandons keeps its thread until it
+  returns, and counts. A simulated instrument never blocks, so in M0b only the library of the tests of `runtime` gives
+  work to the pool; real instruments come with M4. In deterministic mode a simulated call does not block: it does its work at once and says how long it took,
+  and its task sleeps that long, so the waits of parallel branches overlap and the run replays exactly; work that blocks
+  runs at once on the thread of the run, as it does without threads. The two modes share all the code but the clock and
+  where that work runs.
 - **Running compute nodes on several threads**, D-12's blocks on a thread pool, comes when a program needs it (M2 or
   later). Nothing above stops it: the order of spec 8 binds deterministic mode, and a real-time run may run ready
   nodes side by side.
@@ -581,13 +598,18 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
 - **Stopping** (spec 8.2). Stop is the program's own: the scheduler does nothing special. An abort or a fault winds down
   the same way: no task starts; waits end at once; a native call in progress ends within the grace period, on the clock
   of the run, or is abandoned when the period ends and its resource reported as leaked; then each resource the run
-  opened is released by its library. The prototype first had faults release resources while a call still used them:
+  opened is released by its library. In real time the grace period waits on the real clock for the calls that sleep and
+  the work on the pool, and a second Ctrl-C (`Control::grace_over`, which wakes it) ends it at once. The prototype first had faults release resources while a call still used them:
   both paths now go through one function, and so will these.
 - **A panic** of a primitive or of a native body, on the thread of the run or on a thread of the pool, is caught there
-  and ends the run with the fault `LC8004`, released as any fault is; the session goes on.
-- **Two clocks.** The app gives the runtime a `runtime::run::Control`: the real time that `--max-real-time` bounds in
-  deterministic mode, and an abort asked from outside; the clock of a deterministic run is the runtime's own. The runtime never calls `Instant::now` itself, which
-  `clippy.toml` refuses and which traps in WASM.
+  and ends the run with the fault `LC8004`, released as any fault is; the session goes on. The call whose library
+  panicked ends there, its keys given back: the resources it was given are released with the others, not leaked.
+- **Two clocks.** The app gives the runtime a `runtime::run::Control`: the real time, which `--max-real-time` bounds in
+  deterministic mode and which is the clock of a run in real time, the waits of real time, an abort asked from outside,
+  and the settings of `run.set_element`; the clock of a deterministic run is the runtime's own. The runtime never calls
+  `Instant::now` itself, which `clippy.toml` refuses and which traps in WASM. So the scheduler in real time is tested
+  without the real clock: a `Control` of the tests jumps to the time each wait waits for (`crates/runtime`, and scenario 3,
+  point 2 in `tests/harness`), and only the corpus of runs waits on the real one (10.11).
 
 ### 10.5 The interpreter and the primitives
 
@@ -656,8 +678,8 @@ each `set`, which `runtime::trace` writes (10.7).
 
 ### 10.6 Native libraries
 
-*Status: the interface, `labcraft-visa` in deterministic mode and `labcraft-results-log` are implemented (step 4); `Blocking`
-comes with real time (step 8).* The runtime defines what a library with native functions gives it (`runtime::native`):
+*Status: implemented: the interface, `labcraft-visa` and `labcraft-results-log` (step 4), `Blocking` and the pool
+(step 8).* The runtime defines what a library with native functions gives it (`runtime::native`):
 
 ```rust
 pub trait NativeLibrary: Send + Sync {
@@ -670,13 +692,15 @@ pub trait NativeLibrary: Send + Sync {
 pub trait LibraryRun: Send {                                             // its sessions, its instruments, for one run
     fn call(&mut self, function: &str, inputs: Vec<Value>) -> Option<CallId>;   // starts an `extern rust` body
     fn step(&mut self, call: CallId, cx: CallContext) -> Step;           // asked again after each wait
+    fn resume(&mut self, call: CallId, done: Box<dyn Any + Send>);       // what its `Job` returned, before the next step
     fn cancel(&mut self, call: CallId);                                  // a call the run abandons
     fn describe(&self, handle: Handle) -> Option<HandleInfo>;            // what it designates, whether it is open
     fn release(&mut self, handle: Handle);                               // after an abort or a fault
     fn instruments(&self) -> Vec<InstrumentLog>;                         // the commands each instrument saw, for the report
     fn logs(&self) -> Logs;                                              // what it kept of the values it was given, for the report
 }
-pub enum Step { Done(NativeOutcome), Sleep(i64), Exclusive(Key), Release(Key) }   // `Blocking(…)` with real time
+pub enum Step { Done(NativeOutcome), Sleep(i64), Exclusive(Key), Release(Key), Blocking(Job) }
+pub type Job = Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>;          // work that blocks, apart from the run
 pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
 ```
 
@@ -707,13 +731,16 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
 - **A call is a small state machine.** It returns `Sleep` to wait on the clock of the run (the latency of a simulated
   instrument, a read that waits for its timeout), `Exclusive` to wait for a key and `Release` to give one back, in
   the middle of a call if it must (an instrument is free once its latency has passed, while the session waits for
-  the answer: simulation.md 4), `Blocking` for work that blocks in real time and runs on the pool, and `Done` with its
-  outputs; the keys it still holds are given back then. The scheduler calls `step` again after each wait, so a
+  the answer: simulation.md 4), `Blocking` for work that blocks, and `Done` with its outputs; the keys it still holds are
+  given back then. **The work of `Blocking`** is a closure that owns what it needs, since the run of the library stays on
+  the thread of the run: in real time it runs on the pool (10.4) while the call waits, holding its keys; in deterministic
+  mode and without threads it runs at once. What it returns is given to the call by `resume`, then the call steps on. The scheduler calls `step` again after each wait, so a
   call can wait in its middle, as an instrument that is busy makes it (simulation.md 4).
 - **A library owns what it guarantees** (spec 8.1): `visa` keeps each of its calls atomic on its session, and each
-  instrument handling one command at a time, through keys that the runtime lends (`Exclusive`). A key is a lock in
-  real time, and in deterministic mode a queue of the scheduler that gives it in the global order of spec 8, so that a
-  replay is exact. The runtime locks nothing on its own.
+  instrument handling one command at a time, through keys that the runtime lends (`Exclusive`). A key is a queue of the
+  scheduler that gives it to the call that waits for it first in the global order of spec 8, so that a replay is exact;
+  in real time too, since one thread steps every call (decision of the owner, 2026-11-11), and work on the pool keeps the
+  keys of its call. The runtime locks nothing on its own.
 - **The simulation file** is split by the tool (cli.md 6.2): each library gets its table, with the spans of its keys,
   so that a diagnostic points at its key (simulation.md 7), and judges it with its own codes. `cargo xtask codes` also
   checks that the codes of each library equal the table of its document.
@@ -777,9 +804,9 @@ where it is written: `engine` and the app decide.
 
 ### 10.8 `engine` (L6)
 
-*Status: implemented (steps 6a and 6b): the registry, the session, the commands of commands.md 6 but
-`run.set_element`, `view.open_trace` and `guide.read`, which are registered as `planned` (step 8, step 8 of M0v and step 9;
-decisions of the owner, 2026-11-10), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
+*Status: implemented (steps 6a, 6b and 8): the registry, the session, the commands of commands.md 6 but
+`view.open_trace` and `guide.read`, which are registered as `planned` (step 8 of M0v and step 9; decisions of the owner,
+2026-11-10), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
 with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask commands`.*
 
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
@@ -813,14 +840,23 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   file), then runs it on a thread of `format::STACK_SIZE` and returns its report, or `running` after `wait`; one run at a
   time per session; the last 16 reports are kept. **A caller waits on the run, not in the session**: the runs are an
   `engine::Runs`, shared, which `Session::runs` hands out, and `Runs::execute` answers `run.wait`, `run.status`,
-  `run.abort` and `run.trace` without the session, so the MCP server (10.9) answers them while another request holds it.
-  A waiter blocks on the condition of the runs; `run.abort`, and later `run.set_element` and Ctrl-C, reach the scheduler
-  through `runtime::run::Control`, which also asks the run where it is (`wants_progress`, `progress`): the scheduler
-  writes the `running` report, with its clock and its loops, only when someone waits for it. A run is going from the
+  `run.abort`, `run.set_element` and `run.trace` without the session, so the MCP server (10.9) answers them while another
+  request holds it. A waiter blocks on the condition of the runs; `run.abort`, `run.set_element` and Ctrl-C reach the
+  scheduler through `runtime::run::Control`, which also asks the run where it is (`wants_progress`, `progress`), and wake
+  it when it waits in real time: the scheduler writes the `running` report, with its clock and its loops, only when someone
+  waits for it. **`run.set_element`** (decision of the owner, 2026-11-11) queues the setting with the run and waits: the
+  thread of the run judges it against the panel of its program as `prepare` judges `set` (`prepare::judge_setting`), so that
+  the program never crosses threads, gives it to the scheduler, which applies it between two nodes, and answers with its
+  entry of `panel` (`runtime::report::panel_entry`), or `params.invalid` with the code of the refusal; a setting the run
+  never took, because it ended first, is in `panel` with `applied: false`. On a deterministic run it is
+  `command.not_enabled`. The pool of a session (10.4) is in `Runs`. A run is going from the
   moment its id is given, so `run.abort` reaches it while it is judged, and it never outlives its session: dropping the
   session aborts it (commands.md 4). The kept reports are held as text. The app gives the real clock
-  (`engine::Clock`; `engine::Still` in tests, whose reports say `real_ms: 0`) and the id of the process, which names the
-  `.partial` of a trace.
+  (`engine::Clock`, with the UTC time for `time.now` in real time; `engine::Still` in tests, whose reports say
+  `real_ms: 0`, and on which `run.start` refuses a run in real time, `command.not_enabled`, since its clock would never
+  move: `Clock::moves`; decision of the owner, 2026-11-11) and the id of the process,
+  which names the `.partial` of a trace. `engine::run_to_end`, without threads, refuses a run in real time
+  (`command.not_enabled`).
 - **What a run is given** is converted by `engine::runs::convert` (cli.md 6.3, 6.4), a value read against its type as a
   literal is: a number reads once in the kind of its type and converts as a wire does, through `ir::literal_number`, so
   an argument has the bits of the literal it would be. `args` take the JSON form exactly (decision of the owner, 2026-11-10): a number
@@ -881,7 +917,7 @@ headless in M0b. The instructions it gives point to `guide.read`.
 
 ### 10.10 `labcraft-cli`
 
-It gains `run` (cli.md 6) and `mcp` (step 9), both through `engine`. `run` starts a session on `FOLDER` and calls
+It gains `run` (cli.md 6) and `mcp` (step 9), both through `engine`. `--real-time` gives `mode: "real_time"` (step 8). `run` starts a session on `FOLDER` and calls
 `Session::start_run`: the parameters of `run.start`, judged as `execute` judges them, and `engine::runs::CommandLine`,
 what the command line gives beyond them (decisions of the owner, 2026-11-11): the current folder, which paths are shown
 from as `check` shows them; the values of `--arg` and `--set` as text, which `engine` reads against their types with the
@@ -929,6 +965,12 @@ to `run.start` unchanged, on a session of `engine` on the repository in memory, 
 through `engine::run_to_end`; `tools/lcf-poc/tests/test_runs.py` runs it through the proof of concept, which skips the
 cases of `poc-later.txt`, rules it does not follow, and must still give them a report.
 
+**A case in real time** (step 8; decision of the owner, 2026-11-11), `s3-2-real-time`, runs natively on the real clock,
+and WASM skips it. It asserts what does not depend on the speed of the machine: the status, the outputs, exact since the
+noise of a quantity depends on how many times it is read and not on time, the resources, the commands and answers of
+each instrument in order but not their times, and `clock.real_ms` as a range, `{"at_least": 1000, "below": 1500}`: the
+lower bound is a fact, the upper one, that of scenario 3, point 2, is given three tries, and only it.
+
 Each step of work ends with something testable:
 
 0. **`check` for runs:** the interface of 10.1. *Done.*
@@ -952,7 +994,9 @@ Each step of work ends with something testable:
    (section 10.8).
 7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C. *Done*
    (section 10.10): every case of the corpus gives through the command line the report of `run.start`.
-8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2.
+8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2. *Done* (sections 10.4,
+   10.6, 10.8): `s3-2-real-time` in the corpus of runs, on the real clock, and point 2 in `tests/harness` on a clock that
+   jumps.
 9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.
 10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.
 

@@ -50,7 +50,21 @@ impl Drop for Scratch {
 }
 
 /// The report of `run.start` for the same parameters, from a session of `engine` on the repository.
+/// The real clock, for a case in real time.
+struct Real(std::time::Instant);
+
+impl labcraft_engine::Clock for Real {
+    fn real_ns(&self) -> u64 {
+        u64::try_from(self.0.elapsed().as_nanos()).unwrap_or(u64::MAX)
+    }
+    /// From 1970: no test here asserts the time of day.
+    fn utc_ns(&self) -> i64 {
+        0
+    }
+}
+
 fn engine_report(params: &Value) -> Value {
+    let real_time = params["mode"] == "real_time";
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(labcraft_format::STACK_SIZE)
@@ -61,11 +75,18 @@ fn engine_report(params: &Value) -> Value {
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
                     natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_results_log::ResultsLog)],
-                    clock: Arc::new(labcraft_engine::Still),
+                    clock: if real_time {
+                        #[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
+                        let now = std::time::Instant::now();
+                        Arc::new(Real(now))
+                    } else {
+                        Arc::new(labcraft_engine::Still)
+                    },
                     process: 0,
                 };
-                let session = Session::new(Arc::new(Disk), config, false).unwrap();
-                labcraft_engine::run_to_end(&session, params).unwrap()
+                let mut session = Session::new(Arc::new(Disk), config, false).unwrap();
+                // A run in real time needs threads: through the command, which waits for its end.
+                if real_time { session.execute("run.start", params).unwrap() } else { labcraft_engine::run_to_end(&session, params).unwrap() }
             })
             .unwrap()
             .join()
@@ -102,6 +123,8 @@ fn options_of(params: &Value, scratch: &Scratch) -> Vec<String> {
                 }
             }
             "deny_warnings" if value == &json!(true) => options.push("--deny-warnings".to_owned()),
+            "mode" if value == "real_time" => options.push("--real-time".to_owned()),
+            "mode" => {}
             _ => options.extend([format!("--{}", key.replace('_', "-")), if value.is_null() { "none".to_owned() } else { text_of(value) }]),
         }
     }
@@ -110,10 +133,20 @@ fn options_of(params: &Value, scratch: &Scratch) -> Vec<String> {
     options
 }
 
-/// What differs between two runs of one program: the real clock.
+/// What differs between two runs of one program: the real clock, and in real time the times on it.
 fn without_real_time(mut report: Value) -> Value {
     if let Some(clock) = report.get_mut("clock").and_then(Value::as_object_mut) {
         clock.remove("real_ms");
+    }
+    if report["mode"] == "real_time" {
+        for instrument in report["instruments"].as_array_mut().into_iter().flatten() {
+            for command in instrument["commands"].as_array_mut().into_iter().flatten() {
+                command.as_object_mut().unwrap().remove("t_ms");
+            }
+        }
+        if let Some(abort) = report.get_mut("abort").and_then(Value::as_object_mut) {
+            abort.remove("at_ms");
+        }
     }
     report
 }
@@ -197,7 +230,8 @@ fn wrong_usage_is_exit_2_and_runs_nothing() {
     for args in [
         &["run", "examples"][..],
         &["run", "examples", "check_voltage", "--timeout", "30"],
-        &["run", "examples", "check_voltage", "--real-time"],
+        &["run", "examples", "check_voltage", "--real-time", "--max-real-time", "1s"],
+        &["run", "examples", "check_voltage", "--real-time", "--schedule-seed", "3"],
         &["run", "examples", "check_voltage", "--trace", "examples/check_voltage.lcf"],
         &["run", "examples", "check_voltage", "--arg", "x=1", "--arg", "x=2"],
         &["run", "examples/check_voltage.lcf", "check_voltage"],
@@ -290,6 +324,45 @@ fn ctrl_c_aborts_the_run_and_the_report_is_still_written() {
     assert_eq!(output.status.code(), Some(3), "{}", String::from_utf8_lossy(&output.stdout));
     let report = report_of(&output);
     assert_eq!((report["status"].as_str(), report["abort"]["by"].as_str()), (Some("aborted"), Some("interrupt")), "{report}");
+}
+
+/// In real time, Ctrl-C wakes a run that waits: the wait of 60 s ends at once (spec 8.2).
+#[cfg(unix)]
+#[test]
+#[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
+fn ctrl_c_wakes_a_run_in_real_time_that_waits() {
+    let scratch = Scratch::new("interrupt-real-time");
+    let folder = scratch.0.join("q");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("nap.lcf"),
+        "labcraft 1
+
+use time
+
+/// Waits a minute.
+fn nap() -> (err: error) {
+    err = time.wait(60 s)
+}
+",
+    )
+    .unwrap();
+    let started = std::time::Instant::now();
+    let child = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
+        .current_dir(&scratch.0)
+        .args(["run", "--json", "--no-trace", "--real-time", "q", "nap"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let sent = Command::new("kill").args(["-INT", &child.id().to_string()]).status().unwrap();
+    assert!(sent.success());
+    let output = child.wait_with_output().unwrap();
+    // Bounded, not timed: far below the minute of the wait.
+    assert!(started.elapsed() < std::time::Duration::from_secs(30), "{:?}", started.elapsed());
+    assert_eq!(output.status.code(), Some(3), "{}", String::from_utf8_lossy(&output.stdout));
+    let report = report_of(&output);
+    assert_eq!((report["mode"].as_str(), report["abort"]["by"].as_str()), (Some("real_time"), Some("interrupt")), "{report}");
 }
 
 /// The human form of the other statuses (cli.md 6.7), on cases of the corpus whose reports are worked out by hand.

@@ -198,7 +198,8 @@ fn what_the_command_line_calls_wrong_usage_is_a_command_error() {
     assert_eq!(code(&mut session, json!({ "function": "double", "timeout": "30" })), "params.invalid", "seconds are not assumed");
     assert_eq!(code(&mut session, json!({ "function": "double", "wait": "301 s" })), "params.invalid");
     assert_eq!(code(&mut session, json!({ "function": "double", "folder": "../x" })), "path.outside_project");
-    assert_eq!(code(&mut session, json!({ "function": "double", "mode": "real_time" })), "command.not_enabled", "step 8");
+    assert_eq!(code(&mut session, json!({ "function": "double", "mode": "real_time", "schedule_seed": 1 })), "params.invalid");
+    assert_eq!(code(&mut session, json!({ "function": "double", "mode": "real_time", "max_real_time": "1 s" })), "params.invalid");
 }
 
 #[test]
@@ -679,4 +680,139 @@ fn a_large_json_number_reads_and_one_that_no_integer_type_holds_is_out_of_range(
     args.push(("n".to_owned(), "99999999999999999999".to_owned()));
     let line = crate::runs::CommandLine { args, ..Default::default() };
     assert_eq!(codes(&from_line(&memory, json!({ "function": "takes", "trace": "none" }), line)), ["LC8106"]);
+}
+
+// Real time ----------------------------------------------------------------------------------------------------------------
+
+/// Counts 10 ms waits until the switch is on.
+const POLL: &str = "labcraft 1\n\nuse core\nuse time\nuse ui\n\n/// Counts until the switch is on.\nfn poll() -> (n: f64, err: error) {\n    n, err = loop carry n = 0.0, carry e = none {\n        e1 = time.wait(10 ms, err: e)\n        stop = ui.get(stop_switch, after: e1)\n        next n = core.add(n, 1.0)\n        next e = e1\n        until stop\n    }\n}\n\npanel {\n    control stop_switch: switch\n    control note: text_box\n}\n";
+
+/// Waits 10 s.
+const SLEEP: &str = "labcraft 1\n\nuse time\n\n/// Waits 10 s.\nfn sleep() -> (err: error) {\n    err = time.wait(10 s)\n}\n";
+
+/// The real clock, for runs in real time.
+struct Real(std::time::Instant);
+
+impl crate::Clock for Real {
+    fn real_ns(&self) -> u64 {
+        u64::try_from(self.0.elapsed().as_nanos()).unwrap_or(u64::MAX)
+    }
+    /// From 1970: no test here asserts the time of day.
+    fn utc_ns(&self) -> i64 {
+        0
+    }
+}
+
+#[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
+fn real_session() -> Session {
+    let memory = Memory::new();
+    memory.put("/p/poll.lcf", POLL);
+    memory.put("/p/sleep.lcf", SLEEP);
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Real(std::time::Instant::now())),
+        process: 7,
+    };
+    Session::new(Arc::new(memory) as Arc<dyn Workspace>, config, false).unwrap()
+}
+
+#[test]
+fn run_set_element_sets_an_element_of_a_run_in_real_time() {
+    let mut session = real_session();
+    let running = ok(&mut session, "run.start", json!({ "function": "poll", "mode": "real_time", "wait": "0 s", "trace": "none" }));
+    // commands.md 7: `mode` says it, and `clock` has no simulated time.
+    assert_eq!((running["status"].as_str(), running["mode"].as_str()), (Some("running"), Some("real_time")), "{running}");
+    assert!(running["clock"].get("simulated_ms").is_none(), "{running}");
+    // A setting that `--set` would refuse is `params.invalid`, whose message gives the code (commands.md 6.4), and the run goes on.
+    let unknown = session.execute("run.set_element", &json!({ "element": "stop", "value": true })).unwrap_err();
+    assert_eq!((unknown.code, unknown.parameter.as_deref()), ("params.invalid", Some("element")));
+    assert!(unknown.message.starts_with("LC8108: "), "{}", unknown.message);
+    let wrong = session.execute("run.set_element", &json!({ "element": "stop_switch", "value": 1 })).unwrap_err();
+    assert_eq!((wrong.code, wrong.parameter.as_deref()), ("params.invalid", Some("value")));
+    assert!(wrong.message.starts_with("LC8104: "), "{}", wrong.message);
+    // Its entry of `panel`, once the run took it.
+    let entry = ok(&mut session, "run.set_element", json!({ "element": "stop_switch", "value": true }));
+    assert_eq!(
+        (entry["run"].as_str(), entry["element"].as_str(), &entry["value"], entry["by"].as_str(), &entry["applied"]),
+        (Some("r1"), Some("stop_switch"), &json!(true), Some("run.set_element"), &json!(true)),
+        "{entry}"
+    );
+    assert!(entry["at_ms"].as_f64().is_some_and(|at| at >= 0.0), "{entry}");
+    let report = ok(&mut session, "run.wait", json!({ "wait": "10 s" }));
+    assert_eq!((report["status"].as_str(), report["mode"].as_str()), (Some("ok"), Some("real_time")), "{report}");
+    assert!(report["outputs"][0]["value"].as_f64().is_some_and(|n| n >= 1.0), "the loop reads the switch after a wait: {report}");
+    let mut in_panel = entry.clone();
+    in_panel.as_object_mut().unwrap().remove("run");
+    assert_eq!(report["panel"], json!([in_panel]));
+    // With no run going: `run.unknown`.
+    let ended = session.execute("run.set_element", &json!({ "element": "stop_switch", "value": true })).unwrap_err();
+    assert_eq!(ended.code, "run.unknown");
+}
+
+#[test]
+fn run_set_element_is_not_enabled_on_a_deterministic_run() {
+    let memory = project();
+    let mut session = session(&memory);
+    let limits = json!({ "function": "forever", "max_iterations": null, "max_nodes": null, "wait": "0 s", "trace": "none" });
+    assert_eq!(ok(&mut session, "run.start", limits)["status"], "running");
+    // commands.md 6.4: the time a call arrives would date the change; a deterministic run takes it in `set`.
+    let error = session.execute("run.set_element", &json!({ "element": "stop_switch", "value": true })).unwrap_err();
+    assert_eq!(error.code, "command.not_enabled");
+    assert!(error.message.contains("`set`"), "{}", error.message);
+    assert_eq!(ok(&mut session, "run.abort", json!({}))["status"], "aborted");
+}
+
+#[test]
+#[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
+fn an_abort_wakes_a_run_that_waits_in_real_time() {
+    let mut session = real_session();
+    let running = ok(&mut session, "run.start", json!({ "function": "sleep", "mode": "real_time", "wait": "0 s", "trace": "none" }));
+    assert_eq!(running["status"], "running");
+    let asked = std::time::Instant::now();
+    let aborted = ok(&mut session, "run.abort", json!({}));
+    // The run waits 10 s; the abort wakes it, and waits end at once (spec 8.2). Bounded, not timed: far below 10 s.
+    assert!(asked.elapsed() < std::time::Duration::from_secs(5), "{:?}", asked.elapsed());
+    assert_eq!((aborted["status"].as_str(), aborted["abort"]["by"].as_str()), (Some("aborted"), Some("request")), "{aborted}");
+    assert!(aborted["abort"]["at_ms"].as_f64().is_some_and(|at| at < 5000.0), "{aborted}");
+}
+
+#[test]
+fn what_only_deterministic_mode_has_is_refused_in_real_time_and_a_run_to_its_end_has_no_real_time() {
+    let mut session = real_session();
+    // Real time has no limit of iterations or nodes by default (cli.md 6.2): the run goes on, bounded by its timeout.
+    let report = ok(&mut session, "run.start", json!({ "function": "poll", "mode": "real_time", "timeout": "50 ms", "trace": "none" }));
+    assert_eq!((report["status"].as_str(), report["abort"]["by"].as_str()), (Some("aborted"), Some("timeout")), "{report}");
+    assert!(report["clock"]["real_ms"].as_u64().is_some_and(|real| real >= 50), "a timeout of real time: {report}");
+    let error = crate::run_to_end(&session, &json!({ "function": "poll", "mode": "real_time" })).unwrap_err();
+    assert_eq!(error.code, "command.not_enabled");
+}
+
+#[test]
+fn a_setting_that_does_not_fit_in_the_memory_of_the_run_is_refused_and_the_run_goes_on() {
+    let mut session = real_session();
+    let params = json!({ "function": "poll", "mode": "real_time", "max_memory": 1_048_576, "wait": "0 s", "trace": "none" });
+    assert_eq!(ok(&mut session, "run.start", params)["status"], "running");
+    // Decision of the owner, 2026-11-11: a text of 2 MiB, past the 1 MiB of the run, is `params.invalid` with `LC8005`.
+    let big = session.execute("run.set_element", &json!({ "element": "note", "value": "x".repeat(2 << 20) })).unwrap_err();
+    assert_eq!((big.code, big.parameter.as_deref()), ("params.invalid", Some("value")));
+    assert!(big.message.starts_with("LC8005: "), "{}", big.message);
+    // The run goes on, and takes the next setting.
+    let entry = ok(&mut session, "run.set_element", json!({ "element": "stop_switch", "value": true }));
+    assert_eq!(entry["applied"], json!(true), "{entry}");
+    let report = ok(&mut session, "run.wait", json!({ "wait": "10 s" }));
+    assert_eq!(report["status"], "ok", "{report}");
+    assert_eq!(report["panel"].as_array().map(Vec::len), Some(1), "{report}");
+}
+
+#[test]
+fn a_run_in_real_time_on_a_clock_that_never_moves_is_not_enabled() {
+    let memory = project();
+    let mut session = session(&memory);
+    // `Still` never moves, so such a run would never end, its timeout included (decision of the owner, 2026-11-11).
+    let error = session.execute("run.start", &json!({ "function": "forever", "mode": "real_time", "timeout": "50 ms" })).unwrap_err();
+    assert_eq!((error.code, error.parameter.as_deref()), ("command.not_enabled", Some("mode")));
 }

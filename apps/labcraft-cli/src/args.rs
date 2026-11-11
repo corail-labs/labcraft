@@ -246,6 +246,8 @@ pub struct RunOptions {
     /// `--set ELEMENT=VALUE@TIME`: the element, the value, the time, as written.
     pub set: Vec<(String, String, String)>,
     pub schedule_seed: Option<u64>,
+    /// `--real-time` (spec 8).
+    pub real_time: bool,
     /// Durations as written, already judged: `30s`, `"30 s"`.
     pub timeout: Option<String>,
     pub max_real_time: Option<String>,
@@ -368,6 +370,7 @@ pub fn parse_run(args: &[OsString]) -> Result<RunOptions, String> {
         args: Vec::new(),
         set: Vec::new(),
         schedule_seed: None,
+        real_time: false,
         timeout: None,
         max_real_time: None,
         max_iterations: None,
@@ -439,9 +442,15 @@ pub fn parse_run(args: &[OsString]) -> Result<RunOptions, String> {
         return Err(format!("`{function}` is not names joined by `.`: `check_voltage`, `dmm_driver.measure`"));
     }
     if real_time {
-        // Real time comes with M0b, step 8 (`docs/architecture.md`, 10.11).
-        return Err("--real-time is not in this version yet: runs are deterministic".to_owned());
+        // What only deterministic mode has (cli.md 6.2).
+        if options.max_real_time.is_some() {
+            return Err("--max-real-time bounds a deterministic run: with --real-time, --timeout counts real time already".to_owned());
+        }
+        if options.schedule_seed.is_some() {
+            return Err("--schedule-seed orders a deterministic run: a run in real time takes its nodes as they are ready".to_owned());
+        }
     }
+    options.real_time = real_time;
     options.trace = match (trace_file, no_trace) {
         (Some(_), true) => return Err("--trace and --no-trace together".to_owned()),
         (Some(file), false) => {
@@ -676,7 +685,8 @@ mod tests {
             &["f", "g", "--max-memory", "1048575"],
             &["f", "g", "--schedule-seed", "18446744073709551616"],
             &["f", "g", "--schedule-seed", "-1"],
-            &["f", "g", "--real-time"],
+            &["f", "g", "--real-time", "--max-real-time", "1s"],
+            &["f", "g", "--schedule-seed", "1", "--real-time"],
             &["f", "g", "--trace", "t.jsonl", "--no-trace"],
             &["f", "g", "--trace", "main.LCF"],
             &["f", "g", "--trace", "args.Json"],

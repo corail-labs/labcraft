@@ -89,16 +89,21 @@ pub enum Described {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CallId(pub u64);
 
-/// What a call can wait for alone: a session, an instrument. In deterministic mode the scheduler gives it in the global order
-/// of spec 8; in real time it is a lock. The runtime locks nothing on its own (spec 8.1).
+/// What a call can wait for alone: a session, an instrument. The scheduler gives it to the call that waits for it first in the
+/// global order of spec 8, in real time too, since one thread steps every call. The runtime locks nothing on its own (spec
+/// 8.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Key {
     pub library: u32,
     pub id: u64,
 }
 
+/// Work that blocks (a read of a real instrument, later a file), which a call gives the runtime to do away from the thread of
+/// the diagram: on a thread of the pool in real time, at once on the thread of the run in deterministic mode and without
+/// threads. What it returns is given back to the call by [`LibraryRun::resume`] before its next step.
+pub type Job = Box<dyn FnOnce() -> Box<dyn Any + Send> + Send>;
+
 /// What a call does next.
-#[derive(Debug)]
 pub enum Step {
     Done(NativeOutcome),
     /// Waits this many nanoseconds on the clock of the run (`LC8007` past its end).
@@ -106,6 +111,20 @@ pub enum Step {
     /// Waits until it holds the key alone; the keys it still holds are given back when it is done.
     Exclusive(Key),
     Release(Key),
+    /// Waits for work that blocks: the keys it holds stay held meanwhile (`docs/architecture.md`, 10.6).
+    Blocking(Job),
+}
+
+impl std::fmt::Debug for Step {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Step::Done(outcome) => f.debug_tuple("Done").field(outcome).finish(),
+            Step::Sleep(ns) => f.debug_tuple("Sleep").field(ns).finish(),
+            Step::Exclusive(key) => f.debug_tuple("Exclusive").field(key).finish(),
+            Step::Release(key) => f.debug_tuple("Release").field(key).finish(),
+            Step::Blocking(_) => f.write_str("Blocking(..)"),
+        }
+    }
 }
 
 /// How a call ended: its outputs, or a new error, whose outputs are those of a node that fails (spec 7.2). The host gives the
@@ -221,6 +240,10 @@ pub trait LibraryRun: Send {
     fn call(&mut self, function: &str, inputs: Vec<Value>) -> Option<CallId>;
     /// The next step of a call, asked again after each wait.
     fn step(&mut self, call: CallId, cx: CallContext) -> Step;
+    /// What the [`Job`] of a call returned, given back before its next step.
+    fn resume(&mut self, call: CallId, done: Box<dyn Any + Send>) {
+        let _ = (call, done);
+    }
     /// A call that the run abandons: it ends now, and gives back what it held.
     fn cancel(&mut self, call: CallId) {
         let _ = call;

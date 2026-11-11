@@ -254,7 +254,8 @@ class Machine:
 
     def run(self, fname, raw_args, settings=()):
         """Runs a top-level function; returns a JSON report (never raises)."""
-        report = {"function": fname, "status": "refused", "ok": False, "outputs": {}, "error": None, "fault": None}
+        report = {"function": fname, "status": "refused", "ok": False, "outputs": {}, "error": None, "fault": None,
+                  "mode": "real_time" if self.real_time else "deterministic"}
         released = leaked = None
         try:
             fn = self.lib.functions.get(fname)

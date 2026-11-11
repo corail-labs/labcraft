@@ -502,8 +502,7 @@ section 3), not a diagnostic.
 
 ## 6. `run`
 
-*Status: milestone M0b, step 7: implemented in deterministic mode. `--real-time` comes with step 8 (real time), and is
-wrong usage until then.*
+*Status: milestone M0b: implemented, in deterministic mode (step 7) and in real time (step 8).*
 
 Runs one function of a library, against simulated instruments, and reports what it did. It is the
 command line of `run.start` ([commands.md](commands.md), section 6.4): the same parameters, the same
@@ -564,7 +563,7 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 | `--max-iterations N` | Iterations of each `loop`, counted again each time the loop starts. Default 10,000 in deterministic mode, none in real time *(proposed, scenario 4)*. A `for` ends with its array and does not count here, only in `--max-nodes`. Reached: fault `LC8001` |
 | `--max-nodes N` | Nodes run in all, a skipped node (spec 7.2) and the node of a call included. Default 1,000,000 in deterministic mode, none in real time *(proposed)*. Reached: fault `LC8002` |
 | `--max-call-depth N` | Depth of calls, always limited. Default 1,024, at most 4,096 *(proposed)*: a stack is sized from it. Reached: fault `LC8003` |
-| `--max-memory BYTES` | The logical size of the values the run holds at once, default 1 GiB, at least 1 MiB *(proposed)*. Reached: fault `LC8005`, at the node that would pass it |
+| `--max-memory BYTES` | The logical size of the values the run holds at once, default 1 GiB, at least 1 MiB *(proposed)*. Reached: fault `LC8005`, at the node that would pass it, or at no node for a setting of `--set` that would pass it; a setting of `run.set_element` that would is refused instead, and the run goes on (commands.md 6.4) |
 | `--max-real-time DURATION` | Deterministic mode only: the real time the run may take, default 10 min *(proposed)*, since `--timeout` there counts simulated time, which a long computation does not advance. Reached: fault `LC8006`, at the node that was running. The only limit whose outcome depends on the speed of the machine, and the fault says so. With `--real-time`, `--timeout` counts real time already |
 | `--trace FILE` | Writes the trace to `FILE` instead of `.labcraft/runs/` (commands.md, section 8). A `FILE` that ends in `.lcf`, `.lct`, `.toml` or `.json`, in any case (`main.LCF`), or that exists and does not start with the first line of a trace, is wrong usage, so that a typo cannot replace a program or a file of arguments |
 | `--no-trace` | Writes no trace |
@@ -578,7 +577,9 @@ each value of a variant, so that an empty string or an empty array still costs s
 of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `i64` or a `duration`,
 twice that for a complex number, 16 for a `timestamp`, 8 for a function reference and for an opaque value), and the
 bytes of a `string` in UTF-8 and of `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
-and the limit stops it. A value counts once while some wire holds it, however many share it (D-11). Each
+and the limit stops it. A value counts once while some wire holds it, however many share it (D-11), and a
+value given to a panel element by `--set` or `run.set_element` counts until the run ends, since `panel` of the
+report keeps it (decision of the owner, 2026-11-11). Each
 region that runs (the body of a call, of an iteration, of an arm), each of its nodes, from when the region starts to
 when it ends, and each frame of a call, counts 256 bytes *(proposed)*, so that a `for parallel` over
 millions of elements reaches the limit as a fault rather than the memory of the process.

@@ -928,6 +928,11 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   - **Noise.** Each simulated quantity draws its noise from its own random sequence: two branches
     that use different instruments get the same values whatever their order. Branches that use the
     same instrument depend on the order of their calls, hence the warning of 8.1.
+  - **`time.now`** gives the simulated clock, from 1970-01-01T00:00:00Z (7.2).
+- **Real time**: the same order of the nodes ready, on the real clock; waits and the latency of
+  simulated instruments take that much real time. `time.now` gives the UTC time of the start of the
+  run plus the time elapsed since, on a monotonic clock, so that it never goes back when the system
+  sets its time.
 
 ### 8.1 Concurrency: values and resources
 

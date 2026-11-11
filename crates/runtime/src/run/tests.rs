@@ -2,15 +2,17 @@
 //! and the rules it cites (spec 8, 8.2; cli.md 6.2); the times are those of the waits written in it.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
 
 use labcraft_check::{Checked, Content, Found, Libraries, LibrarySource, Origin, SourceFile, check_for_run};
 use labcraft_ir::{ElementId, Node, Program, lower_for_run};
 use labcraft_types::{Interner, Limits, Severity};
 
-use super::{AbortBy, Control, Native, Observer, PanelSetting, Run, RunEnd, SetBy, Settings, Status, run};
+use super::{AbortBy, Control, Live, Native, Observer, PanelSetting, Pool, RealTime, Run, RunEnd, SetBy, Settings, Status, Wake, run};
 use crate::fault::FaultCode;
 use crate::native::{CallContext, CallId, HandleInfo, Key, LibraryCode, LibraryRun, LogBudget, NativeLibrary, NativeOutcome, Simulation, Step};
 use crate::value::{Handle, Value};
@@ -18,13 +20,33 @@ use crate::value::{Handle, Value};
 const MS: i64 = 1_000_000;
 
 /// A library shipped for these tests: `bench.open` gives a handle, `bench.slow` holds the key of its handle for one second,
-/// `bench.close` closes it and is `always`.
+/// `bench.block` holds it while work that blocks waits for the gate of the test, `bench.close` closes it and is `always`.
 const BENCH: &[(&str, &str)] = &[
     ("port.lct", "labcraft 1\n\ntype port = opaque\n"),
     ("open.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"open\")\nfn open(err: error = none) -> (h: port, err: error)\n"),
     ("slow.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"slow\")\nfn slow(h: port, err: error = none) -> (h: port, err: error)\n"),
+    ("block.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"block\")\nfn block(h: port, err: error = none) -> (h: port, err: error)\n"),
     ("close.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"close\")\nfn close(h: port, err: error = none) -> (err: error)\n"),
 ];
+
+/// What the work of `bench.block` waits for: it never waits more than 30 s, so that a test cannot hang.
+#[derive(Default)]
+struct Gate {
+    open: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Gate {
+    fn open(&self) {
+        *self.open.lock().unwrap() = true;
+        self.changed.notify_all();
+    }
+
+    fn pass(&self) {
+        let open = self.open.lock().unwrap();
+        let _held = self.changed.wait_timeout_while(open, Duration::from_secs(30), |open| !*open).unwrap();
+    }
+}
 
 const MANIFEST: &str = "name = \"bench\"\nversion = \"0.1.0\"\ndescription = \"test\"\ndependencies = []\nalways = [\"close\"]\nresources = [\"port\"]\ncategories = []\n";
 
@@ -47,11 +69,15 @@ impl Libraries for Shipped {
     }
 }
 
-/// What the test library saw: the calls cancelled and the handles released.
+/// What the test library saw: the calls cancelled and the handles released; what the work of `bench.block` waits for, whether
+/// it panics, and what it gave back.
 #[derive(Default)]
 struct Seen {
     cancelled: Vec<u64>,
     released: Vec<u64>,
+    gate: Option<Arc<Gate>>,
+    panics: bool,
+    resumed: Vec<u64>,
 }
 
 struct Bench(Arc<Mutex<Seen>>);
@@ -111,6 +137,29 @@ impl LibraryRun for BenchRun {
                 self.calls.remove(&call);
                 Step::Done(NativeOutcome::Outputs(vec![Value::Handle(handle), Value::NONE]))
             }
+            ("block", 0) => {
+                *phase = 1;
+                Step::Exclusive(key)
+            }
+            ("block", 1) => {
+                *phase = 2;
+                let (gate, panics) = {
+                    let seen = self.seen.lock().unwrap();
+                    (seen.gate.clone(), seen.panics)
+                };
+                Step::Blocking(Box::new(move || {
+                    assert!(!panics, "the work of `bench.block` panics, as the test asks");
+                    if let Some(gate) = gate {
+                        gate.pass();
+                    }
+                    Box::new(42_u64) as Box<dyn Any + Send>
+                }))
+            }
+            ("block", _) => {
+                let handle = *handle;
+                self.calls.remove(&call);
+                Step::Done(NativeOutcome::Outputs(vec![Value::Handle(handle), Value::NONE]))
+            }
             _ => {
                 let handle = *handle;
                 self.calls.remove(&call);
@@ -119,6 +168,12 @@ impl LibraryRun for BenchRun {
                 }
                 Step::Done(NativeOutcome::Outputs(vec![Value::NONE]))
             }
+        }
+    }
+
+    fn resume(&mut self, _: CallId, done: Box<dyn Any + Send>) {
+        if let Ok(value) = done.downcast::<u64>() {
+            self.seen.lock().unwrap().resumed.push(*value);
         }
     }
 
@@ -620,4 +675,296 @@ fn a_run_deep_in_calls_and_loops_ends_without_a_recursion_of_its_own() {
     // stack of a test thread.
     let ran = run_with(source, vec![Value::F64(1.0)], settings, &Arc::default());
     assert_eq!(ran.fault(), FaultCode::Depth);
+}
+
+// Real time ----------------------------------------------------------------------------------------------------------------
+
+/// Real time on a clock of the test, so that what is asserted does not depend on the speed of the machine: a wait jumps to
+/// the time it waits for, or to the next thing the test makes happen; only a wait for the pool with nothing else to come
+/// waits for real, after opening the gate of the work.
+#[derive(Default)]
+struct Virtual {
+    now: u64,
+    abort_at: Option<u64>,
+    grace_over_at: Option<u64>,
+    /// `run.set_element`, by the time it is given, in order.
+    live: Vec<(u64, Live)>,
+    applied: Vec<(u64, Option<i64>)>,
+    refused: Vec<(u64, FaultCode)>,
+    gate: Option<Arc<Gate>>,
+    /// How late each wait wakes, as the tick of a system makes it.
+    late: u64,
+}
+
+impl Control for Virtual {
+    fn real_ns(&mut self) -> u64 {
+        self.now
+    }
+
+    fn abort(&mut self) -> Option<AbortBy> {
+        let due = self.abort_at.is_some_and(|at| self.now >= at);
+        due.then(|| {
+            self.abort_at = None;
+            AbortBy::Interrupt
+        })
+    }
+
+    fn grace_over(&mut self) -> bool {
+        self.grace_over_at.is_some_and(|at| self.now >= at)
+    }
+
+    fn wait(&mut self, wake: &Wake, seen: u64, until: Option<u64>) {
+        if wake.seen() != seen || until.is_some_and(|until| until <= self.now) {
+            return;
+        }
+        let next =
+            [until, self.abort_at, self.grace_over_at, self.live.first().map(|(at, _)| *at)].into_iter().flatten().filter(|at| *at > self.now).min();
+        match next {
+            Some(at) => self.now = at + self.late,
+            None => {
+                if let Some(gate) = self.gate.take() {
+                    gate.open();
+                }
+                wake.wait(seen, Some(Duration::from_secs(30)));
+            }
+        }
+    }
+
+    fn live(&mut self) -> Vec<Live> {
+        let due = self.live.iter().take_while(|(at, _)| *at <= self.now).count();
+        self.live.drain(..due).map(|(_, live)| live).collect()
+    }
+
+    fn applied(&mut self, tag: u64, at: Option<i64>) {
+        self.applied.push((tag, at));
+    }
+
+    fn close_live(&mut self) -> Vec<Live> {
+        self.live.drain(..).map(|(_, live)| live).collect()
+    }
+
+    fn refused(&mut self, tag: u64, fault: &crate::fault::Fault) {
+        self.refused.push((tag, fault.code));
+    }
+}
+
+/// The settings of a run in real time (cli.md 6.2): no limit of iterations, nodes or real time unless one is given.
+fn real_time(epoch: i64) -> Settings {
+    Settings {
+        max_iterations: None,
+        max_nodes: None,
+        max_real_time: None,
+        real_time: Some(RealTime { pool: Pool::default(), wake: Wake::default(), epoch }),
+        ..Settings::default()
+    }
+}
+
+fn run_real(source: &str, settings: Settings, seen: &Arc<Mutex<Seen>>, control: &mut Virtual) -> Ran {
+    run_controlled(&[("f.lcf", source)], vec![], settings, seen, control)
+}
+
+#[test]
+fn in_real_time_the_waits_of_two_branches_overlap_on_the_real_clock() {
+    let source = "labcraft 1\n\nuse errors\nuse time\n\nfn f() -> (err: error) {\n    a = time.wait(100 ms)\n    b = time.wait(50 ms)\n    err = errors.merge(a, b)\n}\n";
+    let ran = run_real(source, real_time(0), &Arc::default(), &mut Virtual::default());
+    assert_eq!(ran.end.status, Status::Ok);
+    // As in deterministic mode (spec 8), on the real clock: both waits start at 0, the clock ends at 100 ms, not 150 ms.
+    assert_eq!(ran.events, ["ran b[] at 50", "ran a[] at 100", "ran err[] at 100"]);
+    assert_eq!(ran.end.clock, 100 * MS);
+}
+
+#[test]
+fn in_real_time_time_now_counts_from_the_start_of_the_run() {
+    let source = "labcraft 1\n\nuse time\n\nfn f() -> (t: timestamp, err: error) {\n    err = time.wait(20 ms)\n    t = time.now(after: err)\n}\n";
+    // 2026-11-11T00:00:00Z, in nanoseconds since 1970: 20,768 days of 86,400 s (Python's `datetime`, by subtraction).
+    let epoch = 20_768 * 86_400 * 1_000 * MS;
+    let ran = run_real(source, real_time(epoch), &Arc::default(), &mut Virtual::default());
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    assert!(matches!(ran.end.outputs[0], Value::Timestamp(ns) if ns == epoch + 20 * MS), "{:?}", ran.end.outputs[0]);
+    assert_eq!(ran.outputs()[0], "2026-11-11T00:00:00.020000000Z");
+}
+
+const BLOCKED: &str = "labcraft 1\n\nuse bench\nuse errors\nuse time\n\nfn f() -> (err: error) {\n    h, e1 = bench.open()\n    b, eb = bench.block(h, err: e1)\n    w = time.wait(100 ms)\n    c = bench.close(b, err: eb)\n    err = errors.merge(c, w)\n}\n";
+
+#[test]
+fn work_that_blocks_runs_on_the_pool_while_the_other_branches_go_on() {
+    let gate = Arc::new(Gate::default());
+    let seen = Arc::new(Mutex::new(Seen { gate: Some(Arc::clone(&gate)), ..Seen::default() }));
+    let mut control = Virtual { gate: Some(gate), ..Virtual::default() };
+    let ran = run_real(BLOCKED, real_time(0), &seen, &mut control);
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    // `b` blocks from 0 ms; `w` ends at 100 ms meanwhile (D-12); then the gate opens, the work returns, `b` and what follows
+    // end at 100 ms.
+    assert_eq!(ran.events, ["ran h[] at 0", "ran w[] at 100", "ran b[] at 100", "ran c[] at 100", "ran err[] at 100"]);
+    assert_eq!(seen.lock().unwrap().resumed, [42]);
+    assert!(!ran.end.resources[0].info.as_ref().unwrap().open);
+}
+
+#[test]
+fn in_deterministic_mode_work_that_blocks_runs_at_once_on_the_thread_of_the_run() {
+    let seen = Arc::default();
+    let ran = run_with(BLOCKED, vec![], Settings::default(), &seen);
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    // In the global order: `h`, then `b`, whose work takes no simulated time, then `w` starts, `c` runs at 0, `w` ends at 100.
+    assert_eq!(ran.events, ["ran h[] at 0", "ran b[] at 0", "ran c[] at 0", "ran w[] at 100", "ran err[] at 100"]);
+    assert_eq!(seen.lock().unwrap().resumed, [42]);
+}
+
+const BLOCKS: &str = "labcraft 1\n\nuse bench\n\nfn f() -> (err: error) {\n    h, e1 = bench.open()\n    b, eb = bench.block(h, err: e1)\n    err = bench.close(b, err: eb)\n}\n";
+
+#[test]
+fn an_abort_abandons_work_still_on_the_pool_when_the_grace_period_ends() {
+    let gate = Arc::new(Gate::default());
+    let seen = Arc::new(Mutex::new(Seen { gate: Some(Arc::clone(&gate)), ..Seen::default() }));
+    let mut control = Virtual { abort_at: Some(10_000_000), ..Virtual::default() };
+    let ran = run_real(BLOCKS, real_time(0), &seen, &mut control);
+    gate.open();
+    assert_eq!(ran.end.status, Status::Aborted);
+    // Spec 8.2: Ctrl-C at 10 ms; the work never returns, so the call is abandoned when the 5 s of grace end, at 5,010 ms, and
+    // its handle leaked, not released.
+    assert_eq!(ran.end.abort.as_ref().unwrap().at, 10 * MS);
+    assert_eq!(ran.end.clock, 5010 * MS);
+    let seen = seen.lock().unwrap();
+    assert_eq!((seen.cancelled.len(), seen.released.len()), (1, 0));
+    assert!(ran.end.resources[0].leaked);
+}
+
+#[test]
+fn a_second_interrupt_abandons_work_on_the_pool_at_once() {
+    let gate = Arc::new(Gate::default());
+    let seen = Arc::new(Mutex::new(Seen { gate: Some(Arc::clone(&gate)), ..Seen::default() }));
+    let mut control = Virtual { abort_at: Some(10_000_000), grace_over_at: Some(1_010_000_000), ..Virtual::default() };
+    let ran = run_real(BLOCKS, real_time(0), &seen, &mut control);
+    gate.open();
+    assert_eq!(ran.end.status, Status::Aborted);
+    // cli.md 6.5: the second Ctrl-C, at 1,010 ms, ends the grace period there, not at 5,010 ms.
+    assert_eq!(ran.end.clock, 1010 * MS);
+    assert!(ran.end.resources[0].leaked);
+}
+
+#[test]
+fn work_that_panics_is_a_fault_at_its_node_in_both_modes() {
+    for real in [true, false] {
+        let seen = Arc::new(Mutex::new(Seen { panics: true, ..Seen::default() }));
+        let settings = if real { real_time(0) } else { Settings::default() };
+        let ran = run_controlled(&[("f.lcf", BLOCKS)], vec![], settings, &seen, &mut Virtual::default());
+        // 10.4: a panic on a thread of the pool is caught there, and ends the run with `LC8004`; the runtime releases `h`.
+        assert_eq!(ran.fault(), FaultCode::Bug, "real time: {real}");
+        assert_eq!(ran.end.fault.as_ref().unwrap().node.map(|node| ran.names.resolve(node).to_owned()).as_deref(), Some("b"));
+        assert_eq!(seen.lock().unwrap().released, [1], "real time: {real}");
+    }
+}
+
+#[test]
+fn a_setting_of_run_set_element_is_seen_by_the_reads_that_start_after_it() {
+    let live = Live { tag: 7, element: ElementId(0), value: Value::Bool(true) };
+    let mut control = Virtual { live: vec![(250_000_000, live)], ..Virtual::default() };
+    let ran = run_real(STOPPED, real_time(0), &Arc::default(), &mut control);
+    assert_eq!(ran.end.status, Status::Ok);
+    // Given at 250 ms, between the reads of 200 and 300 ms: the read at 300 ms sees it, so three iterations.
+    assert_eq!(ran.outputs()[0], "3.0");
+    assert_eq!(ran.end.clock, 300 * MS);
+    let applied = &ran.end.panel[0];
+    assert!(applied.applied && applied.setting.by == SetBy::RunSetElement && applied.setting.at == 250 * MS);
+    assert_eq!(control.applied, [(7, Some(250 * MS))]);
+}
+
+#[test]
+fn a_setting_of_run_set_element_given_as_the_run_ends_never_applies() {
+    let mut settings = real_time(0);
+    settings.panel = vec![PanelSetting { element: ElementId(0), value: Value::Bool(true), at: 0, by: SetBy::Set }];
+    let live = Live { tag: 9, element: ElementId(0), value: Value::Bool(false) };
+    let mut control = Virtual { live: vec![(5000 * 1_000_000, live)], ..Virtual::default() };
+    let ran = run_real(STOPPED, settings, &Arc::default(), &mut control);
+    // The `set` at 0 ms stops the loop at its first read, 100 ms; the setting due at 5 s is never taken.
+    assert_eq!(ran.end.clock, 100 * MS);
+    assert_eq!(
+        ran.end.panel.iter().map(|applied| (applied.setting.by, applied.applied)).collect::<Vec<_>>(),
+        [(SetBy::Set, true), (SetBy::RunSetElement, false)]
+    );
+    assert_eq!(control.applied, [(9, None)]);
+}
+
+#[test]
+fn in_real_time_a_timeout_counts_real_time() {
+    let mut settings = real_time(0);
+    settings.timeout = Some(150 * MS);
+    let ran = run_real(STOPPED, settings, &Arc::default(), &mut Virtual::default());
+    assert_eq!(ran.end.status, Status::Aborted);
+    // cli.md 6.2: the loop waits until 200 ms; the timeout at 150 ms aborts it there, and no native call is in progress.
+    let abort = ran.end.abort.as_ref().unwrap();
+    assert_eq!((abort.by, abort.at, ran.end.clock), (AbortBy::Timeout, 150 * MS, 150 * MS));
+}
+
+/// `STOPPED`, with a `text_box` that nothing reads, `ElementId(1)`.
+const STOPPED_WITH_A_NOTE: &str = "labcraft 1
+
+use core
+use time
+use ui
+
+fn f() -> (n: f64, err: error) {
+    n, err = loop carry n = 0.0, carry e = none {
+        e1 = time.wait(100 ms, err: e)
+        stop = ui.get(stop_switch, after: e1)
+        next n = core.add(n, 1.0)
+        next e = e1
+        until stop
+    }
+}
+
+panel {
+    control stop_switch: switch
+    control note: text_box
+}
+";
+
+#[test]
+fn a_setting_of_run_set_element_that_does_not_fit_is_refused_and_the_run_goes_on() {
+    let mut settings = real_time(0);
+    settings.max_memory = 1 << 20;
+    // Two settings in one pass, at 50 ms: a text of 2 MiB, past the 1 MiB of the run, then the switch.
+    let big = Live { tag: 1, element: ElementId(1), value: Value::string("x".repeat(2 << 20)) };
+    let stop = Live { tag: 2, element: ElementId(0), value: Value::Bool(true) };
+    let mut control = Virtual { live: vec![(50 * 1_000_000, big), (50 * 1_000_000, stop)], ..Virtual::default() };
+    let ran = run_real(STOPPED_WITH_A_NOTE, settings, &Arc::default(), &mut control);
+    // Decision of the owner, 2026-11-11: the first is refused, `LC8005`, and the run goes on; the second applies, and the
+    // read at 100 ms stops the loop.
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    assert_eq!(ran.outputs()[0], "1.0");
+    assert_eq!(control.refused, [(1, FaultCode::Memory)]);
+    assert_eq!(control.applied, [(2, Some(50 * MS))]);
+    assert_eq!(ran.end.panel.len(), 1);
+    assert_eq!(ran.end.held, 0, "what the panel kept is given back when the run ends");
+}
+
+#[test]
+fn the_values_a_panel_keeps_count_in_the_memory_of_the_run() {
+    let mut settings = real_time(0);
+    settings.max_memory = 1 << 20;
+    // Three texts of 400,000 bytes, at 10, 20 and 30 ms: `panel` keeps each, so the third would hold 1.2 MB, past 1 MiB,
+    // although the element holds only the last.
+    let note = |tag: u64, letter: &str| Live { tag, element: ElementId(1), value: Value::string(letter.repeat(400_000)) };
+    let stop = Live { tag: 4, element: ElementId(0), value: Value::Bool(true) };
+    let live = vec![(10 * 1_000_000, note(1, "a")), (20 * 1_000_000, note(2, "b")), (30 * 1_000_000, note(3, "c")), (40 * 1_000_000, stop)];
+    let mut control = Virtual { live, ..Virtual::default() };
+    let ran = run_real(STOPPED_WITH_A_NOTE, settings, &Arc::default(), &mut control);
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    assert_eq!(control.refused, [(3, FaultCode::Memory)]);
+    assert_eq!(control.applied, [(1, Some(10 * MS)), (2, Some(20 * MS)), (4, Some(40 * MS))]);
+    assert_eq!(ran.end.held, 0);
+}
+
+#[test]
+fn in_real_time_a_setting_of_set_is_dated_when_it_applies() {
+    let mut settings = real_time(0);
+    settings.panel = vec![PanelSetting { element: ElementId(0), value: Value::Bool(true), at: 150 * MS, by: SetBy::Set }];
+    // Each wait wakes 5 ms late: the reads come at 105 and 210 ms, and the setting due at 150 ms applies at 155 ms, the
+    // time `panel` gives (decision of the owner, 2026-11-11), not the time it was given for.
+    let mut control = Virtual { late: 5 * 1_000_000, ..Virtual::default() };
+    let ran = run_real(STOPPED, settings, &Arc::default(), &mut control);
+    assert_eq!(ran.end.status, Status::Ok);
+    assert_eq!(ran.outputs()[0], "2.0");
+    assert!(ran.end.panel[0].applied);
+    assert_eq!(ran.end.panel[0].setting.at, 155 * MS);
 }
