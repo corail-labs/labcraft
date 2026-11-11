@@ -847,10 +847,16 @@ impl<'a> Builder<'a> {
                     .filter(|name| !name.is_empty() && *name != self.own)
                     .map(|name| cut_text(name).into_owned());
                 found.always = declared.is_some_and(|declared| declared.always.contains(&name));
+                // From its file when it is kept, otherwise from the declaration, which holds the icon of a file that is not.
+                // An icon that `check` refuses, or one past the bounds of 11.1, gives way to the label, from whatever library.
                 found.icon = function
-                    .and_then(|function| function.file)
-                    .and_then(|file| self.checked.files.get(file as usize))
-                    .and_then(|file| file.file.icon.as_ref());
+                    .and_then(|function| {
+                        function
+                            .icon
+                            .as_ref()
+                            .or_else(|| function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.icon.as_ref()))
+                    })
+                    .filter(|icon| labcraft_check::icon_refused(icon, self.names).is_none());
             }
             Meaning::Primitive { library, name } => {
                 if let Some(primitive) = primitive(library, self.names.resolve(name)) {

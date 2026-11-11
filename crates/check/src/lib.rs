@@ -32,7 +32,7 @@ mod resolved;
 mod terminals;
 
 pub use declare::{Align, DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType, Format as FieldFormat, Piece};
-pub use declare::{PathSegment, path_segments};
+pub use declare::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
 pub use file_name::{case_key, kept_by_windows};
 pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};
@@ -202,10 +202,28 @@ fn check_with(root: LibrarySource, libraries: &dyn Libraries, names: &mut Intern
         }
         let library_index = u32::try_from(index).unwrap_or(u32::MAX);
         for (file, resolved) in library.files.into_iter().zip(resolved) {
-            let Some(model) = file.model.filter(|_| kept) else {
+            let Some(mut model) = file.model else {
                 at.push(None);
                 continue;
             };
+            if !kept {
+                // The file goes, its icon stays with the declaration of its function, which every call draws (spec 11.1):
+                // moved, not copied.
+                let name = match &model.file.decl {
+                    Decl::Function(function) => Some(function.name),
+                    Decl::Extern(function) => Some(function.name),
+                    Decl::Type(_) => None,
+                };
+                let local = u32::try_from(at.len()).ok();
+                if let Some(function) = name.and_then(|name| declared.libraries.get_mut(index).and_then(|library| library.functions.get_mut(&name)))
+                    && function.file == local
+                {
+                    // One that would not be drawn is not kept (11.1).
+                    function.icon = model.file.icon.take().filter(|icon| icon_refused(icon, names).is_none());
+                }
+                at.push(None);
+                continue;
+            }
             if library.checked {
                 match model.file.decl {
                     Decl::Function(_) | Decl::Extern(_) => counts.functions += 1,

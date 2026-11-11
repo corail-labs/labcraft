@@ -4,7 +4,7 @@
 //! (`types::text`): as wide as its cells as a drawing shows them, from the top of its capitals to its descent.
 
 use labcraft_graph::{Icon, IconItem, IconShape, Numeral, NumeralKind, Point};
-use labcraft_types::{Code, cut_text, text};
+use labcraft_types::{Code, Interner, cut_text, text};
 
 use super::super::read_escapes;
 use super::{Sections, numeral_text};
@@ -49,14 +49,92 @@ pub(super) const TOKENS: &[&str] = &[
     "wire.resource",
 ];
 
+/// The most shapes of an icon *(proposed)*: with [`MAX_PATH_SEGMENTS`] for its paths in all, what drawing an icon costs
+/// stays within the bounds of scenario 4, from whatever library it comes; beyond, its calls show the label (11.1).
+pub const MAX_ICON_SHAPES: usize = 256;
+
+/// The most bytes of the `path` strings of an icon together *(proposed)*: an SVG writes them as they are, at each call, so
+/// a few segments of long numbers or of spaces must not cost what 4 MiB do. 4 096 segments of 16 bytes (11.1).
+pub const MAX_ICON_PATH_BYTES: usize = 65_536;
+
 pub(super) fn judge(sections: &mut Sections<'_, '_>, icon: &Icon) {
     let grid = sections.text(icon.grid);
     if grid != "32" {
         sections.say(Code::Lc5008, format!("`icon {grid}`: the grid of an icon is written `32` in v0 (11.1)"), icon.id, Vec::new());
     }
+    if icon.items.len() > MAX_ICON_SHAPES {
+        let message = format!("an icon of {} shapes: at most {MAX_ICON_SHAPES}, or its calls show the label (11.1)", icon.items.len());
+        sections.say(Code::Lc5008, message, icon.id, Vec::new());
+        // Its shapes are not judged one by one: the icon is not drawn, and judging them could cost far more than drawing.
+        return;
+    }
+    let bytes = path_bytes(icon);
+    if bytes > MAX_ICON_PATH_BYTES {
+        let message = format!("paths of {bytes} bytes in all: at most {MAX_ICON_PATH_BYTES}, or the calls show the label (11.1)");
+        sections.say(Code::Lc5008, message, icon.id, Vec::new());
+        // Its paths are not read: the icon is not drawn.
+        return;
+    }
+    let segments = segments_in_all(icon);
+    if segments > MAX_PATH_SEGMENTS {
+        let message = format!("paths of {segments} segments in all: at most {MAX_PATH_SEGMENTS}, or the calls show the label (11.1)");
+        sections.say(Code::Lc5008, message, icon.id, Vec::new());
+    }
     for item in &icon.items {
         judge_item(sections, item);
     }
+}
+
+/// Why the calls to a function show its label instead of its icon (spec 11.1): what `judge` says with `LC5008`, a grid,
+/// a number, a path, an accent, or more than [`MAX_ICON_SHAPES`] shapes, [`MAX_ICON_PATH_BYTES`] bytes or
+/// [`MAX_PATH_SEGMENTS`] segments of path in all. `None` when the icon is drawn. A library that is not checked is never judged: its icons are, by this.
+pub fn icon_refused(icon: &Icon, names: &Interner) -> Option<String> {
+    if names.resolve(icon.grid) != "32" {
+        return Some("its grid is not written `32`".to_owned());
+    }
+    if icon.items.len() > MAX_ICON_SHAPES {
+        return Some(format!("more than {MAX_ICON_SHAPES} shapes"));
+    }
+    if path_bytes(icon) > MAX_ICON_PATH_BYTES {
+        return Some(format!("more than {MAX_ICON_PATH_BYTES} bytes of path"));
+    }
+    if segments_in_all(icon) > MAX_PATH_SEGMENTS {
+        return Some(format!("more than {MAX_PATH_SEGMENTS} segments of path"));
+    }
+    icon.items.iter().find_map(|item| {
+        if let Some(accent) = &item.accent {
+            let token: Vec<&str> = accent.segments().map(|name| names.resolve(name)).collect();
+            if !TOKENS.contains(&token.join(".").as_str()) {
+                return Some("an accent that is not a token of the theme".to_owned());
+            }
+        }
+        shape_extent(names, &item.shape).err()
+    })
+}
+
+/// The bytes of all the `path` strings of an icon.
+fn path_bytes(icon: &Icon) -> usize {
+    icon.items
+        .iter()
+        .map(|item| match &item.shape {
+            IconShape::Path { data } => data.len(),
+            _ => 0,
+        })
+        .fold(0usize, usize::saturating_add)
+}
+
+/// The segments of all the paths of an icon, valid or not; it stops counting past the bound.
+fn segments_in_all(icon: &Icon) -> usize {
+    let mut total = 0usize;
+    for item in &icon.items {
+        if let IconShape::Path { data } = &item.shape {
+            total = total.saturating_add(read_path(data, false).map_or(0, |pen| pen.count));
+            if total > MAX_PATH_SEGMENTS {
+                break;
+            }
+        }
+    }
+    total
 }
 
 fn judge_item(sections: &mut Sections<'_, '_>, item: &IconItem) {
@@ -69,7 +147,7 @@ fn judge_item(sections: &mut Sections<'_, '_>, item: &IconItem) {
             sections.say(Code::Lc5008, message, accent.id, Vec::new());
         }
     }
-    let extent = match shape_extent(sections, &item.shape) {
+    let extent = match shape_extent(sections.names(), &item.shape) {
         Ok(extent) => extent,
         Err(message) => {
             sections.say(Code::Lc5008, message, item.id, Vec::new());
@@ -97,10 +175,10 @@ fn shown(value: f64) -> String {
 }
 
 /// What a shape draws, or what is wrong with it. `None` for what draws nothing, such as an empty path.
-fn shape_extent(sections: &Sections<'_, '_>, shape: &IconShape) -> Result<Option<Extent>, String> {
+fn shape_extent(names: &Interner, shape: &IconShape) -> Result<Option<Extent>, String> {
     let number = |numeral: Numeral| -> Result<f64, String> {
-        number_of(numeral, sections).ok_or_else(|| {
-            let text = numeral_text(numeral, sections.names());
+        number_of(numeral, names).ok_or_else(|| {
+            let text = numeral_text(numeral, names);
             format!("`{text}` is not a number of the grid: an icon takes finite numbers (11.1)")
         })
     };
@@ -110,7 +188,7 @@ fn shape_extent(sections: &Sections<'_, '_>, shape: &IconShape) -> Result<Option
         if value > 0.0 {
             Ok(value)
         } else {
-            let text = numeral_text(numeral, sections.names());
+            let text = numeral_text(numeral, names);
             Err(format!("a {what} of `{text}`: a {what} is above zero (11.1)"))
         }
     };
@@ -160,9 +238,9 @@ fn shape_extent(sections: &Sections<'_, '_>, shape: &IconShape) -> Result<Option
     Ok(Some(extent))
 }
 
-fn number_of(numeral: Numeral, sections: &Sections<'_, '_>) -> Option<f64> {
+fn number_of(numeral: Numeral, names: &Interner) -> Option<f64> {
     let text = match numeral.kind {
-        NumeralKind::Int(text) | NumeralKind::Float(text) => sections.names().resolve(text),
+        NumeralKind::Int(text) | NumeralKind::Float(text) => names.resolve(text),
         NumeralKind::Inf | NumeralKind::Nan => return None,
     };
     let digits: String = text.chars().filter(|c| *c != '_').collect();
@@ -215,8 +293,8 @@ pub enum PathSegment {
     Close,
 }
 
-/// The segments that a canvas draws of a path *(proposed)*: an icon is 32 units of grid, and a path of more draws no
-/// more on the canvas, while its SVG draws it whole.
+/// The most segments of the paths of an icon in all *(proposed)*: an icon is 32 units of grid, and more draws no more;
+/// beyond, its calls show the label (11.1). A canvas keeps at most as many of one path.
 pub const MAX_PATH_SEGMENTS: usize = 4096;
 
 /// The segments of a `path` string (spec 11.1), at most [`MAX_PATH_SEGMENTS`], or why it is not in the SVG path syntax
@@ -398,6 +476,8 @@ struct Pen {
     extent: Extent,
     record: bool,
     segments: Vec<PathSegment>,
+    /// Every segment drawn, kept or not.
+    count: usize,
 }
 
 impl Default for Extent {
@@ -409,6 +489,7 @@ impl Default for Extent {
 impl Pen {
     /// A segment kept, within the bound; a close after a close adds nothing.
     fn push(&mut self, segment: PathSegment) {
+        self.count = self.count.saturating_add(1);
         if !self.record || self.segments.len() >= MAX_PATH_SEGMENTS || (segment == PathSegment::Close && self.segments.last() == Some(&segment)) {
             return;
         }
@@ -556,6 +637,8 @@ impl Pen {
         self.line(to);
         let (mut rx, mut ry) = (rx.abs(), ry.abs());
         if from == to {
+            // It draws nothing, and still counts in the bound of an icon, as every arc that the text writes (11.1).
+            self.count = self.count.saturating_add(1);
             return;
         }
         // An arc with a radius of zero is a line (SVG 1.1, F.6.6).

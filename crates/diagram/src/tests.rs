@@ -445,6 +445,84 @@ fn an_icon_is_written_once() {
     assert!(text.contains(&format!("d=\"{path}\"")));
 }
 
+/// A library `dev`, which `use` finds and `check` does not check, with these files; and the graph of a `main` that calls
+/// each of its functions `a`, `f`, `g`, whichever it has.
+struct Dev(Vec<(&'static str, String)>);
+
+impl Libraries for Dev {
+    fn find(&self, name: &str, _: Origin) -> Found {
+        if name != "dev" {
+            return Found::NotFound;
+        }
+        let mut library = LibrarySource::new("dev".to_owned(), "dev".to_owned(), Origin::Project);
+        library.files.extend(self.0.iter().map(|(shown, text)| source(shown, text)));
+        Found::Library(library)
+    }
+}
+
+/// The icon of each call of `main`, by the name of its function, as many shapes as it draws; `None` for the label.
+fn icons_through(dev: &Dev, calls: &str) -> Vec<(String, Option<usize>)> {
+    let main = format!("labcraft 1\n\nuse dev\n\nfn main(x: f64) -> () {{\n{calls}}}\n");
+    let mut names = Interner::new();
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    root.files.push(source("main.lcf", &main));
+    let checked = check(root, dev, &mut names, &Limits::default());
+    // Only the folder given is kept: the files of `dev`, which hold the icons, are not.
+    assert_eq!(checked.files.len(), 1);
+    let graph = graph(&checked, &names, "main.lcf");
+    let mut icons: Vec<(String, Option<usize>)> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| match &node.kind {
+            Kind::Call { qualified, icon, .. } => Some((qualified.clone(), icon.map(|icon| icon.items.len()))),
+            _ => None,
+        })
+        .collect();
+    icons.sort();
+    icons
+}
+
+fn function_with(name: &str, icon: &str) -> String {
+    format!("labcraft 1\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = x\n}}\n{icon}")
+}
+
+/// Spec 11.1: each call shows the icon of its function, from whatever library: one found by `use`, which is not checked
+/// and whose files are not kept, too (`visa`, a `--lib-path`). Each icon goes to the function of its own file, among
+/// several, before and after it in the order of the files: `a` has none, `f` three shapes, `g` one.
+#[test]
+fn a_call_shows_the_icon_of_a_function_of_another_library() {
+    let dev = Dev(vec![
+        ("a.lcf", function_with("a", "")),
+        ("f.lcf", ICON_OF_F.to_owned()),
+        ("g.lcf", function_with("g", "\nicon 32 {\n    circle (16, 16) 8\n}\n")),
+    ]);
+    let icons = icons_through(&dev, "    p = dev.a(x)\n    q = dev.f(x)\n    r = dev.g(x)\n");
+    assert_eq!(icons, [("dev.a".to_owned(), None), ("dev.f".to_owned(), Some(3)), ("dev.g".to_owned(), Some(1))]);
+}
+
+/// Spec 11.1: an icon that `check` refuses (`LC5008`), or one past its bounds (256 shapes, 64 KiB or 4 096 segments of
+/// path), gives way to the label at every call, from a library that is not checked too, which nobody judged.
+#[test]
+fn a_call_shows_the_label_for_an_icon_refused() {
+    let shapes = |count: usize| format!("\nicon 32 {{\n{}}}\n", "    circle (16, 16) 8\n".repeat(count));
+    let path = |path: String| format!("\nicon 32 {{\n    path \"{path}\"\n}}\n");
+    for (icon, shown) in [
+        (shapes(256), Some(256)),
+        (shapes(257), None),
+        ("\nicon 0 {\n    circle (16, 16) 8\n}\n".to_owned(), None),
+        (path("M0 0 Q".to_owned()), None),
+        ("\nicon 32 {\n    circle (16, 16) nan\n}\n".to_owned(), None),
+        ("\nicon 32 {\n    circle (16, 16) 0\n}\n".to_owned(), None),
+        ("\nicon 32 {\n    circle (16, 16) 8 accent wire.nothing\n}\n".to_owned(), None),
+        (path(format!("M0 0{}", " L1 1".repeat(4095))), Some(1)),
+        (path(format!("M0 0{}", " L1 1".repeat(4096))), None),
+        (path(format!("M0 0{}", " ".repeat(65_536))), None),
+    ] {
+        let dev = Dev(vec![("f.lcf", function_with("f", &icon))]);
+        assert_eq!(icons_through(&dev, "    y = dev.f(x)\n"), [("dev.f".to_owned(), shown)], "{icon:.80}");
+    }
+}
+
 /// A coordinate far off the grid is drawn as a million, without an exponent: the icon is cut to its grid anyway.
 #[test]
 fn an_icon_number_has_no_exponent() {
@@ -578,16 +656,20 @@ fn a_match_is_a_frame_with_its_arms() {
     assert!(svg.contains("<g data-arm=\"1\">") && svg.contains("<g data-arm=\"other\">"));
 }
 
-/// The grid of an icon is a number of the SVG like the others, in its shortest form.
+/// The grid of an icon is a number of the SVG like the others, in its shortest form; a grid not written `32` (`3_2`),
+/// which `check` refuses (`LC5008`), gives way to the label (11.1).
 #[test]
 fn the_grid_of_an_icon_is_written_in_its_shortest_form() {
     let main = "labcraft 1\n\nfn main(x: f64) -> (y: f64) {\n    y = f(x)\n}\n";
-    let f = ICON_OF_F.replace("icon 32", "icon 3_2");
-    let (checked, names) = checked(&[("main.lcf", main), ("f.lcf", &f)]);
-    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
-        panic!()
-    };
-    assert!(svg(&drawing, crate::Theme::Both).contains("viewBox=\"0 0 32 32\" overflow=\"hidden\">"));
+    for (grid, symbols) in [("icon 32", 1), ("icon 3_2", 0)] {
+        let f = ICON_OF_F.replace("icon 32", grid);
+        let (checked, names) = checked(&[("main.lcf", main), ("f.lcf", &f)]);
+        let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+            panic!()
+        };
+        let text = svg(&drawing, crate::Theme::Both);
+        assert_eq!(text.matches("viewBox=\"0 0 32 32\" overflow=\"hidden\">").count(), symbols, "{grid}");
+    }
 }
 
 /// A value too many for a variant, which `check` refuses, is still drawn, by its position, as an argument too many for a
