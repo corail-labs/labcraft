@@ -1177,6 +1177,7 @@ pub struct ViewState { standard_everywhere: bool,   // the preference of the IDE
 pub struct Shown { arms: HashMap<String, usize>, ... }  // in `editor`: what it does not depend on (5.2, 6.1)
 pub fn draw(checked: &Checked, function: &FunctionRef, view: &ViewState, limits: &DiagramLimits) -> Drawn;
 pub enum Drawn { Drawing(Drawing), NotDrawn(Vec<Diagnostic>) }      // LC7002, or a function that is not drawable
+// Drawing::warnings: what drawing finds about the file (LC7005), which the caller adds to its report
 pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the reader keeps (11.2)
 pub fn values(drawing: &Drawing, checked: &Checked, trace: &trace::Trace, shown: &Shown) -> Overlay;  // 6.1
 pub fn svg(drawing: &Drawing, overlay: Option<&Overlay>, shown: &Shown, theme: Theme) -> String;  // cli.md 7.2

@@ -120,14 +120,17 @@ pub struct WireStyle {
     pub pattern: Pattern,
     /// A struct is sheathed: its core, in the fill of the frame it runs in.
     pub core: Option<Token>,
-    /// An array has a cross-tick per dimension every 8 units.
+    /// An array has a cross-tick per dimension every 8 units, within the width of the wire.
     pub ticks: u8,
+    /// What a cut through the wire shows: the fill of the frame it runs in. Nothing is drawn outside the width of a
+    /// wire: its pattern is cut into it (notation 4.1).
+    pub ground: Token,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pattern {
     Solid,
-    /// An error: chevrons every 24 units, in the direction of the flow.
+    /// An error: a tape, chevrons cut into it every 8 units, in the direction of the flow.
     Chevrons,
     /// An order wire, thin and dotted.
     Dotted,
@@ -135,7 +138,11 @@ pub enum Pattern {
     DashDot,
 }
 
-/// The chevrons of an error wire along its polyline: each three points, pointing in the direction of the flow.
+/// How wide the stroke of a chevron cut into an error wire is, in hundredths of a unit.
+pub const CHEVRON_STROKE: i64 = 90;
+
+/// The chevrons cut into an error wire along its polyline: each three points, pointing in the direction of the flow,
+/// 1.8 long and 2.8 across, so that with their stroke they stay inside a wire of 4.
 pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
     let mut found = Vec::new();
     let mut next = style::chevron_step() / 2;
@@ -149,7 +156,7 @@ pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
             let along = next - walked;
             if along >= style::wire_radius() {
                 let (x, y) = (x0 + dx * along, y0 + dy * along);
-                let (back, side) = (200, 300);
+                let (back, side) = (90, 140);
                 found.push([
                     (x - dx * back - dy * side, y - dy * back + dx * side),
                     (x + dx * back, y + dy * back),
@@ -337,6 +344,9 @@ pub struct Drawing {
     pub tabs: Vec<Tab>,
     /// The values of the notation it was drawn with (notation 10), which the SVG and the canvas paint it with.
     pub style: std::sync::Arc<crate::style::Style>,
+    /// What drawing found to say about the file, its warnings (`LC7005`), with no file name: the caller gives it. Not
+    /// in the SVG.
+    pub warnings: Vec<labcraft_types::Diagnostic>,
 }
 
 /// The mark of a diagnostic: what shows where it is, and its code.

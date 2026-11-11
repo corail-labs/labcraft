@@ -50,7 +50,8 @@ pub struct Published {
     /// be read.
     pub folder: Option<String>,
     pub functions: Vec<Listed>,
-    /// The report of the check of the folder, the drawings' diagnostics included; a new one with each check.
+    /// The report of the check of the folder, with the diagnostics of the drawing shown (`LC7005`); a new one with each
+    /// check and each drawing.
     pub report: Option<Arc<Report>>,
     pub errors: u64,
     pub warnings: u64,
@@ -187,7 +188,7 @@ pub fn set_state(session: &mut Session, params: &Params) -> Result<Value, Comman
         view.publish();
         return Ok(view.entry.clone());
     }
-    Ok(render(view, name, &file).map(|(_, _, entry)| entry).unwrap_or(Value::Null))
+    Ok(render(view, name, &file).map(|(_, _, entry, _)| entry).unwrap_or(Value::Null))
 }
 
 /// Reads `state` into `of`; whether it changes what placement depends on.
@@ -323,9 +324,9 @@ fn file_of(view: &View, name: &str) -> String {
     matching().find(|listed| listed.drawable).or_else(|| matching().next()).map(|listed| listed.file.clone()).unwrap_or_default()
 }
 
-/// The picture of a function in its view state, whether it is drawn, and its entry of `diagrams` in
-/// `labcraft-diagram/1`.
-fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Value)> {
+/// The picture of a function in its view state, whether it is drawn, its entry of `diagrams` in `labcraft-diagram/1`,
+/// and the report of the check with what drawing it added (`LC7005`, in this view state).
+fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Value, Report)> {
     let loaded = view.loaded.as_ref()?;
     let function = loaded.functions.iter().find(|function| function.shown == file)?;
     let of = view.views.get(file).cloned().unwrap_or_default();
@@ -344,7 +345,7 @@ fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Va
             drawings::drawing_of(function, loaded.checked.as_ref(), &files, &loaded.names, &state, &DiagramLimits::default(), &mut report);
         let drawn = drawing.is_some();
         let picture = Arc::new(drawings::picture(function, drawing, &report));
-        Some((picture, drawn, entry_of(name, file, drawn, nodes, &codes)))
+        Some((picture, drawn, entry_of(name, file, drawn, nodes, &codes), report))
     })
 }
 
@@ -359,7 +360,7 @@ fn draw(view: &mut View, glide: bool) -> Value {
         (Some(name), Some(file)) => render(view, &name, &file).map(|rendered| (file, rendered)),
         _ => None,
     };
-    let Some((file, (picture, drawn, entry))) = rendered else {
+    let Some((file, (picture, drawn, entry, report))) = rendered else {
         view.published.drawing = None;
         view.published.kept = false;
         view.entry = Value::Null;
@@ -377,6 +378,22 @@ fn draw(view: &mut View, glide: bool) -> Value {
         picture
     };
     view.published.drawing = Some(shown);
+    // The warnings of the drawing (`LC7005`) have no mark: the problems of the viewer list them.
+    let counts = |report: &Report| (report.diagnostics().len(), report.errors(), report.warnings());
+    if let Some(loaded) = &view.loaded
+        && counts(&report) != counts(&loaded.report)
+    {
+        view.published.errors = report.errors();
+        view.published.warnings = report.warnings();
+        view.published.report = Some(Arc::new(report));
+    } else if let Some(loaded) = &view.loaded
+        && view.published.report.as_ref().is_some_and(|published| counts(published) != counts(&loaded.report))
+    {
+        // Back to the report of the check when the drawing shown adds nothing.
+        view.published.errors = loaded.report.errors();
+        view.published.warnings = loaded.report.warnings();
+        view.published.report = Some(Arc::new(loaded.report.clone()));
+    }
     view.published.arms = view.views.get(&file).map(|of| of.arms.clone()).unwrap_or_default();
     view.entry = entry.clone();
     entry

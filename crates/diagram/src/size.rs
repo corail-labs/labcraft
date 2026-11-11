@@ -295,16 +295,19 @@ pub fn wire_style(family: Family, core: Token) -> crate::shape::WireStyle {
     use crate::shape::{Pattern, WireStyle};
     let token = wire_token(family);
     let ticks = family.dimensions.min(3);
-    match family.base {
-        Base::Struct => WireStyle { token, width: style::width_struct(), pattern: Pattern::Solid, core: Some(core), ticks },
-        Base::Session => WireStyle { token, width: style::width_session(), pattern: Pattern::Solid, core: None, ticks },
-        Base::Error => WireStyle { token, width: style::width_error(), pattern: Pattern::Chevrons, core: None, ticks },
-        Base::Order => WireStyle { token: "wire.order", width: style::width_order(), pattern: Pattern::Dotted, core: None, ticks: 0 },
-        Base::Function => WireStyle { token, width: style::width_function(), pattern: Pattern::DashDot, core: None, ticks },
+    let ground = core;
+    let style = match family.base {
+        Base::Struct => WireStyle { token, width: style::width_struct(), pattern: Pattern::Solid, core: Some(core), ticks, ground },
+        Base::Session => WireStyle { token, width: style::width_session(), pattern: Pattern::Solid, core: None, ticks, ground },
+        Base::Error => WireStyle { token, width: style::width_error(), pattern: Pattern::Chevrons, core: None, ticks, ground },
+        Base::Order => WireStyle { token: "wire.order", width: style::width_order(), pattern: Pattern::Dotted, core: None, ticks: 0, ground },
+        Base::Function => WireStyle { token, width: style::width_function(), pattern: Pattern::DashDot, core: None, ticks, ground },
         Base::Number | Base::Bool | Base::Text | Base::Enum | Base::Unknown => {
-            WireStyle { token, width: style::width_data(), pattern: Pattern::Solid, core: None, ticks }
+            WireStyle { token, width: style::width_data(), pattern: Pattern::Solid, core: None, ticks, ground }
         }
-    }
+    };
+    // An array is as wide as a struct, and 4, at least, so that its ticks are cut into it rather than sticking out.
+    if ticks > 0 { WireStyle { width: style.width.max(style::width_struct()).max(400), ..style } } else { style }
 }
 
 /// A terminal centred on `(x, y)`, its shape telling its family (notation 4.1), at `scale` percent.
@@ -391,8 +394,11 @@ pub fn pill_width(text: &Text) -> i64 {
 
 /// The name of a compact block, the last segment of what it calls, on two lines at most of `max` cells (notation 3.2):
 /// on one line when it holds; else cut at an underscore, which is not drawn, when both parts hold, the cut whose longer
-/// line is the shortest, the first on a tie; else the first line as far as the last underscore that it holds, or as far
-/// as it holds, and the rest on the second line, cut by `…`.
+/// line is the shortest, the first on a tie; else the first line as far as the last underscore that it holds and the
+/// rest on the second; else, when the first word does not hold, that word on the first line and the rest on the second,
+/// each cut by `…`; else, a single word, two halves as even as the graphemes allow, the first the longer, or, when it
+/// needs more than two lines, the first line as far as it holds and the rest cut by `…`. A word is never cut to leave a
+/// letter alone (`set / tle`, not `settl / e`).
 pub fn label_lines(name: &str, max: u64) -> Vec<Text> {
     // The first 200 code points: no line of more than `max` cells is drawn anyway.
     let name = cut_text(name);
@@ -406,10 +412,12 @@ pub fn label_lines(name: &str, max: u64) -> Vec<Text> {
     }
     // Each underscore that is a grapheme of its own, with the cells before it: one pass, whatever the underscores.
     let mut best: Option<(u64, usize)> = None;
+    let mut first_underscore: Option<usize> = None;
     let (mut at, mut before) = (0usize, 0u64);
     for grapheme in text::graphemes(&name) {
         let cells = text::cells(grapheme);
         if grapheme == "_" && at > 0 && at + 1 < name.len() {
+            first_underscore = first_underscore.or(Some(at));
             let longer = before.max(total.saturating_sub(before).saturating_sub(cells));
             if longer <= max && best.is_none_or(|(shortest, _)| longer < shortest) {
                 best = Some((longer, at));
@@ -437,9 +445,27 @@ pub fn label_lines(name: &str, max: u64) -> Vec<Text> {
     // The underscore right after what holds, else the last one that it holds; never one that leaves a line empty.
     let underscore =
         if name.get(end..).is_some_and(|rest| rest.starts_with('_')) { Some(end) } else { name.get(..end).and_then(|head| head.rfind('_')) };
-    let (first, second) = match underscore.filter(|&at| at > 0 && at + 1 < name.len()) {
-        Some(at) => (name.get(..at), name.get(at + 1..)),
-        None => (name.get(..end), name.get(end..)),
+    let (first, second) = match (underscore.filter(|&at| at > 0 && at + 1 < name.len()), first_underscore) {
+        (Some(at), _) => (name.get(..at), name.get(at + 1..)),
+        // The first word does not hold: it keeps its line, cut, and the rest goes on the second (`appe… / csv`).
+        (None, Some(at)) => (name.get(..at), name.get(at + 1..)),
+        (None, None) if total <= max.saturating_mul(2) => {
+            // Two even halves, the first the longer: the shortest first line of half the cells or more, within the line.
+            let (mut middle, mut used) = (0, 0u64);
+            for grapheme in text::graphemes(&name) {
+                let cells = text::cells(grapheme);
+                if used.saturating_add(cells) > max {
+                    break;
+                }
+                used = used.saturating_add(cells);
+                middle += grapheme.len();
+                if used.saturating_mul(2) >= total {
+                    break;
+                }
+            }
+            if middle < name.len() { (name.get(..middle), name.get(middle..)) } else { (name.get(..end), name.get(end..)) }
+        }
+        (None, None) => (name.get(..end), name.get(end..)),
     };
     vec![line(first.unwrap_or_default()), line(second.unwrap_or_default())]
 }

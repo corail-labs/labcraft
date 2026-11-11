@@ -26,20 +26,19 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="130.18" y="147.65" font-size="10" style="fill: var(--pill-text)">.dmm</text>
 <rect x="326.26" y="137" width="50.14" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="330.26" y="147.65" font-size="10" style="fill: var(--pill-text)">.source</text>
-<text x="70.1" y="141" font-size="10" style="fill: var(--ink-muted)">bench</text>
 <text x="203.17" y="85" font-size="10" style="fill: var(--ink-muted)">bench</text>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="e1.err">
-<path d="M106.18 168 L170.26 168" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 171 L120.18 168 L116.18 165 M140.18 171 L144.18 168 L140.18 165" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 168 L170.26 168" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 169.4 L119.08 168 L117.28 166.6 M125.28 169.4 L127.08 168 L125.28 166.6 M133.28 169.4 L135.08 168 L133.28 166.6 M141.28 169.4 L143.08 168 L141.28 166.6 M149.28 169.4 L151.08 168 L149.28 166.6 M157.28 169.4 L159.08 168 L157.28 166.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e1" data-from="e1.err" data-to="e2.err">
-<path d="M306.26 168 L388.4 168" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M316.26 171 L320.26 168 L316.26 165 M340.26 171 L344.26 168 L340.26 165 M364.26 171 L368.26 168 L364.26 165" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M306.26 168 L388.4 168" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M317.36 169.4 L319.16 168 L317.36 166.6 M325.36 169.4 L327.16 168 L325.36 166.6 M333.36 169.4 L335.16 168 L333.36 166.6 M341.36 169.4 L343.16 168 L341.36 166.6 M349.36 169.4 L351.16 168 L349.36 166.6 M357.36 169.4 L359.16 168 L357.36 166.6 M365.36 169.4 L367.16 168 L365.36 166.6 M373.36 169.4 L375.16 168 L373.36 166.6 M381.36 169.4 L383.16 168 L381.36 166.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="fn.err">
-<path d="M524.4 168 L553.94 168" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M534.4 171 L538.4 168 L534.4 165" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M524.4 168 L553.94 168" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M535.5 169.4 L537.3 168 L535.5 166.6 M543.5 169.4 L545.3 168 L543.5 166.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="e1"><title>scpi.check_errors</title>
 <rect x="170.26" y="104" width="136" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

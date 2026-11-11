@@ -23,33 +23,31 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="477.94" y="179.65" font-size="10" style="fill: var(--node-title)">err</text>
 <g data-wire="session" data-from="fn.session" data-to="text.session">
 <path d="M78.14 128 L130.18 128" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="82.14" y="125" font-size="10" style="fill: var(--ink-muted)">session</text>
 </g>
 <g data-wire="command" data-from="fn.command" data-to="text.command">
 <path d="M78.14 152 L130.18 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="82.14" y="149" font-size="10" style="fill: var(--ink-muted)">command</text>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="text.err">
-<path d="M106.18 176 L130.18 176" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 179 L120.18 176 L116.18 173" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 176 L130.18 176" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 177.4 L119.08 176 L117.28 174.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="text" data-from="text.text" data-to="value.text">
 <path d="M266.18 104 L280.18 104 Q286.18 104 286.18 110 L286.18 146 Q286.18 152 292.18 152 L298.18 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="e1" data-from="text.err" data-to="value.err">
-<path d="M266.18 176 L298.18 176" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M276.18 179 L280.18 176 L276.18 173" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M266.18 176 L298.18 176" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M277.28 177.4 L279.08 176 L277.28 174.6 M285.28 177.4 L287.08 176 L285.28 174.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="value" data-from="value.value" data-to="fn.value">
 <path d="M410.18 152 L416.18 152 Q422.18 152 422.18 146 L422.18 134 Q422.18 128 428.18 128 L461.9 128" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="s" data-from="text.session" data-to="fn.session">
 <path d="M266.18 128 L272.18 128 Q278.18 128 278.18 122 L278.18 102 Q278.18 96 284.18 96 L424.18 96 Q430.18 96 430.18 102 L430.18 146 Q430.18 152 436.18 152 L449.86 152" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="351.17" y="93" font-size="10" style="fill: var(--ink-muted)">s</text>
+<text x="282.18" y="93" font-size="10" style="fill: var(--ink-muted)">s</text>
 </g>
 <g data-wire="e2" data-from="value.err" data-to="fn.err">
-<path d="M410.18 176 L473.94 176" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M420.18 179 L424.18 176 L420.18 173 M444.18 179 L448.18 176 L444.18 173" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M410.18 176 L473.94 176" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M421.28 177.4 L423.08 176 L421.28 174.6 M429.28 177.4 L431.08 176 L429.28 174.6 M437.28 177.4 L439.08 176 L437.28 174.6 M445.28 177.4 L447.08 176 L445.28 174.6 M453.28 177.4 L455.08 176 L453.28 174.6 M461.28 177.4 L463.08 176 L461.28 174.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="text"><title>visa.query</title>
 <rect x="130.18" y="64" width="136" height="128" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

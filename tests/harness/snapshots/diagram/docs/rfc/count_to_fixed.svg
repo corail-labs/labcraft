@@ -13,7 +13,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="393.98" y="169.65" font-size="10" style="fill: var(--node-title)">n</text>
 <g data-wire="n" data-from="n.n" data-to="fn.n">
 <path d="M368.12 166 L389.98 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="372.12" y="163" font-size="10" style="fill: var(--ink-muted)">n</text>
 </g>
 <g data-wire="limit" data-from="fn.limit" data-to="n.limit">
 <path d="M66.1 190 L112.12 190" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -36,7 +35,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="c" data-to="c1.a">
 <path d="M134.14 166 L204.24 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="138.14" y="163" font-size="10" style="fill: var(--ink-muted)">c</text>
 </g>
 <g data-wire="c1" data-from="c1.result" data-to="done.a next.c">
 <path d="M229.72 174 L237.72 174 Q241.72 174 241.72 170 L241.72 170 Q241.72 166 245.72 166 L264.24 166" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

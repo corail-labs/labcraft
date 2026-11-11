@@ -130,13 +130,13 @@ numbers! {
     min_channel: "wire"."min_channel" = 1600, Length, 800..=6400, "2.2", "The narrowest channel between two columns.";
     track_room: "wire"."track_room" = 2400, Length, 0..=9600, "4", "Above the highest track: room for the name of its wire.";
     wire_radius: "wire"."radius" = 600, Length, 0..=2400, "2", "The corners of a wire.";
-    chevron_step: "wire"."chevron_step" = 2400, Length, 1200..=9600, "4.1", "Between two chevrons of an error wire.";
+    chevron_step: "wire"."chevron_step" = 800, Length, 400..=9600, "4.1", "Between two chevrons cut into an error wire.";
     name_above: "wire"."name_above" = 300, Length, 0..=1200, "4", "Between a wire and its name.";
     name_side: "wire"."name_side" = 400, Length, 0..=1600, "4", "On each side of the name of a wire.";
     width_data: "wire"."width_data" = 150, Length, 50..=600, "4.1", "A wire of a number, a boolean, a text or an enum.";
     width_struct: "wire"."width_struct" = 400, Length, 300..=1600, "4.1", "A wire of a struct, with a core of the fill under it.";
     width_session: "wire"."width_session" = 250, Length, 50..=1000, "4.1", "A wire of a session.";
-    width_error: "wire"."width_error" = 200, Length, 50..=800, "4.1", "A wire of an error.";
+    width_error: "wire"."width_error" = 400, Length, 400..=1600, "4.1", "A wire of an error, a tape with its chevrons cut into it.";
     width_order: "wire"."width_order" = 100, Length, 50..=400, "4.1", "A wire of order (`after:`).";
     width_function: "wire"."width_function" = 150, Length, 50..=600, "4.1", "A wire of a reference to a function.";
 
@@ -439,9 +439,9 @@ mod tests {
 
     #[test]
     fn a_value_left_out_keeps_its_default() {
-        let style = read("[place]\nstack = 30\n\n[wire]\nwidth_error = 2.25\n\n[zoom]\nnames = 60\n").unwrap();
+        let style = read("[place]\nstack = 30\n\n[wire]\nwidth_error = 4.25\n\n[zoom]\nnames = 60\n").unwrap();
         assert_eq!(style.numbers.stack, 3000);
-        assert_eq!(style.numbers.width_error, 225);
+        assert_eq!(style.numbers.width_error, 425);
         assert_eq!(style.numbers.names_zoom, 60);
         assert_eq!(style.numbers.grid, 800);
         assert_eq!(style.colors, Style::default().colors);

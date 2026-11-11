@@ -292,13 +292,19 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
         let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({}); stroke-width: {}\"/>", variable(core), n(style.width - 240));
     }
     if style.ticks > 0 {
-        // A tick is a dash of a wide stroke: 6 across, 1 along, one per dimension, every 8.
+        // A tick is a dash across the whole width of the wire, 1 along, one per dimension, every 8: a rung of the wire's
+        // color in a sheath, a cut showing the ground in a solid wire.
         let dashes = match style.ticks {
             1 => "1 7",
             2 => "1 2 1 4",
             _ => "1 2 1 2 1 1",
         };
-        let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({token}); stroke-width: 6; stroke-dasharray: {dashes}\"/>");
+        let tick = if style.core.is_some() { token } else { variable(style.ground) };
+        let _ = writeln!(
+            out,
+            "<path d=\"{data}\" style=\"fill: none; stroke: var({tick}); stroke-width: {}; stroke-dasharray: {dashes}\"/>",
+            n(style.width)
+        );
     }
     if style.pattern == Pattern::Chevrons {
         let marks = chevrons(points);
@@ -307,7 +313,13 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
             for [a, b, c] in marks {
                 let _ = write!(data, "M{} {} L{} {} L{} {} ", n(a.0), n(a.1), n(b.0), n(b.1), n(c.0), n(c.1));
             }
-            let _ = writeln!(out, "<path d=\"{}\" style=\"fill: none; stroke: var({token}); stroke-width: 1.5\"/>", data.trim_end());
+            let _ = writeln!(
+                out,
+                "<path d=\"{}\" style=\"fill: none; stroke: var({}); stroke-width: {}\"/>",
+                data.trim_end(),
+                variable(style.ground),
+                n(crate::shape::CHEVRON_STROKE)
+            );
         }
     }
 }

@@ -22,22 +22,22 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M84.16 151.64 L114.18 151.64 Q118.18 151.64 118.18 155.64 L118.18 155.64 Q118.18 159.64 122.18 159.64 L164.24 159.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="dmm.err">
-<path d="M106.18 175.64 L164.24 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 178.64 L120.18 175.64 L116.18 172.64 M140.18 178.64 L144.18 175.64 L140.18 172.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 175.64 L164.24 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 177.04 L119.08 175.64 L117.28 174.24 M125.28 177.04 L127.08 175.64 L125.28 174.24 M133.28 177.04 L135.08 175.64 L133.28 174.24 M141.28 177.04 L143.08 175.64 L141.28 174.24 M149.28 177.04 L151.08 175.64 L149.28 174.24 M157.28 177.04 L159.08 175.64 L157.28 174.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm" data-from="dmm.session" data-to="raw.session">
 <path d="M204.24 159.64 L292.4 159.64" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e1" data-from="dmm.err" data-to="raw.err">
-<path d="M204.24 175.64 L292.4 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M214.24 178.64 L218.24 175.64 L214.24 172.64 M238.24 178.64 L242.24 175.64 L238.24 172.64 M262.24 178.64 L266.24 175.64 L262.24 172.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M204.24 175.64 L292.4 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M215.34 177.04 L217.14 175.64 L215.34 174.24 M223.34 177.04 L225.14 175.64 L223.34 174.24 M231.34 177.04 L233.14 175.64 L231.34 174.24 M239.34 177.04 L241.14 175.64 L239.34 174.24 M247.34 177.04 L249.14 175.64 L247.34 174.24 M255.34 177.04 L257.14 175.64 L255.34 174.24 M263.34 177.04 L265.14 175.64 L263.34 174.24 M271.34 177.04 L273.14 175.64 L271.34 174.24 M279.34 177.04 L281.14 175.64 L279.34 174.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm2" data-from="raw.session" data-to="e3.session">
 <path d="M332.4 159.64 L340.4 159.64 Q344.4 159.64 344.4 163.64 L344.4 163.64 Q344.4 167.64 348.4 167.64 L356.4 167.64" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e2" data-from="raw.err" data-to="e3.err">
-<path d="M332.4 175.64 L356.4 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M342.4 178.64 L346.4 175.64 L342.4 172.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M332.4 175.64 L356.4 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M343.5 177.04 L345.3 175.64 L343.5 174.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="raw" data-from="raw.value" data-to="voltage.x">
 <path d="M332.4 151.64 L338.4 151.64 Q344.4 151.64 344.4 145.64 L344.4 84 Q344.4 78 350.4 78 L356.4 78" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -46,8 +46,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M384.4 78 L421.6 78" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="e3" data-from="e3.err" data-to="fn.err">
-<path d="M396.4 175.64 L465.94 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M406.4 178.64 L410.4 175.64 L406.4 172.64 M430.4 178.64 L434.4 175.64 L430.4 172.64 M454.4 178.64 L458.4 175.64 L454.4 172.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M396.4 175.64 L465.94 175.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M407.5 177.04 L409.3 175.64 L407.5 174.24 M415.5 177.04 L417.3 175.64 L415.5 174.24 M423.5 177.04 L425.3 175.64 L423.5 174.24 M431.5 177.04 L433.3 175.64 L431.5 174.24 M439.5 177.04 L441.3 175.64 L439.5 174.24 M447.5 177.04 L449.3 175.64 L447.5 174.24 M455.5 177.04 L457.3 175.64 L455.5 174.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="dmm"><title>visa.open</title>
 <rect x="164.24" y="143.64" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

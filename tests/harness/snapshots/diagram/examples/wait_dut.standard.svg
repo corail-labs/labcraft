@@ -22,22 +22,20 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1645.94" y="387.65" font-size="10" style="fill: var(--node-title)">err</text>
 <g data-wire="err" data-from="fn.err" data-to="t0.after present.e">
 <path d="M106.18 384 L128.18 384 Q134.18 384 134.18 378 L134.18 306 Q134.18 300 140.18 300 L146.18 300" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
-<path d="M134.18 384 L336.28 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M144.18 387 L148.18 384 L144.18 381 M168.18 387 L172.18 384 L168.18 381 M192.18 387 L196.18 384 L192.18 381 M216.18 387 L220.18 384 L216.18 381 M240.18 387 L244.18 384 L240.18 381 M264.18 387 L268.18 384 L264.18 381 M288.18 387 L292.18 384 L288.18 381 M312.18 387 L316.18 384 L312.18 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M134.18 384 L336.28 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M145.28 385.4 L147.08 384 L145.28 382.6 M153.28 385.4 L155.08 384 L153.28 382.6 M161.28 385.4 L163.08 384 L161.28 382.6 M169.28 385.4 L171.08 384 L169.28 382.6 M177.28 385.4 L179.08 384 L177.28 382.6 M185.28 385.4 L187.08 384 L185.28 382.6 M193.28 385.4 L195.08 384 L193.28 382.6 M201.28 385.4 L203.08 384 L201.28 382.6 M209.28 385.4 L211.08 384 L209.28 382.6 M217.28 385.4 L219.08 384 L217.28 382.6 M225.28 385.4 L227.08 384 L225.28 382.6 M233.28 385.4 L235.08 384 L233.28 382.6 M241.28 385.4 L243.08 384 L241.28 382.6 M249.28 385.4 L251.08 384 L249.28 382.6 M257.28 385.4 L259.08 384 L257.28 382.6 M265.28 385.4 L267.08 384 L265.28 382.6 M273.28 385.4 L275.08 384 L273.28 382.6 M281.28 385.4 L283.08 384 L281.28 382.6 M289.28 385.4 L291.08 384 L289.28 382.6 M297.28 385.4 L299.08 384 L297.28 382.6 M305.28 385.4 L307.08 384 L305.28 382.6 M313.28 385.4 L315.08 384 L313.28 382.6 M321.28 385.4 L323.08 384 L321.28 382.6 M329.28 385.4 L331.08 384 L329.28 382.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 <circle cx="134.18" cy="384" r="3" style="fill: var(--wire-order)"/>
-<text x="110.18" y="381" font-size="10" style="fill: var(--ink-muted)">err</text>
 </g>
 <g data-wire="present" data-from="present.present" data-to="fn.present">
 <path d="M1592.28 200 L1617.86 200" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err_out" data-from="present.err_out" data-to="fn.err">
-<path d="M1592.28 384 L1641.94 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M1602.28 387 L1606.28 384 L1602.28 381 M1626.28 387 L1630.28 384 L1626.28 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M1592.28 384 L1641.94 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M1603.38 385.4 L1605.18 384 L1603.38 382.6 M1611.38 385.4 L1613.18 384 L1611.38 382.6 M1619.38 385.4 L1621.18 384 L1619.38 382.6 M1627.38 385.4 L1629.18 384 L1627.38 382.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="bench" data-from="fn.bench" data-to="present.bench">
 <path d="M66.1 288 L112.18 288 Q118.18 288 118.18 282 L118.18 278 Q118.18 272 124.18 272 L264.18 272 Q270.18 272 270.18 278 L270.18 282 Q270.18 288 276.18 288 L336.28 288" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M66.1 288 L112.18 288 Q118.18 288 118.18 282 L118.18 278 Q118.18 272 124.18 272 L264.18 272 Q270.18 272 270.18 278 L270.18 282 Q270.18 288 276.18 288 L336.28 288" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
-<text x="70.1" y="285" font-size="10" style="fill: var(--ink-muted)">bench</text>
 </g>
 <g data-wire="t0" data-from="t0.timestamp" data-to="present.t0">
 <path d="M258.18 328 L264.18 328 Q270.18 328 270.18 322 L270.18 318 Q270.18 312 276.18 312 L336.28 312" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -89,9 +87,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="434.42" y="339.65" font-size="10" style="fill: var(--pill-text)">.relays</text>
 </g>
 <g data-wire="e" data-to="level.err">
-<path d="M358.3 384 L492.56 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M368.3 387 L372.3 384 L368.3 381 M392.3 387 L396.3 384 L392.3 381 M416.3 387 L420.3 384 L416.3 381 M440.3 387 L444.3 384 L440.3 381 M464.3 387 L468.3 384 L464.3 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<text x="362.3" y="381" font-size="10" style="fill: var(--ink-muted)">e</text>
+<path d="M358.3 384 L492.56 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M369.4 385.4 L371.2 384 L369.4 382.6 M377.4 385.4 L379.2 384 L377.4 382.6 M385.4 385.4 L387.2 384 L385.4 382.6 M393.4 385.4 L395.2 384 L393.4 382.6 M401.4 385.4 L403.2 384 L401.4 382.6 M409.4 385.4 L411.2 384 L409.4 382.6 M417.4 385.4 L419.2 384 L417.4 382.6 M425.4 385.4 L427.2 384 L425.4 382.6 M433.4 385.4 L435.2 384 L433.4 382.6 M441.4 385.4 L443.2 384 L441.4 382.6 M449.4 385.4 L451.2 384 L449.4 382.6 M457.4 385.4 L459.2 384 L457.4 382.6 M465.4 385.4 L467.2 384 L465.4 382.6 M473.4 385.4 L475.2 384 L473.4 382.6 M481.4 385.4 L483.2 384 L481.4 382.6" style="fill: none; stroke: var(--frame-fill-2); stroke-width: 0.9"/>
 </g>
 <g data-wire="level" data-from="level.value" data-to="here.a">
 <path d="M644.56 312 L650.56 312 Q656.56 312 656.56 306 L656.56 206 Q656.56 200 662.56 200 L760.77 200" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -111,12 +108,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1112.77" y="363.65" font-size="10" style="fill: var(--mark-coercion)">f64[ms]→d…</text>
 </g>
 <g data-wire="e1" data-from="level.err" data-to="e2.err">
-<path d="M644.56 384 L1188.98 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M654.56 387 L658.56 384 L654.56 381 M678.56 387 L682.56 384 L678.56 381 M702.56 387 L706.56 384 L702.56 381 M726.56 387 L730.56 384 L726.56 381 M750.56 387 L754.56 384 L750.56 381 M774.56 387 L778.56 384 L774.56 381 M798.56 387 L802.56 384 L798.56 381 M822.56 387 L826.56 384 L822.56 381 M846.56 387 L850.56 384 L846.56 381 M870.56 387 L874.56 384 L870.56 381 M894.56 387 L898.56 384 L894.56 381 M918.56 387 L922.56 384 L918.56 381 M942.56 387 L946.56 384 L942.56 381 M966.56 387 L970.56 384 L966.56 381 M990.56 387 L994.56 384 L990.56 381 M1014.56 387 L1018.56 384 L1014.56 381 M1038.56 387 L1042.56 384 L1038.56 381 M1062.56 387 L1066.56 384 L1062.56 381 M1086.56 387 L1090.56 384 L1086.56 381 M1110.56 387 L1114.56 384 L1110.56 381 M1134.56 387 L1138.56 384 L1134.56 381 M1158.56 387 L1162.56 384 L1158.56 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M644.56 384 L1188.98 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M655.66 385.4 L657.46 384 L655.66 382.6 M663.66 385.4 L665.46 384 L663.66 382.6 M671.66 385.4 L673.46 384 L671.66 382.6 M679.66 385.4 L681.46 384 L679.66 382.6 M687.66 385.4 L689.46 384 L687.66 382.6 M695.66 385.4 L697.46 384 L695.66 382.6 M703.66 385.4 L705.46 384 L703.66 382.6 M711.66 385.4 L713.46 384 L711.66 382.6 M719.66 385.4 L721.46 384 L719.66 382.6 M727.66 385.4 L729.46 384 L727.66 382.6 M735.66 385.4 L737.46 384 L735.66 382.6 M743.66 385.4 L745.46 384 L743.66 382.6 M751.66 385.4 L753.46 384 L751.66 382.6 M759.66 385.4 L761.46 384 L759.66 382.6 M767.66 385.4 L769.46 384 L767.66 382.6 M775.66 385.4 L777.46 384 L775.66 382.6 M783.66 385.4 L785.46 384 L783.66 382.6 M791.66 385.4 L793.46 384 L791.66 382.6 M799.66 385.4 L801.46 384 L799.66 382.6 M807.66 385.4 L809.46 384 L807.66 382.6 M815.66 385.4 L817.46 384 L815.66 382.6 M823.66 385.4 L825.46 384 L823.66 382.6 M831.66 385.4 L833.46 384 L831.66 382.6 M839.66 385.4 L841.46 384 L839.66 382.6 M847.66 385.4 L849.46 384 L847.66 382.6 M855.66 385.4 L857.46 384 L855.66 382.6 M863.66 385.4 L865.46 384 L863.66 382.6 M871.66 385.4 L873.46 384 L871.66 382.6 M879.66 385.4 L881.46 384 L879.66 382.6 M887.66 385.4 L889.46 384 L887.66 382.6 M895.66 385.4 L897.46 384 L895.66 382.6 M903.66 385.4 L905.46 384 L903.66 382.6 M911.66 385.4 L913.46 384 L911.66 382.6 M919.66 385.4 L921.46 384 L919.66 382.6 M927.66 385.4 L929.46 384 L927.66 382.6 M935.66 385.4 L937.46 384 L935.66 382.6 M943.66 385.4 L945.46 384 L943.66 382.6 M951.66 385.4 L953.46 384 L951.66 382.6 M959.66 385.4 L961.46 384 L959.66 382.6 M967.66 385.4 L969.46 384 L967.66 382.6 M975.66 385.4 L977.46 384 L975.66 382.6 M983.66 385.4 L985.46 384 L983.66 382.6 M991.66 385.4 L993.46 384 L991.66 382.6 M999.66 385.4 L1001.46 384 L999.66 382.6 M1007.66 385.4 L1009.46 384 L1007.66 382.6 M1015.66 385.4 L1017.46 384 L1015.66 382.6 M1023.66 385.4 L1025.46 384 L1023.66 382.6 M1031.66 385.4 L1033.46 384 L1031.66 382.6 M1039.66 385.4 L1041.46 384 L1039.66 382.6 M1047.66 385.4 L1049.46 384 L1047.66 382.6 M1055.66 385.4 L1057.46 384 L1055.66 382.6 M1063.66 385.4 L1065.46 384 L1063.66 382.6 M1071.66 385.4 L1073.46 384 L1071.66 382.6 M1079.66 385.4 L1081.46 384 L1079.66 382.6 M1087.66 385.4 L1089.46 384 L1087.66 382.6 M1095.66 385.4 L1097.46 384 L1095.66 382.6 M1103.66 385.4 L1105.46 384 L1103.66 382.6 M1111.66 385.4 L1113.46 384 L1111.66 382.6 M1119.66 385.4 L1121.46 384 L1119.66 382.6 M1127.66 385.4 L1129.46 384 L1127.66 382.6 M1135.66 385.4 L1137.46 384 L1135.66 382.6 M1143.66 385.4 L1145.46 384 L1143.66 382.6 M1151.66 385.4 L1153.46 384 L1151.66 382.6 M1159.66 385.4 L1161.46 384 L1159.66 382.6 M1167.66 385.4 L1169.46 384 L1167.66 382.6 M1175.66 385.4 L1177.46 384 L1175.66 382.6" style="fill: none; stroke: var(--frame-fill-2); stroke-width: 0.9"/>
 </g>
 <g data-wire="t0" data-to="t.since">
 <path d="M364.32 312 L400.42 312 Q406.42 312 406.42 306 L406.42 238 Q406.42 232 412.42 232 L492.56 232" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="368.32" y="309" font-size="10" style="fill: var(--ink-muted)">t0</text>
 <text x="443.47" y="229" font-size="10" style="fill: var(--ink-muted)">t0</text>
 </g>
 <g data-wire="t" data-from="t.duration" data-to="late.a">
@@ -132,9 +128,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="late" data-from="late.result" data-to="give_up.a">
 <path d="M872.77 304 L878.77 304 Q884.77 304 884.77 298 L884.77 150 Q884.77 144 890.77 144 L1094.77 144 Q1100.77 144 1100.77 150 L1100.77 250 Q1100.77 256 1106.77 256 L1188.98 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="1104.77" y="253" font-size="10" style="fill: var(--ink-muted)">late</text>
 </g>
 <g data-wire="absent" data-from="absent.result" data-to="give_up.b">
 <path d="M1016.77 200 L1086.77 200 Q1092.77 200 1092.77 206 L1092.77 274 Q1092.77 280 1098.77 280 L1188.98 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="1096.77" y="277" font-size="10" style="fill: var(--ink-muted)">absent</text>
 </g>
 <g data-wire="give_up" data-from="give_up.result" data-to="done.b @21.condition">
 <path d="M1300.98 256 L1324.98 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -142,12 +140,12 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <circle cx="1312.98" cy="256" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="@21.err">
-<path d="M1300.98 384 L1324.98 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M1310.98 387 L1314.98 384 L1310.98 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M1300.98 384 L1324.98 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M1312.08 385.4 L1313.88 384 L1312.08 382.6" style="fill: none; stroke: var(--frame-fill-2); stroke-width: 0.9"/>
 </g>
 <g data-wire="e" data-from="@21.err" data-to="next.e">
-<path d="M1508.98 384 L1540.16 384" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M1518.98 387 L1522.98 384 L1518.98 381" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M1508.98 384 L1540.16 384" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M1520.08 385.4 L1521.88 384 L1520.08 382.6 M1528.08 385.4 L1529.88 384 L1528.08 382.6" style="fill: none; stroke: var(--frame-fill-2); stroke-width: 0.9"/>
 </g>
 <g data-wire="done" data-from="done.result" data-to="until">
 <path d="M1436.98 232 L1514.98 232 Q1520.98 232 1520.98 238 L1520.98 354 Q1520.98 360 1526.98 360 L1546.18 360" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

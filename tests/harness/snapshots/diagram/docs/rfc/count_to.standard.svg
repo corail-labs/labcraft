@@ -13,7 +13,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="409.98" y="259.65" font-size="10" style="fill: var(--node-title)">n</text>
 <g data-wire="n" data-from="n.n" data-to="fn.n">
 <path d="M384.12 256 L405.98 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="388.12" y="253" font-size="10" style="fill: var(--ink-muted)">n</text>
 </g>
 <g data-wire="limit" data-from="fn.limit" data-to="n.limit">
 <path d="M66.1 280 L112.12 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -38,7 +37,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M134.14 256 L182.22 256" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <path d="M170.22 256 L170.22 158 Q170.22 152 176.22 152 L182.22 152" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="170.22" cy="256" r="3" style="fill: var(--wire-data)"/>
-<text x="138.14" y="253" font-size="10" style="fill: var(--ink-muted)">c</text>
 </g>
 <g data-wire="limit" data-to="done.b">
 <path d="M158.22 280 L182.22 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

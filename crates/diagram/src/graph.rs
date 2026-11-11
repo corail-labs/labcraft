@@ -205,6 +205,8 @@ pub struct Node<'a> {
     pub bodies: Vec<usize>,
     /// Where the `layout` section puts it, in hundredths, from the top-left corner of the frame that holds it.
     pub at: Option<(i64, i64)>,
+    /// The entry of the `layout` section that puts it there, for `LC7005`.
+    pub placed_by: Option<labcraft_types::Span>,
     /// `#close`, drawn above the node.
     pub label: Option<String>,
     pub always: bool,
@@ -482,10 +484,11 @@ impl<'a> Builder<'a> {
             graph.bodies.push(frame);
         }
         // A `node` entry designates a node only when it names one (spec 11): one that names several gives `LC5006`.
-        for ((is_label, name), (at, standard)) in entries {
+        for ((is_label, name), (at, standard, span)) in entries {
             let Some(&[node]) = flow.designations.get(&(is_label, name)).map(Vec::as_slice) else { continue };
             if let Some(node) = graph.nodes.get_mut(node) {
                 node.at = at;
+                node.placed_by = at.and(span);
                 node.standard = standard;
             }
         }
@@ -647,7 +650,7 @@ impl<'a> Builder<'a> {
                 // A second entry for one node is `LC5007`: the first one counts.
                 LayoutKind::Node { node, at, view } if seen.insert((node.is_label, node.name)) => {
                     let at = at.as_ref().and_then(|point| Some((coordinate(&point.x)?, coordinate(&point.y)?)));
-                    Some(((node.is_label, node.name), (at, *view == Some(View::Standard))))
+                    Some(((node.is_label, node.name), (at, *view == Some(View::Standard), self.file.source_map.span(item.id))))
                 }
                 _ => None,
             })
@@ -707,6 +710,7 @@ impl<'a> Builder<'a> {
             statement: statement.id,
             bodies: Vec::new(),
             at: None,
+            placed_by: None,
             label: statement.label.map(|label| format!("#{}", self.text(label.name))),
             always,
             after,
@@ -1080,7 +1084,7 @@ fn primitive_family(ty: PrimitiveTy) -> Family {
 /// How the `layout` section designates a node: by its label (`true`), or by the name of its line.
 type Designation = (bool, Name);
 /// What a `node` entry gives: a position, and whether the node is in standard view.
-type Entry = (Option<(i64, i64)>, bool);
+type Entry = (Option<(i64, i64)>, bool, Option<labcraft_types::Span>);
 
 /// How the `layout` section designates the node of a line (spec 11): by its label, or by the name of its line.
 fn designation_of(statement: &Statement) -> Option<(bool, Name)> {

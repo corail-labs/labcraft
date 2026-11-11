@@ -128,7 +128,8 @@ are the nodes that a `layout` section does not place (spec 11).
   free space between what it connects: right of what feeds it, left of what it feeds, above the error
   chain if there is one. The other unplaced nodes move apart only as far as needed. With no position in
   the file, this gives the placement above. What the file writes always wins: around a position or a
-  `via` that it gives, the rules that say "never" hold as far as they can. The axis of the chain goes
+  `via` that it gives, the rules that say "never" hold as far as they can. Two nodes that the file places one over the other are drawn
+  where it puts them, and `diagram` warns (`LC7005`, decided 2026-11-11), so that the author moves one. The axis of the chain goes
   through the first node of the chain, placed or not, and a node of the chain that the file does not
   place goes on the axis.
 - **When the file changes**, in the live viewer, the nodes glide from their old place to the new one in
@@ -395,9 +396,13 @@ When the function comes from another library, a **band** above the block says wh
   is on one line. Otherwise it is cut at an underscore, which is not drawn, when both parts hold: the cut whose longer
   line is the shortest, the first one on a tie, never one that leaves a line empty (`query_f64` → `query` / `f64`).
   Otherwise the first line goes as far as the last underscore that it holds, or the one right after what it holds,
-  which is not drawn, or as far as it holds,
-  in the middle of a word, and the second line takes the rest, cut to one cell less followed by `…`: `bench_selftest` →
-  `bench` / `self…`, `read_dc_volts` → `read` / `dc_v…`, `elapsed` → `elaps` / `ed`. Here and in the band, a cut falls
+  which is not drawn, and the second line takes the rest; when the first word does not hold, it keeps the first line
+  and the rest goes on the second; each line longer than the block is cut to one cell less followed by `…`:
+  `bench_selftest` → `bench` / `self…`, `read_dc_volts` → `read` / `dc_v…`, `append_csv` → `appe…` / `csv`. A name
+  with no underscore that two lines hold is cut in two halves as even as its graphemes allow, the first the longer, so
+  that no letter is left alone (`elapsed` → `elap` / `sed`, `settle` → `set` / `tle`); a longer one fills the first line
+  and the rest is cut. The room is the width of the block, never a number of letters: a block that the author makes
+  wider (N-15) holds more (decided 2026-11-11). Here and in the band, a cut falls
   between two graphemes, before the one that would pass the limit, and `…` takes one cell. The author does not declare a label: the icon is there for that. The qualified
   name (`visa.open`) is in the tooltip, and in the `<title>` of the node in an exported SVG.
 - **Unnamed terminals**: inputs on the left, outputs on the right by default (3.1, N-15), on the
@@ -477,11 +482,15 @@ of the right side. They are not on the grid of 8: the routing of the wires (2.2)
 **One value = one wire** (spec 5.1). The wire starts at a named output terminal; it splits at
 junction points when the value feeds several inputs. The name of the value is that of the output
 terminal. It is written on the first horizontal segment of the wire, 3 units above it, when the whole name
-(cut at 40 cells, 2.3) fits there with 4 units on each side and covers no node, pill, bubble, wire or other name (a parallel
-wire 8 above runs through a name, which is 12.8 high);
-otherwise it is only in the tooltip and in the `data-wire` of the SVG: it never widens a channel (2.2). A long
-wire repeats its name halfway (N-3), by the same rule: on its longest horizontal past the first segment, centred,
-when that is three times what the name needs *(proposed)*.
+(cut at 40 cells, 2.3) fits there with 4 units on each side and covers no node, pill, bubble, wire, other name, terminal
+of a frame (a register box reaches past the edge) or name of such a terminal (a parallel
+wire 8 above runs through a name, which is 12.8 high); otherwise on the next horizontal segment of that branch where it
+does; otherwise it is only in the tooltip and in the `data-wire` of the SVG: it never widens a channel (2.2). A name is
+never written twice side by side: a wire that leaves a terminal of the frame showing the same name (an input of the
+function, a terminal inside a loop or an arm) has no name at its start, and a branch that ends at one (`err` to the
+output `err`, `s` to the register `next s`) has none on its last segment. A long
+wire repeats its name halfway (N-3), by the same rule: on its longest horizontal past the segment of the first name,
+centred, when that is three times what the name needs *(proposed)*.
 
 ### 4.1 Wire families
 
@@ -492,20 +501,26 @@ when that is three times what the name needs *(proposed)*.
 | Text | `string`, `bytes` | solid, 1.5 | rectangle | `wire.data` |
 | Enumeration | `enum` | solid, 1.5 | triangle | `wire.data` |
 | Struct | `struct` | sheathed: outline of 4, empty core | double circle | `wire.data` |
-| Array | `[T]`, `[T; n]` | that of `T`, with cross-ticks (small perpendicular strokes) every 8; one tick per dimension | that of `T` in brackets | `wire.data` |
+| Array | `[T]`, `[T; n]` | that of `T`, as wide as a struct and 4 at least, with a tick across its width every 8, one per dimension: a cut in a solid wire, a rung in a sheath | that of `T` in brackets | `wire.data` |
 | Session, resource | opaque types, `ref<T>`, `queue<T>` | solid, 2.5 | filled square | `wire.resource` |
-| Error | `error` | solid, 2, chevrons `›` every 24 in the flow direction | chevron | `wire.error` |
+| Error | `error` | a tape of 4, chevrons `›` cut into it every 8 in the flow direction | chevron | `wire.error` |
 | Order | `after:` | thin dotted | hollow chevron | `wire.order` (muted) |
 | Function | function references (Q-14) | dash-dot | `ƒ` | `wire.data` |
 
-*(proposed)*: the core of a sheath is the fill of the frame it runs in, 1.6 wide; a cross-tick is 6 across and 1
-along, every 8, up to three per period for three dimensions and more; the chevrons of an error are 24 apart, the
-first 12 from the start, none on a bend; an order wire is 1 wide, dotted 1.5 and 3; a function wire dashed 6, 3,
-1.5, 3. A value read as an order and as a value is one net: its trunk is drawn with each.
+**Nothing is drawn outside the width of a wire** (retained 2026-11-11): a pattern is cut into the wire, never drawn
+around it, so that two parallel wires 8 apart never touch and a crossing or a junction stays clear. A cut shows the
+ground: the fill of the frame the wire runs in.
+
+*(proposed)*: the core of a sheath is the fill of the frame it runs in, 1.6 wide; a tick of an array is 1 along, across
+the whole width of the wire, every 8, up to three per period for three dimensions and more; the chevrons of an error are
+1.8 long, 2.8 across and 0.9 thick, inside its 4, 8 apart along the wire, none centred within `wire.radius` (6) of a bend
+or an end; an order wire is 1
+wide, dotted 1.5 and 3; a function wire dashed 6, 3, 1.5, 3. A value read as an order and as a value is one net: its
+trunk is drawn with each.
 
 - A terminal is 10 units across, centred on the edge of its node.
 - The chevrons of the error wire show **the direction of the order**: this is the wire you follow
-  to know what happens before what.
+  to know what happens before what. Its tape is the heaviest wire of a drawing, as the error chain is its spine (N-7).
 - The exact type (`f64[V]`, `[StepResult]`) is always in the tooltip of the wire and the terminal.
 - **Order wires** are the text's `after:` (spec 5.3). The command "order in sequence"
   (`order.chain`) chains the selected nodes with order wires, in the order they were selected, and
@@ -901,13 +916,13 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `wire.min_channel` | 16 units | 8 to 64 | 2.2 | The narrowest channel between two columns. |
 | `wire.track_room` | 24 units | 0 to 96 | 4 | Above the highest track: room for the name of its wire. |
 | `wire.radius` | 6 units | 0 to 24 | 2 | The corners of a wire. |
-| `wire.chevron_step` | 24 units | 12 to 96 | 4.1 | Between two chevrons of an error wire. |
+| `wire.chevron_step` | 8 units | 4 to 96 | 4.1 | Between two chevrons cut into an error wire. |
 | `wire.name_above` | 3 units | 0 to 12 | 4 | Between a wire and its name. |
 | `wire.name_side` | 4 units | 0 to 16 | 4 | On each side of the name of a wire. |
 | `wire.width_data` | 1.5 units | 0.5 to 6 | 4.1 | A wire of a number, a boolean, a text or an enum. |
 | `wire.width_struct` | 4 units | 3 to 16 | 4.1 | A wire of a struct, with a core of the fill under it. |
 | `wire.width_session` | 2.5 units | 0.5 to 10 | 4.1 | A wire of a session. |
-| `wire.width_error` | 2 units | 0.5 to 8 | 4.1 | A wire of an error. |
+| `wire.width_error` | 4 units | 4 to 16 | 4.1 | A wire of an error, a tape with its chevrons cut into it. |
 | `wire.width_order` | 1 units | 0.5 to 4 | 4.1 | A wire of order (`after:`). |
 | `wire.width_function` | 1.5 units | 0.5 to 6 | 4.1 | A wire of a reference to a function. |
 | `marks.line_pitch` | 20 units | 10 to 80 | 4.2 | Between the lines of a function that is not drawn. |

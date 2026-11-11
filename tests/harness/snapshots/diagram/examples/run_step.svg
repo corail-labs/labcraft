@@ -37,7 +37,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="384.6" y="219.65" font-size="10" style="fill: var(--pill-text)">.source</text>
 <rect x="621" y="185" width="32.08" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="625" y="195.65" font-size="10" style="fill: var(--pill-text)">.dmm</text>
-<text x="70.1" y="181" font-size="10" style="fill: var(--ink-muted)">bench</text>
 </g>
 <g data-wire="step" data-from="fn.step" data-to="e1.route e2.voltage v.target above.b below.b result.name">
 <path d="M60.08 208 L120.18 208 Q126.18 208 126.18 214 L126.18 218 Q126.18 224 132.18 224 L248.44 224" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
@@ -69,20 +68,19 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="739.6" y="189.65" font-size="10" style="fill: var(--pill-text)">.high</text>
 <rect x="899.18" y="161" width="38.1" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="903.18" y="171.65" font-size="10" style="fill: var(--pill-text)">.name</text>
-<text x="64.08" y="205" font-size="10" style="fill: var(--ink-muted)">step</text>
 <text x="496.64" y="85" font-size="10" style="fill: var(--ink-muted)">step</text>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="e1.err">
-<path d="M106.18 232 L248.44 232" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 235 L120.18 232 L116.18 229 M140.18 235 L144.18 232 L140.18 229 M164.18 235 L168.18 232 L164.18 229 M188.18 235 L192.18 232 L188.18 229 M212.18 235 L216.18 232 L212.18 229 M236.18 235 L240.18 232 L236.18 229" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 232 L248.44 232" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 233.4 L119.08 232 L117.28 230.6 M125.28 233.4 L127.08 232 L125.28 230.6 M133.28 233.4 L135.08 232 L133.28 230.6 M141.28 233.4 L143.08 232 L141.28 230.6 M149.28 233.4 L151.08 232 L149.28 230.6 M157.28 233.4 L159.08 232 L157.28 230.6 M165.28 233.4 L167.08 232 L165.28 230.6 M173.28 233.4 L175.08 232 L173.28 230.6 M181.28 233.4 L183.08 232 L181.28 230.6 M189.28 233.4 L191.08 232 L189.28 230.6 M197.28 233.4 L199.08 232 L197.28 230.6 M205.28 233.4 L207.08 232 L205.28 230.6 M213.28 233.4 L215.08 232 L213.28 230.6 M221.28 233.4 L223.08 232 L221.28 230.6 M229.28 233.4 L231.08 232 L229.28 230.6 M237.28 233.4 L239.08 232 L237.28 230.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e1" data-from="e1.err" data-to="e2.err">
-<path d="M288.44 232 L442.74 232" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M298.44 235 L302.44 232 L298.44 229 M322.44 235 L326.44 232 L322.44 229 M346.44 235 L350.44 232 L346.44 229 M370.44 235 L374.44 232 L370.44 229 M394.44 235 L398.44 232 L394.44 229 M418.44 235 L422.44 232 L418.44 229" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M288.44 232 L442.74 232" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M299.54 233.4 L301.34 232 L299.54 230.6 M307.54 233.4 L309.34 232 L307.54 230.6 M315.54 233.4 L317.34 232 L315.54 230.6 M323.54 233.4 L325.34 232 L323.54 230.6 M331.54 233.4 L333.34 232 L331.54 230.6 M339.54 233.4 L341.34 232 L339.54 230.6 M347.54 233.4 L349.34 232 L347.54 230.6 M355.54 233.4 L357.34 232 L355.54 230.6 M363.54 233.4 L365.34 232 L363.54 230.6 M371.54 233.4 L373.34 232 L371.54 230.6 M379.54 233.4 L381.34 232 L379.54 230.6 M387.54 233.4 L389.34 232 L387.54 230.6 M395.54 233.4 L397.34 232 L395.54 230.6 M403.54 233.4 L405.34 232 L403.54 230.6 M411.54 233.4 L413.34 232 L411.54 230.6 M419.54 233.4 L421.34 232 L419.54 230.6 M427.54 233.4 L429.34 232 L427.54 230.6 M435.54 233.4 L437.34 232 L435.54 230.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e2" data-from="e2.err" data-to="v.err">
-<path d="M482.74 232 L665.08 232" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M492.74 235 L496.74 232 L492.74 229 M516.74 235 L520.74 232 L516.74 229 M540.74 235 L544.74 232 L540.74 229 M564.74 235 L568.74 232 L564.74 229 M588.74 235 L592.74 232 L588.74 229 M612.74 235 L616.74 232 L612.74 229 M636.74 235 L640.74 232 L636.74 229" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M482.74 232 L665.08 232" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M493.84 233.4 L495.64 232 L493.84 230.6 M501.84 233.4 L503.64 232 L501.84 230.6 M509.84 233.4 L511.64 232 L509.84 230.6 M517.84 233.4 L519.64 232 L517.84 230.6 M525.84 233.4 L527.64 232 L525.84 230.6 M533.84 233.4 L535.64 232 L533.84 230.6 M541.84 233.4 L543.64 232 L541.84 230.6 M549.84 233.4 L551.64 232 L549.84 230.6 M557.84 233.4 L559.64 232 L557.84 230.6 M565.84 233.4 L567.64 232 L565.84 230.6 M573.84 233.4 L575.64 232 L573.84 230.6 M581.84 233.4 L583.64 232 L581.84 230.6 M589.84 233.4 L591.64 232 L589.84 230.6 M597.84 233.4 L599.64 232 L597.84 230.6 M605.84 233.4 L607.64 232 L605.84 230.6 M613.84 233.4 L615.64 232 L613.84 230.6 M621.84 233.4 L623.64 232 L621.84 230.6 M629.84 233.4 L631.64 232 L629.84 230.6 M637.84 233.4 L639.64 232 L637.84 230.6 M645.84 233.4 L647.64 232 L645.84 230.6 M653.84 233.4 L655.64 232 L653.84 230.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="v" data-from="v.value" data-to="above.a below.a result.value">
 <path d="M705.08 192 L711.08 192 Q717.08 192 717.08 186 L717.08 124 Q717.08 118 723.08 118 L785.7 118" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -105,8 +103,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M1021.28 168 L1047.88 168" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 1.6"/>
 </g>
 <g data-wire="e3" data-from="v.err" data-to="fn.err">
-<path d="M705.08 232 L1065.94 232" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M715.08 235 L719.08 232 L715.08 229 M739.08 235 L743.08 232 L739.08 229 M763.08 235 L767.08 232 L763.08 229 M787.08 235 L791.08 232 L787.08 229 M811.08 235 L815.08 232 L811.08 229 M835.08 235 L839.08 232 L835.08 229 M859.08 235 L863.08 232 L859.08 229 M883.08 235 L887.08 232 L883.08 229 M907.08 235 L911.08 232 L907.08 229 M931.08 235 L935.08 232 L931.08 229 M955.08 235 L959.08 232 L955.08 229 M979.08 235 L983.08 232 L979.08 229 M1003.08 235 L1007.08 232 L1003.08 229 M1027.08 235 L1031.08 232 L1027.08 229 M1051.08 235 L1055.08 232 L1051.08 229" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M705.08 232 L1065.94 232" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M716.18 233.4 L717.98 232 L716.18 230.6 M724.18 233.4 L725.98 232 L724.18 230.6 M732.18 233.4 L733.98 232 L732.18 230.6 M740.18 233.4 L741.98 232 L740.18 230.6 M748.18 233.4 L749.98 232 L748.18 230.6 M756.18 233.4 L757.98 232 L756.18 230.6 M764.18 233.4 L765.98 232 L764.18 230.6 M772.18 233.4 L773.98 232 L772.18 230.6 M780.18 233.4 L781.98 232 L780.18 230.6 M788.18 233.4 L789.98 232 L788.18 230.6 M796.18 233.4 L797.98 232 L796.18 230.6 M804.18 233.4 L805.98 232 L804.18 230.6 M812.18 233.4 L813.98 232 L812.18 230.6 M820.18 233.4 L821.98 232 L820.18 230.6 M828.18 233.4 L829.98 232 L828.18 230.6 M836.18 233.4 L837.98 232 L836.18 230.6 M844.18 233.4 L845.98 232 L844.18 230.6 M852.18 233.4 L853.98 232 L852.18 230.6 M860.18 233.4 L861.98 232 L860.18 230.6 M868.18 233.4 L869.98 232 L868.18 230.6 M876.18 233.4 L877.98 232 L876.18 230.6 M884.18 233.4 L885.98 232 L884.18 230.6 M892.18 233.4 L893.98 232 L892.18 230.6 M900.18 233.4 L901.98 232 L900.18 230.6 M908.18 233.4 L909.98 232 L908.18 230.6 M916.18 233.4 L917.98 232 L916.18 230.6 M924.18 233.4 L925.98 232 L924.18 230.6 M932.18 233.4 L933.98 232 L932.18 230.6 M940.18 233.4 L941.98 232 L940.18 230.6 M948.18 233.4 L949.98 232 L948.18 230.6 M956.18 233.4 L957.98 232 L956.18 230.6 M964.18 233.4 L965.98 232 L964.18 230.6 M972.18 233.4 L973.98 232 L972.18 230.6 M980.18 233.4 L981.98 232 L980.18 230.6 M988.18 233.4 L989.98 232 L988.18 230.6 M996.18 233.4 L997.98 232 L996.18 230.6 M1004.18 233.4 L1005.98 232 L1004.18 230.6 M1012.18 233.4 L1013.98 232 L1012.18 230.6 M1020.18 233.4 L1021.98 232 L1020.18 230.6 M1028.18 233.4 L1029.98 232 L1028.18 230.6 M1036.18 233.4 L1037.98 232 L1036.18 230.6 M1044.18 233.4 L1045.98 232 L1044.18 230.6 M1052.18 233.4 L1053.98 232 L1052.18 230.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="e1"><title>relays.apply</title>
 <rect x="248.44" y="200" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
@@ -133,8 +131,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="v"><title>settle</title>
 <rect x="665.08" y="184" width="40" height="56" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="670.03" y="209.83" font-size="10" style="fill: var(--node-title)">settl</text>
-<text x="682.07" y="221.47" font-size="10" style="fill: var(--node-title)">e</text>
+<text x="676.05" y="209.83" font-size="10" style="fill: var(--node-title)">set</text>
+<text x="676.05" y="221.47" font-size="10" style="fill: var(--node-title)">tle</text>
 <rect x="661.08" y="188" width="8" height="8" style="fill: var(--wire-resource)"/>
 <circle cx="705.08" cy="192" r="4" style="fill: var(--wire-data)"/>
 <circle cx="665.08" cy="200" r="4" style="fill: var(--wire-data)"/>

@@ -501,6 +501,7 @@ section 3), not a diagnostic.
 | `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, an unwired input included, missing or optional. Gives the counts | section 7.6 |
 | `LC7003` | error | `FOLDER` holds no function to draw, only types | section 7.6 |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written | section 7.6 |
+| `LC7005` | warning | Two nodes that the `layout` section places, in one body, whose blocks overlap. Both stay where the file puts them. Going from the left, then from the top, each node that overlaps one met before it gets one warning, at its entry, naming the nearest above it of those. Touching edges are not an overlap. Judged in the view drawn (the export of `diagram`, or the view of the viewer), whose sizes it uses; a node is compared with the 64 placed nodes nearest above it at most *(proposed)*, so that thousands in one column stay linear | notation 2.1 |
 
 ## 6. `run`
 
@@ -1006,6 +1007,7 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, an unwired input included, missing or optional. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the nodes, or the nodes built when the terminals passed the limit |
 | `LC7003` | error | `FOLDER` holds no function to draw, only types |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written |
+| `LC7005` | warning | Two nodes that the `layout` section places, in one body, whose blocks overlap. Both stay where the file puts them. Going from the left, then from the top, each node that overlaps one met before it gets one warning, at its entry, naming the nearest above it of those. Touching edges are not an overlap. Judged in the view drawn (the export of `diagram`, or the view of the viewer), whose sizes it uses; a node is compared with the 64 placed nodes nearest above it at most *(proposed)*, so that thousands in one column stay linear |
 | `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values |
 | `LC7102` | warning | The trace is that of another function: no values |
 | `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit (7.4): the values up to there, as in a cut trace. Gives the line and the limit |
