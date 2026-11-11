@@ -81,23 +81,25 @@ numbers! {
     grid: "canvas"."grid" = 800, Length, 400..=1600, "2", "The grid of the canvas: positions and sizes round up to it.";
     margin: "canvas"."margin" = 1600, Length, 0..=6400, "2", "Around what an image shows (`docs/cli.md`, 7.2).";
 
-    large: "text"."large" = 1200, Length, 600..=2400, "2.3", "Titles of structures and of standard nodes.";
-    medium: "text"."medium" = 1100, Length, 600..=2400, "2.3", "Labels, pills, names of wires.";
+    large: "text"."large" = 1000, Length, 600..=2400, "2.3", "Titles of structures and of standard nodes, names of constants.";
+    label: "text"."label" = 1000, Length, 600..=2400, "3.2", "The name on a compact block, the label of an oblong.";
+    medium: "text"."medium" = 1000, Length, 600..=2400, "2.3", "Labels, pills, names of wires.";
     small: "text"."small" = 900, Length, 600..=2400, "2.3", "Units of terminals, bands, marks.";
     any_text: "text"."any_text" = 40, Count, 4..=160, "2.3", "A text that no other rule cuts.";
-    label_line: "text"."label_line" = 12, Count, 4..=48, "3.2", "A line of a label, a band.";
+    label_line: "text"."label_line" = 10, Count, 4..=48, "3.2", "A line of the label of an oblong, the pill of a wire.";
     compact_constant: "text"."compact_constant" = 8, Count, 2..=32, "3.2", "An inline constant in compact view.";
 
-    terminal: "node"."terminal" = 1000, Length, 400..=4000, "4.1", "The shape of a terminal.";
-    pill_height: "node"."pill_height" = 1800, Length, 800..=7200, "3.2", "A pill of an inline constant.";
+    terminal: "node"."terminal" = 800, Length, 400..=4000, "4.1", "The shape of a terminal.";
+    pill_height: "node"."pill_height" = 1400, Length, 800..=7200, "3.2", "A pill of an inline constant.";
     band_height: "node"."band_height" = 1200, Length, 600..=4800, "3.2", "The band of a library above a block.";
     padding: "node"."padding" = 400, Length, 0..=1600, "3.2", "Inside a pill, on each side.";
-    label_padding: "node"."label_padding" = 900, Length, 0..=3600, "3.2", "Inside an oblong label, on each side.";
-    square: "node"."square" = 4000, Length, 1600..=16000, "3.2", "A compact block.";
+    label_padding: "node"."label_padding" = 200, Length, 0..=3600, "3.2", "Inside an oblong label, on each side.";
+    square: "node"."square" = 4000, Length, 1600..=16000, "3.2", "The width of a compact block, and its least height.";
+    compact_pitch: "node"."pitch" = 800, Length, 800..=4800, "3.2", "Between two lines of terminals of a compact block.";
     circle: "node"."circle" = 2800, Length, 1200..=11200, "3.2", "The circle of a primitive.";
     icon: "node"."icon" = 2800, Length, 1200..=11200, "3.2", "An icon in a block.";
     outline: "node"."outline" = 100, Length, 0..=400, "3", "The outline of a node.";
-    radius: "node"."radius" = 400, Length, 0..=1600, "3", "The corners of a node.";
+    radius: "node"."radius" = 200, Length, 0..=1600, "3", "The corners of a node.";
 
     standard_header: "standard"."header" = 2400, Length, 1200..=9600, "3.1", "The title of a node in standard view.";
     first_line: "standard"."first_line" = 4000, Length, 1600..=16000, "3.1", "From its top to its first line of terminals.";

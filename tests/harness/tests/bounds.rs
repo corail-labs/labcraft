@@ -614,7 +614,7 @@ fn drawn_wires_over_100_columns() -> Vec<Folder> {
 
 /// The function that the cases call with an error: it passes one through.
 const PASS: &str = "labcraft 1\n\nuse core\n\nfn s(x: f64, err: error = none) -> (y: f64, err: error) {\n    y = core.neg(x)\n    err = err\n}\n";
-const SWAP: &str = "labcraft 1\n\nuse core\n\nfn t(x: f64, z: f64, err: error = none) -> (y: f64, w: f64, err: error) {\n    y = core.neg(x)\n    w = core.abs(z)\n    err = err\n}\n";
+const SWAP: &str = "labcraft 1\n\nuse core\n\nfn t(x: f64, z: f64) -> (y: f64, w: f64) {\n    y = core.neg(x)\n    w = core.abs(z)\n}\n";
 
 /// One error read by every node of a chain: a track below the chain, a drop in every column.
 fn drawn_error_read_everywhere() -> Vec<Folder> {
@@ -635,8 +635,10 @@ fn drawn_calls_of_huge_icons() -> Vec<Folder> {
 }
 
 /// Pairs of values swapped between two calls, all in two columns: crossings in one channel, each a cycle that jogs.
+/// `t` has no `err`: an optional input is drawn (notation 3.2), and four terminals a node keep the whole case under the
+/// bound of terminals, five a node.
 fn drawn_crossings_in_one_channel() -> Vec<Folder> {
-    let lines: String = (0..DRAWN / 2).map(|k| format!("    p{k}, q{k}, e{k} = t(a, b)\n    y{k}, z{k}, f{k} = t(q{k}, p{k})\n")).collect();
+    let lines: String = (0..DRAWN / 2).map(|k| format!("    p{k}, q{k} = t(a, b)\n    y{k}, z{k} = t(q{k}, p{k})\n")).collect();
     let main = format!("labcraft 1\n\nfn f(a: f64, b: f64) -> () {{\n{lines}}}\n");
     vec![vec![("f.lcf".to_owned(), main.into_bytes()), ("t.lcf".to_owned(), SWAP.as_bytes().to_vec())]]
 }
