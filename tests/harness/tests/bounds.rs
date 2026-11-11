@@ -481,8 +481,59 @@ fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'stati
     start.elapsed()
 }
 
-/// `run.start` of a case, on a session of `engine` whose root holds its folder in memory: the time it takes, judged and run,
-/// and the code of its fault.
+/// A workspace in memory whose files written as they go, the trace of a run, go nowhere, as they go to the disk for the
+/// command line: the memory of the process is that of the run, not that of a file of 256 MiB held in memory. Each file
+/// created is still there, empty, so that the trace ends as it does on disk (renamed from its `.partial`).
+struct TraceToTheDisk(Arc<labcraft_engine::Memory>);
+
+impl labcraft_engine::Workspace for TraceToTheDisk {
+    fn canonicalize(&self, path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+        self.0.canonicalize(path)
+    }
+    fn absolute(&self, path: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+        self.0.absolute(path)
+    }
+    fn current(&self) -> Option<std::path::PathBuf> {
+        self.0.current()
+    }
+    fn metadata(&self, path: &std::path::Path) -> std::io::Result<labcraft_engine::workspace::Metadata> {
+        self.0.metadata(path)
+    }
+    fn link_metadata(&self, path: &std::path::Path) -> std::io::Result<labcraft_engine::workspace::Metadata> {
+        self.0.link_metadata(path)
+    }
+    fn read_dir(&self, path: &std::path::Path, each: &mut dyn FnMut(std::io::Result<labcraft_engine::workspace::Entry>)) -> std::io::Result<()> {
+        self.0.read_dir(path, each)
+    }
+    fn read(&self, path: &std::path::Path, max: u64) -> std::io::Result<labcraft_engine::workspace::Read> {
+        self.0.read(path, max)
+    }
+    fn write(&self, path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+        self.0.write(path, bytes)
+    }
+    fn create_folders(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.0.create_folders(path)
+    }
+    fn rename(&self, from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+        self.0.rename(from, to)
+    }
+    fn remove_file(&self, path: &std::path::Path) -> std::io::Result<()> {
+        self.0.remove_file(path)
+    }
+    fn create(&self, path: &std::path::Path) -> std::io::Result<Box<dyn std::io::Write + Send>> {
+        self.0.write(path, b"")?;
+        Ok(Box::new(std::io::sink()))
+    }
+    fn open(&self, path: &std::path::Path, offset: u64) -> std::io::Result<Box<dyn std::io::Read + Send>> {
+        self.0.open(path, offset)
+    }
+    fn try_lock(&self, path: &std::path::Path) -> std::io::Result<Option<labcraft_engine::workspace::Held>> {
+        self.0.try_lock(path)
+    }
+}
+
+/// `run.start` of a case, on a session of `engine` whose root holds its folder in memory, its trace written to nowhere as
+/// to a disk: the time it takes, judged and run, and the code of its fault.
 #[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
 fn run_bound(case: &RunBound) -> (Duration, String) {
     let memory = labcraft_engine::Memory::new();
@@ -498,7 +549,8 @@ fn run_bound(case: &RunBound) -> (Duration, String) {
         clock: Arc::new(labcraft_engine::Still),
         process: 0,
     };
-    let mut session = labcraft_engine::Session::new(Arc::new(memory) as Arc<dyn labcraft_engine::Workspace>, config, false).unwrap();
+    let workspace = TraceToTheDisk(Arc::new(memory));
+    let mut session = labcraft_engine::Session::new(Arc::new(workspace) as Arc<dyn labcraft_engine::Workspace>, config, false).unwrap();
     let mut params: serde_json::Value = serde_json::from_str(case.params).unwrap();
     params["function"] = case.function.into();
     params["folder"] = "bounds".into();
