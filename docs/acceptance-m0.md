@@ -80,17 +80,30 @@ instructions of the M0b MCP server must not point to it (those of the proof of c
 5. No human message after the prompt; at most 20 calls to the MCP tools *(proposed)*.
 6. Five independent sessions; at least four succeed *(proposed)*.
 
-**Recorded, not required:** limits inclusive (two noise-free simulated instruments,
-`dmm-220V-exact` and `dmm-240V-exact`, *proposed*), canonical form, number of tool calls, number of
-`check` failures before the first clean `check`.
+**Recorded, not required:** limits inclusive (PASS at 220 V and 240 V, FAIL at 219.99 V and 240.01 V, against
+noise-free simulated multimeters that the check writes, not shipped with `visa`), canonical form, number of tool calls,
+number of `check` failures before the first clean `check` (a `check` of the folder still empty, `LC0002`, is not one).
 
 **Verification.** By hand for the agent part. In CI, a scripted client, `apps/labcraft-cli/tests/mcp.rs` (step 9a
 of M0b, after `tools/lcf-poc/tests/mcp_smoke.py`), plays a fixed loop over real stdio MCP: write a draft with one
 error, read the diagnostic, fix it, run against both multimeters and against `no-instrument.toml`.
 
+**Agent sessions, run (2026-11-11)** with [`tests/acceptance/agent/scenario-1.sh`](../tests/acceptance/agent/scenario-1.sh)
+and [`scenario-1.py`](../tests/acceptance/agent/scenario-1.py), against `labcraft-cli mcp` of M0b (Claude Code 2.1.322,
+`claude-opus-5-5`): **5 of 5 sessions succeed**, each in 28 to 57 s. A first run of the same sessions, by a draft of the
+script, also gave 5 of 5. Both ran while the script still allowed `Read` beforehand, with a list of refused paths
+that was not complete; neither has a call to `Read`. Over the ten sessions: 9 to 19 calls to the MCP tools; no `check` of a program fails; every
+program is in canonical form, has inclusive limits, closes its session with `#close` and gives FAIL when the measurement
+fails; the verdict is an enumeration in seven, a string in three. No agent used `Read` or a skill: each began with
+`guide_read`, then `project_describe`, `functions_list` and `simulation_describe`, in that order or with the first two
+swapped. Each also ran its program against
+`dmm-timeout` unasked. Five ran it against `dmm-scpi-error` as well, and those five, and only they, read the error queue
+of the instrument (`scpi.check_errors`) and give FAIL there; the other five give PASS there, which the scenario does not
+forbid. The transcripts of both runs are attached to the pull request of this run.
+
 **Proof of concept today.** Points 1 to 4 pass with `examples/check_voltage.lcf` (point 3 with
 `no-instrument.toml`). An agent has written, checked and fixed a new
-program through the MCP server (the demo), but the five-session measure has not been made.
+program through the MCP server of the proof of concept (the demo).
 
 ## Scenario 2: a type error names its node and its wire
 
@@ -127,7 +140,7 @@ fault). Minimum content:
 it at the first attempt, for all the cases but one at most *(proposed)*. By hand, through the CLI,
 before the M0a tag.
 
-**Agent half, run (2026-11-07)** with [`tests/acceptance/agent/run.sh`](../tests/acceptance/agent/run.sh):
+**Agent half, run (2026-11-07)** with [`tests/acceptance/agent/scenario-2.sh`](../tests/acceptance/agent/scenario-2.sh):
 one fresh Claude Code session per case (2.1.319, `claude-opus-5-5`), on a copy of the case outside the
 repository, given the files and the human-readable diagnostic, with the file tools only: it cannot run
 `check`, so its first fix is the one judged. A case is fixed when `check --deny-warnings` then reports

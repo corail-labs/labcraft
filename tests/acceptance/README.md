@@ -27,7 +27,7 @@ Every program is in canonical form and has exactly one error, so a second diagno
 ("one error, one diagnostic"). Each code marked `S2` in `docs/cli.md` has one case. `apps/labcraft-cli/tests/check.rs`
 runs them, through the program, and `tests/harness` with no command line, natively and in WASM.
 
-[`agent/run.sh`](agent/run.sh) plays the agent half of scenario 2 on these cases, by hand: it needs Claude Code
+[`agent/scenario-2.sh`](agent/scenario-2.sh) plays the agent half of scenario 2 on these cases, by hand: it needs Claude Code
 and is not part of the `checks` workflow.
 
 ## `runs/`: the corpus of runs
@@ -60,6 +60,10 @@ threads, through `engine::run_to_end`, the same judging, run and report. It read
 and that its last says the status of the report. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
 through the proof of concept, which has a report of its own: it compares what that report gives, and runs the cases of
 [`poc-later.txt`](runs/poc-later.txt), rules the proof of concept does not follow, only to see that each gives a report.
+
+[`agent/scenario-1.sh`](agent/scenario-1.sh) plays scenario 1 itself, by hand: five Claude Code sessions, each in an
+empty folder with the MCP server and the skills, then [`agent/scenario-1.py`](agent/scenario-1.py) checks what each left
+with the CLI. It needs Claude Code and is not part of the `checks` workflow.
 
 ## `hostile/`: scenario 4
 
