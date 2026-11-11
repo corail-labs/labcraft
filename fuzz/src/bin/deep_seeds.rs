@@ -6,7 +6,9 @@
 //!   `libs/`, `docs/rfc/`, `tests/acceptance/` and `tests/harness/routing-cases/` (the drawings built to break the rules of
 //!   routing), as many as fit in 64 KiB and at most 32, separated by two NUL bytes, so that calls and types cross files;
 //! - for the target `simulation`, simulation files of arrays and of inline tables nested at the limit of the reader of `toml`
-//!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2).
+//!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2);
+//! - for the target `mcp`, a session of the scripted loop of scenario 1 on the project of the target, a run followed and
+//!   aborted, and lines that are not requests, so that the fuzzer starts from requests the server reads.
 //!
 //! Run from `fuzz/`.
 
@@ -43,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(folder.join(format!("simulation-arrays-{depth}.toml")), arrays)?;
         fs::write(folder.join(format!("simulation-tables-{depth}.toml")), tables)?;
     }
+    fs::write(folder.join("mcp-session.jsonl"), MCP_SESSION)?;
     let mut libraries = Vec::new();
     for root in ["../examples", "../libs", "../docs/rfc", "../tests/acceptance", "../tests/harness/routing-cases"] {
         libraries_under(Path::new(root), &mut libraries)?;
@@ -71,6 +74,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+/// One request per line, as a client writes them to the target `mcp`.
+const MCP_SESSION: &str = concat!(
+    r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"seed","version":"1"}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"guide_read","arguments":{}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"functions_list","arguments":{"filter":"d"}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"file_write","arguments":{"path":"half.lcf","text":"labcraft 1\n\nuse core\n\n/// Halves.\nfn half(x: f64) -> (y: f64) {\n    y = core.div(x, 2)\n}\n"}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"library_check","arguments":{}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_start","arguments":{"function":"double","args":{"x":2.5}}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"run_start","arguments":{"function":"count","sim":"<labcraft>/visa/sim/dmm-230V.toml","trace":"inline","wait":"0 s"}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"run_status","arguments":{}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"run_abort","arguments":{}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"diagram_svg","arguments":{"function":"double"}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":8}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"no_such_tool","arguments":{}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"run_start","arguments":{"function":7}}}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":14,"method":"ping"}"#,
+    "\n",
+    r#"{"jsonrpc":"2.0","id":15,"method""#,
+    "\n",
+    "[1, 2]\n",
+    "\n",
+);
 
 /// The programs of each folder under `folder`, in the order of their paths, one list per folder that has some.
 fn libraries_under(folder: &Path, found: &mut Vec<Vec<PathBuf>>) -> std::io::Result<()> {

@@ -390,7 +390,12 @@ fn a_resource_not_found_waits_for_the_timeout_of_the_open() {
     let NativeOutcome::Fail { message, .. } = alone.call("open", vec![Value::string("SIM::DMM0"), Value::Duration(MS), Value::NONE]).0 else {
         panic!()
     };
-    assert!(message.contains("without a simulation file"), "{message}");
+    assert!(message.contains("no instrument is simulated"), "{message}");
+    // `no-instrument.toml` is a simulation file without `[visa]`: the message holds for it too (scenario 1, point 3).
+    let NativeOutcome::Fail { message, .. } = driver.call("open", vec![Value::string("SIM::DMM0"), Value::Duration(MS), Value::NONE]).0 else {
+        panic!()
+    };
+    assert!(message.contains("or its file no `[visa]`"), "{message}");
 }
 
 #[test]

@@ -7,21 +7,35 @@ use std::fmt::Write as _;
 const PLAIN_FROM: i32 = -5;
 const PLAIN_BELOW: i32 = 16;
 
-/// A float as the fewest digits that read back the same, in decimal notation within [`PLAIN_FROM`, `PLAIN_BELOW`) and
-/// with an exponent outside; a float with no fraction keeps `.0`, so that `12.0` is not taken for an integer. `nan`,
+/// A float as the fewest digits that read back the same, in decimal notation from 10^-5 to below 10^16 and with an
+/// exponent outside; a float with no fraction keeps `.0`, so that `12.0` is not taken for an integer. `nan`,
 /// `inf` and `-inf` as the language writes them.
 pub fn f64_text(value: f64) -> String {
-    if value.is_nan() {
-        return "nan".to_owned();
-    }
-    if value.is_infinite() {
-        return if value > 0.0 { "inf" } else { "-inf" }.to_owned();
-    }
-    // `{:e}` gives the shortest digits that read back the same, with one digit before the point.
-    layout(&format!("{:e}", value.abs()), value.is_sign_negative())
+    with_f64_text(value, str::to_owned)
 }
 
-/// As [`f64_text`], with the digits that read back the same `f32`.
+/// [`f64_text`] given to `write`, without a heap: a trace writes millions of floats (the bounds of scenario 4).
+pub fn with_f64_text<R>(value: f64, write: impl FnOnce(&str) -> R) -> R {
+    if value.is_nan() {
+        return write("nan");
+    }
+    if value.is_infinite() {
+        return write(if value > 0.0 { "inf" } else { "-inf" });
+    }
+    let mut buffer = zmij::Buffer::new();
+    let mut written = Text::default();
+    if value.is_sign_negative() {
+        written.push(b'-');
+    }
+    // `zmij` writes the exponent as `e+16`, the language as `e16`.
+    for byte in buffer.format_finite(value.abs()).bytes().filter(|byte| *byte != b'+') {
+        written.push(byte);
+    }
+    write(written.text())
+}
+
+/// As [`f64_text`], with the digits that read back the same `f32`. `zmij` writes an `f32` with an exponent from 10^15, so
+/// its digits are laid out again.
 pub fn f32_text(value: f32) -> String {
     if value.is_nan() {
         return "nan".to_owned();
@@ -29,18 +43,88 @@ pub fn f32_text(value: f32) -> String {
     if value.is_infinite() {
         return if value > 0.0 { "inf" } else { "-inf" }.to_owned();
     }
-    layout(&format!("{:e}", value.abs()), value.is_sign_negative())
+    let (digits, exponent) = digits_of(zmij::Buffer::new().format_finite(value.abs()));
+    layout(digits.text(), exponent, value.is_sign_negative())
 }
 
-fn layout(scientific: &str, negative: bool) -> String {
-    let (mantissa, exponent) = scientific.split_once('e').unwrap_or((scientific, "0"));
-    let exponent: i32 = exponent.parse().unwrap_or(0);
-    let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+/// The digits of the text of a float, from the first that is not 0 to the last that is not 0, and the exponent of the first:
+/// `("15", -7)` for `1.5e-7`, `("12", 1)` for `12.0`, nothing for `0.0`.
+fn digits_of(text: &str) -> (Stack, i32) {
+    let (mantissa, exponent) = text.split_once(['e', 'E']).unwrap_or((text, "0"));
+    let exponent: i32 = exponent.trim_start_matches('+').parse().unwrap_or(0);
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let mut kept = Stack::default();
+    let mut first = None;
+    // Zeros are kept only when a digit that is not 0 follows, so that a run of them never fills the stack.
+    let mut zeros = 0_usize;
+    for (at, digit) in whole.bytes().chain(fraction.bytes()).enumerate() {
+        if digit == b'0' {
+            zeros += usize::from(first.is_some());
+            continue;
+        }
+        first.get_or_insert(at);
+        for _ in 0..zeros {
+            kept.push(b'0');
+        }
+        zeros = 0;
+        kept.push(digit);
+    }
+    let whole = i32::try_from(whole.len()).unwrap_or(0);
+    let first = first.and_then(|at| i32::try_from(at).ok()).unwrap_or(0);
+    (kept, exponent + whole - 1 - first)
+}
+
+/// The digits of a float, kept without a heap: at most 17.
+#[derive(Default)]
+struct Stack {
+    bytes: [u8; 24],
+    len: usize,
+}
+
+impl Stack {
+    fn text(&self) -> &str {
+        self.bytes.get(..self.len).and_then(|bytes| std::str::from_utf8(bytes).ok()).unwrap_or_default()
+    }
+
+    fn push(&mut self, byte: u8) {
+        if let Some(slot) = self.bytes.get_mut(self.len) {
+            *slot = byte;
+            self.len += 1;
+        }
+    }
+}
+
+/// The text of `zmij`, the fewest digits that read back the same float: in decimal notation from 10^-5 to below 10^16, `.0`
+/// on a float with no fraction, and an exponent outside, as the language writes it. Between two texts as short and as near,
+/// the one whose last digit is even, as Python writes them: `1658206780088562.2` for `1658206780088562.25`. `zmij` rather
+/// than `{:e}` and a layout of its digits, which took ten times as long; the test checks the two against each other.
+#[derive(Default)]
+struct Text {
+    bytes: [u8; 32],
+    len: usize,
+}
+
+impl Text {
+    fn push(&mut self, byte: u8) {
+        if let Some(slot) = self.bytes.get_mut(self.len) {
+            *slot = byte;
+            self.len += 1;
+        }
+    }
+
+    fn text(&self) -> &str {
+        self.bytes.get(..self.len).and_then(|bytes| std::str::from_utf8(bytes).ok()).unwrap_or_default()
+    }
+}
+
+/// `digits`, the first not 0 and the last not 0, the first at the place `10^exponent`; none for 0: the rule of
+/// [`PLAIN_FROM`] and [`PLAIN_BELOW`], for an `f32`, and against which the text of `zmij` is checked.
+fn layout(digits: &str, exponent: i32, negative: bool) -> String {
     let mut text = String::with_capacity(digits.len() + 8);
     if negative {
         text.push('-');
     }
-    if digits.bytes().all(|digit| digit == b'0') {
+    if digits.is_empty() {
         text.push_str("0.0");
         return text;
     }
@@ -56,7 +140,7 @@ fn layout(scientific: &str, negative: bool) -> String {
         } else {
             text.push_str("0.");
             text.extend(std::iter::repeat_n('0', usize::try_from(-exponent - 1).unwrap_or(0)));
-            text.push_str(&digits);
+            text.push_str(digits);
         }
     } else {
         let mut chars = digits.chars();
@@ -99,14 +183,20 @@ pub fn duration_text(nanos: i64) -> String {
 
 /// The clock of a run in milliseconds, exactly, from its whole nanoseconds: `0.0`, `1.5`, `0.00025`. A JSON number.
 pub fn millis_text(nanos: u64) -> String {
-    let mut text = format!("{}", nanos / 1_000_000);
+    let mut text = String::new();
+    push_millis(&mut text, nanos);
+    text
+}
+
+/// [`millis_text`] written at the end of `text`, as each line of a trace starts.
+pub fn push_millis(text: &mut String, nanos: u64) {
+    let _ = write!(text, "{}", nanos / 1_000_000);
     let fraction = nanos % 1_000_000;
     if fraction == 0 {
         text.push_str(".0");
     } else {
-        push_fraction(&mut text, fraction, 6);
+        push_fraction(text, fraction, 6);
     }
-    text
 }
 
 /// `.` and the digits of a fraction of `10^width`, without the zeros that end it; nothing for 0.
@@ -114,9 +204,11 @@ fn push_fraction(text: &mut String, fraction: u64, width: usize) {
     if fraction == 0 {
         return;
     }
-    let digits = format!("{fraction:0width$}");
     text.push('.');
-    text.push_str(digits.trim_end_matches('0'));
+    let start = text.len();
+    let _ = write!(text, "{fraction:0width$}");
+    let kept = text.trim_end_matches('0').len().max(start);
+    text.truncate(kept);
 }
 
 const SECONDS_PER_DAY: i64 = 86_400;
@@ -170,6 +262,78 @@ pub fn base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The digits of the standard library, `{:e}`, which `f64_text` gave before `zmij`: another implementation of the
+    /// shortest digits, against which `zmij` is checked.
+    fn reference(scientific: &str, negative: bool) -> String {
+        let (mantissa, exponent) = scientific.split_once('e').unwrap_or((scientific, "0"));
+        let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+        let digits = digits.trim_start_matches('0').trim_end_matches('0');
+        layout(digits, exponent.parse().unwrap_or(0), negative)
+    }
+
+    #[test]
+    fn the_digits_of_zmij_are_those_of_the_standard_library_but_on_a_tie() {
+        // Two million bit patterns of each width, from a fixed xorshift: every exponent, subnormals included. Where the two
+        // differ, the value is a tie between two texts as short: both read back the same, they differ by one in the last
+        // digit, and `zmij` takes the even one, as Python does.
+        let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut ties = 0;
+        let mut compare = |text: String, expected: String, reads_back: &dyn Fn(&str) -> bool| {
+            if text == expected {
+                return;
+            }
+            ties += 1;
+            let (last, other) = (text.trim_end_matches(char::is_alphabetic).bytes().last(), expected.bytes().last());
+            assert_eq!(text.len(), expected.len(), "{text} {expected}");
+            assert!(reads_back(&text) && reads_back(&expected), "{text} {expected}");
+            assert!(last.is_some_and(|digit| (digit - b'0').is_multiple_of(2)), "{text} {expected}");
+            assert_eq!(last.map(|digit| digit.abs_diff(other.unwrap_or(0))), Some(1), "{text} {expected}");
+        };
+        for _ in 0..2_000_000 {
+            let value = f64::from_bits(next());
+            if value.is_finite() {
+                let expected = reference(&format!("{:e}", value.abs()), value.is_sign_negative());
+                compare(f64_text(value), expected, &|text| text.parse::<f64>().ok() == Some(value));
+            }
+            let single = f32::from_bits((next() >> 32) as u32);
+            if single.is_finite() {
+                let expected = reference(&format!("{:e}", single.abs()), single.is_sign_negative());
+                compare(f32_text(single), expected, &|text| text.parse::<f32>().ok() == Some(single));
+            }
+        }
+        // About one value in a thousand, in this sample: 4,428 of 4,000,000.
+        assert!(ties < 40_000, "{ties} ties");
+        // 1658206780088562.25, exactly: a tie between `.2` and `.3`.
+        assert_eq!(f64_text(f64::from_bits(0x4317_9085_685D_83C9)), "1658206780088562.2");
+        // The edges of the decimal notation.
+        for value in [
+            1e21,
+            1e22,
+            1e300,
+            123_456_789.0,
+            1e-7,
+            0.1,
+            100.0,
+            1.0,
+            f64::MIN_POSITIVE,
+            5e-324,
+            f64::MAX,
+            1e-5,
+            9.999_999_999_999_999e-6,
+            9_999_999_999_999_998.0,
+            1e16,
+            1e15,
+        ] {
+            assert_eq!(f64_text(value), reference(&format!("{value:e}"), false), "{value:e}");
+        }
+    }
 
     /// Worked out by hand from the rule: the fewest digits, decimal from 1e-5 to below 1e16, `.0` on a whole float.
     #[test]

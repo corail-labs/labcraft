@@ -24,7 +24,7 @@ use crate::value::Value;
 const PATTERN_TEXT: usize = usize::MAX;
 
 /// What the trace says of one function, found the first time one of its frames begins.
-struct Bound {
+struct Bound<'a> {
     /// The `types` of its `call` events, in the order of the lines: each value its body binds, by name.
     types: Vec<(String, String)>,
     /// The names bound with two types, which `types` leaves out: each event that binds one gives its type.
@@ -33,7 +33,7 @@ struct Bound {
     arms: HashMap<Id, String>,
     /// The loops around each node in a loop, by its statement: the name of each, outermost first, one for each level of
     /// its `iter`, so that two nodes of one name in two loops are told apart (commands.md 8).
-    loops: HashMap<Id, Rc<[String]>>,
+    loops: HashMap<Id, Rc<[&'a str]>>,
 }
 
 /// An [`Observer`] that writes the trace of the run to `sink`. A sink that fails stops the trace, never the run.
@@ -43,7 +43,7 @@ pub struct TraceObserver<'a, W: io::Write> {
     files: &'a [CheckedFile],
     /// The function of each frame, by its number.
     frames: Vec<FunctionId>,
-    functions: HashMap<FunctionId, Bound>,
+    functions: HashMap<FunctionId, Bound<'a>>,
 }
 
 /// What a trace became when its run ended: what the report says of it (commands.md 7, `trace`).
@@ -75,7 +75,7 @@ impl<'a, W: io::Write> TraceObserver<'a, W> {
     }
 
     /// What the trace says of the function, found the first time it is asked for.
-    fn bound(functions: &mut HashMap<FunctionId, Bound>, env: Env<'_>, files: &[CheckedFile], function: FunctionId) {
+    fn bound(functions: &mut HashMap<FunctionId, Bound<'a>>, env: Env<'a>, files: &[CheckedFile], function: FunctionId) {
         functions.entry(function).or_insert_with(|| bound_of(env, files, function));
     }
 
@@ -88,13 +88,12 @@ impl<'a, W: io::Write> TraceObserver<'a, W> {
         let several = self.functions.get(&function).map_or(&empty, |bound| &bound.several);
         let Some(json) = json_of(self.env, function, handles) else { return };
         let names = self.env.names;
-        let mut named: Vec<(&str, TyId, &Value)> = Vec::new();
-        for (port, value) in node.outputs.iter().zip(outputs) {
-            if let Some(name) = port.names.first() {
-                named.push((names.resolve(*name), port.ty, value));
-            }
-        }
-        let typed: Vec<_> = named.iter().map(|(name, ty, value)| (*name, json.typed(value, *ty))).collect();
+        let typed: Vec<(&str, _)> = node
+            .outputs
+            .iter()
+            .zip(outputs)
+            .filter_map(|(port, value)| port.names.first().map(|name| (names.resolve(*name), json.typed(value, port.ty))))
+            .collect();
         let out: Vec<(&str, &dyn WriteValue)> = typed.iter().map(|(name, value)| (*name, value as &dyn WriteValue)).collect();
         let own: Vec<(String, String)> = node
             .outputs
@@ -104,7 +103,7 @@ impl<'a, W: io::Write> TraceObserver<'a, W> {
             })
             .collect();
         let own: Vec<(&str, &str)> = own.iter().map(|(name, ty)| (name.as_str(), ty.as_str())).collect();
-        let loops: Vec<&str> = loops_of(&self.functions, function, node);
+        let loops = loops_of(&self.functions, function, node);
         let node = names.resolve(node.name);
         let event = if skipped {
             Event::Skipped { frame, node, loops: &loops, iter, out: &out, types: &own }
@@ -143,12 +142,12 @@ impl<W: io::Write> Observer for TraceObserver<'_, W> {
         let inputs: Vec<Input<'_>> =
             shown.iter().filter_map(|(name, ty, value)| value.as_ref().map(|value| Input { name, ty, value: value as &dyn WriteValue })).collect();
         let caller_node = caller.as_ref().map(|caller| names.resolve(caller.node.name));
-        let caller_loops: Vec<&str> = match &caller {
+        let caller_loops: Rc<[&str]> = match &caller {
             Some(caller) => {
                 let function = self.function_of(caller.frame);
                 loops_of(&self.functions, function, caller.node)
             }
-            None => Vec::new(),
+            None => Rc::from([]),
         };
         let caller = match (caller, caller_node) {
             (Some(caller), Some(node)) => Some(TraceCaller { frame: caller.frame, node, loops: &caller_loops, iter: caller.iter }),
@@ -169,7 +168,7 @@ impl<W: io::Write> Observer for TraceObserver<'_, W> {
         let function = self.function_of(frame);
         Self::bound(&mut self.functions, self.env, self.files, function);
         let text = origin.and_then(|origin| self.functions.get(&function).and_then(|bound| bound.arms.get(&origin))).map_or("_", String::as_str);
-        let loops: Vec<&str> = loops_of(&self.functions, function, node);
+        let loops = loops_of(&self.functions, function, node);
         let node = self.env.names.resolve(node.name);
         self.writer.event(nanos(at), &Event::Arm { frame, node, loops: &loops, iter, arm: text });
     }
@@ -209,19 +208,15 @@ fn json_of<'b>(env: Env<'b>, function: FunctionId, handles: &'b dyn Describe) ->
 }
 
 /// The loops around a node, by name, outermost first: none when it is in no loop.
-fn loops_of<'b>(functions: &'b HashMap<FunctionId, Bound>, function: FunctionId, node: &Node) -> Vec<&'b str> {
-    functions
-        .get(&function)
-        .and_then(|bound| bound.loops.get(&node.origin))
-        .map(|loops| loops.iter().map(String::as_str).collect())
-        .unwrap_or_default()
+fn loops_of<'b>(functions: &HashMap<FunctionId, Bound<'b>>, function: FunctionId, node: &Node) -> Rc<[&'b str]> {
+    functions.get(&function).and_then(|bound| bound.loops.get(&node.origin)).map_or_else(|| Rc::from([]), Rc::clone)
 }
 
 fn nanos(at: i64) -> u64 {
     u64::try_from(at).unwrap_or(0)
 }
 
-fn bound_of(env: Env<'_>, files: &[CheckedFile], function: FunctionId) -> Bound {
+fn bound_of<'b>(env: Env<'b>, files: &[CheckedFile], function: FunctionId) -> Bound<'b> {
     let mut bound = Bound { types: Vec::new(), several: HashSet::new(), arms: HashMap::new(), loops: HashMap::new() };
     let Some(declared) = env.program.functions.get(function.0 as usize) else { return bound };
     let Body::Region(region) = &declared.body else { return bound };
@@ -239,7 +234,7 @@ fn bound_of(env: Env<'_>, files: &[CheckedFile], function: FunctionId) -> Bound 
     };
     // In the order of the lines: a structure, then the lines of its bodies, then what follows it.
     // Each body with the loops around it.
-    let mut pending: Vec<(std::slice::Iter<'_, Node>, Rc<[String]>)> = vec![(region.nodes.iter(), Rc::from([]))];
+    let mut pending: Vec<(std::slice::Iter<'_, Node>, Rc<[&'b str]>)> = vec![(region.nodes.iter(), Rc::from([]))];
     let enter = |region: &Region, bound: &mut Bound, bind: &mut dyn FnMut(Name, TyId, &mut Bound)| {
         for value in &region.args {
             for name in value.names.iter() {
@@ -265,7 +260,7 @@ fn bound_of(env: Env<'_>, files: &[CheckedFile], function: FunctionId) -> Bound 
         match &node.kind {
             NodeKind::Loop { region, .. } | NodeKind::For { region, .. } => {
                 enter(region, &mut bound, &mut bind);
-                let inner: Rc<[String]> = around.iter().cloned().chain(std::iter::once(env.names.resolve(node.name).to_owned())).collect();
+                let inner: Rc<[&'b str]> = around.iter().copied().chain(std::iter::once(env.names.resolve(node.name))).collect();
                 pending.push((region.nodes.iter(), inner));
             }
             NodeKind::Match { arms } | NodeKind::Handle { arms } => {

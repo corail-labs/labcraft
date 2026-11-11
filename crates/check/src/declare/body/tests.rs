@@ -144,9 +144,9 @@ fn after_takes_values_and_labels() {
     assert_eq!(in_body("y, _ = g(1, after: p, after: p)"), ["LC2105"]);
     assert_eq!(in_body("y, _ = g(1, after: Reading.Overload)"), ["LC2001"]);
     assert_eq!(
-        codes(&[("a.lcf", "fn a( {"), ("f.lcf", "fn f() -> () {\n    h(after: nowhere)\n}")]),
-        ["LC1001", "LC2001"],
-        "a value comes from this file"
+        codes(&[("h.lcf", "fn h( {"), ("f.lcf", "fn f() -> () {\n    h(after: nowhere)\n}")]),
+        ["LC2001", "LC1001"],
+        "a value comes from this file; in the order of the files"
     );
 }
 
@@ -440,13 +440,35 @@ fn a_function_defined_twice_binds_to_the_first_one() {
 
 #[test]
 fn a_bad_file_hides_what_it_may_declare() {
+    // A file declares what its name says (R-22): `a.lcf` the function `a`, `T.lct` the type `T`.
     let broken = ("a.lcf", "fn a( {");
     assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = a(1)\n}")]), ["LC1001"]);
     assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = a\n}")]), ["LC1001"], "it may be a function reference");
-    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = T.A\n}")]), ["LC1001"]);
-    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = T { a: 1 }\n}")]), ["LC1001"]);
-    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = 1\n    q = T.g(1)\n}")]), ["LC1001"], "`T` may be a type of that file");
-    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = nowhere(1, c)\n}")]), ["LC1001"]);
+    let broken_type = ("T.lct", "type T =");
+    assert_eq!(codes(&[broken_type, ("f.lcf", "fn f() -> (r: i32) {\n    r = T.A\n}")]), ["LC1002"]);
+    assert_eq!(codes(&[broken_type, ("f.lcf", "fn f() -> (r: i32) {\n    r = T { a: 1 }\n}")]), ["LC1002"]);
+    assert_eq!(
+        codes(&[broken_type, ("f.lcf", "fn f() -> (r: i32) {\n    r = 1\n    q = T.g(1)\n}")]),
+        ["LC1002"],
+        "`T` may be the type of that file"
+    );
+    let nowhere = ("nowhere.lcf", "fn nowhere( {");
+    // `c` is no value, and `nowhere.lcf` may declare `nowhere` only: the arguments of a call left unbound still read their
+    // names. The diagnostics come in the order of the files.
+    assert_eq!(codes(&[nowhere, ("f.lcf", "fn f() -> (r: i32) {\n    r = nowhere(1, c)\n}")]), ["LC2001", "LC1001"]);
+}
+
+#[test]
+fn a_bad_file_hides_nothing_else() {
+    // Scenario 4, point 2: `a.lcf` may declare `a`, and nothing else; worked out from cli.md, section 5.
+    let broken = ("a.lcf", "fn a( {");
+    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = b(1)\n}")]), ["LC1001", "LC2002"], "an unknown function");
+    assert_eq!(codes(&[broken, ("f.lcf", "fn f() -> (r: i32) {\n    r = T.A\n}")]), ["LC1001", "LC2001"], "`T` is no value, library or type");
+    assert_eq!(
+        codes(&[broken, ("f.lcf", "use core\n\nfn f() -> (r: i32) {\n    r = scpi.query(1)\n}")]),
+        ["LC1001", "LC2005"],
+        "a file that does not read adds no `use` to another"
+    );
 }
 
 #[test]

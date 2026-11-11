@@ -403,10 +403,15 @@ fn a_type_that_does_not_exist() {
 
 #[test]
 fn a_type_that_may_be_in_a_broken_file_says_nothing() {
-    assert_eq!(codes(&[("bad.lcf", "fn ("), ("f.lcf", "fn f(a: Nowhere) -> () {}")]), ["LC1001"]);
+    // A file declares what its name says (R-22): only `Nowhere.lct` may declare `Nowhere`.
+    assert_eq!(codes(&[("Nowhere.lct", "type Nowhere ="), ("f.lcf", "fn f(a: Nowhere) -> () {}")]), ["LC1002"]);
+    assert_eq!(codes(&[("bad.lcf", "fn ("), ("f.lcf", "fn f(a: Nowhere) -> () {}")]), ["LC1001", "LC2003"], "`bad.lcf` declares `bad`");
+    let mut root = source("", &[("f.lcf", "use lib\n\nfn f(a: lib.Nowhere) -> () {}")]);
+    root.sub_libraries.push(source("lib", &[("lib/Nowhere.lct", "type Nowhere =")]));
+    assert_eq!(codes_of(root), ["LC1002"]);
     let mut root = source("", &[("f.lcf", "use lib\n\nfn f(a: lib.Nowhere) -> () {}")]);
     root.sub_libraries.push(source("lib", &[("lib/T.lct", "type T =")]));
-    assert_eq!(codes_of(root), ["LC1002"]);
+    assert_eq!(codes_of(root), ["LC2003", "LC1002"], "`T.lct` declares `T`; in the order of the libraries");
 }
 
 #[test]

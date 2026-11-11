@@ -1,0 +1,8 @@
+[[visa.instrument]]
+resource = "SIM::DMM0"
+
+[visa.instrument.measure]
+"MEAS:VOLT:DC?" = "voltage"
+
+[visa.instrument.quantity.voltage]
+value = nan

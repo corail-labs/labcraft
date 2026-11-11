@@ -1,0 +1,24 @@
+{
+  "how": "`lowest` names no input of `check_voltage`, whose inputs are `resource`, `low`, `high` and `err` (cli.md 6.6, `LC8102`): the run is refused (scenario 4, family Arguments).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC8102",
+        "severity": "error"
+      }
+    ]
+  }
+}

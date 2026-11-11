@@ -159,6 +159,19 @@ impl<'a> ValueWriter<'a> {
         self.written = Written { cut: true, spent: true };
     }
 
+    /// A value of one piece of text, which `write` writes in place: taken back for a cut when it does not fit, as
+    /// [`ValueWriter::scalar`] judges it. No text is made apart, since a trace writes millions of numbers.
+    fn scalar_in_place(&mut self, write: impl FnOnce(&mut String)) {
+        let Some(prefix) = self.position() else { return };
+        let mark = self.out.len();
+        self.out.push_str(prefix);
+        write(self.out);
+        if !self.fits(0) {
+            self.out.truncate(mark);
+            self.spend(prefix);
+        }
+    }
+
     /// A value of one piece of text.
     fn scalar(&mut self, text: &str) {
         let Some(prefix) = self.position() else { return };
@@ -278,18 +291,20 @@ impl<'a> ValueWriter<'a> {
 
     /// An integer, with the unit of its type if it has one: `12`, `"9007199254740993"`, `"-3 mV"`.
     pub fn i64(&mut self, value: i64, unit: Option<&str>) {
-        let digits = value.to_string();
-        self.number(&digits, number::i64_is_exact(value), unit);
+        self.number_with(number::i64_is_exact(value), unit, |out| {
+            let _ = write!(out, "{value}");
+        });
     }
 
     pub fn u64(&mut self, value: u64, unit: Option<&str>) {
-        let digits = value.to_string();
-        self.number(&digits, number::u64_is_exact(value), unit);
+        self.number_with(number::u64_is_exact(value), unit, |out| {
+            let _ = write!(out, "{value}");
+        });
     }
 
     /// An `f64`, with the unit of its type if it has one: `0.5`, `"nan"`, `"230.03 V"`.
     pub fn f64(&mut self, value: f64, unit: Option<&str>) {
-        self.number(&number::f64_text(value), value.is_finite(), unit);
+        number::with_f64_text(value, |digits| self.number(digits, value.is_finite(), unit));
     }
 
     pub fn f32(&mut self, value: f32, unit: Option<&str>) {
@@ -299,11 +314,26 @@ impl<'a> ValueWriter<'a> {
     /// A number as JSON gives it when it reads back the same and has no unit; otherwise a string, as a constant of the
     /// language.
     fn number(&mut self, digits: &str, plain: bool, unit: Option<&str>) {
-        match unit {
-            None if plain => self.scalar(digits),
-            None => self.scalar(&quoted(digits)),
-            Some(unit) => self.scalar(&quoted(&format!("{digits} {unit}"))),
-        }
+        self.number_with(plain, unit, |out| out.push_str(digits));
+    }
+
+    /// [`ValueWriter::number`], its digits written by `digits`, all in place: `12`, `"9007199254740993"`, `"230.03 V"`.
+    fn number_with(&mut self, plain: bool, unit: Option<&str>, digits: impl FnOnce(&mut String)) {
+        self.scalar_in_place(|out| match unit {
+            None if plain => digits(out),
+            None => {
+                out.push('"');
+                push_escaped(out, digits);
+                out.push('"');
+            }
+            Some(unit) => {
+                out.push('"');
+                push_escaped(out, digits);
+                out.push(' ');
+                push_escaped(out, |out| out.push_str(unit));
+                out.push('"');
+            }
+        });
     }
 
     /// A `c64` or a `c128`, as `{"re":…,"im":…}`; `f32` says which, for the digits of each part.
@@ -465,6 +495,21 @@ pub fn quoted(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     push_string(&mut out, text);
     out
+}
+
+/// Appends what `write` writes, escaped as in a JSON string, without the quotes: digits and units have nothing to escape,
+/// and are then left as written.
+fn push_escaped(out: &mut String, write: impl FnOnce(&mut String)) {
+    let start = out.len();
+    write(out);
+    let plain = out.get(start..).is_none_or(|text| !text.chars().any(|c| matches!(c, '"' | '\\') || u32::from(c) < 0x20));
+    if !plain {
+        let text = out.split_off(start);
+        push_string(out, &text);
+        // Without the quotes that `push_string` adds.
+        out.remove(start);
+        out.pop();
+    }
 }
 
 /// Appends a JSON string of this text: `"`, `\` and the control characters escaped, the rest as it is.

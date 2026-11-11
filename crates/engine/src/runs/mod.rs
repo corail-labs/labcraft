@@ -33,7 +33,9 @@ use crate::error::CommandError;
 use crate::params::{self, Params};
 use crate::registry;
 use crate::session::Session;
-use prepare::{Ready, given, prepare, wait_param, with_line};
+#[cfg(not(target_arch = "wasm32"))]
+use prepare::with_line;
+use prepare::{Ready, given, prepare, wait_param};
 use task::{Alone, Finished, Request, Steer, execute};
 
 /// The reports a session keeps *(proposed)*: an older id is `run.unknown`.

@@ -362,6 +362,12 @@ fn catalog() -> Vec<Command> {
                         "max_memory",
                         integer("The logical size of the values held at once, in bytes.", 1_048_576, 9_223_372_036_854_775_807, Some(1_073_741_824)),
                     ),
+                    (
+                        "max_made",
+                        limit(
+                            "The bytes of the values the nodes make, in all; default 2 GiB in deterministic mode, none in real time; `null` removes it.",
+                        ),
+                    ),
                     ("max_real_time", string("Deterministic mode: the real time the run may take; default `10 min`.")),
                     ("deny_warnings", boolean("Warnings of the folder refuse the run.", false)),
                     (

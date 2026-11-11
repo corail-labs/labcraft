@@ -925,3 +925,17 @@ fn args_and_set_hold_at_most_the_bytes_of_a_file_of_args() {
     let refused = session.execute("run.start", &set).unwrap_err();
     assert_eq!((refused.code, refused.parameter.as_deref()), ("params.invalid", Some("set")), "{}", refused.message);
 }
+
+/// commands.md 5: the fields of a struct in their declared order, and a report in the order of section 7, through
+/// `engine` as through the runtime (decision of the owner, 2026-11-11): `zed` before `alpha`, which a sorted map would turn.
+#[test]
+fn a_report_keeps_the_order_of_its_keys_and_of_the_fields_of_a_struct() {
+    let memory = project();
+    memory.put("/p/Pair.lct", "labcraft 1\n\ntype Pair = struct {\n    zed: f64,\n    alpha: f64,\n}\n");
+    memory.put("/p/pair.lcf", "labcraft 1\n\n/// A pair.\nfn pair() -> (p: Pair) {\n    p = Pair { zed: 1.0, alpha: 2.0 }\n}\n");
+    let mut session = session(&memory);
+    let report = ok(&mut session, "run.start", json!({ "function": "pair", "trace": "none" }));
+    let text = serde_json::to_string(&report).unwrap();
+    assert!(text.contains(r#""value":{"zed":1.0,"alpha":2.0}"#), "{text}");
+    assert!(text.starts_with(r#"{"schema":"labcraft-run/1","status":"ok","run":"#), "{text}");
+}

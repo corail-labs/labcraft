@@ -658,7 +658,9 @@ line = string.format("U = {u:.3 mV}, I = {i:.2}", u: voltage, i: current)
   constant on a field keeps its own type (`a: 255` is an `i32`, so `{a:x}` is accepted).
 - **The text of a value** with no format is the one the reports of a run give it, so that what a run shows and what a program
   writes agree: a number with the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16
-  and with an exponent outside, a float with no fraction keeping `.0` (`12.0`, `1.5e-7`), then a space and its unit
+  and with an exponent outside, between two texts as short and as near the one whose last digit is even
+  (`1658206780088562.2` for `1658206780088562.25`, as Python writes it), a float with no fraction keeping
+  `.0` (`12.0`, `1.5e-7`), then a space and its unit
   (`230.0712173 V`); a complex number as `1.0 - 2.0i`; `true`, `false`; a `duration` in seconds (`0.1 s`); a `timestamp` in
   RFC 3339, in UTC, to the nanosecond; `bytes` in hexadecimal (`0aff03`); a variant as `Verdict.Pass` or
   `Reading.Value(230.0 V)`; a struct as `Limits { low: 220.0 V, high: 240.0 V }`, and one written in place without its name;
@@ -1015,9 +1017,10 @@ requested from outside; a fault, found by the runtime.
 **Limits.** The depth of calls is always limited, to protect the stack: a function may call itself
 (with a warning at edit time), and a run that goes too deep ends with a fault. So is the memory that
 the values of a run hold at once: a run that would pass it ends with a fault, rather than the process
-running out of memory, in real time too. By default, the number of iterations of a `loop` and of nodes
-executed is limited only in deterministic mode (a `for` ends with its array): there it protects a test or
-an agent from a program that never ends, including one whose simulated clock no longer advances. For the
+running out of memory, in real time too. By default, the number of iterations of a `loop`, of nodes
+executed and of the bytes of the values the nodes make, in all, is limited only in deterministic mode (a `for` ends with
+its array): there it protects a test or an agent from a program that never ends, including one whose simulated clock no
+longer advances, or that copies a large array at each iteration. A value changed in place makes nothing (D-11). For the
 same reason a deterministic run is limited in real time, since a computation does not advance the
 simulated clock; that limit alone depends on the speed of the machine. In real time a loop runs as long as
 the program says, for days on a bench, unless the run is given a limit. The clock of a run has an end, far

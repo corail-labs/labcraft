@@ -1,0 +1,23 @@
+{
+  "how": "`array.repeat(0.0, 1000)` makes an array of logical size 16 + 1,000 x (16 + 8) = 24,016 bytes (cli.md 6.2). The array is read twice in each iteration, and in the canonical order of the nodes (spec 5.2, 8), `array.set` before `array.len`, so `array.set` does not take the last read and works on a copy, which makes 24,016 bytes more (D-11); `array.len` gives an `i32`, which counts nothing. After the array and three copies the run has made 96,064 bytes; the fourth copy, in iteration 3 from 0, makes 120,080, past the limit of 100,000: the fault `LC8009` at the node `b`, with no output.",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8009",
+    "function": "copies",
+    "node": "b",
+    "file": "tests/acceptance/runs/fault-LC8009-made/copies.lcf",
+    "loops": [
+      {
+        "function": "copies",
+        "node": "a",
+        "iteration": 3
+      }
+    ]
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

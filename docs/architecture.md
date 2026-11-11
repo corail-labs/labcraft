@@ -334,7 +334,7 @@ character boundary, and these crates hold little numerical code.
 | `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
 | `codes` | `Code` equals the tables of cli.md, section 5; from M0b, the codes of each native library equal the table of its document (section 10.6) |
 | `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
-| `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8). In release, each case in a process of its own; the memory on Linux only |
+| `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8); `run.start` of programs built to cost the most up to a default limit of the run, 2 s and 512 MB, 4 s when the trace reaches its bound, `--max-memory` and 30 % when the run fills its memory (10.11). In release, each case in a process of its own; the memory on Linux only |
 | `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
 | `spec` | The Python checks of the spec, `examples/`, `docs/rfc/` and `libs/`: `lcf_view.py`, `check` and `fmt --check` of the proof of concept, and its tests. Runs them all, prints `ok` or `FAIL` for each and the output of those that fail; the interpreter is `python`, then `python3`, and a missing interpreter or requirement is an error that says what to install. Not part of `ci`, which needs no Python: the workflow `checks` runs it |
@@ -374,7 +374,7 @@ exception (verified at step 1).
 | Every canonical file written back byte for byte; `fmt(fmt(f)) = fmt(f)`; model unchanged | `format` tests, `tests/harness` | 5 |
 | Exit codes, paths, walking, JSON, atomic writes, the generated families | `apps/labcraft-cli/tests` | 4 |
 | `examples/`, `docs/rfc/`, `libs/` clean under `check` and `fmt --check` | `apps/labcraft-cli/tests` | |
-| Time and memory of `fmt`, `check` and the drawing of `diagram` (11.6), in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
+| Time and memory of `fmt`, `check`, the drawing of `diagram` (11.6) and runs (10.11), in release: `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4 |
 | Fuzzing the parser, `check`, the round trip and `diagram` | `fuzz/` | 4 |
 
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the
@@ -413,7 +413,7 @@ sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 8 of 10.11 implemented, and the server of step 9 (9a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: draft; steps 0 to 9 of 10.11 implemented, and the bounds of step 10 (10a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -1023,7 +1023,11 @@ Each step of work ends with something testable:
    `labcraft-debugging` and `labcraft-testing`; no example that measures, compares to limits and gives a verdict; the
    whole files of a skill checked by `check` with no warning, besides the Python checks of the spec; installed by
    copying, as `skills/README.md` says).
-10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.
+10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag. In parts (decisions of the owner,
+   2026-11-11): **10a**, the bounds: the families Instruments and Arguments of scenario 4 in the corpus of runs, runs
+   built to cost the most in `xtask bounds`, the limit of the bytes made (`--max-made`, `LC8009`), a faster writer of the
+   trace, the fuzz targets `run` and `mcp`, point 3 of scenario 5 with M0b (`tests/harness`, runs of programs written in
+   another order), *done*; **10b**, scenario 1 by hand; the long fuzzing of the targets of M0b; **10c**, the tag.
 
 Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).
 

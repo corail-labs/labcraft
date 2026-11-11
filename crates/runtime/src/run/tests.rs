@@ -448,6 +448,37 @@ fn the_memory_of_a_run_is_bounded() {
 }
 
 #[test]
+fn the_bytes_made_count_copies_and_not_changes_in_place() {
+    // An array of 1,000 `f64` is 16 + 1,000 x 24 = 24,016 bytes (cli.md 6.2). Read only by `array.set`, it changes in place
+    // and makes nothing: the loop reaches its limit of 50 iterations. Read by `array.len` too, each iteration copies it:
+    // the array and four copies make 120,080 bytes, past 100,000, in iteration 3 from 0.
+    let in_place = "labcraft 1\n\nuse array\n\nfn f() -> (a: [f64], err: error) {\n    big, e = array.repeat(0.0, 1000)\n    a, err = loop carry xs = big, carry g = e {\n        b, h = array.set(xs, 0, 1.0, err: g)\n        next g = h\n        next xs = b\n        until false\n    }\n}\n";
+    let copies = "labcraft 1\n\nuse array\n\nfn f() -> (a: [f64], err: error, k: i32) {\n    big, e = array.repeat(0.0, 1000)\n    a, err, k = loop carry xs = big, carry g = e, carry n = 0 {\n        b, h = array.set(xs, 0, 1.0, err: g)\n        l = array.len(xs)\n        next g = h\n        next n = l\n        next xs = b\n        until false\n    }\n}\n";
+    let settings = Settings { max_made: Some(100_000), max_iterations: Some(50), ..Settings::default() };
+    let ran = run_with(in_place, vec![], settings.clone(), &Arc::default());
+    assert_eq!(ran.fault(), FaultCode::Iterations);
+    let ran = run_with(copies, vec![], settings.clone(), &Arc::default());
+    assert_eq!(ran.fault(), FaultCode::Made);
+    let message = format!("{:?}", ran.end);
+    assert!(message.contains("made 120080 bytes of values, past its limit of 100000"), "{message}");
+    // No limit, as in real time by default: the loop reaches its limit of iterations.
+    let ran = run_with(copies, vec![], Settings { max_made: None, ..settings.clone() }, &Arc::default());
+    assert_eq!(ran.fault(), FaultCode::Iterations);
+    // A part read out of a value is no copy: the value still holds it. The row and the array of two rows make 24,016 and
+    // 16 + 2 x 24,016 = 48,048 bytes, 72,064 in all, under 100,000; each `array.get` makes nothing, so the loop reaches its
+    // limit of 50 iterations.
+    let parts = "labcraft 1\n\nuse array\n\nfn f() -> (k: i32) {\n    row, e = array.repeat(0.0, 1000)\n    rows, g = array.repeat(row, 2, err: e)\n    k = loop carry n = 0 {\n        x, h = array.get(rows, 0, err: g)\n        l = array.len(x)\n        next n = l\n        until false\n    }\n}\n";
+    let ran = run_with(parts, vec![], settings.clone(), &Arc::default());
+    assert_eq!(ran.fault(), FaultCode::Iterations);
+    // A value built again around parts it shares counts its own level and the place of each part, not the parts: each
+    // `array.concat` of two rows that `row` still holds makes 16 + 2 x 16 = 48 bytes, not 16 + 2 x 24,016. With the row,
+    // 24,016 + 50 x 48 = 26,416 bytes, under 100,000: the loop reaches its limit of 50 iterations.
+    let shared = "labcraft 1\n\nuse array\n\nfn f() -> (k: i32) {\n    row, e = array.repeat(0.0, 1000)\n    k = loop carry n = 0 {\n        m = array.concat([row], [row])\n        l = array.len(m)\n        next n = l\n        until false\n    }\n}\n";
+    let ran = run_with(shared, vec![], settings, &Arc::default());
+    assert_eq!(ran.fault(), FaultCode::Iterations);
+}
+
+#[test]
 fn a_for_gives_its_carries_and_collects_in_the_order_of_its_iterations() {
     let source = "labcraft 1\n\nuse core\n\nfn f(xs: [f64]) -> (total: f64, doubled: [f64], indices: [i32]) {\n    total, doubled, indices = for x in xs, i in 0..10, carry acc = 0.0 {\n        d = core.mul(x, 2.0)\n        next acc = core.add(acc, x)\n        collect d\n        collect i\n    }\n}\n";
     let ran = ran(source, vec![Value::array(vec![Value::F64(1.0), Value::F64(2.5), Value::F64(4.0)])]);

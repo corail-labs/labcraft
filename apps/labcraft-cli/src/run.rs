@@ -71,7 +71,7 @@ fn params_of(options: &RunOptions) -> Json {
             object.insert(name.to_owned(), json!(value));
         }
     }
-    for (name, limit) in [("max_iterations", options.max_iterations), ("max_nodes", options.max_nodes)] {
+    for (name, limit) in [("max_iterations", options.max_iterations), ("max_nodes", options.max_nodes), ("max_made", options.max_made)] {
         match limit {
             Some(Limit::Count(count)) => object.insert(name.to_owned(), json!(count)),
             Some(Limit::None) => object.insert(name.to_owned(), Json::Null),

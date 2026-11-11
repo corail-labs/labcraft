@@ -23,6 +23,8 @@ pub enum FaultCode {
     RealTime,
     /// `LC8007`: the clock of the run would pass its end, 2^62 ns.
     Clock,
+    /// `LC8009`: the bytes of the values the nodes made, in all, pass the limit of the run (`--max-made`).
+    Made,
 }
 
 impl FaultCode {
@@ -36,6 +38,7 @@ impl FaultCode {
             FaultCode::RealTime => "LC8006",
             FaultCode::Clock => "LC8007",
             FaultCode::OutOfRange => "LC8008",
+            FaultCode::Made => "LC8009",
         }
     }
 }

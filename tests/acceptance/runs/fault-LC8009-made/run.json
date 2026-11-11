@@ -1,0 +1,5 @@
+{
+  "function": "copies",
+  "folder": "tests/acceptance/runs/fault-LC8009-made",
+  "max_made": 100000
+}

@@ -1,0 +1,24 @@
+{
+  "how": "`low` is an `f64[V]`, given the JSON `true`, which does not read as its type (cli.md 6.6, `LC8104`): the run is refused before any node runs (scenario 4, family Arguments).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC8104",
+        "severity": "error"
+      }
+    ]
+  }
+}

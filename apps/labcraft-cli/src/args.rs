@@ -261,7 +261,7 @@ pub enum TraceTo {
     None,
 }
 
-/// A `--max-` limit given: a number, or `none`, which removes the default (`--max-iterations`, `--max-nodes`).
+/// A `--max-` limit given: a number, or `none`, which removes the default (`--max-iterations`, `--max-nodes`, `--max-made`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Limit {
     Count(u64),
@@ -291,13 +291,14 @@ pub struct RunOptions {
     pub max_real_time: Option<String>,
     pub max_iterations: Option<Limit>,
     pub max_nodes: Option<Limit>,
+    pub max_made: Option<Limit>,
     pub max_call_depth: Option<u64>,
     pub max_memory: Option<u64>,
     pub trace: TraceTo,
 }
 
 /// The options of `run` that take one value, which it refuses twice (`docs/cli.md`, 6.2).
-const RUN_ONCE: [&str; 13] = [
+const RUN_ONCE: [&str; 14] = [
     "--sim",
     "--args",
     "--schedule-seed",
@@ -306,6 +307,7 @@ const RUN_ONCE: [&str; 13] = [
     "--max-nodes",
     "--max-call-depth",
     "--max-memory",
+    "--max-made",
     "--max-real-time",
     "--trace",
     "--max-report",
@@ -413,6 +415,7 @@ pub fn parse_run(args: &[OsString]) -> Result<RunOptions, String> {
         max_real_time: None,
         max_iterations: None,
         max_nodes: None,
+        max_made: None,
         max_call_depth: None,
         max_memory: None,
         trace: TraceTo::Folder,
@@ -459,10 +462,14 @@ pub fn parse_run(args: &[OsString]) -> Result<RunOptions, String> {
                 let slot = if option == "--timeout" { &mut options.timeout } else { &mut options.max_real_time };
                 *slot = Some(text.to_owned());
             }
-            "--max-iterations" | "--max-nodes" => {
+            "--max-iterations" | "--max-nodes" | "--max-made" => {
                 let text = text_of(option, rest.next())?;
                 let limit = if text == "none" { Limit::None } else { Limit::Count(count(option, text, 1, MAX_COUNT)?) };
-                let slot = if option == "--max-iterations" { &mut options.max_iterations } else { &mut options.max_nodes };
+                let slot = match option {
+                    "--max-iterations" => &mut options.max_iterations,
+                    "--max-nodes" => &mut options.max_nodes,
+                    _ => &mut options.max_made,
+                };
                 *slot = Some(limit);
             }
             "--max-call-depth" => options.max_call_depth = Some(count(option, text_of(option, rest.next())?, 1, MAX_CALL_DEPTH)?),

@@ -4,5 +4,7 @@ fault-LC8002-nodes the proof of concept has no limit of nodes run (--max-nodes)
 fault-LC8003-depth the proof of concept has no limit of call depth (--max-call-depth), only that of Python
 fault-LC8005-memory the proof of concept counts no logical size (--max-memory)
 fault-LC8008-overflow the proof of concept computes integers without bounds: an `i32` does not overflow there
+fault-LC8009-made the proof of concept counts no bytes made (--max-made)
 refused-a-type-error the proof of concept has no static type checking: the error is found as the run goes
+refused-an-argument-out-of-range the proof of concept reads `1e999` as an infinite float, in range
 s3-6-a-limit-of-iterations the fault of the proof of concept does not give the iteration of the loop itself

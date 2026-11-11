@@ -1,0 +1,8 @@
+{
+  "function": "check_voltage",
+  "folder": "examples",
+  "sim": "tests/acceptance/runs/refused-a-resource-defined-twice/dmm.toml",
+  "args": {
+    "resource": "SIM::DMM0"
+  }
+}

@@ -529,8 +529,9 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         Named::AlreadySaid
     }
 
-    fn own_library_is_broken(&self) -> bool {
-        self.pass.broken.get(self.scope.library).copied().unwrap_or(true)
+    /// Whether a file of the library of this body that did not read may declare this name.
+    fn own_library_may_declare(&self, name: Name) -> bool {
+        self.pass.may_be_broken(self.scope.library, name)
     }
 
     fn read(&self, name: Name) -> Option<Value> {
@@ -1068,7 +1069,11 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         if source.types.contains_key(&name) {
             return Named::IsType;
         }
-        if source.broken || self.pass.is_refused(library, name) { self.said_elsewhere() } else { otherwise }
+        if source.broken_names.may_declare(self.names().resolve(name)) || self.pass.is_refused(library, name) {
+            self.said_elsewhere()
+        } else {
+            otherwise
+        }
     }
 
     fn find_own_variant(&mut self, ty: Name, variant: Name, library_name: String) -> Named {
@@ -1076,7 +1081,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         let declared = self.context.declared;
         match declared.get(own).and_then(|source| source.types.get(&ty)).copied() {
             Some(declared) => self.variant_of(declared, ty, variant),
-            None if self.own_library_is_broken() || self.pass.is_refused(own, ty) => self.said_elsewhere(),
+            None if self.own_library_may_declare(ty) || self.pass.is_refused(own, ty) => self.said_elsewhere(),
             // `g.h`, with a function `g`: the first name is known, and it is no library.
             None if declared.get(own).is_some_and(|source| source.functions.contains_key(&ty)) => Named::Unknown,
             None => {
@@ -1091,7 +1096,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         let Some(source) = declared.get(library) else { return self.said_elsewhere() };
         match source.types.get(&ty).copied() {
             Some(declared) => self.variant_of(declared, ty, variant),
-            None if source.broken || self.pass.is_refused(library, ty) => self.said_elsewhere(),
+            None if source.broken_names.may_declare(self.names().resolve(ty)) || self.pass.is_refused(library, ty) => self.said_elsewhere(),
             // `a.b.g`, with `use a`: the file does not import the sub-library that has `g`.
             None if self.is_known(&library_name) => Named::NotImported { library: library_name, known: true },
             None => Named::NoFunction(library_name),

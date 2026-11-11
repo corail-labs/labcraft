@@ -8,6 +8,10 @@
 //! cases built to cost the most: wires over many columns, a value or an error read everywhere, a chain of structures,
 //! crossings in one channel, a waypoint for every wire.
 //!
+//! Scenario 4, point 3, for runs (decisions of the owner, 2026-11-11): `run.start` of a program built to cost the most, up
+//! to a default limit of the run, takes at most 2 s and 512 MB, and a run that fills its memory at most `--max-memory` and 30 %.
+//! Each case must end with the fault of its limit, so that a run that stops early cannot pass for a fast one.
+//!
 //! In release only, since the crates of the workspace are not optimized in tests: `cargo xtask bounds`. Each case runs in a
 //! process of its own, this one started again, which times its own work and, on Linux, reads the peak of its resident memory
 //! (`VmHWM`). Elsewhere only the time is measured.
@@ -15,6 +19,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
@@ -41,6 +46,7 @@ enum Tool {
     Fmt,
     Check,
     Diagram,
+    Run,
 }
 
 impl Tool {
@@ -49,6 +55,7 @@ impl Tool {
             Tool::Fmt => "fmt",
             Tool::Check => "check",
             Tool::Diagram => "diagram",
+            Tool::Run => "run",
         }
     }
 }
@@ -208,6 +215,93 @@ const CASES: &[Case] = &[
     },
 ];
 
+/// A run measured: the files of its folder, the function, what `run.start` is given besides, the code of the fault it ends
+/// with, and the most memory it may take.
+struct RunBound {
+    name: &'static str,
+    files: fn() -> Folder,
+    function: &'static str,
+    /// A JSON object, the parameters of `run.start` besides `function` and `folder`.
+    params: &'static str,
+    code: &'static str,
+    seconds: f64,
+    bytes: u64,
+}
+
+/// A run whose trace reaches its bound of 256 MiB (commands.md 8): the writing adds at most 2 s (decision of the owner,
+/// 2026-11-11).
+const TRACED_SECONDS: f64 = 4.0;
+
+/// 1 GiB, the default of `--max-memory`, and 30 % (decision of the owner, 2026-11-11).
+const FILLED_BYTES: u64 = (1 << 30) / 10 * 13;
+
+const RUN_BOUNDS: &[RunBound] = &[
+    RunBound {
+        name: "run-loops-of-10000-in-loops",
+        files: loops_in_loops,
+        function: "nested",
+        params: "{}",
+        code: "LC8002",
+        seconds: SECONDS,
+        bytes: BYTES,
+    },
+    RunBound {
+        name: "run-10000-iterations-of-90-nodes",
+        files: iterations_of_90_nodes,
+        function: "body",
+        params: "{}",
+        code: "LC8001",
+        seconds: SECONDS,
+        bytes: BYTES,
+    },
+    RunBound {
+        name: "run-for-over-10000000-items",
+        files: for_over_many_items,
+        function: "wide",
+        params: "{}",
+        code: "LC8002",
+        seconds: SECONDS,
+        bytes: BYTES,
+    },
+    RunBound { name: "run-calls-1024-deep", files: calls_deep, function: "deep", params: "{}", code: "LC8003", seconds: SECONDS, bytes: BYTES },
+    RunBound {
+        name: "run-text-that-doubles",
+        files: text_that_doubles,
+        function: "double",
+        params: "{}",
+        code: "LC8005",
+        seconds: SECONDS,
+        bytes: FILLED_BYTES,
+    },
+    RunBound {
+        name: "run-copies-of-a-large-array",
+        files: copies_of_a_large_array,
+        function: "copies",
+        params: "{}",
+        code: "LC8009",
+        seconds: SECONDS,
+        bytes: BYTES,
+    },
+    RunBound {
+        name: "run-10000-queries",
+        files: queries,
+        function: "queries",
+        params: r#"{"sim": "<labcraft>/visa/sim/dmm-230V.toml", "args": {"resource": "SIM::DMM0"}}"#,
+        code: "LC8001",
+        seconds: SECONDS,
+        bytes: BYTES,
+    },
+    RunBound {
+        name: "run-trace-to-its-bound",
+        files: trace_to_its_bound,
+        function: "arrays",
+        params: "{}",
+        code: "LC8002",
+        seconds: TRACED_SECONDS,
+        bytes: BYTES,
+    },
+];
+
 /// The whole run: each case and command in a process of its own, then the table, then the verdict.
 #[test]
 #[ignore = "in release only: cargo xtask bounds"]
@@ -247,6 +341,28 @@ fn every_case_stays_within_the_bounds() {
             }
         }
     }
+    for case in RUN_BOUNDS {
+        let mut measure = run(case.name, Tool::Run);
+        for _ in 0..2 {
+            if measure.0 <= case.seconds {
+                break;
+            }
+            let again = run(case.name, Tool::Run);
+            if again.0 < measure.0 {
+                measure = again;
+            }
+        }
+        let (seconds, peak, codes) = measure;
+        if codes != BTreeSet::from([case.code.to_owned()]) {
+            over.push(format!("{} run: ended with {codes:?}, expected the fault {}", case.name, case.code));
+        }
+        let shown = peak.map_or_else(|| "-".to_owned(), |bytes| (bytes / (1024 * 1024)).to_string());
+        let listed: Vec<&str> = codes.iter().map(String::as_str).collect();
+        println!("{:<38} {:<6} {seconds:>8.2} {shown:>8}  {}", case.name, "run", listed.join(" "));
+        if seconds > case.seconds || peak.is_some_and(|bytes| bytes > case.bytes) {
+            over.push(format!("{} run: {seconds:.2} s, {shown} MB", case.name));
+        }
+    }
     if peak_memory().is_none() {
         println!("memory is measured on Linux only");
     }
@@ -282,6 +398,13 @@ fn run(name: &str, command: Tool) -> (f64, Option<u64>, BTreeSet<String>) {
 fn one_case() {
     let Ok(which) = std::env::var(CASE) else { return };
     let (name, command) = which.split_once(':').unwrap();
+    if command == "run" {
+        let case = RUN_BOUNDS.iter().find(|case| case.name == name).unwrap();
+        let (took, code) = std::thread::Builder::new().stack_size(STACK_SIZE).spawn(|| run_bound(case)).unwrap().join().unwrap();
+        let peak = peak_memory().map_or_else(|| "-".to_owned(), |bytes| bytes.to_string());
+        println!("bounds: {} {peak} {code}", took.as_secs_f64());
+        return;
+    }
     let case = CASES.iter().find(|case| case.name == name).unwrap();
     let command = match command {
         "fmt" => Tool::Fmt,
@@ -352,8 +475,56 @@ fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'stati
             }
             return longest;
         }
+        // A run is measured by `run_bound`, on a session of `engine`.
+        Tool::Run => {}
     }
     start.elapsed()
+}
+
+/// `run.start` of a case, on a session of `engine` whose root holds its folder in memory: the time it takes, judged and run,
+/// and the code of its fault.
+#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
+fn run_bound(case: &RunBound) -> (Duration, String) {
+    let memory = labcraft_engine::Memory::new();
+    for (name, bytes) in (case.files)() {
+        memory.put(format!("/bounds/{name}"), bytes);
+    }
+    let config = labcraft_engine::Config {
+        root: "/".into(),
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        shipped: shipped(),
+        natives: vec![Arc::new(labcraft_visa::Visa)],
+        clock: Arc::new(labcraft_engine::Still),
+        process: 0,
+    };
+    let mut session = labcraft_engine::Session::new(Arc::new(memory) as Arc<dyn labcraft_engine::Workspace>, config, false).unwrap();
+    let mut params: serde_json::Value = serde_json::from_str(case.params).unwrap();
+    params["function"] = case.function.into();
+    params["folder"] = "bounds".into();
+    let start = Instant::now();
+    let report = session.execute("run.start", &params).unwrap();
+    let took = start.elapsed();
+    std::hint::black_box(serde_json::to_string(&report).unwrap());
+    let code = report["fault"]["code"].as_str().map_or_else(|| format!("status-{}", report["status"]), str::to_owned);
+    (took, code)
+}
+
+/// The libraries shipped with LabCraft, as `engine` is given them.
+fn shipped() -> labcraft_engine::Shipped {
+    use labcraft_engine::{ShippedFile, ShippedLibrary};
+    let files = |files: &'static [labcraft_libs::File]| files.iter().map(|file| ShippedFile { name: file.name, bytes: file.bytes }).collect();
+    labcraft_engine::Shipped::new(
+        labcraft_libs::LIBRARIES
+            .iter()
+            .map(|library| ShippedLibrary {
+                name: library.name,
+                manifest: library.manifest,
+                files: files(library.files),
+                simulations: files(library.simulations),
+            })
+            .collect(),
+    )
 }
 
 /// The peak of the resident memory of this process, in bytes.
@@ -374,6 +545,102 @@ impl Libraries for Shipped {
 }
 
 // The cases.
+
+fn program(name: &str, text: &str) -> Folder {
+    vec![(name.to_owned(), text.as_bytes().to_vec())]
+}
+
+/// Two loops of 10,000 iterations, one in the other: the limit of nodes, 1,000,000, comes first.
+fn loops_in_loops() -> Folder {
+    program(
+        "nested.lcf",
+        "labcraft 1\n\nuse core\n\n/// Two loops of 10,000 iterations, one in the other.\nfn nested() -> (n: f64) {\n    n = loop carry i = 0.0 {\n        k = loop carry j = 0.0 {\n            m = core.add(j, 1.0)\n            done = core.ge(m, 9999.0)\n            next j = m\n            until done\n        }\n        a = core.add(i, k)\n        next i = a\n        until false\n    }\n}\n",
+    )
+}
+
+/// A loop of 90 nodes in each iteration: 900,000 nodes, under their limit, when the loop reaches its 10,000 iterations.
+fn iterations_of_90_nodes() -> Folder {
+    let mut text = String::from(
+        "labcraft 1\n\nuse core\n\n/// A loop of 10,000 iterations, each of 90 nodes.\nfn body() -> (n: f64) {\n    n = loop carry i = 0.0 {\n",
+    );
+    let mut previous = "i".to_owned();
+    for index in 1..90 {
+        text.push_str(&format!("        a{index} = core.add({previous}, 1.0)\n"));
+        previous = format!("a{index}");
+    }
+    text.push_str(&format!("        next i = {previous}\n        until false\n    }}\n}}\n"));
+    program("body.lcf", &text)
+}
+
+/// A `for` over an array of 10,000,000 items, 240 MB, which collects a value for each: the limit of nodes comes first.
+fn for_over_many_items() -> Folder {
+    program(
+        "wide.lcf",
+        "labcraft 1\n\nuse array\nuse core\n\n/// Adds one to each item of a large array.\nfn wide() -> (ys: [f64], err: error) {\n    xs, err = array.repeat(0.0, 10000000)\n    ys = for x in xs {\n        y = core.add(x, 1.0)\n        collect y\n    }\n}\n",
+    )
+}
+
+/// A function that calls itself with an array one item longer, which each level copies, since it reads the array again after
+/// the push (D-11): 1,024 copies of about 120 kB, until the limit of call depth.
+fn calls_deep() -> Folder {
+    vec![
+        (
+            "deep.lcf".to_owned(),
+            b"labcraft 1\n\nuse array\n\n/// Starts the calls.\nfn deep() -> (n: [f64], err: error) {\n    big, err = array.repeat(0.0, 5000)\n    n, k = down(big)\n}\n".to_vec(),
+        ),
+        (
+            "down.lcf".to_owned(),
+            b"labcraft 1\n\nuse array\n\n/// Calls itself, with an array one item longer, and reads it again.\nfn down(a: [f64]) -> (n: [f64], l: i32) {\n    b = array.push(a, 1.0)\n    l = array.len(a)\n    n, m = down(b)\n}\n".to_vec(),
+        ),
+    ]
+}
+
+/// A text that doubles at each iteration, until the memory of the run is full.
+fn text_that_doubles() -> Folder {
+    program(
+        "double.lcf",
+        "labcraft 1\n\nuse string\n\n/// Doubles a text until the run stops it.\nfn double() -> (n: string) {\n    n = loop carry s = \"x\" {\n        t = string.concat(s, s)\n        next s = t\n        until false\n    }\n}\n",
+    )
+}
+
+/// An array of 10,000,000 items, read twice in each iteration, so that `array.set` copies it each time: the limit of the
+/// bytes made comes first.
+fn copies_of_a_large_array() -> Folder {
+    program(
+        "copies.lcf",
+        "labcraft 1\n\nuse array\n\n/// Sets an item of a large array at each iteration, and reads the array before the change too.\nfn copies() -> (a: [f64], err: error, k: i32) {\n    big, e = array.repeat(0.0, 10000000)\n    a, err, k = loop carry xs = big, carry g = e, carry n = 0 {\n        b, h = array.set(xs, 0, 1.0, err: g)\n        l = array.len(xs)\n        next g = h\n        next n = l\n        next xs = b\n        until false\n    }\n}\n",
+    )
+}
+
+/// An array of 40 floats made by each node, until the limit of nodes: the trace writes 40,000,000 floats, and reaches its
+/// bound of 256 MiB before the end.
+fn trace_to_its_bound() -> Folder {
+    program(
+        "arrays.lcf",
+        "labcraft 1
+
+use array
+
+/// Makes an array of 40 items at each iteration, which the trace writes.
+fn arrays() -> (a: [f64], err: error) {
+    xs, e = array.repeat(1.5, 2000000)
+    a, err = for x in xs, carry k = [0.0], carry f = e {
+        y, g = array.repeat(x, 40, err: f)
+        next f = g
+        next k = y
+    }
+}
+",
+    )
+}
+
+/// A multimeter read at each iteration, until the limit of iterations: what the instrument and the log keep of 10,000 queries.
+fn queries() -> Folder {
+    program(
+        "queries.lcf",
+        "labcraft 1\n\nuse core\nuse scpi\nuse visa\n\n/// Reads a multimeter until the run stops it.\nfn queries(resource: string) -> (n: f64, err: error) {\n    dmm, e1 = visa.open(resource)\n    n, s, e = loop carry total = 0.0, carry session = dmm, carry f = e1 {\n        v, s2, f2 = scpi.query_f64(session, \"MEAS:VOLT:DC?\", err: f)\n        t = core.add(total, v)\n        next f = f2\n        next session = s2\n        next total = t\n        until false\n    }\n    #close: err = visa.close(s, err: e)\n}\n",
+    )
+}
 
 fn alone(name: &str, text: String) -> Vec<Folder> {
     vec![vec![(name.to_owned(), text.into_bytes())]]
