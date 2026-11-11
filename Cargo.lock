@@ -1947,6 +1947,7 @@ dependencies = [
  "labcraft-cli",
  "labcraft-diagram",
  "labcraft-editor",
+ "labcraft-engine",
  "labcraft-format",
  "labcraft-types",
  "notify",
@@ -2011,12 +2012,14 @@ name = "labcraft-engine"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+ "labcraft-diagram",
  "labcraft-format",
  "labcraft-graph",
  "labcraft-ir",
  "labcraft-runtime",
  "labcraft-trace",
  "labcraft-types",
+ "serde",
  "serde_json",
  "sha2",
  "toml",

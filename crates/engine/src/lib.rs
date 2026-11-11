@@ -20,6 +20,7 @@
 
 mod bound;
 mod catalog;
+pub mod drawings;
 pub mod error;
 mod files;
 pub mod fmt;
@@ -35,6 +36,7 @@ pub mod runs;
 pub mod session;
 pub mod shipped;
 mod simulations;
+pub mod view;
 pub mod walk;
 pub mod workspace;
 
@@ -42,7 +44,7 @@ pub use error::CommandError;
 pub use runs::{Clock, Runs, Still, run_to_end};
 pub use session::{Config, Session};
 pub use shipped::{Shipped, ShippedFile, ShippedLibrary};
-pub use workspace::{Memory, Workspace};
+pub use workspace::{Memory, ReadOnly, Workspace};
 
 #[cfg(test)]
 mod tests;

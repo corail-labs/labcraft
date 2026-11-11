@@ -490,3 +490,118 @@ fn the_signature_of_each_primitive_is_that_of_appendix_a() {
     }
     assert!(found >= 40, "{found}");
 }
+
+// The viewer and `diagram.svg` (`docs/commands.md`, 6.5; decisions of the owner, 2026-11-11). The expected values come
+// from the files of `project()`: one function, `double`, drawable; `Verdict.lct` is a type and gets no entry.
+
+const DOUBLE_BROKEN: &str = "labcraft 1\n\nfn double(x: f64) -> (y: f64) {\n    y = nowhere(x)\n}\n";
+
+#[test]
+fn diagram_svg_gives_the_svg_of_each_function_in_image_and_writes_nothing() {
+    let (mut session, counting) = session();
+    let before = counting.memory.get("/p/double.lcf");
+    let report = ok(&mut session, "diagram.svg", json!({ "folder": "." }));
+    assert_eq!((report["schema"].as_str(), report["status"].as_str()), (Some("labcraft-diagram/1"), Some("ok")), "{report}");
+    assert_eq!(report["summary"], json!({ "functions": 1, "drawn": 1, "not_drawn": 0 }));
+    let entry = &report["diagrams"][0];
+    assert_eq!((entry["function"].as_str(), entry["file"].as_str(), entry["drawn"].as_bool()), (Some("double"), Some("double.lcf"), Some(true)));
+    // No file is written: the SVG is in `image`, and `svg`, the path of a file written, is absent.
+    assert!(entry.get("svg").is_none(), "{entry}");
+    let image = entry["image"].as_str().unwrap();
+    assert!(image.starts_with("<svg"), "{image}");
+    // Both themes by default: the dark one under `prefers-color-scheme` (`docs/cli.md`, 7.2); `light` alone has none.
+    assert!(image.contains("prefers-color-scheme: dark"));
+    let light = ok(&mut session, "diagram.svg", json!({ "folder": ".", "theme": "light" }));
+    assert!(!light["diagrams"][0]["image"].as_str().unwrap().contains("prefers-color-scheme"));
+    assert_eq!(counting.memory.get("/p/double.lcf"), before);
+    assert!(counting.memory.get("/p/double.svg").is_none());
+}
+
+#[test]
+fn diagram_svg_names_an_unknown_function_and_refuses_a_folder_out_of_reach() {
+    let (mut session, _) = session();
+    let report = ok(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["doubel"] }));
+    assert_eq!(report["status"], "error");
+    assert_eq!(report["diagrams"], json!([{ "function": "doubel", "drawn": false, "codes": ["LC7001"] }]));
+    let diagnostic = &report["check"]["diagnostics"][0];
+    assert_eq!(diagnostic["code"], "LC7001");
+    // `doubel` is two edits from `double`, within a third of 6.
+    assert_eq!(diagnostic["fixes"][0]["title"], "did you mean `double`?");
+    assert_eq!(error(&mut session, "diagram.svg", json!({ "folder": "nowhere" })).code, "path.not_found");
+    assert_eq!(error(&mut session, "diagram.svg", json!({ "folder": "../q" })).code, "path.outside_project");
+    assert_eq!(error(&mut session, "diagram.svg", json!({})).code, "params.missing");
+    // An empty name between two dots is no name, wrong usage on the command line (cli.md 7).
+    let empty = error(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["a..b"] }));
+    assert_eq!((empty.code, empty.parameter.as_deref()), ("params.invalid", Some("functions")));
+}
+
+#[test]
+fn the_viewer_opens_a_folder_of_the_project_and_shows_its_first_function() {
+    let (mut session, _) = session();
+    let shown = error(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(shown.code, "params.invalid");
+    assert!(shown.message.contains("no folder is open"), "{}", shown.message);
+    // The libraries are those of the session (decision of the owner, 2026-11-11).
+    assert_eq!(error(&mut session, "view.open", json!({ "folder": ".", "lib_path": [] })).code, "params.unknown");
+    let opened = ok(&mut session, "view.open", json!({ "folder": "." }));
+    assert_eq!(opened["functions"], json!([{ "function": "double", "file": "double.lcf", "drawable": true }]));
+    assert_eq!(opened["check"]["schema"], "labcraft-check/1");
+    let view = session.view();
+    assert_eq!(
+        (view.folder.as_deref(), view.function.as_deref(), view.opened.as_slice()),
+        (Some("."), Some("double"), ["double".to_owned()].as_slice())
+    );
+    assert!(view.drawing.is_some() && !view.kept);
+    let entry = ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!((entry["function"].as_str(), entry["drawn"].as_bool()), (Some("double"), Some(true)));
+    assert_eq!(ok(&mut session, "view.set_standard_view", json!({ "on": true })), json!({ "before": false }));
+    assert_eq!(ok(&mut session, "view.set_standard_view", json!({ "on": false })), json!({ "before": true }));
+    let unknown = error(&mut session, "view.show_function", json!({ "function": "dobule" }));
+    assert_eq!((unknown.code, unknown.expected.as_slice()), ("params.invalid", ["double".to_owned()].as_slice()));
+    assert_eq!(error(&mut session, "view.set_state", json!({ "function": "double", "state": { "colour": { "a": 1 } } })).code, "params.invalid");
+    assert_eq!(error(&mut session, "view.open", json!({ "folder": "nowhere" })).code, "path.not_found");
+    assert_eq!(error(&mut session, "view.open_trace", json!({ "file": "t.jsonl" })).code, "command.not_enabled");
+}
+
+#[test]
+fn a_file_written_by_a_command_is_read_again_by_the_next_command_of_the_viewer() {
+    let (mut session, _) = session();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    let drawn = session.view().drawing.clone().unwrap();
+    ok(&mut session, "file.write", json!({ "path": "double.lcf", "text": DOUBLE_BROKEN }));
+    // `nowhere` is an unknown function, `LC2002`, of the family `LC20`: not drawable (`docs/cli.md`, 7.1). The last drawing stays.
+    let entry = ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!((entry["drawn"].as_bool(), &entry["codes"]), (Some(false), &json!(["LC2002"])), "{entry}");
+    let view = session.view();
+    assert!(view.kept);
+    assert!(Arc::ptr_eq(view.drawing.as_ref().unwrap(), &drawn));
+    assert_eq!(view.errors, 1);
+}
+
+#[test]
+fn a_change_that_the_app_sees_is_drawn_again_and_glides() {
+    let (mut session, counting) = session();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    let before = session.view().drawing_generation;
+    assert!(!session.view().glide);
+    counting.memory.put("/p/double.lcf", "labcraft 1\n\nuse core\n\nfn double(x: f64) -> (y: f64) {\n    y = core.add(x, x)\n}\n");
+    session.files_changed();
+    let view = session.view();
+    assert!(view.drawing_generation > before && view.glide && !view.kept && view.errors == 0);
+    // The file gone: nothing shown, nothing listed.
+    counting.memory.remove_file(Path::new("/p/double.lcf")).unwrap();
+    session.files_changed();
+    let view = session.view();
+    assert!(view.functions.is_empty() && view.function.is_none() && view.drawing.is_none() && view.opened.is_empty());
+}
+
+#[test]
+fn a_session_on_a_read_only_workspace_writes_nothing() {
+    let memory = Arc::new(project());
+    let mut session = session_on(Arc::new(crate::ReadOnly(memory.clone())));
+    let refused = error(&mut session, "file.write", json!({ "path": "double.lcf", "text": DOUBLE_BROKEN }));
+    assert_eq!(refused.code, "file.unwritable", "{}", refused.message);
+    assert_eq!(memory.get("/p/double.lcf").as_deref(), Some(MAIN.as_bytes()));
+    assert_eq!(error(&mut session, "file.delete", json!({ "path": "double.lcf" })).code, "file.unwritable");
+    assert!(memory.get("/p/double.lcf").is_some());
+}

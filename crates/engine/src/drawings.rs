@@ -1,0 +1,517 @@
+//! What `labcraft-cli diagram`, the command `diagram.svg` and the viewer share (`docs/cli.md`, 7.1, 7.2 and 7.5;
+//! `docs/commands.md`, 6.5): a folder read and checked as `check` does, through the [`Workspace`], its functions named
+//! from the folder, the drawing of each, the picture that shows it, with its marks, or its diagnostics when it is not
+//! drawable, and the report `labcraft-diagram/1`.
+
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::panic::{self, AssertUnwindSafe};
+use std::path::{Path, PathBuf};
+
+use labcraft_check::{Checked, check};
+use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, Theme, ViewState, draw, mark, svg, undrawn};
+use labcraft_types::{CheckCounts, CheckSummary, Code, Diagnostic, Fix, Interner, Limits, Report, Status, cut_text};
+use serde::Serialize;
+use serde_json::{Value, json};
+
+use crate::error::CommandError;
+use crate::folders::{Host, library_of, readable_lib_paths, roots};
+use crate::panics::last_panic;
+use crate::params::Params;
+use crate::paths::{self, Place, Wanted};
+use crate::session::Session;
+use crate::shipped::Shipped;
+use crate::walk::{self, slashed};
+use crate::workspace::Workspace;
+
+/// The schema of the report, which the attributes of the SVG share (`docs/cli.md`, 7.2 and 7.5).
+pub const SCHEMA: &str = "labcraft-diagram/1";
+
+/// A function: named from the folder, as `run` names it, by the path of its file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Function {
+    pub name: String,
+    /// Its file, as reports show it.
+    pub shown: String,
+    /// The path of its file under the folder, as the SVG shows it.
+    pub source: String,
+    /// The path of its SVG under `DIR`: that of its file, with `.svg`.
+    pub relative: PathBuf,
+}
+
+/// A folder read and checked.
+pub struct Loaded {
+    pub report: Report,
+    pub counts: CheckCounts,
+    pub checked: Option<Checked>,
+    pub names: Interner,
+    pub functions: Vec<Function>,
+    /// The folder, as reports show it; none when it could not be read.
+    pub root: Option<String>,
+}
+
+/// Reads and checks `folder` with the folders of `--lib-path`, its paths shown from `current`, keeping the first
+/// diagnostics of each file for its picture, whatever `--max-report` lists (`docs/cli.md`, 7.2).
+pub fn load(ws: &dyn Workspace, shipped: &Shipped, folder: &Path, lib_paths: &[PathBuf], limits: &Limits, current: Option<&Path>) -> Loaded {
+    let mut limits = limits.clone();
+    limits.keep_per_file = MAX_LINES;
+    let limits = &limits;
+    let folders = [folder.to_path_buf()];
+    let mut walked = walk::walk(ws, &folders, current, limits);
+    let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
+    let lib_paths = readable_lib_paths(ws, &folders, lib_paths, current, &mut report);
+    let in_the_walk: HashSet<PathBuf> =
+        walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect();
+    let host = Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current, limits, seen: None };
+    let mut names = Interner::new();
+    let Some(root) = roots(ws, &folders, current).into_iter().next() else {
+        return Loaded { report, counts: CheckCounts::default(), checked: None, names, functions: Vec::new(), root: None };
+    };
+    let functions = functions_of(&root.real, &walked);
+    let has_types = walked.files.iter().any(|found| found.path.extension().is_some_and(|extension| extension == "lct"));
+    let mut counts = CheckCounts::default();
+    let checked = match library_of(ws, &root.real, &root.shown, &mut walked, limits, None) {
+        Some(source) => {
+            let work = || check(source, &host, &mut names, limits);
+            match panic::catch_unwind(AssertUnwindSafe(work)) {
+                Ok(mut checked) => {
+                    report.merge(std::mem::replace(&mut checked.report, Report::for_limits(limits)));
+                    for dependency in std::mem::take(&mut checked.dependencies) {
+                        report.merge(dependency.report);
+                    }
+                    counts = checked.counts;
+                    Some(checked)
+                }
+                Err(_) => {
+                    let message = format!("internal error, which is a bug of the tool: {}", last_panic());
+                    report.push(Diagnostic::new(Code::Lc0099, message, root.shown.as_str()));
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+    if functions.is_empty() && has_types {
+        report.push(Diagnostic::new(Code::Lc7003, "no function to draw here, only types", root.shown.as_str()));
+    }
+    Loaded { report, counts, checked, names, functions, root: Some(root.shown) }
+}
+
+/// Every `.lcf` file under the folder, read or not, named from the folder by its path: `dmm_driver/measure.lcf` is
+/// `dmm_driver.measure`. A file whose name is not that of its function gets `LC2023`, which keeps it from being drawn.
+fn functions_of(root: &Path, walked: &walk::Walked) -> Vec<Function> {
+    let found =
+        walked.files.iter().map(|found| (&found.path, &found.shown)).chain(walked.refused.iter().map(|refused| (&refused.path, &refused.shown)));
+    let mut functions: Vec<Function> = found
+        .filter(|(path, _)| path.extension().is_some_and(|extension| extension == "lcf"))
+        .filter_map(|(path, shown)| {
+            let relative = path.strip_prefix(root).ok()?;
+            let parts: Vec<String> = relative.with_extension("").components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect();
+            Some(Function { name: parts.join("."), shown: shown.clone(), source: slashed(relative), relative: relative.with_extension("svg") })
+        })
+        .collect();
+    functions.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.shown.cmp(&b.shown)));
+    functions
+}
+
+/// The index of each file in `Checked::files`, by its name in reports.
+pub fn files_of(checked: Option<&Checked>) -> HashMap<&str, usize> {
+    checked.map(|checked| checked.files.iter().enumerate().map(|(index, file)| (file.shown.as_str(), index)).collect()).unwrap_or_default()
+}
+
+/// A drawing or none, the nodes counted, the codes that keep it from being drawn.
+pub type Drawn3 = (Option<Drawing>, Option<u64>, Vec<Code>);
+
+/// The drawing of a function, or none when it is not drawable (`docs/cli.md`, 7.1); `LC7002` and a bug of the tool
+/// join the report.
+pub fn drawing_of(
+    function: &Function,
+    checked: Option<&Checked>,
+    files: &HashMap<&str, usize>,
+    names: &Interner,
+    view: &ViewState,
+    limits: &DiagramLimits,
+    report: &mut Report,
+) -> Drawn3 {
+    let mut codes = report.keeping_from_drawing(&function.shown);
+    let (Some(checked), Some(&index)) = (checked, files.get(function.shown.as_str())) else { return (None, None, codes) };
+    let nodes = labcraft_diagram::count_nodes(checked, index, names);
+    if !codes.is_empty() {
+        return (None, nodes, codes);
+    }
+    let work = || draw(checked, index, names, view, limits);
+    match panic::catch_unwind(AssertUnwindSafe(work)) {
+        Ok(Drawn::Drawing(drawing)) => (Some(drawing), nodes, codes),
+        Ok(Drawn::NotDrawn(diagnostics)) => {
+            for diagnostic in diagnostics {
+                codes.push(diagnostic.code());
+                report.push(diagnostic);
+            }
+            codes.sort();
+            codes.dedup();
+            (None, nodes, codes)
+        }
+        Err(_) => {
+            let message = format!("internal error, which is a bug of the tool: {}", last_panic());
+            report.push(Diagnostic::new(Code::Lc0099, message, function.shown.as_str()));
+            (None, nodes, vec![Code::Lc0099])
+        }
+    }
+}
+
+/// What shows a function: its drawing with the marks of the first diagnostics of its file, or, when it is not drawn,
+/// its frame and those diagnostics (`docs/cli.md`, 7.2).
+pub fn picture(function: &Function, drawing: Option<Drawing>, report: &Report) -> Drawing {
+    let of_file = report.first_of(&function.shown);
+    match drawing {
+        Some(mut drawing) => {
+            mark(&mut drawing, &of_file);
+            drawing
+        }
+        None => {
+            let shown: Vec<Diagnostic> = of_file
+                .into_iter()
+                .map(|mut diagnostic| {
+                    diagnostic.file.clone_from(&function.source);
+                    diagnostic
+                })
+                .collect();
+            let counts = report.counts_of(&function.shown);
+            undrawn(&cut_text(&function.name), &shown, counts.errors + counts.warnings)
+        }
+    }
+}
+
+/// The functions asked for, in code point order of their names, or every one when none is; an unknown name gets
+/// `LC7001` at the folder, with the nearest names, and its entry. Two files can give one name (`a.b.lcf` and `a/b.lcf`):
+/// both are asked for. A name given twice counts once.
+pub fn asked<'a>(names: &[String], functions: &'a [Function], folder: &str, report: &mut Report) -> (Vec<&'a Function>, Vec<Entry>) {
+    if names.is_empty() {
+        return (functions.iter().collect(), Vec::new());
+    }
+    let mut asked: Vec<&Function> = Vec::new();
+    let mut unknown_entries = Vec::new();
+    let mut seen: HashSet<&str> = HashSet::new();
+    for name in names {
+        if !seen.insert(name.as_str()) {
+            continue;
+        }
+        let before = asked.len();
+        asked.extend(functions.iter().filter(|function| function.name == *name));
+        if asked.len() == before {
+            report.push(unknown(name, functions, folder));
+            unknown_entries.push(Entry { function: name.clone(), drawn: false, codes: vec![Code::Lc7001], ..Entry::default() });
+        }
+    }
+    asked.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.shown.cmp(&b.shown)));
+    (asked, unknown_entries)
+}
+
+/// `LC7001`, at the folder, with the nearest names as fixes.
+fn unknown(name: &str, functions: &[Function], folder: &str) -> Diagnostic {
+    let mut diagnostic = Diagnostic::new(Code::Lc7001, format!("unknown function `{name}`: not a function of this folder"), folder);
+    let mut near: Vec<(usize, &str)> =
+        functions.iter().filter_map(|other| near(name, &other.name).map(|edits| (edits, other.name.as_str()))).collect();
+    near.sort();
+    near.dedup();
+    diagnostic.fixes = near.into_iter().take(3).map(|(_, other)| Fix { title: format!("did you mean `{other}`?"), edits: Vec::new() }).collect();
+    diagnostic
+}
+
+/// The edits from one name to another, when they are near: at most a third of the longer one.
+fn near(a: &str, b: &str) -> Option<usize> {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a.len() > 200 || b.len() > 200 {
+        return None;
+    }
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.iter().enumerate() {
+        let mut row = vec![i + 1];
+        for (j, y) in b.iter().enumerate() {
+            let replace = previous.get(j).copied().unwrap_or(0) + usize::from(x != y);
+            let insert = row.get(j).copied().unwrap_or(0) + 1;
+            let delete = previous.get(j + 1).copied().unwrap_or(0) + 1;
+            row.push(replace.min(insert).min(delete));
+        }
+        previous = row;
+    }
+    let edits = previous.last().copied().unwrap_or(0);
+    (edits * 3 <= a.len().max(b.len())).then_some(edits)
+}
+
+/// The drawing of each function asked for, in the view state of an exported image (`docs/cli.md`, 7.1).
+pub fn drawings(asked: &[&Function], loaded: &Loaded, limits: &DiagramLimits, report: &mut Report) -> Vec<Drawn3> {
+    let files = files_of(loaded.checked.as_ref());
+    asked.iter().map(|function| drawing_of(function, loaded.checked.as_ref(), &files, &loaded.names, &ViewState::default(), limits, report)).collect()
+}
+
+/// What became of one function, as an entry of `diagrams` says it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Entry {
+    pub function: String,
+    /// Absent for an unknown function.
+    pub file: Option<String>,
+    /// The path of the SVG written, by `labcraft-cli diagram`.
+    pub svg: Option<String>,
+    /// The SVG itself, by `diagram.svg`, which writes nothing.
+    pub image: Option<String>,
+    pub drawn: bool,
+    pub nodes: Option<u64>,
+    pub codes: Vec<Code>,
+}
+
+#[derive(Serialize)]
+pub struct Document<'a> {
+    pub schema: &'static str,
+    pub status: Status,
+    pub summary: Summary,
+    pub diagrams: Vec<JsonEntry<'a>>,
+    pub check: CheckPart<'a>,
+}
+
+#[derive(Serialize)]
+pub struct Summary {
+    pub functions: u64,
+    pub drawn: u64,
+    pub not_drawn: u64,
+}
+
+#[derive(Serialize)]
+pub struct JsonEntry<'a> {
+    pub function: Cow<'a, str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub svg: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<&'a str>,
+    pub drawn: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nodes: Option<u64>,
+    #[serde(skip_serializing_if = "<[Code]>::is_empty")]
+    pub codes: &'a [Code],
+}
+
+#[derive(Serialize)]
+pub struct CheckPart<'a> {
+    pub summary: CheckSummary,
+    pub diagnostics: &'a [Diagnostic],
+}
+
+/// Whether the report says `error`: a function not drawn, an unknown name, nothing to draw, an SVG not written, or an
+/// error that no drawing marks, in a file that is not that of a function drawn or about no file (`docs/cli.md`, 7.1).
+/// `written`: whether each entry of a file must have its SVG, as `labcraft-cli diagram` writes them.
+pub fn failed(entries: &[Entry], report: &Report, written: bool) -> bool {
+    let not_drawn = entries.iter().any(|entry| !entry.drawn);
+    let marked: HashSet<&str> = entries.iter().filter(|entry| entry.drawn).filter_map(|entry| entry.file.as_deref()).collect();
+    let unmarked = report.file_counts().any(|(file, counts)| counts.errors > 0 && !marked.contains(file));
+    let unwritten = written && entries.iter().any(|entry| entry.file.is_some() && entry.svg.is_none());
+    entries.is_empty() || not_drawn || unwritten || unmarked
+}
+
+/// `labcraft-diagram/1` (`docs/cli.md`, 7.5), the entries in code point order of their names.
+pub fn document<'a>(entries: &'a [Entry], report: &'a Report, counts: CheckCounts, failed: bool) -> Document<'a> {
+    let drawn = entries.iter().filter(|entry| entry.drawn).count() as u64;
+    Document {
+        schema: SCHEMA,
+        status: if failed { Status::Error } else { Status::Ok },
+        summary: Summary { functions: entries.len() as u64, drawn, not_drawn: entries.len() as u64 - drawn },
+        diagrams: entries
+            .iter()
+            .map(|entry| JsonEntry {
+                function: cut_text(&entry.function),
+                file: entry.file.as_deref(),
+                svg: entry.svg.as_deref(),
+                image: entry.image.as_deref(),
+                drawn: entry.drawn,
+                nodes: entry.nodes,
+                codes: &entry.codes,
+            })
+            .collect(),
+        check: CheckPart { summary: report.check_document(counts, false).summary, diagnostics: report.diagnostics() },
+    }
+}
+
+/// `diagram.svg` (`docs/commands.md`, 6.5): `labcraft-cli diagram --svg --json` without the files, the SVG of each
+/// function in `image`. When the result would pass the bound of a result, the SVGs give way first, from the last
+/// function to the first, each as `{ "$cut": true }` (decision of the owner, 2026-11-11), and the result says
+/// `truncated`; what still passes is cut by `Session::execute`, as for any command.
+pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandError> {
+    let folder = params.text("folder")?;
+    let path = match paths::judge(session.workspace(), session.root(), folder, "folder", Wanted::Folder, false)? {
+        Place::Project { path, shown, exists } => {
+            if !exists {
+                return Err(CommandError::of("path.not_found", "folder", format!("`{shown}` does not exist")));
+            }
+            path
+        }
+        Place::Shipped(shown) => {
+            return Err(CommandError::of(
+                "path.outside_project",
+                "folder",
+                format!("`{shown}` is shipped with LabCraft: draw a folder of the project"),
+            ));
+        }
+    };
+    let names: Vec<String> = match params.get("functions") {
+        Some(Value::Array(names)) => names.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+        _ => Vec::new(),
+    };
+    // A name of the language, or that of a folder or a file that `check` reads: only an empty one is no name, as for the
+    // `FUNCTION` of `labcraft-cli diagram` (`docs/cli.md`, 7).
+    if let Some(empty) = names.iter().find(|name| name.split('.').any(str::is_empty)) {
+        return Err(CommandError::of("params.invalid", "functions", format!("`{empty}` is not the name of a function: names joined by `.`")));
+    }
+    let theme = match params.str("theme") {
+        Some("light") => Theme::Light,
+        Some("dark") => Theme::Dark,
+        _ => Theme::Both,
+    };
+    let max_nodes = params.u64("max_diagram_nodes").unwrap_or(DiagramLimits::default().max_nodes);
+    let config = session.config();
+    let mut loaded = load(session.workspace(), &config.shipped, &path, &config.lib_paths, &config.limits, Some(session.root()));
+    let mut report = std::mem::replace(&mut loaded.report, Report::new(0));
+    let Some(root) = loaded.root.as_deref() else {
+        report.finish();
+        return to_json(&document(&[], &report, CheckCounts::default(), true));
+    };
+    let (asked, mut entries) = asked(&names, &loaded.functions, root, &mut report);
+    let drawn = drawings(&asked, &loaded, &DiagramLimits { max_nodes }, &mut report);
+    // The drawings wait, by the index of their entry, until the room left for their SVG is known.
+    let mut pending: Vec<Option<(&Function, Option<Drawing>)>> = std::iter::repeat_with(|| None).take(entries.len()).collect();
+    for (function, (drawing, nodes, codes)) in asked.iter().zip(drawn) {
+        let is_drawn = drawing.is_some();
+        let codes = if is_drawn { Vec::new() } else { codes };
+        entries.push(Entry {
+            function: function.name.clone(),
+            file: Some(function.shown.clone()),
+            drawn: is_drawn,
+            nodes,
+            codes,
+            ..Entry::default()
+        });
+        pending.push(Some((function, drawing)));
+    }
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    order.sort_by(|&a, &b| entries.get(a).map(|a| (&a.function, &a.file)).cmp(&entries.get(b).map(|b| (&b.function, &b.file))));
+    let mut sorted = Vec::with_capacity(entries.len());
+    let mut waiting = Vec::with_capacity(entries.len());
+    for index in order {
+        if let Some(entry) = entries.get_mut(index) {
+            sorted.push(std::mem::take(entry));
+        }
+        waiting.push(pending.get_mut(index).and_then(Option::take));
+    }
+    report.finish();
+    let failed = failed(&sorted, &report, false);
+    let mut result = to_json(&document(&sorted, &report, loaded.counts, failed))?;
+    fill_images(&mut result, crate::bound::MAX_RESULT, |index| {
+        waiting.get_mut(index).and_then(Option::take).map(|(function, drawing)| svg(&picture(function, drawing, &report), theme))
+    });
+    Ok(result)
+}
+
+fn to_json(document: &Document<'_>) -> Result<Value, CommandError> {
+    serde_json::to_value(document).map_err(|error| CommandError::internal(format!("the report does not write as JSON: {error}")))
+}
+
+/// What `"truncated":true` costs at the top level, with its comma.
+const TRUNCATED: usize = ",\"truncated\":true".len();
+
+/// Gives each entry of a file its SVG in `image`, in order, while the result stays within `max`: the SVGs give way from
+/// the last function to the first (decision of the owner, 2026-11-11), and those that give way are not even made.
+/// `render` makes the SVG of the entry at this index. The marks of a cut and `truncated` are counted before any SVG, so
+/// that they never take the result past `max`, and `bound::fit` has no image left to cut.
+fn fill_images(result: &mut Value, max: usize, mut render: impl FnMut(usize) -> Option<String>) {
+    let cut = json!({ "$cut": true });
+    let Some(diagrams) = result.get_mut("diagrams").and_then(Value::as_array_mut) else { return };
+    // Every entry of a file starts with its mark: what an SVG costs is then what it adds to it.
+    let mut wanted = Vec::with_capacity(diagrams.len());
+    for entry in diagrams.iter_mut() {
+        let has_file = entry.get("file").is_some();
+        if let (true, Some(object)) = (has_file, entry.as_object_mut()) {
+            object.insert("image".to_owned(), cut.clone());
+        }
+        wanted.push(has_file);
+    }
+    let mark = crate::bound::size(&cut);
+    let mut room = max.saturating_sub(crate::bound::size(result));
+    let last = wanted.iter().rposition(|wanted| *wanted);
+    let mut truncated = false;
+    let Some(diagrams) = result.get_mut("diagrams").and_then(Value::as_array_mut) else { return };
+    for (index, (entry, wanted)) in diagrams.iter_mut().zip(wanted).enumerate() {
+        if !wanted {
+            continue;
+        }
+        let Some(image) = render(index) else { continue };
+        let cost = serde_json::to_string(&image).map_or(usize::MAX, |text| text.len()).saturating_sub(mark);
+        // While an SVG may still give way after this one, the room of `truncated` stays.
+        let reserve = if Some(index) == last { 0 } else { TRUNCATED };
+        if cost.saturating_add(reserve) > room {
+            truncated = true;
+            break;
+        }
+        room -= cost;
+        if let Some(object) = entry.as_object_mut() {
+            object.insert("image".to_owned(), Value::String(image));
+        }
+    }
+    if let (true, Some(object)) = (truncated, result.as_object_mut()) {
+        object.insert("truncated".to_owned(), Value::Bool(true));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn near_names_are_a_third_of_their_length_apart_at_most() {
+        assert_eq!(near("check_voltag", "check_voltage"), Some(1));
+        assert_eq!(near("abc", "xyz"), None);
+        assert_eq!(near("measure", "measure"), Some(0));
+    }
+
+    #[test]
+    fn the_images_give_way_from_the_last_and_the_result_fits_whole() {
+        // Three entries of a file and one unknown; each SVG is 2,000 characters, over the 1,000 at which `bound::fit`
+        // cuts a string, and costs 2,002 bytes as JSON less the 13 of `{"$cut":true}`: 1,989 more than its mark.
+        let entries = json!([{ "function": "a", "file": "a.lcf" }, { "function": "b", "file": "b.lcf" }, { "function": "c" }, { "function": "d", "file": "d.lcf" }]);
+        let result = json!({ "schema": SCHEMA, "diagrams": entries });
+        let image = "x".repeat(2000);
+        let fill = |max: usize| {
+            let mut made = Vec::new();
+            let mut filled = result.clone();
+            fill_images(&mut filled, max, |index| {
+                made.push(index);
+                Some(image.clone())
+            });
+            (filled, made)
+        };
+        let mut marked = result.clone();
+        for index in [0, 1, 3] {
+            marked["diagrams"][index]["image"] = json!({ "$cut": true });
+        }
+        let base = crate::bound::size(&marked);
+        // Room for all three: whole, no `truncated`, exactly at the bound.
+        let (whole, made) = fill(base + 3 * 1989);
+        assert_eq!((made, whole.get("truncated")), (vec![0, 1, 3], None));
+        assert_eq!(crate::bound::size(&whole), base + 3 * 1989);
+        assert_eq!(whole["diagrams"][2].get("image"), None);
+        // One byte less: the last gives way, its SVG is not made, and `truncated` fits in the room kept for it.
+        for max in [base + 3 * 1989 - 1, base + 2 * 1989 + TRUNCATED] {
+            let (cut, made) = fill(max);
+            assert_eq!(made, vec![0, 1, 3], "{max}");
+            assert_eq!((cut["diagrams"][0]["image"].as_str(), cut["diagrams"][1]["image"].as_str()), (Some(image.as_str()), Some(image.as_str())));
+            assert_eq!((&cut["diagrams"][3]["image"], &cut["truncated"]), (&json!({ "$cut": true }), &json!(true)));
+            assert!(crate::bound::size(&cut) <= max, "{max}");
+            // Within the bound, `bound::fit` leaves it as it is: no image is cut to a `$head`.
+            assert_eq!(crate::bound::fit(cut.clone(), max), cut);
+        }
+        // Room for one and the mark of `truncated`: the second gives way, and the third SVG is never made.
+        let (one, made) = fill(base + 1989 + TRUNCATED);
+        assert_eq!(made, vec![0, 1]);
+        assert_eq!((&one["diagrams"][1]["image"], &one["diagrams"][3]["image"]), (&json!({ "$cut": true }), &json!({ "$cut": true })));
+        assert!(crate::bound::size(&one) <= base + 1989 + TRUNCATED);
+    }
+}

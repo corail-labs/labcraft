@@ -761,8 +761,8 @@ run: until they come (7.3, 7.4), `--trace` and `--max-trace-size` are wrong usag
 Draws the functions of a library as SVG, following the [visual notation](visual-notation.md): the
 drawing of the viewer's canvas, which paints only the shapes that the `diagram` crate computes, for tests
 and for agents (scenario 6 of [acceptance-m0.md](acceptance-m0.md)). Through MCP, the command `diagram.svg` of the
-catalog returns the same SVG (D-18, [commands.md](commands.md), *with M0b*), with the options below as its
-parameters.
+catalog returns the same SVG (D-18, [commands.md](commands.md), 6.5), in the field `image` of each entry of its
+report, with the options below as its parameters.
 
 ```text
 labcraft-cli diagram --svg --out DIR [--json] [--lib-path DIR]... [--theme light|dark]
@@ -988,7 +988,7 @@ events, ok`: the status of its `end` event or `no end`, then `cut` when the run 
 | `schema` | yes | Name and version of this schema (section 4.4) |
 | `status` | yes | `ok` or `error`; `error` exactly when the exit code is 1 |
 | `summary` | yes | `functions`, the entries of `diagrams`: one per file drawn or not, and one per unknown `FUNCTION`; how many are `drawn` and `not_drawn` |
-| `diagrams` | yes | One entry per function, in code point order of their names: `function`, `file` (absent for an unknown `FUNCTION`), `svg` (absent when it could not be written), `drawn`; `nodes`, the nodes counted against `--max-diagram-nodes`, when the file parses; `codes`, the codes that keep it from being drawn |
+| `diagrams` | yes | One entry per function, in code point order of their names: `function`, `file` (absent for an unknown `FUNCTION`), `svg` (absent when it could not be written, and in the result of the command `diagram.svg`, which writes no file and gives the SVG itself in `image`), `drawn`; `nodes`, the nodes counted against `--max-diagram-nodes`, when the file parses; `codes`, the codes that keep it from being drawn |
 | `trace` | no | With `--trace`: `file`; `events`, the events read; `status`, that of its `end` event, absent when it has none; `cut`, true when the run or a limit of reading cut it; `stale`, the files that have changed or are gone since the run, `[]` when it matches; `ignored`, the events counted by `LC7104` |
 | `check` | yes | As in the report of a run (commands.md, section 7): the `summary` and the `diagnostics` of `check`, those of `diagram` included |
 
@@ -1033,8 +1033,8 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   its message on stderr, 2 for wrong usage, with the
   reason and the usage on stderr: an unknown option, a second folder, `--theme` given twice or with another value,
   `--lib-path` without a folder, `--style` given twice or without a file.
-- What the window does goes through the commands of [commands.md](commands.md), section 6.5, which the session of
-  the viewer answers (`docs/architecture.md`, 11.5).
+- What the window does goes through the commands of [commands.md](commands.md), section 6.5, which a session of
+  `engine` answers, one for each folder opened, its root that folder (`docs/architecture.md`, 11.5).
 
 ## 9. Left for later
 

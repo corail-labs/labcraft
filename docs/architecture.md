@@ -778,8 +778,8 @@ where it is written: `engine` and the app decide.
 ### 10.8 `engine` (L6)
 
 *Status: implemented (steps 6a and 6b): the registry, the session, the commands of commands.md 6 but
-`run.set_element`, `diagram.svg`, `view.*` and `guide.read`, which are registered as `planned` (step 8, M0v and step 9;
-decisions of the owner, 2026-11-10), the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
+`run.set_element`, `view.open_trace` and `guide.read`, which are registered as `planned` (step 8, step 8 of M0v and step 9;
+decisions of the owner, 2026-11-10), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
 with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask commands`.*
 
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
@@ -858,7 +858,7 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   simulation.md 9 says.
 - **The state of the viewer** (the folder open, the function shown, the view state that the file does not hold, the
   preference of the standard view, the trace shown) is held by the session too, and the `view.*` commands change it;
-  the app reads it each frame, as in the Craft apps. M0v writes that part (`engine::view`, section 11).
+  the app reads it each frame, as in the Craft apps. M0v writes that part (`engine::view`, section 11.5).
 - **`engine` builds for `wasm32-unknown-unknown`**, where the commands of runs are not enabled, having no threads (D-22);
   `engine::run_to_end` runs one there on the caller's thread, the same judging, run and report, which the corpus of runs
   uses in WASM (decision of the owner, 2026-11-10). The web viewer
@@ -866,8 +866,8 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   that of the commands, and a trap restarts the worker with a new session. On the desktop, the session runs on a
   thread of `format::STACK_SIZE`, and the interface sends it commands through a channel.
 - `fmt` and `check` become the commands `file.format` and `library.check`, and `labcraft-cli` calls them like the
-  others. `diagram.svg` and the `view.*` commands are registered as `planned` until M0v brings them (commands.md
-  6.5), and the MCP server exposes each one once it is enabled.
+  others. `diagram.svg` and the `view.*` commands came with M0v (commands.md 6.5), `view.open_trace` registered as
+  `planned` until the values of a run; the MCP server exposes each one once it is enabled.
 
 ### 10.9 `mcp` (L7)
 
@@ -964,7 +964,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 values of a run aside; the apps (11.5) to come.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
-viewer ([commands.md](commands.md), section 6.5, *with M0b*), the trace (commands.md, section 8),
+viewer ([commands.md](commands.md), section 6.5), the trace (commands.md, section 8),
 [acceptance scenarios 4 and 6](acceptance-m0.md).
 
 ```text
@@ -972,7 +972,7 @@ apps/labcraft ──> engine ──> diagram ──> check ──> format ──
       │                         └──────> trace
       └──> editor ──> diagram, egui (the fork of the suite)
 apps/labcraft-web: the same, with the session in a worker
-apps/labcraft-cli ──> diagram (diagram --svg), and mcp ──> engine (diagram.svg)
+apps/labcraft-cli ──> engine ──> diagram (diagram --svg), and mcp ──> engine (diagram.svg)
 ```
 
 | Layer | Crate | In M0v |
@@ -1243,10 +1243,14 @@ shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand befo
 around the canvas, `craft-window`, `craft-settings` for the preferences (standard view everywhere, theme).
 
 *Status: implemented (step 6b of 11.7), without the trace (step 8) and without `craft-window`, the window keeping
-the frame of the system. Until M0b merges `engine`, the session is a module of the app (`apps/labcraft/src/session.rs`,
-decided at the start of step 6), with the four `view.*` commands of commands.md 6.5 but `view.open_trace`, and the
-folder is read, checked and drawn by the code that `labcraft-cli diagram` uses (`labcraft_cli::folder`): it moves into
-`engine::view` with the commands, and the files behind `engine::Workspace`. The command line is cli.md, section 8.
+the frame of the system. The state of the viewer and the `view.*` commands but `view.open_trace` are in `engine::view`,
+and the folder is read, checked and drawn by the code that `labcraft-cli diagram` and `diagram.svg` use
+(`engine::drawings`), through `engine::Workspace`. The app makes a session of `engine` for each folder it opens, its
+root that folder and its libraries those of `--lib-path` (decisions of the owner, 2026-11-11), on the disk wrapped in
+`engine::ReadOnly`; it watches the files and calls `Session::files_changed`, and hands the values of `--style` to
+`Session::set_style`: neither is a command, the first coming from the system, the second being a tool to tune the
+notation. A command of the session that writes a file marks the view stale, and the next `view.*` command reads the
+folder again. The command line is cli.md, section 8.
 Only a change of a program file (`.lcf`, `.lct`) or of a folder is a change: a log that a bench writes into its
 folder checks nothing again. The changes of the 50 ms after the first are taken together, a window that does not
 move. Each path is watched on its own, before it is read; a path that cannot be watched is the only one looked at
@@ -1256,8 +1260,8 @@ and read again within the same 50 ms, and publishes them with the drawing, which
 - **The session** of `engine` runs on a thread of `format::STACK_SIZE`. It holds the state of the viewer: the
   folder open, the function shown, the view state that the file does not hold, the preference, the trace. The
   window sends it commands through a channel (`view.open`, `view.show_function`, `view.set_standard_view`,
-  `view.set_state`, `view.open_trace`, commands.md 6.5, *with M0b*), and reads its state; the drawings come back as
-  `Arc<Drawing>`. M0v writes these commands, in a module of `engine`. While a drawing is computed, the one before
+  `view.set_state`, `view.open_trace`, commands.md 6.5), and reads its state; the drawings come back as
+  `Arc<Drawing>`. M0v writes these commands, in `engine::view`. While a drawing is computed, the one before
   stays on screen; a function that is no longer drawable keeps its last drawing with its diagnostics
   (scenario 6, point 3).
 - **The window.** A tree of the files of the folder, which marks a file whose function has a trace open and
@@ -1289,9 +1293,10 @@ bundled examples and libraries (`libs/embedded`) or a folder dropped on the page
 section 6 and read once; there is no trace in the browser in M0 (scenario 6, point 7). The fallback faces are the served faces of
 `craft-ui` when the build has them; otherwise a character that Hack lacks shows in its cells as a missing glyph.
 
-**`labcraft-cli diagram`** (cli.md 7) calls `diagram` itself and writes the files, with `craft-atomic`: an SVG of
-20,000 nodes can pass the 4 MiB of a command result (commands.md, section 2), which `diagram.svg`, the way in of
-MCP, keeps. Both give the same SVG, from the same function of `diagram`.
+**`labcraft-cli diagram`** (cli.md 7) reads, checks and draws through `engine::drawings`, as `diagram.svg` does, and
+writes the files, with `craft-atomic`: an SVG of 20,000 nodes can pass the 4 MiB of a command result (commands.md,
+section 2), which `diagram.svg`, the way in of MCP, keeps. Both give the same SVG and the same report, but the paths
+of the files, from the same code, which a test compares on `examples/`.
 
 ### 11.6 Tests
 
@@ -1328,7 +1333,7 @@ Each step ends with something testable.
 4. **Routing**: the snapshots of scenario 6, point 2, native and WASM; bounds; fuzzing.
 5. **`labcraft-cli diagram --svg`** (cli.md 7), and the diagnostics SVG.
 6. **`editor` and `apps/labcraft`**: the canvas, the fonts, watching, the glide, read-only; the session of `engine`
-   once M0b has merged it.
+   once M0b has merged it (`engine::view`, done after step 6).
 7. **`apps/labcraft-web`**.
 8. **The values of a run** (6.1), once M0b has written `trace` (section 10.11): `diagram::values`, `--trace`, the
    family Traces, the fuzzing of the reader.

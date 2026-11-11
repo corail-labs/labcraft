@@ -51,6 +51,8 @@ pub struct Session {
     kept: Vec<(PathBuf, Kept)>,
     /// Its runs, shared with whoever waits for them.
     runs: Runs,
+    /// The state of the viewer, which the `view.*` commands change (`view`).
+    pub(crate) view: crate::view::View,
     /// The first check of the root, made in the background when the session starts.
     #[cfg(not(target_arch = "wasm32"))]
     first: Option<std::thread::JoinHandle<Option<Kept>>>,
@@ -72,6 +74,7 @@ impl Session {
             config,
             kept: Vec::new(),
             runs: Runs::default(),
+            view: crate::view::View::default(),
             #[cfg(not(target_arch = "wasm32"))]
             first: None,
         };
@@ -139,6 +142,24 @@ impl Session {
         self.runs.clone()
     }
 
+    /// What the viewer shows, as the `view.*` commands last left it (`docs/architecture.md`, 11.5).
+    pub fn view(&self) -> &crate::view::Published {
+        self.view.published()
+    }
+
+    /// The files of the folder open in the viewer, or of its libraries, changed: the app that watches them says so,
+    /// and the folder is read, checked and drawn again (decisions of the owner, 2026-11-11). Not a command: the change
+    /// comes from the system, not from a caller.
+    pub fn files_changed(&mut self) {
+        crate::view::files_changed(self);
+    }
+
+    /// Draws the viewer with these values of the notation (`labcraft --style`, notation 10): a tool to tune the
+    /// notation, not a preference, so not a command.
+    pub fn set_style(&mut self, style: std::sync::Arc<labcraft_diagram::style::Style>) {
+        crate::view::set_style(self, style);
+    }
+
     /// Runs a command: the only way in.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         let Some(command) = registry::command(id) else {
@@ -197,6 +218,11 @@ impl Session {
             "project.describe" => project::describe(self),
             "functions.list" => functions::list(self, params),
             "simulation.describe" => simulations::describe(self, params),
+            "diagram.svg" => crate::drawings::svg_command(self, params),
+            "view.open" => crate::view::open(self, params),
+            "view.show_function" => crate::view::show_function(self, params),
+            "view.set_standard_view" => crate::view::set_standard_view(self, params),
+            "view.set_state" => crate::view::set_state(self, params),
             #[cfg(not(target_arch = "wasm32"))]
             "run.start" => self.runs.start(self, params),
             "run.wait" | "run.status" | "run.abort" | "run.trace" => {
@@ -208,9 +234,10 @@ impl Session {
     }
 
     /// A command changed files: nothing kept is given again before it is checked. What it saw would tell the change too;
-    /// this costs nothing and does not lean on it.
+    /// this costs nothing and does not lean on it. The viewer reads its folder again at its next command.
     pub(crate) fn forget(&mut self) {
         self.kept.clear();
+        self.view.stale = true;
     }
 
     fn keep(&mut self, folder: PathBuf, kept: Kept) {
