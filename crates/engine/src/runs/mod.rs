@@ -11,6 +11,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 pub(crate) mod convert;
+mod json_text;
 mod parts;
 mod prepare;
 mod read;
@@ -25,13 +26,14 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use labcraft_runtime::run::AbortBy;
 use serde_json::{Value as Json, json};
 
-pub use task::{Clock, Still};
+pub use prepare::{CommandLine, Outside};
+pub use task::{Clock, Still, let_go};
 
 use crate::error::CommandError;
 use crate::params::{self, Params};
 use crate::registry;
 use crate::session::Session;
-use prepare::{Ready, given, prepare, wait_param};
+use prepare::{Ready, given, prepare, wait_param, with_line};
 use task::{Alone, Finished, Steer, execute};
 
 /// The reports a session keeps *(proposed)*: an older id is `run.unknown`.
@@ -90,6 +92,8 @@ struct Going {
     /// Its `.partial` from the root, with `trace: file`, once `prepare` has found its folder.
     partial: Mutex<Option<String>>,
     abort: Mutex<Option<AbortBy>>,
+    /// The grace period ended from outside: a second Ctrl-C.
+    grace_over: AtomicBool,
     wanted: AtomicBool,
     /// The last `running` report it wrote, and how many it wrote.
     progress: Mutex<(Json, u64)>,
@@ -103,6 +107,10 @@ impl Steer for Going {
 
     fn wants_progress(&self) -> bool {
         self.wanted.swap(false, Ordering::SeqCst)
+    }
+
+    fn grace_over(&self) -> bool {
+        self.grace_over.load(Ordering::SeqCst)
     }
 
     fn progress(&self, report: Json) {
@@ -127,6 +135,7 @@ impl Going {
             trace,
             partial: Mutex::new(None),
             abort: Mutex::new(None),
+            grace_over: AtomicBool::new(false),
             wanted: AtomicBool::new(false),
             progress: Mutex::new((judged, 0)),
             shared: Arc::clone(shared),
@@ -140,6 +149,8 @@ struct Ended {
     function: String,
     /// As text: a report held as a tree of JSON takes many times its text.
     report: Arc<str>,
+    /// The text of each output, for the human form of the command line.
+    texts: Vec<Option<String>>,
     /// Its trace file, from the root, if it wrote one.
     trace_file: Option<String>,
     /// `file`, `inline` or `none`.
@@ -197,6 +208,7 @@ impl State {
             id: going.id.clone(),
             function: going.function.clone(),
             report: Arc::from(finished.report.to_string()),
+            texts: finished.texts,
             trace_file: finished.trace_file,
             trace,
         });
@@ -328,10 +340,24 @@ impl Runs {
         }
     }
 
+    /// The text of each output of a run that ended, as the language writes a constant (cli.md 6.7), in the order of the
+    /// signature; `None` for one that has no text, which holds a session or a function.
+    pub fn output_texts(&self, id: &str) -> Option<Vec<Option<String>>> {
+        self.shared.lock().ended.iter().find(|ended| ended.id == id).map(|ended| ended.texts.clone())
+    }
+
     /// Aborts the run going, if one is, as when the client goes away (commands.md 4): its report is kept.
     pub fn abort_going(&self) {
         if let Some(going) = self.shared.lock().going.clone() {
             *going.abort.lock().unwrap_or_else(PoisonError::into_inner) = Some(AbortBy::Interrupt);
+        }
+    }
+
+    /// Ends the grace period of the run going, aborted or not yet (a second Ctrl-C, cli.md 6.5): the native calls still
+    /// going are abandoned at once, and their resources reported as leaked. The report is still written.
+    pub fn end_grace(&self) {
+        if let Some(going) = self.shared.lock().going.clone() {
+            going.grace_over.store(true, Ordering::SeqCst);
         }
     }
 
@@ -375,8 +401,14 @@ impl Runs {
     /// Starts a run on a thread of its own, and waits for it up to `wait`.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start(&self, session: &Session, params: &Params) -> Result<Json, CommandError> {
+        self.start_with(session, params, CommandLine::default())
+    }
+
+    /// As [`Runs::start`], with what the command line gives beyond the parameters.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_with(&self, session: &Session, params: &Params, line: CommandLine) -> Result<Json, CommandError> {
         let max_nesting = session.config.limits.max_nesting();
-        let given = given(params, max_nesting)?;
+        let given = with_line(given(params, max_nesting)?, line, max_nesting)?;
         let trace = trace_name(given.trace);
         let going = {
             let mut state = self.shared.lock();
@@ -406,7 +438,7 @@ impl Runs {
         };
         let prepared = match ready {
             Ready::Refused(report) => {
-                self.shared.lock().end(&going, Finished { report: report.clone(), trace_file: None }, trace);
+                self.shared.lock().end(&going, Finished { report: report.clone(), texts: Vec::new(), trace_file: None }, trace);
                 self.shared.changed.notify_all();
                 return Ok(report);
             }
@@ -420,8 +452,9 @@ impl Runs {
         let shared = Arc::clone(&self.shared);
         let running = Arc::clone(&going);
         let work = move || {
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(*prepared, &*ws, &root, &*clock, &*running, tag)));
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| execute(*prepared, &ws, &root, &*clock, &*running, tag)));
             let finished = outcome.unwrap_or_else(|_| Finished {
+                texts: Vec::new(),
                 report: json!({
                     "schema": "labcraft-run/1", "status": "fault", "run": running.id, "function": running.function, "mode": "deterministic",
                     "outputs": [], "clock": { "simulated_ms": 0.0, "real_ms": 0 }, "resources": { "opened": 0, "open": [], "leaked": [] },
@@ -447,6 +480,16 @@ impl Runs {
     }
 }
 
+/// A duration of the command line, `30s`, `"500 ms"`, `@0s` (cli.md 6.2), in nanoseconds; why it is none otherwise.
+pub fn duration_ns(text: &str) -> Result<i64, String> {
+    convert::duration_text(text, 64).map_err(|problem| problem.message)
+}
+
+/// The report of a run refused before any session could start, with its diagnostics: a `FOLDER` that does not read.
+pub fn refused_report(function: &str, diagnostics: Vec<Json>) -> Json {
+    prepare::refused("r1", function, parts::CheckPart::of_problems(diagnostics))
+}
+
 /// Why the commands of runs cannot run here, if they cannot.
 pub(crate) fn not_enabled_here() -> Option<&'static str> {
     if cfg!(target_arch = "wasm32") { Some("runs need threads, which the WASM build of M0 does not have (D-22)") } else { None }
@@ -461,7 +504,7 @@ pub fn run_to_end(session: &Session, params: &Json) -> Result<Json, CommandError
     let tag = session.runs().tag(session.config.process);
     let report = match prepare(session, &given, "r1")? {
         Ready::Refused(report) => report,
-        Ready::Run(prepared) => execute(*prepared, &*session.ws, &session.root, &*session.config.clock, &Alone, tag).report,
+        Ready::Run(prepared) => execute(*prepared, &session.ws, &session.root, &*session.config.clock, &Alone, tag).report,
     };
     Ok(crate::bound::fit(report, crate::bound::MAX_RESULT))
 }

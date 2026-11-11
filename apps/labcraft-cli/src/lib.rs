@@ -19,6 +19,7 @@ pub mod disk;
 pub mod fmt;
 pub mod folder;
 pub mod output;
+pub mod run;
 pub mod walk;
 
 /// Every library shipped with LabCraft, as `engine` takes them (`labcraft-libs`, which no crate of `crates/` sees).

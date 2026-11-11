@@ -502,7 +502,8 @@ section 3), not a diagnostic.
 
 ## 6. `run`
 
-*Status: draft for milestone M0b, nothing implemented.*
+*Status: milestone M0b, step 7: implemented in deterministic mode. `--real-time` comes with step 8 (real time), and is
+wrong usage until then.*
 
 Runs one function of a library, against simulated instruments, and reports what it did. It is the
 command line of `run.start` ([commands.md](commands.md), section 6.4): the same parameters, the same
@@ -553,7 +554,7 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 
 | Option | Meaning |
 |---|---|
-| `--sim FILE` | The simulation file of the bench: TOML, one table per library that simulates, by its name (in M0 only `visa`, whose format is [libs/visa/simulation.md](../libs/visa/simulation.md)). `run` reads the file, gives each library its table, and each library judges its part and reports its problems with its own codes (`visa:S001`…). A path is data: a file that does not exist or cannot be read gives `LC0001`, one over `--max-file-size` `LC0006`, one nested deeper than `--max-nesting` or than 80 levels `LC0007` (the reader of TOML goes no deeper; decision of the owner, 2026-11-09: the levels from the root of the file to its deepest value, where a table header of n segments is n levels, a key of n segments n - 1, and an array or an inline table one), one that is not TOML `LC8109`, a key at its top level that no library claims `LC8110`, each with `refused`, not exit 2. Without it, no resource exists, and `visa.open` returns an error |
+| `--sim FILE` | The simulation file of the bench: TOML, one table per library that simulates, by its name (in M0 only `visa`, whose format is [libs/visa/simulation.md](../libs/visa/simulation.md)). `run` reads the file, gives each library its table, and each library judges its part and reports its problems with its own codes (`visa:S001`…). A path is data: a file that does not exist or cannot be read gives `LC0001`, one over `--max-file-size` `LC0006`, one nested deeper than `--max-nesting` or than 80 levels `LC0007` (the reader of TOML goes no deeper; decision of the owner, 2026-11-09: the levels from the root of the file to its deepest value, where a table header of n segments is n levels, a key of n segments n - 1, and an array or an inline table one), one that is not TOML `LC8109`, a key at its top level that no library claims `LC8110`, each with `refused`, not exit 2. A path that starts with `<labcraft>/` names a simulation file shipped with LabCraft, as for `run.start` (commands.md 2): `--sim "<labcraft>/visa/sim/dmm-230V.toml"`. Without it, no resource exists, and `visa.open` returns an error |
 | `--args FILE` | The values of inputs, as one JSON object, the `args` of MCP (6.3). A path is data, as for `--sim`; the file is bounded by `--max-file-size` |
 | `--arg NAME=VALUE` | The value of an input of the function (6.3), which replaces the one of `--args` for that input. An input with a default may be left out |
 | `--set ELEMENT=VALUE@TIME` | Sets a panel element of the function at a time of the run (6.4) |
@@ -605,7 +606,9 @@ above, a `--schedule-seed` with `--real-time`, a number out of the range of its 
 `--no-trace`. What needs the program to be judged (an unknown function or input, a value that does not
 convert) is a diagnostic, and the status `refused`: a value is data, as a path is (section 1).
 
-**Ctrl-C before the run starts**, during the check, ends with the status `aborted`, at 0 ms, nothing run.
+**Ctrl-C before the run starts**, during the check, ends with the status `aborted`, at 0 ms, nothing run; but a
+check that refuses the run still gives `refused`, exit 1, whose diagnostics say what to fix: nothing ran either way
+(decision of the owner, 2026-11-11).
 
 `run` is not part of the WASM build of M0 (D-22; [acceptance-m0.md](acceptance-m0.md), common conditions),
 so its limits are those of the native process.
@@ -620,7 +623,9 @@ space before a unit may be left out.
 exactly, as the `args` of `run.start` do: `{"resource": "SIM::DMM0", "limits": {"low": "220 V", "high":
 "240 V"}}`. No shell quoting is involved, so this is the form for structs and arrays in a script or on
 Windows. An `--arg` replaces the value of the file for its input. A diagnostic about a value of the file is
-located in the file, at its key; a file that is not a JSON object, or gives a key twice, gets `LC8104`.
+located in the file, at its key; a file that is not a JSON object, or gives a key twice, gets `LC8104`, and then no
+input is said to have no argument (`LC8103`), since the file may have given it. The keys that name no input are listed up
+to `--max-report`, and counted after it.
 
 | Input | Example |
 |---|---|
@@ -648,7 +653,8 @@ starts. It gets `LC8107` whether it has a default or not.
 **Quoting.** The examples are written for a POSIX shell and PowerShell 7. Windows PowerShell 5.1 drops the
 double quotes inside an argument, so `'{"low": "220 V"}'` arrives as several broken arguments. `--args FILE`
 works in every shell; writing the inner quotes as `\"` works in PowerShell 5.1 only, and breaks in
-PowerShell 7, so a script that must run in both uses `--args`.
+PowerShell 7, so a script that must run in both uses `--args`. PowerShell 5.1 writes UTF-16 with `>`, which is not the
+UTF-8 that `--args` reads: write the file with `Set-Content -Encoding UTF8` (its byte order mark is skipped).
 
 ### 6.4 Panel elements: `--set` (Q-20)
 
@@ -739,7 +745,8 @@ resources: 1 opened, 0 open
 trace: .labcraft/runs/check_voltage.trace.jsonl, 41 events
 ```
 
-A `refused` run gives the diagnostics in the form of section 4.1, then `check_voltage: refused`. An
+The diagnostics of the report come first, in the form of section 4.1, whatever the status: those of what the run
+reaches, and the errors found elsewhere in the folder. A `refused` run then ends with `check_voltage: refused`. An
 `error` gives the error with its category, its message and where it came from (spec 7.1); a `fault`,
 the first line of a diagnostic (`file:line:column: error[LC8001]: fault: …`); an `aborted` run, how and
 when it was aborted, where each loop was, and the warning that the instruments are in an unknown state.

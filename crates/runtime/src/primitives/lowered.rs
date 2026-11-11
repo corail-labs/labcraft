@@ -97,7 +97,7 @@ fn run_body(program: &Program, names: &Interner, args: Vec<Value>) -> Vec<Value>
 fn text(program: &Program, names: &Interner, value: &Value, index: usize) -> String {
     let function = &program.functions[0];
     let mut out = Text::new(1 << 20);
-    let writer = Writer { env: Env { program, names }, viewer: function.library };
+    let writer = Writer { env: Env { program, names }, viewer: function.library, cut: false };
     writer.write(&mut out, value, function.outputs[index].ty, None).unwrap();
     out.finish()
 }

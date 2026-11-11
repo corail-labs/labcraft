@@ -158,6 +158,21 @@ impl Session {
         })
     }
 
+    /// `run.start` from the command line (`docs/cli.md`, section 6; decisions of the owner, 2026-11-11): the parameters of
+    /// the command, judged as `execute` judges them, and what `labcraft-cli run` gives beyond them, its values as text and
+    /// its files outside the project.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn start_run(&mut self, params: &Value, line: crate::runs::CommandLine) -> Result<Value, CommandError> {
+        let Some(command) = registry::command("run.start") else { return Err(CommandError::internal("`run.start` is not registered")) };
+        let params = params::judge(command, params)?;
+        let runs = self.runs.clone();
+        let session = &*self;
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| runs.start_with(session, &params, line)));
+        outcome
+            .map(|result| result.map(|value| crate::bound::fit(value, crate::bound::MAX_RESULT)))
+            .unwrap_or_else(|_| Err(CommandError::internal(format!("a bug of LabCraft in `run.start`, caught: {}", last_panic()))))
+    }
+
     /// Why a command cannot run now, if it cannot.
     pub fn not_enabled(&self, command: &Command) -> Option<String> {
         if let Some(planned) = command.planned {

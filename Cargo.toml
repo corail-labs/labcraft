@@ -38,6 +38,7 @@ egui = { version = "0.37", default-features = false }
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "wayland", "wgpu", "x11"] }
 
 # foundation
+ctrlc = "3.4"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

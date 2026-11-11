@@ -475,7 +475,7 @@ pub struct Reach { functions: Vec<u32>, types: Vec<u32>, unresolved: Vec<Unresol
   of each file (`CheckedFile::counts`) come from `Report::counts_of`, complete whatever the lists keep, and are added up
   once, when `check` ends.
 - **Limits:** a run of the CLI reaches a file of the folder given through a `--lib-path` copy of it as that dependency,
-  whose warnings do not count under `--deny-warnings`; `run` (step 7) maps the copy back to the folder. When
+  whose warnings `Reach::refuses` counts as those of the folder, by the name the file is shown with. When
   `Checked::bodies` lists fewer diagnostics than it counts, those of a reached file may be among the ones it left out:
   the run is refused all the same, by the counts.
 - **What the manifests say**, normalized and in their order, in each `DeclaredLibrary`: `always`, `resources`,
@@ -686,8 +686,7 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   another call. A call that fails gives its error, without origin: the host makes it, at its node, and the outputs are
   those of a node that fails (`outputs_on_error`, 10.5).
 - **A library judges its section** of the simulation file and returns its diagnostics with its own codes
-  (`LibraryDiagnostic`, cli.md 4.4), each at its key or its value; they join the report of the run with `labcraft-cli run`
-  (step 7). What it judged (`Simulation`, its own type) serves every run that uses the file.
+  (`LibraryDiagnostic`, cli.md 4.4), each at its key or its value; they join the report of the run. What it judged (`Simulation`, its own type) serves every run that uses the file.
 - **The file as a whole** is read by `runtime::simulation`: its nesting is counted first, on the tokens of the lexer of
   `toml` and without recursion, along the path from its root to its deepest value (cli.md 6.2): 80 levels at most, or
   `--max-nesting` when lower, since the parser recurses and stops at 80, and since the tree it builds is dropped by
@@ -695,7 +694,7 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   segments make 6,400 levels, which overflow a stack of 1 MiB. A parse error of the reader's own limit is `LC0007` too. Then it is parsed, its integers checked to fit in 64 bits, and each library given its table
   (`SimulationFile::judge`). A position is a binary search in `simulation::Places` (the start of each line, and the code
   points before every 1,024 bytes), so a file of many problems is placed in linear time. The codes of the tool that this
-  gives, `LC0007`, `LC8109` and `LC8110`, join the tables of cli.md, section 5, when `labcraft-cli run` gives them;
+  gives have their rows in cli.md, `LC0007` in section 5, `LC8109` and `LC8110` in 6.6;
   `cargo xtask codes` checks that each has its row there. A library says its problems in the order of the keys of its
   section, which `toml` sorts: the tool sorts the diagnostics of a run by place (cli.md 4.2).
 
@@ -840,8 +839,9 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   session is numbered in its process, so two sessions never write one `.partial`. `.labcraft/.gitignore` is written when
   `.labcraft` is made. A folder of traces that a link leads elsewhere is refused, for writing and for `run.trace`
   (commands.md 2), and the report says so in `trace.error`. A run removes the `.partial` of its function that its own
-  session left; those of a process that
-  no longer runs wait for `labcraft-cli run` (step 7), which can tell (decision of the owner, 2026-11-10). `run.trace`
+  session left, and those of a process that no longer runs: a process holds the lock of `.<process>.lock` in each
+  folder where it writes a `.partial` (`Workspace::try_lock`), kept in a table of the process until `runs::let_go`, and
+  one whose lock is free or missing has ended (decision of the owner, 2026-11-11). `run.trace`
   reads a trace through `Workspace::open`, one pass a page, keeping each `call` by its place in the file. The first line
   names the files of the folder and of the shipped libraries that the run reaches; a file of a `--lib-path` library is
   not named yet.
@@ -881,11 +881,23 @@ headless in M0b. The instructions it gives point to `guide.read`.
 
 ### 10.10 `labcraft-cli`
 
-It gains `run` (cli.md 6) and `mcp`, both through `engine`. It implements `Workspace` and the real `Clock`
-(`engine::Clock`), gives the id of its process, which names the `.partial` of a trace, and tells `engine` whether the
-process that left another `.partial` still runs (step 7; decision of the owner, 2026-11-10). It gives the
-session the native crates it links (`labcraft-visa`, `labcraft-results-log`), and turns Ctrl-C into an abort, a second
-one into the end of the grace period (cli.md 6.5), through the `ctrlc` crate. `run` is not in the WASM build of M0
+It gains `run` (cli.md 6) and `mcp` (step 9), both through `engine`. `run` starts a session on `FOLDER` and calls
+`Session::start_run`: the parameters of `run.start`, judged as `execute` judges them, and `engine::runs::CommandLine`,
+what the command line gives beyond them (decisions of the owner, 2026-11-11): the current folder, which paths are shown
+from as `check` shows them; the values of `--arg` and `--set` as text, which `engine` reads against their types with the
+freedoms of cli.md 6.3 (`Converter::text_value`), before the converter that MCP uses, whose `args` stay in their exact JSON
+form; and its files outside the project, `--args`, `--sim` and `--trace FILE`, whose `.partial` is written beside it.
+The file of `--args` is read without recursion, so that its bound is `--max-nesting`, a key given twice is refused, and
+each problem is at its key. Then `run.wait`, once a second, which also writes where the run is on stderr when it is a
+terminal. The human form (cli.md 6.7) writes each output as the language writes a constant, cut as commands.md 5 cuts
+a value: `runtime::constant_text`, the writer of `string.format` with its cuts, which `engine` keeps with the report
+when the command line asks for it (`CommandLine::texts`, `Runs::output_texts`), at most 16 KiB for an output and 1 MiB
+for all; past that, an output shows its JSON form. It implements `Workspace` (its locks through `File::try_lock` of `std`) and the real `Clock`
+(`engine::Clock`), and gives the id of its process, which names the `.partial` of a trace and its lock (10.8). It gives
+the session the native crates it links (`labcraft-visa`, `labcraft-results-log`), and turns Ctrl-C into an abort
+(`Runs::abort_going`), a second one into the end of the grace period (`Runs::end_grace`, which
+`runtime::run::Control::grace_over` gives the scheduler; cli.md 6.5), through the `ctrlc` crate (MIT OR Apache-2.0).
+Wrong usage that only `run.start` sees is still exit 2. `run` is not in the WASM build of M0
 (D-22); the deterministic part of `runtime` still builds for `wasm32-unknown-unknown`, which `cargo xtask wasm`
 checks, for the web simulation of M10.
 
@@ -938,7 +950,8 @@ Each step of work ends with something testable:
    *done* (section 10.8); **6b**, runs as tasks, the converter of arguments of cli.md 6.3 (`LC8101` to `LC8108`), the
    diagnostics of a report cut before its values, and the corpus of runs started through `engine` as it is, *done*
    (section 10.8).
-7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C.
+7. **`labcraft-cli run`**, through `engine`: options, arguments, settings, exit codes, the human form, Ctrl-C. *Done*
+   (section 10.10): every case of the corpus gives through the command line the report of `run.start`.
 8. **Real time:** native calls on the pool, the real clock, `--real-time`; scenario 3, point 2.
 9. **`mcp`:** the server, the guide, the scripted loop of scenario 1.
 10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag.

@@ -111,6 +111,11 @@ pub trait Control {
     fn wants_progress(&mut self) -> bool {
         false
     }
+    /// Whether the grace period after an abort was ended from outside (a second Ctrl-C, cli.md 6.5): the native calls still
+    /// going are abandoned at once, and their resources reported as leaked.
+    fn grace_over(&mut self) -> bool {
+        false
+    }
     /// Where the run is: its clock, the resources it opened so far, and each loop going.
     fn progress(&mut self, _progress: Progress) {}
 }

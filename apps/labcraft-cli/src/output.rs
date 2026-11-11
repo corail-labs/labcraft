@@ -25,6 +25,11 @@ fn printable(text: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
+/// A text for one line of a terminal, what it could hide escaped.
+pub fn printable_line(text: &str) -> String {
+    printable(text).into_owned()
+}
+
 fn line(out: &mut String, text: &str) {
     push_line(out, text);
 }

@@ -466,11 +466,15 @@ The example leaves lines out, and files from the first line.
   last trace when it ends, so the trace of the last finished run is always whole, and two runs of one
   function at once never write the same file: the one that ends last stays. A run first removes the
   `.partial` files of its function left by a process that no longer runs, so a killed run leaves nothing
-  for long. A `refused` run writes no
+  for long. A process that writes a `.partial` holds the lock of `.<process>.lock` in its folder until it ends, and
+  the system lets it go however the process ends: the `.partial` of a process whose lock is free, or missing, was left
+  by one that no longer runs, and its lock file goes with it once no `.partial` of it is left there (decision of the
+  owner, 2026-11-11). A `refused` run writes no
   trace, and the last one stays. A reader opens a trace so that it can be replaced while open (on Windows, with `FILE_SHARE_DELETE`);
   if the rename still fails, the trace stays as `.partial` and the report says so in `trace.error`. The
   viewer of M0v shows the values of the last run of the function it draws; an agent reads it with
-  `run.trace` (section 6.4); `labcraft-cli run --trace FILE` writes elsewhere.
+  `run.trace` (section 6.4); `labcraft-cli run --trace FILE` writes elsewhere, its `.partial` beside `FILE`, and
+  leaves the last trace of the function as it was.
 
 ## 9. Left for later
 

@@ -91,25 +91,39 @@ fn a_run_gives_its_report_and_its_trace_in_the_folder_of_runs() {
     assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(&b"*\n"[..]), "made with `.labcraft`");
     let mut names = Vec::new();
     memory.read_dir(std::path::Path::new("/p/.labcraft/runs"), &mut |entry| names.push(entry.unwrap().name)).unwrap();
-    assert_eq!(names, ["double.trace.jsonl"], "no `.partial` left once the trace is renamed");
+    names.sort();
+    assert_eq!(names, [".7.lock", "double.trace.jsonl"], "no `.partial` left once the trace is renamed; the lock of the process");
+    let lock = std::path::Path::new("/p/.labcraft/runs/.7.lock");
+    assert!(memory.try_lock(lock).unwrap().is_none(), "held while the process runs");
     // The report is kept: `run.wait` and `run.status` give it again.
     assert_eq!(ok(&mut session, "run.wait", json!({})), report);
     assert_eq!(ok(&mut session, "run.status", json!({ "run": "r1" })), report);
 }
 
 #[test]
-fn a_partial_trace_that_this_process_left_is_removed_and_those_of_others_stay() {
+fn a_partial_trace_is_removed_when_this_session_or_a_process_that_no_longer_runs_left_it() {
     let memory = project();
     let mut session = session(&memory);
     let mine = session.runs().tag(7).session;
     let partial = |process: u32, session: u64| format!("/p/.labcraft/runs/double.trace.jsonl.{process}-{session}-r9.partial");
-    for (process, number) in [(7, mine), (7, mine + 1000), (8, mine)] {
+    for (process, number) in [(7, mine), (7, mine + 1000), (8, 1), (9, 1), (10, 1)] {
         memory.put(partial(process, number), "{}\n");
     }
+    // 9 runs: it holds its lock. 10 ended: its lock file is there, and free. 8 left no lock file.
+    let running = memory.try_lock(std::path::Path::new("/p/.labcraft/runs/.9.lock")).unwrap();
+    memory.put("/p/.labcraft/runs/.10.lock", "");
+    // 11 ended too, with a `.partial` of another function, which stays until that function runs: so does its lock.
+    memory.put("/p/.labcraft/runs/other.trace.jsonl.11-1-r1.partial", "{}\n");
+    memory.put("/p/.labcraft/runs/.11.lock", "");
     ok(&mut session, "run.start", json!({ "function": "double", "args": { "x": 1 } }));
     assert!(memory.get(partial(7, mine)).is_none(), "left by this session");
     assert!(memory.get(partial(7, mine + 1000)).is_some(), "another session of the process, which may be running");
-    assert!(memory.get(partial(8, mine)).is_some(), "another process: step 7");
+    assert!(memory.get(partial(8, 1)).is_none(), "a process without a lock no longer runs");
+    assert!(memory.get(partial(9, 1)).is_some(), "a process that holds its lock runs");
+    assert!(memory.get(partial(10, 1)).is_none() && memory.get("/p/.labcraft/runs/.10.lock").is_none(), "a free lock: gone, with it");
+    assert!(memory.get("/p/.labcraft/runs/.11.lock").is_some(), "kept while a `.partial` of 11 is left");
+    assert!(memory.get("/p/.labcraft/runs/.9.lock").is_some());
+    drop(running);
     assert!(memory.get("/p/.labcraft/.gitignore").is_none(), "`.labcraft` was there: nothing is added to it");
 }
 
@@ -200,7 +214,15 @@ fn a_long_run_is_followed_and_aborted_while_the_session_answers() {
     assert_eq!(busy.to_json()["error"]["run"], "r1");
     // The session goes on answering while the run goes.
     assert_eq!(ok(&mut session, "library.check", json!({}))["schema"], "labcraft-check/1");
-    let status = ok(&mut session, "run.status", json!({}));
+    // The run may not be in its loop yet when it is first asked (`"loops": []`): asked again, a bounded number of times.
+    let mut status = ok(&mut session, "run.status", json!({}));
+    for _ in 0..200 {
+        if status["loops"].as_array().is_some_and(|loops| !loops.is_empty()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        status = ok(&mut session, "run.status", json!({}));
+    }
     assert_eq!(status["status"], "running");
     assert_eq!(status["loops"][0]["function"], "forever", "{status}");
     assert_eq!(status["loops"][0]["node"], "n");
@@ -320,9 +342,10 @@ fn a_bad_argument_and_a_bad_setting_are_both_said() {
         "run.start",
         json!({ "function": "both", "args": { "x": "a" }, "set": [{ "element": "stop", "value": true, "at": "0 s" }] }),
     );
-    assert_eq!(codes(&report), ["LC8104", "LC8108"]);
+    // Sorted as cli.md 4.2 sorts them: the unknown element has no position, so it comes first in `both.lcf`.
+    assert_eq!(codes(&report), ["LC8108", "LC8104"]);
     // By hand: `x` is on line 6 of `both.lcf`.
-    assert_eq!(report["check"]["diagnostics"][0]["span"]["start"]["line"], 6, "at the name of the input: {report}");
+    assert_eq!(report["check"]["diagnostics"][1]["span"]["start"]["line"], 6, "at the name of the input: {report}");
 }
 
 #[test]
@@ -401,7 +424,14 @@ fn two_sessions_of_one_process_never_share_a_partial_and_a_run_ends_with_its_ses
     let mut partials = Vec::new();
     for _ in 0..200 {
         partials.clear();
-        memory.read_dir(std::path::Path::new("/p/.labcraft/runs"), &mut |entry| partials.push(entry.unwrap().name)).unwrap();
+        memory
+            .read_dir(std::path::Path::new("/p/.labcraft/runs"), &mut |entry| {
+                let name = entry.unwrap().name;
+                if name.to_string_lossy().ends_with(".partial") {
+                    partials.push(name);
+                }
+            })
+            .unwrap();
         if partials.len() == 2 {
             break;
         }
@@ -415,4 +445,238 @@ fn two_sessions_of_one_process_never_share_a_partial_and_a_run_ends_with_its_ses
     assert_eq!((ended["status"].as_str(), ended["abort"]["by"].as_str()), (Some("aborted"), Some("interrupt")), "{ended}");
     assert!(ended["trace"].get("error").is_none(), "{ended}");
     assert_eq!(ok(&mut first, "run.abort", json!({}))["trace"].get("error"), None);
+}
+
+// The command line (cli.md 6; decisions of the owner, 2026-11-11) -----------------------------------------------------
+
+fn texts(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs.iter().map(|(name, text)| ((*name).to_owned(), (*text).to_owned())).collect()
+}
+
+fn outside(path: &str, shown: &str) -> Option<crate::runs::Outside> {
+    Some(crate::runs::Outside { path: PathBuf::from(path), shown: shown.to_owned() })
+}
+
+fn from_line(memory: &Arc<Memory>, params: Value, line: crate::runs::CommandLine) -> Value {
+    let mut session = session(memory);
+    session.start_run(&params, line).unwrap_or_else(|error| panic!("{}", error.to_json()))
+}
+
+/// The inputs of `takes` but `n`, as the command line writes them.
+const GOOD_TEXTS: [(&str, &str); 5] =
+    [("v", "0.22V"), ("d", "100ms"), ("k", "Fail"), ("xs", "[1, 2.5]"), ("s", r#"{"name": "a", "voltage": "230 V"}"#)];
+
+#[test]
+fn the_command_line_gives_values_as_text_with_the_freedoms_of_cli_6_3() {
+    let memory = project();
+    let mut args = texts(&GOOD_TEXTS);
+    // A string is its text as it is, even one that JSON would read as a number.
+    args.extend(texts(&[("n", "7"), ("label", "10")]));
+    let line = crate::runs::CommandLine { args, ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "takes", "trace": "none" }), line);
+    assert_eq!(report["status"], "ok", "{report}");
+    // By hand: 0.22 V, the unit written without its space, is 220 mV; 7 + 1.
+    assert_eq!(report["outputs"][0]["value"], "220.0 mV");
+    assert_eq!(report["outputs"][1]["value"], 8);
+}
+
+#[test]
+fn a_text_that_does_not_convert_has_the_code_of_its_problem() {
+    for (name, text, code) in [
+        ("n", "seven", "LC8104"),
+        ("n", "300", "LC8106"),
+        ("n", "7.0", "LC8104"),
+        ("v", "220", "LC8105"),
+        ("s", "{bad", "LC8104"),
+        ("xs", "[1e999]", "LC8106"),
+    ] {
+        let memory = project();
+        let mut args: Vec<(String, String)> = texts(&GOOD_TEXTS).into_iter().filter(|(given, _)| given != name).collect();
+        if name != "n" {
+            args.push(("n".to_owned(), "7".to_owned()));
+        }
+        args.push((name.to_owned(), text.to_owned()));
+        let line = crate::runs::CommandLine { args, ..Default::default() };
+        let report = from_line(&memory, json!({ "function": "takes", "trace": "none" }), line);
+        assert_eq!(codes(&report), [code], "{name}={text}: {report}");
+        assert_eq!(report["check"]["diagnostics"][0]["file"], "takes.lcf", "at the name of the input");
+    }
+}
+
+#[test]
+fn the_file_of_args_has_its_problems_at_its_keys_and_an_arg_replaces_its_value() {
+    let memory = project();
+    memory.put("/w/args.json", "{\n  \"v\": \"1 V\",\n  \"n\": 300,\n  \"zz\": 1\n}\n");
+    let rest = || texts(&GOOD_TEXTS).into_iter().filter(|(name, _)| name != "v").collect::<Vec<_>>();
+    let line = crate::runs::CommandLine { args: rest(), args_file: outside("/w/args.json", "w/args.json"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "takes", "trace": "none" }), line);
+    let diagnostics = report["check"]["diagnostics"].as_array().unwrap();
+    let found: Vec<(&str, &str, u64, u64)> = diagnostics
+        .iter()
+        .map(|d| {
+            let start = &d["span"]["start"];
+            (d["code"].as_str().unwrap(), d["file"].as_str().unwrap(), start["line"].as_u64().unwrap(), start["column"].as_u64().unwrap())
+        })
+        .collect();
+    // By hand: `"n"` is on line 3 and `"zz"` on line 4, both at column 3, after two spaces; in the order of their places.
+    assert_eq!(found, [("LC8106", "w/args.json", 3, 3), ("LC8102", "w/args.json", 4, 3)], "{report}");
+    // `--arg n=7` replaces the 300 of the file; `zz` still names no input.
+    let mut args = rest();
+    args.push(("n".to_owned(), "7".to_owned()));
+    let line = crate::runs::CommandLine { args, args_file: outside("/w/args.json", "w/args.json"), ..Default::default() };
+    assert_eq!(codes(&from_line(&memory, json!({ "function": "takes", "trace": "none" }), line)), ["LC8102"]);
+}
+
+#[test]
+fn a_file_of_args_that_is_not_an_object_of_inputs_is_refused_in_the_file() {
+    for (text, code, line_at) in [("{\"n\": 1, \"n\": 2}", "LC8104", Some(1)), ("[1]", "LC8104", None), ("{\"n\": ", "LC8104", Some(1))] {
+        let memory = project();
+        memory.put("/w/args.json", text);
+        let line = crate::runs::CommandLine { args_file: outside("/w/args.json", "args.json"), ..Default::default() };
+        let report = from_line(&memory, json!({ "function": "double", "trace": "none" }), line);
+        let first = &report["check"]["diagnostics"][0];
+        assert_eq!((first["code"].as_str(), first["file"].as_str()), (Some(code), Some("args.json")), "{text}: {report}");
+        assert_eq!(first["span"]["start"]["line"].as_u64(), line_at, "{text}");
+    }
+    let memory = project();
+    let line =
+        crate::runs::CommandLine { args_file: outside("/w/none.json", "none.json"), sim: outside("/w/none.toml", "none.toml"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double", "trace": "none" }), line);
+    let files: Vec<(&str, &str)> =
+        report["check"]["diagnostics"].as_array().unwrap().iter().map(|d| (d["code"].as_str().unwrap(), d["file"].as_str().unwrap())).collect();
+    // A path is data: files that do not exist give `LC0001`, each at itself, in the order of their names; `x` is not said
+    // to have no argument, since the file of `--args` that did not read may have given it.
+    assert_eq!(files, [("LC0001", "none.json"), ("LC0001", "none.toml")], "{report}");
+}
+
+#[test]
+fn paths_are_shown_from_the_current_folder_of_the_command_line() {
+    let memory = project();
+    let current = || Some(PathBuf::from("/"));
+    let line = crate::runs::CommandLine { current: current(), args: texts(&[("x", "1.5")]), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double" }), line);
+    assert_eq!(report["trace"]["file"], "p/.labcraft/runs/double.trace.jsonl", "{report}");
+    assert!(memory.get("/p/.labcraft/runs/double.trace.jsonl").is_some(), "under the root, as ever");
+    let line = crate::runs::CommandLine { current: current(), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "doubel", "trace": "none" }), line);
+    assert_eq!(report["check"]["diagnostics"][0]["file"], "p", "{report}");
+    let line = crate::runs::CommandLine { current: current(), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double", "trace": "none" }), line);
+    assert_eq!(report["check"]["diagnostics"][0]["file"], "p/double.lcf", "{report}");
+}
+
+#[test]
+fn a_trace_to_a_file_goes_there_and_the_folder_of_runs_is_left_alone() {
+    let memory = project();
+    memory.put_folder("/out");
+    memory.put("/out/t.jsonl.3-1-r1.partial", "{}\n");
+    let line = crate::runs::CommandLine { args: texts(&[("x", "2")]), trace: outside("/out/t.jsonl", "out/t.jsonl"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double" }), line);
+    assert_eq!(report["trace"]["file"], "out/t.jsonl", "{report}");
+    let trace = String::from_utf8(memory.get("/out/t.jsonl").unwrap()).unwrap();
+    assert!(trace.starts_with("{\"schema\":\"labcraft-trace/1\""), "{trace}");
+    assert!(memory.get("/p/.labcraft").is_none() && memory.link_metadata(std::path::Path::new("/p/.labcraft")).is_err(), "nothing under the root");
+    let mut names = Vec::new();
+    memory.read_dir(std::path::Path::new("/out"), &mut |entry| names.push(entry.unwrap().name.to_string_lossy().into_owned())).unwrap();
+    names.sort();
+    // The `.partial` of process 3, which holds no lock, is gone; this process holds its lock beside the file.
+    assert_eq!(names, [".7.lock", "t.jsonl"]);
+    // A folder that does not exist: the run goes on, and the report says why there is no trace.
+    let line = crate::runs::CommandLine { args: texts(&[("x", "2")]), trace: outside("/nowhere/t.jsonl", "nowhere/t.jsonl"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double" }), line);
+    assert_eq!((report["status"].as_str(), report["trace"]["error"]["code"].as_str()), (Some("ok"), Some("file.unwritable")), "{report}");
+}
+
+#[test]
+fn a_setting_of_the_command_line_converts_as_an_argument_does() {
+    let memory = project();
+    let set = vec![("stop_switch".to_owned(), "true".to_owned(), "0s".to_owned())];
+    let line = crate::runs::CommandLine { set, ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "watch", "trace": "none" }), line);
+    // By hand: set at 0 s, before the first node, so the read sees it.
+    assert_eq!(report["outputs"][0]["value"], true, "{report}");
+    assert_eq!(report["panel"][0]["by"], "set", "{report}");
+    let set = vec![("stop_switch".to_owned(), "maybe".to_owned(), "0s".to_owned())];
+    let line = crate::runs::CommandLine { set, ..Default::default() };
+    assert_eq!(codes(&from_line(&memory, json!({ "function": "watch", "trace": "none" }), line)), ["LC8104"]);
+}
+
+#[test]
+fn a_warning_in_a_file_of_the_folder_reached_through_a_lib_path_copy_refuses_under_deny_warnings() {
+    // `x` is found through `--lib-path /p/vendor`, so the run reaches `vendor/x/f.lcf` as a dependency; it is a file of
+    // the folder all the same (architecture 10.1, cli.md 6.1), and its warning (`LC2020`, `core` imported twice) counts.
+    let memory = Arc::new(Memory::new());
+    memory.put("/p/main.lcf", "labcraft 1\n\nuse x\n\n/// Calls x.\nfn main() -> (y: f64) {\n    y = x.f()\n}\n");
+    memory.put("/p/vendor/x/f.lcf", "labcraft 1\n\nuse core\nuse core\n\n/// One.\nfn f() -> (y: f64) {\n    y = core.add(1.0, 0.0)\n}\n");
+    let run = |deny: bool| {
+        let config = Config {
+            root: PathBuf::from("/p"),
+            lib_paths: vec![PathBuf::from("/p/vendor")],
+            limits: Limits::default(),
+            shipped: Shipped::default(),
+            natives: Vec::new(),
+            clock: Arc::new(Still),
+            process: 7,
+        };
+        let mut session = Session::new(Arc::clone(&memory) as Arc<dyn Workspace>, config, false).unwrap();
+        ok(&mut session, "run.start", json!({ "function": "main", "deny_warnings": deny, "trace": "none" }))
+    };
+    let plain = run(false);
+    assert_eq!(plain["status"], "ok", "{plain}");
+    let denied = run(true);
+    assert_eq!(denied["status"], "refused", "{denied}");
+    let codes: Vec<&str> = denied["check"]["diagnostics"].as_array().unwrap().iter().filter_map(|d| d["code"].as_str()).collect();
+    assert!(codes.contains(&"LC2020"), "{denied}");
+}
+
+#[test]
+fn a_number_that_no_f64_holds_is_out_of_range_in_text_and_in_the_file_of_args() {
+    let memory = project();
+    // cli.md 6.6 names `1e999` under `LC8106`.
+    let line = crate::runs::CommandLine { args: texts(&[("x", "1e999")]), ..Default::default() };
+    assert_eq!(codes(&from_line(&memory, json!({ "function": "double", "trace": "none" }), line)), ["LC8106"]);
+    memory.put("/w/args.json", "{\"x\": 1e999}");
+    let line = crate::runs::CommandLine { args_file: outside("/w/args.json", "args.json"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double", "trace": "none" }), line);
+    assert_eq!(codes(&report), ["LC8106"], "no `LC8103` after it: {report}");
+    // By hand: `1e999` starts at byte 6, column 7.
+    assert_eq!(report["check"]["diagnostics"][0]["span"]["start"]["column"], 7, "{report}");
+}
+
+#[test]
+fn a_lock_with_no_partial_left_of_a_process_that_no_longer_runs_goes() {
+    let memory = project();
+    memory.put("/p/.labcraft/runs/.40.lock", "");
+    let running = memory.try_lock(std::path::Path::new("/p/.labcraft/runs/.41.lock")).unwrap();
+    let mut session = session(&memory);
+    ok(&mut session, "run.start", json!({ "function": "double", "args": { "x": 1 } }));
+    assert!(memory.get("/p/.labcraft/runs/.40.lock").is_none(), "free, with no `.partial`: an ended process left it");
+    assert!(memory.get("/p/.labcraft/runs/.41.lock").is_some(), "held");
+    drop(running);
+}
+
+#[test]
+fn a_file_of_args_of_many_unknown_keys_lists_the_first_and_counts_them_all() {
+    let memory = project();
+    let keys: Vec<String> = (0..1500).map(|index| format!("\"k{index}\": 1")).collect();
+    memory.put("/w/args.json", format!("{{{}, \"x\": 2}}", keys.join(", ")));
+    let line = crate::runs::CommandLine { args_file: outside("/w/args.json", "args.json"), ..Default::default() };
+    let report = from_line(&memory, json!({ "function": "double", "trace": "none" }), line);
+    // By hand: 1,500 keys name no input; `--max-report` is 1,000 by default, so 1,000 are said and 500 counted.
+    assert_eq!(report["check"]["diagnostics"].as_array().unwrap().len(), 1000, "{}", report["check"]["summary"]);
+    assert_eq!(report["check"]["summary"]["errors"], 1500);
+    assert_eq!(report["check"]["summary"]["truncated"], true);
+}
+
+#[test]
+fn a_large_json_number_reads_and_one_that_no_integer_type_holds_is_out_of_range() {
+    let memory = project();
+    // `serde_json` writes 1e20 back as `1e+20`; by hand, 1e20 × 2.
+    let mut session = session(&memory);
+    let report = ok(&mut session, "run.start", json!({ "function": "double", "args": { "x": 1e20 }, "trace": "none" }));
+    assert_eq!(report["outputs"][0]["value"], 2e20, "{report}");
+    let mut args: Vec<(String, String)> = texts(&GOOD_TEXTS);
+    args.push(("n".to_owned(), "99999999999999999999".to_owned()));
+    let line = crate::runs::CommandLine { args, ..Default::default() };
+    assert_eq!(codes(&from_line(&memory, json!({ "function": "takes", "trace": "none" }), line)), ["LC8106"]);
 }

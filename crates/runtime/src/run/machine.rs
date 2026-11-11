@@ -620,9 +620,15 @@ impl<'p, 'o> Machine<'p, 'o> {
         let sleeping: Vec<Reverse<(i64, u64, TaskId)>> =
             std::mem::take(&mut self.sleepers).into_iter().filter(|Reverse((_, _, task))| self.is_native(Ready::Resume(*task))).collect();
         self.sleepers = sleeping.into_iter().collect();
+        // Ended from outside, the grace period ends now, not at its deadline.
+        let mut cut = false;
         loop {
             // A library that never ends a call, asking to wait 0 ns again and again, is stopped by the real time of the run.
             if self.settings.max_real_time.is_some_and(|limit| self.control.real_ns() > limit) {
+                break;
+            }
+            if self.control.grace_over() {
+                cut = true;
                 break;
             }
             if let Some(ticket) = self.ready.pop() {
@@ -640,7 +646,7 @@ impl<'p, 'o> Machine<'p, 'o> {
             }
         }
         let abandoned: Vec<TaskId> = (0..self.tasks.len()).filter(|task| self.is_native(Ready::Resume(*task))).collect();
-        if !abandoned.is_empty() {
+        if !abandoned.is_empty() && !cut {
             self.now = self.now.max(deadline);
         }
         for task in abandoned {
