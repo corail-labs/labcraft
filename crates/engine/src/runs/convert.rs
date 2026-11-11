@@ -59,8 +59,12 @@ fn not_read(message: impl Into<String>) -> Problem {
 
 /// A JSON value, shown in a message: cut, so that a message never repeats a large argument.
 fn shown(value: &Json) -> String {
-    let text = value.to_string();
-    if text.chars().count() <= 60 { text } else { format!("{}…", text.chars().take(60).collect::<String>()) }
+    cut(&value.to_string())
+}
+
+/// A text shown in a message, cut at 60 code points.
+fn cut(text: &str) -> String {
+    if text.chars().count() <= 60 { text.to_owned() } else { format!("{}…", text.chars().take(60).collect::<String>()) }
 }
 
 impl Converter<'_> {
@@ -93,6 +97,49 @@ impl Converter<'_> {
             return Err(problem("LC8107", "its type holds an opaque type or a function reference, which no argument can give"));
         }
         self.convert(json, ty)
+    }
+
+    /// A value written on the command line (cli.md 6.3): the JSON form, with two more freedoms, the quotes of what JSON
+    /// writes as a string may be left out, and the space before a unit. Which applies depends on the type: the text of a
+    /// `string` is the string, always; a number with a unit, a `duration`, a `timestamp` and a variant without values are
+    /// strings in JSON, so their text is taken as it is unless it is quoted; an `i64` or a `u64` written as digits is
+    /// the string of digits of commands.md 5; anything else is JSON. Then the value converts as `args` do.
+    pub fn text_value(&self, text: &str, ty: TyId) -> Result<Value, Problem> {
+        let quoted = || text.trim_start().starts_with('"');
+        let as_json = |what: &str| -> Result<Json, Problem> {
+            super::json_text::parse(text, self.max_nesting).map(|parsed| parsed.value).map_err(|bad| match bad {
+                super::json_text::Bad::TooDeep => not_read(format!("the value nests deeper than {} levels (--max-nesting)", self.max_nesting)),
+                super::json_text::Bad::OutOfRange(range) => {
+                    problem("LC8106", format!("`{}` is out of the range of {}", cut(text.get(range).unwrap_or(text)), self.type_text(ty)))
+                }
+                _ => not_read(format!("`{}` does not read as {what}, for {}", cut(text), self.type_text(ty))),
+            })
+        };
+        let json = match self.types.ty(ty) {
+            Ty::String => Json::String(text.to_owned()),
+            Ty::Number { kind, unit } if *unit == Unit::ONE => {
+                let digits = text.strip_prefix('-').unwrap_or(text);
+                let wide =
+                    matches!(kind, NumberKind::I64 | NumberKind::U64) && !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit());
+                if wide || (!kind.is_integer() && matches!(text, "nan" | "inf" | "-inf")) {
+                    Json::String(text.to_owned())
+                } else if kind.is_integer() && !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) && text.parse::<i64>().is_err()
+                {
+                    // Digits that JSON would read as a float, `99999999999999999999`: an integer out of the range of any
+                    // integer type but the wide ones, which take them above.
+                    return Err(problem("LC8106", format!("`{}` is out of the range of {}", cut(text), self.type_text(ty))));
+                } else {
+                    as_json("a number")?
+                }
+            }
+            Ty::Number { kind, .. } if kind.is_complex() && text.trim_start().starts_with('{') => as_json("JSON")?,
+            Ty::Number { .. } | Ty::Duration | Ty::Timestamp if !quoted() => Json::String(text.to_owned()),
+            Ty::Enum(_) if !quoted() && !text.trim_start().starts_with('{') => Json::String(text.to_owned()),
+            Ty::ErrorValue if matches!(text, "none" | "null") => Json::Null,
+            Ty::Bool => as_json("`true` or `false`")?,
+            _ => as_json("JSON")?,
+        };
+        self.value(&json, ty)
     }
 
     pub fn type_text(&self, ty: TyId) -> String {
@@ -401,7 +448,8 @@ fn lex(text: &str) -> Option<Lexed> {
     }
     if matches!(bytes.get(end), Some(b'e' | b'E')) {
         let mut at = end + 1;
-        if bytes.get(at) == Some(&b'-') {
+        // `1e+20`: how JSON writes a large number, as `serde_json` gives it back.
+        if matches!(bytes.get(at), Some(b'-' | b'+')) {
             at += 1;
         }
         let after = int(at);

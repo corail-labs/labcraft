@@ -214,6 +214,259 @@ fn number<T: std::str::FromStr>(option: &str, value: Option<&OsString>) -> Resul
     value.parse().map_err(|_| format!("{option} needs a whole number, not `{value}`"))
 }
 
+/// Where the trace of a run goes (`docs/cli.md`, 6.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TraceTo {
+    /// `.labcraft/runs/` under `FOLDER`.
+    Folder,
+    File(PathBuf),
+    None,
+}
+
+/// A `--max-` limit given: a number, or `none`, which removes the default (`--max-iterations`, `--max-nodes`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Limit {
+    Count(u64),
+    None,
+}
+
+/// `labcraft-cli run` (`docs/cli.md`, section 6).
+#[derive(Debug)]
+pub struct RunOptions {
+    pub json: bool,
+    pub deny_warnings: bool,
+    pub lib_paths: Vec<PathBuf>,
+    pub limits: Limits,
+    pub folder: PathBuf,
+    pub function: String,
+    pub sim: Option<PathBuf>,
+    pub args_file: Option<PathBuf>,
+    /// `--arg NAME=VALUE`, in the order given.
+    pub args: Vec<(String, String)>,
+    /// `--set ELEMENT=VALUE@TIME`: the element, the value, the time, as written.
+    pub set: Vec<(String, String, String)>,
+    pub schedule_seed: Option<u64>,
+    /// Durations as written, already judged: `30s`, `"30 s"`.
+    pub timeout: Option<String>,
+    pub max_real_time: Option<String>,
+    pub max_iterations: Option<Limit>,
+    pub max_nodes: Option<Limit>,
+    pub max_call_depth: Option<u64>,
+    pub max_memory: Option<u64>,
+    pub trace: TraceTo,
+}
+
+/// The options of `run` that take one value, which it refuses twice (`docs/cli.md`, 6.2).
+const RUN_ONCE: [&str; 13] = [
+    "--sim",
+    "--args",
+    "--schedule-seed",
+    "--timeout",
+    "--max-iterations",
+    "--max-nodes",
+    "--max-call-depth",
+    "--max-memory",
+    "--max-real-time",
+    "--trace",
+    "--max-report",
+    "--max-file-size",
+    "--max-nesting",
+];
+
+/// The most of `--max-call-depth`, and the least of `--max-memory` (`docs/cli.md`, 6.2).
+pub const MAX_CALL_DEPTH: u64 = 4096;
+pub const MIN_MEMORY: u64 = 1 << 20;
+/// The most of a count: 2^63 - 1.
+const MAX_COUNT: u64 = i64::MAX as u64;
+
+/// What starts a trace (`docs/commands.md`, section 8): a file that exists and does not start so is not replaced.
+const TRACE_START: &[u8] = b"{\"schema\":\"labcraft-trace/1\"";
+
+fn text_of<'a>(option: &str, value: Option<&'a OsString>) -> Result<&'a str, String> {
+    let value = value.ok_or_else(|| format!("{option} needs a value"))?;
+    value.to_str().ok_or_else(|| format!("{option}: `{}` is not Unicode", value.to_string_lossy()))
+}
+
+/// A duration of the command line, as the language writes it, the space before the unit optional (`docs/cli.md`, 6.2).
+fn duration(option: &str, text: &str, above_zero: bool) -> Result<i64, String> {
+    match labcraft_engine::runs::duration_ns(text) {
+        Ok(ns) if ns > 0 || (ns == 0 && !above_zero) => Ok(ns),
+        Ok(_) if above_zero => Err(format!("{option}: `{text}` is not above 0")),
+        Ok(_) => Err(format!("{option}: `{text}` is below 0")),
+        Err(_) if text.trim().parse::<f64>().is_ok() => {
+            Err(format!("{option}: `{text}` has no unit, and seconds are not assumed: write `{}s` or `\"{} s\"`", text.trim(), text.trim()))
+        }
+        Err(why) => Err(format!("{option}: `{text}` is no duration, `30s` or `\"500 ms\"`: {why}")),
+    }
+}
+
+fn count(option: &str, text: &str, least: u64, most: u64) -> Result<u64, String> {
+    match text.parse::<u64>() {
+        Ok(value) if (least..=most).contains(&value) => Ok(value),
+        _ => Err(format!("{option} is a whole number from {least} to {most}, not `{text}`")),
+    }
+}
+
+/// Names joined by `.`, each a name of the language (spec 14.1).
+fn is_function_path(text: &str) -> bool {
+    !text.is_empty() && text.split('.').all(labcraft_format::is_name)
+}
+
+/// `--trace FILE` never replaces a program, a file of arguments or anything that is not a trace (`docs/cli.md`, 6.2).
+fn judge_trace_file(path: &Path) -> Result<(), String> {
+    // Windows drops the dots and spaces that end a name: `x.lcf.` is `x.lcf`.
+    let name = path.file_name().map(|name| name.to_string_lossy().trim_end_matches(['.', ' ']).to_lowercase()).unwrap_or_default();
+    if [".lcf", ".lct", ".toml", ".json"].iter().any(|extension| name.ends_with(extension)) {
+        return Err(format!("--trace: `{}` would replace a program or a file of LabCraft, not a trace", path.display()));
+    }
+    // On Windows, `x.lcf:s` names the stream `s` of the file `x.lcf`, which writing it makes.
+    if cfg!(windows) && name.contains(':') {
+        return Err(format!("--trace: `{}` names a stream of a file, on Windows", path.display()));
+    }
+    match std::fs::metadata(path) {
+        Err(_) => Ok(()),
+        Ok(metadata) if metadata.is_dir() => Err(format!("--trace: `{}` is a folder", path.display())),
+        Ok(_) => {
+            let mut start = [0_u8; TRACE_START.len()];
+            let read = std::fs::File::open(path).and_then(|mut file| std::io::Read::read_exact(&mut file, &mut start));
+            if read.is_ok() && start == TRACE_START {
+                Ok(())
+            } else {
+                Err(format!("--trace: `{}` exists and is not a trace, so it is not replaced", path.display()))
+            }
+        }
+    }
+}
+
+pub fn parse_run(args: &[OsString]) -> Result<RunOptions, String> {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let text = arg.to_string_lossy();
+        if text == "--" {
+            break;
+        }
+        if let Some(&once) = RUN_ONCE.iter().find(|once| **once == text) {
+            if seen.contains(&once) {
+                return Err(format!("{once} is given twice"));
+            }
+            seen.push(once);
+            rest.next();
+        } else if matches!(text.as_ref(), "--lib-path" | "--arg" | "--set") {
+            rest.next();
+        }
+    }
+    let mut options = RunOptions {
+        json: false,
+        deny_warnings: false,
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        folder: PathBuf::new(),
+        function: String::new(),
+        sim: None,
+        args_file: None,
+        args: Vec::new(),
+        set: Vec::new(),
+        schedule_seed: None,
+        timeout: None,
+        max_real_time: None,
+        max_iterations: None,
+        max_nodes: None,
+        max_call_depth: None,
+        max_memory: None,
+        trace: TraceTo::Folder,
+    };
+    let (mut real_time, mut trace_file, mut no_trace) = (false, None, false);
+    let common = parse_common(args, |option, rest| {
+        match option {
+            "--deny-warnings" => options.deny_warnings = true,
+            "--real-time" => real_time = true,
+            "--no-trace" => no_trace = true,
+            "--lib-path" => options.lib_paths.push(PathBuf::from(rest.next().ok_or("--lib-path needs a folder")?)),
+            "--sim" => options.sim = Some(PathBuf::from(rest.next().ok_or("--sim needs a file")?)),
+            "--args" => options.args_file = Some(PathBuf::from(rest.next().ok_or("--args needs a file")?)),
+            "--trace" => trace_file = Some(PathBuf::from(rest.next().ok_or("--trace needs a file")?)),
+            "--arg" => {
+                let text = text_of(option, rest.next())?;
+                let (name, value) = text.split_once('=').ok_or_else(|| format!("--arg `{text}` has no `=`: write NAME=VALUE"))?;
+                if !labcraft_format::is_name(name) {
+                    return Err(format!("--arg: `{name}` is not a name, so no input has it"));
+                }
+                if options.args.iter().any(|(known, _)| known == name) {
+                    return Err(format!("--arg gives the input `{name}` twice"));
+                }
+                options.args.push((name.to_owned(), value.to_owned()));
+            }
+            "--set" => {
+                let text = text_of(option, rest.next())?;
+                let (element, setting) = text.split_once('=').ok_or_else(|| format!("--set `{text}` has no `=`: write ELEMENT=VALUE@TIME"))?;
+                let (value, time) =
+                    setting.rsplit_once('@').ok_or_else(|| format!("--set `{text}` has no `@TIME`: write ELEMENT=VALUE@TIME, `@0s`"))?;
+                if !labcraft_format::is_name(element) {
+                    return Err(format!("--set: `{element}` is not a name, so no element has it"));
+                }
+                duration("--set", time, false)?;
+                options.set.push((element.to_owned(), value.to_owned(), time.to_owned()));
+            }
+            "--schedule-seed" => {
+                let text = text_of(option, rest.next())?;
+                options.schedule_seed = Some(text.parse().map_err(|_| format!("--schedule-seed is a whole number from 0 to 2^64-1, not `{text}`"))?);
+            }
+            "--timeout" | "--max-real-time" => {
+                let text = text_of(option, rest.next())?;
+                duration(option, text, true)?;
+                let slot = if option == "--timeout" { &mut options.timeout } else { &mut options.max_real_time };
+                *slot = Some(text.to_owned());
+            }
+            "--max-iterations" | "--max-nodes" => {
+                let text = text_of(option, rest.next())?;
+                let limit = if text == "none" { Limit::None } else { Limit::Count(count(option, text, 1, MAX_COUNT)?) };
+                let slot = if option == "--max-iterations" { &mut options.max_iterations } else { &mut options.max_nodes };
+                *slot = Some(limit);
+            }
+            "--max-call-depth" => options.max_call_depth = Some(count(option, text_of(option, rest.next())?, 1, MAX_CALL_DEPTH)?),
+            "--max-memory" => options.max_memory = Some(count(option, text_of(option, rest.next())?, MIN_MEMORY, MAX_COUNT)?),
+            _ => return Ok(false),
+        }
+        Ok(true)
+    })?;
+    let mut positional = common.paths.into_iter();
+    let (Some(folder), Some(function), None) = (positional.next(), positional.next(), positional.next()) else {
+        return Err("run takes FOLDER and FUNCTION, and nothing else".to_owned());
+    };
+    let function = function.to_str().unwrap_or_default().to_owned();
+    if !is_function_path(&function) {
+        return Err(format!("`{function}` is not names joined by `.`: `check_voltage`, `dmm_driver.measure`"));
+    }
+    if real_time {
+        // Real time comes with M0b, step 8 (`docs/architecture.md`, 10.11).
+        return Err("--real-time is not in this version yet: runs are deterministic".to_owned());
+    }
+    options.trace = match (trace_file, no_trace) {
+        (Some(_), true) => return Err("--trace and --no-trace together".to_owned()),
+        (Some(file), false) => {
+            judge_trace_file(&file)?;
+            TraceTo::File(file)
+        }
+        (None, true) => TraceTo::None,
+        (None, false) => TraceTo::Folder,
+    };
+    options.json = common.json;
+    options.limits = common.limits;
+    options.folder = folder;
+    options.function = function;
+    Ok(options)
+}
+
+/// `run` takes a folder (`docs/cli.md`, section 6), and a file is wrong usage; a path that does not exist is data.
+pub fn refuse_a_file_as_folder(options: &RunOptions) -> Result<(), String> {
+    let is_a_file = |path: &&PathBuf| Path::metadata(path).is_ok_and(|metadata| !metadata.is_dir());
+    match std::iter::once(&options.folder).chain(&options.lib_paths).find(is_a_file) {
+        Some(file) => Err(format!("`{}` is a file, and run takes a folder", file.display())),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +594,104 @@ mod tests {
         }
         // After `--`, a path; and a value is not an option given twice.
         assert_eq!(diagram(&["--svg", "--out", "--out", "--", "--theme"]).unwrap().check.folders, [PathBuf::from("--theme")]);
+    }
+
+    fn run(args: &[&str]) -> Result<RunOptions, String> {
+        parse_run(&os(args))
+    }
+
+    #[test]
+    fn run_takes_its_options() {
+        let options = run(&[
+            "examples",
+            "check_voltage",
+            "--json",
+            "--arg",
+            "resource=SIM::DMM0",
+            "--arg",
+            "low=220V",
+            "--set",
+            "note=a@b@500ms",
+            "--sim",
+            "b.toml",
+            "--args",
+            "a.json",
+            "--timeout",
+            "30s",
+            "--max-iterations",
+            "none",
+            "--max-nodes",
+            "5",
+            "--max-call-depth",
+            "4096",
+            "--max-memory",
+            "1048576",
+            "--max-real-time",
+            "1 min",
+            "--schedule-seed",
+            "18446744073709551615",
+            "--no-trace",
+            "--deny-warnings",
+            "--lib-path",
+            "l",
+        ])
+        .unwrap();
+        assert_eq!((options.folder, options.function.as_str()), (PathBuf::from("examples"), "check_voltage"));
+        assert_eq!(options.args, [("resource".to_owned(), "SIM::DMM0".to_owned()), ("low".to_owned(), "220V".to_owned())]);
+        // The time is after the last `@`, so a value may hold one (cli.md 6.4).
+        assert_eq!(options.set, [("note".to_owned(), "a@b".to_owned(), "500ms".to_owned())]);
+        assert_eq!((options.sim, options.args_file), (Some(PathBuf::from("b.toml")), Some(PathBuf::from("a.json"))));
+        assert_eq!((options.timeout.as_deref(), options.max_real_time.as_deref()), (Some("30s"), Some("1 min")));
+        assert_eq!((options.max_iterations, options.max_nodes), (Some(Limit::None), Some(Limit::Count(5))));
+        assert_eq!((options.max_call_depth, options.max_memory, options.schedule_seed), (Some(4096), Some(1 << 20), Some(u64::MAX)));
+        assert!(options.json && options.deny_warnings && options.trace == TraceTo::None);
+        assert_eq!(options.lib_paths, [PathBuf::from("l")]);
+        let plain = run(&["f", "a.b"]).unwrap();
+        assert!(plain.trace == TraceTo::Folder && plain.args.is_empty() && plain.timeout.is_none());
+    }
+
+    #[test]
+    fn run_refuses_what_cli_6_2_calls_wrong_usage() {
+        let cases: &[&[&str]] = &[
+            &["f"],
+            &["f", "g", "h"],
+            &["f", "a..b"],
+            &["f", "1x"],
+            &["f", "g", "--arg", "x"],
+            &["f", "g", "--arg", "next=1"],
+            &["f", "g", "--arg", "x=1", "--arg", "x=2"],
+            &["f", "g", "--set", "e=1"],
+            &["f", "g", "--set", "e=1@soon"],
+            &["f", "g", "--set", "e=1@-1s"],
+            &["f", "g", "--set", "e=1@5"],
+            &["f", "g", "--timeout", "30"],
+            &["f", "g", "--timeout", "0s"],
+            &["f", "g", "--timeout", "inf s"],
+            &["f", "g", "--timeout", "1s", "--timeout", "2s"],
+            &["f", "g", "--max-real-time", "-1s"],
+            &["f", "g", "--max-nodes", "0"],
+            &["f", "g", "--max-nodes", "9223372036854775808"],
+            &["f", "g", "--max-call-depth", "4097"],
+            &["f", "g", "--max-call-depth", "none"],
+            &["f", "g", "--max-memory", "1048575"],
+            &["f", "g", "--schedule-seed", "18446744073709551616"],
+            &["f", "g", "--schedule-seed", "-1"],
+            &["f", "g", "--real-time"],
+            &["f", "g", "--trace", "t.jsonl", "--no-trace"],
+            &["f", "g", "--trace", "main.LCF"],
+            &["f", "g", "--trace", "args.Json"],
+            &["f", "g", "--trace", "x.lcf."],
+            &["f", "g", "--trace", "x.toml. ."],
+            #[cfg(windows)]
+            &["f", "g", "--trace", "p/x.lcf:s"],
+            &["f", "g", "--unknown"],
+            &["f", "g", "--sim"],
+        ];
+        for args in cases {
+            assert!(run(args).is_err(), "{args:?}");
+        }
+        let message = run(&["f", "g", "--timeout", "30"]).unwrap_err();
+        assert!(message.contains("`30s`"), "the form to write: {message}");
     }
 
     #[cfg(unix)]

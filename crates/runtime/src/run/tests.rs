@@ -188,7 +188,8 @@ impl Ran {
     fn value(&self, index: usize) -> String {
         let function = &self.program.functions[0];
         let mut out = crate::text::Text::new(1 << 16);
-        let writer = crate::text::Writer { env: crate::convert::Env { program: &self.program, names: &self.names }, viewer: function.library };
+        let writer =
+            crate::text::Writer { env: crate::convert::Env { program: &self.program, names: &self.names }, viewer: function.library, cut: false };
         writer.write(&mut out, &self.end.outputs[index], function.outputs[index].ty, None).unwrap();
         out.finish()
     }
@@ -207,6 +208,10 @@ fn run_with(source: &str, inputs: Vec<Value>, settings: Settings, seen: &Arc<Mut
 }
 
 fn run_files(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings, seen: &Arc<Mutex<Seen>>) -> Ran {
+    run_controlled(files, inputs, settings, seen, &mut Still)
+}
+
+fn run_controlled(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings, seen: &Arc<Mutex<Seen>>, control: &mut dyn Control) -> Ran {
     let mut names = Interner::new();
     let checked = checked(files, &mut names);
     let start = checked.files.iter().position(|file| file.shown == files[0].0).unwrap();
@@ -219,7 +224,7 @@ fn run_files(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings, see
         .map(|library| Native { library: library.id, native: &bench, simulation: None })
         .collect();
     let mut heard = Heard { events: Vec::new(), names: &names };
-    let end = run(Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings }, &mut Still, &mut heard);
+    let end = run(Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings }, control, &mut heard);
     let events = heard.events;
     drop(natives);
     Ran { end, events, program, names }
@@ -475,6 +480,32 @@ fn a_call_past_the_grace_period_is_abandoned_and_its_resource_leaked() {
     assert_eq!(ran.end.status, Status::Aborted);
     // The grace period ends at 700 ms with the call still going: cancelled, its handle leaked and not released.
     assert_eq!(ran.end.clock, 700 * MS);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.cancelled.len(), 1);
+    assert!(seen.released.is_empty());
+    assert!(ran.end.resources[0].leaked);
+}
+
+/// A second Ctrl-C, before the run is aborted: the grace period is over as soon as it starts.
+struct GraceOver;
+
+impl Control for GraceOver {
+    fn real_ns(&mut self) -> u64 {
+        0
+    }
+    fn grace_over(&mut self) -> bool {
+        true
+    }
+}
+
+#[test]
+fn a_grace_period_ended_from_outside_abandons_the_call_at_once() {
+    let seen = Arc::default();
+    let settings = Settings { timeout: Some(500 * MS), ..Settings::default() };
+    let ran = run_controlled(&[("f.lcf", SLOW)], vec![], settings, &seen, &mut GraceOver);
+    assert_eq!(ran.end.status, Status::Aborted);
+    // cli.md 6.5: the call that would end at 1 s is abandoned at the abort, 500 ms, not at the end of the 5 s of grace.
+    assert_eq!(ran.end.clock, 500 * MS);
     let seen = seen.lock().unwrap();
     assert_eq!(seen.cancelled.len(), 1);
     assert!(seen.released.is_empty());

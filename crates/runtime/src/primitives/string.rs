@@ -55,7 +55,7 @@ pub fn format(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault
     let names: HashMap<&str, usize> = fields.iter().enumerate().map(|(index, name)| (name.as_str(), index)).collect();
     let room = usize::try_from(host.room().saturating_sub(VALUE_COST)).unwrap_or(usize::MAX);
     let mut out = Text::new(room);
-    let writer = Writer { env: call.env, viewer: call.viewer };
+    let writer = Writer { env: call.env, viewer: call.viewer, cut: false };
     for piece in &pieces {
         match piece {
             Piece::Text(text) => out.push(text)?,

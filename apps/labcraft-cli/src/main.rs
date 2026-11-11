@@ -11,7 +11,7 @@
 )]
 #![forbid(unsafe_code)]
 
-use labcraft_cli::{args, check, diagram, fmt, walk};
+use labcraft_cli::{args, check, diagram, fmt, run, walk};
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -28,6 +28,8 @@ commands:
   diagram --svg --out DIR [--json] [options] FOLDER [FUNCTION]...
                                               draw each function of FOLDER, or those named, as an SVG
                                               under DIR, at the path of its file
+  run [--json] [options] FOLDER FUNCTION      check FOLDER, then run FUNCTION against simulated
+                                              instruments, deterministically, and report what it did
   version                                     print the version
   --help                                      print this text
 
@@ -42,6 +44,25 @@ options of diagram:
   --lib-path DIR         as for check
   --theme light|dark     one theme only, instead of both under prefers-color-scheme
   --max-diagram-nodes N  a function with more nodes is not drawn, default 20000, at most 100000
+
+options of run:
+  --deny-warnings, --lib-path DIR             as for check
+  --sim FILE             the simulation file of the bench (TOML)
+  --args FILE            the values of inputs, as one JSON object
+  --arg NAME=VALUE       the value of an input: 230V, \"0.1 s\", Fast, '[1, 2]'; can be given several times
+  --set ELEMENT=VALUE@TIME
+                         set a panel element at a time of the run: stop=true@5s; can be given several times
+  --schedule-seed N      draw the order of the nodes ready at one time from N
+  --timeout DURATION     abort the run after DURATION on its clock: 30s
+  --max-iterations N|none, --max-nodes N|none
+                         iterations of each loop (default 10000), nodes run in all (default 1000000)
+  --max-call-depth N     depth of calls, default 1024, at most 4096
+  --max-memory BYTES     what the values of the run hold at once, default 1 GiB, at least 1 MiB
+  --max-real-time DURATION
+                         the real time the run may take, default 10 min
+  --trace FILE           write the trace to FILE instead of .labcraft/runs/
+  --no-trace             write no trace
+  exit codes: 0 ok, 1 error or refused, 2 wrong usage, 3 aborted (Ctrl-C, --timeout), 4 fault
 
 options of all:
   --json                 one JSON document on stdout, nothing else
@@ -76,6 +97,10 @@ fn main() -> ExitCode {
             Ok(options) => run_diagram(&options),
             Err(message) => usage_error(&message),
         },
+        (Some("run"), _) => match args::parse_run(rest).and_then(|options| args::refuse_a_file_as_folder(&options).map(|()| options)) {
+            Ok(options) => run_run(&options),
+            Err(message) => usage_error(&message),
+        },
         _ => usage_error("unknown command"),
     }
 }
@@ -86,6 +111,24 @@ fn run_fmt(options: &args::FmtOptions) -> ExitCode {
 
 fn run_check(options: &args::CheckOptions) -> ExitCode {
     on_the_stack_of_the_work(|| check::run(options), |what| check::internal_failure(options, what))
+}
+
+fn run_run(options: &args::RunOptions) -> ExitCode {
+    let wrong = std::sync::Mutex::new(None);
+    let code = on_the_stack_of_the_work(
+        || match run::run(options) {
+            Ok(code) => code,
+            Err(message) => {
+                *wrong.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(message);
+                ExitCode::from(WRONG_USAGE)
+            }
+        },
+        |what| run::internal_failure(options, what),
+    );
+    match wrong.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner) {
+        Some(message) => usage_error(&message),
+        None => code,
+    }
 }
 
 fn run_diagram(options: &args::DiagramOptions) -> ExitCode {

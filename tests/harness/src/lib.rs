@@ -474,7 +474,7 @@ mod tests {
                         );
                         if textual {
                             let mut text = Text::new(1 << 20);
-                            Writer { env, viewer }
+                            Writer { env, viewer, cut: false }
                                 .write(&mut text, &value, found.ty, None)
                                 .unwrap_or_else(|fault| panic!("{root}{}: the text of constant {id}: {fault}", file.shown));
                         }

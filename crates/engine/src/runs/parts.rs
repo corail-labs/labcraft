@@ -32,6 +32,18 @@ impl CheckPart {
         CheckPart { summary, diagnostics }
     }
 
+    /// With errors counted but not listed: the summary counts them, and says that the list is cut.
+    pub fn with_unlisted(mut self, unlisted: u64) -> CheckPart {
+        if unlisted > 0
+            && let Some(object) = self.summary.as_object_mut()
+        {
+            let errors = object.get("errors").and_then(Json::as_u64).unwrap_or(0).saturating_add(unlisted);
+            object.insert("errors".to_owned(), json!(errors));
+            object.insert("truncated".to_owned(), json!(true));
+        }
+        self
+    }
+
     /// The diagnostics of a run that could not even be checked: its folder does not exist.
     pub fn of_problems(problems: Vec<Json>) -> CheckPart {
         let summary = json!({ "libraries": 0, "functions": 0, "types": 0, "errors": problems.len(), "warnings": 0, "truncated": false });

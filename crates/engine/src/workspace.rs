@@ -4,7 +4,7 @@
 //! The operations are those a walk needs, with the meaning of `std::fs`: a link is followed by [`Workspace::metadata`]
 //! and [`Workspace::canonicalize`], never by [`Workspace::link_metadata`] nor by [`Workspace::read_dir`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -76,7 +76,16 @@ pub trait Workspace: Send + Sync {
     fn open(&self, _path: &Path, _offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
+    /// Takes the exclusive lock of a file, made empty if it is missing, held until the guard is dropped; `None` when someone
+    /// else holds it. A process that writes a `.partial` holds the lock of `.<pid>.lock` beside it, which tells another
+    /// process that it still runs (`docs/commands.md`, section 8; decision of the owner, 2026-11-11). Its folder exists.
+    fn try_lock(&self, _path: &Path) -> io::Result<Option<Held>> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
 }
+
+/// A lock that [`Workspace::try_lock`] took: dropping it lets it go.
+pub type Held = Box<dyn std::any::Any + Send + Sync>;
 
 /// A file system in memory, for tests and for the web viewer, with the meaning of the disk: files, folders and links,
 /// whose names are compared exactly. Paths are absolute from `/`; the current folder is `/`, or the one given.
@@ -117,6 +126,20 @@ struct Nodes {
     /// Counts the writes, so that each one changes the time of what it writes.
     clock: u128,
     current: Option<PathBuf>,
+    /// The files whose lock someone holds.
+    locked: BTreeSet<PathBuf>,
+}
+
+/// A lock of [`Memory`], let go when dropped.
+struct MemoryLock {
+    nodes: Arc<Mutex<Nodes>>,
+    path: PathBuf,
+}
+
+impl Drop for MemoryLock {
+    fn drop(&mut self) {
+        self.nodes.lock().unwrap_or_else(PoisonError::into_inner).locked.remove(&self.path);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -434,11 +457,38 @@ impl Workspace for Memory {
             None => Err(not_found()),
         }
     }
+
+    fn try_lock(&self, path: &Path) -> io::Result<Option<Held>> {
+        if self.link_metadata(path).is_err() {
+            self.write(path, b"")?;
+        }
+        let mut nodes = self.lock();
+        let real = nodes.resolve(path)?;
+        if !matches!(nodes.by_path.get(&real), Some(Node::File { .. })) {
+            return Err(io::Error::other("not a file"));
+        }
+        if !nodes.locked.insert(real.clone()) {
+            return Ok(None);
+        }
+        Ok(Some(Box::new(MemoryLock { nodes: Arc::clone(&self.nodes), path: real })))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lock_is_held_until_its_guard_goes() {
+        let memory = Memory::new();
+        memory.put_folder("/p");
+        let held = memory.try_lock(Path::new("/p/.7.lock")).unwrap();
+        assert!(held.is_some());
+        assert!(memory.get("/p/.7.lock").is_some(), "the file is made");
+        assert!(memory.try_lock(Path::new("/p/.7.lock")).unwrap().is_none());
+        drop(held);
+        assert!(memory.try_lock(Path::new("/p/.7.lock")).unwrap().is_some());
+    }
 
     #[test]
     fn a_link_is_followed_by_canonicalize_and_by_metadata_but_not_by_link_metadata() {

@@ -6,7 +6,7 @@ use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use labcraft_engine::workspace::{Entry, Kind, Metadata, Read, Workspace};
+use labcraft_engine::workspace::{Entry, Held, Kind, Metadata, Read, Workspace};
 
 /// The disk, the current folder that of the process.
 #[derive(Clone, Copy, Debug, Default)]
@@ -100,5 +100,16 @@ impl Workspace for Disk {
         let mut file = options.open(path)?;
         io::Seek::seek(&mut file, io::SeekFrom::Start(offset))?;
         Ok(Box::new(file))
+    }
+
+    /// The lock of the system (`flock` on Unix, `LockFileEx` on Windows), through `std`: the system lets it go when the
+    /// process ends, however it ends, which is what tells another process that this one no longer runs.
+    fn try_lock(&self, path: &Path) -> io::Result<Option<Held>> {
+        let file = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Box::new(file))),
+            Err(fs::TryLockError::WouldBlock) => Ok(None),
+            Err(fs::TryLockError::Error(error)) => Err(error),
+        }
     }
 }

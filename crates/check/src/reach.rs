@@ -35,19 +35,29 @@ pub enum Unresolved {
 impl Reach {
     /// Whether `docs/cli.md`, 6.1, refuses the run: an error in what it reaches, its types included, or what could not be
     /// lowered; under `--deny-warnings`, also a warning in a reached file of the folder given. A warning in a dependency
-    /// never refuses a run, since the user cannot fix it there.
+    /// never refuses a run, since the user cannot fix it there. A file of the folder that the run reaches through a
+    /// `--lib-path` copy of it, as a dependency, is a file of the folder: its warnings are those that the folder found in it.
     pub fn refuses(&self, checked: &Checked, deny_warnings: bool) -> bool {
         if !self.unresolved.is_empty() {
             return true;
         }
+        let checked_library = |file: &crate::CheckedFile| checked.libraries.get(file.library as usize).is_some_and(|library| library.checked);
+        // The files of the folder by how they are shown, which a copy shares.
+        let of_the_folder: std::collections::HashMap<&str, usize> = if deny_warnings {
+            checked.files.iter().enumerate().filter(|(_, file)| checked_library(file)).map(|(index, file)| (file.shown.as_str(), index)).collect()
+        } else {
+            std::collections::HashMap::new()
+        };
         self.functions.iter().chain(&self.types).any(|file| {
             let counts = checked.counts_of(*file as usize);
-            let own = checked
-                .files
-                .get(*file as usize)
-                .and_then(|file| checked.libraries.get(file.library as usize))
-                .is_some_and(|library| library.checked);
-            counts.errors > 0 || (deny_warnings && own && counts.warnings > 0)
+            if counts.errors > 0 {
+                return true;
+            }
+            let Some(reached) = checked.files.get(*file as usize).filter(|_| deny_warnings) else { return false };
+            if checked_library(reached) {
+                return counts.warnings > 0;
+            }
+            of_the_folder.get(reached.shown.as_str()).is_some_and(|index| checked.counts_of(*index).warnings > 0)
         })
     }
 }

@@ -4,6 +4,7 @@
 //! is found, so that one report gives every problem.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use labcraft_check::Checked;
@@ -17,6 +18,7 @@ use labcraft_types::{Interner, LibraryId, Span, TyId};
 use serde_json::{Value as Json, json};
 
 use super::convert::{Converter, Problem, Types, duration_text};
+use super::json_text::{self, Bad};
 use super::parts::CheckPart;
 use crate::error::{CommandError, did_you_mean};
 use crate::files::bytes_of;
@@ -24,7 +26,7 @@ use crate::folders::check_folder_for_run;
 use crate::params::Params;
 use crate::paths::{self, Place, Wanted};
 use crate::session::Session;
-use crate::walk::slashed;
+use crate::walk::{shown_of, slashed};
 use labcraft_runtime::report::Part as _;
 
 /// `wait` of a run: 30 s by default, at most 300 s *(proposed)*.
@@ -64,6 +66,69 @@ pub(crate) struct Prepared {
     pub trace: TraceMode,
     /// The file of the last trace of the function, from the root (`task::trace_path`).
     pub trace_file: String,
+    /// How the trace file is shown in the report: from the root, or from the current folder of the command line.
+    pub trace_shown: String,
+    /// `--trace FILE`: the trace goes there instead (decision of the owner, 2026-11-11).
+    pub trace_to: Option<Outside>,
+    /// Whether to keep the text of each output (`CommandLine::texts`).
+    pub texts: bool,
+}
+
+/// A file of the command line, outside the rules of paths of commands (commands.md 2): named from the current folder,
+/// anywhere (cli.md 6).
+#[derive(Clone, Debug)]
+pub struct Outside {
+    /// Absolute, or from the current folder of the process.
+    pub path: PathBuf,
+    /// As the command line shows it.
+    pub shown: String,
+}
+
+/// What `labcraft-cli run` gives a run beyond the parameters of `run.start` (cli.md 6; decisions of the owner,
+/// 2026-11-11): the folder it shows paths from, its files, and its values as text, which `engine` reads against their
+/// types with the freedoms of cli.md 6.3, so that MCP keeps `args` in their exact JSON form.
+#[derive(Clone, Debug, Default)]
+pub struct CommandLine {
+    /// The current folder, without links, which paths are shown from, as `check` shows them; the root otherwise.
+    pub current: Option<PathBuf>,
+    /// The folder as the command line names it, from the current folder: the root, walked and shown under that name, so
+    /// that a folder that is not under the current one is shown as the user wrote it (`../bench/x.lcf`).
+    pub folder: Option<PathBuf>,
+    /// Whether the run keeps the text of each output, for the human form (cli.md 6.7).
+    pub texts: bool,
+    /// `--arg NAME=VALUE`, in the order given, each name once.
+    pub args: Vec<(String, String)>,
+    /// `--args FILE`.
+    pub args_file: Option<Outside>,
+    /// `--sim FILE`, in place of the parameter `sim`.
+    pub sim: Option<Outside>,
+    /// `--set ELEMENT=VALUE@TIME`: the element, the value as text, the time as text.
+    pub set: Vec<(String, String, String)>,
+    /// `--trace FILE`.
+    pub trace: Option<Outside>,
+}
+
+/// A value given to a run: in its JSON form (`args`, `set`, a key of `--args`), or as the text of the command line.
+#[derive(Clone, Debug)]
+pub(crate) enum Supplied {
+    Json(Json),
+    Text(String),
+}
+
+/// An argument, and where a problem with its value is shown: the file of `--args` at its key, or else the signature.
+struct Arg {
+    name: String,
+    value: Supplied,
+    at: Option<(String, Span)>,
+}
+
+impl Converter<'_> {
+    fn supplied(&self, value: &Supplied, ty: TyId) -> Result<Value, Problem> {
+        match value {
+            Supplied::Json(json) => self.value(json, ty),
+            Supplied::Text(text) => self.text_value(text, ty),
+        }
+    }
 }
 
 /// What `run.start` finds before it runs: a run, or the report of a refused one.
@@ -78,12 +143,13 @@ pub(crate) struct Given {
     pub folder: String,
     pub sim: Option<String>,
     pub args: serde_json::Map<String, Json>,
-    pub set: Vec<(String, Json, i64)>,
+    pub set: Vec<(String, Supplied, i64)>,
     pub settings: Settings,
     pub deny_warnings: bool,
     pub trace: TraceMode,
     /// How long `run.start` waits, in nanoseconds.
     pub wait: i64,
+    pub line: CommandLine,
 }
 
 fn invalid(parameter: &str, message: impl Into<String>) -> CommandError {
@@ -147,7 +213,7 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
             Ok(_) => return Err(invalid("set", format!("`{at_text}` is below 0: a setting is at a time of the run, from its start"))),
             Err(problem) => return Err(invalid("set", format!("`{at_text}` is no time of the run, `\"5 s\"`: {}", problem.message))),
         };
-        set.push((element.to_owned(), setting.get("value").cloned().unwrap_or(Json::Null), at));
+        set.push((element.to_owned(), Supplied::Json(setting.get("value").cloned().unwrap_or(Json::Null)), at));
     }
     let schedule_seed = match params.get("schedule_seed") {
         None | Some(Json::Null) => None,
@@ -195,7 +261,28 @@ pub(crate) fn given(params: &Params, max_nesting: u32) -> Result<Given, CommandE
         deny_warnings: params.bool("deny_warnings"),
         trace,
         wait: wait_param(params, max_nesting)?,
+        line: CommandLine::default(),
     })
+}
+
+/// Joins what the command line gives to the parameters judged: its settings come after those of `set`.
+pub(crate) fn with_line(mut given: Given, line: CommandLine, max_nesting: u32) -> Result<Given, CommandError> {
+    for (element, value, at_text) in &line.set {
+        if !labcraft_format::is_name(element) {
+            return Err(invalid("set", format!("`{element}` is not a name, so no element has it (spec 14.1)")));
+        }
+        let at = match duration_text(at_text, max_nesting) {
+            Ok(at) if at >= 0 => at,
+            Ok(_) => return Err(invalid("set", format!("`{at_text}` is below 0: a setting is at a time of the run, from its start"))),
+            Err(problem) => return Err(invalid("set", format!("`{at_text}` is no time of the run, `5s`: {}", problem.message))),
+        };
+        given.set.push((element.clone(), Supplied::Text(value.clone()), at));
+    }
+    if let Some(name) = line.args.iter().map(|(name, _)| name).find(|name| !labcraft_format::is_name(name)) {
+        return Err(invalid("args", format!("`{name}` is not a name, so no input has it (spec 14.1)")));
+    }
+    given.line = line;
+    Ok(given)
 }
 
 /// A diagnostic of a run (`LC81`, `LC0001` for a path that does not read, those of the simulation file), as JSON.
@@ -251,6 +338,149 @@ fn read_sim(session: &Session, given: &str, max_nesting: u32) -> Result<Read, Co
     }
 }
 
+/// A file of the command line, read as `--sim` and `--args` are (cli.md 6.2): one that does not read is a diagnostic.
+fn read_outside(session: &Session, outside: &Outside, what: &str) -> Read {
+    let exists = session.ws.link_metadata(&outside.path).is_ok();
+    let place = Place::Project { path: outside.path.clone(), shown: outside.shown.clone(), exists };
+    match bytes_of(session, &place, what) {
+        Ok((bytes, _)) => match String::from_utf8(bytes.into_owned()) {
+            Ok(text) => Read::Text(text),
+            Err(_) => {
+                let code = if what == "sim" { simulation::NOT_TOML } else { "LC8104" };
+                Read::Problem(diagnostic(code, &format!("`{}` is not UTF-8", outside.shown), &outside.shown, None, None))
+            }
+        },
+        Err(error) => {
+            let code = if error.code == "file.too_large" { "LC0006" } else { "LC0001" };
+            Read::Problem(diagnostic(code, &error.message, &outside.shown, None, None))
+        }
+    }
+}
+
+/// The arguments given to a run, each once, in the order first given, and whether the file of `--args` did not read, in
+/// which case no input is said to have no argument: the file may have given it.
+struct Arguments {
+    list: Vec<Arg>,
+    at: HashMap<String, usize>,
+    file_failed: bool,
+    /// The arguments that name no input, said in full up to `--max-report`, counted after (`LC8102`): a file of `--args`
+    /// can hold hundreds of thousands of keys.
+    unknown_said: std::cell::Cell<usize>,
+    unknown_counted: std::cell::Cell<u64>,
+    max_report: usize,
+}
+
+impl Arguments {
+    /// Whether one more argument that names no input is said in full; counted otherwise.
+    fn say_unknown(&self) -> bool {
+        if self.unknown_said.get() < self.max_report {
+            self.unknown_said.set(self.unknown_said.get() + 1);
+            true
+        } else {
+            self.unknown_counted.set(self.unknown_counted.get() + 1);
+            false
+        }
+    }
+}
+
+impl Arguments {
+    fn put(&mut self, arg: Arg) {
+        match self.at.get(&arg.name) {
+            Some(index) => {
+                if let Some(known) = self.list.get_mut(*index) {
+                    *known = arg;
+                }
+            }
+            None => {
+                self.at.insert(arg.name.clone(), self.list.len());
+                self.list.push(arg);
+            }
+        }
+    }
+
+    fn get(&self, name: &str) -> Option<&Arg> {
+        self.at.get(name).and_then(|index| self.list.get(*index))
+    }
+}
+
+/// The arguments of a run: `args`, then the keys of `--args`, then `--arg`, each replacing the one before it for its
+/// input; the problems of the file of `--args` go to `problems`, in the file.
+fn arguments(session: &Session, given: &Given, max_nesting: u32, problems: &mut Vec<Json>) -> Arguments {
+    let mut arguments = Arguments {
+        list: Vec::new(),
+        at: HashMap::new(),
+        file_failed: false,
+        unknown_said: std::cell::Cell::new(0),
+        unknown_counted: std::cell::Cell::new(0),
+        max_report: session.config.limits.max_report,
+    };
+    for (name, value) in &given.args {
+        arguments.put(Arg { name: name.clone(), value: Supplied::Json(value.clone()), at: None });
+    }
+    if let Some(file) = &given.line.args_file {
+        let before = problems.len();
+        match read_outside(session, file, "args") {
+            Read::Problem(problem) => problems.push(problem),
+            Read::Text(text) => match json_text::parse(&text, max_nesting) {
+                Ok(parsed) => match parsed.value {
+                    Json::Object(mut values) => {
+                        // Placed once: a position is then a binary search (`Places`), so a file of many keys is linear.
+                        let places = labcraft_runtime::simulation::Places::new(&text);
+                        for (name, range) in parsed.keys {
+                            let span = places.span(range);
+                            if let Some(value) = values.remove(&name) {
+                                arguments.put(Arg { name, value: Supplied::Json(value), at: Some((file.shown.clone(), span)) });
+                            }
+                        }
+                    }
+                    _ => problems.push(diagnostic(
+                        "LC8104",
+                        "the file of `--args` is not a JSON object of input names, `{\"resource\": \"SIM::DMM0\"}`",
+                        &file.shown,
+                        None,
+                        None,
+                    )),
+                },
+                Err(bad) => {
+                    let place = |range| Some(labcraft_runtime::simulation::span_of(&text, range));
+                    let (message, span) = match bad {
+                        Bad::Syntax(at) => ("the file of `--args` does not read as JSON".to_owned(), place(at..at)),
+                        Bad::TooDeep => (format!("the file of `--args` nests deeper than {max_nesting} levels (--max-nesting)"), None),
+                        Bad::Twice(key, range) => (format!("the file of `--args` gives the key `{key}` twice"), place(range)),
+                        Bad::OutOfRange(range) => {
+                            let number = text.get(range.clone()).unwrap_or_default();
+                            let message =
+                                format!("the number `{}` of the file of `--args` is out of the range of a number", labcraft_types::cut_text(number));
+                            problems.push(diagnostic("LC8106", &message, &file.shown, place(range), None));
+                            (String::new(), None)
+                        }
+                    };
+                    if !message.is_empty() {
+                        problems.push(diagnostic("LC8104", &message, &file.shown, span, None));
+                    }
+                }
+            },
+        }
+        arguments.file_failed = problems.len() > before;
+    }
+    for (name, text) in &given.line.args {
+        arguments.put(Arg { name: name.clone(), value: Supplied::Text(text.clone()), at: None });
+    }
+    arguments
+}
+
+/// The diagnostics of a run in the order of their places (cli.md 4.2): by file, then by position, one with no position
+/// first in its file, then by code and message.
+fn by_place(mut problems: Vec<Json>) -> Vec<Json> {
+    let key = |problem: &Json| {
+        let at = |field: &str| problem.pointer(&format!("/span/start/{field}")).and_then(Json::as_u64).unwrap_or(0);
+        let text = |field: &str| problem.get(field).and_then(Json::as_str).unwrap_or_default().to_owned();
+        (text("file"), at("line"), at("column"), text("code"), text("message"))
+    };
+    problems.sort_by_cached_key(key);
+    problems
+}
+
 /// What a type declared in a `.lct` file stands for, in a `Checked`: `None` for an opaque one.
 fn definitions_of(checked: &Checked) -> HashMap<TyId, Option<TyId>> {
     checked
@@ -267,9 +497,17 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     let max_nesting = limits.max_nesting();
     let mut problems: Vec<Json> = Vec::new();
 
+    // Paths are shown from the root, or from the current folder of the command line.
+    let current: PathBuf = given.line.current.clone().unwrap_or_else(|| session.root.clone());
+    let from_current = |path: &Path| shown_of(&*session.ws, path, session.ws.canonicalize(path).ok().as_deref(), Some(&current));
     // The folder, a path of the project.
     let folder = match paths::judge(&*session.ws, &session.root, &given.folder, "folder", Wanted::Folder, false)? {
         Place::Project { path, shown, exists } => {
+            let shown = match (&given.line.folder, given.line.current.is_some()) {
+                (Some(typed), _) => from_current(typed),
+                (None, true) => from_current(&path),
+                (None, false) => shown,
+            };
             if !exists {
                 problems.push(diagnostic("LC0001", &format!("cannot read this path: `{shown}` does not exist"), &shown, None, None));
                 None
@@ -286,15 +524,22 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         }
     };
     // The simulation file, read now, judged by its libraries once the run is lowered.
-    let sim = match &given.sim {
-        Some(path) => match read_sim(session, path, max_nesting)? {
+    let sim = match (&given.line.sim, &given.sim) {
+        (Some(outside), _) => match read_outside(session, outside, "sim") {
+            Read::Text(text) => Some((text, outside.shown.clone())),
+            Read::Problem(problem) => {
+                problems.push(problem);
+                None
+            }
+        },
+        (None, Some(path)) => match read_sim(session, path, max_nesting)? {
             Read::Text(text) => Some((text, sim_shown(session, path))),
             Read::Problem(problem) => {
                 problems.push(problem);
                 None
             }
         },
-        None => None,
+        (None, None) => None,
     };
     // Each library judges its part of the simulation file now, so that its problems join those of the arguments.
     let mut simulations: Vec<Option<Simulation>> = Vec::new();
@@ -316,14 +561,21 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
             }
         }
     }
+    let arguments = arguments(session, given, max_nesting, &mut problems);
     let Some((folder, folder_shown)) = folder else {
-        return Ok(Ready::Refused(refused(id, &given.function, CheckPart::of_problems(problems))));
+        return Ok(Ready::Refused(refused(
+            id,
+            &given.function,
+            CheckPart::of_problems(by_place(problems)).with_unlisted(arguments.unknown_counted.get()),
+        )));
     };
-    let run_checked = check_folder_for_run(&*session.ws, &session.config.shipped, &folder, &session.config.lib_paths, &session.root, limits);
+    let walked = given.line.folder.clone().unwrap_or_else(|| folder.clone());
+    let run_checked = check_folder_for_run(&*session.ws, &session.config.shipped, &walked, &session.config.lib_paths, &current, limits);
     let mut report = run_checked.report;
     let Some((checked, mut names)) = run_checked.checked else {
         report.finish();
-        let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, problems);
+        let check =
+            CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
         return Ok(Ready::Refused(refused(id, &given.function, check)));
     };
 
@@ -343,7 +595,8 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         let message = format!("`{}` is not a function of the library{}", given.function, did_you_mean(&given.function, &known));
         problems.insert(0, diagnostic("LC8101", &message, &folder_shown, None, near));
         report.finish();
-        let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, problems);
+        let check =
+            CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
         return Ok(Ready::Refused(refused(id, &given.function, check)));
     };
 
@@ -367,8 +620,9 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     // A run that `check` refuses is not lowered: its arguments are judged against the signature that `check` found, so
     // that one report gives every problem (cli.md 6.1, step 2); its settings need the panel, which lowering settles.
     if refuses {
-        problems.extend(judge_signature(&checked, &names, start, given, file_shown, max_nesting));
-        let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, problems);
+        problems.extend(judge_signature(&checked, &names, start, &arguments, &given.function, file_shown, max_nesting));
+        let check =
+            CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
         return Ok(Ready::Refused(refused(id, &given.function, check)));
     }
 
@@ -384,8 +638,9 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
             };
             let code = if message.starts_with("internal") { "LC0099" } else { "LC8111" };
             problems.insert(0, diagnostic(code, &message, file_shown, None, None));
-            problems.extend(judge_signature(&checked, &names, start, given, file_shown, max_nesting));
-            let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, problems);
+            problems.extend(judge_signature(&checked, &names, start, &arguments, &given.function, file_shown, max_nesting));
+            let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems))
+                .with_unlisted(arguments.unknown_counted.get());
             return Ok(Ready::Refused(refused(id, &given.function, check)));
         }
     };
@@ -397,30 +652,40 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     // The inputs, in the order of the signature, each problem at the name of its input; an unknown one at the first.
     let names_of: Vec<&str> = top.inputs.iter().map(|port| names.resolve(port.name)).collect();
     let signature = top.inputs.first().and_then(|port| span_of(port.origin));
-    for key in given.args.keys() {
-        if !names_of.contains(&key.as_str()) {
+    let known: std::collections::HashSet<&str> = names_of.iter().copied().collect();
+    for arg in &arguments.list {
+        let key = arg.name.as_str();
+        if !known.contains(key) && arguments.say_unknown() {
             let near = labcraft_runtime::simulation::nearest(key, &names_of).map(|near| format!("did you mean `{near}`?"));
             let message = format!("`{key}` names no input of `{}`{}", given.function, did_you_mean(key, &names_of));
-            problems.push(diagnostic("LC8102", &message, file_shown, signature, near));
+            let (file, span) = arg.at.as_ref().map_or((file_shown, signature), |(file, span)| (file.as_str(), Some(*span)));
+            problems.push(diagnostic("LC8102", &message, file, span, near));
         }
     }
     let mut inputs = Vec::with_capacity(top.inputs.len());
     for (port, name) in top.inputs.iter().zip(&names_of) {
-        let span = span_of(port.origin);
+        let arg = arguments.get(name);
+        let (file, span) = match arg.and_then(|arg| arg.at.as_ref()) {
+            Some((file, span)) => (file.as_str(), Some(*span)),
+            None => (file_shown, span_of(port.origin)),
+        };
         let value = if converter.holds_opaque(port.ty) {
             Err(Problem { code: "LC8107", message: OPAQUE.to_owned() })
         } else {
-            match given.args.get(*name) {
-                Some(value) => converter.value(value, port.ty),
+            match arg {
+                Some(arg) => converter.supplied(&arg.value, port.ty),
                 None => match port.default {
                     Some(default) => constant(env, default).map_err(|fault| Problem { code: "LC8104", message: fault.message.clone() }),
+                    // The file of `--args` that did not read may have given it; its problem refuses the run, so this
+                    // place holder never runs.
+                    None if arguments.file_failed => Ok(Value::Error(None)),
                     None => Err(Problem { code: "LC8103", message: "it has no default, and no argument gives it".to_owned() }),
                 },
             }
         };
         match value {
             Ok(value) => inputs.push(value),
-            Err(Problem { code, message }) => problems.push(diagnostic(code, &format!("the input `{name}`: {message}"), file_shown, span, None)),
+            Err(Problem { code, message }) => problems.push(diagnostic(code, &format!("the input `{name}`: {message}"), file, span, None)),
         }
     }
 
@@ -446,12 +711,16 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
             problems.push(diagnostic("LC8108", &format!("the type of `{element}` is not settled, so it cannot be set"), file_shown, span, None));
             continue;
         };
-        if names.resolve(declared.kind) == "button" && *value == Json::Bool(false) {
+        let off = match value {
+            Supplied::Json(json) => *json == Json::Bool(false),
+            Supplied::Text(text) => text.trim() == "false",
+        };
+        if names.resolve(declared.kind) == "button" && off {
             let message = format!("`{element}` is a button: setting it to `false` is not taken in M0, the modes of a button being open (spec, Q-30)");
             problems.push(diagnostic("LC8108", &message, file_shown, span, None));
             continue;
         }
-        match converter.value(value, ty) {
+        match converter.supplied(value, ty) {
             Ok(value) => {
                 let element = ElementId(u32::try_from(index).map_err(|_| CommandError::internal("an element beyond u32"))?);
                 settings.panel.push(PanelSetting { element, value, at: *at, by: SetBy::Set });
@@ -461,7 +730,8 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     }
 
     if !problems.is_empty() {
-        let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, problems);
+        let check =
+            CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
         return Ok(Ready::Refused(refused(id, &given.function, check)));
     }
     // The native libraries the program uses, each with its part of the simulation file.
@@ -490,7 +760,17 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         })
         .collect();
     let check = CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, Vec::new());
-    let trace_file = super::task::trace_path(&folder_shown, &given.function);
+    let folder_from_root = slashed(folder.strip_prefix(&session.root).unwrap_or(&folder));
+    let trace_file = super::task::trace_path(&folder_from_root, &given.function);
+    let trace_shown = match (&given.line.trace, given.line.current.is_some()) {
+        (Some(outside), _) => outside.shown.clone(),
+        (None, true) => {
+            let mut path = given.line.folder.clone().unwrap_or_else(|| session.root.clone());
+            path.extend(trace_file.split('/'));
+            shown_of(&*session.ws, &path, None, Some(&current))
+        }
+        (None, false) => trace_file.clone(),
+    };
     Ok(Ready::Run(Box::new(Prepared {
         id: id.to_owned(),
         function: given.function.clone(),
@@ -504,6 +784,9 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         files,
         trace: given.trace,
         trace_file,
+        trace_shown,
+        trace_to: given.line.trace.clone(),
+        texts: given.line.texts,
     })))
 }
 
@@ -512,34 +795,53 @@ const OPAQUE: &str = "its type holds an opaque type or a function reference, whi
 
 /// The arguments judged against the signature that `check` found, for a run that is not lowered: no span, since the
 /// signature is not lowered either.
-fn judge_signature(checked: &Checked, names: &Interner, start: usize, given: &Given, file_shown: &str, max_nesting: u32) -> Vec<Json> {
+fn judge_signature(
+    checked: &Checked,
+    names: &Interner,
+    start: usize,
+    arguments: &Arguments,
+    function: &str,
+    file_shown: &str,
+    max_nesting: u32,
+) -> Vec<Json> {
     let mut problems = Vec::new();
     let Some(library) = checked.files.get(start).and_then(|file| checked.libraries.get(file.library as usize)) else { return problems };
-    let Some(declared) = given.function.rsplit('.').next().and_then(|name| names.find(name)).and_then(|name| library.functions.get(&name)) else {
+    let Some(declared) = function.rsplit('.').next().and_then(|name| names.find(name)).and_then(|name| library.functions.get(&name)) else {
         return problems;
     };
     let definitions = definitions_of(checked);
     let converter = Converter { types: Types { table: &checked.types, definitions: &definitions, names, viewer: library.id }, max_nesting };
     let inputs: Vec<&str> = declared.params.iter().map(|param| names.resolve(param.name)).collect();
-    for key in given.args.keys() {
-        if !inputs.contains(&key.as_str()) {
+    let at = |arg: Option<&Arg>| match arg.and_then(|arg| arg.at.as_ref()) {
+        Some((file, span)) => (file.clone(), Some(*span)),
+        None => (file_shown.to_owned(), None),
+    };
+    let known: std::collections::HashSet<&str> = inputs.iter().copied().collect();
+    for arg in &arguments.list {
+        let key = arg.name.as_str();
+        if !known.contains(key) && arguments.say_unknown() {
             let near = labcraft_runtime::simulation::nearest(key, &inputs).map(|near| format!("did you mean `{near}`?"));
-            let message = format!("`{key}` names no input of `{}`{}", given.function, did_you_mean(key, &inputs));
-            problems.push(diagnostic("LC8102", &message, file_shown, None, near));
+            let message = format!("`{key}` names no input of `{function}`{}", did_you_mean(key, &inputs));
+            let (file, span) = at(Some(arg));
+            problems.push(diagnostic("LC8102", &message, &file, span, near));
         }
     }
     for (param, name) in declared.params.iter().zip(&inputs) {
+        let arg = arguments.get(name);
         let problem = if converter.holds_opaque(param.ty) {
             Some(Problem { code: "LC8107", message: OPAQUE.to_owned() })
         } else {
-            match given.args.get(*name) {
-                Some(value) => converter.value(value, param.ty).err(),
-                None if !param.has_default => Some(Problem { code: "LC8103", message: "it has no default, and no argument gives it".to_owned() }),
+            match arg {
+                Some(arg) => converter.supplied(&arg.value, param.ty).err(),
+                None if !param.has_default && !arguments.file_failed => {
+                    Some(Problem { code: "LC8103", message: "it has no default, and no argument gives it".to_owned() })
+                }
                 None => None,
             }
         };
         if let Some(Problem { code, message }) = problem {
-            problems.push(diagnostic(code, &format!("the input `{name}`: {message}"), file_shown, None, None));
+            let (file, span) = at(arg);
+            problems.push(diagnostic(code, &format!("the input `{name}`: {message}"), &file, span, None));
         }
     }
     problems

@@ -48,6 +48,32 @@ impl Text {
 pub struct Writer<'a> {
     pub env: Env<'a>,
     pub viewer: LibraryId,
+    /// Cut as a report cuts a value (`docs/commands.md`, section 5): an array of more than 64 elements shows its first 16,
+    /// a string of more than 1,000 code points and `bytes` of more than 1,000 bytes their start, each followed by how
+    /// much there is. For the human form of `labcraft-cli run` (cli.md 6.7); `string.format` writes everything.
+    pub cut: bool,
+}
+
+/// An array longer than this is cut, to [`HEAD`] elements (commands.md 5).
+const CUT_LEN: usize = 64;
+const HEAD: usize = 16;
+/// A string or `bytes` longer than this is cut to it (commands.md 5).
+const CUT_TEXT: usize = 1000;
+
+/// The text of a value as the language writes a constant (a `string` between quotes), cut as a report cuts it, within
+/// `limit` bytes, past which it ends with `…`; `None` for a value that has no text, which holds a session or a function.
+pub fn constant_text(env: Env<'_>, viewer: LibraryId, value: &Value, ty: TyId, limit: usize) -> Option<String> {
+    let writer = Writer { env, viewer, cut: true };
+    let mut out = Text::new(limit);
+    match writer.value(&mut out, value, ty, None, false) {
+        Ok(()) => Some(out.finish()),
+        Err(fault) if fault.code == crate::fault::FaultCode::Memory => {
+            let mut text = out.finish();
+            text.push('…');
+            Some(text)
+        }
+        Err(_) => None,
+    }
 }
 
 impl Writer<'_> {
@@ -62,11 +88,16 @@ impl Writer<'_> {
         match (value, defined) {
             (Value::Array(items), Ty::Array { element, .. }) => {
                 out.push("[")?;
-                for (index, item) in items.items().iter().enumerate() {
+                let all = items.items();
+                let shown = if self.cut && all.len() > CUT_LEN { HEAD } else { all.len() };
+                for (index, item) in all.iter().take(shown).enumerate() {
                     if index > 0 {
                         out.push(", ")?;
                     }
                     self.value(out, item, *element, format, false)?;
+                }
+                if shown < all.len() {
+                    out.push(&format!(", … {} elements in all", all.len()))?;
                 }
                 out.push("]")
             }
@@ -138,7 +169,8 @@ impl Writer<'_> {
         let Some((length, inner)) = shape.split_first() else { return Ok(()) };
         out.push("[")?;
         let stride: usize = inner.iter().product();
-        for index in 0..*length {
+        let shown = if self.cut && *length > CUT_LEN { HEAD } else { *length };
+        for index in 0..shown {
             if index > 0 {
                 out.push(", ")?;
             }
@@ -150,6 +182,9 @@ impl Writer<'_> {
                 let part = items.get(start..start.saturating_add(stride)).ok_or_else(|| Fault::bug("a grid shorter than its shape"))?;
                 self.grid_level(out, part, inner, element, format)?;
             }
+        }
+        if shown < *length {
+            out.push(&format!(", … {length} in all"))?;
         }
         out.push("]")
     }
@@ -171,7 +206,14 @@ impl Writer<'_> {
         let (text, numeric) = match value {
             Value::Bool(value) => ((if *value { "true" } else { "false" }).to_owned(), false),
             Value::String(text) if top => (text.to_string(), false),
+            Value::String(text) if self.cut && text.chars().count() > CUT_TEXT => {
+                let head: String = text.chars().take(CUT_TEXT).collect();
+                (format!("{}… {} code points in all", quoted(&head), text.chars().count()), false)
+            }
             Value::String(text) => (quoted(text), false),
+            Value::Bytes(bytes) if self.cut && bytes.len() > CUT_TEXT => {
+                (format!("{}… {} bytes in all", hex(bytes.get(..CUT_TEXT).unwrap_or_default()), bytes.len()), false)
+            }
             Value::Bytes(bytes) => (hex(bytes), false),
             Value::Duration(ns) => match format {
                 Some(format) if format.needs_number() => (number(&Number::Real(*ns as f64 / 1e9, false), Unit::SECOND, format)?, true),

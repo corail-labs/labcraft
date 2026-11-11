@@ -9,17 +9,17 @@ publish.workspace = true
 
 [dependencies]
 craft-atomic = { workspace = true }
+ctrlc = { workspace = true }
 labcraft-check = { workspace = true }
 labcraft-diagram = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-libs = { workspace = true }
 labcraft-types = { workspace = true }
+labcraft-visa = { workspace = true }
+labcraft-results-log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-[dev-dependencies]
-labcraft-visa = { workspace = true }
 
 [lints]
 workspace = true
