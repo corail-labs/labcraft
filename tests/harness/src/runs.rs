@@ -19,11 +19,73 @@ use crate::{PROGRAMS, RUNS, RunCase};
 /// The repository in memory: the programs of `examples/`, `libs/` and `docs/rfc/`, and the files of every case, at their
 /// paths from the root.
 fn repository() -> Arc<Memory> {
+    repository_as(|bytes| bytes.to_vec())
+}
+
+/// [`repository`], each file as `written` gives it.
+fn repository_as(written: impl Fn(&[u8]) -> Vec<u8>) -> Arc<Memory> {
     let memory = Memory::new();
     for file in PROGRAMS.iter().chain(RUNS.iter().flat_map(|case| case.files.iter())) {
-        memory.put(format!("/{}", file.path), file.bytes);
+        memory.put(format!("/{}", file.path), written(file.bytes));
     }
     Arc::new(memory)
+}
+
+/// A function file with the lines of each body in the reverse of their order, but `collect`, whose written order means
+/// something, as `crates/format/tests/round_trip.rs` writes them, where `fmt` brings them back to the canonical text. Any
+/// other file as it is.
+fn reversed(bytes: &[u8]) -> Vec<u8> {
+    let mut names = labcraft_types::Interner::new();
+    let Some(mut file) = labcraft_format::read(bytes, &mut names, &Limits::default()).file else { return bytes.to_vec() };
+    let labcraft_graph::Decl::Function(function) = &mut file.decl else { return bytes.to_vec() };
+    reverse_body(&mut function.body);
+    labcraft_format::write(&file, &names, &Limits::default()).map_or_else(|_| bytes.to_vec(), String::into_bytes)
+}
+
+fn reverse_body(body: &mut labcraft_graph::Body) {
+    use labcraft_graph::{Rhs, StatementKind};
+    let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count();
+    if collects < 2 {
+        body.statements.reverse();
+    }
+    for statement in &mut body.statements {
+        if let StatementKind::Binding { value, .. } = &mut statement.kind {
+            match value {
+                Rhs::Match(branching) | Rhs::Handle(branching) => {
+                    for arm in &mut branching.arms {
+                        reverse_body(&mut arm.body);
+                    }
+                }
+                Rhs::For(structure) => reverse_body(&mut structure.body),
+                Rhs::Loop(structure) => reverse_body(&mut structure.body),
+                Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => {}
+            }
+        }
+    }
+}
+
+/// What a run gave, without where a line is: an error and a fault name the line of their node, which the order moves.
+fn results(report: &Json) -> Json {
+    fn without_lines(value: &mut Json) {
+        match value {
+            Json::Object(object) => {
+                object.retain(|key, _| key != "line" && key != "span");
+                object.values_mut().for_each(without_lines);
+            }
+            Json::Array(items) => items.iter_mut().for_each(without_lines),
+            _ => {}
+        }
+    }
+    let mut kept = serde_json::Map::new();
+    for key in ["status", "outputs", "error", "fault", "abort", "resources", "instruments", "logs"] {
+        if let Some(value) = report.get(key) {
+            kept.insert(key.to_owned(), value.clone());
+        }
+    }
+    kept.insert("simulated_ms".to_owned(), report["clock"]["simulated_ms"].clone());
+    let mut kept = Json::Object(kept);
+    without_lines(&mut kept);
+    kept
 }
 
 fn session(memory: &Arc<Memory>) -> Session {
@@ -69,8 +131,12 @@ fn real_time(params: &Json) -> bool {
 }
 
 fn run_case(case: &RunCase) -> Ran {
+    run_case_on(case, &repository())
+}
+
+fn run_case_on(case: &RunCase, memory: &Arc<Memory>) -> Ran {
     let params: Json = serde_json::from_str(case.run).unwrap_or_else(|error| panic!("{}: run.json: {error}", case.name));
-    let memory = repository();
+    let memory = Arc::clone(memory);
     #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
     let mut session = session(&memory);
     #[cfg(not(target_arch = "wasm32"))]
@@ -197,6 +263,34 @@ fn the_corpus_of_runs_gives_its_expected_reports() {
         }
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// Scenario 5, point 3, *with M0b*: the order of lines means nothing (spec 5.2), so the programs of every case, each body
+/// written the other way round, run to the same results as their canonical text: status, outputs, error, fault, abort,
+/// resources, the commands of each instrument, the logs and the simulated clock, where a line is aside. The runs in real
+/// time are left out: their clock is a range.
+#[test]
+fn the_programs_written_in_another_order_run_the_same() {
+    let canonical = repository();
+    let other = repository_as(reversed);
+    let mut moved = 0;
+    for file in PROGRAMS.iter().chain(RUNS.iter().flat_map(|case| case.files.iter())) {
+        moved += usize::from(reversed(file.bytes) != file.bytes);
+    }
+    // The functions of more than one line: 20 when this was written.
+    assert!(moved >= 10, "the lines of {moved} files moved");
+    let mut differ = Vec::new();
+    for case in RUNS {
+        let params: Json = serde_json::from_str(case.run).unwrap();
+        if real_time(&params) {
+            continue;
+        }
+        let (first, second) = (results(&run_case_on(case, &canonical).report), results(&run_case_on(case, &other).report));
+        if first != second {
+            differ.push(format!("{}:\n  canonical {first}\n  reversed  {second}", case.name));
+        }
+    }
+    assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
 /// The trace that the runtime writes is the one the reader of the viewer reads (M0v, `docs/architecture.md`, 11.2): the

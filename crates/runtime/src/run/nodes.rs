@@ -105,6 +105,7 @@ pub(super) fn start(machine: &mut Machine<'_, '_>, instance: InstanceId, index: 
         return Err(machine.halt(instance, index, fault));
     }
     machine.nodes_run += 1;
+    machine.memory.forget_taken();
     let mut inputs = Vec::with_capacity(node.inputs.len());
     for used in &node.inputs {
         match machine.take(instance, used) {

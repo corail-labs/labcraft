@@ -64,6 +64,8 @@ options of run:
                          in real time, no limit by default
   --max-call-depth N     depth of calls, default 1024, at most 4096
   --max-memory BYTES     what the values of the run hold at once, default 1 GiB, at least 1 MiB
+  --max-made BYTES|none  the bytes of the values the nodes make, in all, default 1 GiB; in real time,
+                         no limit by default
   --max-real-time DURATION
                          the real time a deterministic run may take, default 10 min
   --trace FILE           write the trace to FILE instead of .labcraft/runs/

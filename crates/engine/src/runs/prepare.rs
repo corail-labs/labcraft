@@ -272,12 +272,15 @@ pub(crate) fn given(params: &Params, max_nesting: u32, max_file_size: u64) -> Re
     if real_time {
         settings.max_iterations = None;
         settings.max_nodes = None;
+        settings.max_made = None;
     }
     settings.timeout = match duration_param(params, "timeout", max_nesting)? {
         Some(0) => return Err(invalid("timeout", "a timeout is above 0")),
         other => other,
     };
-    for (name, slot) in [("max_iterations", &mut settings.max_iterations), ("max_nodes", &mut settings.max_nodes)] {
+    for (name, slot) in
+        [("max_iterations", &mut settings.max_iterations), ("max_nodes", &mut settings.max_nodes), ("max_made", &mut settings.max_made)]
+    {
         if params.is_null(name) {
             *slot = None;
         } else if let Some(value) = params.u64(name) {

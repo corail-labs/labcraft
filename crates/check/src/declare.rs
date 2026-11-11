@@ -49,6 +49,30 @@ pub struct DeclaredLibrary {
     /// A file of it did not read, or a bug stopped one: a name that it does not seem to have may still be its own, and
     /// that has its diagnostic.
     pub broken: bool,
+    /// What its files that did not read may declare: each the name it bears (R-22).
+    pub broken_names: Broken,
+}
+
+/// The names that the files of a library that did not read may declare, by the name of each file (R-22): `bad.lcf` declares
+/// `bad`, or is misnamed (`LC2023`). Any name, when a bug stopped a file. A name it has not, which none of them may declare,
+/// is told unknown, so that a file that does not read hides nothing else (scenario 4, point 2).
+#[derive(Clone, Debug, Default)]
+pub struct Broken {
+    all: bool,
+    /// By [`case_key`], so that a file whose name differs only in case still counts.
+    names: HashSet<String>,
+}
+
+impl Broken {
+    /// Whether some file of the library did not read.
+    pub fn any(&self) -> bool {
+        self.all || !self.names.is_empty()
+    }
+
+    /// Whether a file that did not read may declare this name.
+    pub fn may_declare(&self, name: &str) -> bool {
+        self.all || self.names.contains(&case_key(name))
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -199,8 +223,8 @@ struct Pass<'a> {
     /// The names that a file of each library declares under its own name (R-22): another file that declares one of
     /// them is a copy that has its `LC2023`, not a second definition.
     named: Vec<HashSet<(Name, bool)>>,
-    /// A file that does not read may declare what a name stands for.
-    broken: Vec<bool>,
+    /// A file that does not read may declare what its name says.
+    broken: Vec<Broken>,
     imports: Vec<Imports<'a>>,
     /// The types that each type names.
     mentions: Vec<Vec<usize>>,
@@ -450,7 +474,7 @@ impl<'a> Pass<'a> {
         let names = self.names;
         for (library, source) in loaded.iter().enumerate() {
             let mut imports: Imports<'a> = HashMap::new();
-            let mut broken = false;
+            let mut broken = Broken::default();
             let mut places: HashMap<Name, Vec<(&'a LoadedFile, &'a Model)>> = HashMap::new();
             let mut order = Vec::new();
             let mut named = HashSet::new();
@@ -458,7 +482,7 @@ impl<'a> Pass<'a> {
             for file in sorted_files(source, names) {
                 *taken.files.entry(case_key(file_name(&file.shown))).or_default() += 1;
                 let Some(model) = &file.model else {
-                    broken = true;
+                    broken.names.insert(case_key(&stem(&file.shown)));
                     continue;
                 };
                 let (declared, _, is_type) = name_of_decl(&model.file.decl);
@@ -674,6 +698,11 @@ impl<'a> Pass<'a> {
         }
     }
 
+    /// Whether a file of the library that did not read may declare this name.
+    pub(crate) fn may_be_broken(&self, library: usize, name: Name) -> bool {
+        self.broken.get(library).is_none_or(|broken| broken.may_declare(self.names.resolve(name)))
+    }
+
     fn is_refused(&self, library: usize, name: Name) -> bool {
         self.refused.get(library).is_some_and(|refused| refused.contains(&name))
     }
@@ -681,7 +710,7 @@ impl<'a> Pass<'a> {
     fn declared_in(&self, library: usize, name: Name) -> Lookup {
         match self.index.get(library).and_then(|index| index.get(&name)) {
             Some(index) => Lookup::Declared(*index),
-            None if self.broken.get(library).copied().unwrap_or(true) || self.is_refused(library, name) => Lookup::AlreadySaid,
+            None if self.may_be_broken(library, name) || self.is_refused(library, name) => Lookup::AlreadySaid,
             None => Lookup::Unknown,
         }
     }
@@ -922,7 +951,7 @@ impl<'a> Pass<'a> {
         let message = format!("internal error, which is a bug of the tool: {bug}");
         self.push(library, Diagnostic::new(Code::Lc0099, message, shown));
         if let Some(broken) = self.broken.get_mut(library) {
-            *broken = true;
+            broken.all = true;
         }
     }
 
@@ -1007,7 +1036,7 @@ impl<'a> Pass<'a> {
                 self.said.insert(&file.shown, said);
             }
         }
-        let broken = self.broken.get(library).copied().unwrap_or(true);
+        let broken_names = self.broken.get(library).cloned().unwrap_or(Broken { all: true, names: HashSet::new() });
         let normalized = |list: &[String]| -> Vec<Name> { list.iter().filter_map(|text| self.names.find(text)).collect() };
         let always = normalized(&source.manifest.always);
         let resources = normalized(&source.manifest.resources);
@@ -1021,7 +1050,8 @@ impl<'a> Pass<'a> {
             always,
             resources,
             categories: source.manifest.categories.iter().map(|category| normalize(category).into_owned()).collect(),
-            broken,
+            broken: broken_names.any(),
+            broken_names,
         }
     }
 

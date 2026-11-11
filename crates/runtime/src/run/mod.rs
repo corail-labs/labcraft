@@ -36,6 +36,10 @@ pub use memory::NODE_COST;
 /// The end of the clock of a run, 2^62 ns, about 146 years *(proposed, cli.md 6.2)*: past it, `LC8007`.
 pub const CLOCK_END: i64 = 1 << 62;
 
+/// The default of `--max-made` in deterministic mode, 1 GiB *(proposed, cli.md 6.2)*: about 1 s of copies of a large array
+/// on a runner of CI, where 2 GiB took up to 2.09 s and 4 GiB 2.8 s on a desktop machine (decisions of the owner, 2026-11-11).
+pub const MAX_MADE: u64 = 1 << 30;
+
 /// What a wait in real time leaves to the high-resolution timer: a little more than the tick of Windows.
 pub const COARSE: u64 = 16_000_000;
 
@@ -54,6 +58,8 @@ pub struct Settings {
     pub max_call_depth: u32,
     /// `--max-memory`, in bytes of logical size.
     pub max_memory: u64,
+    /// `--max-made`: the bytes of logical size of the values the nodes make, in all (`run::memory`).
+    pub max_made: Option<u64>,
     /// `--max-real-time`, in nanoseconds of real time.
     pub max_real_time: Option<u64>,
     /// What a native call in progress is given to end after an abort or a fault, on the clock of the run *(proposed, 5 s)*.
@@ -138,6 +144,7 @@ impl Default for Settings {
             max_nodes: Some(1_000_000),
             max_call_depth: 1024,
             max_memory: 1 << 30,
+            max_made: Some(MAX_MADE),
             max_real_time: Some(600_000_000_000),
             grace: 5_000_000_000,
             panel: Vec::new(),

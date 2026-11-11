@@ -1,0 +1,17 @@
+labcraft 1
+
+use array
+use core
+
+/// Sets an item of an array at each iteration, and reads the array before the change too.
+fn copies() -> (a: [f64], err: error, k: i32) {
+    big, e = array.repeat(0.0, 1000)
+    a, err, k = loop carry xs = big, carry f = e, carry n = 0 {
+        b, g = array.set(xs, 0, 1.0, err: f)
+        l = array.len(xs)
+        next f = g
+        next n = l
+        next xs = b
+        until false
+    }
+}

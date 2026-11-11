@@ -1,0 +1,24 @@
+{
+  "how": "`1e999 V` is beyond the largest `f64`, out of the range of its type (cli.md 6.6, `LC8106`, which gives this very value): the run is refused (scenario 4, family Arguments).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "LC8106",
+        "severity": "error"
+      }
+    ]
+  }
+}

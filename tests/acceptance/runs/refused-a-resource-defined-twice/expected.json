@@ -1,0 +1,24 @@
+{
+  "how": "Two instruments with the resource `SIM::DMM0` (libs/visa/simulation.md, section 7, `visa:S004`): the run is refused and no command reaches the instrument (scenario 4, family Instruments).",
+  "status": "refused",
+  "outputs": [],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 1
+    },
+    "diagnostics": [
+      {
+        "code": "visa:S004",
+        "severity": "error"
+      }
+    ]
+  }
+}

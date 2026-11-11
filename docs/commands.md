@@ -100,8 +100,8 @@ A failed command returns one object:
     "message": "unknown parameter `max_iteration`: did you mean `max_iterations`?",
     "parameter": "max_iteration",
     "expected": ["function", "folder", "sim", "args", "set", "mode", "schedule_seed", "timeout",
-                 "max_iterations", "max_nodes", "max_call_depth", "max_memory", "max_real_time",
-                 "deny_warnings", "trace", "wait"]
+                 "max_iterations", "max_nodes", "max_call_depth", "max_memory", "max_made",
+                 "max_real_time", "deny_warnings", "trace", "wait"]
   }
 }
 ```
@@ -173,13 +173,15 @@ and the run goes on. `run.wait` waits again and returns the same thing; `run.sta
 
 Arguments, outputs, panel elements and the trace write values the same way. A value is read and written
 **against its type**, which the report gives next to it and the trace with each frame (section 8), so the
-encoding stays short:
+encoding stays short. The keys of every object of a result, a report or a trace come in the order the tool writes them:
+the fields of a struct in their declared order, a report in the order of section 7, a result in the order of its
+example, the same through `--json` and MCP (decision of the owner, 2026-11-11):
 
 | Type | JSON | Example |
 |---|---|---|
 | `bool` | a boolean | `true` |
 | integers | a number, exact; an `i64` or `u64` beyond ±(2^53−1) as a string of digits | `12`, `"9007199254740993"` |
-| `f32`, `f64` without a unit | a number: the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16 and with an exponent outside, written as the language writes it (`1.5e-7`, `1e16`); a float with no fraction keeps `.0`, so that it is not taken for an integer; `"nan"`, `"inf"`, `"-inf"` | `0.5`, `12.0`, `0.0015` |
+| `f32`, `f64` without a unit | a number: the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16 and with an exponent outside, written as the language writes it (`1.5e-7`, `1e16`); between two texts as short and as near, the one whose last digit is even, as Python writes them (`1658206780088562.2`); a float with no fraction keeps `.0`, so that it is not taken for an integer; `"nan"`, `"inf"`, `"-inf"` | `0.5`, `12.0`, `0.0015` |
 | a number with a unit | a string, as the language writes a constant, in the unit of the type: the number as above, a space, the unit | `"230.03 V"`, `"-0.0015 A"`, `"-3 mV"` |
 | `duration` | a string, written in seconds, exactly from its nanoseconds; read in any unit of time | `"0.1 s"`, `"2 s"`; `"100 ms"` as an argument |
 | `c64`, `c128` | `{ "re": …, "im": … }`, each as above | `{ "re": "1.0 V", "im": "0.0 V" }` |
@@ -305,7 +307,7 @@ How the session keeps its checks is written in the architecture of M0b (section 
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`set`* (`[]`), *`mode`* (`deterministic`), *`schedule_seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`max_call_depth`*, *`max_memory`*, *`max_real_time`*, *`deny_warnings`* (`false`), *`trace`* (`file`), *`wait`* (30 s) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5), at most `--max-file-size` bytes written as JSON, as a file of `--args` (cli.md
+| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`set`* (`[]`), *`mode`* (`deterministic`), *`schedule_seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`max_call_depth`*, *`max_memory`*, *`max_made`*, *`max_real_time`*, *`deny_warnings`* (`false`), *`trace`* (`file`), *`wait`* (30 s) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5), at most `--max-file-size` bytes written as JSON, as a file of `--args` (cli.md
 6.3), and `set` too; `sim`, a simulation file; `set`, panel elements and the time on the clock of the run at which each is set, `[{ "element": "stop_switch", "value": true, "at": "5 s" }]` (Q-20, cli.md, section 6.4); `schedule_seed`, the seed of the order among ready nodes (scenario 3); `trace`: `file` (the default, so that whoever watches the viewer sees the values of every run on the wires), `inline` or `none` (section 8) |
 | `run.wait` | *`run`*, *`wait`* (30 s) | The final report, or `running` again |
 | `run.status` | *`run`* | The report so far, at once: `running` with the clock and where each loop is, or the final report |

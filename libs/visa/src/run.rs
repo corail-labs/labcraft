@@ -186,8 +186,10 @@ impl VisaRun {
             },
             (Kind::Open, _) => {
                 let resource = shown(&call.resource);
+                // `visa` sees only its section: a run with no simulation file, and one whose file has no `[visa]`, are one
+                // case here.
                 let message = if self.bench.is_none() {
-                    format!("{resource}: no resource exists without a simulation file (--sim)")
+                    format!("{resource}: no instrument is simulated: the run has no simulation file (--sim), or its file no `[visa]`")
                 } else {
                     format!("{resource}: the simulation file has no such instrument")
                 };

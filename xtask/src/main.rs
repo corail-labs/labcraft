@@ -26,7 +26,7 @@ commands:
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
-  bounds    fmt, check and diagram of the files of scenario 4 stay within 2 s and 512 MB, in release; memory on Linux only
+  bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine and editor build for wasm32-unknown-unknown, and the harness passes there
   spec      the Python checks of the spec, examples, docs/rfc and libs, and the proof of concept's tests; ok or FAIL for each, the output of failures only; not part of ci
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci

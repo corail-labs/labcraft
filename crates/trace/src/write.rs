@@ -156,10 +156,16 @@ impl Line<'_> {
         Ok(())
     }
 
+    /// A string, quoted, as [`Line::needed`] judges it: written in place, and taken back when it does not fit.
     fn string(&mut self, text: &str) -> Result<(), Overflow> {
-        let mut quoted = String::with_capacity(text.len() + 2);
-        push_string(&mut quoted, text);
-        self.needed(&quoted)
+        let room = self.room();
+        let start = self.text.len();
+        push_string(self.text, text);
+        if self.text.len() - start + CUT.len() > room {
+            self.text.truncate(start);
+            return Err(Overflow);
+        }
+        Ok(())
     }
 
     fn value(&mut self, value: &dyn WriteValue) {
@@ -344,7 +350,9 @@ impl<W: io::Write> TraceWriter<W> {
     }
 
     fn start(text: &mut String, seq: u64, t_ns: u64, event: &Event<'_>) {
-        let _ = write!(text, "{{\"seq\":{seq},\"t_ms\":{},\"event\":\"{}\",\"frame\":{}", number::millis_text(t_ns), event.name(), event.frame());
+        let _ = write!(text, "{{\"seq\":{seq},\"t_ms\":");
+        number::push_millis(text, t_ns);
+        let _ = write!(text, ",\"event\":\"{}\",\"frame\":{}", event.name(), event.frame());
     }
 
     fn full(text: &mut String, seq: u64, t_ns: u64, event: &Event<'_>, limit: usize) -> Result<(), Overflow> {
@@ -434,14 +442,17 @@ fn iter(line: &mut Line<'_>, loops: &[&str], iter: &[u64]) -> Result<(), Overflo
     if iter.is_empty() {
         return Ok(());
     }
-    let mut text = String::new();
+    // Written in place, and taken back when it does not fit, as [`Line::needed`] judges it.
+    let room = line.room();
+    let start = line.text.len();
+    let text = &mut *line.text;
     if !loops.is_empty() {
         text.push_str(",\"loops\":[");
         for (index, name) in loops.iter().enumerate() {
             if index > 0 {
                 text.push(',');
             }
-            push_string(&mut text, name);
+            push_string(text, name);
         }
         text.push(']');
     }
@@ -453,7 +464,11 @@ fn iter(line: &mut Line<'_>, loops: &[&str], iter: &[u64]) -> Result<(), Overflo
         let _ = write!(text, "{iteration}");
     }
     text.push(']');
-    line.needed(&text)
+    if text.len() - start + CUT.len() > room {
+        text.truncate(start);
+        return Err(Overflow);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

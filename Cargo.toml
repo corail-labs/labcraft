@@ -49,7 +49,8 @@ unicode-normalization = "0.1"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 
 # tooling
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+zmij = "1"
 wasm-bindgen-test = "0.3"
 
 [workspace.lints.rust]

@@ -407,7 +407,7 @@ impl<'p, 'o> Machine<'p, 'o> {
         Machine {
             program,
             names,
-            memory: Memory::new(settings.max_memory),
+            memory: Memory::new(settings.max_memory, settings.max_made),
             settings,
             control,
             observer,
@@ -1096,7 +1096,7 @@ impl<'p, 'o> Machine<'p, 'o> {
                 if last {
                     let value = value.take().ok_or_else(|| Fault::bug("a value read before it was made, or once too often"))?;
                     if counted {
-                        self.memory.release(&value);
+                        self.memory.release_taken(&value);
                     }
                     value
                 } else {
@@ -1124,13 +1124,20 @@ impl<'p, 'o> Machine<'p, 'o> {
             return Err(self.halt(instance, node, Fault::bug(message)));
         }
         for (index, value) in outputs.iter().enumerate() {
-            if !self.memory.hold(value) {
+            if !self.memory.hold_output(value) {
                 for held in outputs.iter().take(index) {
                     self.memory.release(held);
                 }
                 let size = crate::value::logical_size(value);
                 return Err(self.halt(instance, node, memory_fault("the outputs of this node", size)));
             }
+        }
+        if let Some((made, limit)) = self.memory.made_over() {
+            for value in &outputs {
+                self.memory.release(value);
+            }
+            let message = format!("the nodes of the run have made {made} bytes of values, past its limit of {limit} (--max-made)");
+            return Err(self.halt(instance, node, Fault::new(FaultCode::Made, message)));
         }
         self.observer.ran(self.now, frame_number, the_node, &iter, Outputs { values: &outputs, skipped }, &Described(&self.natives));
         let start = plan.outputs(node).unwrap_or(0);

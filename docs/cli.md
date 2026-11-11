@@ -165,8 +165,11 @@ cannot be listed gets `LC0001` once and is skipped, and a file given there is wr
 **One error, one diagnostic** (scenario 2). A value whose type is unknown because of an error
 upstream takes an error type that matches everything; a call to a function whose file does not parse
 gives no further diagnostic. A file with a syntax error gives at least one diagnostic and is not
-checked further; the other files of the library are. A library with such a file may declare what a name
-stands for, so a type that it does not seem to have gives no `LC2003`.
+checked further; the other files of the library are. Such a file may declare what its name says (R-22): `bad.lcf` the
+function `bad`, `T.lct` the type `T`. So a name that the library does not seem to have, and that a file of that name
+which does not read may declare, gives no `LC2001`, `LC2002` or `LC2003`; any other name does, and a library used
+without `use` still gets its `LC2005` (decision of the owner, 2026-11-11). A bug that stops a file (`LC0099`) hides any
+name of its library.
 
 `--deny-warnings` makes warnings count for the status and the exit code. This is what scenario 1
 asks of an agent, and what a project can ask of its CI.
@@ -516,7 +519,7 @@ labcraft-cli run [--json] [--deny-warnings] [--lib-path DIR]... [--sim FILE]
                  [--args FILE] [--arg NAME=VALUE]... [--set ELEMENT=VALUE@TIME]...
                  [--real-time] [--schedule-seed N] [--timeout DURATION]
                  [--max-iterations N] [--max-nodes N] [--max-call-depth N] [--max-memory BYTES]
-                 [--max-real-time DURATION] [--trace FILE | --no-trace] [options] FOLDER FUNCTION
+                 [--max-made BYTES] [--max-real-time DURATION] [--trace FILE | --no-trace] [options] FOLDER FUNCTION
 ```
 
 `FOLDER` is the root of the project, as for `check`, and `FUNCTION` is named from it: `check_voltage`,
@@ -560,13 +563,14 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 | `--args FILE` | The values of inputs, as one JSON object, the `args` of MCP (6.3). A path is data, as for `--sim`; the file is bounded by `--max-file-size` |
 | `--arg NAME=VALUE` | The value of an input of the function (6.3), which replaces the one of `--args` for that input. An input with a default may be left out |
 | `--set ELEMENT=VALUE@TIME` | Sets a panel element of the function at a time of the run (6.4) |
-| `--real-time` | Real time instead of deterministic mode. In real time, iterations and nodes are not limited unless a `--max-` option is given (spec 8.2) |
+| `--real-time` | Real time instead of deterministic mode. In real time, iterations, nodes and the bytes made are not limited unless a `--max-` option is given (spec 8.2) |
 | `--schedule-seed N` | Deterministic mode only. The order among the nodes ready at the same time is drawn from `N` (an integer from 0 to 2^64−1) instead of the canonical order of spec 8 (scenario 3, point 1). The noise of simulated instruments does not depend on it: it belongs to each simulated quantity (spec 8) |
 | `--timeout DURATION` | Aborts the run after `DURATION` on its clock: simulated in deterministic mode, real otherwise (spec 8.2, `abort.by` = `timeout`). A finite duration above 0, as for `--max-real-time` |
 | `--max-iterations N` | Iterations of each `loop`, counted again each time the loop starts. Default 10,000 in deterministic mode, none in real time *(proposed, scenario 4)*. A `for` ends with its array and does not count here, only in `--max-nodes`. Reached: fault `LC8001` |
 | `--max-nodes N` | Nodes run in all, a skipped node (spec 7.2) and the node of a call included. Default 1,000,000 in deterministic mode, none in real time *(proposed)*. Reached: fault `LC8002` |
 | `--max-call-depth N` | Depth of calls, always limited. Default 1,024, at most 4,096 *(proposed)*: a stack is sized from it. Reached: fault `LC8003` |
 | `--max-memory BYTES` | The logical size of the values the run holds at once, default 1 GiB, at least 1 MiB *(proposed)*. Reached: fault `LC8005`, at the node that would pass it, or at no node for a setting of `--set` that would pass it; a setting of `run.set_element` that would is refused instead, and the run goes on (commands.md 6.4) |
+| `--max-made BYTES` | The bytes of logical size of the values that the nodes make, in all: an output of a node that nothing held, a copy or a new text or array, but not one that the node changed in place or passed through, a part read out of a value (a field, `array.get`), nor a value without parts (a number, a `bool`). A new value counts its parts that nothing else holds; a part that another value holds counts only its place, 16 bytes, so that a struct built again to change one field does not count the array it shares. Whether a change copies depends on which read of a value comes last (D-11), so with `--schedule-seed` the node where the limit is reached can change; for one seed it is always the same. Default 1 GiB in deterministic mode, none in real time; `none` removes it *(proposed: about 1 s of copies of a large array on a runner of CI, where 2 GiB took up to 2.09 s; decisions of the owner, 2026-11-11)*. Reached: fault `LC8009`, at the node whose outputs pass it |
 | `--max-real-time DURATION` | Deterministic mode only: the real time the run may take, default 10 min *(proposed)*, since `--timeout` there counts simulated time, which a long computation does not advance. Reached: fault `LC8006`, at the node that was running. The only limit whose outcome depends on the speed of the machine, and the fault says so. With `--real-time`, `--timeout` counts real time already |
 | `--trace FILE` | Writes the trace to `FILE` instead of `.labcraft/runs/` (commands.md, section 8). A `FILE` that ends in `.lcf`, `.lct`, `.toml` or `.json`, in any case (`main.LCF`), or that exists and does not start with the first line of a trace, is wrong usage, so that a typo cannot replace a program or a file of arguments |
 | `--no-trace` | Writes no trace |
@@ -719,6 +723,7 @@ ships its own format, and the tool does not read it.
 | `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
 | `LC8007` | error | Fault: the clock of the run would pass 2^62 ns, about 146 years: a wait or a timeout that long, or one that is not finite |
 | `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), or the empty separator of `string.split`, or a call of the default of a function type that has no output of type `error` to say that it designates no function (spec 7.2). Gives the node and the values |
+| `LC8009` | error | Fault: the bytes of the values the nodes made, in all, pass `--max-made`. Gives the node, and the bytes made |
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
 | `LC8103` | error | An input with no default has no `--arg` |

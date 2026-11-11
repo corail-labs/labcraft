@@ -63,11 +63,22 @@ impl<'a> Json<'a> {
         match (value, self.env.ty(ty)) {
             (Value::Array(items), Ty::Array { element, .. }) => {
                 let count = writer.begin_array(items.len());
-                for item in items.items().iter().take(count) {
-                    if writer.spent() {
-                        break;
+                // The items of an array of numbers share the text of their unit: made once, not for each.
+                if let Ty::Number { unit, .. } = self.env.ty(*element) {
+                    let unit = unit_text(*unit);
+                    for item in items.items().iter().take(count) {
+                        if writer.spent() {
+                            break;
+                        }
+                        self.scalar(writer, item, unit.as_deref());
                     }
-                    self.value(writer, item, *element);
+                } else {
+                    for item in items.items().iter().take(count) {
+                        if writer.spent() {
+                            break;
+                        }
+                        self.value(writer, item, *element);
+                    }
                 }
                 writer.end();
             }
@@ -90,9 +101,9 @@ impl<'a> Json<'a> {
                 };
                 writer.begin_object();
                 writer.key("t0");
-                self.scalar(writer, t0, Unit::ONE);
+                self.scalar(writer, t0, None);
                 writer.key("dt");
-                self.scalar(writer, dt, Unit::ONE);
+                self.scalar(writer, dt, None);
                 writer.key("samples");
                 match samples {
                     Value::Array(items) => {
@@ -165,10 +176,10 @@ impl<'a> Json<'a> {
             }
             (value, defined) => {
                 let unit = match defined {
-                    Ty::Number { unit, .. } => *unit,
-                    _ => Unit::ONE,
+                    Ty::Number { unit, .. } => unit_text(*unit),
+                    _ => None,
                 };
-                self.scalar(writer, value, unit);
+                self.scalar(writer, value, unit.as_deref());
             }
         }
     }
@@ -196,9 +207,8 @@ impl<'a> Json<'a> {
         writer.end();
     }
 
-    fn scalar(&self, writer: &mut ValueWriter<'_>, value: &Value, unit: Unit) {
-        let text = if unit == Unit::ONE { None } else { Some(unit.to_string()) };
-        let unit = text.as_deref();
+    /// A value of no parts, with the text of its unit, if it has one.
+    fn scalar(&self, writer: &mut ValueWriter<'_>, value: &Value, unit: Option<&str>) {
         match value {
             Value::Bool(value) => writer.bool(*value),
             Value::I8(x) => writer.i64(i64::from(*x), unit),
@@ -225,6 +235,11 @@ impl<'a> Json<'a> {
             }
         }
     }
+}
+
+/// The text of a unit, as a value writes it after its digits: none for a number without one.
+fn unit_text(unit: Unit) -> Option<String> {
+    (unit != Unit::ONE).then(|| unit.to_string())
 }
 
 /// An error of spec 7.1, with the errors that `errors.merge` gathered.
