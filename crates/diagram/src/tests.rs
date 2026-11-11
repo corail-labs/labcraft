@@ -110,7 +110,7 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         constant: None,
         ignored: false,
         reads: Vec::new(),
-        pilled: false,
+        pill: None,
     }
 }
 
@@ -164,16 +164,30 @@ fn the_graph_has_a_node_per_drawn_line() {
     assert_eq!(inputs, [("session", None), ("command", Some("\"MEAS:VOLT:DC?\"")), ("err", None)]);
     assert_eq!(raw.outputs.iter().map(|output| output.family.base).collect::<Vec<_>>(), [Base::Number, Base::Session, Base::Error]);
     let dmm = &graph.nodes[graph.bodies[0].nodes[0]];
-    // `timeout` has a default and no argument: hidden.
-    assert_eq!(dmm.inputs.len(), 2);
-    assert_eq!(dmm.hidden, 1);
+    // `timeout` has a default and no argument: still a terminal, at its place, so that the node has the size of its
+    // signature at every call (notation 3.2).
+    let names: Vec<(&str, Option<&str>)> = dmm.inputs.iter().map(|input| (input.name.as_str(), input.constant.as_deref())).collect();
+    assert_eq!(names, [("resource", None), ("timeout", None), ("err", None)]);
     let value = &graph.nodes[graph.bodies[0].nodes[3]];
     assert!(matches!(&value.kind, Kind::Call { glyph: Some(crate::graph::Glyph::Sign("+")), library: None, .. }));
 }
 
-/// Notation 3.2: `open` 48, `close` 56, `elapsed` 72; a band widens the block; `query_f64` on two lines.
+/// The texts of a node in `node.title`: its name, its glyph.
+fn titles(sized: &crate::size::Sized) -> Vec<String> {
+    sized
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, .. } if runs.iter().all(|run| run.token == "node.title") => Some(runs.iter().map(|run| run.text.as_str()).collect()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Notation 3.2: a compact block is `node.square` wide, whatever its name or its band, and as tall as its lines need,
+/// 40 at least; `query_f64` on two lines.
 #[test]
-fn a_compact_block_is_a_square_as_large_as_its_label() {
+fn a_compact_block_has_the_width_of_the_square() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
     let sizer = Sizer { names: &names, standard_everywhere: false };
@@ -182,71 +196,90 @@ fn a_compact_block_is_a_square_as_large_as_its_label() {
         let node = graph.nodes.iter().find(|node| node.key == key).unwrap();
         sizer.size(node, Some(&band), None)
     };
-    // `open`: 4 cells, 2890 + 2 × 900 = 4690, up to 4800. Its two lines need 8 + 16 + 8 = 32.
+    // `open`: three lines (`resource`, `timeout` at its place, `err`), 8 + 2 × 8 + 8 = 32, under 40.
     let open = size_of("dmm");
-    assert_eq!((open.width, open.height), (4800, 4800));
-    // `close`: 5 cells, 3612 + 1800 = 5412, up to 5600.
-    assert_eq!(size_of("e3").width, 5600);
-    // `query_f64`: one line of 9 cells is 6502 + 1800 = 8302, up to 8800; `query` / `f64` is 5 cells, 5412, and two
-    // lines of 1397 (2384/2048 of 12) and 8 above and below, 4394: 5600, smaller.
+    assert_eq!((open.width, open.height), (4000, 4000));
+    // `close`: 5 cells at 10 (5 × 1233 × 10 / 2048 = 30.10) hold in 40 less a terminal, 32: nothing grows.
+    assert_eq!(size_of("e3").width, 4000);
+    // `query_f64`: four lines, 8 + 3 × 8 + 8 = 40; 9 cells do not hold in 5, `query` / `f64` do.
     let raw = size_of("raw");
-    assert_eq!((raw.width, raw.height), (5600, 5600));
-    let labels: Vec<String> = raw
-        .shapes
-        .iter()
-        .filter_map(|shape| match shape {
-            Shape::Text { runs, size: 1200, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(labels, ["query", "f64"]);
-    // The band of `dev`: 3 cells at 9 (1626) and 4 on each side is 2426, narrower than the block; 12 high, above.
+    assert_eq!((raw.width, raw.height), (4000, 4000));
+    assert_eq!(titles(&raw), ["query", "f64"]);
+    // The band of `dev`: 12 high, above.
     assert_eq!(raw.above, 1200);
-    // A library of 10 cells at 9: 5418 + 800 = 6218, up to 6400, wider than the 48 of `open`.
+    // A band wider than the block, which `bands` would have cut, widens nothing.
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
-    assert_eq!(sizer.size(node, Some(&wide), None).width, 6400);
+    assert_eq!(sizer.size(node, Some(&wide), None).width, 4000);
 }
 
-/// Notation 3.2: a label written on two lines when that makes the square smaller, cut where the longer line is shortest,
-/// the first such cut on a tie, never leaving a line empty.
+/// Notation 3.2: a name on one line when it holds; else cut at an underscore when both parts hold, where the longer line
+/// is shortest; else the first line as far as the last underscore that it holds, or as far as it holds, and the rest
+/// cut by `…`.
 #[test]
-fn a_label_is_cut_at_an_underscore() {
+fn a_name_holds_on_two_lines_of_the_block() {
+    // 40 less a terminal of 8: 32. At 10 a cell is 1233 × 10 / 2048 = 6.02: 5 cells are 30.10, 6 are 36.12.
+    assert_eq!(crate::size::name_cells(), 5);
     let cut_of = |name: &str| -> Vec<String> {
         let source = format!("labcraft 1\n\nfn main(x: f64) -> (y: f64) {{\n    y = {name}(x)\n}}\n");
         let callee = format!("labcraft 1\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = x\n}}\n");
         let (checked, names) = checked(&[("main.lcf", &source), (&format!("{name}.lcf"), &callee)]);
         let graph = graph(&checked, &names, "main.lcf");
-        let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
-        sized
-            .shapes
-            .iter()
-            .filter_map(|shape| match shape {
-                Shape::Text { runs, size: 1200, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect()),
-                _ => None,
-            })
-            .collect()
+        titles(&Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None))
     };
-    assert_eq!(cut_of("bench_selftest"), ["bench", "selftest"]);
-    assert_eq!(cut_of("read_dc_volts"), ["read_dc", "volts"]);
-    assert_eq!(cut_of("count_to_fixed"), ["count", "to_fixed"]);
-    assert_eq!(cut_of("abcdefgh_"), ["abcdefgh_"]);
-    // 13 cells: one line cut to 11 and `…`.
-    assert_eq!(cut_of("abcdefghijklm"), ["abcdefghijk\u{2026}"]);
+    assert_eq!(cut_of("open"), ["open"]);
+    assert_eq!(cut_of("a_b"), ["a_b"]);
+    // Both parts hold: `query` (5) and `f64` (3).
+    assert_eq!(cut_of("query_f64"), ["query", "f64"]);
+    // No part pair holds: the first line takes `bench`, the underscore after it is the cut, `selftest` is cut to 4 and `…`.
+    assert_eq!(cut_of("bench_selftest"), ["bench", "self\u{2026}"]);
+    // `read_` holds: cut at its underscore.
+    assert_eq!(cut_of("read_dc_volts"), ["read", "dc_v\u{2026}"]);
+    assert_eq!(cut_of("count_to_fixed"), ["count", "to_f\u{2026}"]);
+    // No underscore in what holds: in the middle of the word.
+    assert_eq!(cut_of("elapsed"), ["elaps", "ed"]);
+    assert_eq!(cut_of("abcdefghijklm"), ["abcde", "fghi\u{2026}"]);
+    // An underscore that would leave a line empty is no cut.
+    assert_eq!(cut_of("abcdefgh_"), ["abcde", "fgh_"]);
+    assert_eq!(cut_of("abcd_e_"), ["abcd", "e_"]);
+    // Two cuts whose longer line is 5: the first.
+    assert_eq!(cut_of("ab_cd_ef"), ["ab", "cd_ef"]);
 }
 
-/// Notation 3.2: lines counted from the bottom, 8 above the lower edge and 16 apart; when 16 would pass the side, the
-/// gaps between wired lines shrink to 8 and the terminals are drawn at 70 %.
+/// Notation 3.1, 3.2: an optional input of a primitive left to its default has the family of its table, so that an `err`
+/// keeps the bottom line whatever the call wires; a variadic primitive given no value has no input.
 #[test]
-fn lines_close_up_before_a_block_grows() {
-    let callee = "labcraft 1\n\nfn four(a: f64, b: f64, c: f64, d: f64) -> (y: f64) {\n    y = a\n}\n";
-    let source = "labcraft 1\n\nfn main(x: f64) -> (y: f64) {\n    y = four(x, x, x, x)\n}\n";
-    let (checked, names) = checked(&[("main.lcf", source), ("four.lcf", callee)]);
+fn a_primitive_has_its_size_whatever_a_call_wires() {
+    let source = "labcraft 1\n\nuse errors\nuse time\n\nfn main(e: error) -> (a: error, b: error, c: error) {\n    a = time.wait(1 s)\n    b = time.wait(1 s, err: e)\n    c = errors.merge()\n}\n";
+    let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
-    // `four`: 4 cells, 48. Four lines at 16 need 8 + 48 + 8 = 64, more than 48; at 8, 8 + 24 + 8 = 40: they shrink.
-    assert_eq!((sized.width, sized.height), (4800, 4800));
-    let inputs: Vec<(i64, i64)> = sized
+    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let of = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
+    for key in ["a", "b"] {
+        assert_eq!(of(key).inputs.iter().map(|input| input.family.base).collect::<Vec<_>>(), [Base::Number, Base::Error], "{key}");
+        let sized = sizer.size(of(key), None, None);
+        // Two lines, `duration` alone, then the `err` pair: 8 above the bottom of 40, at 32, and 8 above it, at 24.
+        assert_eq!((sized.inputs.clone(), sized.outputs.clone()), (vec![(0, 2400), (0, 3200)], vec![(4000, 3200)]), "{key}");
+    }
+    assert!(of("c").inputs.is_empty());
+}
+
+/// Notation 3.2: lines counted from the bottom, 8 above the lower edge and `node.pitch` apart, whatever they carry; past
+/// four lines, the block grows down, never across.
+#[test]
+fn a_block_grows_by_its_lines_only() {
+    let size_of = |count: usize| {
+        let params: Vec<String> = (0..count).map(|index| format!("p{index}: f64")).collect();
+        let callee = format!("labcraft 1\n\nfn many({}) -> (y: f64) {{\n    y = p0\n}}\n", params.join(", "));
+        let source = format!("labcraft 1\n\nfn main(x: f64) -> (y: f64) {{\n    y = many({})\n}}\n", vec!["x"; count].join(", "));
+        let (checked, names) = checked(&[("main.lcf", &source), ("many.lcf", &callee)]);
+        let graph = graph(&checked, &names, "main.lcf");
+        Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None)
+    };
+    let four = size_of(4);
+    // Four lines 8 apart need 8 + 24 + 8 = 40: the square.
+    assert_eq!((four.width, four.height), (4000, 4000));
+    let inputs: Vec<(i64, i64)> = four
         .shapes
         .iter()
         .filter_map(|shape| match shape {
@@ -254,8 +287,37 @@ fn lines_close_up_before_a_block_grows() {
             _ => None,
         })
         .collect();
-    // From the bottom: 48 - 8 = 40, then 32, 24, 16; a terminal of 10 at 70 % has a radius of 3.5.
-    assert_eq!(inputs, [(1600, 350), (2400, 350), (3200, 350), (4000, 350)]);
+    // From the bottom: 40 - 8 = 32, then 24, 16, 8; a terminal of 8 has a radius of 4.
+    assert_eq!(inputs, [(800, 400), (1600, 400), (2400, 400), (3200, 400)]);
+    // Five lines need 8 + 32 + 8 = 48.
+    let five = size_of(5);
+    assert_eq!((five.width, five.height), (4000, 4800));
+}
+
+/// Notation 3.2: two pills less than a pill apart step outward, the lower one past the upper one, 8 from it, and the
+/// constant so moved draws a wire to its terminal; a pill 16 below the first one keeps its place.
+#[test]
+fn neighbouring_pills_step_outward() {
+    let callee = "labcraft 1\n\nfn three(a: f64, b: f64, c: f64) -> (y: f64) {\n    y = a\n}\n";
+    let source = "labcraft 1\n\nfn main() -> (y: f64) {\n    y = three(1.0, 2.0, 3.0)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", source), ("three.lcf", callee)]);
+    let graph = graph(&checked, &names, "main.lcf");
+    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    // Lines at 16, 24 and 32. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
+    // end 8 left of the half terminal: -12; it starts at -38.06. The second, 8 lower, under 14, ends 8 left of that,
+    // -46.06, and starts at -72.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
+    // its place.
+    assert_eq!(sized.reaches, [Some(3806), Some(7212), Some(3806)]);
+    assert_eq!(sized.left, 7212);
+    let leads: Vec<&Vec<(i64, i64)>> = sized
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Poly { points, closed: false, .. } => Some(points),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(leads, [&vec![(-4606, 2400), (-400, 2400)]]);
 }
 
 /// Notation 3.2: a circle of 28; two inputs at 8 above and below the middle, on the edge; `select` with two constants
@@ -274,15 +336,15 @@ fn a_primitive_is_a_circle() {
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Circle { x, y, radius: 500, .. } if *x < 1400 => Some((*x, *y)),
+            Shape::Circle { x, y, radius: 400, .. } if *x < 1400 => Some((*x, *y)),
             _ => None,
         })
         .collect();
     assert_eq!(inputs, [(252, 600), (252, 2200)]);
     // `select`: -10, 0, 10; 16 between `ok` and the first constant, which goes to 6; 24 between the two constants, the
-    // second at 30; a span of 40 and a pill of 18 make 58.
+    // second at 30; a span of 40 and a pill of 14 make 54.
     let select = sizer.size(&graph.nodes[1], None, None);
-    assert_eq!((select.width, select.height), (2800, 5800));
+    assert_eq!((select.width, select.height), (2800, 5400));
 }
 
 /// Decided at step 2 of M0v: 24 for the header, the first line at 40, lines 24 apart, the last 16 above the bottom, 12
@@ -296,10 +358,10 @@ fn a_standard_block_has_the_numbers_of_step_2() {
     let sized = sizer.size(raw, None, None);
     // Four lines: 40 + 3 × 24 + 16 = 128.
     assert_eq!(sized.height, 12_800);
-    // The widest line is `command`, alone, with its pill: 12, then 7 cells (5057), 8, the pill of 15 cells at 11 (9934)
-    // and 4 on each side, then 12: 18,991. `session` and `session`: 12 + 5057 + 24 + 5057 + 12 = 14,914. The header
-    // `dev.query_f64`, 13 cells (9392), with 12 on each side: 11,792. So 18,991, up to 19,200.
-    assert_eq!(sized.width, 19_200);
+    // At 10 a cell is 1233 × 10 / 2048. The widest line is `command`, alone, with its pill: 12, then 7 cells (4214), 8,
+    // the pill of 15 cells (9031) and 4 on each side, then 12: 17,245. `session` and `session`: 12 + 4214 + 24 + 4214 +
+    // 12 = 13,228. The header `dev.query_f64`, 13 cells (7827), with 12 on each side: 10,227. So 17,245, up to 17,600.
+    assert_eq!(sized.width, 17_600);
     let close = graph.nodes.iter().find(|node| node.key == "e3").unwrap();
     // Two lines (`session` alone, then the `err` pair): 40 + 24 + 16 = 80; at least 112 wide.
     assert_eq!((sizer.size(close, None, None).height, sizer.size(close, None, None).width), (8000, 11_200));
@@ -319,11 +381,11 @@ fn a_constant_shows_its_controls_by_their_signs() {
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Text { runs, size: 1100, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect()),
+            Shape::Text { runs, x, .. } if *x < 0 => Some(runs.iter().map(|run| run.text.as_str()).collect()),
             _ => None,
         })
         .collect();
-    // `"x↵y"` is 5 cells, under the 8 of the compact view.
+    // Left of the block, the pill: `"x↵y"` is 5 cells, under the 8 of the compact view.
     assert_eq!(pills, ["\"x\u{21B5}y\""]);
 }
 
@@ -364,14 +426,15 @@ fn a_function_with_too_many_terminals_is_not_drawn() {
     let Drawn::NotDrawn(diagnostics) = drawn else { panic!() };
     assert!(diagnostics[0].message.contains("more than 15 terminals, counted on its first 3 nodes"), "{}", diagnostics[0].message);
     assert!(matches!(draw(&checked, file, &names, &ViewState::default(), &DiagramLimits { max_nodes: 4 }), Drawn::Drawing(_)));
-    // The bench: `open` 2 inputs (`timeout` hidden) and 2 outputs, `query_f64` 3 and 3, `close` 2 and 1, `add` 2 and 1.
+    // The bench: `open` 3 inputs (`timeout` at its place) and 2 outputs, `query_f64` 3 and 3, `close` 2 and 1, `add` 2
+    // and 1: 17.
     let (checked, names) = bench();
     let file = &checked.files[index_of(&checked, "main.lcf")];
     let function = function_of(file).unwrap();
     let orders = orders_of(file, function, &names);
-    assert!(Builder::new(&checked, file, &names).graph(function, &orders, 16).is_ok());
-    let Err(crate::graph::TooLarge(counts)) = Builder::new(&checked, file, &names).graph(function, &orders, 15) else { panic!() };
-    assert_eq!((counts.nodes, counts.terminals), (4, 16));
+    assert!(Builder::new(&checked, file, &names).graph(function, &orders, 17).is_ok());
+    let Err(crate::graph::TooLarge(counts)) = Builder::new(&checked, file, &names).graph(function, &orders, 16) else { panic!() };
+    assert_eq!((counts.nodes, counts.terminals), (4, 17));
 }
 
 /// Notation 3.1: a construction of constants is folded in the viewer, a variant among its constants; an exported image
@@ -392,24 +455,24 @@ fn a_construction_of_constants_is_folded_only_in_the_viewer() {
     assert!(matches!(&viewer.nodes[0].kind, Kind::Constant { name, value } if name == "p" && value == "P {\u{2026}}"));
 }
 
-/// Notation 3.2: the label is in the centre of the block, which a band widens beyond its square.
+/// Notation 3.2: the name is in the centre of the block, which a band never widens.
 #[test]
-fn a_label_is_centred_on_a_block_that_a_band_widens() {
+fn a_name_is_centred_on_its_block() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(node, Some(&wide), None);
-    // 64 wide (above); `open`, 4 cells at 12, is 2890: it starts at 3200 - 1445.
+    // 40 wide; `open`, 4 cells at 10, 4 × 1233 × 10 / 2048 = 24.08: it starts at 20 - 12.04.
     let starts: Vec<i64> = sized
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Text { x, size: 1200, .. } => Some(*x),
+            Shape::Text { x, runs, .. } if runs.iter().all(|run| run.token == "node.title") => Some(*x),
             _ => None,
         })
         .collect();
-    assert_eq!(starts, [1755]);
+    assert_eq!(starts, [796]);
 }
 
 const ICON_OF_F: &str = "labcraft 1
@@ -541,17 +604,17 @@ fn a_circle_holds_all_its_inputs() {
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
-    // Five inputs 8 apart: a span of 32, and a pill of 18: 50 high; their centres from 9 to 41.
-    assert_eq!(sized.height, 5000);
+    // Five inputs 8 apart: a span of 32, and a pill of 14: 46 high; their centres from 7 to 39.
+    assert_eq!(sized.height, 4600);
     let ys: Vec<i64> = sized
         .shapes
         .iter()
         .filter_map(|shape| match shape {
-            Shape::Circle { y, radius: 500, x, .. } if *x < 1400 => Some(*y),
+            Shape::Circle { y, radius: 400, x, .. } if *x < 1400 => Some(*y),
             _ => None,
         })
         .collect();
-    assert_eq!(ys, [900, 1700, 2500, 3300, 4100]);
+    assert_eq!(ys, [700, 1500, 2300, 3100, 3900]);
 }
 
 /// Two libraries whose bands would read the same show their full path, and cut in the middle when they still do
@@ -563,8 +626,30 @@ fn bands_that_read_the_same_show_more() {
     let (checked, names) = checked(&[("main.lcf", main), ("measurement_a/f.lcf", f), ("measurement_b/f.lcf", f)]);
     let graph = graph(&checked, &names, "main.lcf");
     let bands: Vec<String> = crate::bands(&graph).into_iter().map(|band| band.unwrap().text()).collect();
-    // The last segment, `measurement_a`, is 13 cells: `measurement…` for both; the full path is the same; in the middle.
-    assert_eq!(bands, ["measu\u{2026}ment_a", "measu\u{2026}ment_b"]);
+    // Above a block of 40: 40 less 4 on each side, 32; at 9 a cell is 1233 × 9 / 2048 = 5.42, 5 cells are 27.09, 6 are
+    // 32.51: 5 cells. `meas…` for both; the full path is the same; in the middle, 2 cells, `…`, 2 cells.
+    assert_eq!(bands, ["me\u{2026}_a", "me\u{2026}_b"]);
+}
+
+/// Notation 3.2: a band is cut to the width of its block; an oblong is as wide as its label, so its band shows more.
+#[test]
+fn a_band_is_cut_to_the_width_of_its_block() {
+    let ty = "labcraft 1\n\ntype StepResult = struct { name: string, ok: bool }\n";
+    let f = "labcraft 1\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n";
+    let main = "labcraft 1\n\nuse results_log\n\nfn main(x: f64, s: string, b: bool) -> (y: f64, r: results_log.StepResult) {\n    y = results_log.f(x)\n    r = results_log.StepResult { name: s, ok: b }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("results_log/StepResult.lct", ty), ("results_log/f.lcf", f)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands = crate::bands(&graph);
+    let band_of = |key: &str| {
+        let index = graph.nodes.iter().position(|node| node.key == key).unwrap();
+        bands[index].as_ref().unwrap().text()
+    };
+    // A block of 40 holds 5 cells at 9 (above): `resu…`.
+    assert_eq!(band_of("y"), "resu\u{2026}");
+    // `StepResult`, 10 cells at 10 (60.21) and 2 on each side, 64.21: 72 on the grid. 72 less 8 is 64, which holds 11
+    // cells at 9 (59.60), not 12 (65.02): `results_log` whole.
+    assert_eq!(band_of("r"), "results_log");
 }
 
 /// A terminal shows the type of its parameter, not that of its argument: `timeout: duration` given `5 s` has no unit
@@ -727,11 +812,11 @@ fn the_error_chain_is_one_straight_line() {
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, b, y, c, d) = (&placed["a"], &placed["b"], &placed["y"], &placed["c"], &placed["d"]);
-    // `step` is a square as wide as its label, 4 cells at 12 (28.90) and 9 on each side, 46.90 on the grid: 48. Its lines
-    // are 16 apart, the last 8 from the bottom, at 24 and 40: its error pair at 40 from its top.
-    assert_eq!((a.height, b.y, y.y), (4800, a.y, a.y));
+    // `step` is a block of 40. Its lines are 8 apart, the last 8 from the bottom, at 24 and 32: its error pair at 32 from
+    // its top.
+    assert_eq!((a.height, b.y, y.y), (4000, a.y, a.y));
     assert_eq!((a.column, b.column, d.column, y.column), (0, 1, 2, 3));
-    let axis = a.y + 4000;
+    let axis = a.y + 3200;
     // `c`, a circle of 28, in the column of `a`: 24 above it.
     assert_eq!(c.y, a.y - 2400 - 2800);
     // `d` is alone in its column: its bottom 40 above the axis.
@@ -746,14 +831,14 @@ fn a_placed_node_keeps_its_place() {
     let (checked, names) = checked(&[("main.lcf", main)]);
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, y) = (&placed["a"], &placed["y"]);
-    // `a` stands in the first column: after the name `x` (one cell at 11, 6.62), 12 before it and 8 after it, the
-    // narrowest channel, 16, its wire being straight, and the half terminal of 5: 63.62 from the corner of the frame.
+    // `a` stands in the first column: after the name `x` (one cell at 10, 6.02), 12 before it and 8 after it, the
+    // narrowest channel, 16, its wire being straight, and the half terminal of 4: 62.02 from the corner of the frame.
     // It reaches over `y`, at 80, so it
     // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header and its margin (48). The frame
     // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40.
-    // Across, the margin of 16 is around everything: the terminal of `x` reaches 5 left of the frame, at 21.
-    assert_eq!((y.x, y.y), (2100 + 8000, 4000 + 8000));
-    assert_eq!((a.x, a.y), (2100 + 1200 + 662 + 800 + 1600 + 500, 4000 + 2800));
+    // Across, the margin of 16 is around everything: the terminal of `x` reaches 4 left of the frame, at 20.
+    assert_eq!((y.x, y.y), (2000 + 8000, 4000 + 8000));
+    assert_eq!((a.x, a.y), (2000 + 1200 + 602 + 800 + 1600 + 400, 4000 + 2800));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
@@ -902,7 +987,7 @@ fn a_conversion_is_a_pill_on_its_wire() {
     let graph = graph(&checked, &names, "main.lcf");
     let pills: Vec<(&str, bool)> = graph.pills.values().map(|pill| (pill.text.as_str(), pill.conversion)).collect();
     assert_eq!(pills, [("mV\u{2192}V", true)]);
-    assert!(graph.nodes[0].inputs[0].pilled);
+    assert_eq!(graph.nodes[0].inputs[0].pill.as_deref(), Some("mV\u{2192}V"));
 }
 
 /// A value read by two nodes is one wire: a trunk, a junction point where a branch leaves it, the terminals it joins in

@@ -1,21 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228.5 144" width="228.5" height="144" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="results_log.append_csv">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 202.5 144" width="202.5" height="144" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="results_log.append_csv">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="228.5" height="144" style="fill: var(--canvas-fill)"/>
-<rect x="23.5" y="16" width="184" height="112" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="35.5" y="36.38" font-size="12" style="fill: var(--node-title)">results_log.append_csv</text>
-<circle cx="23.5" cy="76" r="5" style="fill: var(--node-fill); stroke: var(--wire-data); stroke-width: 1.5"/>
-<circle cx="23.5" cy="76" r="2.5" style="fill: var(--wire-data)"/>
-<polyline points="18,71 16,71 16,81 18,81" style="fill: none; stroke: var(--wire-data); stroke-width: 1.2"/>
-<polyline points="29,71 31,71 31,81 29,81" style="fill: none; stroke: var(--wire-data); stroke-width: 1.2"/>
-<text x="35.5" y="80.01" font-size="11" style="fill: var(--node-title)">results</text>
-<polygon points="18.5,95 28.5,100 18.5,105 21.84,100" style="fill: var(--wire-error)"/>
-<text x="35.5" y="104.01" font-size="11" style="fill: var(--node-title)">err</text>
-<rect x="63.37" y="91" width="47.74" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="67.37" y="104.01" font-size="11" style="fill: var(--pill-text)">◂ none</text>
-<polygon points="202.5,95 212.5,100 202.5,105 205.84,100" style="fill: var(--wire-error)"/>
-<text x="175.63" y="104.01" font-size="11" style="fill: var(--node-title)">err</text>
+<rect width="202.5" height="144" style="fill: var(--canvas-fill)"/>
+<rect x="22.5" y="16" width="160" height="112" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="34.5" y="35.65" font-size="10" style="fill: var(--node-title)">results_log.append_csv</text>
+<circle cx="22.5" cy="76" r="4" style="fill: var(--node-fill); stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="22.5" cy="76" r="2" style="fill: var(--wire-data)"/>
+<polyline points="18,72 16,72 16,80 18,80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.2"/>
+<polyline points="27,72 29,72 29,80 27,80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.2"/>
+<text x="34.5" y="79.65" font-size="10" style="fill: var(--node-title)">results</text>
+<polygon points="18.5,96 26.5,100 18.5,104 21.17,100" style="fill: var(--wire-error)"/>
+<text x="34.5" y="103.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="60.56" y="93" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="64.56" y="103.65" font-size="10" style="fill: var(--pill-text)">◂ none</text>
+<polygon points="178.5,96 186.5,100 178.5,104 181.17,100" style="fill: var(--wire-error)"/>
+<text x="152.44" y="103.65" font-size="10" style="fill: var(--node-title)">err</text>
 </svg>

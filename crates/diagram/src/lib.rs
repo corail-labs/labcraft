@@ -168,8 +168,9 @@ pub fn count_nodes(checked: &Checked, file: usize, names: &Interner) -> Option<u
     Some(graph::count_nodes(function, &graph::orders_of(checked_file, function, names), &checked_file.resolved))
 }
 
-/// The band of each node (notation 3.2): the last segment of its library, cut at 12 cells; the full path when two
-/// libraries of the drawing would read the same; cut in the middle when they still do.
+/// The band of each node (notation 3.2): the last segment of its library, cut to the width of its block; the full path
+/// when two libraries of the drawing would read the same at that width; cut in the middle when they still do. A width
+/// is that of a compact block or of an oblong, whose label is cut: few widths, each worked out once.
 fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
     let library_of = |kind: &Kind<'_>| match kind {
         Kind::Call { library, glyph: None, .. } | Kind::Construction { library, .. } | Kind::Variant { library, .. } => library.clone(),
@@ -179,7 +180,28 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
     let mut distinct: Vec<&String> = libraries.iter().flatten().collect();
     distinct.sort();
     distinct.dedup();
-    let short = |library: &str| labcraft_types::text::cut(library.rsplit('.').next().unwrap_or(library), crate::size::label_line()).into_owned();
+    let cells: Vec<u64> = graph
+        .nodes
+        .iter()
+        .zip(&libraries)
+        .map(|(node, library)| if library.is_some() { crate::size::band_cells(crate::size::band_room(node)) } else { 0 })
+        .collect();
+    let mut at: BTreeMap<u64, BTreeMap<&String, String>> = BTreeMap::new();
+    for (library, &cells) in libraries.iter().zip(&cells) {
+        if library.is_some() && !at.contains_key(&cells) {
+            at.insert(cells, bands_at(&distinct, cells));
+        }
+    }
+    libraries
+        .iter()
+        .zip(&cells)
+        .map(|(library, cells)| library.as_ref().and_then(|library| at.get(cells)?.get(library)).map(|text| ShownText::plain(text)))
+        .collect()
+}
+
+/// The band of each library at `cells` (notation 3.2).
+fn bands_at<'a>(distinct: &[&'a String], cells: u64) -> BTreeMap<&'a String, String> {
+    let short = |library: &str| labcraft_types::text::cut(library.rsplit('.').next().unwrap_or(library), cells).into_owned();
     let mut drawn: BTreeMap<&String, String> = distinct.iter().map(|&library| (library, short(library))).collect();
     for pass in 0..2 {
         let mut readers: BTreeMap<String, Vec<&String>> = BTreeMap::new();
@@ -188,16 +210,12 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
         }
         for same in readers.values().filter(|libraries| libraries.len() > 1) {
             for &library in same {
-                let text = if pass == 0 {
-                    labcraft_types::text::cut(library, crate::size::label_line()).into_owned()
-                } else {
-                    cut_middle(library, crate::size::label_line()).into_owned()
-                };
+                let text = if pass == 0 { labcraft_types::text::cut(library, cells).into_owned() } else { cut_middle(library, cells).into_owned() };
                 drawn.insert(library, text);
             }
         }
     }
-    libraries.iter().map(|library| library.as_ref().and_then(|library| drawn.get(library)).map(|text| ShownText::plain(text))).collect()
+    drawn
 }
 
 /// What the tooltip of a node says (notation 3.2), cut at 200 code points (cli.md 7.2).
@@ -725,13 +743,18 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             _ => 0,
         })
         .collect();
-    // The pill of each wire, just before its reader.
+    // The pill of each wire, just before its reader, where the reader keeps it: past the pill of a neighbour when it
+    // steps outward (notation 3.2).
     let mut pills: HashMap<usize, Vec<Shape>> = HashMap::new();
     for routed in routes {
         for (&wire, branch) in routed.wires.iter().zip(&routed.branches) {
             let (Some(pill), Some(&(x, y))) = (graph.pills.get(&(body, wire)), branch.last()) else { continue };
             let text = Text::new(&pill.text, crate::size::label_line(), crate::size::medium());
-            let start = x - pill_reach(pill);
+            let kept = match of.wires.get(wire).map(|wire| wire.to) {
+                Some(graph::End::Node { node, terminal }) => sized.get(node).and_then(|found| found.reaches.get(terminal)).copied().flatten(),
+                _ => None,
+            };
+            let start = x - kept.unwrap_or_else(|| pill_reach(pill));
             obstacles.rect(start, y - style::pill_height() / 2, start + size::pill_width(&text), y + style::pill_height() / 2);
             pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion));
         }

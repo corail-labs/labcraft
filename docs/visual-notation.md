@@ -69,7 +69,7 @@ are the nodes that a `layout` section does not place (spec 11).
   files (the signatures, type declarations, icons and bands of what it calls), on the font of the
   notation (2.3), on the values of the notation (10), which are the defaults outside a viewer tuning them, and on
   the view state: the view of each node, tabs or unfolded branches, folded or
-  unfolded constructions, optional inputs shown, the branch shown in tabs (by default that of the run,
+  unfolded constructions, the branch shown in tabs (by default that of the run,
   6.1), which changes nothing around its frame, as large as its largest branch (5.2). With the same
   view state, the same file gives the same drawing on screen, when it is opened again, in an export and
   in the snapshots of CI (scenario 6 of `acceptance-m0.md`). Nothing comes from a previous drawing, from
@@ -202,16 +202,17 @@ export and the snapshots of CI draw the same thing. A monospaced font tells `l`,
 and `0`, apart in names, and keeps a value as wide when an iteration selector changes it (6.1). The
 developer chooses the zoom, and the font of the other panels of the IDE.
 
-- **Three sizes.** 12 units: the label in the center of a block, the names of terminals, the titles of
-  structures and of the function. 11 units: the names of wires, inline constants, the values of a run
-  (6.1), badges, tabs, legends and banners. 9 units: the text of the band (3.2). A title stands out by
+- **Three sizes** *(proposed)*. 10 units (`text.large`, `text.label`, `text.medium`, section 10): the label in the
+  center of a block, the names of terminals, the titles of structures and of the function, the names of wires,
+  inline constants, the values of a run (6.1), badges, tabs, legends and banners. 9 units: the text of the band
+  (3.2). The three values stay apart in the table, so that each can be tuned. A title stands out by
   its place and its color, never by its weight: there is one face.
 - **Cells.** Every length of text in the notation is counted in cells: its width, and the limits at
   which a text is cut (3.2, 6.1). A grapheme (Unicode, UAX #29) takes one cell, or two when one of
   its code points is East Asian Wide or Fullwidth (UAX #11) or an emoji (`Emoji_Presentation`, or
   U+FE0F, which asks for one): `☝🏽`, a hand and a skin tone, takes two; `©`, `™` or `▶`, which Hack
-  draws, take one cell, and `e` with an accent one: a library name in Japanese is cut after 5 characters
-  and `…`, not after 11. The Unicode version is the one with which names are read (spec 14.1).
+  draws, take one cell, and `e` with an accent one: in the band of a block of 40, which holds 5 cells, a
+  library name in Japanese is cut after 2 characters and `…`, not after 4. The Unicode version is the one with which names are read (spec 14.1).
 - **Every text has a cut.** A text that no other rule cuts (the name of a terminal or a wire, a title,
   a label in standard view, an inline constant) is cut at 40 cells *(proposed)*: 39 and `…`, and its
   tooltip shows more of it. A name of normal length stays whole (`measurement_channel_voltage_limit` is 33
@@ -222,17 +223,17 @@ developer chooses the zoom, and the font of the other panels of the IDE.
 - **A tooltip is cut too**, on the canvas as in the `<title>` of the SVG ([cli.md](cli.md), section 7.2): at
   200 code points and `…`, names and values alike, so that hovering stays fast whatever the file holds. To
   see a longer value whole belongs to the debugger (M5).
-- **Width.** Every character of Hack has the same advance, 1233/2048 of the size: 7.22 units at 12,
-  6.62 at 11, 5.42 at 9. A text is as wide as its cells times that advance. No kerning, no ligatures.
+- **Width.** Every character of Hack has the same advance, 1233/2048 of the size: 6.02 units at 10,
+  5.42 at 9. A text is as wide as its cells times that advance. No kerning, no ligatures.
   A character that Hack lacks (a name in Japanese, an emoji in a string) is drawn by a fallback font.
   On the canvas, a text that a fallback font makes wider than its cells is drawn smaller, as a whole, to
   fit them, so that it never runs past them.
   A text keeps 4 units on its left and on its right between itself and the edge of its box (block,
-  band, pill, badge, tab, bubble); the label of a compact block keeps 9, since the terminals straddle its edge
-  (3.2).
+  band, pill, badge, tab, bubble); the label of an oblong keeps 2 (`node.label_padding`), and the label of a
+  compact block holds between its terminals, which straddle its edge (3.2).
 - **Direction.** Every text is put in display order with the Unicode bidirectional algorithm
   (UAX #9), on its own and with a left-to-right base direction, so that a name in Hebrew or Arabic
-  reads in its order. A text is cut first, in its logical order (11 cells and `…` at its logical end,
+  reads in its order. A text is cut first, in its logical order (one cell less than its limit and `…` at its logical end,
   which then shows on the right), and reordered after. The `diagram` crate cuts and counts; it does not
   reorder. The canvas and the SVG both give the text in its logical order, isolated, with a left-to-right
   base, to a text engine that applies the algorithm and joins Arabic letters: epaint, in the egui of the
@@ -295,8 +296,8 @@ terminals (N-15).
                 └───────────────────────────┘
 ```
 
-- **Sizes** *(proposed)*, those of `design/notation.figcraft` on the grid of 8: a header of 24, its text at 12; the
-  first line of terminals at 40 from the top, the others 24 apart (a pill is 18 high), the last at 16 above the
+- **Sizes** *(proposed)*, those of `design/notation.figcraft` on the grid of 8: a header of 24, its text at 10; the
+  first line of terminals at 40 from the top, the others 24 apart (a pill is 14 high), the last at 16 above the
   bottom, so a block of one line is 56 high and one of two 80. The names of the terminals keep 12 from the edge,
   and an input name and an output name on one line 24 between them; a unit badge follows its name, 4 after it,
   and the pill of a constant its input, 8 after. The width is the largest of 112, the header (12, the name, the
@@ -321,7 +322,7 @@ terminals (N-15).
   in full in the tooltip.
 - **Named constant** (`limit = 240 V`, spec 5.1): a small node without a body, the user places it near what it
   feeds. It shows its name, its value in a pill and one output terminal (`limit  240 V ●`), and its wire splits like any
-  other. *(proposed)* It is 24 high: its name in 12, then 8, the pill, 8, and the terminal on its right edge. Dragging a wire from an inline constant to a second terminal makes one. A new name for a wire (`err = e3`) still
+  other. *(proposed)* It is 24 high: its name in `text.large`, then 8, the pill, 8, and the terminal on its right edge. Dragging a wire from an inline constant to a second terminal makes one. A new name for a wire (`err = e3`) still
   draws nothing.
 - **Constant construction** (`k = Limits { low: 220 V, high: 240 V }`, or a variant with values): when every field is a
   constant and the values fit in a tooltip, it is drawn folded by default, as a small node (`k  Limits {…} ●`). Each node can be
@@ -334,8 +335,8 @@ terminals (N-15).
 - **`led` on a panel** (spec 10): until the developer chooses, grey when off and one accent colour, neither green nor red, when
   on, with the name of the variant on an enumeration. No default gives a colour a meaning: colours by position would make a
   `Fail` green.
-- **Unwired optional inputs**: hidden by default, with a `+2` indicator in the header; shown with
-  their default value on hover or on request.
+- **Unwired optional inputs**: drawn, at their place in the signature, so that a node has the size of its
+  definition at every call (N-6); the tooltip of the terminal gives the default value.
 - **Ignored output** (`_`): hollow terminal, no wire.
 - **`always`**: `always` badge in the header. This is the node that runs even after an error; it
   must be spotted at a glance.
@@ -358,55 +359,55 @@ A compact node is a **block** whose center says what the function does: its icon
 When the function comes from another library, a **band** above the block says which.
 
 - **Band**: the name of the library of the function (`visa`, `scpi`, `dmm_driver`, `results_log`), whole
-  up to 12 cells, beyond that cut to 11 followed by `…` (cells, 2.3), in the token `band.text` on `band.fill`, neutral by default,
+  when it holds in the width of its block less 4 on each side, beyond that cut to one cell less followed by `…`
+  (cells, 2.3): above a block of 40, 5 cells at 9, `visa`, `resu…` *(proposed)*, in the token `band.text` on `band.fill`, neutral by default,
   with a contrast of at least 4.5:1 in both themes. The band is 12 units high and as wide as the block,
-  which widens to hold it. A call to a function of `core`, of the other primitive libraries of the spec
+  which it never widens; an oblong (below), as wide as its label, holds more of it (`results_log` above
+  `StepResult`). The name of a library is whole in the tooltip, and a library mask will give it a shorter
+  text (N-11). A call to a function of `core`, of the other primitive libraries of the spec
   (`array`, `string`, `time`, `errors`, `ui`, spec appendix A.2) or of the library that holds the diagram has no
   band: those are everywhere, and their band would say nothing. `visa`, `scpi` and every other library keep
   theirs. A folder of the project is a library like any other (spec 4), so a call from the root to
   `relays.close` has the band `relays`. A sub-library `a.b` shows its last segment, `b`, with the full
   path in the tooltip; when two bands of one diagram would read the same (`x.util` and `y.util`), each
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
-  same, each is cut in the middle instead, keeping its start and its end (`measurement_a` and
-  `measurement_b` give `measu…ment_a` and `measu…ment_b`). The label (`#close:`) is drawn above the band, or above the block when there is
-  no band, in 11 and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
+  same, each is cut in the middle instead, keeping its start and its end (above a block of 40,
+  `measurement_a` and `measurement_b` give `me…_a` and `me…_b`). The label (`#close:`) is drawn above the band, or above the block when there is
+  no band, in 10 (`text.medium`) and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
   (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
-- **Block**: a square *(proposed)*, of 40 × 40 units at least, so that a node reads as an icon. Its side is
-  the largest of 40, the width of its label with 9 units on each side (4, and half a terminal, which is 10
-  across and straddles the edge, 4.1), and the height that its lines of terminals need at the closest (below),
-  with 8 above the top line and 8 below the bottom one, and, with no icon, the height of its label with 8 above and
-  below *(proposed)*, rounded up to the grid. A band never makes a block taller: a band wider than the square widens the block,
-  which is then wider than tall, and the terminals stay where they were. A label of more than 3 cells makes the
-  square larger than 40 (`open` 48, `close` 56, `elapsed` 72): a reason to give the function an icon. A
+- **Block** *(proposed)*: `node.square` wide, 40 units, whatever its label, its band or its lines, so that a node
+  reads as an icon and the blocks of a column line up; as tall as its lines need (below), with 8 above
+  the top line and 8 below the bottom one, 40 at least, rounded up to the grid: up to four lines a square of 40, five
+  lines 40 × 48. Its size comes from the definition of what it calls, never from what a call wires: every terminal of
+  the signature is drawn, the lines are evenly spaced, and its label, its band and the pills of its constants never
+  make it larger (N-6). A label that does not hold is cut (below): a reason to give the function an icon. A
   construction, a variant constructor and a node of `ui` are not squares: they can have no icon, and their text
-  is what they show. Their width is that of their label with 9 on each side, their height the larger of what
-  their lines need and their label with 8 above and below (two lines, `set` / `live_voltage`, need 44, so 48), each at
-  least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square. A value too many for a
+  is what they show. Their width is that of their label, in `text.label` (10), with 2 on each side
+  (`node.label_padding`), their height the larger of what their lines need and their label with 8 above and below (two
+  lines, `set` / `live_volt…`, need 39.28, so 40), each at least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square. A value too many for a
   variant, or an argument too many for a function, which `check` refuses, still has its input, named by its position
   (`1`), so that the drawing shows where.
-- **Center** of the block, which a band can make wider than its square: the function's icon (`icon` section,
+- **Center** of the block: the function's icon (`icon` section,
   spec 11.1), alone, drawn 28 × 28 units and cut to its grid, so that a shape that leaves it (`LC5009`) never covers
   the block, a terminal or a wire, each of its texts cut at 40 cells (2.3) to bound what is drawn; otherwise a
-  short label: the last segment of the name (`visa.open` → `open`). A label that holds an
-  underscore is written on **two lines** when that makes the square smaller, cut at an underscore, which is
-  not drawn. The
-  cut is the one whose longer line is the shortest, the first one on a tie, and never one that leaves
-  a line empty: `query_f64` → `query` / `f64`, `bench_selftest` → `bench` / `selftest`,
-  `read_dc_volts` → `read_dc` / `volts`, `count_to_fixed` → `count` / `to_fixed`. When no cut is allowed (`abcdefgh_`), the label stays on
-  one line. A line of more than 12 cells is cut to 11 followed by `…`. Here and in the band, a cut falls
+  short label: the last segment of the name (`visa.open` → `open`), in `text.label` (10), on two lines at most, each
+  as wide as the block less a terminal (5 cells in a block of 40 with terminals of 8) *(proposed)*. A label that holds
+  is on one line. Otherwise it is cut at an underscore, which is not drawn, when both parts hold: the cut whose longer
+  line is the shortest, the first one on a tie, never one that leaves a line empty (`query_f64` → `query` / `f64`).
+  Otherwise the first line goes as far as the last underscore that it holds, or the one right after what it holds,
+  which is not drawn, or as far as it holds,
+  in the middle of a word, and the second line takes the rest, cut to one cell less followed by `…`: `bench_selftest` →
+  `bench` / `self…`, `read_dc_volts` → `read` / `dc_v…`, `elapsed` → `elaps` / `ed`. Here and in the band, a cut falls
   between two graphemes, before the one that would pass the limit, and `…` takes one cell. The author does not declare a label: the icon is there for that. The qualified
   name (`visa.open`) is in the tooltip, and in the `<title>` of the node in an exported SVG.
 - **Unnamed terminals**: inputs on the left, outputs on the right by default (3.1, N-15), on the
   **same lines as in standard view**: signature order, pass-through pairs on one line. Switching a
   node from one view to the other never reorders its terminals. By default (N-15), lines are counted
-  from the bottom: the last one is 8 units above the lower edge, and the lines above it are 16 apart: a block
-  of one line has it at 32 from the top, a block of two lines at 16 and 32. A line that carries a pill, an inline
-  constant or the pill of its wire (3.3, 4.2), keeps 16 from its neighbours, and 24 from a neighbour that carries
-  one too, since a pill is 18 high and lies where a wire would. When 16 between the other lines would pass the side of the square, the gaps
-  between two wired lines shrink, all alike, to 8 (the grid of the canvas and the gap
-  between parallel wires, 2.2), rather than the block growing; their terminals are then drawn at 70 %
-  *(proposed)* so that they do not touch. Only when the lines need more than that does the block grow, by what
-  they need. The name of a terminal is shown in the tooltip and while wiring, on the targeted
+  from the bottom: the last one is 8 units above the lower edge, and the lines above it are `node.pitch` apart, 8,
+  the grid of the canvas, whatever they carry *(proposed)*: a block of one line has it at 32 from the top, a block of
+  two lines at 24 and 32. A pill (an inline constant, or the pill of its wire, 3.3, 4.2) is 14 high and lies where a
+  wire would, 8 left of the terminal; when it would overlap the pill of a line above, it steps outward, its right end 8
+  left of that pill, and a constant so moved has a wire to its terminal, as N-15 does for M1. The name of a terminal is shown in the tooltip and while wiring, on the targeted
   terminal. The shape of the terminal still tells its family (4.1).
 - **The `err` pair stays on the bottom line**, as in standard view: the error chain crosses the
   node in a straight line.
@@ -415,13 +416,15 @@ When the function comes from another library, a **band** above the block says wh
   8 cells, 2.3), the label (`#close:`), the `after:` terminal (on the left of the band; with no band, on
   the top edge of the block, 8 units from its left corner), the conversion marks and the run-time state
   (6). Otherwise the diagram would lie about the execution.
-- **Unwired optional inputs** are hidden, with no `+n` indicator: the tooltip lists them with their
-  default values.
+- **Unwired optional inputs** are drawn, at their place, as in standard view: a node has the size of its
+  definition at every call (N-6), and the tooltip of the terminal gives the default value. A variadic primitive
+  (`errors.merge`) has the inputs that the call gives.
 - **Construction** (`StepResult { … }`, 3.3): the label is the name of the type, without its library,
   which goes to the band (`results_log` above `StepResult`). **Variant constructor**: the type and the
   variant on two lines (`Reading` / `Value`).
 - **Nodes of `ui`** (`ui.set`, `ui.get`, 3.1): no band; the label is the operation and the element on
-  two lines (`set` / `live_voltage`), so the element stays on the face of the node.
+  two lines, each cut at `text.label_line` (`set` / `live_volt…` at 10 cells), so the element stays on the face of the
+  node.
 - **Indistinguishable inputs**: when two or more wired inputs have the same type and nothing
   tells them apart (no inline constant, no wire name drawn, section 4), the editor warns: "inputs `low` and `high`
   indistinguishable in compact view", with the action "show in standard view". This is a warning,
@@ -444,8 +447,8 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
 the unit needs, with 3 on each side *(proposed)*. When an input carries a pill (an inline
 constant, the pill of its wire), the circle stretches into a capsule of the same width, as tall as needed for it to
-be 16 from a neighbour, 24 from a neighbour that carries one too, as on a compact block, since a pill is 18 high
-(`select(ok, 1 V, 0 V)`): the span of its inputs and 18 *(proposed)*. More than three inputs, which
+be 16 from a neighbour, 24 from a neighbour that carries one too, since a pill is 14 high
+(`select(ok, 1 V, 0 V)`): the span of its inputs and 14 *(proposed)*. More than three inputs, which
 `check` refuses but the drawing still shows, are 8 apart, and the circle stretches the same way. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
 ordinary compact view (block, no band).
 
@@ -460,8 +463,8 @@ of the right side. They are not on the grid of 8: the routing of the wires (2.2)
 
 - **Field access** (`step.low`): no node. The wire starts at `step` and carries, just before the
   terminal, a `.low` pill. This is what the text says: a path as an argument, not a call. A pill of a
-  wire, a field or a conversion (4.2), is cut at 12 cells, and its line keeps from its neighbours the distance
-  of a line that carries an inline constant (3.2) *(proposed)*.
+  wire, a field or a conversion (4.2), is cut at 10 cells (`text.label_line`), and steps outward past the pill of a
+  neighbour as an inline constant does (3.2) *(proposed)*.
 - **An array of wires** (`y = [a, b]`): a block `[ ]` with one input per element, in order, one output,
   as the IR builds it; an array of constants is an inline constant *(proposed)*.
 - **Construction** (`StepResult { name: n, … }`): block with the header `StepResult { }`, one
@@ -822,7 +825,7 @@ IDE, the diagram takes its colors from this table.
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
-| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. In compact view the lines are counted from the bottom, and the lines of a side come closer before the block grows (3.2): adding a wired terminal keeps the size of the block and its bottom line, so the error chain does not move, while the other lines of that side close up, until the lines need more than the side. When the block grows, it grows to the right and downward, and its bottom line and the error chain move down. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
+| N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. **Retained (2026-11-10):** in compact view the size of a node comes from the definition of what it calls, never from what a call wires: every terminal of the signature is drawn, an optional input unwired too, the lines are `node.pitch` apart whatever they carry, and the label, the band and the pills never make a block larger (3.2). A block grows only when the signature changes, or with what a call gives beyond its parameters (the values of a variadic parameter, the fields of `string.format`, what `core.call` passes): down by 8 for each line past four, never across, so that its top-left corner and its width stay; the lines are counted from the bottom, so its bottom line and the error chain move down with it. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
 | N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, which does not yet keep the line straight through a `match`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | **Settled (2026-11-08):** the output of each branch joins a vertical bus along the inner right edge of the frame, which leads to the output terminal, so that the drawing says that every branch gives the value; an outer value read by several branches enters by its notch, then a vertical bus along the inner left edge; one bus per value, in the order of the outputs, the error output on the bottom line like the frame's (5.2) |
@@ -831,7 +834,7 @@ IDE, the diagram takes its colors from this table.
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | **Settled (2026-11-09):** the compact view was judged on mock-ups of `check_voltage`, `settle` and `station` before the code of M0v; the public tool stays as it is until `diagram` replaces it |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
-| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1) |
+| N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines counted from the bottom, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1). **Retained for M1 (2026-11-10):** a section `terminals`, in the file of the function after `layout` and before `icon`, gives its compact block a grid of places, 8 apart on the grid of the canvas: `top N` sets the width and `left N` the height, each (N + 1) × 8 (`top 4`, `left 5`: 40 × 48), and the right side has as many places as the left. `left 2 parts` puts a terminal on a place, counted from the top or from the left; `last` names the last place of a side (no `first`: it is `1`). A terminal that the section does not name keeps its default side, on the first free place, with no warning: the author writes only what differs. By default `err` is on the last place of the left and right sides, so the author writes it only to move it; the error chain stays straight through a node whose `err` is elsewhere, which then hangs from it (N-7). The bottom side has no place. The defaults (retained 2026-11-10): inputs on the left and outputs on the right, in signature order, filled from the top, one place apart, a pass-through pair on one place; a terminal that the section does not name takes the first free place that keeps an empty neighbour, else a place next to another, else the block grows by two places; an optional input goes to the top side only when the left side is full: left, then top, then the block grows. The block has the size that the section gives at every call, with one exception: a variadic parameter takes a place per value that the call gives, the block grows from its place and what follows it moves along; the variadic primitives (`errors.merge`, `core.add`) follow the same rule. Two inputs on neighbouring places may both receive a constant: their pills step outward. The standard view does not follow the section. Like `icon`, the section says nothing about running: the CLI and the MCP server leave it out by default, and an agent writes it only when asked; in M1 the user drags a terminal onto a place and the IDE writes the line. `top`, `left`, `right` and `last` mean something only in the section and stay names everywhere (spec 14.1). Without a section, the layout computed by 3.2, as in v0 |
 
 ## 10. The values in one place
 
@@ -855,22 +858,24 @@ always draws with the defaults. Only the colours may become a choice of the deve
 |---|---|---|---|---|
 | `canvas.grid` | 8 units | 4 to 16 | 2 | The grid of the canvas: positions and sizes round up to it. |
 | `canvas.margin` | 16 units | 0 to 64 | 2 | Around what an image shows (`docs/cli.md`, 7.2). |
-| `text.large` | 12 units | 6 to 24 | 2.3 | Titles of structures and of standard nodes. |
-| `text.medium` | 11 units | 6 to 24 | 2.3 | Labels, pills, names of wires. |
+| `text.large` | 10 units | 6 to 24 | 2.3 | Titles of structures and of standard nodes, names of constants. |
+| `text.label` | 10 units | 6 to 24 | 3.2 | The name on a compact block, the label of an oblong. |
+| `text.medium` | 10 units | 6 to 24 | 2.3 | Labels, pills, names of wires. |
 | `text.small` | 9 units | 6 to 24 | 2.3 | Units of terminals, bands, marks. |
 | `text.any_text` | 40 cells | 4 to 160 | 2.3 | A text that no other rule cuts. |
-| `text.label_line` | 12 cells | 4 to 48 | 3.2 | A line of a label, a band. |
+| `text.label_line` | 10 cells | 4 to 48 | 3.2 | A line of the label of an oblong, the pill of a wire. |
 | `text.compact_constant` | 8 cells | 2 to 32 | 3.2 | An inline constant in compact view. |
-| `node.terminal` | 10 units | 4 to 40 | 4.1 | The shape of a terminal. |
-| `node.pill_height` | 18 units | 8 to 72 | 3.2 | A pill of an inline constant. |
+| `node.terminal` | 8 units | 4 to 40 | 4.1 | The shape of a terminal. |
+| `node.pill_height` | 14 units | 8 to 72 | 3.2 | A pill of an inline constant. |
 | `node.band_height` | 12 units | 6 to 48 | 3.2 | The band of a library above a block. |
 | `node.padding` | 4 units | 0 to 16 | 3.2 | Inside a pill, on each side. |
-| `node.label_padding` | 9 units | 0 to 36 | 3.2 | Inside an oblong label, on each side. |
-| `node.square` | 40 units | 16 to 160 | 3.2 | A compact block. |
+| `node.label_padding` | 2 units | 0 to 36 | 3.2 | Inside an oblong label, on each side. |
+| `node.square` | 40 units | 16 to 160 | 3.2 | The width of a compact block, and its least height. |
+| `node.pitch` | 8 units | 8 to 48 | 3.2 | Between two lines of terminals of a compact block. |
 | `node.circle` | 28 units | 12 to 112 | 3.2 | The circle of a primitive. |
 | `node.icon` | 28 units | 12 to 112 | 3.2 | An icon in a block. |
 | `node.outline` | 1 units | 0 to 4 | 3 | The outline of a node. |
-| `node.radius` | 4 units | 0 to 16 | 3 | The corners of a node. |
+| `node.radius` | 2 units | 0 to 16 | 3 | The corners of a node. |
 | `standard.header` | 24 units | 12 to 96 | 3.1 | The title of a node in standard view. |
 | `standard.first_line` | 40 units | 16 to 160 | 3.1 | From its top to its first line of terminals. |
 | `standard.pitch` | 24 units | 12 to 96 | 3.1 | Between two lines of terminals. |

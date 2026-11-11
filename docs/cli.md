@@ -496,7 +496,7 @@ section 3), not a diagnostic.
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
 | `LC7001` | error | `FUNCTION` is not a function of `FOLDER`; fix: the nearest names | section 7.6 |
-| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, a missing input included. Gives the counts | section 7.6 |
+| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, an unwired input included, missing or optional. Gives the counts | section 7.6 |
 | `LC7003` | error | `FOLDER` holds no function to draw, only types | section 7.6 |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written | section 7.6 |
 
@@ -1000,7 +1000,7 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | Code | Severity | When |
 |---|---|---|
 | `LC7001` | error | `FUNCTION` is not a function of `FOLDER`; fix: the nearest names |
-| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, a missing input included. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the nodes, or the nodes built when the terminals passed the limit |
+| `LC7002` | error | The function is too large to draw: more nodes than `--max-diagram-nodes`, every level counted, structures included, or more than five times as many terminals, an unwired input included, missing or optional. Default 20,000, at most 100,000 *(proposed)*; above the default, the bounds of scenario 4 are not promised. Gives the nodes, or the nodes built when the terminals passed the limit |
 | `LC7003` | error | `FOLDER` holds no function to draw, only types |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written |
 | `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values |

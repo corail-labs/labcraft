@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use labcraft_check::primitives::{ParamKind, primitive};
+use labcraft_check::primitives::{ParamKind, PrimitiveTy, primitive};
 use labcraft_check::{Checked, CheckedFile, DeclaredLibrary, Meaning, PrimitiveLibrary, Resolved, Terminal as Wiring, read_escapes};
 use labcraft_format::{BodyOrders, canonical_orders, write_operand};
 use labcraft_graph::{
@@ -69,8 +69,9 @@ pub struct Terminal {
     /// What an input reads: the paths of its operand that read a value, each the end of a wire, with the name that the
     /// wire bears (`step.low`).
     pub reads: Vec<(Id, String)>,
-    /// A wire with a pill reaches it (a field, a conversion): its line keeps its distance as a line with a constant does.
-    pub pilled: bool,
+    /// The text of the pill of the wire that reaches it (a field, a conversion): it stands left of the input, as an
+    /// inline constant does (notation 3.2).
+    pub pill: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,8 +213,6 @@ pub struct Node<'a> {
     pub standard: bool,
     pub inputs: Vec<Terminal>,
     pub outputs: Vec<Terminal>,
-    /// Unwired optional inputs, hidden (notation 3.1, 3.2).
-    pub hidden: u32,
 }
 
 /// A body: the function's, or one that a structure holds, with its frame and its wires.
@@ -284,10 +283,9 @@ pub struct Counts {
 /// costs what its arguments and its terminals cost, never the size of a signature again.
 struct Callee<'a> {
     params: Vec<Param>,
-    /// The positions of the parameters that are wires without a default: each is a terminal, wired or not.
-    required: Vec<usize>,
-    /// How many parameters are wires with a default: those that no argument wires are hidden.
-    defaults: u32,
+    /// The positions of the parameters that are wires, with a default or not: each is a terminal, wired or not, so that a
+    /// node has the size of its signature at every call (notation 3.2).
+    wires: Vec<usize>,
     outputs: Vec<String>,
     band: Option<String>,
     always: bool,
@@ -502,11 +500,11 @@ impl<'a> Builder<'a> {
         flow::structure_pairs(&mut graph, &flow);
         graph.pills = self.pills(&graph);
         graph.vias = self.vias(&graph, &flow);
-        for &(body, wire) in graph.pills.keys() {
+        for (&(body, wire), pill) in &graph.pills {
             if let Some(End::Node { node, terminal }) = graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to)
                 && let Some(input) = graph.nodes.get_mut(node).and_then(|node| node.inputs.get_mut(terminal))
             {
-                input.pilled = true;
+                input.pill = Some(pill.text.clone());
             }
         }
         Ok(graph)
@@ -666,38 +664,38 @@ impl<'a> Builder<'a> {
     }
 
     fn node(&mut self, statement: &'a Statement) -> Option<Node<'a>> {
-        let (kind, inputs, outputs, hidden, always, after) = match &statement.kind {
+        let (kind, inputs, outputs, always, after) = match &statement.kind {
             StatementKind::Binding { targets, value } => match value {
                 Rhs::Call(call) => {
                     let call = self.call(call, statement, targets);
-                    (call.0, call.1, call.2, call.3, call.4, call.5)
+                    (call.0, call.1, call.2, call.3, call.4)
                 }
                 Rhs::Struct(lit) => {
                     let (kind, inputs) = self.construction(lit, targets);
                     let outputs = vec![self.output_of(targets, 0, "value")];
-                    (kind, inputs, outputs, 0, false, false)
+                    (kind, inputs, outputs, false, false)
                 }
                 // An array of wires is a node with an input per element, as `ir` lowers it (decision of the owner, M0v
                 // step 4); an array of constants stays a constant.
                 Rhs::Operand(operand @ Operand::Array(_, values)) if !self.reads(operand).is_empty() => {
                     let inputs = values.iter().enumerate().map(|(index, value)| self.input(index.to_string(), value, None)).collect();
                     let kind = Kind::Construction { ty: "[ ]".to_owned(), library: None };
-                    (kind, inputs, vec![self.output_of(targets, 0, "value")], 0, false, false)
+                    (kind, inputs, vec![self.output_of(targets, 0, "value")], false, false)
                 }
                 Rhs::Operand(operand) if is_constant(operand, self.resolved()) => {
                     let name = targets.first().map_or_else(String::new, |target| self.target_text(target));
                     let kind = Kind::Constant { name, value: self.constant_text(operand) };
-                    (kind, Vec::new(), vec![self.output_of(targets, 0, "value")], 0, false, false)
+                    (kind, Vec::new(), vec![self.output_of(targets, 0, "value")], false, false)
                 }
                 Rhs::Operand(_) => return None,
                 Rhs::Loop(_) | Rhs::For(_) | Rhs::Match(_) | Rhs::Handle(_) => {
                     let (kind, inputs, outputs) = self.structure(value, targets);
-                    (kind, inputs, outputs, 0, false, false)
+                    (kind, inputs, outputs, false, false)
                 }
             },
             StatementKind::Call(call) => {
                 let call = self.call(call, statement, &[]);
-                (call.0, call.1, call.2, call.3, call.4, call.5)
+                (call.0, call.1, call.2, call.3, call.4)
             }
             StatementKind::Collect(_) | StatementKind::Until(_) => return None,
         };
@@ -715,7 +713,6 @@ impl<'a> Builder<'a> {
             standard: false,
             inputs,
             outputs,
-            hidden,
         })
     }
 
@@ -746,13 +743,13 @@ impl<'a> Builder<'a> {
             constant,
             ignored,
             reads: Vec::new(),
-            pilled: false,
+            pill: None,
         }
     }
 
-    /// A call: its kind, its inputs and outputs in signature order, the unwired optional inputs, `always`, `after:`.
+    /// A call: its kind, its inputs and outputs in signature order, `always`, `after:`.
     #[allow(clippy::type_complexity)]
-    fn call(&mut self, call: &'a Call, statement: &Statement, targets: &[Target]) -> (Kind<'a>, Vec<Terminal>, Vec<Terminal>, u32, bool, bool) {
+    fn call(&mut self, call: &'a Call, statement: &Statement, targets: &[Target]) -> (Kind<'a>, Vec<Terminal>, Vec<Terminal>, bool, bool) {
         let resolved = self.resolved().call(call.id);
         let callee = resolved.map_or(Meaning::None, |resolved| resolved.callee);
         let wiring = |index: usize| resolved.and_then(|resolved| resolved.terminals.get(index)).copied();
@@ -764,9 +761,9 @@ impl<'a> Builder<'a> {
             let (type_name, band) = self.type_name(ty);
             let kind = Kind::Variant { ty: type_name, variant: self.text(variant), library: band };
             let inputs = self.inputs(call, &signature, &wiring);
-            return (kind, inputs.0, vec![self.output_of(targets, 0, "value")], inputs.1, false, after);
+            return (kind, inputs, vec![self.output_of(targets, 0, "value")], false, after);
         }
-        let (inputs, hidden) = self.inputs(call, &signature, &wiring);
+        let inputs = self.inputs(call, &signature, &wiring);
         // Outputs: one per name of the signature, typed by what the line binds, or by what a call written alone gives.
         let alone = self.resolved().outputs_of(statement.id);
         // A call written alone has the outputs that `check` gives it: those of its callee, `core.call` those of the function it calls.
@@ -805,7 +802,7 @@ impl<'a> Builder<'a> {
                 Kind::Call { qualified, short, library: signature.band.clone(), glyph, icon: signature.icon }
             }
         };
-        (kind, inputs, outputs, hidden, signature.always, after)
+        (kind, inputs, outputs, signature.always, after)
     }
 
     /// What a call needs of its callee, worked out on the first call to it.
@@ -827,9 +824,8 @@ impl<'a> Builder<'a> {
     }
 
     fn make_callee(&self, callee: Meaning) -> Callee<'a> {
-        let mut found =
-            Callee { params: Vec::new(), required: Vec::new(), defaults: 0, outputs: Vec::new(), band: None, always: false, glyph: None, icon: None };
-        // The parameters: name, whether it has a default, whether it is a wire at all (not a unit, a category, an element).
+        let mut found = Callee { params: Vec::new(), wires: Vec::new(), outputs: Vec::new(), band: None, always: false, glyph: None, icon: None };
+        // The parameters: name, whether it is a wire at all (not a unit, a category, an element), its type or its family.
         match callee {
             Meaning::Function { library, name } => {
                 let declared = self.checked.libraries.get(library as usize);
@@ -838,7 +834,7 @@ impl<'a> Builder<'a> {
                     found.params = function
                         .params
                         .iter()
-                        .map(|param| Param { name: self.text(param.name), has_default: param.has_default, is_wire: true, ty: Some(param.ty) })
+                        .map(|param| Param { name: self.text(param.name), is_wire: true, ty: Some(param.ty), family: None, variadic: false })
                         .collect();
                     found.outputs = function.outputs.iter().map(|output| self.text(output.name)).collect();
                 }
@@ -865,9 +861,10 @@ impl<'a> Builder<'a> {
                         .iter()
                         .map(|param| Param {
                             name: param.name.to_owned(),
-                            has_default: param.default.is_some(),
                             is_wire: param.kind == ParamKind::Value,
                             ty: None,
+                            family: Some(primitive_family(param.ty)),
+                            variadic: param.variadic,
                         })
                         .collect();
                     found.outputs = primitive.outputs.map_or_else(Vec::new, |outputs| outputs.iter().map(|&output| output.to_owned()).collect());
@@ -879,26 +876,20 @@ impl<'a> Builder<'a> {
                     .variant_values(ty, variant)
                     .iter()
                     .enumerate()
-                    .map(|(index, &ty)| Param { name: index.to_string(), has_default: false, is_wire: true, ty: Some(ty) })
+                    .map(|(index, &ty)| Param { name: index.to_string(), is_wire: true, ty: Some(ty), family: None, variadic: false })
                     .collect();
             }
             _ => {}
         }
-        for (position, param) in found.params.iter().enumerate() {
-            match (param.is_wire, param.has_default) {
-                (true, false) => found.required.push(position),
-                (true, true) => found.defaults = found.defaults.saturating_add(1),
-                (false, _) => {}
-            }
-        }
+        found.wires = found.params.iter().enumerate().filter(|(_, param)| param.is_wire).map(|(position, _)| position).collect();
         found
     }
 
     /// The inputs of a call in the order of its parameters: an argument wired, or given as a constant; a variadic parameter
     /// gives one per argument; an argument of no parameter (the fields of `string.format`, what `core.call` passes) comes
-    /// last. A parameter with a default and no argument is hidden; a unit, a category or an element is no terminal. In
-    /// time, the arguments and the terminals: the parameters with a default are counted, not walked.
-    fn inputs(&self, call: &Call, callee: &Callee<'_>, wiring: &dyn Fn(usize) -> Option<Wiring>) -> (Vec<Terminal>, u32) {
+    /// last. A parameter that no argument wires is still a terminal, a default or not (notation 3.2); a unit, a category or
+    /// an element is no terminal. In time, the arguments and the parameters, which `LC4008` bounds.
+    fn inputs(&self, call: &Call, callee: &Callee<'_>, wiring: &dyn Fn(usize) -> Option<Wiring>) -> Vec<Terminal> {
         // The arguments that a parameter takes, by its position then their own; the free ones, in their order.
         let mut wired: Vec<(usize, usize, &Operand)> = Vec::new();
         let mut free: Vec<(usize, Option<Name>, &Operand)> = Vec::new();
@@ -912,16 +903,14 @@ impl<'a> Builder<'a> {
         }
         wired.sort_by_key(|&(position, index, _)| (position, index));
         let mut inputs = Vec::new();
-        let mut wired_defaults: u32 = 0;
-        let mut required = callee.required.iter().copied().peekable();
-        let mut previous = None;
+        let mut unwired = callee.wires.iter().copied().peekable();
         for &(position, _, operand) in &wired {
-            // The parameters without a default that come before, and that no argument wires: missing, which `check`
-            // says, and still a terminal, so the drawing shows where.
-            while let Some(missing) = required.next_if(|&missing| missing < position) {
-                self.missing(callee, missing, &mut inputs);
+            // The parameters that come before, and that no argument wires: a terminal each, so that the drawing shows
+            // where (a missing one, which `check` says, or one with a default).
+            while let Some(free) = unwired.next_if(|&free| free < position) {
+                self.unwired(callee, free, &mut inputs);
             }
-            let _ = required.next_if_eq(&position);
+            let _ = unwired.next_if_eq(&position);
             let Some(param) = callee.params.get(position) else {
                 // A value of no parameter (one too many for a variant, which `check` says): still drawn, by its
                 // position, so that the drawing shows where, as an argument too many for a function.
@@ -930,26 +919,27 @@ impl<'a> Builder<'a> {
             };
             if param.is_wire {
                 inputs.push(self.input(param.name.clone(), operand, param.ty));
-                if param.has_default && previous != Some(position) {
-                    wired_defaults = wired_defaults.saturating_add(1);
-                }
             }
-            previous = Some(position);
         }
-        for missing in required {
-            self.missing(callee, missing, &mut inputs);
+        for free in unwired {
+            self.unwired(callee, free, &mut inputs);
         }
         for (index, name, operand) in free {
             let name = name.map_or_else(|| index.to_string(), |name| self.text(name));
             inputs.push(self.input(name, operand, None));
         }
-        (inputs, callee.defaults.saturating_sub(wired_defaults))
+        inputs
     }
 
-    fn missing(&self, callee: &Callee<'_>, position: usize, inputs: &mut Vec<Terminal>) {
-        if let Some(param) = callee.params.get(position) {
-            inputs.push(self.terminal(param.name.clone(), param.ty.unwrap_or(TyId::ERROR), None, false));
+    /// A parameter that no argument wires: a terminal of its type, or of the family of its table for a primitive; a
+    /// variadic parameter given no value has none, since it has the inputs that the call gives (notation 3.2).
+    fn unwired(&self, callee: &Callee<'_>, position: usize, inputs: &mut Vec<Terminal>) {
+        let Some(param) = callee.params.get(position).filter(|param| !param.variadic) else { return };
+        let mut terminal = self.terminal(param.name.clone(), param.ty.unwrap_or(TyId::ERROR), None, false);
+        if let (None, Some(family)) = (param.ty, param.family) {
+            terminal.family = family;
         }
+        inputs.push(terminal);
     }
 
     /// An input: its type is that of the parameter, when the signature gives one, so that the terminal shows its unit
@@ -1059,13 +1049,32 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// A parameter of what a call calls: whether it has a default, whether it is a wire at all (not a unit, a category or an
-/// element), and its type when the signature gives one that does not depend on the call.
+/// A parameter of what a call calls: whether it is a wire at all (not a unit, a category or an element), its type when
+/// the signature gives one that does not depend on the call, and for a primitive, which has no type before the call, the
+/// family of its table; whether it is variadic.
 struct Param {
     name: String,
-    has_default: bool,
     is_wire: bool,
     ty: Option<TyId>,
+    family: Option<Family>,
+    variadic: bool,
+}
+
+/// The family of a parameter of a primitive, as its table gives it (spec appendix A): what a terminal that no argument
+/// wires shows, so that an `err` left to its default is the `err` of its line (notation 3.1).
+fn primitive_family(ty: PrimitiveTy) -> Family {
+    let (base, dimensions) = match ty {
+        PrimitiveTy::Bool => (Base::Bool, 0),
+        PrimitiveTy::I32 | PrimitiveTy::F32 | PrimitiveTy::F64 | PrimitiveTy::Timestamp | PrimitiveTy::Duration => (Base::Number, 0),
+        PrimitiveTy::Text => (Base::Text, 0),
+        PrimitiveTy::Texts => (Base::Text, 1),
+        PrimitiveTy::Error => return Family::ERROR,
+        PrimitiveTy::Function => (Base::Function, 0),
+        PrimitiveTy::ArrayOf(_) => (Base::Unknown, 1),
+        PrimitiveTy::Rows(_) | PrimitiveTy::Rectangle(_) => (Base::Unknown, 2),
+        PrimitiveTy::Var(_) | PrimitiveTy::None => (Base::Unknown, 0),
+    };
+    Family { base, dimensions }
 }
 
 /// How the `layout` section designates a node: by its label (`true`), or by the name of its line.

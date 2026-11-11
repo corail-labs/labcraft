@@ -1,59 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 426 432" width="426" height="432" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="channel_voltage">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 408 432" width="408" height="432" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="channel_voltage">
 <style>
 svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; }
 @media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
-<rect width="426" height="432" style="fill: var(--canvas-fill)"/>
-<rect x="21" y="16" width="384" height="400" rx="4" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="33" y="36.38" font-size="12" style="fill: var(--node-title)">channel_voltage</text>
-<circle cx="21" cy="80" r="5" style="fill: var(--wire-data)"/>
-<text x="33" y="84.01" font-size="11" style="fill: var(--node-title)">channel</text>
-<circle cx="405" cy="356" r="5" style="fill: var(--wire-data)"/>
-<text x="326.38" y="360.01" font-size="11" style="fill: var(--node-title)">voltage</text>
-<text x="376.74" y="359.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect width="408" height="432" style="fill: var(--canvas-fill)"/>
+<rect x="20" y="16" width="368" height="400" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="32" y="35.65" font-size="10" style="fill: var(--node-title)">channel_voltage</text>
+<circle cx="20" cy="80" r="4" style="fill: var(--wire-data)"/>
+<text x="32" y="83.65" font-size="10" style="fill: var(--node-title)">channel</text>
+<circle cx="388" cy="356" r="4" style="fill: var(--wire-data)"/>
+<text x="313.6" y="359.65" font-size="10" style="fill: var(--node-title)">voltage</text>
+<text x="359.74" y="359.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
 <g data-wire="channel" data-from="fn.channel">
-<path d="M83.36 80 L103.36 80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M78.14 80 L98.14 80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="voltage" data-from="voltage.voltage" data-to="fn.voltage">
-<path d="M295.36 356 L322.38 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M282.14 356 L309.6 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-node="voltage"><title>match channel</title>
-<rect x="103.36" y="64" width="192" height="336" rx="4" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="115.36" y="84.38" font-size="12" style="fill: var(--node-title)">match channel</text>
-<circle cx="103.36" cy="80" r="5" style="fill: var(--wire-data)"/>
-<circle cx="295.36" cy="356" r="5" style="fill: var(--wire-data)"/>
-<path d="M279.36 164 L283.36 164 Q287.36 164 287.36 168 L287.36 352 Q287.36 356 291.36 356 L295.36 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M279.36 260 L283.36 260 Q287.36 260 287.36 264 L287.36 352 Q287.36 356 291.36 356 L295.36 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M279.36 356 L295.36 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<circle cx="287.36" cy="260" r="3" style="fill: var(--wire-data)"/>
-<circle cx="287.36" cy="356" r="3" style="fill: var(--wire-data)"/>
+<rect x="98.14" y="64" width="184" height="336" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="110.14" y="83.65" font-size="10" style="fill: var(--node-title)">match channel</text>
+<circle cx="98.14" cy="80" r="4" style="fill: var(--wire-data)"/>
+<circle cx="282.14" cy="356" r="4" style="fill: var(--wire-data)"/>
+<path d="M266.14 164 L270.14 164 Q274.14 164 274.14 168 L274.14 352 Q274.14 356 278.14 356 L282.14 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M266.14 260 L270.14 260 Q274.14 260 274.14 264 L274.14 352 Q274.14 356 278.14 356 L282.14 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M266.14 356 L282.14 356" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="274.14" cy="260" r="3" style="fill: var(--wire-data)"/>
+<circle cx="274.14" cy="356" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-arm="1, other">
-<rect x="119.36" y="112" width="160" height="80" rx="4" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="131.36" y="128.01" font-size="11" style="fill: var(--ink-muted)">1, other</text>
-<circle cx="279.36" cy="164" r="5" style="fill: var(--wire-data)"/>
-<text x="151.63" y="168.01" font-size="11" style="fill: var(--node-title)">voltage</text>
-<text x="201.99" y="167.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<rect x="226.25" y="155" width="41.11" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="230.25" y="168.01" font-size="11" style="fill: var(--pill-text)">◂ 5 V</text>
+<rect x="114.14" y="112" width="152" height="80" rx="2" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="126.14" y="127.65" font-size="10" style="fill: var(--ink-muted)">1, other</text>
+<circle cx="266.14" cy="164" r="4" style="fill: var(--wire-data)"/>
+<text x="145.64" y="167.65" font-size="10" style="fill: var(--node-title)">voltage</text>
+<text x="191.78" y="167.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect x="216.04" y="157" width="38.1" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="220.04" y="167.65" font-size="10" style="fill: var(--pill-text)">◂ 5 V</text>
 </g>
 <g data-arm="2">
-<rect x="119.36" y="208" width="160" height="80" rx="4" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="131.36" y="224.01" font-size="11" style="fill: var(--ink-muted)">2</text>
-<circle cx="279.36" cy="260" r="5" style="fill: var(--wire-data)"/>
-<text x="145" y="264.01" font-size="11" style="fill: var(--node-title)">voltage</text>
-<text x="195.36" y="263.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<rect x="219.62" y="251" width="47.74" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="223.62" y="264.01" font-size="11" style="fill: var(--pill-text)">◂ 12 V</text>
+<rect x="114.14" y="208" width="152" height="80" rx="2" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="126.14" y="223.65" font-size="10" style="fill: var(--ink-muted)">2</text>
+<circle cx="266.14" cy="260" r="4" style="fill: var(--wire-data)"/>
+<text x="139.62" y="263.65" font-size="10" style="fill: var(--node-title)">voltage</text>
+<text x="185.76" y="263.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect x="210.02" y="253" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="214.02" y="263.65" font-size="10" style="fill: var(--pill-text)">◂ 12 V</text>
 </g>
 <g data-arm="3..=5, 8">
-<rect x="119.36" y="304" width="160" height="80" rx="4" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="131.36" y="320.01" font-size="11" style="fill: var(--ink-muted)">3..=5, 8</text>
-<circle cx="279.36" cy="356" r="5" style="fill: var(--wire-data)"/>
-<text x="145" y="360.01" font-size="11" style="fill: var(--node-title)">voltage</text>
-<text x="195.36" y="359.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
-<rect x="219.62" y="347" width="47.74" height="18" rx="9" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
-<text x="223.62" y="360.01" font-size="11" style="fill: var(--pill-text)">◂ 24 V</text>
+<rect x="114.14" y="304" width="152" height="80" rx="2" style="fill: var(--frame-fill-3); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="126.14" y="319.65" font-size="10" style="fill: var(--ink-muted)">3..=5, 8</text>
+<circle cx="266.14" cy="356" r="4" style="fill: var(--wire-data)"/>
+<text x="139.62" y="359.65" font-size="10" style="fill: var(--node-title)">voltage</text>
+<text x="185.76" y="359.28" font-size="9" style="fill: var(--ink-muted)">[V]</text>
+<rect x="210.02" y="349" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="214.02" y="359.65" font-size="10" style="fill: var(--pill-text)">◂ 24 V</text>
 </g>
 </svg>
