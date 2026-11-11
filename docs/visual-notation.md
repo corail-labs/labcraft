@@ -52,8 +52,8 @@ Craft family:
 ## 2. The canvas
 
 - The flow goes **left to right**: inputs on the left of a node, outputs on the right.
-- **The function is a frame**, like a structure: its inputs are terminals on the left edge, its
-  outputs on the right edge, in signature order, except `err`, which is always at the bottom of each
+- **The function is drawn as a frame without a box**: its title, its inputs as terminals on the left
+  edge, its outputs on the right edge, as a structure has, but no outline and no fill (5), in signature order, except `err`, which is always at the bottom of each
   edge (2.1). An optional input shows its default value next to
   its terminal (`low ◂ 220 V`). The `///` documentation is the tooltip of the title.
 - Orthogonal wires, rounded corners (radius 6). Grid of 8 units.
@@ -203,11 +203,11 @@ export and the snapshots of CI draw the same thing. A monospaced font tells `l`,
 and `0`, apart in names, and keeps a value as wide when an iteration selector changes it (6.1). The
 developer chooses the zoom, and the font of the other panels of the IDE.
 
-- **Three sizes** *(proposed)*. 10 units (`text.large`, `text.label`, `text.medium`, section 10): the label in the
-  center of a block, the names of terminals, the titles of structures and of the function, the names of wires,
-  inline constants, the values of a run (6.1), badges, tabs, legends and banners. 9 units: the text of the band
-  (3.2). The three values stay apart in the table, so that each can be tuned. A title stands out by
-  its place and its color, never by its weight: there is one face.
+- **Three sizes** *(proposed)*. 10 units (`text.large`, `text.medium`, section 10): the names of terminals, the
+  titles of structures and of the function, the names of wires, inline constants, the values of a run (6.1), badges,
+  tabs, legends and banners. 9 units: the label in the center of a block and of an oblong (`text.label`), the text of
+  the band (3.2). The values stay apart in the table, so that each can be tuned. A title stands out by its place and
+  its color, never by its weight: there is one face.
 - **Cells.** Every length of text in the notation is counted in cells: its width, and the limits at
   which a text is cut (3.2, 6.1). A grapheme (Unicode, UAX #29) takes one cell, or two when one of
   its code points is East Asian Wide or Fullwidth (UAX #11) or an emoji (`Emoji_Presentation`, or
@@ -383,16 +383,16 @@ When the function comes from another library, a **band** above the block says wh
   the signature is drawn, the lines are evenly spaced, and its label, its band and the pills of its constants never
   make it larger (N-6). A label that does not hold is cut (below): a reason to give the function an icon. A
   construction, a variant constructor and a node of `ui` are not squares: they can have no icon, and their text
-  is what they show. Their width is that of their label, in `text.label` (10), with 2 on each side
+  is what they show. Their width is that of their label, in `text.label` (9), with 2 on each side
   (`node.label_padding`), their height the larger of what their lines need and their label with 8 above and below (two
-  lines, `set` / `live_volt…`, need 39.28, so 40), each at least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square. A value too many for a
+  lines, `set` / `live_volt…`, need 36.95, so 40), each at least 40 and rounded up to the grid; their lines are counted from the bottom, as on a square. A value too many for a
   variant, or an argument too many for a function, which `check` refuses, still has its input, named by its position
   (`1`), so that the drawing shows where.
 - **Center** of the block: the function's icon (`icon` section,
   spec 11.1), alone, drawn 28 × 28 units and cut to its grid, so that a shape that leaves it (`LC5009`) never covers
   the block, a terminal or a wire, each of its texts cut at 40 cells (2.3) to bound what is drawn; otherwise a
-  short label: the last segment of the name (`visa.open` → `open`), in `text.label` (10), on two lines at most, each
-  as wide as the block less a terminal (5 cells in a block of 40 with terminals of 8) *(proposed)*. A label that holds
+  short label: the last segment of the name (`visa.open` → `open`), in `text.label` (9), on two lines at most, each
+  as wide as the block less a terminal (6 cells in a block of 40 with terminals of 6) *(proposed)*. A label that holds
   is on one line. Otherwise it is cut at an underscore, which is not drawn, when both parts hold: the cut whose longer
   line is the shortest, the first one on a tie, never one that leaves a line empty (`query_f64` → `query` / `f64`).
   Otherwise the first line goes as far as the last underscore that it holds, or the one right after what it holds,
@@ -518,7 +518,7 @@ or an end; an order wire is 1
 wide, dotted 1.5 and 3; a function wire dashed 6, 3, 1.5, 3. A value read as an order and as a value is one net: its
 trunk is drawn with each.
 
-- A terminal is 10 units across, centred on the edge of its node.
+- A terminal is `node.terminal` across (6 units), centred on the edge of its node.
 - The chevrons of the error wire show **the direction of the order**: this is the wire you follow
   to know what happens before what. Its tape is the heaviest wire of a drawing, as the error chain is its spine (N-7).
 - The exact type (`f64[V]`, `[StepResult]`) is always in the tooltip of the wire and the terminal.
@@ -543,12 +543,19 @@ A structure is a **frame** with, as header, the keyword of the text (`loop conti
 the order of the text, except its error output, which is always on the bottom line, so that the error
 chain crosses the frame in a straight line (2.1).
 
+- **Names of the terminals of a frame** (of the function, of a loop, of a branch): inside, by their terminal. A wire
+  leaves a terminal from its centre and runs under its name, which lies on a ground of the fill of the frame, from the
+  terminal to the end of the name, or to its pill: the drawing is the same, and where a zoom hides the names (7) the
+  wire shows up to its terminal *(proposed)*.
+
 - **Outer values** used inside (spec 6): the wire crosses the edge; a notch marks the crossing.
   No terminal to wire. A value that is also the selector of a `match` or a `handle` enters by the
   selector, which serves as its notch: one wire outside, not two side by side. The developer can still
   give it a notch of its own, which the `layout` section keeps (spec 11).
 - **Nesting**: frames contain each other; the background darkens by one step per level (token
-  `frame.fill.n`).
+  `frame.fill.n`). The function has no frame: its title and its terminals stand on the canvas
+  (`canvas.fill`), and a structure in its body is the first level, `frame.fill.1`; from the fifth level on, the
+  background stays `frame.fill.4` *(proposed)*.
 
 ### 5.1 `loop` and `for`
 
@@ -597,6 +604,10 @@ chain crosses the frame in a straight line (2.1).
   tab, which lists them (`1, other`). The displayed branch is highlighted. *(proposed)* The tabs stand in a row
   of 24 under the title, each 20 high and 4 apart, from the start of the title: the branch shown filled with
   `tab.fill` and outlined like the frame, the others outlined with `frame.divider`, their text in `ink.muted`. The
+  number of branches never sets the width of the frame, which its branches and its title set: when the tabs do not
+  hold in it, a **selector** stands for them, `‹ State.WaitDut ▾ 2/5 ›`: its two steps as wide as a tab is high, and a
+  title of 13 cells at least, 134.27 with the values of section 10, which is all the tabs can widen the frame; `‹` and `›` show the
+  branch before and after, round, and a click on the title lists the branches to choose one *(proposed)*. The
   box of a branch has no title of its own, 8 at its top, and the boxes of all the branches start from one corner,
   moved down so that their error chains meet on one line: the frame is as high as the lowest.
   A bound value (`Reading.Value(v)`, `io.timeout(err)`) appears as a terminal on the inner left
@@ -712,7 +723,7 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
 - **A run that did not end well.** A wire with no value in the trace (a node that never ran, after a
   `fault`, an `aborted` run or a cut trace) shows nothing, and a banner gives the status that the `end` event gives ("aborted", "fault"), or says that the trace was cut, or that it has no end (the
   run did not finish writing it). With a cut trace, the last iteration shown is the last one traced,
-  and the banner says so. The banner is 20 units high, above the frame of the function and never over the
+  and the banner says so. The banner is 20 units high, above the drawing of the function and never over the
   drawing; a trace that no longer matches (below) and did not end well has one banner, which names the files
   first.
 - **A trace that no longer matches.** The first line of the trace gives the SHA-256 of every file the
@@ -743,7 +754,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 | Zoom | Shown |
 |---|---|
 | ≥ 75% | everything |
-| 40 to 75% | no terminal names or units; the names of the wires stay; the values of a run (6.1) down to 50 %, only on hover below |
+| 40 to 75% | no terminal names or units, and a wire that leaves a terminal of a frame shows up to it (5); the names of the wires stay; the values of a run (6.1) down to 50 %, only on hover below |
 | < 40% | shapes, wires, structure titles; nodes as plain rectangles; no values |
 
 ## 8. Theme tokens
@@ -874,13 +885,13 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `canvas.grid` | 8 units | 4 to 16 | 2 | The grid of the canvas: positions and sizes round up to it. |
 | `canvas.margin` | 16 units | 0 to 64 | 2 | Around what an image shows (`docs/cli.md`, 7.2). |
 | `text.large` | 10 units | 6 to 24 | 2.3 | Titles of structures and of standard nodes, names of constants. |
-| `text.label` | 10 units | 6 to 24 | 3.2 | The name on a compact block, the label of an oblong. |
+| `text.label` | 9 units | 6 to 24 | 3.2 | The name on a compact block, the label of an oblong. |
 | `text.medium` | 10 units | 6 to 24 | 2.3 | Labels, pills, names of wires. |
 | `text.small` | 9 units | 6 to 24 | 2.3 | Units of terminals, bands, marks. |
 | `text.any_text` | 40 cells | 4 to 160 | 2.3 | A text that no other rule cuts. |
 | `text.label_line` | 10 cells | 4 to 48 | 3.2 | A line of the label of an oblong, the pill of a wire. |
 | `text.compact_constant` | 8 cells | 2 to 32 | 3.2 | An inline constant in compact view. |
-| `node.terminal` | 8 units | 4 to 40 | 4.1 | The shape of a terminal. |
+| `node.terminal` | 6 units | 4 to 40 | 4.1 | The shape of a terminal. |
 | `node.pill_height` | 14 units | 8 to 72 | 3.2 | A pill of an inline constant. |
 | `node.band_height` | 12 units | 6 to 48 | 3.2 | The band of a library above a block. |
 | `node.padding` | 4 units | 0 to 16 | 3.2 | Inside a pill, on each side. |

@@ -84,7 +84,7 @@ fn line(diagnostic: &Diagnostic, x: i64, middle: i64) -> Shape {
     }
     let width = text::width(cells, crate::size::medium()).unwrap_or(i64::MAX / 4);
     let cap = text::scale(u64::from(text::CAP_HEIGHT), crate::size::medium()).unwrap_or(0);
-    Shape::Text { x, y: middle + (cap + 1) / 2, size: crate::size::medium(), width, runs, detail: crate::Detail::Title }
+    Shape::Text { x, y: middle + (cap + 1) / 2, size: crate::size::medium(), width, runs, detail: crate::Detail::Title, ground: None }
 }
 
 /// The marks of the errors of `diagnostics` on a drawing (`docs/cli.md`, 7.1): each wire at fault drawn again in
@@ -125,17 +125,11 @@ pub fn mark(drawing: &mut Drawing, diagnostics: &[Diagnostic]) {
             let node = named.or_else(|| diagnostic.span.map(|span| format!("@{}", span.start.line)));
             shapes.extend(node.and_then(|node| outline(drawing, &node)));
         }
+        // Nothing of the drawing: the frame of the function, which only its mark draws (notation 5).
         if shapes.is_empty() {
-            shapes.extend(drawing.loose.iter().find_map(|shape| match shape {
-                Shape::Rect { x, y, width, height, radius, .. } => Some(Shape::Rect {
-                    x: *x,
-                    y: *y,
-                    width: *width,
-                    height: *height,
-                    radius: *radius,
-                    paint: Paint::stroke("mark.invalid", style::mark_width()),
-                }),
-                _ => None,
+            shapes.extend(drawing.bodies.first().map(|body| {
+                let (x, y, width, height) = body.frame;
+                Shape::Rect { x, y, width, height, radius: style::radius(), paint: Paint::stroke("mark.invalid", style::mark_width()) }
             }));
         }
         marks.push(Mark { code: diagnostic.code().as_str().to_owned(), shapes });
@@ -157,7 +151,7 @@ fn invalid(group: &crate::shape::Group) -> WireStyle {
 
 /// An outline around the block of the node of that name, if the drawing has it.
 fn outline(drawing: &Drawing, node: &str) -> Option<Shape> {
-    let nodes = drawing.groups.iter().filter(|group| group.wire.is_none() && group.arm.is_none());
+    let nodes = drawing.groups.iter().filter(|group| group.is_node());
     let placed = nodes.zip(&drawing.placed).find(|(group, _)| group.node == node).map(|(_, placed)| placed)?;
     Some(Shape::Rect {
         x: placed.x - style::mark_around(),

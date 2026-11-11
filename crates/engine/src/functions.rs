@@ -3,7 +3,7 @@
 //! files, and the project's own entries from the last check of the root, so that they agree with it.
 
 use labcraft_check::manifest::Manifest;
-use labcraft_check::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveDefault, PrimitiveOutput, PrimitiveParam, PrimitiveTy};
+use labcraft_check::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveOutput, PrimitiveParam, PrimitiveTy};
 use labcraft_graph::{Attached, CommentKind, Decl, File, NamedType, Path as NamePath, TypeExpr};
 use labcraft_types::{Interner, Limits};
 use serde_json::{Value, json};
@@ -40,24 +40,7 @@ fn categories_of(primitive: &Primitive) -> &'static [&'static str] {
 }
 
 fn type_text(ty: PrimitiveTy, variables: &[&str]) -> String {
-    let variable = |index: usize| variables.get(index).copied().unwrap_or("T").to_owned();
-    match ty {
-        PrimitiveTy::Bool => "bool".to_owned(),
-        PrimitiveTy::I32 => "i32".to_owned(),
-        PrimitiveTy::F32 => "f32".to_owned(),
-        PrimitiveTy::F64 => "f64".to_owned(),
-        PrimitiveTy::Text => "string".to_owned(),
-        PrimitiveTy::Texts => "[string]".to_owned(),
-        PrimitiveTy::Timestamp => "timestamp".to_owned(),
-        PrimitiveTy::Duration => "duration".to_owned(),
-        PrimitiveTy::Error => "error".to_owned(),
-        PrimitiveTy::Var(index) => variable(index),
-        PrimitiveTy::ArrayOf(index) => format!("[{}]", variable(index)),
-        PrimitiveTy::Rows(index) => format!("[[{}]]", variable(index)),
-        PrimitiveTy::Rectangle(index) => format!("[{}; 2]", variable(index)),
-        PrimitiveTy::Function => "fn(…) -> (…)".to_owned(),
-        PrimitiveTy::None => String::new(),
-    }
+    ty.text(variables)
 }
 
 fn param_text(param: &PrimitiveParam, variables: &[&str]) -> String {
@@ -67,13 +50,7 @@ fn param_text(param: &PrimitiveParam, variables: &[&str]) -> String {
         ParamKind::Category => "kind category".to_owned(),
         ParamKind::Element => "kind element".to_owned(),
     };
-    let default = match param.default {
-        None => "",
-        Some(PrimitiveDefault::NoError) => " = none",
-        Some(PrimitiveDefault::Zero) => " = 0",
-        Some(PrimitiveDefault::EmptyText) => " = \"\"",
-        Some(PrimitiveDefault::ToTheEnd) => " = …",
-    };
+    let default = param.default.map_or_else(String::new, |default| format!(" = {}", default.text()));
     format!("{}: {ty}{default}{}", param.name, if param.variadic { "..." } else { "" })
 }
 

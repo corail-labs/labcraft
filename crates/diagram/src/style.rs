@@ -82,14 +82,14 @@ numbers! {
     margin: "canvas"."margin" = 1600, Length, 0..=6400, "2", "Around what an image shows (`docs/cli.md`, 7.2).";
 
     large: "text"."large" = 1000, Length, 600..=2400, "2.3", "Titles of structures and of standard nodes, names of constants.";
-    label: "text"."label" = 1000, Length, 600..=2400, "3.2", "The name on a compact block, the label of an oblong.";
+    label: "text"."label" = 900, Length, 600..=2400, "3.2", "The name on a compact block, the label of an oblong.";
     medium: "text"."medium" = 1000, Length, 600..=2400, "2.3", "Labels, pills, names of wires.";
     small: "text"."small" = 900, Length, 600..=2400, "2.3", "Units of terminals, bands, marks.";
     any_text: "text"."any_text" = 40, Count, 4..=160, "2.3", "A text that no other rule cuts.";
     label_line: "text"."label_line" = 10, Count, 4..=48, "3.2", "A line of the label of an oblong, the pill of a wire.";
     compact_constant: "text"."compact_constant" = 8, Count, 2..=32, "3.2", "An inline constant in compact view.";
 
-    terminal: "node"."terminal" = 800, Length, 400..=4000, "4.1", "The shape of a terminal.";
+    terminal: "node"."terminal" = 600, Length, 400..=4000, "4.1", "The shape of a terminal.";
     pill_height: "node"."pill_height" = 1400, Length, 800..=7200, "3.2", "A pill of an inline constant.";
     band_height: "node"."band_height" = 1200, Length, 600..=4800, "3.2", "The band of a library above a block.";
     padding: "node"."padding" = 400, Length, 0..=1600, "3.2", "Inside a pill, on each side.";

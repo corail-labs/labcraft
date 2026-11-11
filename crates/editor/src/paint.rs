@@ -98,6 +98,8 @@ struct Text {
     at: Pos2,
     galley: Arc<Galley>,
     detail: Detail,
+    /// Painted just before the text, in points of the step from the corner of the drawing.
+    ground: Option<(Rect, Color32)>,
 }
 
 /// An icon: its square, in units, and what it draws, tessellated at the step from the corner of its square.
@@ -126,8 +128,15 @@ impl Painted {
         let mut icons = Vec::new();
         for shape in shapes {
             match shape {
-                Shape::Text { x, y, size, width, runs, detail } => {
-                    if let Some(text) = text(ctx, (*x, *y), *size, *width, runs, *detail, theme, step) {
+                Shape::Text { x, y, size, width, runs, detail, ground } => {
+                    if let Some(mut text) = text(ctx, (*x, *y), *size, *width, runs, *detail, theme, step) {
+                        text.ground = ground.map(|ground| {
+                            let area = Rect::from_min_size(
+                                point(ground.x, ground.y, step),
+                                Vec2::new(length(ground.width, step), length(ground.height, step)),
+                            );
+                            (area, theme.color(ground.token))
+                        });
                         texts.push(text);
                     }
                 }
@@ -152,6 +161,10 @@ impl Painted {
         add_mesh(painter, &self.mesh, origin, scale);
         if texts {
             for text in self.texts.iter().filter(|text| text.detail.shown_at(zoom)) {
+                if let Some((area, color)) = text.ground {
+                    let area = Rect::from_min_size(origin + area.min.to_vec2() * scale, area.size() * scale);
+                    painter.rect_filled(area, 0.0, color);
+                }
                 painter.add(TextShape::new(origin + text.at.to_vec2() * scale, text.galley.clone(), Color32::PLACEHOLDER));
             }
         }
@@ -313,7 +326,7 @@ fn text(ctx: &egui::Context, (x, y): (i64, i64), size: u32, width: i64, runs: &[
         galley = ctx.fonts_mut(|fonts| fonts.layout_job(job(smaller)));
     }
     let baseline = galley.rows.first().and_then(|row| Some(row.pos.y + row.row.glyphs.first()?.pos.y)).unwrap_or(points * 0.93);
-    Some(Text { at: point(x, y, step) - Vec2::new(0.0, baseline), galley, detail })
+    Some(Text { at: point(x, y, step) - Vec2::new(0.0, baseline), galley, detail, ground: None })
 }
 
 /// The size of a text of an icon, at most twice its grid: a larger text shows nothing more in its square, and a text
@@ -376,7 +389,7 @@ fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon:
                 let galley = ctx.fonts_mut(|fonts| fonts.layout_job(job));
                 let baseline = galley.rows.first().and_then(|row| Some(row.pos.y + row.row.glyphs.first()?.pos.y)).unwrap_or(0.0);
                 let corner = at((*x, *y)) - Vec2::new(galley.size().x / 2.0, baseline);
-                texts.push(Text { at: corner, galley, detail: Detail::Label });
+                texts.push(Text { at: corner, galley, detail: Detail::Label, ground: None });
                 Vec::new()
             }
         };

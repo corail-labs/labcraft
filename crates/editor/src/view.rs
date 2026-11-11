@@ -171,7 +171,7 @@ impl Grid {
         grid.groups = vec![Vec::new(); drawing.placed.len()];
         for (index, group) in drawing.groups.iter().enumerate().filter(|(_, group)| group.wire.is_none()) {
             let Some(placed) = group.placed else { continue };
-            if group.arm.is_none()
+            if group.is_node()
                 && let Some(slot) = grid.within.get_mut(placed)
             {
                 *slot = group.within;

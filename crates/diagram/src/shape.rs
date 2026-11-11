@@ -56,6 +56,17 @@ impl Detail {
 /// A node below the coarse zoom (notation 7, `zoom.coarse` of [`crate::style`]).
 pub const COARSE_NODE: Paint = Paint::both("node.fill", "node.stroke", 100);
 
+/// A fill under a text, that hides what passes under it and is shown and hidden with it (notation 5): the name of a
+/// terminal of a frame, over the wire that leaves the terminal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ground {
+    pub token: Token,
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+}
+
 /// A run of a text in one token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Run {
@@ -95,6 +106,8 @@ pub enum Shape {
         runs: Vec<Run>,
         /// Not in the SVG.
         detail: Detail,
+        /// Drawn just before the text.
+        ground: Option<Ground>,
     },
     /// The icon of a function (spec 11.1), drawn in a square of `side` and cut to its grid: `icon` is its index in
     /// `Drawing::icons`, where each icon is once, however many calls show it.
@@ -267,6 +280,24 @@ pub struct Group {
     /// The innermost arm shown in tabs that holds it, by its index in [`Drawing::arms`]: it shows only when that arm and
     /// every arm around it are shown (notation 5.2). Not in the SVG.
     pub within: Option<usize>,
+    /// The terminals of the frame of a body and their names, drawn over its wires (notation 5), instead of a node: with
+    /// the title of its arm when the body is one, for its `data-arm`.
+    pub terminals: Option<TerminalsOf>,
+}
+
+/// What a group of the terminals of a frame belongs to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalsOf {
+    /// The title of the arm, when the frame is that of an arm of a `match` or a `handle`.
+    pub arm: Option<String>,
+}
+
+impl Group {
+    /// Whether it draws a node, a structure included: neither a wire, nor an arm, nor the terminals of a frame. The groups
+    /// of the nodes come in the order of [`Drawing::placed`].
+    pub fn is_node(&self) -> bool {
+        self.wire.is_none() && self.arm.is_none() && self.terminals.is_none()
+    }
 }
 
 /// An arm of a `match` or a `handle` drawn in tabs (notation 5.2): its arms lie on one another, in one frame as large
@@ -284,7 +315,7 @@ pub struct ArmOf {
 /// The tab of an arm in the header of its structure: where a click chooses it, and how it is drawn, shown or not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tab {
-    /// Its arm, by its index in [`Drawing::arms`].
+    /// The arm it shows when clicked, by its index in [`Drawing::arms`].
     pub arm: usize,
     /// Its structure, by its index in [`Drawing::placed`]: it glides with it.
     pub structure: usize,
@@ -292,8 +323,25 @@ pub struct Tab {
     pub y: i64,
     pub width: i64,
     pub height: i64,
+    /// Painted when its arm is shown, and otherwise `other`.
     pub shown: Vec<Shape>,
     pub other: Vec<Shape>,
+    /// Shown only while this arm is, by its index in [`Drawing::arms`]: the parts of a selector.
+    pub when: Option<usize>,
+    pub kind: TabKind,
+    /// The title of its arm, as the list of a selector writes it.
+    pub caption: String,
+}
+
+/// A tab of a row, or a part of the selector that stands for the row when its tabs do not hold in the width of the
+/// frame (notation 5.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TabKind {
+    Tab,
+    /// `‹` or `›`: to the arm before or after.
+    Step,
+    /// The title of the arm shown: a click lists the arms.
+    Name,
 }
 
 /// A reader of a wire: the form of the terminal it reaches, if it has one, and the path from the source to it.
@@ -316,6 +364,24 @@ pub struct WireOf {
     /// Each reader: the form of the terminal it reaches, if it has one, and the whole path from the source to it, for
     /// the mark of a diagnostic that names it (`docs/cli.md`, 7.2). Not in the SVG.
     pub readers: Vec<Reader>,
+    /// Its exact type as the language writes it, for its tooltip (notation 4.1). Not in the SVG.
+    pub ty: String,
+}
+
+/// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input
+/// that no argument wires (notation 3.2, 4.1). Not in the SVG.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hint {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+    pub text: String,
+    /// The node it belongs to, or the structure whose frame holds it, by its index in [`Drawing::placed`]: it glides with
+    /// it.
+    pub placed: Option<usize>,
+    /// As [`Group::within`].
+    pub within: Option<usize>,
 }
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
@@ -342,6 +408,8 @@ pub struct Drawing {
     /// The arms drawn in tabs, and their tabs; none in an export, which unfolds every arm (notation 5.2). Not in the SVG.
     pub arms: Vec<ArmOf>,
     pub tabs: Vec<Tab>,
+    /// The tooltips of the terminals. Not in the SVG.
+    pub hints: Vec<Hint>,
     /// The values of the notation it was drawn with (notation 10), which the SVG and the canvas paint it with.
     pub style: std::sync::Arc<crate::style::Style>,
     /// What drawing found to say about the file, its warnings (`LC7005`), with no file name: the caller gives it. Not
@@ -356,11 +424,13 @@ pub struct Mark {
     pub shapes: Vec<Shape>,
 }
 
-/// A body drawn: the height of its main error chain, and whether its file places a node of it.
+/// A body drawn: the height of its main error chain, whether its file places a node of it, and its frame (`x`, `y`,
+/// width, height), which the function has without drawing it (notation 5).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BodyDrawn {
     pub axis: Option<i64>,
     pub from_file: bool,
+    pub frame: (i64, i64, i64, i64),
 }
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.

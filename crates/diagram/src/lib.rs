@@ -37,8 +37,8 @@ pub mod theme;
 pub use labcraft_check::PathSegment;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use shape::{
-    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint, Pattern, Placed,
-    Run, Shape, Tab, Token, WireOf, WireStyle, chevrons,
+    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint,
+    Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
@@ -301,9 +301,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     let within = |body: usize| inside.get(body).copied().flatten();
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
-        let mut shapes = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, false, "frame.stroke");
-        frame_terminals(body, frame, true, &mut shapes);
-        drawing.loose = shapes;
+        drawing.loose = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, false, "frame.stroke");
     }
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
@@ -313,9 +311,33 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             groups
         })
         .collect();
+    // The terminals of the frame of a body and their names, over its wires.
+    let edges = |body: usize, placed: Option<usize>, hints: &mut Vec<Hint>| -> Option<Group> {
+        let (Some(of), Some(frame)) = (graph.bodies.get(body), placement.frames.get(body)) else { return None };
+        hints.extend(frame_hints(of, frame, placed, within(body)));
+        let shapes = frame_terminals(of, frame);
+        let arm = of
+            .owner
+            .and_then(|owner| graph.nodes.get(owner))
+            .filter(
+                |owner| matches!(&owner.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Match | StructureKind::Handle)),
+            )
+            .map(|_| of.caption.clone());
+        (!shapes.is_empty()).then(|| Group {
+            node: String::new(),
+            title: String::new(),
+            shapes,
+            arm: None,
+            wire: None,
+            placed,
+            within: within(body),
+            terminals: Some(TerminalsOf { arm }),
+        })
+    };
     if let Some(first) = wires.first_mut() {
         drawing.groups.append(first);
     }
+    drawing.groups.extend(edges(0, None, &mut drawing.hints));
     for (index, (node, sized)) in graph.nodes.iter().zip(sized).enumerate() {
         let Some(Some(at)) = placement.nodes.get(index) else { continue };
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
@@ -346,6 +368,10 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             holds: node.bodies.clone(),
         });
         let placed = Some(drawing.placed.len() - 1);
+        let half = style::terminal() / 2;
+        for (terminal, &(dx, dy)) in node.inputs.iter().zip(&sized.inputs).chain(node.outputs.iter().zip(&sized.outputs)) {
+            drawing.hints.push(hint_at(terminal, (at.x + dx, at.y + dy), half, placed, within(node.body)));
+        }
         drawing.groups.push(Group {
             node: node.key.clone(),
             title: title(&node.kind),
@@ -354,6 +380,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             wire: None,
             placed,
             within: within(node.body),
+            terminals: None,
         });
         for ((arm, shapes), &body) in arms.into_iter().zip(&node.bodies) {
             drawing.groups.push(Group {
@@ -364,22 +391,43 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
                 wire: None,
                 placed,
                 within: within(body),
+                terminals: None,
             });
         }
-        for ((x, y, width, height, shown, other), &body) in tabs.into_iter().zip(&node.bodies) {
-            let Some(arm) = within(body) else { continue };
-            drawing.tabs.push(Tab { arm, structure: drawing.placed.len() - 1, x, y, width, height, shown, other });
+        for found in tabs {
+            let arm_of = |rank: usize| node.bodies.get(rank).and_then(|&body| within(body));
+            let Some(arm) = arm_of(found.arm) else { continue };
+            let when = match found.when {
+                Some(rank) => match arm_of(rank) {
+                    Some(when) => Some(when),
+                    None => continue,
+                },
+                None => None,
+            };
+            let (x, y, width, height) = found.at;
+            let (shown, other, kind, caption) = (found.shown, found.other, found.kind, found.caption);
+            drawing.tabs.push(Tab { arm, structure: drawing.placed.len() - 1, x, y, width, height, shown, other, when, kind, caption });
         }
         for &body in &node.bodies {
             if let Some(list) = wires.get_mut(body) {
                 drawing.groups.append(list);
             }
+            drawing.groups.extend(edges(body, placed, &mut drawing.hints));
         }
     }
-    // The extent: everything, and the margin around it (cli.md 7.2).
+    // The extent: everything, and the margin around it (cli.md 7.2). The frame of the function counts, though it is not
+    // drawn: the drawing keeps its place on the grid.
     let (mut right, mut bottom) = (0i64, 0i64);
     let (mut left, mut top) = (i64::MAX, i64::MAX);
-    for shape in drawing.loose.iter().chain(drawing.groups.iter().flat_map(|group| group.shapes.iter())) {
+    let function_frame = placement.frames.first().map(|frame| Shape::Rect {
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+        radius: 0,
+        paint: Paint::stroke("frame.stroke", 0),
+    });
+    for shape in drawing.loose.iter().chain(function_frame.iter()).chain(drawing.groups.iter().flat_map(|group| group.shapes.iter())) {
         let (x0, y0, x1, y1) = extent(shape);
         (left, top, right, bottom) = (left.min(x0), top.min(y0), right.max(x1), bottom.max(y1));
     }
@@ -399,13 +447,24 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         for placed in &mut drawing.placed {
             (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
         }
+        for hint in &mut drawing.hints {
+            (hint.x, hint.y) = (hint.x + dx, hint.y + dy);
+        }
         for tab in &mut drawing.tabs {
             (tab.x, tab.y) = (tab.x + dx, tab.y + dy);
             tab.shown = std::mem::take(&mut tab.shown).into_iter().map(|shape| moved(shape, dx, dy)).collect();
             tab.other = std::mem::take(&mut tab.other).into_iter().map(|shape| moved(shape, dx, dy)).collect();
         }
     }
-    drawing.bodies = placement.frames.iter().map(|frame| BodyDrawn { axis: frame.axis.map(|axis| axis + dy), from_file: frame.from_file }).collect();
+    drawing.bodies = placement
+        .frames
+        .iter()
+        .map(|frame| BodyDrawn {
+            axis: frame.axis.map(|axis| axis + dy),
+            from_file: frame.from_file,
+            frame: (frame.x + dx, frame.y + dy, frame.width, frame.height),
+        })
+        .collect();
     drawing.width = right + dx + style::margin();
     drawing.height = bottom + dy + style::margin();
     drawing
@@ -456,15 +515,100 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
             && matches!(structure.kind, StructureKind::Match | StructureKind::Handle)
         {
             let mut width = header_width(structure);
+            // The tabs widen the frame no more than a selector needs: when they do not hold, it stands for them (notation
+            // 5.2).
             if titles.tabs.contains(&index) {
                 let row: i64 =
                     node.bodies.iter().filter_map(|&body| graph.bodies.get(body)).map(|body| tab_width(&body.caption) + style::tab_gap()).sum();
-                width = width.max(2 * style::label_start() + row - style::tab_gap());
+                width = width.max(2 * style::label_start() + (row - style::tab_gap()).min(selector_least()));
             }
             titles.structures.insert(index, width);
         }
     }
     titles
+}
+
+/// The least width of a selector, from the values of the notation: its two steps, as wide as a tab is high, a gap on
+/// each side of its title, and a title that holds 13 cells, 6 of the arm and 7 of ` ▾ 1/5`, and its padding: with the
+/// defaults 2 × 20 + 2 × 4 + 78.27 (13 × 1233 × 10 / 2048) + 2 × 4 = 134.27.
+fn selector_least() -> i64 {
+    let cells = labcraft_types::text::width(13, crate::size::medium()).unwrap_or(0);
+    2 * style::tab_height() + 2 * style::tab_gap() + cells + 2 * style::padding()
+}
+
+/// The tabs of a `match` or a `handle` in tabs (notation 5.2), in the row under its header, from `x` at `y`, in the width
+/// `room`: a tab per arm when they hold; else a selector, `‹ State.Init ▾ 1/5 ›`, its steps to the arm before and after,
+/// its title a list of the arms, each part shown with the arm it stands for.
+fn tab_row(captions: &[&str], (x, y): (i64, i64), room: i64, stroke: Token) -> Vec<TabShapes> {
+    let height = style::tab_height();
+    let middle = y + height / 2;
+    let rect = |x: i64, width: i64, paint| Shape::Rect { x, y, width, height, radius: 300, paint };
+    let row: i64 = captions.iter().map(|caption| tab_width(caption) + style::tab_gap()).sum::<i64>() - style::tab_gap();
+    let mut tabs = Vec::new();
+    if row <= room {
+        let mut tab_x = x;
+        for (rank, caption) in captions.iter().enumerate() {
+            let text = Text::new(caption, crate::size::any_text(), crate::size::medium());
+            let width = tab_width(caption);
+            // The arm shown filled *(proposed)*.
+            let shown = vec![
+                rect(tab_x, width, Paint::both("tab.fill", stroke, style::outline())),
+                text.shown_from(tab_x + style::padding(), middle, "node.title", shape::Detail::Title),
+            ];
+            let other = vec![
+                rect(tab_x, width, Paint::stroke("frame.divider", style::outline())),
+                text.shown_from(tab_x + style::padding(), middle, "ink.muted", shape::Detail::Title),
+            ];
+            let caption = labcraft_types::cut_text(caption).into_owned();
+            tabs.push(TabShapes { at: (tab_x, y, width, height), shown, other, arm: rank, when: None, kind: TabKind::Tab, caption });
+            tab_x += width + style::tab_gap();
+        }
+        return tabs;
+    }
+    let count = captions.len();
+    let step = height;
+    let name_x = x + step + style::tab_gap();
+    let name_width = (room - 2 * (step + style::tab_gap())).max(step);
+    let next_x = name_x + name_width + style::tab_gap();
+    let glyph = |text: &str, at: i64| Text::new(text, 1, crate::size::medium()).centred(at + step / 2, middle, "node.title");
+    for (rank, caption) in captions.iter().enumerate() {
+        // `▾ 2/9` after the title, which is cut to what is left.
+        let count_text = format!(" \u{25BE} {}/{count}", rank + 1);
+        let tail = Text::new(&count_text, crate::size::any_text(), crate::size::medium());
+        let cell = labcraft_types::text::width(1, crate::size::medium()).unwrap_or(1).max(1);
+        let cells = u64::try_from((name_width - 2 * style::padding() - tail.width).max(0) / cell).unwrap_or(0);
+        let title = Text::new(caption, cells, crate::size::medium());
+        let shown = vec![
+            rect(name_x, name_width, Paint::both("tab.fill", stroke, style::outline())),
+            title.shown_from(name_x + style::padding(), middle, "node.title", shape::Detail::Title),
+            tail.shown_from(name_x + style::padding() + title.width, middle, "ink.muted", shape::Detail::Title),
+        ];
+        let caption = labcraft_types::cut_text(caption).into_owned();
+        tabs.push(TabShapes {
+            at: (name_x, y, name_width, height),
+            shown,
+            other: Vec::new(),
+            arm: rank,
+            when: Some(rank),
+            kind: TabKind::Name,
+            caption: caption.clone(),
+        });
+        // Its steps: to the arm before and after, round.
+        for (target, at, text) in [((rank + count - 1) % count, x, "\u{2039}"), ((rank + 1) % count, next_x, "\u{203A}")] {
+            let shapes = vec![rect(at, step, Paint::stroke("frame.divider", style::outline())), glyph(text, at)];
+            let caption = captions.get(target).map(|caption| labcraft_types::cut_text(caption).into_owned()).unwrap_or_default();
+            tabs.push(TabShapes {
+                at: (at, y, step, height),
+                shown: shapes.clone(),
+                other: shapes,
+                arm: target,
+                when: Some(rank),
+                kind: TabKind::Step,
+                caption,
+            });
+        }
+    }
+    tabs
 }
 
 /// The width of the tab of an arm.
@@ -475,26 +619,32 @@ fn tab_width(caption: &str) -> i64 {
 /// An arm: its title, and its shapes.
 type ArmShapes = (String, Vec<Shape>);
 
-/// A tab: where it is, and its shapes, shown and not.
-type TabShapes = (i64, i64, i64, i64, Vec<Shape>, Vec<Shape>);
+/// A tab or a part of a selector: where it is, its shapes shown and not, the rank of the arm it shows, the rank of the
+/// arm while which it shows, its kind and the title of its arm.
+struct TabShapes {
+    at: (i64, i64, i64, i64),
+    shown: Vec<Shape>,
+    other: Vec<Shape>,
+    arm: usize,
+    when: Option<usize>,
+    kind: TabKind,
+    caption: String,
+}
 
 /// A frame: its box, its title in its header, a badge.
 fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, double: bool, stroke: Token) -> Vec<Shape> {
-    let level = (frame.depth + 1).min(4);
-    let fill = match level {
-        1 => "frame.fill.1",
-        2 => "frame.fill.2",
-        3 => "frame.fill.3",
-        _ => "frame.fill.4",
-    };
-    let mut shapes = vec![Shape::Rect {
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-        radius: style::radius(),
-        paint: Paint::both(fill, stroke, style::outline()),
-    }];
+    let mut shapes = Vec::new();
+    // The function has no frame: its title and its terminals stand on the canvas (notation 5).
+    if frame.depth > 0 {
+        shapes.push(Shape::Rect {
+            x: frame.x,
+            y: frame.y,
+            width: frame.width,
+            height: frame.height,
+            radius: style::radius(),
+            paint: Paint::both(frame_fill(frame.depth), stroke, style::outline()),
+        });
+    }
     if double {
         shapes.push(Shape::Rect {
             x: frame.x + 300,
@@ -523,30 +673,53 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
     shapes
 }
 
-/// The terminals of the frame of a body on its edges, their names inside (notation 2, 5).
-fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt, named: bool, shapes: &mut Vec<Shape>) {
+/// The terminals of the frame of a body on its edges, their names inside (notation 2, 5). They are drawn over the wires
+/// of the body, which leave a terminal from its centre: the terminal covers the end of its wire, and the name with its
+/// unit lies on a ground of the fill of the frame, from the terminal to where the wire was routed from, so that the
+/// wire shows when the name does not (notation 7).
+fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt) -> Vec<Shape> {
+    let mut shapes = Vec::new();
+    let height = size::line_height(crate::size::medium());
     for (side, terminals, heights) in [(false, &body.left, &frame.left), (true, &body.right, &frame.right)] {
         let x = if side { frame.x + frame.width } else { frame.x };
-        for (terminal, &height) in terminals.iter().zip(heights) {
-            let y = frame.y + height;
+        for (terminal, &at_height) in terminals.iter().zip(heights) {
+            let y = frame.y + at_height;
             shapes.extend(edge_terminal(terminal, x, y));
-            if !named {
-                continue;
-            }
             let label = place::TerminalLabel::of(terminal);
             let width = label.width();
-            let mut at = if side { x - style::label_start() - width } else { x + style::label_start() };
-            shapes.push(label.name.shown_from(at, y, "node.title", shape::Detail::Name));
-            at += label.name.width;
+            let start = if side { x - style::label_start() - width } else { x + style::label_start() };
+            let mut at = start + label.name.width;
             if let Some(unit) = &label.unit {
-                shapes.push(unit.shown_from(at + style::padding(), y, "ink.muted", shape::Detail::Name));
                 at += style::padding() + unit.width;
+            }
+            // From the terminal to the pill, or to where the route starts; on the right, from where it ends.
+            let (from, to) = match (side, &label.pill) {
+                (false, Some(_)) => (x + edge_reach(terminal), at + style::grid()),
+                (false, None) => (x + edge_reach(terminal), start + width + style::padding()),
+                (true, Some(_)) => (start - style::padding(), at + style::grid()),
+                (true, None) => (start - style::padding(), x - edge_reach(terminal)),
+            };
+            let ground = Ground { token: frame_fill(frame.depth), x: from, y: y - height / 2, width: (to - from).max(0), height };
+            let mut name = label.name.shown_from(start, y, "node.title", shape::Detail::Name);
+            if let Shape::Text { ground: slot, .. } = &mut name {
+                *slot = Some(ground);
+            }
+            shapes.push(name);
+            if let Some(unit) = &label.unit {
+                shapes.push(unit.shown_from(start + label.name.width + style::padding(), y, "ink.muted", shape::Detail::Name));
             }
             if let Some(pill) = &label.pill {
                 shapes.extend(size::pill(pill, at + style::grid(), y));
             }
         }
     }
+    shapes
+}
+
+/// How far a terminal of a frame reaches inside from its edge (`edge_terminal`).
+/// Measured on its shapes, so that the brackets of an array (notation 4.1) are inside it.
+fn edge_reach(terminal: &graph::FrameTerminal) -> i64 {
+    edge_terminal(terminal, 0, 0).iter().map(extent).map(|(x0, _, x1, _)| x1.max(-x0)).max().unwrap_or(0)
 }
 
 /// A terminal of a frame: a register is a box across the edge, a notch a bar, the others the shape of their family.
@@ -586,13 +759,10 @@ fn structure_shapes(
     let stroke = if structure.kind == StructureKind::Handle { "wire.error" } else { "frame.stroke" };
     match structure.kind {
         StructureKind::Loop | StructureKind::For => {
-            let Some((&index, frame)) = node.bodies.first().and_then(|index| Some((index, placement.frames.get(*index)?))) else {
+            let Some(frame) = node.bodies.first().and_then(|index| placement.frames.get(*index)) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
             let mut shapes = frame_shapes(frame, &title, structure.badge, structure.parallel, stroke);
-            if let Some(body) = graph.bodies.get(index) {
-                frame_terminals(body, frame, true, &mut shapes);
-            }
             for (input, &(_, y)) in node.inputs.iter().zip(inputs) {
                 if let Some(constant) = &input.constant {
                     let text = Text::new(constant, crate::size::compact_constant(), crate::size::medium());
@@ -622,35 +792,17 @@ fn structure_shapes(
                 shapes.extend(size::terminal(output.family, at.x + x, at.y + y, 100, output.ignored));
             }
             let mut arms = Vec::new();
-            let mut tabs = Vec::new();
-            let mut tab_x = at.x + style::label_start();
+            let tabs = if in_tabs {
+                let captions: Vec<&str> = node.bodies.iter().filter_map(|&index| graph.bodies.get(index)).map(|body| body.caption.as_str()).collect();
+                tab_row(&captions, (at.x + style::label_start(), at.y + style::frame_header()), width - 2 * style::label_start(), stroke)
+            } else {
+                Vec::new()
+            };
             for &index in &node.bodies {
                 let (Some(body), Some(frame)) = (graph.bodies.get(index), placement.frames.get(index)) else { continue };
                 let mut shapes = Vec::new();
                 let caption = Text::new(&body.caption, crate::size::any_text(), crate::size::medium());
-                if in_tabs {
-                    // The tab of the arm, in the row under the header: the arm shown filled *(proposed)*.
-                    let (x, y, width, height) = (tab_x, at.y + style::frame_header(), tab_width(&body.caption), style::tab_height());
-                    let middle = y + height / 2;
-                    let rect = |paint| Shape::Rect { x, y, width, height, radius: 300, paint };
-                    let shown = vec![
-                        rect(Paint::both("tab.fill", stroke, style::outline())),
-                        caption.shown_from(x + style::padding(), middle, "node.title", shape::Detail::Title),
-                    ];
-                    let other = vec![
-                        rect(Paint::stroke("frame.divider", style::outline())),
-                        caption.shown_from(x + style::padding(), middle, "ink.muted", shape::Detail::Title),
-                    ];
-                    tabs.push((x, y, width, height, shown, other));
-                    tab_x += width + style::tab_gap();
-                }
-                let level = (frame.depth + 1).min(4);
-                let fill = match level {
-                    1 => "frame.fill.1",
-                    2 => "frame.fill.2",
-                    3 => "frame.fill.3",
-                    _ => "frame.fill.4",
-                };
+                let fill = frame_fill(frame.depth);
                 shapes.push(Shape::Rect {
                     x: frame.x,
                     y: frame.y,
@@ -662,7 +814,6 @@ fn structure_shapes(
                 if !in_tabs {
                     shapes.push(caption.shown_from(frame.x + style::label_start(), frame.y + frame.header / 2, "ink.muted", shape::Detail::Title));
                 }
-                frame_terminals(body, frame, true, &mut shapes);
                 arms.push((body.caption.clone(), shapes));
             }
             (shapes, arms, tabs)
@@ -695,15 +846,110 @@ fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
         Shape::Rect { x, y, width, height, radius, paint } => Shape::Rect { x: x + dx, y: y + dy, width, height, radius, paint },
         Shape::Circle { x, y, radius, paint } => Shape::Circle { x: x + dx, y: y + dy, radius, paint },
         Shape::Poly { points, closed, paint } => Shape::Poly { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), closed, paint },
-        Shape::Text { x, y, size, width, runs, detail } => Shape::Text { x: x + dx, y: y + dy, size, width, runs, detail },
+        Shape::Text { x, y, size, width, runs, detail, ground } => Shape::Text {
+            x: x + dx,
+            y: y + dy,
+            size,
+            width,
+            runs,
+            detail,
+            ground: ground.map(|ground| Ground { x: ground.x + dx, y: ground.y + dy, ..ground }),
+        },
         Shape::Icon { x, y, side, icon } => Shape::Icon { x: x + dx, y: y + dy, side, icon },
         Shape::Wire { points, style } => Shape::Wire { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), style },
     }
 }
 
-/// The fill of a frame at a depth of nesting (notation 8).
+/// The exact type of what a wire carries: that of the terminal it leaves.
+fn source_type(graph: &Graph<'_>, of: &graph::BodyOf, from: &graph::End) -> String {
+    match *from {
+        graph::End::Node { node, terminal } => {
+            graph.nodes.get(node).and_then(|node| node.outputs.get(terminal)).map(|terminal| terminal.ty_text.clone())
+        }
+        graph::End::Left(index) => of.left.get(index).map(|terminal| terminal.terminal.ty_text.clone()),
+        _ => None,
+    }
+    .unwrap_or_default()
+}
+
+/// What the tooltip of a terminal says (notation 3.2, 4.1): `timeout: duration`, and `default: 2 s` on a second line for
+/// an input that no argument wires; each part cut at 200 code points (cli.md 7.2).
+fn hint_text(terminal: &graph::Terminal) -> String {
+    let mut text = labcraft_types::cut_text(&terminal.name).into_owned();
+    if !terminal.ty_text.is_empty() {
+        text.push_str(": ");
+        text.push_str(&terminal.ty_text);
+    }
+    if let Some(default) = &terminal.default {
+        text.push_str("\ndefault: ");
+        text.push_str(&labcraft_types::cut_text(default));
+    }
+    text
+}
+
+/// A tooltip around a terminal at (`x`, `y`): at least 8 across, so that a small terminal is easy to reach.
+fn hint_at(terminal: &graph::Terminal, (x, y): (i64, i64), half: i64, placed: Option<usize>, within: Option<usize>) -> Hint {
+    let half = half.max(400);
+    Hint { x: x - half, y: y - half, width: 2 * half, height: 2 * half, text: hint_text(terminal), placed, within }
+}
+
+/// The tooltips of the terminals of the frame of a body.
+fn frame_hints(of: &graph::BodyOf, frame: &place::FrameAt, placed: Option<usize>, within: Option<usize>) -> Vec<Hint> {
+    let mut hints = Vec::new();
+    for (side, terminals, heights) in [(false, &of.left, &frame.left), (true, &of.right, &frame.right)] {
+        let x = if side { frame.x + frame.width } else { frame.x };
+        for (terminal, &height) in terminals.iter().zip(heights) {
+            hints.push(hint_at(&terminal.terminal, (x, frame.y + height), edge_reach(terminal).max(700), placed, within));
+        }
+    }
+    hints
+}
+
+/// The branches of a wire as drawn: one that leaves a terminal of the frame, or reaches one, goes on to its centre,
+/// under its name (`frame_terminals`); the route stops at the name, so that the name never moves a channel.
+fn to_frame_terminals(of: &graph::BodyOf, frame: Option<&place::FrameAt>, routed: &route::Routed) -> Vec<Vec<(i64, i64)>> {
+    let Some(frame) = frame else { return routed.branches.clone() };
+    let from_left = routed.wires.first().and_then(|&wire| of.wires.get(wire)).is_some_and(|wire| matches!(wire.from, graph::End::Left(_)));
+    routed
+        .wires
+        .iter()
+        .zip(&routed.branches)
+        .map(|(&wire, branch)| {
+            // The end of the route moves to the terminal when its segment is level, which it is when it leaves or reaches a
+            // side; otherwise a segment is added. Nothing else is simplified: the waypoints of a `via` stay (spec 11).
+            let mut points = branch.clone();
+            let level = |a: Option<&(i64, i64)>, b: Option<&(i64, i64)>| matches!((a, b), (Some(a), Some(b)) if a.1 == b.1);
+            if from_left && let Some(&(_, y)) = points.first() {
+                if level(points.first(), points.get(1))
+                    && let Some(first) = points.first_mut()
+                {
+                    *first = (frame.x, y);
+                } else {
+                    points.insert(0, (frame.x, y));
+                }
+            }
+            if of.wires.get(wire).is_some_and(|wire| matches!(wire.to, graph::End::Right(_)))
+                && let Some(&(_, y)) = points.last()
+            {
+                let last = points.len().saturating_sub(1);
+                if last > 0
+                    && level(points.get(last - 1), points.get(last))
+                    && let Some(end) = points.last_mut()
+                {
+                    *end = (frame.x + frame.width, y);
+                } else {
+                    points.push((frame.x + frame.width, y));
+                }
+            }
+            points
+        })
+        .collect()
+}
+
+/// The fill of a frame at a depth of nesting (notation 8): the function has none, it is on the canvas.
 fn frame_fill(depth: u32) -> Token {
-    match (depth + 1).min(4) {
+    match depth.min(4) {
+        0 => "canvas.fill",
         1 => "frame.fill.1",
         2 => "frame.fill.2",
         3 => "frame.fill.3",
@@ -780,11 +1026,12 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             let first = of.wires.get(*routed.wires.first()?)?;
             // Each branch as its wire is drawn: a value read as an order (`after:`) and as a value shares its trunk.
             let style = size::wire_style(first.family, core);
+            let branches = to_frame_terminals(of, placement.frames.get(body), routed);
             // The trunk once: each branch from where it leaves those before it.
             let mut shapes: Vec<Shape> = routed
                 .wires
                 .iter()
-                .zip(route::parts(&routed.branches))
+                .zip(route::parts(&branches))
                 .filter(|(_, points)| points.len() > 1)
                 .map(|(&wire, points)| {
                     let style = of.wires.get(wire).map_or(style, |wire| size::wire_style(wire.family, core));
@@ -825,7 +1072,7 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             let readers = routed
                 .wires
                 .iter()
-                .zip(&routed.branches)
+                .zip(&branches)
                 .map(|(&wire, branch)| {
                     let form = of.wires.get(wire).and_then(|wire| terminal_form(graph, of, body, &wire.to, false, &ordinals));
                     (form, branch.clone())
@@ -837,9 +1084,10 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 title: String::new(),
                 shapes,
                 arm: None,
-                wire: Some(WireOf { body, error, via: routed.via, value, from, to, readers }),
+                wire: Some(WireOf { body, error, via: routed.via, value, from, to, readers, ty: source_type(graph, of, &first.from) }),
                 placed: None,
                 within: None,
+                terminals: None,
             })
         })
         .collect()

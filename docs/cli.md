@@ -861,6 +861,9 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
     structure has one `<g>` per body;
   - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, written as its tab (`other`
     for `_`);
+  - the terminals of a frame and their names are a `<g>` drawn over the wires of its body (notation 5), with the
+    `data-arm` of its branch when the frame is one, so that a branch has two: its frame, then its terminals; those of
+    the function and of a loop have no attribute;
   - each mark of a diagnostic carries `data-code` (`LC3002`), so that the place of a diagnostic in the
     image can be found. On a function that is drawn, each error among the first 32 diagnostics of its file, in
     the order of a cut of the report (section 1), has a mark, a `<g data-code>` drawn over the rest, in
