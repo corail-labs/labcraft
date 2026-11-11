@@ -646,3 +646,30 @@ fn guide_read_refuses_what_it_does_not_hold_with_the_choices() {
     assert_eq!(error(&mut session, "guide.read", json!({ "skill": 3 })).code, "params.invalid");
     assert_eq!(error(&mut session, "guide.read", json!({ "skil": "labcraft-writing" })).code, "params.unknown");
 }
+
+/// `LC7005` has no mark: the viewer lists it with the problems of the folder, for the function shown, and the report
+/// of the check alone comes back with a function that adds nothing. `y` placed 4 units right of `ab`, both circles of
+/// 28 (notation 10), covers it.
+#[test]
+fn the_viewer_lists_the_warnings_of_the_drawing_shown() {
+    let memory = Memory::new();
+    memory.put(
+        "/p/sum3.lcf",
+        "labcraft 1\n\nuse core\n\nfn sum3(a: f64, b: f64, c: f64) -> (y: f64) {\n    ab = core.add(a, b)\n    y = core.add(ab, c)\n}\n\n\
+         layout {\n    node ab at (100, 40)\n    node y at (104, 40)\n}\n",
+    );
+    memory.put("/p/double.lcf", MAIN);
+    let mut session = session_on(Arc::new(memory));
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    // `double` comes first in code point order: nothing added.
+    assert_eq!(session.view().function.as_deref(), Some("double"));
+    assert_eq!(session.view().warnings, 0);
+    ok(&mut session, "view.show_function", json!({ "function": "sum3" }));
+    let view = session.view();
+    assert_eq!(view.warnings, 1);
+    let codes: Vec<&str> = view.report.as_ref().unwrap().diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect();
+    assert_eq!(codes, ["LC7005"]);
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(session.view().warnings, 0);
+    assert!(session.view().report.as_ref().unwrap().diagnostics().is_empty());
+}

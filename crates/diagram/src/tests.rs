@@ -214,8 +214,9 @@ fn a_compact_block_has_the_width_of_the_square() {
 }
 
 /// Notation 3.2: a name on one line when it holds; else cut at an underscore when both parts hold, where the longer line
-/// is shortest; else the first line as far as the last underscore that it holds, or as far as it holds, and the rest
-/// cut by `…`.
+/// is shortest; else the first line as far as the last underscore that it holds; else the first word, cut, and the rest;
+/// else, a single word of two lines at most, two halves, the first the longer; else as far as it holds, the rest cut by
+/// `…`.
 #[test]
 fn a_name_holds_on_two_lines_of_the_block() {
     // 40 less a terminal of 8: 32. At 10 a cell is 1233 × 10 / 2048 = 6.02: 5 cells are 30.10, 6 are 36.12.
@@ -236,10 +237,18 @@ fn a_name_holds_on_two_lines_of_the_block() {
     // `read_` holds: cut at its underscore.
     assert_eq!(cut_of("read_dc_volts"), ["read", "dc_v\u{2026}"]);
     assert_eq!(cut_of("count_to_fixed"), ["count", "to_f\u{2026}"]);
-    // No underscore in what holds: in the middle of the word.
-    assert_eq!(cut_of("elapsed"), ["elaps", "ed"]);
+    // A single word of two lines at most: two halves, the first the longer: 7 cells give 4 and 3, 6 give 3 and 3.
+    assert_eq!(cut_of("elapsed"), ["elap", "sed"]);
+    assert_eq!(cut_of("measure"), ["meas", "ure"]);
+    assert_eq!(cut_of("settle"), ["set", "tle"]);
+    // The first word does not hold (`append`, 6) and no underscore is in what holds: each part on its line, `append`
+    // cut to 4 and `…`.
+    assert_eq!(cut_of("append_csv"), ["appe\u{2026}", "csv"]);
+    // A grapheme of 2 cells: `ab一cd` is 1 + 1 + 2 + 1 + 1 = 6 cells; the shortest first line of 3 or more is `ab一`, 4.
+    assert_eq!(cut_of("ab\u{4E00}cd"), ["ab\u{4E00}", "cd"]);
+    // More than two lines: 13 cells, as far as the first line holds, the rest cut.
     assert_eq!(cut_of("abcdefghijklm"), ["abcde", "fghi\u{2026}"]);
-    // An underscore that would leave a line empty is no cut.
+    // An underscore that would leave a line empty is no cut: a single word of 9 cells, halves of 5 and 4.
     assert_eq!(cut_of("abcdefgh_"), ["abcde", "fgh_"]);
     assert_eq!(cut_of("abcd_e_"), ["abcd", "e_"]);
     // Two cuts whose longer line is 5: the first.
@@ -1142,4 +1151,67 @@ fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
     );
     assert!(crate::Detail::Name.shown_at(0.75) && !crate::Detail::Name.shown_at(0.74));
     assert!(crate::Detail::Label.shown_at(0.4) && !crate::Detail::Label.shown_at(0.39) && crate::Detail::Title.shown_at(0.01));
+}
+
+/// `LC7005` (notation 2.1): two nodes that the file places one over the other, in one body. `core.add` is a circle of
+/// `node.circle`, 28 across (notation 10), so its block spans x to x + 28: at 100 and 127 the blocks share one unit
+/// across and all their height; at 100 and 128 they only touch.
+#[test]
+fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
+    let main = |second: &str| {
+        format!(
+            "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, c: f64) -> (y: f64) {{\n    ab = core.add(a, b)\n    y = core.add(ab, c)\n}}\n\n\
+             layout {{\n    node ab at (100, 40)\n    node y at ({second}, 40)\n}}\n"
+        )
+    };
+    let warnings = drawing_of(&main("127")).warnings;
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = &warnings[0];
+    assert_eq!(warning.code(), labcraft_types::Code::Lc7005);
+    assert!(warning.message.starts_with("node `y` overlaps node `ab`"), "{}", warning.message);
+    // The entry of `y`: line 12 of the file (1 `labcraft`, 3 `use`, 5 `fn`, 10 `layout {`, 11 `node ab`, 12 `node y`).
+    assert_eq!(warning.span.map(|span| span.start.line), Some(12));
+    assert_eq!(warning.file, "main.lcf");
+    assert!(drawing_of(&main("128")).warnings.is_empty());
+    // A node that the file does not place moves out of the way and is never named.
+    let unplaced = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, c: f64) -> (y: f64) {\n    ab = core.add(a, b)\n    y = core.add(ab, c)\n}\n\n\
+                    layout {\n    node ab at (100, 40)\n}\n";
+    assert!(drawing_of(unplaced).warnings.is_empty());
+    // Three in a diagonal, `y` at (100, 100), `w` at (105, 105), `a` at (110, 110), each 28 across and down: from the
+    // left `y`, `w`, `a`. `w` overlaps `y`; `a` overlaps both, and names the nearest above it, `w` (105 against 100).
+    let diagonal = "labcraft 1\n\nuse core\n\nfn main(p: f64, q: f64, r: f64, s: f64) -> (y: f64) {\n    a = core.add(p, q)\n    \
+                    w = core.add(a, r)\n    y = core.add(w, s)\n}\n\nlayout {\n    node a at (110, 110)\n    node w at (105, 105)\n    \
+                    node y at (100, 100)\n}\n";
+    let messages: Vec<String> = drawing_of(diagonal).warnings.iter().map(|warning| warning.message.clone()).collect();
+    assert_eq!(messages.len(), 2, "{messages:?}");
+    assert!(messages[0].starts_with("node `w` overlaps node `y`"), "{messages:?}");
+    assert!(messages[1].starts_with("node `a` overlaps node `w`"), "{messages:?}");
+}
+
+/// Notation 4: a name is never written twice side by side. `period` at `text.medium` 10 is 6 cells of 6, 36 units, and
+/// needs 4 more on each side: 44. Its halfway repeat (N-3) needs a horizontal past the first name three times that, 132,
+/// which neither branch has. In hundredths:
+/// - a first run of 200, a drop, a run of 40: the name goes on the first run, unless the wire leaves a terminal that
+///   shows it;
+/// - a first run of 10, too short, a drop, a last run of 80: the name goes on the last run, unless the branch ends at a
+///   terminal that shows it.
+#[test]
+fn a_wire_has_no_name_beside_a_terminal_that_shows_it() {
+    let count = |branch: Vec<(i64, i64)>, start: bool, end: bool| {
+        let mut obstacles = crate::names::Obstacles::default();
+        crate::wire_names("period", &[branch], (start, &[end]), &mut obstacles).len()
+    };
+    let long_first = || vec![(0, 0), (20000, 0), (20000, 4000), (24000, 4000)];
+    assert_eq!(count(long_first(), false, false), 1);
+    assert_eq!(count(long_first(), true, false), 0);
+    let long_last = || vec![(0, 0), (1000, 0), (1000, 4000), (9000, 4000)];
+    assert_eq!(count(long_last(), false, false), 1);
+    assert_eq!(count(long_last(), false, true), 0);
+    // Two branches sharing their trunk: a run of 5, too short, a drop, a run of 295 that holds the first name, then the
+    // second branch goes on down. The run of 295 is the longest past the first segment of the second branch, but it is
+    // the trunk that holds the first name: no second name there.
+    let mut obstacles = crate::names::Obstacles::default();
+    let first = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000)];
+    let second = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000), (30000, 3000)];
+    assert_eq!(crate::wire_names("period", &[first, second], (false, &[false, false]), &mut obstacles).len(), 1);
 }

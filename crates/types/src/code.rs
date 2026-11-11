@@ -157,6 +157,7 @@ codes! {
     Lc7002 = "LC7002" Error,
     Lc7003 = "LC7003" Error,
     Lc7004 = "LC7004" Error,
+    Lc7005 = "LC7005" Warning,
 }
 
 impl Code {

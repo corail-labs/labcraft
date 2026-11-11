@@ -37,8 +37,8 @@ pub mod theme;
 pub use labcraft_check::PathSegment;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use shape::{
-    ArmOf, BodyDrawn, COARSE_NODE, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint, Pattern, Placed, Run, Shape,
-    Tab, Token, WireOf, WireStyle, chevrons,
+    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Group, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint, Pattern, Placed,
+    Run, Shape, Tab, Token, WireOf, WireStyle, chevrons,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
 
@@ -115,7 +115,11 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
             for node in &mut graph.nodes {
                 node.standard |= view.standard.contains(&node.stable);
             }
-            Drawn::Drawing(drawing(&graph, names, view))
+            let mut drawn = drawing(&graph, names, view);
+            for warning in &mut drawn.warnings {
+                warning.file.clone_from(&checked_file.shown);
+            }
+            Drawn::Drawing(drawn)
         }
         Err(graph::TooLarge(counts)) => too_large(format!(
             "the function is too large to draw: more than {max_terminals} terminals, counted on its first {} nodes, for at most five \
@@ -267,6 +271,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     }
     let titles = titles(graph, view);
     let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
+    drawing.warnings = overlapping(graph, &sized, &placement);
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -716,6 +721,16 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
     for &node in &of.nodes {
         let (Some(Some(at)), Some(found)) = (placement.nodes.get(node), sized.get(node)) else { continue };
         obstacles.rect(at.x - found.left, at.y - found.above, at.x + found.width + found.right, at.y + found.height);
+        // The terminals of the frames of a structure reach past its edges.
+        for &inner in graph.nodes.get(node).map_or(&[][..], |found| &found.bodies[..]) {
+            if let (Some(inner_of), Some(frame)) = (graph.bodies.get(inner), placement.frames.get(inner)) {
+                frame_obstacles(inner_of, frame, false, &mut obstacles);
+            }
+        }
+    }
+    // The terminals of its own frame and their names inside.
+    if let Some(frame) = placement.frames.get(body) {
+        frame_obstacles(of, frame, true, &mut obstacles);
     }
     for routed in routes {
         for branch in &routed.branches {
@@ -781,7 +796,24 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 shapes.extend(pills.remove(wire).unwrap_or_default());
             }
             let value = first.name.split('.').next().unwrap_or_default().to_owned();
-            shapes.extend(wire_names(&value, &routed.branches, &mut obstacles));
+            // A wire that leaves a terminal of the frame already named the same has no name at its start (notation 4).
+            // Nor on the last segment of a branch that ends at a terminal of the frame named the same, `next s` for `s`.
+            let named_at_start = match first.from {
+                graph::End::Left(index) => of.left.get(index).is_some_and(|terminal| terminal.terminal.name == value),
+                _ => false,
+            };
+            let named_at_end: Vec<bool> = routed
+                .wires
+                .iter()
+                .map(|&wire| match of.wires.get(wire).map(|wire| wire.to) {
+                    Some(graph::End::Right(index)) => of.right.get(index).is_some_and(|terminal| {
+                        let name = &terminal.terminal.name;
+                        *name == value || (terminal.edge == graph::Edge::Register && name.strip_prefix("next ") == Some(value.as_str()))
+                    }),
+                    _ => false,
+                })
+                .collect();
+            shapes.extend(wire_names(&value, &routed.branches, (named_at_start, &named_at_end[..]), &mut obstacles));
             let from = terminal_form(graph, of, body, &first.from, true, &ordinals);
             let mut to: Vec<String> = routed
                 .wires
@@ -813,14 +845,61 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
         .collect()
 }
 
+/// `LC7005` for each node placed by the file that overlaps one before it, from the left then from the top (notation
+/// 2.1), at its entry of the `layout` section, naming that one: the drawing keeps both where the file puts them.
+fn overlapping(graph: &Graph<'_>, sized: &[size::Sized], placement: &place::Placement) -> Vec<Diagnostic> {
+    place::overlaps(graph, sized, placement)
+        .into_iter()
+        .filter_map(|(first, second)| {
+            let (Some(a), Some(b)) = (graph.nodes.get(first), graph.nodes.get(second)) else { return None };
+            let message =
+                format!("node `{}` overlaps node `{}`: the `layout` section places both, and the drawing keeps where it puts them", b.key, a.key);
+            let mut diagnostic = Diagnostic::new(Code::Lc7005, message, String::new());
+            if let Some(span) = b.placed_by.or(a.placed_by) {
+                diagnostic = diagnostic.with_span(span);
+            }
+            diagnostic.function = Some(graph.function.clone());
+            Some(diagnostic)
+        })
+        .collect()
+}
+
 /// How far the pill of a wire reaches left of the terminal it leads to.
 fn pill_reach(pill: &graph::Pill) -> i64 {
     style::terminal() / 2 + style::grid() + size::pill_width(&Text::new(&pill.text, crate::size::label_line(), crate::size::medium()))
 }
 
+/// The terminals of a frame as obstacles to the names of wires: each terminal, which reaches past the edge, and, when
+/// `named`, its name inside with its unit and pill (notation 4, 5).
+fn frame_obstacles(of: &graph::BodyOf, frame: &place::FrameAt, named: bool, obstacles: &mut names::Obstacles) {
+    // A register box is 14 across, centred on the edge (`edge_terminal`); the other terminals are smaller.
+    let reach = style::terminal().max(1400) / 2;
+    let height = size::line_height(crate::size::medium());
+    for (side, terminals, heights) in [(false, &of.left, &frame.left), (true, &of.right, &frame.right)] {
+        let x = if side { frame.x + frame.width } else { frame.x };
+        for (terminal, &at) in terminals.iter().zip(heights) {
+            let y = frame.y + at;
+            obstacles.rect(x - reach, y - reach, x + reach, y + reach);
+            if named {
+                let width = place::TerminalLabel::of(terminal).width();
+                let start = if side { x - style::label_start() - width } else { x + style::label_start() };
+                obstacles.rect(start, y - height / 2, start + width, y + height / 2);
+            }
+        }
+    }
+}
+
 /// Above a wire, its name (notation 4): on its first horizontal segment, 3 units above it, when the whole name fits there
-/// with 4 on each side and covers nothing; and again halfway along a long horizontal of the wire, by the same rule.
-fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::Obstacles) -> Vec<Shape> {
+/// with 4 on each side and covers nothing, else on the next horizontal of that branch where it does; none at the start
+/// when the wire leaves a terminal that shows the same name (`named_at_start`), and none on the last segment of a branch
+/// that ends at one (`named_at_end`, by branch). And again halfway along a long horizontal of the wire, past the segment
+/// that holds the first name, by the same rule.
+fn wire_names(
+    value: &str,
+    branches: &[Vec<(i64, i64)>],
+    (named_at_start, named_at_end): (bool, &[bool]),
+    obstacles: &mut names::Obstacles,
+) -> Vec<Shape> {
     let (above, side) = (style::name_above(), style::name_side());
     let text = Text::new(value, crate::size::any_text(), crate::size::medium());
     if text.width == 0 {
@@ -828,34 +907,66 @@ fn wire_names(value: &str, branches: &[Vec<(i64, i64)>], obstacles: &mut names::
     }
     let height = size::line_height(crate::size::medium());
     let across = |a: (i64, i64), b: (i64, i64)| (a.1 == b.1 && a.0 != b.0).then_some((a.0.min(b.0), a.0.max(b.0), a.1));
-    let mut candidates = Vec::new();
-    if let Some((x0, x1, y)) = branches.first().and_then(|branch| across(*branch.first()?, *branch.get(1)?)) {
-        candidates.push((x0 + side, x1 - side, y, false));
-    }
-    // The longest horizontal of the net past its first segment, when it is long: three times what the name needs.
-    let longest = branches
-        .iter()
-        .flat_map(|branch| branch.windows(2).skip(1).filter_map(|pair| across(*pair.first()?, *pair.get(1)?)))
-        .max_by_key(|&(x0, x1, y)| (x1 - x0, -y, -x0));
-    if let Some((x0, x1, y)) = longest
-        && x1 - x0 >= 3 * (text.width + 2 * side)
-    {
-        candidates.push((x0 + side, x1 - side, y, true));
-    }
+    // The segments of a branch that may hold its name: all but the last when its reader shows the same name.
+    let open = |number: usize, branch: &[(i64, i64)]| {
+        let shown = named_at_end.get(number).copied().unwrap_or(false);
+        branch.len().saturating_sub(if shown { 2 } else { 1 })
+    };
+    let cap = labcraft_types::text::scale(u64::from(labcraft_types::text::CAP_HEIGHT), crate::size::medium()).unwrap_or(0);
     let mut shapes = Vec::new();
-    for (start, end, y, centred) in candidates {
+    // Writes the name on `[start, end]` at `y` when it fits there and covers nothing.
+    let mut put = |start: i64, end: i64, y: i64, centred: bool, shapes: &mut Vec<Shape>| -> bool {
         if end - start < text.width {
-            continue;
+            return false;
         }
         let x = if centred { start + (end - start - text.width) / 2 } else { start };
         let (top, bottom) = (y - above - height, y - above);
         if !obstacles.free(x, top, x + text.width, bottom) {
-            continue;
+            return false;
         }
         obstacles.rect(x, top, x + text.width, bottom);
         // Its baseline 3 above the wire, its line above that, as the extent of a text counts it.
-        let cap = labcraft_types::text::scale(u64::from(labcraft_types::text::CAP_HEIGHT), crate::size::medium()).unwrap_or(0);
         shapes.push(text.at(x, bottom - (cap + 1) / 2, "ink.muted"));
+        true
+    };
+    // The first name: the first horizontal of the first branch where it fits, the segment that holds it kept.
+    let mut first = None;
+    if !named_at_start && let Some(branch) = branches.first() {
+        for (index, pair) in branch.windows(2).take(open(0, branch)).enumerate() {
+            let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
+            let Some((x0, x1, y)) = across(a, b) else { continue };
+            if put(x0 + side, x1 - side, y, false, &mut shapes) {
+                first = Some(index);
+                break;
+            }
+        }
+    }
+    // The longest horizontal of the net past the first segment and past the first name, when it is long: three times
+    // what the name needs.
+    // The segments of the first branch up to the one of the first name: the other branches repeat them as their trunk.
+    let past = first.unwrap_or(0);
+    let before: HashSet<((i64, i64), (i64, i64))> = branches
+        .first()
+        .map(|branch| branch.windows(2).take(past + 1).filter_map(|pair| Some((*pair.first()?, *pair.get(1)?))).collect())
+        .unwrap_or_default();
+    let longest = branches
+        .iter()
+        .enumerate()
+        .flat_map(|(number, branch)| {
+            let before = &before;
+            branch
+                .windows(2)
+                .take(open(number, branch))
+                .skip(1)
+                .filter_map(|pair| Some((*pair.first()?, *pair.get(1)?)))
+                .filter(move |segment| !before.contains(segment))
+                .filter_map(|(a, b)| across(a, b))
+        })
+        .max_by_key(|&(x0, x1, y)| (x1 - x0, -y, -x0));
+    if let Some((x0, x1, y)) = longest
+        && x1 - x0 >= 3 * (text.width + 2 * side)
+    {
+        put(x0 + side, x1 - side, y, true, &mut shapes);
     }
     shapes
 }

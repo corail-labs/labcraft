@@ -13,7 +13,7 @@
 //! Every step is linear in the nodes and the wires of a body, but for the sorts of a column.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
 use crate::graph::{BodyOf, End, FrameTerminal, Graph, Kind, Node, StructureKind};
 use crate::route::{self, At, Ends, Routed, Side};
@@ -1285,4 +1285,50 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
             limit = y - sized.above - style::stack();
         }
     }
+}
+
+/// How many nodes placed by the file a node is compared with, the nearest above it first, when it looks for one that it
+/// covers *(proposed)*: the work stays linear when thousands of placed nodes share a column.
+const OVERLAP_LOOKS: usize = 64;
+
+/// The nodes that the `layout` section places and whose blocks overlap, in one body (`LC7005`, notation 2.1): each node
+/// that overlaps one before it in the sweep, from the left then from the top, once, with the nearest above it of those
+/// it overlaps, as the pair (that one, the node). Touching edges are not an overlap.
+pub fn overlaps(graph: &Graph<'_>, sized: &[Sized], placement: &Placement) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    for body in &graph.bodies {
+        let mut blocks: Vec<(i64, i64, i64, i64, usize)> = body
+            .nodes
+            .iter()
+            .filter_map(|&node| {
+                graph.nodes.get(node)?.at?;
+                let at = placement.nodes.get(node).copied().flatten()?;
+                let block = sized.get(node)?;
+                (block.width > 0 && block.height > 0).then_some((at.x, at.y, at.x + block.width, at.y + block.height, node))
+            })
+            .collect();
+        if blocks.len() < 2 {
+            continue;
+        }
+        blocks.sort_unstable();
+        // Those that reach past the left edge of the next one, by their top, and when they end on the right.
+        let mut active: BTreeMap<(i64, usize), i64> = BTreeMap::new();
+        let mut ending: BinaryHeap<Reverse<(i64, i64, usize)>> = BinaryHeap::new();
+        for (x0, y0, x1, y1, node) in blocks {
+            while let Some(&Reverse((end, top, other))) = ending.peek() {
+                if end > x0 {
+                    break;
+                }
+                active.remove(&(top, other));
+                ending.pop();
+            }
+            let covered = active.range(..(y1, 0)).rev().take(OVERLAP_LOOKS).find(|&(_, &bottom)| bottom > y0).map(|(&(_, other), _)| other);
+            if let Some(other) = covered {
+                found.push((other, node));
+            }
+            active.insert((y0, node), y1);
+            ending.push(Reverse((x1, y0, node)));
+        }
+    }
+    found
 }

@@ -151,7 +151,8 @@ fn invalid(group: &crate::shape::Group) -> WireStyle {
     });
     let (width, pattern) =
         style.map_or((style::mark_width(), crate::shape::Pattern::Solid), |style| (style.width.max(style::mark_width()), style.pattern));
-    WireStyle { token: "mark.invalid", width, pattern, core: None, ticks: 0 }
+    let ground = style.map_or("canvas.fill", |style| style.ground);
+    WireStyle { token: "mark.invalid", width, pattern, core: None, ticks: 0, ground }
 }
 
 /// An outline around the block of the node of that name, if the drawing has it.

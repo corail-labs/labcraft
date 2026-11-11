@@ -22,22 +22,22 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M84.16 175.64 L130.18 175.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="dmm.err">
-<path d="M106.18 223.64 L130.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 226.64 L120.18 223.64 L116.18 220.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 223.64 L130.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 225.04 L119.08 223.64 L117.28 222.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm" data-from="dmm.session" data-to="raw.session">
 <path d="M274.18 175.64 L298.18 175.64" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e1" data-from="dmm.err" data-to="raw.err">
-<path d="M274.18 223.64 L298.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M284.18 226.64 L288.18 223.64 L284.18 220.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M274.18 223.64 L298.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M285.28 225.04 L287.08 223.64 L285.28 222.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm2" data-from="raw.session" data-to="e3.session">
 <path d="M474.18 175.64 L480.18 175.64 Q486.18 175.64 486.18 181.64 L486.18 193.64 Q486.18 199.64 492.18 199.64 L498.18 199.64" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e2" data-from="raw.err" data-to="e3.err">
-<path d="M474.18 223.64 L498.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M484.18 226.64 L488.18 223.64 L484.18 220.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M474.18 223.64 L498.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M485.28 225.04 L487.08 223.64 L485.28 222.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="raw" data-from="raw.value" data-to="voltage.x">
 <path d="M474.18 151.64 L480.18 151.64 Q486.18 151.64 486.18 145.64 L486.18 110 Q486.18 104 492.18 104 L498.18 104" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -46,8 +46,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M618.18 104 L669.6 104" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="e3" data-from="e3.err" data-to="fn.err">
-<path d="M642.18 223.64 L713.94 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M652.18 226.64 L656.18 223.64 L652.18 220.64 M676.18 226.64 L680.18 223.64 L676.18 220.64 M700.18 226.64 L704.18 223.64 L700.18 220.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M642.18 223.64 L713.94 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M653.28 225.04 L655.08 223.64 L653.28 222.24 M661.28 225.04 L663.08 223.64 L661.28 222.24 M669.28 225.04 L671.08 223.64 L669.28 222.24 M677.28 225.04 L679.08 223.64 L677.28 222.24 M685.28 225.04 L687.08 223.64 L685.28 222.24 M693.28 225.04 L695.08 223.64 L693.28 222.24 M701.28 225.04 L703.08 223.64 L701.28 222.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="dmm"><title>visa.open</title>
 <rect x="130.18" y="135.64" width="144" height="104" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

@@ -22,11 +22,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="525.94" y="203.65" font-size="10" style="fill: var(--node-title)">err</text>
 <g data-wire="session" data-from="fn.session" data-to="raw.session">
 <path d="M78.14 152 L130.18 152" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="82.14" y="149" font-size="10" style="fill: var(--ink-muted)">session</text>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="raw.err">
-<path d="M106.18 200 L130.18 200" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 203 L120.18 200 L116.18 197" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 200 L130.18 200" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 201.4 L119.08 200 L117.28 198.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="raw" data-from="raw.value" data-to="volts.x">
 <path d="M306.18 128 L320.18 128 Q326.18 128 326.18 134 L326.18 138 Q326.18 144 332.18 144 L338.18 144" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -36,11 +35,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="s" data-from="raw.session" data-to="fn.session">
 <path d="M306.18 152 L312.18 152 Q318.18 152 318.18 146 L318.18 94 Q318.18 88 324.18 88 L464.18 88 Q470.18 88 470.18 94 L470.18 162 Q470.18 168 476.18 168 L497.86 168" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="391.17" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
+<text x="322.18" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
 </g>
 <g data-wire="e1" data-from="raw.err" data-to="fn.err">
-<path d="M306.18 200 L521.94 200" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M316.18 203 L320.18 200 L316.18 197 M340.18 203 L344.18 200 L340.18 197 M364.18 203 L368.18 200 L364.18 197 M388.18 203 L392.18 200 L388.18 197 M412.18 203 L416.18 200 L412.18 197 M436.18 203 L440.18 200 L436.18 197 M460.18 203 L464.18 200 L460.18 197 M484.18 203 L488.18 200 L484.18 197 M508.18 203 L512.18 200 L508.18 197" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M306.18 200 L521.94 200" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M317.28 201.4 L319.08 200 L317.28 198.6 M325.28 201.4 L327.08 200 L325.28 198.6 M333.28 201.4 L335.08 200 L333.28 198.6 M341.28 201.4 L343.08 200 L341.28 198.6 M349.28 201.4 L351.08 200 L349.28 198.6 M357.28 201.4 L359.08 200 L357.28 198.6 M365.28 201.4 L367.08 200 L365.28 198.6 M373.28 201.4 L375.08 200 L373.28 198.6 M381.28 201.4 L383.08 200 L381.28 198.6 M389.28 201.4 L391.08 200 L389.28 198.6 M397.28 201.4 L399.08 200 L397.28 198.6 M405.28 201.4 L407.08 200 L405.28 198.6 M413.28 201.4 L415.08 200 L413.28 198.6 M421.28 201.4 L423.08 200 L421.28 198.6 M429.28 201.4 L431.08 200 L429.28 198.6 M437.28 201.4 L439.08 200 L437.28 198.6 M445.28 201.4 L447.08 200 L445.28 198.6 M453.28 201.4 L455.08 200 L453.28 198.6 M461.28 201.4 L463.08 200 L461.28 198.6 M469.28 201.4 L471.08 200 L469.28 198.6 M477.28 201.4 L479.08 200 L477.28 198.6 M485.28 201.4 L487.08 200 L485.28 198.6 M493.28 201.4 L495.08 200 L493.28 198.6 M501.28 201.4 L503.08 200 L501.28 198.6 M509.28 201.4 L511.08 200 L509.28 198.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="raw"><title>scpi.query_f64</title>
 <rect x="130.18" y="88" width="176" height="128" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

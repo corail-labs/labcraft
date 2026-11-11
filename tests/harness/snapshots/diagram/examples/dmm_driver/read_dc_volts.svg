@@ -24,8 +24,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M78.14 148 L114.18 148 Q118.18 148 118.18 152 L118.18 152 Q118.18 156 122.18 156 L194.34 156" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="raw.err">
-<path d="M106.18 172 L194.34 172" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 175 L120.18 172 L116.18 169 M140.18 175 L144.18 172 L140.18 169 M164.18 175 L168.18 172 L164.18 169" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 172 L194.34 172" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 173.4 L119.08 172 L117.28 170.6 M125.28 173.4 L127.08 172 L125.28 170.6 M133.28 173.4 L135.08 172 L133.28 170.6 M141.28 173.4 L143.08 172 L141.28 170.6 M149.28 173.4 L151.08 172 L149.28 170.6 M157.28 173.4 L159.08 172 L157.28 170.6 M165.28 173.4 L167.08 172 L165.28 170.6 M173.28 173.4 L175.08 172 L173.28 170.6 M181.28 173.4 L183.08 172 L181.28 170.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="raw" data-from="raw.value" data-to="volts.x">
 <path d="M234.34 148 L240.34 148 Q246.34 148 246.34 142 L246.34 124 Q246.34 118 252.34 118 L266.34 118" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -35,11 +35,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="s" data-from="raw.session" data-to="fn.session">
 <path d="M234.34 156 L248.34 156 Q254.34 156 254.34 150 L254.34 94 Q254.34 88 260.34 88 L300.34 88 Q306.34 88 306.34 94 L306.34 142 Q306.34 148 312.34 148 L329.86 148" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="277.33" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
+<text x="258.34" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
 </g>
 <g data-wire="e1" data-from="raw.err" data-to="fn.err">
-<path d="M234.34 172 L353.94 172" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M244.34 175 L248.34 172 L244.34 169 M268.34 175 L272.34 172 L268.34 169 M292.34 175 L296.34 172 L292.34 169 M316.34 175 L320.34 172 L316.34 169 M340.34 175 L344.34 172 L340.34 169" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M234.34 172 L353.94 172" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M245.44 173.4 L247.24 172 L245.44 170.6 M253.44 173.4 L255.24 172 L253.44 170.6 M261.44 173.4 L263.24 172 L261.44 170.6 M269.44 173.4 L271.24 172 L269.44 170.6 M277.44 173.4 L279.24 172 L277.44 170.6 M285.44 173.4 L287.24 172 L285.44 170.6 M293.44 173.4 L295.24 172 L293.44 170.6 M301.44 173.4 L303.24 172 L301.44 170.6 M309.44 173.4 L311.24 172 L309.44 170.6 M317.44 173.4 L319.24 172 L317.44 170.6 M325.44 173.4 L327.24 172 L325.44 170.6 M333.44 173.4 L335.24 172 L333.44 170.6 M341.44 173.4 L343.24 172 L341.44 170.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="raw"><title>scpi.query_f64</title>
 <rect x="194.34" y="140" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

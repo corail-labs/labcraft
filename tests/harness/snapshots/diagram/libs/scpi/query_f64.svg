@@ -28,26 +28,26 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M78.14 112 L112.18 112 Q118.18 112 118.18 118 L118.18 122 Q118.18 128 124.18 128 L138.18 128" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="text.err">
-<path d="M106.18 136 L138.18 136" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 139 L120.18 136 L116.18 133" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 136 L138.18 136" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 137.4 L119.08 136 L117.28 134.6 M125.28 137.4 L127.08 136 L125.28 134.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="text" data-from="text.text" data-to="value.text">
 <path d="M178.18 112 L192.18 112 Q198.18 112 198.18 118 L198.18 122 Q198.18 128 204.18 128 L210.18 128" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="e1" data-from="text.err" data-to="value.err">
-<path d="M178.18 136 L210.18 136" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M188.18 139 L192.18 136 L188.18 133" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M178.18 136 L210.18 136" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M189.28 137.4 L191.08 136 L189.28 134.6 M197.28 137.4 L199.08 136 L197.28 134.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="value" data-from="value.value" data-to="fn.value">
 <path d="M250.18 128 L264.18 128 Q270.18 128 270.18 122 L270.18 94 Q270.18 88 276.18 88 L301.9 88" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="s" data-from="text.session" data-to="fn.session">
 <path d="M178.18 120 L184.18 120 Q190.18 120 190.18 114 L190.18 94 Q190.18 88 196.18 88 L256.18 88 Q262.18 88 262.18 94 L262.18 106 Q262.18 112 268.18 112 L289.86 112" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="223.17" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
+<text x="194.18" y="85" font-size="10" style="fill: var(--ink-muted)">s</text>
 </g>
 <g data-wire="e2" data-from="value.err" data-to="fn.err">
-<path d="M250.18 136 L313.94 136" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M260.18 139 L264.18 136 L260.18 133 M284.18 139 L288.18 136 L284.18 133" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M250.18 136 L313.94 136" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M261.28 137.4 L263.08 136 L261.28 134.6 M269.28 137.4 L271.08 136 L269.28 134.6 M277.28 137.4 L279.08 136 L277.28 134.6 M285.28 137.4 L287.08 136 L285.28 134.6 M293.28 137.4 L295.08 136 L293.28 134.6 M301.28 137.4 L303.08 136 L301.28 134.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="text"><title>visa.query</title>
 <rect x="138.18" y="104" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

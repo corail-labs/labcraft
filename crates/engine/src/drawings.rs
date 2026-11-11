@@ -141,7 +141,13 @@ pub fn drawing_of(
     }
     let work = || draw(checked, index, names, view, limits);
     match panic::catch_unwind(AssertUnwindSafe(work)) {
-        Ok(Drawn::Drawing(drawing)) => (Some(drawing), nodes, codes),
+        Ok(Drawn::Drawing(mut drawing)) => {
+            // Its warnings (`LC7005`) join those of `check` for the file.
+            for warning in std::mem::take(&mut drawing.warnings) {
+                report.push(warning);
+            }
+            (Some(drawing), nodes, codes)
+        }
         Ok(Drawn::NotDrawn(diagnostics)) => {
             for diagnostic in diagnostics {
                 codes.push(diagnostic.code());

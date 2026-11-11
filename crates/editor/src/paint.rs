@@ -268,7 +268,7 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, theme: Theme, step: f32) -> Ve
         out.push(Painted2::line(path.clone(), Stroke::new(length(style.width - 240, step), theme.color(core))));
     }
     if style.ticks > 0 {
-        // A tick is a dash of a wide stroke: 6 across, 1 along, one per dimension, every 8.
+        // A tick is a dash 1 along, one per dimension, every 8.
         let (dashes, gaps): (&[f32], &[f32]) = match style.ticks {
             1 => (&[1.0], &[7.0]),
             2 => (&[1.0, 1.0], &[2.0, 4.0]),
@@ -276,10 +276,12 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, theme: Theme, step: f32) -> Ve
         };
         let dashes: Vec<f32> = dashes.iter().map(|dash| dash * unit).collect();
         let gaps: Vec<f32> = gaps.iter().map(|gap| gap * unit).collect();
-        Painted2::dashed_line_many_with_offset(&path, Stroke::new(6.0 * unit, color), &dashes, &gaps, 0.0, &mut out);
+        // Across the whole width of the wire: a rung of its color in a sheath, a cut showing the ground otherwise.
+        let tick = if style.core.is_some() { color } else { theme.color(style.ground) };
+        Painted2::dashed_line_many_with_offset(&path, Stroke::new(length(style.width, step), tick), &dashes, &gaps, 0.0, &mut out);
     }
     if style.pattern == Pattern::Chevrons && labcraft_diagram::style::chevron_step() > 0 {
-        let thin = Stroke::new(1.5 * unit, color);
+        let thin = Stroke::new(length(labcraft_diagram::CHEVRON_STROKE, step), theme.color(style.ground));
         for [a, b, c] in chevrons(points) {
             out.push(Painted2::line(vec![point(a.0, a.1, step), point(b.0, b.1, step), point(c.0, c.1, step)], thin));
         }

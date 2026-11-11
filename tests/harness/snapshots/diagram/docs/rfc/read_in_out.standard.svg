@@ -25,58 +25,56 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="885.94" y="426.93" font-size="10" style="fill: var(--node-title)">err</text>
 <g data-wire="input" data-from="fn.input" data-to="dmm_in.resource">
 <path d="M66.1 375.28 L138.18 375.28" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="70.1" y="372.28" font-size="10" style="fill: var(--ink-muted)">input</text>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="dmm_in.err dmm_out.err">
-<path d="M106.18 423.28 L138.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 426.28 L120.18 423.28 L116.18 420.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<path d="M126.18 423.28 L126.18 301.28 Q126.18 295.28 132.18 295.28 L138.18 295.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M129.18 413.28 L126.18 409.28 L123.18 413.28 M129.18 389.28 L126.18 385.28 L123.18 389.28 M129.18 365.28 L126.18 361.28 L123.18 365.28 M129.18 341.28 L126.18 337.28 L123.18 341.28 M129.18 317.28 L126.18 313.28 L123.18 317.28 M130.18 298.28 L134.18 295.28 L130.18 292.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M106.18 423.28 L138.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 424.68 L119.08 423.28 L117.28 421.88 M125.28 424.68 L127.08 423.28 L125.28 421.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
+<path d="M126.18 423.28 L126.18 301.28 Q126.18 295.28 132.18 295.28 L138.18 295.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M127.58 412.18 L126.18 410.38 L124.78 412.18 M127.58 404.18 L126.18 402.38 L124.78 404.18 M127.58 396.18 L126.18 394.38 L124.78 396.18 M127.58 388.18 L126.18 386.38 L124.78 388.18 M127.58 380.18 L126.18 378.38 L124.78 380.18 M127.58 372.18 L126.18 370.38 L124.78 372.18 M127.58 364.18 L126.18 362.38 L124.78 364.18 M127.58 356.18 L126.18 354.38 L124.78 356.18 M127.58 348.18 L126.18 346.38 L124.78 348.18 M127.58 340.18 L126.18 338.38 L124.78 340.18 M127.58 332.18 L126.18 330.38 L124.78 332.18 M127.58 324.18 L126.18 322.38 L124.78 324.18 M127.58 316.18 L126.18 314.38 L124.78 316.18 M127.58 308.18 L126.18 306.38 L124.78 308.18 M131.28 296.68 L133.08 295.28 L131.28 293.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 <circle cx="126.18" cy="423.28" r="3" style="fill: var(--wire-error)"/>
 </g>
 <g data-wire="output" data-from="fn.output" data-to="dmm_out.resource">
 <path d="M72.12 399.28 L112.18 399.28 Q118.18 399.28 118.18 393.28 L118.18 253.28 Q118.18 247.28 124.18 247.28 L138.18 247.28" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="76.12" y="396.28" font-size="10" style="fill: var(--ink-muted)">output</text>
 </g>
 <g data-wire="dmm_in" data-from="dmm_in.session" data-to="raw_in.session">
 <path d="M282.18 375.28 L306.18 375.28" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e1" data-from="dmm_in.err" data-to="raw_in.err">
-<path d="M282.18 423.28 L306.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M292.18 426.28 L296.18 423.28 L292.18 420.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M282.18 423.28 L306.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M293.28 424.68 L295.08 423.28 L293.28 421.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm_in2" data-from="raw_in.session" data-to="e3.session">
 <path d="M482.18 375.28 L488.18 375.28 Q494.18 375.28 494.18 381.28 L494.18 393.28 Q494.18 399.28 500.18 399.28 L522.18 399.28" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e2" data-from="raw_in.err" data-to="e3.err">
-<path d="M482.18 423.28 L522.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M492.18 426.28 L496.18 423.28 L492.18 420.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M482.18 423.28 L522.18 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M493.28 424.68 L495.08 423.28 L493.28 421.88 M501.28 424.68 L503.08 423.28 L501.28 421.88 M509.28 424.68 L511.08 423.28 L509.28 421.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm_out" data-from="dmm_out.session" data-to="raw_out.session">
 <path d="M282.18 247.28 L288.18 247.28 Q294.18 247.28 294.18 241.28 L294.18 229.28 Q294.18 223.28 300.18 223.28 L306.18 223.28" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e4" data-from="dmm_out.err" data-to="raw_out.err">
-<path d="M282.18 295.28 L288.18 295.28 Q294.18 295.28 294.18 289.28 L294.18 277.28 Q294.18 271.28 300.18 271.28 L306.18 271.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M297.18 291.28 L294.18 287.28 L291.18 291.28 M298.18 274.28 L302.18 271.28 L298.18 268.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M282.18 295.28 L288.18 295.28 Q294.18 295.28 294.18 289.28 L294.18 277.28 Q294.18 271.28 300.18 271.28 L306.18 271.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M295.58 290.18 L294.18 288.38 L292.78 290.18 M295.58 282.18 L294.18 280.38 L292.78 282.18 M299.28 272.68 L301.08 271.28 L299.28 269.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="dmm_out2" data-from="raw_out.session" data-to="e6.session">
 <path d="M482.18 223.28 L496.18 223.28 Q502.18 223.28 502.18 217.28 L502.18 205.64 Q502.18 199.64 508.18 199.64 L522.18 199.64" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e5" data-from="raw_out.err" data-to="e6.err">
-<path d="M482.18 271.28 L504.18 271.28 Q510.18 271.28 510.18 265.28 L510.18 229.64 Q510.18 223.64 516.18 223.64 L522.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M492.18 274.28 L496.18 271.28 L492.18 268.28 M513.18 265.28 L510.18 261.28 L507.18 265.28 M513.18 241.28 L510.18 237.28 L507.18 241.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M482.18 271.28 L504.18 271.28 Q510.18 271.28 510.18 265.28 L510.18 229.64 Q510.18 223.64 516.18 223.64 L522.18 223.64" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M493.28 272.68 L495.08 271.28 L493.28 269.88 M501.28 272.68 L503.08 271.28 L501.28 269.88 M511.58 266.18 L510.18 264.38 L508.78 266.18 M511.58 258.18 L510.18 256.38 L508.78 258.18 M511.58 250.18 L510.18 248.38 L508.78 250.18 M511.58 242.18 L510.18 240.38 L508.78 242.18 M511.58 234.18 L510.18 232.38 L508.78 234.18 M515.28 225.04 L517.08 223.64 L515.28 222.24" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e3" data-from="e3.err" data-to="err.errs">
-<path d="M666.18 423.28 L672.18 423.28 Q678.18 423.28 678.18 417.28 L678.18 349.28 Q678.18 343.28 684.18 343.28 L698.18 343.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M681.18 419.28 L678.18 415.28 L675.18 419.28 M681.18 395.28 L678.18 391.28 L675.18 395.28 M681.18 371.28 L678.18 367.28 L675.18 371.28 M682.18 346.28 L686.18 343.28 L682.18 340.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M666.18 423.28 L672.18 423.28 Q678.18 423.28 678.18 417.28 L678.18 349.28 Q678.18 343.28 684.18 343.28 L698.18 343.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M679.58 418.18 L678.18 416.38 L676.78 418.18 M679.58 410.18 L678.18 408.38 L676.78 410.18 M679.58 402.18 L678.18 400.38 L676.78 402.18 M679.58 394.18 L678.18 392.38 L676.78 394.18 M679.58 386.18 L678.18 384.38 L676.78 386.18 M679.58 378.18 L678.18 376.38 L676.78 378.18 M679.58 370.18 L678.18 368.38 L676.78 370.18 M679.58 362.18 L678.18 360.38 L676.78 362.18 M679.58 354.18 L678.18 352.38 L676.78 354.18 M683.28 344.68 L685.08 343.28 L683.28 341.88 M691.28 344.68 L693.08 343.28 L691.28 341.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="e6" data-from="e6.err" data-to="err.errs">
-<path d="M666.18 223.64 L680.18 223.64 Q686.18 223.64 686.18 229.64 L686.18 361.28 Q686.18 367.28 692.18 367.28 L698.18 367.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M676.18 226.64 L680.18 223.64 L676.18 220.64 M683.18 237.64 L686.18 241.64 L689.18 237.64 M683.18 261.64 L686.18 265.64 L689.18 261.64 M683.18 285.64 L686.18 289.64 L689.18 285.64 M683.18 309.64 L686.18 313.64 L689.18 309.64 M683.18 333.64 L686.18 337.64 L689.18 333.64 M683.18 357.64 L686.18 361.64 L689.18 357.64" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M666.18 223.64 L680.18 223.64 Q686.18 223.64 686.18 229.64 L686.18 361.28 Q686.18 367.28 692.18 367.28 L698.18 367.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M677.28 225.04 L679.08 223.64 L677.28 222.24 M684.78 228.74 L686.18 230.54 L687.58 228.74 M684.78 236.74 L686.18 238.54 L687.58 236.74 M684.78 244.74 L686.18 246.54 L687.58 244.74 M684.78 252.74 L686.18 254.54 L687.58 252.74 M684.78 260.74 L686.18 262.54 L687.58 260.74 M684.78 268.74 L686.18 270.54 L687.58 268.74 M684.78 276.74 L686.18 278.54 L687.58 276.74 M684.78 284.74 L686.18 286.54 L687.58 284.74 M684.78 292.74 L686.18 294.54 L687.58 292.74 M684.78 300.74 L686.18 302.54 L687.58 300.74 M684.78 308.74 L686.18 310.54 L687.58 308.74 M684.78 316.74 L686.18 318.54 L687.58 316.74 M684.78 324.74 L686.18 326.54 L687.58 324.74 M684.78 332.74 L686.18 334.54 L687.58 332.74 M684.78 340.74 L686.18 342.54 L687.58 340.74 M684.78 348.74 L686.18 350.54 L687.58 348.74 M684.78 356.74 L686.18 358.54 L687.58 356.74 M691.28 368.68 L693.08 367.28 L691.28 365.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="err" data-from="err.err" data-to="fn.err">
-<path d="M810.18 343.28 L816.18 343.28 Q822.18 343.28 822.18 349.28 L822.18 417.28 Q822.18 423.28 828.18 423.28 L881.94 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M819.18 347.28 L822.18 351.28 L825.18 347.28 M819.18 371.28 L822.18 375.28 L825.18 371.28 M819.18 395.28 L822.18 399.28 L825.18 395.28 M826.18 426.28 L830.18 423.28 L826.18 420.28 M850.18 426.28 L854.18 423.28 L850.18 420.28" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M810.18 343.28 L816.18 343.28 Q822.18 343.28 822.18 349.28 L822.18 417.28 Q822.18 423.28 828.18 423.28 L881.94 423.28" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M820.78 348.38 L822.18 350.18 L823.58 348.38 M820.78 356.38 L822.18 358.18 L823.58 356.38 M820.78 364.38 L822.18 366.18 L823.58 364.38 M820.78 372.38 L822.18 374.18 L823.58 372.38 M820.78 380.38 L822.18 382.18 L823.58 380.38 M820.78 388.38 L822.18 390.18 L823.58 388.38 M820.78 396.38 L822.18 398.18 L823.58 396.38 M820.78 404.38 L822.18 406.18 L823.58 404.38 M820.78 412.38 L822.18 414.18 L823.58 412.38 M827.28 424.68 L829.08 423.28 L827.28 421.88 M835.28 424.68 L837.08 423.28 L835.28 421.88 M843.28 424.68 L845.08 423.28 L843.28 421.88 M851.28 424.68 L853.08 423.28 L851.28 421.88 M859.28 424.68 L861.08 423.28 L859.28 421.88 M867.28 424.68 L869.08 423.28 L867.28 421.88" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="raw_in" data-from="raw_in.value" data-to="v_in.x">
 <path d="M482.18 351.28 L488.18 351.28 Q494.18 351.28 494.18 345.28 L494.18 309.64 Q494.18 303.64 500.18 303.64 L522.18 303.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

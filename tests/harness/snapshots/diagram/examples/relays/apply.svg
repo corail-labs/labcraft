@@ -21,32 +21,29 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="349.94" y="187.65" font-size="10" style="fill: var(--node-title)">err</text>
 <g data-wire="route" data-from="fn.route" data-to="command.route">
 <path d="M66.1 160 L120.18 160 Q126.18 160 126.18 154 L126.18 142 Q126.18 136 132.18 136 L202.34 136" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="70.1" y="157" font-size="10" style="fill: var(--ink-muted)">route</text>
 </g>
 <g data-wire="bank" data-from="fn.bank" data-to="b.session">
 <path d="M60.08 136 L112.18 136 Q118.18 136 118.18 130 L118.18 94 Q118.18 88 124.18 88 L256.34 88 Q262.34 88 262.34 94 L262.34 162 Q262.34 168 268.34 168 L274.34 168" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="64.08" y="133" font-size="10" style="fill: var(--ink-muted)">bank</text>
 <text x="178.22" y="85" font-size="10" style="fill: var(--ink-muted)">bank</text>
 </g>
 <g data-wire="command" data-from="command.text" data-to="b.command">
 <path d="M242.34 128 L248.34 128 Q254.34 128 254.34 134 L254.34 170 Q254.34 176 260.34 176 L274.34 176" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="err" data-from="fn.err" data-to="b.err">
-<path d="M106.18 184 L274.34 184" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M116.18 187 L120.18 184 L116.18 181 M140.18 187 L144.18 184 L140.18 181 M164.18 187 L168.18 184 L164.18 181 M188.18 187 L192.18 184 L188.18 181 M212.18 187 L216.18 184 L212.18 181 M236.18 187 L240.18 184 L236.18 181 M260.18 187 L264.18 184 L260.18 181" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
-<text x="110.18" y="181" font-size="10" style="fill: var(--ink-muted)">err</text>
+<path d="M106.18 184 L274.34 184" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M117.28 185.4 L119.08 184 L117.28 182.6 M125.28 185.4 L127.08 184 L125.28 182.6 M133.28 185.4 L135.08 184 L133.28 182.6 M141.28 185.4 L143.08 184 L141.28 182.6 M149.28 185.4 L151.08 184 L149.28 182.6 M157.28 185.4 L159.08 184 L157.28 182.6 M165.28 185.4 L167.08 184 L165.28 182.6 M173.28 185.4 L175.08 184 L173.28 182.6 M181.28 185.4 L183.08 184 L181.28 182.6 M189.28 185.4 L191.08 184 L189.28 182.6 M197.28 185.4 L199.08 184 L197.28 182.6 M205.28 185.4 L207.08 184 L205.28 182.6 M213.28 185.4 L215.08 184 L213.28 182.6 M221.28 185.4 L223.08 184 L221.28 182.6 M229.28 185.4 L231.08 184 L229.28 182.6 M237.28 185.4 L239.08 184 L237.28 182.6 M245.28 185.4 L247.08 184 L245.28 182.6 M253.28 185.4 L255.08 184 L253.28 182.6 M261.28 185.4 L263.08 184 L261.28 182.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-wire="b" data-from="b.session" data-to="fn.bank">
 <path d="M314.34 168 L322.34 168 Q326.34 168 326.34 164 L326.34 164 Q326.34 160 330.34 160 L339.92 160" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e1" data-from="b.err" data-to="fn.err">
-<path d="M314.34 184 L345.94 184" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
-<path d="M324.34 187 L328.34 184 L324.34 181" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<path d="M314.34 184 L345.94 184" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M325.44 185.4 L327.24 184 L325.44 182.6 M333.44 185.4 L335.24 184 L333.44 182.6" style="fill: none; stroke: var(--frame-fill-1); stroke-width: 0.9"/>
 </g>
 <g data-node="command"><title>string.format</title>
 <rect x="202.34" y="104" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="207.29" y="121.83" font-size="10" style="fill: var(--node-title)">forma</text>
-<text x="219.33" y="133.47" font-size="10" style="fill: var(--node-title)">t</text>
+<text x="213.31" y="121.83" font-size="10" style="fill: var(--node-title)">for</text>
+<text x="213.31" y="133.47" font-size="10" style="fill: var(--node-title)">mat</text>
 <rect x="198.34" y="125.2" width="8" height="5.6" style="fill: var(--wire-data)"/>
 <rect x="238.34" y="125.2" width="8" height="5.6" style="fill: var(--wire-data)"/>
 <rect x="198.34" y="133.2" width="8" height="5.6" style="fill: var(--wire-data)"/>

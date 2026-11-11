@@ -37,42 +37,36 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="2799.74" y="779.28" font-size="9" style="fill: var(--ink-muted)">[m]</text>
 <g data-wire="drag" data-from="fn.drag" data-to="k.a">
 <path d="M160.75 860 L190.75 860 Q196.75 860 196.75 854 L196.75 571.62 Q196.75 568 200.37 568 L204 568" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="164.75" y="857" font-size="10" style="fill: var(--ink-muted)">drag</text>
 </g>
 <g data-wire="mass" data-from="fn.mass" data-to="k.b">
 <path d="M85.75 836 L182.75 836 Q188.75 836 188.75 830 L188.75 598 Q188.75 592 194.75 592 L204 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="89.75" y="833" font-size="10" style="fill: var(--ink-muted)">mass</text>
 </g>
 <g data-wire="vx0" data-from="fn.vx0" data-to="flight_time.vx">
 <path d="M85.15 728 L166.75 728 Q172.75 728 172.75 722 L172.75 518 Q172.75 512 178.75 512 L366.75 512 Q372.75 512 372.75 518 L372.75 722 Q372.75 728 378.75 728 L460 728" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="89.15" y="725" font-size="10" style="fill: var(--ink-muted)">vx0</text>
 </g>
 <g data-wire="vy0" data-from="fn.vy0" data-to="flight_time.vy">
 <path d="M85.15 752 L174.75 752 Q180.75 752 180.75 746 L180.75 510 Q180.75 504 186.75 504 L374.75 504 Q380.75 504 380.75 510 L380.75 746 Q380.75 752 386.75 752 L460 752" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="89.15" y="749" font-size="10" style="fill: var(--ink-muted)">vy0</text>
 </g>
 <g data-wire="flight_time" data-from="flight_time.flight_time" data-to="fn.flight_time">
 <path d="M2700 288 L2725.51 288" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="range" data-from="flight_time.range" data-to="fn.range">
 <path d="M2700 600 L2761.64 600" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="2704" y="597" font-size="10" style="fill: var(--ink-muted)">range</text>
 </g>
 <g data-wire="apex" data-from="flight_time.apex" data-to="fn.apex">
 <path d="M2700 776 L2767.66 776" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="2704" y="773" font-size="10" style="fill: var(--ink-muted)">apex</text>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
 <path d="M126.44 884 L198.75 884 Q204.75 884 204.75 878 L204.75 502 Q204.75 496 210.75 496 L382.75 496 Q388.75 496 388.75 502 L388.75 794 Q388.75 800 394.75 800 L460 800" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="130.44" y="881" font-size="10" style="fill: var(--ink-muted)">dt</text>
 <text x="290.73" y="493" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="g" data-from="g.value" data-to="flight_time.g">
 <path d="M282.98 888 L366.75 888 Q372.75 888 372.75 882 L372.75 854 Q372.75 848 378.75 848 L460 848" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="413.36" y="845" font-size="10" style="fill: var(--ink-muted)">g</text>
+<text x="376.75" y="845" font-size="10" style="fill: var(--ink-muted)">g</text>
 </g>
 <g data-wire="k" data-from="k.result" data-to="flight_time.k">
 <path d="M372 568 L414 568 Q420 568 420 574 L420 818 Q420 824 426 824 L460 824" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="424" y="821" font-size="10" style="fill: var(--ink-muted)">k</text>
 </g>
 <g data-node="g"><title>g = 9.81 m/s^2</title>
 <text x="192.75" y="891.65" font-size="10" style="fill: var(--node-title)">g</text>
@@ -176,7 +170,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <circle cx="551.95" cy="416" r="3" style="fill: var(--wire-data)"/>
 <circle cx="551.95" cy="600" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1503.95" cy="176" r="3" style="fill: var(--wire-data)"/>
-<text x="523.13" y="725" font-size="10" style="fill: var(--ink-muted)">vx</text>
 </g>
 <g data-wire="dt" data-to="dx.b dy.b dvx.b dvy.b @41.b">
 <path d="M508.3 800 L569.95 800 Q575.95 800 575.95 794 L575.95 630 Q575.95 624 581.95 624 L603.95 624" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -188,7 +181,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <circle cx="575.95" cy="624" r="3" style="fill: var(--wire-data)"/>
 <circle cx="575.95" cy="728" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1927.95" cy="168" r="3" style="fill: var(--wire-data)"/>
-<text x="512.3" y="797" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="vy" data-to="dy.a vy2.a vy2.b kvy.b @44.a">
 <path d="M519.13 752 L553.95 752 Q559.95 752 559.95 746 L559.95 710 Q559.95 704 565.95 704 L603.95 704" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -200,14 +192,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <circle cx="559.95" cy="520" r="3" style="fill: var(--wire-data)"/>
 <circle cx="559.95" cy="704" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1511.95" cy="144" r="3" style="fill: var(--wire-data)"/>
-<text x="523.13" y="749" font-size="10" style="fill: var(--ink-muted)">vy</text>
 </g>
 <g data-wire="y" data-to="ny.a">
 <path d="M502.28 704 L537.95 704 Q543.95 704 543.95 698 L543.95 238 Q543.95 232 549.95 232 L809.95 232 Q815.95 232 815.95 238 L815.95 698 Q815.95 704 821.95 704 L835.95 704" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="506.28" y="701" font-size="10" style="fill: var(--ink-muted)">y</text>
 </g>
 <g data-wire="dy" data-from="dy.result" data-to="ny.b">
 <path d="M755.95 704 L793.95 704 Q799.95 704 799.95 710 L799.95 722 Q799.95 728 805.95 728 L835.95 728" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="803.95" y="725" font-size="10" style="fill: var(--ink-muted)">dy</text>
 </g>
 <g data-wire="ny" data-from="ny.result" data-to="landed.a @42.b next.y">
 <path d="M971.95 704 L1091.95 704" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -227,7 +218,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="k" data-to="ks.a">
 <path d="M513.11 824 L577.95 824 Q583.95 824 583.95 818 L583.95 214 Q583.95 208 589.95 208 L1305.95 208 Q1311.95 208 1311.95 214 L1311.95 698 Q1311.95 704 1317.95 704 L1323.95 704" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="517.11" y="821" font-size="10" style="fill: var(--ink-muted)">k</text>
 </g>
 <g data-wire="speed" data-from="speed.result" data-to="ks.b">
 <path d="M1275.95 520 L1297.95 520 Q1303.95 520 1303.95 526 L1303.95 722 Q1303.95 728 1309.95 728 L1323.95 728" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -251,7 +241,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="g" data-to="ay.b">
 <path d="M523.95 848 L585.95 848 Q591.95 848 591.95 842 L591.95 206 Q591.95 200 597.95 200 L1913.95 200 Q1919.95 200 1919.95 206 L1919.95 722 Q1919.95 728 1925.95 728 L1939.95 728" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="527.95" y="845" font-size="10" style="fill: var(--ink-muted)">g</text>
 <text x="1252.94" y="197" font-size="10" style="fill: var(--ink-muted)">g</text>
 </g>
 <g data-wire="ay" data-from="ay.result" data-to="dvy.a">
@@ -259,15 +248,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="t" data-to="@41.a">
 <path d="M502.28 288 L603.95 288" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="506.28" y="285" font-size="10" style="fill: var(--ink-muted)">t</text>
 </g>
 <g data-wire="t" data-from="@41.result" data-to="next.t">
 <path d="M739.95 288 L793.95 288 Q799.95 288 799.95 282 L799.95 142 Q799.95 136 805.95 136 L2585.95 136 Q2591.95 136 2591.95 142 L2591.95 282 Q2591.95 288 2597.95 288 L2627.62 288" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="1692.94" y="133" font-size="10" style="fill: var(--ink-muted)">t</text>
+<text x="803.95" y="133" font-size="10" style="fill: var(--ink-muted)">t</text>
 </g>
 <g data-wire="top" data-to="@42.a">
 <path d="M514.32 776 L561.95 776 Q567.95 776 567.95 770 L567.95 222 Q567.95 216 573.95 216 L1073.95 216 Q1079.95 216 1079.95 222 L1079.95 594 Q1079.95 600 1085.95 600 L1091.95 600" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="518.32" y="773" font-size="10" style="fill: var(--ink-muted)">top</text>
 </g>
 <g data-wire="top" data-from="@42.result" data-to="next.top">
 <path d="M1227.95 600 L1281.95 600 Q1287.95 600 1287.95 594 L1287.95 198 Q1287.95 192 1293.95 192 L2553.95 192 Q2559.95 192 2559.95 198 L2559.95 770 Q2559.95 776 2565.95 776 L2615.58 776" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -283,11 +270,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="vy" data-from="@44.result" data-to="next.vy">
 <path d="M2531.95 704 L2537.95 704 Q2543.95 704 2543.95 710 L2543.95 746 Q2543.95 752 2549.95 752 L2610.77 752" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="2571.34" y="749" font-size="10" style="fill: var(--ink-muted)">vy</text>
 </g>
 <g data-wire="x" data-to="@45.a">
 <path d="M502.28 600 L529.95 600 Q535.95 600 535.95 594 L535.95 230 Q535.95 224 541.95 224 L817.95 224 Q823.95 224 823.95 230 L823.95 594 Q823.95 600 829.95 600 L835.95 600" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="506.28" y="597" font-size="10" style="fill: var(--ink-muted)">x</text>
 </g>
 <g data-wire="dx" data-from="dx.result" data-to="@45.b">
 <path d="M755.95 600 L793.95 600 Q799.95 600 799.95 606 L799.95 618 Q799.95 624 805.95 624 L835.95 624" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -297,6 +282,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="landed" data-from="landed.result" data-to="until">
 <path d="M1211.95 704 L1289.95 704 Q1295.95 704 1295.95 698 L1295.95 190 Q1295.95 184 1301.95 184 L2561.95 184 Q2567.95 184 2567.95 190 L2567.95 866 Q2567.95 872 2573.95 872 L2653.9 872" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="2571.95" y="869" font-size="10" style="fill: var(--ink-muted)">landed</text>
 </g>
 <g data-node="dx"><title>core.mul</title>
 <rect x="603.95" y="560" width="152" height="80" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

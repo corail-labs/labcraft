@@ -383,3 +383,26 @@ type t =
     let (exit, document) = good.json(&["--svg", "--out", "d", "lib"]);
     assert_eq!((exit, document["summary"]["not_drawn"].as_u64(), document["status"].as_str()), (1, Some(0), Some("error")), "{document}");
 }
+
+/// `LC7005` (notation 2.1, cli.md 5): `y` placed over `ab` and `cd`, which do not touch each other. `core.add` is a
+/// circle of 28 (notation 10): `y` spans 100 to 128 across and 40 to 68 down, `ab` 110 to 138 and 20 to 48, `cd` 110 to
+/// 138 and 60 to 88. From the left, `y` comes first; `ab` overlaps it, and so does `cd` (60 is above 68), and neither
+/// overlaps the other (48 is above 60): two warnings, at the entries of `ab` and `cd`, lines 12 and 13 (1 `labcraft`,
+/// 3 `use`, 5 `fn`, 6 to 8 the body, 9 `}`, 11 `layout {`, 12 `ab`, 13 `cd`, 14 `y`). Warnings: the function is drawn,
+/// exit 0.
+#[test]
+fn nodes_that_the_file_places_one_over_the_other_are_drawn_and_warned() {
+    let folder = Folder::new("overlap");
+    folder.file(
+        "lib/sum4.lcf",
+        "labcraft 1\n\nuse core\n\nfn sum4(a: f64, b: f64, c: f64, d: f64) -> (y: f64) {\n    ab = core.add(a, b)\n    cd = core.add(c, d)\n    \
+         y = core.add(ab, cd)\n}\n\nlayout {\n    node ab at (110, 20)\n    node cd at (110, 60)\n    node y at (100, 40)\n}\n",
+    );
+    let output = folder.run(&["--svg", "--out", "diagrams", "lib"]);
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("lib/sum4.lcf:12:5: warning[LC7005]: node `ab` overlaps node `y`"), "{text}");
+    assert!(text.contains("lib/sum4.lcf:13:5: warning[LC7005]: node `cd` overlaps node `y`"), "{text}");
+    assert_eq!(text.matches("LC7005").count(), 2, "{text}");
+    assert!(text.ends_with("\ndiagram: 1 function, 1 drawn, 0 not drawn: 0 errors, 2 warnings\n"), "{text}");
+}

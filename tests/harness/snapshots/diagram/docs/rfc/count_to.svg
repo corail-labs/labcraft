@@ -13,7 +13,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="337.98" y="173.65" font-size="10" style="fill: var(--node-title)">n</text>
 <g data-wire="n" data-from="n.n" data-to="fn.n">
 <path d="M312.12 170 L333.98 170" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="316.12" y="167" font-size="10" style="fill: var(--ink-muted)">n</text>
 </g>
 <g data-wire="limit" data-from="fn.limit" data-to="n.limit">
 <path d="M66.1 194 L112.12 194" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -38,7 +37,6 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M134.14 170 L204.24 170" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <path d="M170.22 170 L170.22 124 Q170.22 118 176.22 118 L204.24 118" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="170.22" cy="170" r="3" style="fill: var(--wire-data)"/>
-<text x="138.14" y="167" font-size="10" style="fill: var(--ink-muted)">c</text>
 </g>
 <g data-wire="limit" data-to="done.b">
 <path d="M158.22 194 L166.22 194 Q170.22 194 170.22 190 L170.22 190 Q170.22 186 174.22 186 L204.24 186" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
