@@ -366,6 +366,9 @@ pub struct WireOf {
     pub readers: Vec<Reader>,
     /// Its exact type as the language writes it, for its tooltip (notation 4.1). Not in the SVG.
     pub ty: String,
+    /// The whole conversions that its pills show in part (`f32→f64`, notation 4.2), in the order of its readers: its
+    /// `data-conversion` (`docs/cli.md`, 7.2).
+    pub conversions: Vec<String>,
 }
 
 /// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input

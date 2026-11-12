@@ -314,7 +314,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     // The terminals of the frame of a body and their names, over its wires.
     let edges = |body: usize, placed: Option<usize>, hints: &mut Vec<Hint>| -> Option<Group> {
         let (Some(of), Some(frame)) = (graph.bodies.get(body), placement.frames.get(body)) else { return None };
-        hints.extend(frame_hints(of, frame, placed, within(body)));
+        hints.extend(frame_hints(graph, body, frame, placed, within(body)));
         let shapes = frame_terminals(of, frame);
         let arm = of
             .owner
@@ -322,7 +322,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             .filter(
                 |owner| matches!(&owner.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Match | StructureKind::Handle)),
             )
-            .map(|_| of.caption.clone());
+            .map(|_| of.pattern.clone());
         (!shapes.is_empty()).then(|| Group {
             node: String::new(),
             title: String::new(),
@@ -338,6 +338,15 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         drawing.groups.append(first);
     }
     drawing.groups.extend(edges(0, None, &mut drawing.hints));
+    // The conversions on the wires into nodes, by the input they reach, for its tooltip (notation 4.2): once for all.
+    let mut conversions: HashMap<(usize, usize), &str> = HashMap::new();
+    for (&(body, wire), pill) in &graph.pills {
+        if let (Some(conversion), Some(graph::End::Node { node, terminal })) =
+            (&pill.conversion, graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to))
+        {
+            conversions.insert((node, terminal), conversion);
+        }
+    }
     for (index, (node, sized)) in graph.nodes.iter().zip(sized).enumerate() {
         let Some(Some(at)) = placement.nodes.get(index) else { continue };
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
@@ -369,8 +378,16 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
+        let first_hint = drawing.hints.len();
         for (terminal, &(dx, dy)) in node.inputs.iter().zip(&sized.inputs).chain(node.outputs.iter().zip(&sized.outputs)) {
             drawing.hints.push(hint_at(terminal, (at.x + dx, at.y + dy), half, placed, within(node.body)));
+        }
+        // The tooltip of an input says the whole conversion that the pill of its wire shows in part (notation 4.2).
+        for terminal in 0..node.inputs.len().min(sized.inputs.len()) {
+            if let (Some(conversion), Some(hint)) = (conversions.get(&(index, terminal)), drawing.hints.get_mut(first_hint + terminal)) {
+                hint.text.push_str("\nconverted: ");
+                hint.text.push_str(conversion);
+            }
         }
         drawing.groups.push(Group {
             node: node.key.clone(),
@@ -634,17 +651,11 @@ struct TabShapes {
 /// A frame: its box, its title in its header, a badge.
 fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, double: bool, stroke: Token) -> Vec<Shape> {
     let mut shapes = Vec::new();
-    // The function has no frame: its title and its terminals stand on the canvas (notation 5).
-    if frame.depth > 0 {
-        shapes.push(Shape::Rect {
-            x: frame.x,
-            y: frame.y,
-            width: frame.width,
-            height: frame.height,
-            radius: style::radius(),
-            paint: Paint::both(frame_fill(frame.depth), stroke, style::outline()),
-        });
-    }
+    // The frame of the function has no fill: it is drawn on the canvas, and the first structure takes the first level
+    // (notation 5, 8).
+    let paint =
+        if frame.depth > 0 { Paint::both(frame_fill(frame.depth), stroke, style::outline()) } else { Paint::stroke(stroke, style::outline()) };
+    shapes.push(Shape::Rect { x: frame.x, y: frame.y, width: frame.width, height: frame.height, radius: style::radius(), paint });
     if double {
         shapes.push(Shape::Rect {
             x: frame.x + 300,
@@ -692,12 +703,14 @@ fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt) -> Vec<Shape> {
             if let Some(unit) = &label.unit {
                 at += style::padding() + unit.width;
             }
-            // From the terminal to the pill, or to where the route starts; on the right, from where it ends.
+            // From the terminal to the pill, or to where the route starts; on the right, from where it ends. It stops a
+            // outline short of the terminal, so that it never covers its outline (a register's box).
+            let reach = edge_reach(terminal, Some(side)) + style::outline();
             let (from, to) = match (side, &label.pill) {
-                (false, Some(_)) => (x + edge_reach(terminal), at + style::grid()),
-                (false, None) => (x + edge_reach(terminal), start + width + style::padding()),
+                (false, Some(_)) => (x + reach, at + style::grid()),
+                (false, None) => (x + reach, start + width + style::padding()),
                 (true, Some(_)) => (start - style::padding(), at + style::grid()),
-                (true, None) => (start - style::padding(), x - edge_reach(terminal)),
+                (true, None) => (start - style::padding(), x - reach),
             };
             let ground = Ground { token: frame_fill(frame.depth), x: from, y: y - height / 2, width: (to - from).max(0), height };
             let mut name = label.name.shown_from(start, y, "node.title", shape::Detail::Name);
@@ -716,10 +729,16 @@ fn frame_terminals(body: &graph::BodyOf, frame: &place::FrameAt) -> Vec<Shape> {
     shapes
 }
 
-/// How far a terminal of a frame reaches inside from its edge (`edge_terminal`).
-/// Measured on its shapes, so that the brackets of an array (notation 4.1) are inside it.
-fn edge_reach(terminal: &graph::FrameTerminal) -> i64 {
-    edge_terminal(terminal, 0, 0).iter().map(extent).map(|(x0, _, x1, _)| x1.max(-x0)).max().unwrap_or(0)
+/// How far a terminal of a frame reaches from its edge (`edge_terminal`): inside the frame for a terminal on its left
+/// (`right` false) or on its right, or either way with `None`. Measured on its shapes, so that the brackets of an array
+/// (notation 4.1) are inside it, and the box of a range, which grows outside, is not.
+fn edge_reach(terminal: &graph::FrameTerminal, right: Option<bool>) -> i64 {
+    let reach = |(x0, _, x1, _): (i64, i64, i64, i64)| match right {
+        Some(false) => x1,
+        Some(true) => -x0,
+        None => x1.max(-x0),
+    };
+    edge_terminal(terminal, 0, 0).iter().map(extent).map(reach).max().unwrap_or(0)
 }
 
 /// A terminal of a frame: a register is a box across the edge, a notch a bar, the others the shape of their family.
@@ -736,6 +755,47 @@ fn edge_terminal(terminal: &graph::FrameTerminal, x: i64, y: i64) -> Vec<Shape> 
         }
         graph::Edge::Notch => {
             vec![Shape::Rect { x: x - 200, y: y - 700, width: 400, height: 1400, radius: 0, paint: Paint::fill(size::wire_token(family)) }]
+        }
+        // `x in values`: the array enters by a bracket outside the edge, an element leaves inside, in the shape of its
+        // family (5.1, 4.1).
+        graph::Edge::In => {
+            let token = size::wire_token(family);
+            vec![Shape::Poly {
+                points: vec![(x - 500, y - 600), (x - 250, y - 600), (x - 250, y + 600), (x - 500, y + 600)],
+                closed: false,
+                paint: Paint::stroke(token, 150),
+            }]
+            .into_iter()
+            .chain(size::terminal(family, x + 300, y, 100, false))
+            .collect()
+        }
+        // `collect`: an element enters, the array leaves: the shape of its family in brackets, across the edge (5.1).
+        graph::Edge::Collect => {
+            let token = size::wire_token(family);
+            let bracket = |side: i64| Shape::Poly {
+                points: vec![(x + side * 250, y - 600), (x + side * 500, y - 600), (x + side * 500, y + 600), (x + side * 250, y + 600)],
+                closed: false,
+                paint: Paint::stroke(token, 150),
+            };
+            vec![bracket(-1), bracket(1)].into_iter().chain(size::terminal(family, x, y, 100, false)).collect()
+        }
+        // `i in 0..n`: a box across the edge with the start of the range, which the end enters (5.1); rounded and thinner
+        // than the box of a register, which it must not look like. It reaches inside as far as a register, and grows
+        // outside with its text, so that the name inside keeps its place.
+        graph::Edge::Range => {
+            let text = Text::new(terminal.start.as_deref().unwrap_or(".."), crate::size::any_text(), crate::size::small());
+            let width = (text.width + 2 * 300).max(1400);
+            vec![
+                Shape::Rect {
+                    x: x + 700 - width,
+                    y: y - 700,
+                    width,
+                    height: 1400,
+                    radius: 300,
+                    paint: Paint::both("node.fill", size::wire_token(family), style::outline()),
+                },
+                text.centred(x + 700 - width / 2, y, "node.title"),
+            ]
         }
         _ => size::terminal(family, x, y, 100, false),
     }
@@ -763,7 +823,12 @@ fn structure_shapes(
                 return (Vec::new(), Vec::new(), Vec::new());
             };
             let mut shapes = frame_shapes(frame, &title, structure.badge, structure.parallel, stroke);
-            for (input, &(_, y)) in node.inputs.iter().zip(inputs) {
+            // The inputs follow the clauses, as the left of the frame does: the start of a range is in its box, not on a pill.
+            let left = node.bodies.first().and_then(|index| graph.bodies.get(*index)).map_or(&[][..], |body| &body.left[..]);
+            for (index, (input, &(_, y))) in node.inputs.iter().zip(inputs).enumerate() {
+                if left.get(index).is_some_and(|terminal| terminal.edge == graph::Edge::Range) {
+                    continue;
+                }
                 if let Some(constant) = &input.constant {
                     let text = Text::new(constant, crate::size::compact_constant(), crate::size::medium());
                     shapes.extend(size::pill(&text, at.x - place::constant_reach(constant), at.y + y));
@@ -786,7 +851,7 @@ fn structure_shapes(
             // The selector, then the notches of the outer values that the arms read.
             for (index, (input, &(x, y))) in node.inputs.iter().zip(inputs).enumerate() {
                 let edge = if index == 0 { graph::Edge::Input } else { graph::Edge::Notch };
-                shapes.extend(edge_terminal(&graph::FrameTerminal { terminal: input.clone(), edge }, at.x + x, at.y + y));
+                shapes.extend(edge_terminal(&graph::FrameTerminal { terminal: input.clone(), edge, start: None }, at.x + x, at.y + y));
             }
             for (output, &(x, y)) in node.outputs.iter().zip(outputs) {
                 shapes.extend(size::terminal(output.family, at.x + x, at.y + y, 100, output.ignored));
@@ -814,7 +879,7 @@ fn structure_shapes(
                 if !in_tabs {
                     shapes.push(caption.shown_from(frame.x + style::label_start(), frame.y + frame.header / 2, "ink.muted", shape::Detail::Title));
                 }
-                arms.push((body.caption.clone(), shapes));
+                arms.push((body.pattern.clone(), shapes));
             }
             (shapes, arms, tabs)
         }
@@ -894,12 +959,29 @@ fn hint_at(terminal: &graph::Terminal, (x, y): (i64, i64), half: i64, placed: Op
 }
 
 /// The tooltips of the terminals of the frame of a body.
-fn frame_hints(of: &graph::BodyOf, frame: &place::FrameAt, placed: Option<usize>, within: Option<usize>) -> Vec<Hint> {
+/// The tooltips of the terminals of the frame of a body: a terminal on the right that a converted value reaches (an
+/// output, a `next`) says the whole conversion, as an input of a node does (notation 4.2). Their area reaches inside the
+/// frame as far as the terminal does, so that the box of a range, which grows outside, never covers the body.
+fn frame_hints(graph: &Graph<'_>, body: usize, frame: &place::FrameAt, placed: Option<usize>, within: Option<usize>) -> Vec<Hint> {
     let mut hints = Vec::new();
+    let Some(of) = graph.bodies.get(body) else { return hints };
+    let mut converted: HashMap<usize, &str> = HashMap::new();
+    for (index, wire) in of.wires.iter().enumerate() {
+        if let (graph::End::Right(terminal), Some(conversion)) =
+            (wire.to, graph.pills.get(&(body, index)).and_then(|pill| pill.conversion.as_deref()))
+        {
+            converted.insert(terminal, conversion);
+        }
+    }
     for (side, terminals, heights) in [(false, &of.left, &frame.left), (true, &of.right, &frame.right)] {
         let x = if side { frame.x + frame.width } else { frame.x };
-        for (terminal, &height) in terminals.iter().zip(heights) {
-            hints.push(hint_at(&terminal.terminal, (x, frame.y + height), edge_reach(terminal).max(700), placed, within));
+        for (index, (terminal, &height)) in terminals.iter().zip(heights).enumerate() {
+            let mut hint = hint_at(&terminal.terminal, (x, frame.y + height), edge_reach(terminal, Some(side)).max(700), placed, within);
+            if side && let Some(conversion) = converted.get(&index) {
+                hint.text.push_str("\nconverted: ");
+                hint.text.push_str(conversion);
+            }
+            hints.push(hint);
         }
     }
     hints
@@ -1017,7 +1099,7 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
             };
             let start = x - kept.unwrap_or_else(|| pill_reach(pill));
             obstacles.rect(start, y - style::pill_height() / 2, start + size::pill_width(&text), y + style::pill_height() / 2);
-            pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion));
+            pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion.is_some()));
         }
     }
     routes
@@ -1043,10 +1125,12 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 shapes.extend(pills.remove(wire).unwrap_or_default());
             }
             let value = first.name.split('.').next().unwrap_or_default().to_owned();
-            // A wire that leaves a terminal of the frame already named the same has no name at its start (notation 4).
-            // Nor on the last segment of a branch that ends at a terminal of the frame named the same, `next s` for `s`.
+            // A wire that leaves a terminal of the frame already named the same has no name at its start, nor one that
+            // leaves a constant node, which shows its name (notation 4, B1). Nor on the last segment of a branch that ends
+            // at a terminal of the frame named the same, `next s` for `s`.
             let named_at_start = match first.from {
                 graph::End::Left(index) => of.left.get(index).is_some_and(|terminal| terminal.terminal.name == value),
+                graph::End::Node { node, .. } => graph.nodes.get(node).is_some_and(|node| matches!(node.kind, graph::Kind::Constant { .. })),
                 _ => false,
             };
             let named_at_end: Vec<bool> = routed
@@ -1084,7 +1168,21 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 title: String::new(),
                 shapes,
                 arm: None,
-                wire: Some(WireOf { body, error, via: routed.via, value, from, to, readers, ty: source_type(graph, of, &first.from) }),
+                wire: Some(WireOf {
+                    body,
+                    error,
+                    via: routed.via,
+                    value,
+                    from,
+                    to,
+                    readers,
+                    ty: source_type(graph, of, &first.from),
+                    conversions: routed
+                        .wires
+                        .iter()
+                        .filter_map(|&wire| graph.pills.get(&(body, wire)).and_then(|pill| pill.conversion.clone()))
+                        .collect(),
+                }),
                 placed: None,
                 within: None,
                 terminals: None,

@@ -132,6 +132,8 @@ pub enum Edge {
     Register,
     /// `x in values`: `]▸`.
     In,
+    /// `i in 0..n`: a box `0..` across the edge, which the end enters (notation 5.1).
+    Range,
     /// An outer value read inside, where its wire crosses the edge.
     Notch,
     /// A value that the pattern of an arm binds.
@@ -146,6 +148,9 @@ pub enum Edge {
 pub struct FrameTerminal {
     pub terminal: Terminal,
     pub edge: Edge,
+    /// The text of the box of a range (notation 5.1): each bound that is a constant written in its place, `·` for one
+    /// that a wire gives (`0..10`, `0..·`, `·..10`).
+    pub start: Option<String>,
 }
 
 /// A place on the edges of a frame, from the top: a register has a box on each side at one height (notation 5.1).
@@ -225,8 +230,11 @@ pub struct Node<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BodyOf {
     /// The title of its frame: the name of the function, or the patterns of an arm; none for a loop body, whose frame
-    /// is the structure's.
+    /// is the structure's. A variant shows alone in it (notation 3.3).
     pub caption: String,
+    /// The patterns of an arm as the text writes them (`State.Init`), for its `data-arm` (`docs/cli.md`, 7.2); empty
+    /// otherwise.
+    pub pattern: String,
     /// The number of its arm, from 0.
     pub arm: Option<usize>,
     /// Indices in `Graph::nodes`, in canonical order.
@@ -269,11 +277,11 @@ enum Reader {
     Output(String),
 }
 
-/// A pill on a wire: its text, and whether it shows a conversion.
+/// A pill on a wire: its text, and the conversion it shows, whole, for the tooltip of its reader (`mV→V`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pill {
     pub text: String,
-    pub conversion: bool,
+    pub conversion: Option<String>,
 }
 
 /// What `LC7002` counts (`docs/cli.md`, 7.6): nodes at every level, structures included, and their terminals. The
@@ -611,30 +619,33 @@ impl<'a> Builder<'a> {
                 let field = wire.name.find('.').and_then(|at| wire.name.get(at..)).map(str::to_owned);
                 let conversion = conversions.get(&read).map(|&(from, to)| self.conversion(from, to));
                 let text = match (&field, &conversion) {
-                    (Some(field), Some(conversion)) => format!("{field} {conversion}"),
-                    (Some(text), None) | (None, Some(text)) => text.clone(),
+                    (Some(field), Some((shown, _))) => format!("{field} {shown}"),
+                    (Some(text), None) | (None, Some((text, _))) => text.clone(),
                     (None, None) => continue,
                 };
-                pills.insert((body, index), Pill { text, conversion: conversion.is_some() });
+                pills.insert((body, index), Pill { text, conversion: conversion.map(|(_, whole)| whole) });
             }
         }
         pills
     }
 
-    /// A conversion as its pill writes it: the units when only they change (`mV→V`), the types otherwise (`i16→i32`).
-    fn conversion(&self, from: TyId, to: TyId) -> String {
+    /// A conversion as its pill shows it, and whole (notation 4.2): a widening that keeps the value (`i16→i32`, `f32→f64`,
+    /// the unit unchanged) shows the arrow alone; a change of scale shows the unit it arrives in (`→V` for `mV→V`), any
+    /// other change the type it arrives in (`→f64[s]` for `duration→f64[s]`). The whole conversion goes to the tooltip.
+    fn conversion(&self, from: TyId, to: TyId) -> (String, String) {
         let (a, b) = (unit(self.types(), from), unit(self.types(), to));
         let shape = |ty: TyId| match self.types().get(ty) {
             labcraft_types::Ty::Number { kind, .. } => Some(*kind),
             _ => None,
         };
-        if let (Some(a), Some(b)) = (&a, &b)
-            && shape(from) == shape(to)
-        {
-            return format!("{a}\u{2192}{b}");
-        }
         let written = |ty: TyId| self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names));
-        format!("{}\u{2192}{}", written(from), written(to))
+        let whole = format!("{}\u{2192}{}", written(from), written(to));
+        let shown = match (shape(from), shape(to), &b) {
+            (Some(_), Some(_), _) if a == b => "\u{2192}".to_owned(),
+            (Some(x), Some(y), Some(unit)) if x == y => format!("\u{2192}{unit}"),
+            _ => format!("\u{2192}{}", written(to)),
+        };
+        (shown, whole)
     }
 
     /// The entries of the `layout` section that place a node or set its view, by how they designate it (spec 11): a
@@ -1033,6 +1044,30 @@ impl<'a> Builder<'a> {
                 let raw = text.char_indices().nth(CONSTANT_BYTES / 4).map_or(&**text, |(end, _)| text.get(..end).unwrap_or(text));
                 let more = if raw.len() < text.len() { "\u{2026}" } else { "\"" };
                 format!("\"{}{more}", read_escapes(raw))
+            }
+            // A value of an enumeration shows its variant alone: the terminal gives the type (notation 3.3), in an
+            // array too.
+            Operand::Path(path) if matches!(self.resolved().of(path.id), Meaning::Variant { .. }) => {
+                path.segments().last().map(|name| cut_text(self.names.resolve(name)).into_owned()).unwrap_or_default()
+            }
+            Operand::Array(_, values)
+                if values
+                    .iter()
+                    .any(|value| matches!(value, Operand::Path(path) if matches!(self.resolved().of(path.id), Meaning::Variant { .. }))) =>
+            {
+                let mut text = String::from("[");
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        text.push_str(", ");
+                    }
+                    text.push_str(&self.constant_text(value));
+                    if text.len() > CONSTANT_BYTES {
+                        text.push('\u{2026}');
+                        return text;
+                    }
+                }
+                text.push(']');
+                text
             }
             _ => write_operand(operand, self.names, CONSTANT_BYTES),
         }

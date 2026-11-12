@@ -135,7 +135,7 @@ signatures still say what the session designates.
   units `Hz` `N` `Pa` `J` `W` `C` `V` `F` `Ω` `S` `Wb` `T` `H`, the times `min` `h`, and the scales
   `°C` `°F`. The prefixes are `p` `n` `µ` `m` `k` `M` `G`, on every name but `kg`, `min`, `h`, `°C`
   and `°F`. `V/A` and `Ω` are the same unit.
-- **Same dimension, different units**: implicit conversion, shown as a coercion (`mV` to `V`). It
+- **Same dimension, different units**: implicit conversion, shown on the wire (`mV` to `V`, notation 4.2). It
   is lossless in dimension; the scale factor is applied in floating point, by one operation where it can, so
   that every implementation gives the same bits. A value is held in the unit of its type. It goes to a unit
   whose scale is *n* times larger by one division by *n* (`9 mV` to `V` is 9 ÷ 1000, so 0.009), and to one *n*
@@ -191,7 +191,7 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
 
 ### 3.4 Numeric conversions (D-05)
 
-- **Implicit widening**, shown in the IDE (coercion point), only where nothing can be lost, and this
+- **Implicit widening**, shown on the wire (notation 4.2), only where nothing can be lost, and this
   list is closed: a signed integer to a larger signed one; an unsigned integer to a larger unsigned
   one or to a strictly larger signed one (`u16` to `i32`); integers of up to 32 bits to `f64`; `f32`
   to `f64`; `c64` to `c128`.

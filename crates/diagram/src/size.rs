@@ -370,8 +370,8 @@ pub fn pill(text: &Text, x: i64, middle: i64) -> Vec<Shape> {
     ]
 }
 
-/// The pill of a wire just before its reader: a field it reads (notation 3.3), or a conversion, in `mark.coercion`
-/// (notation 4.2).
+/// The pill of a wire just before its reader: a field it reads (notation 3.3), or a conversion: its arrow, and what it
+/// arrives in, in `mark.coercion` on a ground without outline, never a round mark (notation 4.2).
 pub fn wire_pill(text: &Text, x: i64, middle: i64, conversion: bool) -> Vec<Shape> {
     if !conversion {
         return pill(text, x, middle);
@@ -382,8 +382,8 @@ pub fn wire_pill(text: &Text, x: i64, middle: i64, conversion: bool) -> Vec<Shap
             y: middle - style::pill_height() / 2,
             width: pill_width(text),
             height: style::pill_height(),
-            radius: style::pill_height() / 2,
-            paint: Paint::both("pill.fill", "mark.coercion", style::outline()),
+            radius: style::radius(),
+            paint: Paint::fill("pill.fill"),
         },
         text.at(x + style::padding(), middle, "mark.coercion"),
     ]
