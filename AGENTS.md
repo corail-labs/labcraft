@@ -38,6 +38,12 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
   examples stay generic.
 - **No GPL/LGPL/AGPL code**: don't read or copy it (for example OpenPLC, Beremiz, Snap7).
 - No NI icons, help text, screenshots or examples; NI names only to describe compatibility.
+- **Hooks**: `.claude/settings.json` runs `.claude/hooks/guard.py` before each tool call of Claude Code. It
+  refuses a path, glob or command that names a LabVIEW file (`.vi`, `.ctl`, `.lvproj`, `.lvlib`, `.vit`,
+  `.ctt`, `.llb`, `.lvclass`; `.ignore` keeps them out of broad searches), and, for this repository only
+  (a fork is free), a `git push` that writes `main` and a merge without `--match-head-commit`, with
+  `--admin` or through `gh api`. A guard rail, not a sandbox: never look for a way around it. Other agents
+  have only these rules, `.ignore` and the protection of `main`. Its tests run in `cargo xtask spec`.
 
 ## When you change the spec or the examples
 
@@ -45,8 +51,8 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
   Python check of the workflow `checks`, prints `ok` or `FAIL` for each, and the output of those that
   fail: every complete code block of the spec and of `skills/`, and every file of `examples/`, `libs/` and `docs/rfc/`
   must parse and be in canonical form (spec 5.2: order of lines and layout of the text), `examples/`,
-  `docs/rfc/`, `libs/visa` and `libs/scpi` must check, and the tests of the proof of concept must
-  pass. A new library of `libs/` is added to the list in `xtask/src/spec.rs`. It is not part of
+  `docs/rfc/`, `libs/visa` and `libs/scpi` must check, and the tests of the proof of concept and of
+  the hooks (`.claude/hooks/`) must pass. A new library of `libs/` is added to the list in `xtask/src/spec.rs`. It is not part of
   `cargo xtask ci`, which needs no Python. Code blocks containing `…` are illustrative fragments and
   are skipped.
 - The grammar exists twice: spec section 14 (EBNF) and `tools/lcf-view/lcf_view.py` (Lark). Keep
