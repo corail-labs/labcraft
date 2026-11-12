@@ -52,7 +52,11 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 - The grammar exists twice: spec section 14 (EBNF) and `tools/lcf-view/lcf_view.py` (Lark). Keep
   them in sync.
 - An expected value in a test or a corpus never comes from the output of the program under test: work
-  it out by hand or with another tool, and say how.
+  it out by hand or with another tool, and say how. For a case of `tests/acceptance/`, the agent
+  `labcraft-oracle` works it out from the documents alone and writes its `expected.json`: give it the
+  case folders, never the code, the output or your values. When the program disagrees with it, don't
+  edit its `expected.json`: the program or the documents are wrong, and a question of the documents
+  goes to the owner.
 - The proof of concept is the executable reference for running a program until M0b. It no longer
   follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
   `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept

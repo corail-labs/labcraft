@@ -10,6 +10,9 @@ files through the program: the stored cases, the families Size and Library, and 
 type checking and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
 that the proof of concept does not crash on them.
 
+An `expected.json` is worked out from the documents, never taken from the output of the program: the agent
+[`labcraft-oracle`](../../.claude/agents/labcraft-oracle.md) does it from the case folder alone ([AGENTS.md](../../AGENTS.md)).
+
 ## `type-errors/`: scenario 2
 
 One folder per case, one error in each. From inside the folder, `labcraft-cli check --json .` must
