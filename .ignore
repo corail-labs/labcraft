@@ -1,0 +1,12 @@
+# LabVIEW files are never read or searched for this project (D-23, AGENTS.md). ripgrep, and the Grep tool of Claude
+# Code, skip what this file names, so a broad search does not read one by accident; the Glob tool still lists them by
+# name. It does not change what git tracks. The same list is in .claude/hooks/guard.py, and its tests keep the two in
+# step.
+*.vi
+*.ctl
+*.lvproj
+*.lvlib
+*.vit
+*.ctt
+*.llb
+*.lvclass

@@ -42,7 +42,8 @@ The open questions are listed in the spec, section 15; the decisions and their r
 
 Every complete code block of the spec and every file in `examples/` and `libs/` must parse, the
 examples, the RFC programs (`docs/rfc/`) and the shipped libraries (`libs/`) must check and be in
-canonical form (spec 5.2), and the proof of concept must stay green:
+canonical form (spec 5.2), and the proof of concept and the hooks of the agents (`.claude/hooks/`) must
+stay green:
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt

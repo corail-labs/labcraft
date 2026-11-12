@@ -1,5 +1,6 @@
 //! `cargo xtask spec`: the Python checks of the spec, the examples, the RFC programs and the shipped libraries, with
-//! the tests of the proof of concept. Not part of `ci`, which needs no Python (`docs/architecture.md`, section 7).
+//! the tests of the proof of concept and of the hooks of the agents. Not part of `ci`, which needs no Python
+//! (`docs/architecture.md`, section 7).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -20,6 +21,8 @@ const CHECKS: &[(&str, &[&str])] = &[
     ),
     ("proof of concept tests", &["-m", "unittest", "discover", "tools/lcf-poc/tests"]),
     ("MCP round trip", &["tools/lcf-poc/tests/mcp_smoke.py"]),
+    // The hook that `.claude/settings.json` runs before each tool call of an agent (AGENTS.md, D-23).
+    ("hooks of the agents", &["-m", "unittest", "discover", "-s", ".claude/hooks", "-p", "test_*.py"]),
 ];
 
 /// Tried in this order. On Windows, `python3` is often the stub of the Microsoft Store, which fails the probe.
