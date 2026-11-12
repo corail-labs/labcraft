@@ -1,5 +1,5 @@
 {
-  "how": "Scenario 1, point 2. The answer is the first reading of seed 1 in dmm-230V.toml, from `python tests/acceptance/runs/noise.py 1 230 0.05 1`; the program reads it as an `f64` and gives it the unit V, within 220 V to 240 V. The multimeter has no latency, so the clock stays at 0. The program opens one session and closes it.",
+  "how": "Scenario 1, point 2. The first read of the quantity (seed 1, noise 0.05) has g = 1.4243480905156507 (libs/visa/simulation.md 3; `python tests/acceptance/runs/noise.py 1 230 0.05 1`, checked with a script of my own), so the answer is `230.071217` (simulation.md 4, point 4), which `string.to_f64` reads as the f64 230.071217 (spec A.2) and `core.with_unit` makes `230.071217 V`, written as commands.md 5 writes a number with a unit. It is within 220 V and 240 V, the defaults of `low` and `high`, so `in_range` is true, `e2` is `none` and `handle` yields `measured`, `Verdict.Pass` (spec 12, 7.3; commands.md 5 for the enumeration). The instrument has no latency and an open takes no time, so the query is sent at 0 ms and the run ends at 0 ms (simulation.md 2 and 4). `visa.close` closes the one session opened, and gives `none` (spec 7.2), so `err` is `none` and the status `ok` (spec 8.2). `examples/` checks with no error, and nothing the run reaches has a diagnostic (cli.md 6.1, commands.md 7).",
   "status": "ok",
   "outputs": [
     {
@@ -41,6 +41,7 @@
   "check": {
     "summary": {
       "errors": 0
-    }
+    },
+    "diagnostics": []
   }
 }

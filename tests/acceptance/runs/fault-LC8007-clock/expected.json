@@ -1,14 +1,20 @@
 {
-  "how": "A wait of 5,000,000,000 s is 5 x 10^18 ns, past the end of the clock, 2^62 ns (about 4.6 x 10^18): the fault `LC8007` at the node `err`, when the wait starts at 0 ms.",
+  "how": "The wait `5000000000 s` is a `duration` of 5 x 10^9 x 10^9 = 5 x 10^18 ns, exact in an `f64` and within the 64 bits of a count of nanoseconds, so it converts with no fault (spec 3.1). Started at 0 ns, it would take the clock of the run to 5 x 10^18 ns, past its end at 2^62 = 4,611,686,018,427,387,904 ns: the fault `LC8007` (cli.md 6.2, 6.6), at the node of the wait, named `err` by its first output (spec 5.2, commands.md 8). No loop is around it; no output (spec 8.2), no resource. The fault comes when the wait starts, so the simulated clock is at 0 ms: the wait \"would take it further\" (cli.md 6.2), it does not run; kept from the previous file, as the documents do not say it in so many words.",
   "status": "fault",
   "outputs": [],
   "fault": {
     "code": "LC8007",
     "function": "forever",
     "node": "err",
-    "file": "tests/acceptance/runs/fault-LC8007-clock/forever.lcf"
+    "file": "tests/acceptance/runs/fault-LC8007-clock/forever.lcf",
+    "loops": []
   },
   "clock": {
     "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
   }
 }

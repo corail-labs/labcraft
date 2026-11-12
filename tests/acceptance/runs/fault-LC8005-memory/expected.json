@@ -1,12 +1,13 @@
 {
-  "how": "`array.repeat(1.0, 100000)` makes an array of 100,000 `f64`, whose logical size is 16 + 100,000 x (16 + 8) = 2,400,016 bytes (cli.md 6.2), past the limit of 1 MiB: the fault `LC8005` at the node `a`, with no output.",
+  "how": "`array.repeat(1.0, 100000)` would make an array of `f64` (the literal takes the type of the output `[f64]`, spec 3.4) of logical size 16 + 100,000 x (16 + 8) = 2,400,016 bytes (cli.md 6.2), past `max_memory` 1,048,576 (1 MiB) whatever the 256 bytes of each frame, region and node add: the fault `LC8005` at the node `a`, the node that would pass it (cli.md 6.2, 6.6), not an error on `err`, since a count of 100,000 is no negative count (spec A.2). No loop is around it; no output (spec 8.2), no resource.",
   "status": "fault",
   "outputs": [],
   "fault": {
     "code": "LC8005",
     "function": "fill",
     "node": "a",
-    "file": "tests/acceptance/runs/fault-LC8005-memory/fill.lcf"
+    "file": "tests/acceptance/runs/fault-LC8005-memory/fill.lcf",
+    "loops": []
   },
   "resources": {
     "opened": 0,

@@ -1,10 +1,11 @@
 {
-  "how": "Scenario 3, point 3. SIM::DMM0 never answers its measure: its query, sent at 0 ms, waits for the timeout of the session, 500 ms, and fails with `io.timeout`; the loop of branch A ends on that error after its first iteration (Q-7), and `visa.close`, `always`, closes its session and passes the error on. Branch B makes its 10 readings and ends at 1000 ms. `errors.merge` keeps the error of A. The readings and the means come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1, the sum made in the order of the readings, as the carry `s` does, then divided by `n`. The mean of A is left out: what a loop that ends on an error gives is not what this case is about.",
+  "how": "Scenario 3, point 3. SIM::DMM0 never answers `MEAS:VOLT:DC?` (faults.timeout, simulation.md 4 and 5): the query sent at 0 ms gets no answer, so the read waits the timeout of the session, 500 ms, and fails with `io.timeout`, code -1073807339 (simulation.md 6). `string.to_f64` and `time.wait` skip on it (spec 7.2): `x` is 0.0 and the wait takes no time; the loop stops on the error carry after that iteration (spec 6.3), at 500 ms, with n = 1.0 and s = 0.0 + 0.0, so `mean_a` = 0.0 / 1.0 = 0.0. `visa.close`, `always`, closes the session and passes the error on; `errors.merge(ca, cb)` makes it the main error (spec 7.4), so the status is `error` (spec 8.2). Branch B is not held by A (each instrument is its own, simulation.md 4): its ten readings and its mean are those of `noise.py 2 12 0.01 10`, the sum in the order of the readings then divided by n = 10.0, and it ends at 1000 ms. The command that got no answer has the answer `null`: kept from the previous file, as the documents do not say how the report writes it. Both sessions are closed.",
   "status": "error",
   "outputs": [
     {
       "name": "mean_a",
-      "type": "f64"
+      "type": "f64",
+      "value": 0.0
     },
     {
       "name": "mean_b",
@@ -15,12 +16,14 @@
       "name": "err",
       "type": "error",
       "value": {
-        "category": "io.timeout"
+        "category": "io.timeout",
+        "code": -1073807339
       }
     }
   ],
   "error": {
-    "category": "io.timeout"
+    "category": "io.timeout",
+    "code": -1073807339
   },
   "clock": {
     "simulated_ms": 1000.0

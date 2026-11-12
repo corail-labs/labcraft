@@ -1,14 +1,20 @@
 {
-  "how": "2147483647 is the largest `i32`; adding 1 overflows, and an integer that overflows is a fault, `LC8008` (spec 8.2), at the node `y`, with no output.",
+  "how": "`x` takes its default 2147483647, the largest `i32`, and the literal 1 takes the type `i32` of the other operand (spec 3.4), so `core.add` of two `i32` gives 2^31, which an `i32` cannot hold, and `core.add` has no `err`: the fault `LC8008` at the node `y` (spec 8.2, A.1; cli.md 6.6). No loop is around it; no output (spec 8.2), no resource. The simulated clock stays at 0 ms: nothing waits before the fault, and only what waits takes simulated time (spec 8, discrete-event clock).",
   "status": "fault",
   "outputs": [],
   "fault": {
     "code": "LC8008",
     "function": "overflow",
     "node": "y",
-    "file": "tests/acceptance/runs/fault-LC8008-overflow/overflow.lcf"
+    "file": "tests/acceptance/runs/fault-LC8008-overflow/overflow.lcf",
+    "loops": []
   },
   "clock": {
     "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
   }
 }

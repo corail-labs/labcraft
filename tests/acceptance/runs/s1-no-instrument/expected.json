@@ -1,5 +1,5 @@
 {
-  "how": "Scenario 1, point 3. `visa.open` of a resource that the file does not define fails with `visa.resource_not_found`, code -1073807343, after the timeout of the open, 2 s (libs/visa/simulation.md, section 6). The query skips on the error, `handle e2` takes `_`, so the verdict is `Verdict.Error`; `visa.close`, `always`, passes the error on to `err`. No session is opened.",
+  "how": "Scenario 1, point 3. `no-instrument.toml` defines no instrument, so `visa.open` of SIM::DMM0 fails after the timeout of the open, the `timeout: 2 s` of the program, with `visa.resource_not_found`, code -1073807343 (libs/visa/simulation.md 1 and 6): the clock ends at 2000 ms and no session is opened. Its origin is the node `dmm`, line 14 of `examples/check_voltage.lcf`, named as commands.md 5 names the node of an origin (its first output), with the path from the root of the project (tests/acceptance/README.md). In `scpi.query_f64`, which runs its body, `visa.query` and `string.to_f64` are skipped (spec 7.2), so nothing is sent and `raw` is 0.0; `voltage` is then 0 V, written `0.0 V` (spec 7.2, default values; commands.md 5, a float keeps `.0`, as its example `0.0 V`). `visa.close`, `always`, runs and passes on the error it received (spec 7.2); `err = e3` holds it, so the status is `error` and `error` repeats it (spec 8.2, commands.md 7). `handle e2` yields `Verdict.Error` (spec 12). `instruments` is left out: the documents do not say whether a run whose simulation defines no resource gives an empty list or no field.",
   "status": "error",
   "outputs": [
     {
@@ -9,20 +9,33 @@
     },
     {
       "name": "voltage",
-      "type": "f64[V]"
+      "type": "f64[V]",
+      "value": "0.0 V"
     },
     {
       "name": "err",
       "type": "error",
       "value": {
         "category": "visa.resource_not_found",
-        "code": -1073807343
+        "code": -1073807343,
+        "origin": {
+          "function": "check_voltage",
+          "node": "dmm",
+          "file": "examples/check_voltage.lcf",
+          "line": 14
+        }
       }
     }
   ],
   "error": {
     "category": "visa.resource_not_found",
-    "code": -1073807343
+    "code": -1073807343,
+    "origin": {
+      "function": "check_voltage",
+      "node": "dmm",
+      "file": "examples/check_voltage.lcf",
+      "line": 14
+    }
   },
   "clock": {
     "simulated_ms": 2000.0
@@ -31,5 +44,11 @@
     "opened": 0,
     "open": [],
     "leaked": []
+  },
+  "check": {
+    "summary": {
+      "errors": 0
+    },
+    "diagnostics": []
   }
 }

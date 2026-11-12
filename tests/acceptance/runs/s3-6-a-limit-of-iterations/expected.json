@@ -1,5 +1,5 @@
 {
-  "how": "Scenario 3, point 6. Both loops end their iteration 3 at 400 ms; `n_a` comes before `n_b` in the order of the lines (spec 5.2), so the loop of branch A is the first to start a fifth iteration, its iteration 4 from 0, past the limit of 4: the fault `LC8001`, at 400 ms. No loop is around it. Each multimeter got 4 readings, at 0 to 300 ms, and the runtime released both sessions. The readings and the means come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1, the sum made in the order of the readings, as the carry `s` does, then divided by `n`. ",
+  "how": "Scenario 3, point 6. With `max_iterations` 4, iterations 0 to 3 of each loop run; iteration 4 would pass the limit: fault `LC8001`, with the iteration of the loop itself, 4 (cli.md 6.2 and 6.6, commands.md 7). Both loops end their iteration 3 at 400 ms, when their waits end; at that time the nodes of loop `n_a` come first in the global order (spec 8: its line, 20, comes before that of `n_b`, 34, in the canonical order, 5.2), so `n_a` reaches the limit first, at 400 ms, before any node of `n_b` runs. The loop is named by its first output (commands.md 8); it is in no loop, so `fault.loops` is empty, and its statement starts at line 20, column 5 of two_benches.lcf. The run stops like an abort (spec 8.2): no output, both sessions released by the runtime. The answers come from `python tests/acceptance/runs/noise.py 1 230 0.05 N` for SIM::DMM0 and `noise.py 2 12 0.01 N` for SIM::DMM1 (libs/visa/simulation.md, sections 3 and 4), one reading at the start of each iteration k, at 100k ms (no latency), then a wait of 100 ms. So each instrument saw 4 commands, at 0, 100, 200 and 300 ms.",
   "status": "fault",
   "outputs": [],
   "fault": {
@@ -7,6 +7,12 @@
     "function": "two_benches",
     "node": "n_a",
     "file": "examples/two_benches.lcf",
+    "span": {
+      "start": {
+        "line": 20,
+        "column": 5
+      }
+    },
     "loops": [],
     "iteration": 4
   },
