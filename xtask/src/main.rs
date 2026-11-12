@@ -19,7 +19,9 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci        fmt --check, layers, licences, libs, codes, commands, assets, clippy -D warnings, tests, bounds, wasm; stops at the first failure
+  ci        lint, test, bounds, wasm; stops at the first failure
+  lint      fmt --check, layers, licences, libs, codes, commands, assets, clippy -D warnings
+  test      the tests of the workspace, through cargo-nextest when it is installed, then the doctests
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/ or on a native crate of examples/
@@ -44,6 +46,8 @@ fn main() -> ExitCode {
     let command = std::env::args().nth(1);
     let result = match command.as_deref() {
         Some("ci") => ci(),
+        Some("lint") => lint(),
+        Some("test") => test(),
         Some("layers") => check_layers(),
         Some("licences") => check_licences(),
         Some("fuzz-licences") => check_fuzz_licences(),
@@ -71,7 +75,16 @@ fn main() -> ExitCode {
     }
 }
 
+/// The whole gate. The workflow `checks` runs its parts in jobs of their own, side by side: `lint`, `test`, and `bounds`
+/// with `wasm`.
 fn ci() -> Result<(), String> {
+    lint()?;
+    test()?;
+    bounds()?;
+    wasm()
+}
+
+fn lint() -> Result<(), String> {
     run(&["fmt", "--all", "--check"])?;
     check_layers()?;
     check_licences()?;
@@ -79,10 +92,18 @@ fn ci() -> Result<(), String> {
     check_codes()?;
     check_commands()?;
     check_assets()?;
-    run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])?;
-    run(&["test", "--locked", "--workspace"])?;
-    bounds()?;
-    wasm()
+    run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])
+}
+
+/// cargo-nextest runs the test binaries side by side, where `cargo test` runs them one after the other; without it the
+/// gate still runs every test. nextest does not run doctests.
+fn test() -> Result<(), String> {
+    let nextest = cargo().args(["nextest", "--version"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    if !nextest.is_ok_and(|status| status.success()) {
+        return run(&["test", "--locked", "--workspace"]);
+    }
+    run(&["nextest", "run", "--locked", "--workspace", "--no-fail-fast"])?;
+    run(&["test", "--locked", "--workspace", "--doc"])
 }
 
 /// Scenario 4, point 3, in release: the crates of the workspace are not optimized in tests (`tests/harness/tests/bounds.rs`).

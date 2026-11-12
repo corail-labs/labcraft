@@ -1,0 +1,8 @@
+# One version of Rust for CI and every machine: a new stable must not empty the caches or bring new lints of
+# clippy by itself. Change it in a pull request of its own. `fuzz/` has its own nightly, pinned there.
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+# rust-analyzer and rust-src: without them the proxy `rust-analyzer` refuses to start in the repository.
+components = ["clippy", "rustfmt", "rust-analyzer", "rust-src"]
+targets = ["wasm32-unknown-unknown"]
