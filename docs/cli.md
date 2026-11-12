@@ -858,14 +858,16 @@ does not exist or cannot be read, is data: `LC7004` for each function, `LC7101` 
     calls (`visa.open`), as its tooltip does (notation 3.2);
   - each wire is a `<g>` with the fields of a wire of a diagnostic (4.2): `data-wire`, the name of its
     value; `data-from`, the terminal it leaves; `data-to`, the terminals it reaches, separated by
-    spaces, those that have a form. In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
+    spaces, those that have a form; `data-conversion`, when one of its pills shows a conversion in part (`→`, `→V`,
+    notation 4.2), each conversion whole, in the order of its readers, separated by `, ` (`data-conversion="f32→f64"`).
+    In `check_voltage`, `<g data-wire="e2" data-from="raw.err"
     data-to="e3.err">`: the line `#close: e3 = visa.close(…)` is named `e3`, the name of its line, as `check` names its
     terminals; `e2` also enters the `handle` as its selector, which has no form. One `<g>` holds a value
     in one body: a path per reader, the first from the source, each other from where it leaves those before, its
     junction points, its pills and its name; a value read as an order (`after:`) and as a value is one `<g>`. A value that crosses into a
     structure has one `<g>` per body;
-  - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, written as its tab (`other`
-    for `_`);
+  - each branch of a `match` or `handle` is a `<g data-arm="State.Init">`, its patterns as the text writes them (`other`
+    for `_`), whereas its tab shows the variant alone (`Init`, notation 3.3);
   - the terminals of a frame and their names are a `<g>` drawn over the wires of its body (notation 5), with the
     `data-arm` of its branch when the frame is one, so that a branch has two: its frame, then its terminals; those of
     the function and of a loop have no attribute;

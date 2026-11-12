@@ -115,7 +115,7 @@ numbers! {
     label_start: "place"."label_start" = 1200, Length, 0..=4800, "2.1", "From a terminal of a frame to its label.";
     label_above: "place"."label_above" = 400, Length, 0..=1600, "2.1", "Between the label of a structure and its frame.";
 
-    frame_header: "frame"."header" = 3200, Length, 1600..=12800, "5", "The title of a structure.";
+    frame_header: "frame"."header" = 2400, Length, 1600..=12800, "5", "The title of a structure.";
     frame_pad: "frame"."pad" = 1600, Length, 0..=6400, "5", "Inside a frame, on each side.";
     arm_header: "frame"."arm_header" = 2400, Length, 0..=9600, "5.2", "The title of an arm of a `match` or `handle` unfolded.";
     arm_gap: "frame"."arm_gap" = 1600, Length, 0..=6400, "5.2", "Between two arms unfolded.";

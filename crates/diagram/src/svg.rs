@@ -139,6 +139,9 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
                 if !wire.to.is_empty() {
                     attribute("data-to", &wire.to.join(" "), &mut out);
                 }
+                if !wire.conversions.is_empty() {
+                    attribute("data-conversion", &wire.conversions.join(", "), &mut out);
+                }
                 out.push_str(">\n");
             }
             // The terminals of a frame and their names, over its wires: in the `data-arm` of their arm, if any.

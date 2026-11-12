@@ -37,7 +37,7 @@ pub(super) struct Flow {
 
 impl<'a> Builder<'a> {
     fn frame_terminal(&self, name: String, ty: TyId, edge: Edge) -> FrameTerminal {
-        FrameTerminal { terminal: self.terminal(name, ty, None, false), edge }
+        FrameTerminal { terminal: self.terminal(name, ty, None, false), edge, start: None }
     }
 
     /// The frame of the function: its inputs on the left, its outputs on the right, in signature order (notation 2).
@@ -59,7 +59,14 @@ impl<'a> Builder<'a> {
                 let mut terminal = self.frame_terminal(self.text(param.name), ty, Edge::Input);
                 terminal.terminal.constant = param.default.as_ref().map(|default| match default {
                     Constant::Operand(operand) => self.constant_text(operand),
-                    Constant::Call(call) => format!("{}(\u{2026})", path_text(&call.callee, self.names)),
+                    // A variant with data shows alone too (notation 3.3).
+                    Constant::Call(call) => {
+                        let callee = match self.resolved().of(call.callee.id) {
+                            Meaning::Variant { .. } => call.callee.segments().last().map(|name| self.text(name)).unwrap_or_default(),
+                            _ => path_text(&call.callee, self.names),
+                        };
+                        format!("{callee}(\u{2026})")
+                    }
                     Constant::Struct(lit) => format!("{} {{\u{2026}}}", path_text(&lit.path, self.names)),
                 });
                 terminal
@@ -76,6 +83,7 @@ impl<'a> Builder<'a> {
             .collect();
         BodyOf {
             caption,
+            pattern: String::new(),
             arm: None,
             nodes: Vec::new(),
             owner: None,
@@ -148,6 +156,7 @@ impl<'a> Builder<'a> {
         let StatementKind::Binding { targets, value } = &statement.kind else { return self.function_frame(String::new(), &Signature::default()) };
         let mut frame = BodyOf {
             caption: String::new(),
+            pattern: String::new(),
             arm,
             nodes: Vec::new(),
             owner: None,
@@ -175,7 +184,16 @@ impl<'a> Builder<'a> {
                             carries += 1;
                         }
                         ClauseKind::In(clause) => {
-                            frame.left.push(self.frame_terminal(self.text(clause.name), self.resolved().ty(clause.id), Edge::In))
+                            let edge = if clause.end.is_some() { Edge::Range } else { Edge::In };
+                            let mut terminal = self.frame_terminal(self.text(clause.name), self.resolved().ty(clause.id), edge);
+                            if let Some(end) = &clause.end {
+                                // Each bound in its place, as the text writes it; `·` for one that a wire gives.
+                                let bound = |operand: &Operand| {
+                                    if super::is_constant(operand, self.resolved()) { self.constant_text(operand) } else { "\u{B7}".to_owned() }
+                                };
+                                terminal.start = Some(format!("{}..{}", bound(&clause.source), bound(end)));
+                            }
+                            frame.left.push(terminal)
                         }
                     }
                 }
@@ -205,10 +223,29 @@ impl<'a> Builder<'a> {
                     .map(|pattern| match pattern {
                         Pattern::Wildcard { binding: None, .. } => "other".to_owned(),
                         Pattern::Wildcard { binding: Some(binding), .. } => format!("other ({})", self.text(binding.name)),
+                        // The variant alone, as for a constant (notation 3.1): `RunStep`, `Value(v)`.
+                        Pattern::Variant { path, bindings, .. } => {
+                            let variant = path.segments().last().map(|name| self.text(name)).unwrap_or_default();
+                            if bindings.is_empty() {
+                                variant
+                            } else {
+                                let names: Vec<String> = bindings.iter().map(|binding| self.text(binding.name)).collect();
+                                format!("{variant}({})", names.join(", "))
+                            }
+                        }
                         _ => write_pattern(pattern, self.names, CONSTANT_BYTES),
                     })
                     .collect();
                 frame.caption = cut_text(&titles.join(", ")).into_owned();
+                let written: Vec<String> = arm_of
+                    .patterns()
+                    .map(|pattern| match pattern {
+                        Pattern::Wildcard { binding: None, .. } => "other".to_owned(),
+                        Pattern::Wildcard { binding: Some(binding), .. } => format!("other ({})", self.text(binding.name)),
+                        _ => write_pattern(pattern, self.names, CONSTANT_BYTES),
+                    })
+                    .collect();
+                frame.pattern = cut_text(&written.join(", ")).into_owned();
                 for pattern in arm_of.patterns() {
                     for binding in pattern.bindings() {
                         frame.left.push(self.frame_terminal(self.text(binding.name), self.resolved().ty(binding.id), Edge::Bound));
@@ -222,7 +259,7 @@ impl<'a> Builder<'a> {
                     {
                         terminal.constant = Some(self.constant_text(operand));
                     }
-                    frame.right.push(FrameTerminal { terminal, edge: Edge::Yield });
+                    frame.right.push(FrameTerminal { terminal, edge: Edge::Yield, start: None });
                 }
             }
             Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => {}
@@ -574,7 +611,7 @@ pub(super) fn finish_frame(body: &mut BodyOf, owner: Option<StructureKind>) {
                         next += 1;
                         if Some(index) == register { last = Some(slot) } else { slots.push(slot) }
                     }
-                    Edge::In => slots.push(Slot { left: Some(index), right: None }),
+                    Edge::In | Edge::Range => slots.push(Slot { left: Some(index), right: None }),
                     _ => {}
                 }
             }

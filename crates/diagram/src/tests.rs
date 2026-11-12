@@ -850,12 +850,12 @@ fn a_placed_node_keeps_its_place() {
     // `a` stands in the first column: after the name `x` (one cell at 10, 6.02), 12 before it and 8 after it, the
     // narrowest channel, 16, its wire being straight, and the half terminal of 3: 45.02 from the corner of the frame,
     // its right terminal reaching 76.02. It reaches over `y`, at 78, so it
-    // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header and its margin (48). The frame
-    // grows up by 20, 24 on the grid, so that it holds it: its top is at the margin, 16, its corner 24 lower, at 40. The
-    // frame of the function is not drawn, and still counts for the extent (notation 5).
+    // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header of 24 and its margin of 16 (40).
+    // The frame grows up by 12, 16 on the grid, so that it holds it: its top is at the margin, 16, its corner 16 lower,
+    // at 32 (notation 5).
     // Across, the margin of 16 is around everything: the terminal of `x` reaches 3 left of the frame, at 19.
-    assert_eq!((y.x, y.y), (1900 + 7800, 4000 + 8000));
-    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 4000 + 2800));
+    assert_eq!((y.x, y.y), (1900 + 7800, 3200 + 8000));
+    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 3200 + 2800));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
@@ -994,7 +994,8 @@ fn an_array_of_wires_is_a_node_with_an_input_per_element() {
 }
 
 /// A wire into a node carries the conversion that `check` puts on what it reads, in a pill (notation 4.2), and its line
-/// keeps its distance as a line with a constant does.
+/// keeps its distance as a line with a constant does. A change of scale shows the unit it arrives in; a widening that
+/// keeps the value, the arrow alone; the whole conversion goes to the tooltip of the input.
 #[test]
 fn a_conversion_is_a_pill_on_its_wire() {
     let f0 = "labcraft 1\n\nfn f0(v: f64[V]) -> (w: f64[V]) {\n    w = v\n}\n";
@@ -1002,9 +1003,17 @@ fn a_conversion_is_a_pill_on_its_wire() {
     let (checked, names) = checked(&[("main.lcf", main), ("f0.lcf", f0)]);
     assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
-    let pills: Vec<(&str, bool)> = graph.pills.values().map(|pill| (pill.text.as_str(), pill.conversion)).collect();
-    assert_eq!(pills, [("mV\u{2192}V", true)]);
-    assert_eq!(graph.nodes[0].inputs[0].pill.as_deref(), Some("mV\u{2192}V"));
+    let pills: Vec<(&str, Option<&str>)> = graph.pills.values().map(|pill| (pill.text.as_str(), pill.conversion.as_deref())).collect();
+    assert_eq!(pills, [("\u{2192}V", Some("f64[mV]\u{2192}f64[V]"))]);
+    assert_eq!(graph.nodes[0].inputs[0].pill.as_deref(), Some("\u{2192}V"));
+    // `f32` into `f64`: the value is kept.
+    let f1 = "labcraft 1\n\nfn f1(v: f64) -> (w: f64) {\n    w = v\n}\n";
+    let main = "labcraft 1\n\nfn main(x: f32) -> (y: f64) {\n    y = f1(x)\n}\n";
+    let (widened, names) = self::checked(&[("main.lcf", main), ("f1.lcf", f1)]);
+    assert!(widened.report.diagnostics().is_empty(), "{:?}", widened.report.diagnostics());
+    let built = self::graph(&widened, &names, "main.lcf");
+    let pills: Vec<(&str, Option<&str>)> = built.pills.values().map(|pill| (pill.text.as_str(), pill.conversion.as_deref())).collect();
+    assert_eq!(pills, [("\u{2192}", Some("f32\u{2192}f64"))]);
 }
 
 /// A value read by two nodes is one wire: a trunk, a junction point where a branch leaves it, the terminals it joins in
@@ -1234,14 +1243,19 @@ fn a_wire_has_no_name_beside_a_terminal_that_shows_it() {
     assert_eq!(crate::wire_names("period", &[first, second], (false, &[false, false]), &mut obstacles).len(), 1);
 }
 
-/// Notation 5, 7: the function has no frame; a wire leaves the centre of a terminal of a frame, under its name, which lies
-/// on a ground of the fill of its frame, so that the wire shows when the name does not.
+/// Notation 5, 7: the function has a frame without fill; a wire leaves the centre of a terminal of a frame, under its
+/// name, which lies on a ground of the fill of its frame, so that the wire shows when the name does not.
 #[test]
-fn the_function_has_no_frame_and_its_wires_leave_the_centre_of_its_terminals() {
+fn the_frame_of_the_function_has_no_fill_and_its_wires_leave_the_centre_of_its_terminals() {
     let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.neg(x)\n}\n";
     let drawing = drawing_of(main);
-    // The title alone: no box.
-    assert!(drawing.loose.iter().all(|shape| matches!(shape, Shape::Text { .. })), "{:?}", drawing.loose);
+    // Its outline, with no fill, then its title.
+    assert!(
+        matches!(drawing.loose.first(), Some(Shape::Rect { paint, .. }) if paint.fill.is_none() && paint.stroke == Some("frame.stroke")),
+        "{:?}",
+        drawing.loose
+    );
+    assert!(matches!(drawing.loose.get(1), Some(Shape::Text { .. })), "{:?}", drawing.loose);
     let (left, _, width, _) = drawing.bodies[0].frame;
     assert_eq!(branches(wire_of(&drawing, "x"))[0].first().map(|point| point.0), Some(left));
     assert_eq!(branches(wire_of(&drawing, "y"))[0].last().map(|point| point.0), Some(left + width));
@@ -1256,13 +1270,14 @@ fn the_function_has_no_frame_and_its_wires_leave_the_centre_of_its_terminals() {
             })
             .unwrap()
     };
-    // `x`: from the half terminal of 6, 3 inside, to where its route starts: 12 before the name, one cell at 10 (6.02)
-    // and 4 after it, 22.02 from the edge; a line at 10 high, 11.64.
+    // `x`: from the half terminal of 6 and an outline of 1, 4 inside, so that it never covers the terminal, to where
+    // its route starts: 12 before the name, one cell at 10 (6.02) and 4 after it, 22.02 from the edge; a line at 10
+    // high, 11.64.
     let ground = ground_of("x");
-    assert_eq!((ground.token, ground.x, ground.width, ground.height), ("canvas.fill", left + 300, 2202 - 300, 1164));
-    // `y` on the right, from where its route ends to the half terminal.
+    assert_eq!((ground.token, ground.x, ground.width, ground.height), ("canvas.fill", left + 400, 2202 - 400, 1164));
+    // `y` on the right, from where its route ends to the half terminal and its outline.
     let ground = ground_of("y");
-    assert_eq!((ground.token, ground.x + ground.width), ("canvas.fill", left + width - 300));
+    assert_eq!((ground.token, ground.x + ground.width), ("canvas.fill", left + width - 400));
     // The terminals of the arms of a `match`, two levels down, on the fill of their frames.
     let arms = drawn_with(&ViewState::default());
     let tokens: std::collections::BTreeSet<&str> = arms
@@ -1302,7 +1317,8 @@ fn tabs_that_do_not_hold_give_way_to_a_selector() {
     assert!(drawing.tabs.iter().all(|tab| tab.kind != crate::TabKind::Tab));
     let names_of: Vec<&str> = drawing.tabs.iter().filter(|tab| tab.kind == crate::TabKind::Name).map(|tab| tab.caption.as_str()).collect();
     assert_eq!(names_of.len(), 9);
-    assert_eq!(names_of[1], "Range.Volts");
+    // A value of an enumeration shows its variant alone (notation 3.1).
+    assert_eq!(names_of[1], "Volts");
     // Each title shows with its arm, between its two steps, round: from the first, `‹` goes to the last.
     for tab in &drawing.tabs {
         assert!(tab.when.is_some());
@@ -1354,4 +1370,121 @@ fn a_mark_outlines_its_own_node_and_the_svg_has_no_unnamed_node() {
     assert!(!svg.contains("data-node=\"\""), "{svg}");
     // The terminals of the arms are in their `data-arm`: each arm has its frame and its terminals.
     assert_eq!(svg.matches("data-arm=\"0\"").count(), 2);
+}
+
+/// Notation 3.3, 5.2: a value of an enumeration shows its variant alone, in the title of an arm, on the pill of a
+/// constant, in a default and in an array; the terminal gives the type. A variant with data keeps what it binds. The
+/// `data-arm` of the SVG keeps the pattern as the text writes it (`docs/cli.md`, 7.2).
+#[test]
+fn a_value_of_an_enumeration_shows_its_variant_alone() {
+    let state = "labcraft 1\n\ntype State = enum { Init, RunStep(i32) }\n";
+    let f0 = "labcraft 1\n\nfn f0(v: [State]) -> (w: [State]) {\n    w = v\n}\n";
+    let main = "labcraft 1\n\nfn main(s: State, d: State = State.RunStep(3)) -> (t: State, c: i32, a: [State]) {\n    t, c = match s {\n        State.Init => yield (State.Init, 0)\n        State.RunStep(code) => yield (State.Init, code)\n    }\n    a = f0([State.Init, State.Init])\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("State.lct", state), ("f0.lcf", f0)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let arms: Vec<(&str, &str)> =
+        graph.bodies.iter().filter(|body| body.arm.is_some()).map(|body| (body.caption.as_str(), body.pattern.as_str())).collect();
+    assert_eq!(arms, [("Init", "State.Init"), ("RunStep(code)", "State.RunStep(code)")]);
+    let yielded: Vec<Option<&str>> = graph
+        .bodies
+        .iter()
+        .filter(|body| body.arm.is_some())
+        .map(|body| body.right.first().and_then(|terminal| terminal.terminal.constant.as_deref()))
+        .collect();
+    assert_eq!(yielded, [Some("Init"), Some("Init")]);
+    assert_eq!(graph.bodies[0].left[1].terminal.constant.as_deref(), Some("RunStep(\u{2026})"));
+    let call = graph.nodes.iter().find(|node| node.inputs.first().is_some_and(|input| input.name == "v")).unwrap();
+    assert_eq!(call.inputs[0].constant.as_deref(), Some("[Init, Init]"));
+}
+
+/// Notation 5.1: `x in values` enters by `]` and the shape of the element's family, `collect` leaves by that shape in
+/// brackets, a range by a box that writes each constant bound in its place and `·` for one that a wire gives; the start
+/// of a range is not a pill on a wire. The tooltip of the box covers no more than a register's would.
+#[test]
+fn the_terminals_of_a_for_show_what_crosses_the_edge() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(values: [f64], n: i32) -> (out: [f64]) {\n    out = for x in values, i in 0..n {\n        y = core.mul(x, 2.0)\n        collect y\n    }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let body = graph.bodies.iter().find(|body| body.left.iter().any(|terminal| terminal.edge == crate::graph::Edge::In)).unwrap();
+    let left: Vec<(crate::graph::Edge, Option<&str>)> = body.left.iter().map(|terminal| (terminal.edge, terminal.start.as_deref())).collect();
+    assert_eq!(left, [(crate::graph::Edge::In, None), (crate::graph::Edge::Range, Some("0..\u{B7}"))]);
+    let collect = body.right.iter().find(|terminal| terminal.edge == crate::graph::Edge::Collect).unwrap();
+    // `]` at (0, 0): 2.5 to 5 outside, 12 high, its stroke 1.5; then the filled circle of a number, of 6 (3 across its
+    // centre), 3 inside.
+    let shapes = crate::edge_terminal(&body.left[0], 0, 0);
+    assert!(matches!(&shapes[0], Shape::Poly { points, closed: false, .. } if *points == [(-500, -600), (-250, -600), (-250, 600), (-500, 600)]));
+    assert!(matches!(&shapes[1], Shape::Circle { x: 300, y: 0, radius: 300, .. }), "{shapes:?}");
+    // `[•]`: two brackets 2.5 to 5 on each side, the circle of a number between them.
+    let shapes = crate::edge_terminal(collect, 0, 0);
+    assert_eq!(shapes.len(), 3);
+    assert!(matches!(&shapes[2], Shape::Circle { x: 0, y: 0, radius: 300, .. }), "{shapes:?}");
+    // The box of the range reaches 7 inside, as a register's, and grows outside.
+    let shapes = crate::edge_terminal(&body.left[1], 0, 0);
+    assert!(matches!(&shapes[0], Shape::Rect { x, width, radius: 300, .. } if x + width == 700 && *x < -700));
+    // The other forms of a range: both bounds constant, the start wired.
+    for (range, inputs, written) in [("0..10", "n: i32", "0..10"), ("a..10", "a: i32", "\u{B7}..10")] {
+        let main = format!(
+            "labcraft 1\n\nuse core\n\nfn main({inputs}) -> (out: [i32]) {{\n    out = for i in {range} {{\n        j = core.neg(i)\n        collect j\n    }}\n}}\n"
+        );
+        let (other, names) = self::checked(&[("main.lcf", main.as_str())]);
+        let built = self::graph(&other, &names, "main.lcf");
+        let starts: Vec<Option<&str>> = built.bodies.iter().flat_map(|body| body.left.iter()).map(|terminal| terminal.start.as_deref()).collect();
+        assert!(starts.contains(&Some(written)), "{range}: {starts:?}");
+    }
+    let drawing = drawing_of(main);
+    let texts: Vec<String> = drawing
+        .groups
+        .iter()
+        .flat_map(|group| group.shapes.iter())
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect::<String>()),
+            _ => None,
+        })
+        .collect();
+    assert!(texts.iter().any(|text| text == "0..\u{B7}"), "{texts:?}");
+    assert!(!texts.iter().any(|text| text == "0"), "{texts:?}");
+    // The tooltip of `i`: 7 on each side of the edge, as a register's, never the width of the box outside.
+    // Two: the input of the structure (8, the least) and the terminal of its frame (14).
+    let sizes: Vec<(i64, i64)> = drawing.hints.iter().filter(|hint| hint.text.starts_with("i: ")).map(|hint| (hint.width, hint.height)).collect();
+    assert_eq!(sizes.len(), 2);
+    assert!(sizes.contains(&(1400, 1400)), "{sizes:?}");
+    assert!(sizes.iter().all(|&(width, height)| width <= 1400 && height <= 1400), "{sizes:?}");
+}
+
+/// Notation 4.2: the whole conversion is in the tooltip of what it reaches, an output of the function as an input of a
+/// node, and in the `data-conversion` of its wire (`docs/cli.md`, 7.2).
+#[test]
+fn the_whole_conversion_is_in_the_tooltip_and_the_svg() {
+    let main = "labcraft 1\n\nfn main(x: f32) -> (y: f64) {\n    y = x\n}\n";
+    let drawing = drawing_of(main);
+    let hint = drawing.hints.iter().find(|hint| hint.text.starts_with("y: ")).unwrap();
+    assert_eq!(hint.text, "y: f64\nconverted: f32\u{2192}f64");
+    let svg = crate::svg(&drawing, crate::Theme::Light);
+    assert!(svg.contains("data-conversion=\"f32\u{2192}f64\""), "{svg}");
+    let f0 = "labcraft 1\n\nfn f0(v: f64[V]) -> (w: f64[V]) {\n    w = v\n}\n";
+    let main = "labcraft 1\n\nfn main(x: f64[mV]) -> (y: f64[V]) {\n    y = f0(x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("f0.lcf", f0)]);
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    let hint = drawing.hints.iter().find(|hint| hint.text.starts_with("v: ")).unwrap();
+    assert_eq!(hint.text, "v: f64[V]\nconverted: f64[mV]\u{2192}f64[V]");
+}
+
+/// Notation 4, B1: the wire of a constant node has no name at its start, since the node shows it.
+#[test]
+fn the_wire_of_a_constant_node_is_not_named_at_its_start() {
+    let main = "labcraft 1\n\nuse core\n\nfn main() -> (y: f64) {\n    gain = 2.0\n    y = core.neg(gain)\n}\n";
+    let drawing = drawing_of(main);
+    let names: Vec<String> = wire_of(&drawing, "gain")
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect::<String>()),
+            _ => None,
+        })
+        .collect();
+    assert!(!names.iter().any(|name| name == "gain"), "{names:?}");
 }

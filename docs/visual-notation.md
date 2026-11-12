@@ -48,6 +48,10 @@ Craft family:
    proposed shape is justified by a construct of the text, never by "as in such and such tool".
 6. **Theme tokens.** No hard-coded color: tokens (`wire.error`, `node.fill`…) whose values are
    LabCraft's own, light and dark (section 8; Craft convention).
+7. **Show that something is there, not always what it is.** Where a value or a detail would weigh on the
+   drawing, a mark says that it exists and the tooltip says what it is: a widening conversion is an arrow alone
+   (4.2), a default value is in the tooltip of its input (3.2). A mark never takes a shape that already says a family
+   of type (4.1).
 
 ## 2. The canvas
 
@@ -113,7 +117,7 @@ are the nodes that a `layout` section does not place (spec 11).
   wide as its widest node. Two nodes stacked are 24 apart, plus what a band or a label adds above the lower one;
   a column with no node of the chain starts 40 above the axis. The order in a column comes from four sweeps of
   barycentres each way, the order that makes the wires the shortest kept. A channel is as wide as
-  its wires need (2.2). A frame has a header of 32 for its title and 16 inside around what it holds; a
+  its wires need (2.2). A frame has a header of 24 for its title and 16 inside around what it holds; a
   `match` or a `handle` unfolded stacks its arms 16 apart, 16 below its header, each with a title of 24, all as wide
   as the widest; the error enters and leaves it on the axis of its last arm, whichever arm reads it.
   The terminals of a frame keep their order (the signature, the clauses of a loop), each at the height of the
@@ -474,8 +478,11 @@ of the right side. They are not on the grid of 8: the routing of the wires (2.2)
   as the IR builds it; an array of constants is an inline constant *(proposed)*.
 - **Construction** (`StepResult { name: n, … }`): block with the header `StepResult { }`, one
   input per field in declaration order, one output.
-- **Enum value** (`Verdict.Pass`): inline constant. **Variant constructor** (`Reading.Value(v)`):
-  small `Reading.Value` block.
+- **Enum value** (`Verdict.Pass`): inline constant that shows its **variant alone**, `Pass`, on the pill of an input, a
+  terminal of a frame, the first value of a register, a constant node, a default, an array of constants (`[Init, Init]`)
+  and the title of an arm (`RunStep`, `Value(v)`); the terminal gives the type, the tooltip and the `data-` attributes of
+  the SVG the whole path (retained 2026-11-11). The values of a run (6.1) keep the whole path. **Variant constructor**
+  (`Reading.Value(v)`): small `Reading.Value` block.
 
 ## 4. Wires
 
@@ -487,7 +494,8 @@ of a frame (a register box reaches past the edge) or name of such a terminal (a 
 wire 8 above runs through a name, which is 12.8 high); otherwise on the next horizontal segment of that branch where it
 does; otherwise it is only in the tooltip and in the `data-wire` of the SVG: it never widens a channel (2.2). A name is
 never written twice side by side: a wire that leaves a terminal of the frame showing the same name (an input of the
-function, a terminal inside a loop or an arm) has no name at its start, and a branch that ends at one (`err` to the
+function, a terminal inside a loop or an arm), or a constant node, which shows its name (3.1), has no name at its start,
+and a branch that ends at one (`err` to the
 output `err`, `s` to the register `next s`) has none on its last segment. A long
 wire repeats its name halfway (N-3), by the same rule: on its longest horizontal past the segment of the first name,
 centred, when that is three times what the name needs *(proposed)*.
@@ -529,9 +537,12 @@ trunk is drawn with each.
 ### 4.2 Units and conversions
 
 - A terminal or wire that carries a unit shows a badge: `voltage [V]`, `period [ms]`.
-- **Implicit conversion** (numeric widening spec 3.4, scale change spec 3.3): written on the
-  wire, just before the terminal that receives it, in a `mV→V` or `i16→i32` pill (token
-  `mark.coercion`). You read the conversion instead of guessing what a mark means.
+- **Implicit conversion** (numeric widening spec 3.4, scale change spec 3.3): on the wire, just before the terminal
+  that receives it, in `mark.coercion` on a ground without outline, never a round mark: a **widening that keeps the
+  value** (`i16→i32`, `f32→f64`, the unit unchanged) is an **arrow alone**, `→`; a **change of scale** shows the unit it
+  arrives in, `→V` for `mV→V`; any other change the type it arrives in, `→f64[s]` for `duration→f64[s]`. The start is
+  the type of the wire. The tooltip of the terminal gives the whole conversion (`converted: f64[mV]→f64[V]`)
+  (retained 2026-11-11).
 - Unit error at edit time (`V + A`): the wire is drawn in `mark.invalid`, interrupted at the
   terminal, with the message in the tooltip. An exported image draws the wire again in `mark.invalid`, over
   itself and not interrupted, *(proposed)* ([cli.md](cli.md), 7.2).
@@ -544,17 +555,17 @@ the order of the text, except its error output, which is always on the bottom li
 chain crosses the frame in a straight line (2.1).
 
 - **Names of the terminals of a frame** (of the function, of a loop, of a branch): inside, by their terminal. A wire
-  leaves a terminal from its centre and runs under its name, which lies on a ground of the fill of the frame, from the
-  terminal to the end of the name, or to its pill: the drawing is the same, and where a zoom hides the names (7) the
-  wire shows up to its terminal *(proposed)*.
+  leaves a terminal from its centre and runs under its name, which lies on a ground of the fill of the frame, from an
+  outline past the terminal, so that it never covers it (a register's box), to the end of the name, or to its pill: the
+  drawing is the same, and where a zoom hides the names (7) the wire shows up to its terminal *(proposed)*.
 
 - **Outer values** used inside (spec 6): the wire crosses the edge; a notch marks the crossing.
   No terminal to wire. A value that is also the selector of a `match` or a `handle` enters by the
   selector, which serves as its notch: one wire outside, not two side by side. The developer can still
   give it a notch of its own, which the `layout` section keeps (spec 11).
 - **Nesting**: frames contain each other; the background darkens by one step per level (token
-  `frame.fill.n`). The function has no frame: its title and its terminals stand on the canvas
-  (`canvas.fill`), and a structure in its body is the first level, `frame.fill.1`; from the fifth level on, the
+  `frame.fill.n`). The frame of the function is drawn, with no fill: its title and its terminals are on it, on the
+  canvas (`canvas.fill`), and a structure in its body is the first level, `frame.fill.1`; from the fifth level on, the
   background stays `frame.fill.4` *(proposed)*.
 
 ### 5.1 `loop` and `for`
@@ -583,9 +594,15 @@ chain crosses the frame in a straight line (2.1).
   images do not have it: with several registers (five in `station`), stacked arcs would become
   unreadable. No pair of vertical arrows on the edge, a shape too close to an existing editor
   (D-23).
-- **`collect`**: `[ ]` terminal on the right edge; the outgoing wire is an array.
-- **`for x in array`**: `]▸` terminal on the left edge (the array enters, the element leaves);
-  `for i in 0..n`: `0..n` terminal on the left edge.
+- **`collect`**: `[•]` terminal across the right edge, two brackets around the shape of the element's family (4.1): the
+  element enters, the array leaves.
+- **`for x in array`**: `]▸` terminal on the left edge: the bracket outside, where the array enters, a triangle inside,
+  where the element leaves, in the shape of its family (4.1). `for i in a..b`: a box across the left edge, rounded and
+  thinner than the box of a register, which writes each bound that is a constant in its place and `·` for one that a
+  wire gives (`0..·`, `0..10`, `·..10`), so that it reads as the text; the wires of the bounds enter it, and a constant
+  bound is not a pill on a wire. The box reaches inside as far as a register's and grows outside with its text; its
+  tooltip does not (retained 2026-11-12). Two wired bounds enter at one point in v0, the box saying which is which by its
+  text; one point each, the start above the end, comes with the places of terminals (N-15).
 - **`until`**: `until` terminal on the right, inside the frame, just above the error register, so
   that the error chain keeps the bottom line (2.1); it is a `bool`, so a diamond.
 - **Error register**: box in error style, on the bottom line of the frame; it is a reminder that the loop stops when it contains
@@ -600,12 +617,12 @@ chain crosses the frame in a straight line (2.1).
   error chain (2.1).
 - **One branch at a time**: the frame is as large as its largest branch, so that showing another
   branch moves nothing around it. A tab bar in the header lists the branches (`true`, `false`;
-  `State.Init`, `State.WaitDut` …; `_` is written `other`). A branch with several patterns is one
+  `Init`, `WaitDut` …, the variant alone (3.3); `_` is written `other`). A branch with several patterns is one
   tab, which lists them (`1, other`). The displayed branch is highlighted. *(proposed)* The tabs stand in a row
   of 24 under the title, each 20 high and 4 apart, from the start of the title: the branch shown filled with
   `tab.fill` and outlined like the frame, the others outlined with `frame.divider`, their text in `ink.muted`. The
   number of branches never sets the width of the frame, which its branches and its title set: when the tabs do not
-  hold in it, a **selector** stands for them, `‹ State.WaitDut ▾ 2/5 ›`: its two steps as wide as a tab is high, and a
+  hold in it, a **selector** stands for them, `‹ WaitDut ▾ 2/5 ›`: its two steps as wide as a tab is high, and a
   title of 13 cells at least, 134.27 with the values of section 10, which is all the tabs can widen the frame; `‹` and `›` show the
   branch before and after, round, and a click on the title lists the branches to choose one *(proposed)*. The
   box of a branch has no title of its own, 8 at its top, and the boxes of all the branches start from one corner,
@@ -914,7 +931,7 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `place.slot` | 24 units | 12 to 96 | 2.1 | Between two terminals of a frame, and above the error chain. |
 | `place.label_start` | 12 units | 0 to 48 | 2.1 | From a terminal of a frame to its label. |
 | `place.label_above` | 4 units | 0 to 16 | 2.1 | Between the label of a structure and its frame. |
-| `frame.header` | 32 units | 16 to 128 | 5 | The title of a structure. |
+| `frame.header` | 24 units | 16 to 128 | 5 | The title of a structure. |
 | `frame.pad` | 16 units | 0 to 64 | 5 | Inside a frame, on each side. |
 | `frame.arm_header` | 24 units | 0 to 96 | 5.2 | The title of an arm of a `match` or `handle` unfolded. |
 | `frame.arm_gap` | 16 units | 0 to 64 | 5.2 | Between two arms unfolded. |
