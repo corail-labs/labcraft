@@ -1,5 +1,5 @@
 {
-  "how": "`array.repeat(0.0, 1000)` makes an array of logical size 16 + 1,000 x (16 + 8) = 24,016 bytes (cli.md 6.2). The array is read twice in each iteration, and in the canonical order of the nodes (spec 5.2, 8), `array.set` before `array.len`, so `array.set` does not take the last read and works on a copy, which makes 24,016 bytes more (D-11); `array.len` gives an `i32`, which counts nothing. After the array and three copies the run has made 96,064 bytes; the fourth copy, in iteration 3 from 0, makes 120,080, past the limit of 100,000: the fault `LC8009` at the node `b`, with no output.",
+  "how": "Logical size (cli.md 6.2): an `[f64]` of 1,000 is 16 + 1,000 x (16 + 8) = 24,016 bytes. `array.repeat` makes one (24,016 made; its `none` error and the `i32` of `array.len` are far too small to change the count). In each iteration `b` (`array.set`) comes before `l` (`array.len`) in the global order (spec 8; canonical order of the body, 5.2: `b` before `l` by name), so when `array.set` runs, `xs` is still to be read by `array.len`: its read is not the last, it copies (D-11; cli.md 6.2, `--max-made`), and makes 24,016 bytes. The totals are 48,032, 72,048, 96,064 after iterations 0, 1 and 2, then 120,080 in iteration 3, past 100,000: the fault `LC8009` at the node `b`, in iteration 3 of the loop `a` (named by its first output, commands.md 8), at 0 ms, with no output. The statement of `b` is line 10 of copies.lcf and starts at column 9, after eight spaces.",
   "status": "fault",
   "outputs": [],
   "fault": {
@@ -7,6 +7,12 @@
     "function": "copies",
     "node": "b",
     "file": "tests/acceptance/runs/fault-LC8009-made/copies.lcf",
+    "span": {
+      "start": {
+        "line": 10,
+        "column": 9
+      }
+    },
     "loops": [
       {
         "function": "copies",
@@ -14,6 +20,9 @@
         "iteration": 3
       }
     ]
+  },
+  "clock": {
+    "simulated_ms": 0.0
   },
   "resources": {
     "opened": 0,

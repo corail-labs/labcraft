@@ -1,11 +1,19 @@
 {
-  "how": "A loop of 100 iterations runs at least its two calls in each, so 10 nodes are passed before its sixth iteration ends: the fault `LC8002` in `spin`, at 0 ms, with no output.",
+  "how": "With `max_nodes` 10, 10 nodes run and the fault `LC8002` is on the eleventh (cli.md 6.2: a node counts when it starts). The nodes are those of the diagram (ir.md 3): the loop `n` is a node (spec 6), counted once when it starts, and each iteration runs `m` (`core.add`) then `done` (`core.ge`), which reads `m`; the constants are no nodes, and `next i = m` and `until done` make none (spec 5.1, ir.md 3). So the loop is node 1, iterations 0 to 3 run nodes 2 to 9, and in iteration 4, from 0, `m` is node 10 and `done` the eleventh: the fault is at `done`, inside the loop `n` at its iteration 4 (commands.md 7), long before `m` reaches 100. No output (spec 8.2), no resource. The simulated clock stays at 0 ms: nothing waits before the fault, and only what waits takes simulated time (spec 8, discrete-event clock).",
   "status": "fault",
   "outputs": [],
   "fault": {
     "code": "LC8002",
     "function": "spin",
-    "file": "tests/acceptance/runs/fault-LC8002-nodes/spin.lcf"
+    "node": "done",
+    "file": "tests/acceptance/runs/fault-LC8002-nodes/spin.lcf",
+    "loops": [
+      {
+        "function": "spin",
+        "node": "n",
+        "iteration": 4
+      }
+    ]
   },
   "clock": {
     "simulated_ms": 0.0
