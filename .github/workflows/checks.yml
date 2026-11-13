@@ -13,9 +13,10 @@ concurrency:
   group: checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# The parts of `cargo xtask ci` run side by side, one job each, so that a pull request waits for the longest part only.
+# Each job keeps a cache of its own, since their builds differ (clippy, tests, release and WASM).
 jobs:
-  # One job for the whole gate, so that the check required on main stays `checks`.
-  checks:
+  lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -29,11 +30,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r tools/lcf-poc/requirements.txt
+      # rust-toolchain.toml pins the version, so that a new stable neither empties the caches nor brings new lints.
       - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update \
-            --component clippy --component rustfmt --target wasm32-unknown-unknown
-          rustup default stable
+        run: rustup toolchain install --no-self-update
       # Only main saves the cache; pull requests restore it.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -41,6 +40,46 @@ jobs:
       # The list of the Python checks is in xtask/src/spec.rs.
       - name: Python checks
         run: cargo xtask spec
+      - name: Formatting, repository checks and clippy
+        run: cargo xtask lint
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Runs the test binaries side by side; `cargo xtask test` falls back to `cargo test` without it.
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: cargo-nextest@0.9.150
+      - name: Tests
+        run: cargo xtask test
+
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # The runner must have the version of wasm-bindgen that Cargo.lock gives the tests.
       - name: Version of the WASM test runner
         id: wasm-bindgen
@@ -50,15 +89,33 @@ jobs:
       - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: wasm-bindgen@${{ steps.wasm-bindgen.outputs.version }}
-      - name: Rust gate
-        run: cargo xtask ci
+      - name: Bounds, in release
+        run: cargo xtask bounds
+      - name: WASM
+        run: cargo xtask wasm
       # A figure, never a threshold (docs/visual-notation.md, 2.1 and 7): it never turns the job red.
       - name: Figures of the viewer
         continue-on-error: true
         run: cargo xtask figures >> "$GITHUB_STEP_SUMMARY"
 
+  # The check required on main runs even when a part failed or was cancelled, since a skipped required check counts as passed.
+  checks:
+    if: always()
+    needs: [lint, test, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every part passed
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          echo "lint: $LINT, test: $TEST, release: $RELEASE"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$RELEASE" = success ]
+
   # Paths, walking folders and atomic writes differ on Windows. The crates are the same everywhere, and
-  # the gate above covers them, so this runs only what touches the file system.
+  # the jobs above cover them, so this runs only what touches the file system.
   windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -70,9 +127,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+        run: rustup toolchain install --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}

@@ -328,7 +328,9 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | Everything below but `spec`, `figures`, `unicode` and `fuzz-licences`, plus `cargo fmt --check`, `clippy -D warnings`, tests |
+| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `unicode` and `fuzz-licences`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
+| `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands` and `assets` below, then `clippy -D warnings` |
+| `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side, then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
@@ -357,7 +359,8 @@ English (D-21). The reusable workflows of
 `release`) wait for the first release; `release` is what a signed build for the launcher's catalog
 (D-20) would go through. `gate` was evaluated when the Rust CI started, and not adopted for now: it
 follows the `main` branch of another organization, and its job name would replace `checks`, the
-check required on `main`. Our single job takes the same steps, with its actions pinned by commit.
+check required on `main`. Our jobs take the same steps, split into parts that run side by side (section 8), with
+their actions pinned by commit.
 
 ## 8. Tests
 
@@ -380,8 +383,19 @@ exception (verified at step 1).
 `cargo fuzz` needs Rust nightly and works poorly on Windows, so `fuzz/` stays out of the workspace: the
 product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly. That job is
 the workflow `fuzz`, next to `checks`, which knows nothing of it and stays the only check GitHub requires on
-`main`; a red `fuzz` still stops the merge unless the owner decides otherwise for that pull request.
+`main`; a red `fuzz` still stops the merge unless the owner decides otherwise for that pull request. It builds
+the targets once, then runs them side by side, one per CPU of the runner.
 `fuzz/README.md` says how to run a target and what becomes of a crash.
+
+The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (the Python checks of
+`cargo xtask spec`, then `cargo xtask lint`), `test` (`cargo xtask test`, with `cargo-nextest`) and `release`
+(`bounds`, `wasm` and the figures of the viewer). A last job, `checks`, passes only when the three passed. It runs
+even when one of them failed or was cancelled, since GitHub counts a skipped required check as passed, and it is
+the only check GitHub requires on `main`. Each job keeps a cache of its own, which only `main` saves and pull
+requests restore. Past the 10 GB that GitHub keeps for a repository, it removes the caches used least recently,
+which are the older ones. `rust-toolchain.toml` pins the version of Rust,
+for CI and for every machine: a new stable must not empty the caches or bring new lints of clippy by itself, so
+it changes in a pull request of its own.
 
 The workflow `checks` also has a job `windows`, which runs the tests of `labcraft-cli` and `labcraft-libs`: paths,
 walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and

@@ -33,7 +33,13 @@ bash fuzz/run.sh run 60
 bash fuzz/run.sh mcp 60
 ```
 
-`run.sh` is what the workflow `fuzz` runs (`.github/workflows/fuzz.yml`), for 60 s. It also fails, with exit 3, when
+The workflow `fuzz` (`.github/workflows/fuzz.yml`) builds every target and `deep_seeds` once, then runs the targets
+with `bash fuzz/side_by_side.sh 60 <target>...`, four at a time, the vCPUs of the runner, so that two targets never
+share one. `side_by_side.sh` runs `run.sh` for each target at once, keeps each output in `target/<target>.out`, prints
+them one after the other when all have ended, or when the job stops it, and fails when one of them failed, naming it.
+Run on a machine with fewer CPUs than targets, the targets share them and each fuzzes less in its 60 s.
+
+`run.sh` runs one target, for a number of seconds. It also fails, with exit 3, when
 libFuzzer stopped before 90% of the time, which it calls a success when its clock jumps. The time is read from
 `/proc/uptime`, which setting the clock does not move; it still counts a suspend, and without it (macOS) the check
 cannot see a jump. `bash fuzz/run.sh <target> --replay <file>` runs one input again, alone, with the same limits. `--release` with debug assertions and AddressSanitizer are the defaults of `cargo fuzz`.

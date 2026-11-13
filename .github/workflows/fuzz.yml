@@ -26,10 +26,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The version of rust-toolchain.toml, for xtask.
       - name: Install Rust
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          rustup default stable
+        run: rustup toolchain install --no-self-update
       # Also says when fuzz/Cargo.lock is out of date: cargo fuzz would rewrite it without a word.
       - name: Licences of fuzz/
         run: cargo xtask fuzz-licences
@@ -41,20 +40,17 @@ jobs:
       - name: Formatting of fuzz/
         working-directory: fuzz
         run: cargo fmt --check
-      - name: Fuzz the parser
-        run: bash fuzz/run.sh read 60
-      - name: Fuzz the round trip of fmt
-        run: bash fuzz/run.sh round_trip 60
-      - name: Fuzz check
-        run: bash fuzz/run.sh check 60
-      - name: Fuzz diagram
-        run: bash fuzz/run.sh diagram 60
-      - name: Fuzz the simulation files
-        run: bash fuzz/run.sh simulation 60
-      - name: Fuzz runs
-        run: bash fuzz/run.sh run 60
-      - name: Fuzz the MCP server
-        run: bash fuzz/run.sh mcp 60
+      # Built once, before any clock starts, so that run.sh finds the targets and deep_seeds already built.
+      - name: Build the targets and the seeds
+        working-directory: fuzz
+        run: |
+          cargo build --locked --bin deep_seeds
+          cargo fuzz build
+      # At most four at a time, the vCPUs of the runner, so that two targets never share one.
+      - name: Fuzz the parser, the round trip of fmt, check and diagram
+        run: bash fuzz/side_by_side.sh 60 read round_trip check diagram
+      - name: Fuzz the simulation files, runs and the MCP server
+        run: bash fuzz/side_by_side.sh 60 simulation run mcp
       - name: Keep what crashed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
