@@ -559,10 +559,15 @@ pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandE
             ));
         }
     };
-    let names: Vec<String> = match params.get("functions") {
-        Some(Value::Array(names)) => names.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
-        _ => Vec::new(),
-    };
+    // A function given twice is drawn once, as by `labcraft-cli diagram` (`docs/cli.md`, 7).
+    let mut names: Vec<String> = Vec::new();
+    if let Some(Value::Array(given)) = params.get("functions") {
+        for name in given.iter().filter_map(Value::as_str) {
+            if !names.iter().any(|known| known == name) {
+                names.push(name.to_owned());
+            }
+        }
+    }
     // A name of the language, or that of a folder or a file that `check` reads: only an empty one is no name, as for the
     // `FUNCTION` of `labcraft-cli diagram` (`docs/cli.md`, 7).
     if let Some(empty) = names.iter().find(|name| name.split('.').any(str::is_empty)) {
