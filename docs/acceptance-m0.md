@@ -209,7 +209,8 @@ section 10). Outputs: the mean of each branch and the merged error (`errors.merg
 
 **Proof of concept today** (2026-11-08). Points 1 to 6 in deterministic mode, and point 2 in real
 time, with `two_benches` in `examples/` (class `Scheduler` of its tests): its scheduler is the
-feasibility prototype. Point 5 by Ctrl-C or an MCP `abort`, in real time, comes with M0b.
+feasibility prototype. Point 5 by Ctrl-C or an MCP `abort`, in real time, came with M0b
+(`labcraft-cli run` and `labcraft-cli mcp`).
 
 **Write first:**
 

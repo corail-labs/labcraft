@@ -26,11 +26,6 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0b**: nothing more. Written: the command catalog v0 ([commands.md](commands.md)), the MCP
-  specification ([mcp.md](mcp.md)), the CLI specification of `run` with how the CLI and MCP set a panel element
-  ([cli.md](cli.md), section 6), the throwaway feasibility prototype, a scheduler with parallel loops and a
-  clean stop (the scheduler of the proof of concept, scenario 3), and the architecture of the M0b crates
-  ([architecture.md](architecture.md), section 10) with the dataflow IR ([ir.md](ir.md));
 - **before M0v**: nothing left. The rules were tried on mock-ups of every rule, which changed the compact
   view (square blocks), the width of the channels and the place of the values. Written: the architecture of the
   `trace`, `diagram` and `editor` crates and of the viewers ([architecture.md](architecture.md),

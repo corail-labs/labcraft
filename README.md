@@ -71,6 +71,10 @@ the function runs against a simulated power supply.
 
 ![An agent fixes a check error, shows the diagram of check_power, then runs it: 5.02 V x 0.30 A = 1.52 W, Pass](docs/images/agent-loop.gif)
 
+This was filmed with the proof of concept. Since M0b, the Rust `labcraft-cli mcp` serves the same loop: in five
+sessions of five, an agent wrote, checked, ran and fixed a test program on its own
+([acceptance-m0.md](docs/acceptance-m0.md), scenario 1).
+
 ## Try it
 
 The Rust command line checks the examples, that they are in canonical form, and runs one against a simulated
@@ -82,20 +86,29 @@ cargo run -p labcraft-cli -- fmt --check examples
 cargo run -p labcraft-cli -- run --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
 ```
 
-Its reports and diagnostic codes are described in [docs/cli.md](docs/cli.md). `labcraft-cli mcp` serves the same
-commands to an AI agent over MCP ([docs/mcp.md](docs/mcp.md)).
+`check` reports errors with their line and node; `run` executes a function against a simulated
+instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). The reports and diagnostic codes are
+described in [docs/cli.md](docs/cli.md).
 
-The throwaway proof of concept, which ran programs before Rust did, is in Python (3.11 or later):
+To let an AI agent write, check and run programs on its own, give it the MCP server of the command line on a
+folder of its own, here in Claude Code:
+
+```sh
+cargo build --release -p labcraft-cli
+claude mcp add labcraft -- <repo>/target/release/labcraft-cli mcp --project <folder>
+```
+
+The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent can install with it in
+[skills/README.md](skills/README.md).
+
+The throwaway proof of concept, which ran programs before Rust did, is in Python (3.11 or later), with its own
+MCP server ([tools/lcf-poc/README.md](tools/lcf-poc/README.md)):
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0
 ```
-
-`check` reports errors with their line and node; `run` executes a function against a simulated
-instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). To let an AI agent drive it over
-MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 
 ## Documents
 
