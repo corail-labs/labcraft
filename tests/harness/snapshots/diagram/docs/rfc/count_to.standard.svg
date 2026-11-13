@@ -23,7 +23,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="n"><title>loop</title>
 <rect x="110.12" y="56" width="272" height="260" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="122.12" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="132.63,67.57 132.92,69.2 132.63,70.83 131.79,72.28 130.52,73.35 128.94,73.92 127.3,73.92 125.72,73.35 124.45,72.28 123.61,70.83 123.32,69.2 123.61,67.57 124.45,66.12 125.72,65.05 127.3,64.48 128.94,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="128.43,67.43 131.9,64.99 129.46,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="138.12" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="85.1" y="233" width="14.02" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="89.1" y="243.65" font-size="10" style="fill: var(--pill-text)">0</text>
 </g>

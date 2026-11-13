@@ -181,7 +181,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="measured"><title>match in_range</title>
 <rect x="589.7" y="96" width="176" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="601.7" y="111.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
+<polyline points="601.7,108 606.5,108" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="613.7,103.2 606.5,103.2 606.5,112.8 613.7,112.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="617.7" y="111.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
 <polygon points="589.7,105 592.7,108 589.7,111 586.7,108" style="fill: var(--wire-data)"/>
 <polygon points="762.7,281 768.7,284 762.7,287" style="fill: var(--wire-data)"/>
 <path d="M749.7 188 L753.7 188 Q757.7 188 757.7 192 L757.7 280 Q757.7 284 761.7 284 L765.7 284" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -212,7 +214,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="verdict"><title>handle e2</title>
 <rect x="781.7" y="96" width="184" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--wire-error); stroke-width: 1"/>
-<text x="793.7" y="111.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
+<polyline points="793.7,108 798.5,108" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<polyline points="805.7,103.2 798.5,103.2 798.5,112.8 805.7,112.8" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<text x="809.7" y="111.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
 <polygon points="778.7,309 784.7,312 778.7,315 780.7,312" style="fill: var(--wire-error)"/>
 <rect x="779.7" y="181" width="4" height="14" style="fill: var(--wire-data)"/>
 <polygon points="962.7,281 968.7,284 962.7,287" style="fill: var(--wire-data)"/>

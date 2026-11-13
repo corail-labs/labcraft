@@ -119,6 +119,7 @@ numbers! {
 
     frame_header: "frame"."header" = 2400, Length, 1600..=12800, "5", "The title of a structure.";
     frame_pad: "frame"."pad" = 1600, Length, 0..=6400, "5", "Inside a frame, on each side.";
+    frame_mark: "frame"."mark" = 1200, Length, 400..=4000, "5", "The mark of the family of a structure, before its title.";
     arm_header: "frame"."arm_header" = 2400, Length, 0..=9600, "5.2", "The title of an arm of a `match` or `handle` unfolded.";
     arm_gap: "frame"."arm_gap" = 1600, Length, 0..=6400, "5.2", "Between two arms unfolded.";
 

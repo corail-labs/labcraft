@@ -81,7 +81,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="value"><title>loop</title>
 <rect x="348.5" y="56" width="1344" height="328" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="360.5" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="371.01,67.57 371.3,69.2 371.01,70.83 370.17,72.28 368.9,73.35 367.32,73.92 365.68,73.92 364.1,73.35 362.83,72.28 361.99,70.83 361.7,69.2 361.99,67.57 362.83,66.12 364.1,65.05 365.68,64.48 367.32,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="366.81,67.43 370.28,64.99 367.84,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="376.5" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="311.44" y="153" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="315.44" y="163.65" font-size="10" style="fill: var(--pill-text)">0 V</text>
 </g>

@@ -47,9 +47,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="s"><title>loop</title>
 <rect x="168.26" y="56" width="1000" height="500" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="180.26" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
-<rect x="212.34" y="60" width="110.35" height="16" rx="3" style="fill: var(--badge-fill)"/>
-<text x="216.34" y="71.65" font-size="10" style="fill: var(--badge-text)">continue_on_error</text>
+<polyline points="190.77,67.57 191.06,69.2 190.77,70.83 189.93,72.28 188.66,73.35 187.08,73.92 185.44,73.92 183.86,73.35 182.59,72.28 181.75,70.83 181.46,69.2 181.75,67.57 182.59,66.12 183.86,65.05 185.44,64.48 187.08,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="186.57,67.43 190.04,64.99 187.6,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="196.26" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<rect x="228.34" y="60" width="110.35" height="16" rx="3" style="fill: var(--badge-fill)"/>
+<text x="232.34" y="71.65" font-size="10" style="fill: var(--badge-text)">continue_on_error</text>
 <rect x="143.24" y="405" width="14.02" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="147.24" y="415.65" font-size="10" style="fill: var(--pill-text)">0</text>
 <rect x="125.18" y="477" width="32.08" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
@@ -251,7 +253,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="added"><title>match done</title>
 <rect x="757.66" y="224" width="272" height="316" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="769.66" y="239.65" font-size="10" style="fill: var(--node-title)">match done</text>
+<polyline points="769.66,236 774.46,236" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="781.66,231.2 774.46,231.2 774.46,240.8 781.66,240.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="785.66" y="239.65" font-size="10" style="fill: var(--node-title)">match done</text>
 <polygon points="757.66,233 760.66,236 757.66,239 754.66,236" style="fill: var(--wire-data)"/>
 <rect x="755.66" y="477" width="4" height="14" style="fill: var(--wire-error)"/>
 <rect x="755.66" y="405" width="4" height="14" style="fill: var(--wire-data)"/>

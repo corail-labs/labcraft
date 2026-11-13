@@ -72,7 +72,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="err_out"><title>loop</title>
 <rect x="282.82" y="56" width="1072" height="1232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="294.82" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="305.33,67.57 305.62,69.2 305.33,70.83 304.49,72.28 303.22,73.35 301.64,73.92 300,73.92 298.42,73.35 297.15,72.28 296.31,70.83 296.02,69.2 296.31,67.57 297.15,66.12 298.42,65.05 300,64.48 301.64,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="301.13,67.43 304.6,64.99 302.16,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="310.82" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="239.74" y="101" width="32.08" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="243.74" y="111.65" font-size="10" style="fill: var(--pill-text)">Init</text>
 <rect x="257.8" y="1029" width="14.02" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
@@ -197,7 +199,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="stop"><title>match state</title>
 <rect x="421" y="96" width="800" height="1176" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="433" y="111.65" font-size="10" style="fill: var(--node-title)">match state</text>
+<polyline points="433,108 437.8,108" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="445,103.2 437.8,103.2 437.8,112.8 445,112.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="449" y="111.65" font-size="10" style="fill: var(--node-title)">match state</text>
 <polygon points="418,105 424,108 418,111" style="fill: var(--wire-data)"/>
 <rect x="419" y="713" width="4" height="14" style="fill: var(--wire-data)"/>
 <rect x="419" y="1221" width="4" height="14" style="fill: var(--wire-error)"/>
