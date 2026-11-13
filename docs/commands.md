@@ -37,7 +37,12 @@ register its commands before it builds them, as SolidCraft does with `planned!`:
 and the agent see them, greyed, with the reason.
 
 `cargo xtask commands` checks the registry against the tables of section 6, as `cargo xtask codes`
-checks diagnostic codes against cli.md *(proposed)*. It also refuses two ids that would give one MCP tool
+checks diagnostic codes against cli.md *(proposed)*: the ids, the parameters of each in order, whether each is
+required, and their defaults, both ways: every default of the registry is written in the row as a value in code or
+a number (`` (`false`) ``, `` (`30 s`) ``, `(20,000)`), and every default written so is the registry's. A default
+in prose ("the root") is one the command works out, and the registry has none. A cell that starts in prose gives its
+parameters after its first colon, outside code and parentheses, that a parameter follows, and is an error without
+them. It also refuses two ids that would give one MCP tool
 name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
 
 ## 2. Calling a command
@@ -306,9 +311,9 @@ How the session keeps its checks is written in the architecture of M0b (section 
 
 | Command | Parameters | Returns |
 |---|---|---|
-| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`set`* (`[]`), *`mode`* (`deterministic`), *`schedule_seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`max_call_depth`*, *`max_memory`*, *`max_made`*, *`max_real_time`*, *`deny_warnings`* (`false`), *`trace`* (`file`), *`wait`* (30 s) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5), at most `--max-file-size` bytes written as JSON, as a file of `--args` (cli.md
+| `run.start` | `function`, *`folder`* (the root), *`sim`*, *`args`* (`{}`), *`set`* (`[]`), *`mode`* (`deterministic`), *`schedule_seed`*, *`timeout`*, *`max_iterations`*, *`max_nodes`*, *`max_call_depth`* (1,024), *`max_memory`* (1,073,741,824), *`max_made`*, *`max_real_time`*, *`deny_warnings`* (`false`), *`trace`* (`file`), *`wait`* (`30 s`) | Checks the library, then runs the function and returns `labcraft-run/1` (section 7), or `running` (section 4). `function` is named from the root (`check_voltage`, `dmm_driver.measure`); `args` by input name (section 5), at most `--max-file-size` bytes written as JSON, as a file of `--args` (cli.md
 6.3), and `set` too; `sim`, a simulation file; `set`, panel elements and the time on the clock of the run at which each is set, `[{ "element": "stop_switch", "value": true, "at": "5 s" }]` (Q-20, cli.md, section 6.4); `schedule_seed`, the seed of the order among ready nodes (scenario 3); `trace`: `file` (the default, so that whoever watches the viewer sees the values of every run on the wires), `inline` or `none` (section 8) |
-| `run.wait` | *`run`*, *`wait`* (30 s) | The final report, or `running` again |
+| `run.wait` | *`run`*, *`wait`* (`30 s`) | The final report, or `running` again |
 | `run.status` | *`run`* | The report so far, at once: `running` with the clock and where each loop is, or the final report |
 | `run.set_element` | *`run`*, `element`, `value` | Sets a panel element of the running top-level function (spec 10, Q-20), in real time only: in deterministic mode the time a call arrives would date the change, and a run would no longer replay, so a change is given to `run.start` by `set`, at its time on the simulated clock, and this command is not enabled. The element and its value follow the rules of `--set` (cli.md, section 6.4); the change is seen by the reads that start after it. The run is going, so a setting that `--set` would refuse is a command error, `params.invalid`, whose `message` gives the code of cli.md, section 6.6 (`LC8108: …`, `LC8104: …`), and the run goes on; so is a value that does not fit in the memory of the run (`LC8005: …`), which counts each value its `panel` keeps until it ends (decision of the owner, 2026-11-11). On a deterministic run, `command.not_enabled`. It returns once the run has taken the setting, between two nodes: its entry of `panel` (section 7), with `run`, as `{ "run": "r3", "element": "stop_switch", "value": true, "at_ms": 5012.25, "by": "run.set_element", "applied": true }`; a setting given as the run ends is never taken, and its entry says `"at_ms": null, "applied": false` (decision of the owner, 2026-11-11) |
 | `run.abort` | *`run`* | Aborts the run (spec 8.2) and returns its final report, status `aborted`. A run that has already ended is left as it is, and its final report is returned with its own status (section 4) |

@@ -27,7 +27,7 @@ commands:
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/ or on a native crate of examples/
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
-  commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required
+  commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required, their defaults
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
