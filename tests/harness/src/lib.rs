@@ -651,6 +651,55 @@ mod tests {
         });
     }
 
+    /// Every drawing of the repository through `postcard` and back, natively and in WASM, the two ends of the web viewer
+    /// (architecture 11.5): as its file gives it, in standard view, in tabs; the same drawing comes back, but its warnings,
+    /// which the report carries.
+    #[test]
+    fn every_drawing_of_the_repository_crosses_to_the_page() {
+        use labcraft_diagram::{DiagramLimits, Drawn, ViewState, draw};
+        on_the_stack_of_a_host(|| {
+            let mut crossed = 0usize;
+            for root in ["examples/", "libs/", "docs/rfc/"] {
+                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
+                let mut names = Interner::new();
+                let checked = check(project(root, files), &Shipped, &mut names, &Limits::default());
+                for (index, file) in checked.files.iter().enumerate() {
+                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                        continue;
+                    }
+                    for (standard_everywhere, tabs) in [(false, false), (true, false), (false, true)] {
+                        let view = ViewState { standard_everywhere, tabs, ..ViewState::default() };
+                        let Drawn::Drawing(mut drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else {
+                            panic!("{root}{}: not drawn", file.shown)
+                        };
+                        let bytes = postcard::to_allocvec(&drawing).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
+                        let back: labcraft_diagram::Drawing =
+                            postcard::from_bytes(&bytes).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
+                        drawing.warnings.clear();
+                        assert!(back == drawing, "{root}{}: another drawing came back", file.shown);
+                        crossed += 1;
+                    }
+                }
+            }
+            assert!(crossed > 60, "{crossed} drawings");
+        });
+    }
+
+    /// A token is its index in the table of the theme: one that the table does not name is refused both ways, never
+    /// painted in a colour made up.
+    #[test]
+    fn a_token_that_the_theme_does_not_name_does_not_cross() {
+        use labcraft_diagram::{Paint, theme::TOKENS};
+        assert!(postcard::to_allocvec(&Paint::fill("no.such.token")).is_err());
+        let last = TOKENS.last().unwrap().name;
+        let bytes = postcard::to_allocvec(&Paint::fill(last)).unwrap();
+        assert_eq!(postcard::from_bytes::<Paint>(&bytes).unwrap(), Paint::fill(last));
+        // A paint as postcard writes it: a fill at the index past the table, no stroke, a width of 0.
+        let bytes = postcard::to_allocvec(&(Some(u16::try_from(TOKENS.len()).unwrap()), None::<u16>, 0i64)).unwrap();
+        let error = postcard::from_bytes::<Paint>(&bytes).unwrap_err();
+        assert!(matches!(error, postcard::Error::SerdeDeCustom), "{error:?}");
+    }
+
     /// The trace of a run, natively and in WASM, where the viewer reads it: what the writer writes the reader reads, the
     /// cuts and the numbers of commands.md 5 are the same text, and the SHA-256 of FIPS 180-2 (B.1) is the same digest.
     #[test]

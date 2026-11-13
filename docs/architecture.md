@@ -1376,7 +1376,11 @@ trap of WASM (section 5) restarts the worker with a new session and the same fil
 in flight: when a drawing trapped, that function is not drawn again and shows `LC0099` with its last drawing;
 when another command trapped (`view.open`, or checking again after a change), the worker restarts once for
 that set of files, and a second trap shows `LC0099` for the folder until the files change. A file that traps
-cannot restart the worker forever. The drawing crosses to the page in a compact binary form (`postcard`). It opens the
+cannot restart the worker forever. The drawing crosses to the page in a compact binary form (`postcard`, MIT or
+Apache-2.0), through the derives of `serde` that `diagram` has behind its feature `serde`: a token of the theme as its
+index in the table of the theme, which the worker and the page share, being one build, and refuse when it names nothing;
+the warnings of the drawing stay behind, with the report. A test sends every drawing of the repository through it and
+back, natively and in WASM. It opens the
 bundled examples and libraries (`libs/embedded`) or a folder dropped on the page, walked with the limits of
 section 6 and read once; there is no trace in the browser in M0 (scenario 6, point 7). The fallback faces are the served faces of
 `craft-ui` when the build has them; otherwise a character that Hack lacks shows in its cells as a missing glyph.

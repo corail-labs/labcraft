@@ -41,6 +41,7 @@ eframe = { version = "0.37", default-features = false, features = ["accesskit", 
 # foundation
 ctrlc = "3.4"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }

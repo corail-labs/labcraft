@@ -49,6 +49,7 @@ macro_rules! numbers {
     ($($field:ident: $section:literal . $key:literal = $default:literal, $kind:ident, $min:literal ..= $max:literal, $notation:literal, $doc:literal;)*) => {
         /// The numbers of the notation, each in the unit of its [`Kind`].
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct Numbers {
             $(#[doc = $doc] pub $field: i64,)*
         }
@@ -153,6 +154,7 @@ pub type Rgb = u32;
 
 /// The values of the notation: its numbers, and the colours of each token of [`TOKENS`], in its order.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Style {
     pub numbers: Numbers,
     /// Light, dark.
