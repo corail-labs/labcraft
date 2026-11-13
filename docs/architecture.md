@@ -1194,9 +1194,12 @@ takes its value from, so that `values` reads only the drawing and the trace, and
 (the caller reads them) and `Choice` which iteration each loop shows. With step 8b2, the viewer's own parts of the
 overlay: the value of every wire (`Overlay::wires`, those that enter by a notch too), the iteration selectors
 (`Overlay::selectors`, with where a click steps back, types a number or steps forward), the arm that the run took
-(`Overlay::taken`), and, worked out on demand, the values of a wire over the iterations of its loop (`series`), the
-values at the inputs of a node (`inputs_of`), the loops inside a loop (`loops_inside`) and the shapes of the selection
-(`selected_node`, `selected_wire`).* `draw` takes the index of the file of the function in `Checked::files`, as `ir::lower` does,
+(`Overlay::taken`), and, worked out on demand, the values of a wire over the iterations of its loop (`series`, its
+`Sample`s: for a curve, every iteration up to `CURVE_READS`, 10,000, else that many spread evenly by `sampled`; for a
+list, `SERIES`, 1,000, in a row around the one shown), the values at the inputs of a node (`inputs_of`) and their boxes,
+with the group of each wire (`input_boxes`: the bubble of that wire that one covers is not drawn), the loops inside a
+loop (`loops_inside`) and the shapes of the selection (`selected_node`, `selected_wire`). A reading indexes the elements
+of an array that a `for x in` walks once, so that a series does not scan the array again for each element.* `draw` takes the index of the file of the function in `Checked::files`, as `ir::lower` does,
 and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
@@ -1217,6 +1220,7 @@ pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the 
 pub fn values(drawing: &Drawing, trace: &trace::Trace, judged: &Judged, choice: &Choice) -> Overlay;  // 6.1
 pub fn series(drawing: &Drawing, trace: &trace::Trace, choice: &Choice, group: usize) -> Option<Series>; // a wire in a loop
 pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Shape>;  // hovered or selected
+pub fn input_boxes(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<(usize, (i64, i64, i64, i64))>;
 pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> String;  // cli.md 7.2 and 7.3
 pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: Theme) -> String;
 ```

@@ -554,6 +554,114 @@ fn a_selector_steps_its_iterations_and_a_click_selects_a_node_until_escape() {
     assert_eq!(canvas.selected_wire(), None);
 }
 
+/// Two nodes close together: `a` leaves `mul` and enters `add` a few units further.
+const CHAIN: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n}\n";
+
+/// The values of a run of `main` over `drawing`, from its input `x` and the outputs of its nodes, each named after its
+/// value, all `f64`.
+fn run_of(drawing: &Drawing, x: f64, outputs: &[(&str, f64)]) -> Arc<Overlay> {
+    let types: Vec<String> = outputs.iter().map(|(name, _)| format!("\"{name}\":\"f64\"")).collect();
+    let mut lines = vec![
+        r#"{"schema":"labcraft-trace/1","run":"r1","function":"main","mode":"deterministic","files":[]}"#.to_owned(),
+        format!(
+            r#"{{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"main","in":[{{"name":"x","type":"f64","value":{x:?}}}],"types":{{{}}}}}"#,
+            types.join(",")
+        ),
+    ];
+    for (index, (name, value)) in outputs.iter().enumerate() {
+        lines.push(format!(r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"{name}","out":{{"{name}":{value:?}}}}}"#, index + 2));
+    }
+    lines.push(format!(r#"{{"seq":{},"t_ms":0.0,"event":"end","status":"ok"}}"#, outputs.len() + 2));
+    let text = lines.join("\n") + "\n";
+    let mut reader = labcraft_trace::Reader::new(labcraft_diagram::expected(drawing), labcraft_trace::ReadLimits::default());
+    reader.feed(text.as_bytes());
+    let read = reader.finish();
+    assert_eq!(read.ignored, 0);
+    Arc::new(labcraft_diagram::values(drawing, &read, &labcraft_diagram::Judged::default(), &labcraft_diagram::Choice::default()))
+}
+
+/// The box of a bubble, and of each value at the inputs of a node with the group of its wire, in units.
+fn boxes(drawing: &Drawing, overlay: &Overlay, wire: &str, node: usize) -> (Rect, Vec<(usize, Rect)>) {
+    let bubble = overlay.bubbles.iter().find(|bubble| bubble.wire == wire).unwrap();
+    let rect = |(l, t, r, b): (i64, i64, i64, i64)| Rect::from_min_max(Pos2::new(l as f32, t as f32) / 100.0, Pos2::new(r as f32, b as f32) / 100.0);
+    let inputs = labcraft_diagram::input_boxes(drawing, overlay, node).into_iter().map(|(group, area)| (group, rect(area))).collect();
+    (crate::boxed(&bubble.layer.shapes).unwrap(), inputs)
+}
+
+/// Where each text `text` is painted.
+fn painted_at(shapes: &[ClippedShape], text: &str) -> Vec<Pos2> {
+    shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            Painted::Text(shape) if shape.galley.job.text == text => Some(shape.pos),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A click in the middle of a placed node, then a frame with the pointer away: what it paints.
+fn select_and_paint(ctx: &egui::Context, canvas: &mut Canvas, drawing: &Drawing, node: usize, time: f64) -> Vec<ClippedShape> {
+    let block = &drawing.placed[node];
+    click(ctx, canvas, Pos2::new((block.x + block.width / 2) as f32 / 100.0, (block.y + block.height / 2) as f32 / 100.0), time);
+    frame_with(ctx, canvas, time + 0.4, vec![egui::Event::PointerMoved(Pos2::new(1.0, 550.0))]).0
+}
+
+/// A node selected shows the value at its input; the bubble of the same wire that it covers, the same value, is not
+/// drawn (notation 6.1; decision of the owner, 2026-11-13).
+#[test]
+fn the_value_at_an_input_hides_the_bubble_of_its_wire_that_it_covers() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(CHAIN, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    // By hand: `x` 1.25, `a` 2.5, `y` 3.5.
+    let overlay = run_of(&drawn, 1.25, &[("a", 2.5), ("y", 3.5)]);
+    canvas.set_values(Some(overlay.clone()), None);
+    let add = drawn.placed.iter().position(|placed| placed.key.ends_with('y')).unwrap();
+    // The case holds: the value at the input of `add` covers the bubble of `a`, its own wire.
+    let (bubble, inputs) = boxes(&drawn, &overlay, "a", add);
+    let a = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+    assert!(inputs.iter().any(|(group, input)| *group == a && crate::overlaps(input, &bubble)), "{inputs:?} {bubble:?}");
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    let (unselected, _) = frame_with(&ctx, &mut canvas, 0.2, vec![egui::Event::PointerMoved(Pos2::new(1.0, 550.0))]);
+    let in_bubble = painted_at(&unselected, "2.5");
+    assert_eq!(in_bubble.len(), 1, "{:?}", texts(&unselected));
+    // Selected: one `2.5` still, and no longer where the bubble wrote it: at the input.
+    let at_input = painted_at(&select_and_paint(&ctx, &mut canvas, &drawn, add, 0.4), "2.5");
+    assert_eq!(at_input.len(), 1, "the value at the input in place of the bubble");
+    assert_ne!(at_input, in_bubble, "the bubble hidden, not the value at the input");
+}
+
+/// The bubble of another wire stays, though a value at an input covers it: it gives another value.
+const CROSSED: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.mul(x, 2.0)\n    b = core.add(a, 1.0)\n    \
+                       c = core.add(b, 1.0)\n    y = core.add(c, a)\n    z = core.mul(a, 2.0)\n}\n";
+
+#[test]
+fn the_bubble_of_another_wire_stays_under_a_value_at_an_input() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(CROSSED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    // By hand: `x` 10.125, `a` 20.25, `b` 21.25, `c` 22.25, `y` 42.5, `z` 40.5.
+    let overlay = run_of(&drawn, 10.125, &[("a", 20.25), ("b", 21.25), ("c", 22.25), ("y", 42.5), ("z", 40.5)]);
+    canvas.set_values(Some(overlay.clone()), None);
+    // A node whose values at its inputs cover the bubble of `z`, which none of them carries.
+    let z = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "z")).unwrap();
+    let node = (0..drawn.placed.len())
+        .find(|&node| {
+            let (bubble, inputs) = boxes(&drawn, &overlay, "z", node);
+            inputs.iter().any(|(group, input)| *group != z && crate::overlaps(input, &bubble))
+        })
+        .expect("the case holds: a value at an input covers the bubble of `z`");
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    let selected = select_and_paint(&ctx, &mut canvas, &drawn, node, 0.2);
+    assert_eq!(painted_at(&selected, "40.5").len(), 1, "{:?}", texts(&selected));
+}
+
 /// The wheel turned up over a selector steps back, and never scrolls the canvas; down from the last, nothing.
 #[test]
 fn the_wheel_over_a_selector_steps_its_iterations_and_does_not_scroll() {
@@ -613,4 +721,22 @@ fn a_number_typed_into_a_selector_chooses_that_iteration() {
     let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
     let (_, asked) = frame_with(&ctx, &mut canvas, 0.4, vec![enter]);
     assert_eq!(asked, Some((selector.key.clone(), 1)), "the second, from 0");
+}
+
+/// A list of 1,000 iterations opens on the one shown, here the 901st, counted from 1 (notation 6.1).
+#[test]
+fn a_list_of_values_opens_on_the_iteration_shown() {
+    let ctx = context();
+    let values = (0..1_000u64).map(|iteration| labcraft_diagram::Sample { iteration, value: Some((format!("v{iteration}"), None)) }).collect();
+    let series = labcraft_diagram::Series { key: "n".to_owned(), count: 1_000, shown: 900, values, curve: false, unit: String::new() };
+    let mut painted = Vec::new();
+    for time in [0.0, 0.1] {
+        let mut output = ctx.run_ui(input(time), |ui| {
+            crate::series::show(ui, "n", &series, Theme::Light, false);
+        });
+        painted = texts(&std::mem::take(&mut output.shapes));
+        output.drop_without_applying_deltas();
+    }
+    assert!(painted.iter().any(|text| text.contains("901  v900")), "{painted:?}");
+    assert!(!painted.iter().any(|text| text.contains("  1  v0")), "{painted:?}");
 }

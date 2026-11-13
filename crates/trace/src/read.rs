@@ -90,6 +90,8 @@ pub enum HeaderProblem {
     OtherSchema,
     /// A version of `labcraft-trace` after 1.
     LaterVersion,
+    /// A limit, of the size of the file or of a line, came before its end.
+    Cut(Limit),
 }
 
 /// Where reading stopped, and why (`LC7103`); what was read before stands.
@@ -419,7 +421,18 @@ impl Reader {
             }
         }
         if over && !self.done {
-            self.stop(self.line + 1, Limit::File);
+            // A first line that ends exactly at the limit, only its line feed cut, is whole: it reads, as a last line
+            // without its end does (cli.md 7.4).
+            if self.line == 0 && !self.pending.is_empty() {
+                let first = std::mem::take(&mut self.pending);
+                self.next_line(&first);
+                if self.trace.header == Err(HeaderProblem::Unreadable) {
+                    self.trace.header = Err(HeaderProblem::Cut(Limit::File));
+                }
+            }
+            if !self.done {
+                self.stop(self.line + 1, Limit::File);
+            }
         }
         !self.done
     }
@@ -434,6 +447,10 @@ impl Reader {
     }
 
     fn stop(&mut self, line: u64, limit: Limit) {
+        // The first line cut by a limit gives no values, and says which (`LC7101`).
+        if line == 1 && matches!(limit, Limit::File | Limit::Line) && self.trace.header == Err(HeaderProblem::Unreadable) {
+            self.trace.header = Err(HeaderProblem::Cut(limit));
+        }
         if self.trace.stop.is_none() && self.trace.header.is_ok() {
             self.trace.stop = Some(Stop { line, limit });
         }

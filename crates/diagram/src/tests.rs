@@ -655,6 +655,10 @@ fn a_call_shows_the_label_for_an_icon_refused() {
         ("\nicon 32 {\n    circle (16, 16) nan\n}\n".to_owned(), None),
         ("\nicon 32 {\n    circle (16, 16) 0\n}\n".to_owned(), None),
         ("\nicon 32 {\n    circle (16, 16) 8 accent wire.nothing\n}\n".to_owned(), None),
+        // The colours of the states of the viewer (decisions of the owner, 2026-11-13).
+        ("\nicon 32 {\n    circle (16, 16) 8 accent select.stroke\n}\n".to_owned(), None),
+        ("\nicon 32 {\n    circle (16, 16) 8 accent node.active\n}\n".to_owned(), None),
+        ("\nicon 32 {\n    circle (16, 16) 8 accent wire.error\n}\n".to_owned(), Some(1)),
         (path(format!("M0 0{}", " L1 1".repeat(4095))), Some(1)),
         (path(format!("M0 0{}", " L1 1".repeat(4096))), None),
         (path(format!("M0 0{}", " ".repeat(65_536))), None),

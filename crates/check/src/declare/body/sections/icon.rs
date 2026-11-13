@@ -50,6 +50,15 @@ pub(super) const TOKENS: &[&str] = &[
     "wire.resource",
 ];
 
+/// The tokens of [`TOKENS`] that an accent may not name: the colours of the states of the viewer, what it selects and
+/// what runs, which an icon would seem to be in (spec 11.1; decisions of the owner, 2026-11-13).
+const NOT_ACCENTS: &[&str] = &["select.stroke", "node.active"];
+
+/// Whether `token` is a token of the theme that an accent may name.
+fn is_accent(token: &str) -> bool {
+    TOKENS.contains(&token) && !NOT_ACCENTS.contains(&token)
+}
+
 /// The most shapes of an icon *(proposed)*: with [`MAX_PATH_SEGMENTS`] for its paths in all, what drawing an icon costs
 /// stays within the bounds of scenario 4, from whatever library it comes; beyond, its calls show the label (11.1).
 pub const MAX_ICON_SHAPES: usize = 256;
@@ -105,7 +114,7 @@ pub fn icon_refused(icon: &Icon, names: &Interner) -> Option<String> {
     icon.items.iter().find_map(|item| {
         if let Some(accent) = &item.accent {
             let token: Vec<&str> = accent.segments().map(|name| names.resolve(name)).collect();
-            if !TOKENS.contains(&token.join(".").as_str()) {
+            if !is_accent(&token.join(".")) {
                 return Some("an accent that is not a token of the theme".to_owned());
             }
         }
@@ -142,7 +151,11 @@ fn judge_item(sections: &mut Sections<'_, '_>, item: &IconItem) {
     if let Some(accent) = &item.accent {
         let token: Vec<&str> = accent.segments().map(|name| sections.names().resolve(name)).collect();
         let token = token.join(".");
-        if !TOKENS.contains(&token.as_str()) {
+        if NOT_ACCENTS.contains(&token.as_str()) {
+            let seems = if token == "node.active" { "running" } else { "selected" };
+            let message = format!("`accent {token}`: a colour of a state of the viewer is not an accent, an icon would seem {seems}");
+            sections.say(Code::Lc5008, message, accent.id, Vec::new());
+        } else if !is_accent(&token) {
             let token = cut_text(&token).into_owned();
             let message = format!("`accent {token}`: an accent is a token of the theme, of the visual notation (section 8), such as `wire.error`");
             sections.say(Code::Lc5008, message, accent.id, Vec::new());

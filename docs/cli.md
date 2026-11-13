@@ -481,7 +481,7 @@ section 3), not a diagnostic.
 | `LC5005` | error | Coordinate that is not an integer literal in the range (`5.0`, `1e3`, `2000000`) | 11 |
 | `LC5006` | warning | Layout entry that is ambiguous (a `node` entry on a name defined in several bodies, a `wire` entry that matches several wires: naming the input settles it), or a `wire` entry whose value and node exist with no wire between them | 11 |
 | `LC5007` | error | Two layout entries for the same node or wire, `node x at (…)` and `node x view standard` included | 11 |
-| `LC5008` | error | Invalid icon: a grid not written `32`, `path` syntax, a radius or a size not above zero, `inf` or `nan`, an `accent` token that is not in the visual notation, section 8, more than 256 shapes, or more than 4,096 segments or 64 KiB of path in all *(proposed)*. Its calls show the label instead (spec 11.1) | R-14 |
+| `LC5008` | error | Invalid icon: a grid not written `32`, `path` syntax, a radius or a size not above zero, `inf` or `nan`, an `accent` token that is not in the visual notation, section 8, or is `select.stroke` or `node.active`, more than 256 shapes, or more than 4,096 segments or 64 KiB of path in all *(proposed)*. Its calls show the label instead (spec 11.1) | R-14 |
 | `LC5009` | warning | Icon shape that leaves the grid: what it draws goes below 0 or above 32, a text by its box in the font of the notation (11.1) | R-14 |
 | `LC5010` | error | Panel element that does not say its type (not an input or an output, a kind that holds several types, no `default:`) and that a `ui.get` reads, or that no `ui.set` writes, when the function has no other mistake, which may be a `ui.set` that nothing could bind. Not for a kind that M0 does not know, which has only `LC5003`, nor on an `extern`, which has no diagram | 10 |
 | `LC5011` | error | Panel kind that does not show the type of the input or the output of its name: a wire that it refuses is `LC3001`, a `default:` `LC3017` | 10 |
@@ -505,7 +505,7 @@ section 3), not a diagnostic.
 | `LC7003` | error | `FOLDER` holds no function to draw, only types | section 7.6 |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written | section 7.6 |
 | `LC7005` | warning | Two nodes that the `layout` section places, in one body, whose blocks overlap. Both stay where the file puts them. Going from the left, then from the top, each node that overlaps one met before it gets one warning, at its entry, naming the nearest above it of those. Touching edges are not an overlap. Judged in the view drawn (the export of `diagram`, or the view of the viewer), whose sizes it uses; a node is compared with the 64 placed nodes nearest above it at most *(proposed)*, so that thousands in one column stay linear | notation 2.1 |
-| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values | section 7.4 |
+| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, a limit cuts it, or it names another schema or a later version: no values | section 7.4 |
 | `LC7102` | warning | The trace is that of another function: no values | section 7.3 |
 | `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit: the values up to there, as in a cut trace. Gives the line and the limit | section 7.4 |
 | `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored. Gives how many, and the line of the first | section 7.4 |
@@ -950,7 +950,9 @@ as in a cut trace, and the banner says that the trace was cut. *Proposed figures
 - **A line that does not read** (not JSON, not an object, a field of the schema missing or of the wrong
   kind, a negative number where an iteration, a frame or a sequence number is expected) ends the values
   there, with `LC7103`, which gives its line. A first line that does not read, or that names another
-  schema or a later version of it, gives `LC7101` and no values.
+  schema or a later version of it, gives `LC7101` and no values; so does a first line that a limit cuts, the size of
+  the file or of a line, and the warning names the limit. A first line that ends exactly at the size of the file, only
+  its line feed cut, is whole and reads.
 - **Only frame 0 gives values**, the call of the function drawn: the events of the other frames are
   not decoded beyond what tells their frame, within the limits above.
 - **An event that fits nothing in the drawing** is ignored: an event of frame 0 that names a node or a
@@ -1030,7 +1032,7 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | `LC7003` | error | `FOLDER` holds no function to draw, only types |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written |
 | `LC7005` | warning | Two nodes that the `layout` section places, in one body, whose blocks overlap. Both stay where the file puts them. Going from the left, then from the top, each node that overlaps one met before it gets one warning, at its entry, naming the nearest above it of those. Touching edges are not an overlap. Judged in the view drawn (the export of `diagram`, or the view of the viewer), whose sizes it uses; a node is compared with the 64 placed nodes nearest above it at most *(proposed)*, so that thousands in one column stay linear |
-| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values |
+| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, a limit cuts it, or it names another schema or a later version: no values |
 | `LC7102` | warning | The trace is that of another function: no values |
 | `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit (7.4): the values up to there, as in a cut trace. Gives the line and the limit |
 | `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored (7.4). Gives how many, and the line of the first |

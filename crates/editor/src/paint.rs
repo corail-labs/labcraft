@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use egui::epaint::text::{LayoutJob, TextFormat, TextWrapping};
+use egui::epaint::text::{LayoutJob, TextFormat, TextOptions, TextWrapping};
 use egui::epaint::{
     CircleShape, CornerRadius, Mesh, PathShape, PathStroke, RectShape, Shape as Painted2, Stroke, StrokeKind, TessellationOptions, Tessellator,
     TextShape,
@@ -24,22 +24,32 @@ pub struct Key {
     pub pixels: u32,
 }
 
-/// The state of the fonts that galleys depend on: a galley kept across a reset of the atlas would show other glyphs.
+/// The state of the fonts that galleys depend on: a galley kept across a reset of the atlas would show other glyphs, or
+/// none.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Stamp {
     size: [usize; 2],
     faces: usize,
     fill: f32,
+    /// The options of the text: egui 0.37 gives the dark and the light theme each their own, and empties the atlas when
+    /// they change, at the pass after the theme changed. The fill alone may not show it: the texts of the panels can
+    /// fill it again as far as it was.
+    options: TextOptions,
 }
 
 impl Stamp {
     fn of(ctx: &egui::Context) -> Stamp {
-        ctx.fonts(|fonts| Stamp { size: fonts.font_image_size(), faces: fonts.definitions().font_data.len(), fill: fonts.font_atlas_fill_ratio() })
+        ctx.fonts(|fonts| Stamp {
+            size: fonts.font_image_size(),
+            faces: fonts.definitions().font_data.len(),
+            fill: fonts.font_atlas_fill_ratio(),
+            options: *fonts.options(),
+        })
     }
 
     /// Whether the galleys made under `self` still hold under `now`: the atlas only grows between two resets.
     fn holds(self, now: Stamp) -> bool {
-        self.size == now.size && self.faces == now.faces && now.fill >= self.fill
+        self.size == now.size && self.faces == now.faces && now.fill >= self.fill && self.options == now.options
     }
 }
 
@@ -53,6 +63,9 @@ pub struct Painter {
     tabs: HashMap<(usize, bool), Arc<Painted>>,
     marks: HashMap<usize, Arc<Painted>>,
     values: HashMap<Over, Arc<Painted>>,
+    /// The boxes of the values at the inputs of a node, by its index in [`Drawing::placed`], each with the group of its
+    /// wire, in units: what they cover of the bubbles.
+    boxes: HashMap<usize, Arc<Vec<(usize, Rect)>>>,
 }
 
 /// A part of the values of a run over the drawing (notation 6.1).
@@ -82,6 +95,7 @@ impl Painter {
             self.tabs.clear();
             self.marks.clear();
             self.values.clear();
+            self.boxes.clear();
             self.key = Some(key);
         }
         self.stamp = Some(stamp);
@@ -113,6 +127,12 @@ impl Painter {
     /// The values of a run changed, an iteration moved: only what is painted of them goes, not the drawing.
     pub fn clear_values(&mut self) {
         self.values.clear();
+        self.boxes.clear();
+    }
+
+    /// The boxes of the values at the inputs of a node, made when first asked for.
+    pub fn input_boxes(&mut self, placed: usize, make: impl FnOnce() -> Vec<(usize, Rect)>) -> Arc<Vec<(usize, Rect)>> {
+        self.boxes.entry(placed).or_insert_with(|| Arc::new(make())).clone()
     }
 
     /// A part of the values of a run, its shapes those of `overlay`.
@@ -605,4 +625,37 @@ pub(crate) fn subpaths(segments: &[PathSegment]) -> Vec<(Vec<(f64, f64)>, bool)>
     }
     flush(&mut current, &mut out, false);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A pass of `ctx` in which the painter begins with `key`: whether what it kept is still there.
+    fn kept_after_pass(ctx: &egui::Context, painter: &mut Painter, key: Key) -> bool {
+        let mut kept = false;
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            painter.begin(ui.ctx(), key);
+            kept = painter.loose.is_some();
+            painter.loose = Some(Arc::new(Painted { mesh: Arc::new(Mesh::default()), texts: Vec::new(), icons: Vec::new() }));
+        });
+        output.drop_without_applying_deltas();
+        kept
+    }
+
+    /// egui empties its atlas when the options of the text change, as between its light and its dark theme, at the
+    /// pass after: the galleys kept would point into an empty atlas, the texts gone until the zoom changes.
+    #[test]
+    fn the_galleys_go_when_the_options_of_the_text_change() {
+        let ctx = egui::Context::default();
+        ctx.set_theme(egui::Theme::Light);
+        let key = Key { generation: 1, theme: Theme::Light, step: 1, pixels: 1 };
+        let mut painter = Painter::default();
+        assert!(!kept_after_pass(&ctx, &mut painter, key), "nothing kept yet");
+        assert!(kept_after_pass(&ctx, &mut painter, key), "kept while nothing changes");
+        // The host changes its theme; the key of the canvas is the same, as when the app passes its own theme.
+        ctx.set_theme(egui::Theme::Dark);
+        assert!(!kept_after_pass(&ctx, &mut painter, key), "the atlas was emptied");
+        assert!(kept_after_pass(&ctx, &mut painter, key));
+    }
 }
