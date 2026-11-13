@@ -29,12 +29,23 @@ jobs:
       # The version of rust-toolchain.toml, for xtask.
       - name: Install Rust
         run: rustup toolchain install --no-self-update
-      # Also says when fuzz/Cargo.lock is out of date: cargo fuzz would rewrite it without a word.
-      - name: Licences of fuzz/
-        run: cargo xtask fuzz-licences
       - name: Install the pinned nightly
         working-directory: fuzz
         run: rustup toolchain install --no-self-update
+      # Only main saves the cache; pull requests restore it. Both workspaces: xtask for the licences, the targets of
+      # fuzz/. It also keeps ~/.cargo/bin, so cargo install finds cargo-fuzz already there.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            . -> target
+            fuzz -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # Also says when fuzz/Cargo.lock is out of date: cargo fuzz would rewrite it without a word.
+      - name: Licences of fuzz/
+        run: cargo xtask fuzz-licences
+      # Whatever ran cargo before (the cache step too) must not have rewritten a stale lock without a word.
+      - name: fuzz/Cargo.lock unchanged
+        run: git diff --exit-code fuzz/Cargo.lock
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --version 0.13.2 --locked
       - name: Formatting of fuzz/
