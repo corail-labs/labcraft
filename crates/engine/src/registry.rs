@@ -495,7 +495,7 @@ fn catalog() -> Vec<Command> {
             id: "diagram.svg",
             label: "Draw Diagram",
             summary: "Draw functions of a folder as SVG, with the report of each drawing",
-            description: "The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives, in the field `image` of its entry, and the report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote. Past the bound of a result, the SVGs give way from the last function, each as `{ \"$cut\": true }`, and the result says `truncated`: ask for one function at a time, or use `labcraft-cli diagram`, which writes files.",
+            description: "The SVG of each function asked for, the same as `labcraft-cli diagram --svg` gives, in the field `image` of its entry, and the report `labcraft-diagram/1`, so that an agent sees the drawing of what it wrote; with `trace`, the values of that run on the wires of the one function asked for, and the part `trace` of the report. Past the bound of a result, the SVGs give way from the last function, each as `{ \"$cut\": true }`, and the result says `truncated`: ask for one function at a time, or use `labcraft-cli diagram`, which writes files.",
             params: object(
                 &[
                     ("folder", string("A library folder of the project.")),
@@ -505,6 +505,21 @@ fn catalog() -> Vec<Command> {
                     ),
                     ("theme", one_of("One theme only, instead of both.", &["light", "dark", "both"], "both")),
                     ("max_diagram_nodes", integer("A function with more nodes is not drawn.", 1, 100_000, Some(20_000))),
+                    (
+                        "trace",
+                        string(
+                            "A trace of the project, `labcraft-trace/1`, with exactly one function in `functions`: the values of that run on its wires.",
+                        ),
+                    ),
+                    (
+                        "max_trace_size",
+                        integer(
+                            "The trace is read up to this size, in bytes.",
+                            1,
+                            crate::drawings::MAX_TRACE_SIZE,
+                            Some(crate::drawings::DEFAULT_TRACE_SIZE),
+                        ),
+                    ),
                 ],
                 &["folder"],
             ),

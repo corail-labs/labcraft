@@ -8,7 +8,7 @@
 //! - for the target `simulation`, simulation files of arrays and of inline tables nested at the limit of the reader of `toml`
 //!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2);
 //! - for the target `mcp`, a session of the scripted loop of scenario 1 on the project of the target, a run followed and
-//!   aborted, and lines that are not requests, so that the fuzzer starts from requests the server reads; and requests at
+//!   aborted, the drawing of a function with the trace of its run, and lines that are not requests, so that the fuzzer starts from requests the server reads; and requests at
 //!   the bound of nesting of the server and above it, and one after a byte order mark;
 //! - for the target `trace`, the trace of a run of its function (`trace/walk.lcf`).
 //!
@@ -113,7 +113,7 @@ const MCP_SESSION: &str = concat!(
     "\n",
     r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"run_abort","arguments":{}}}"#,
     "\n",
-    r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"diagram_svg","arguments":{"function":"double"}}}"#,
+    r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"diagram_svg","arguments":{"folder":".","functions":["double"],"trace":".labcraft/runs/double.trace.jsonl"}}}"#,
     "\n",
     r#"{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":8}}"#,
     "\n",

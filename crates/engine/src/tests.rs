@@ -547,6 +547,56 @@ fn diagram_svg_names_an_unknown_function_and_refuses_a_folder_out_of_reach() {
     assert_eq!((empty.code, empty.parameter.as_deref()), ("params.invalid", Some("functions")));
 }
 
+/// `trace` and `max_trace_size` of `diagram.svg` (commands.md 6.5, cli.md 7.3 and 7.4), reached through the registry as an
+/// agent reaches them. By hand: `double` gives `x * 2`, so 5.0 for 2.5; the trace holds `call`, `ran` and `end`.
+#[test]
+fn diagram_svg_draws_the_values_of_a_run_of_the_project() {
+    let (mut session, counting) = session();
+    let report = ok(&mut session, "run.start", json!({ "function": "double", "args": { "x": 2.5 } }));
+    assert_eq!(report["status"], "ok", "{report}");
+    let file = ".labcraft/runs/double.trace.jsonl";
+    let written = counting.memory.get("/p/.labcraft/runs/double.trace.jsonl").unwrap();
+    let drawn = ok(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double"], "trace": file }));
+    assert_eq!(drawn["status"], "ok", "{drawn}");
+    assert_eq!(drawn["trace"], json!({ "file": file, "events": 3, "status": "ok", "cut": false, "stale": [], "ignored": 0 }));
+    let image = drawn["diagrams"][0]["image"].as_str().unwrap();
+    assert!(image.contains("<g data-value=\"y\"><title>5.0</title>"), "{image}");
+    assert!(image.contains("<g data-value=\"x\"><title>2.5</title>"), "{image}");
+    // Read up to the middle of the second line: the first line whole, no value, `LC7103` (cli.md 7.4).
+    let header = written.iter().position(|byte| *byte == b'\n').unwrap() as u64 + 1;
+    let short = ok(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double"], "trace": file, "max_trace_size": header + 10 }));
+    let codes: Vec<&str> = short["check"]["diagnostics"].as_array().unwrap().iter().filter_map(|d| d["code"].as_str()).collect();
+    assert_eq!(codes, ["LC7103"], "{short}");
+    assert_eq!((&short["trace"]["events"], &short["trace"]["cut"]), (&json!(0), &json!(true)), "{short}");
+    assert!(!short["diagrams"][0]["image"].as_str().unwrap().contains("data-value=\"y\""));
+    // One function, exactly: given twice, it is one, as on the command line (cli.md 7); two are wrong usage.
+    let twice = ok(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double", "double"], "trace": file }));
+    assert_eq!(twice["summary"]["functions"], 1, "{twice}");
+    assert!(twice["diagrams"][0]["image"].as_str().unwrap().contains("<g data-value=\"y\"><title>5.0</title>"));
+    counting.memory.put("/p/half.lcf", MAIN.replace("double", "half"));
+    let none = error(&mut session, "diagram.svg", json!({ "folder": ".", "trace": file }));
+    assert_eq!((none.code, none.parameter.as_deref()), ("params.invalid", Some("trace")));
+    let two = error(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double", "half"], "trace": file }));
+    assert_eq!((two.code, two.parameter.as_deref()), ("params.invalid", Some("trace")));
+    // A trace of the project.
+    for outside in ["../t.jsonl", "<labcraft>/visa/t.jsonl"] {
+        let refused = error(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double"], "trace": outside }));
+        assert_eq!((refused.code, refused.parameter.as_deref()), ("path.outside_project", Some("trace")), "{outside}");
+    }
+    let number = error(&mut session, "diagram.svg", json!({ "folder": ".", "trace": 1 }));
+    assert_eq!((number.code, number.parameter.as_deref()), ("params.invalid", Some("trace")));
+    // A size from 1 to 4 GiB, 512 MiB by default (cli.md 7.4).
+    for size in [0_u64, (4 << 30) + 1] {
+        let wrong = error(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double"], "trace": file, "max_trace_size": size }));
+        assert_eq!((wrong.code, wrong.parameter.as_deref()), ("params.invalid", Some("max_trace_size")), "{size}");
+    }
+    let most = ok(&mut session, "diagram.svg", json!({ "folder": ".", "functions": ["double"], "trace": file, "max_trace_size": 4_u64 << 30 }));
+    assert_eq!(most["trace"]["events"], 3, "{most}");
+    let schema =
+        crate::registry::command("diagram.svg").unwrap().params.properties.iter().find(|(name, _)| *name == "max_trace_size").unwrap().1.clone();
+    assert_eq!((&schema["default"], &schema["maximum"]), (&json!(536_870_912_u64), &json!(4_294_967_296_u64)));
+}
+
 #[test]
 fn the_viewer_opens_a_folder_of_the_project_and_shows_its_first_function() {
     let (mut session, _) = session();
