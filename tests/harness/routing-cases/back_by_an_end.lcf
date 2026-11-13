@@ -1,0 +1,13 @@
+labcraft 1
+
+use core
+
+fn back_by_an_end(a0: f64) -> (o0: f64) {
+    v0 = core.sub(a0, a0)
+    v1, err = s(v0, err: err)
+    v2 = core.mul(v1, v1)
+    v3 = core.mul(v1, a0)
+    v4 = core.add(v0, v2)
+    v5 = core.mul(v4, v1)
+    o0 = v4
+}

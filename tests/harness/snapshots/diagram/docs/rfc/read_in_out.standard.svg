@@ -67,9 +67,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M478.18 343.28 L483.68 343.28 Q489.18 343.28 489.18 337.78 L489.18 301.64 Q489.18 295.64 495.18 295.64 L516.18 295.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="v_in" data-from="v_in.result" data-to="fn.v_in">
-<path d="M636.18 295.64 L665.18 295.64 Q671.18 295.64 671.18 289.64 L671.18 285.28 Q671.18 279.28 677.18 279.28 L807.18 279.28 Q813.18 279.28 813.18 285.28 L813.18 289.64 Q813.18 295.64 819.18 295.64 L907 295.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M636.18 295.64 L665.18 295.64 Q671.18 295.64 671.18 289.64 L671.18 278 Q671.18 272 677.18 272 L807.18 272 Q813.18 272 813.18 278 L813.18 289.64 Q813.18 295.64 819.18 295.64 L907 295.64" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="640.18" y="292.64" font-size="10" style="fill: var(--ink-muted)">v_in</text>
-<text x="730.14" y="276.28" font-size="10" style="fill: var(--ink-muted)">v_in</text>
+<text x="730.14" y="269" font-size="10" style="fill: var(--ink-muted)">v_in</text>
 </g>
 <g data-wire="raw_out" data-from="raw_out.value" data-to="v_out.x">
 <path d="M478.18 191.28 L483.68 191.28 Q489.18 191.28 489.18 185.78 L489.18 102 Q489.18 96 495.18 96 L516.18 96" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

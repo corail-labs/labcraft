@@ -1273,7 +1273,9 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
 - **The theme**: the values of the tokens, light and dark, are data here, and the test of the contrasts of
   notation 8 reads them. The canvas maps each token to a colour; the SVG writes them as CSS variables.
 - **Bounded on purpose.** Every step is near linear: a fixed number of sweeps to lower crossings, intervals
-  sorted once for channels and tracks, no search whose cost grows with the square of the nodes. A function of
+  sorted once for channels and tracks, no search whose cost grows with the square of the nodes: the search for a
+  lane between the nodes (notation 2.2) reads at most 4,096 items and 64 more for each node and wire of its body, past
+  which a track goes over the nodes. A function of
   20,000 nodes is placed and routed within 2 s and 512 MB, one of 1,000 nodes and 2,000 wires within 1 s
   (scenarios 4 and 6). Above `--max-diagram-nodes`, `LC7002` (cli.md 7.6).
 - **Text.** `diagram` cuts texts and counts their cells; it does not reorder them. The canvas and the SVG both

@@ -472,7 +472,7 @@ fn main(x: f64) -> () {{
     /// there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 18] = [
+        const CASES: [(&str, &str); 20] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -491,6 +491,8 @@ fn main(x: f64) -> () {{
             ("two.lcf", include_str!("../routing-cases/two.lcf")),
             ("narrow_left.lcf", include_str!("../routing-cases/narrow_left.lcf")),
             ("targets_too_many.lcf", include_str!("../routing-cases/targets_too_many.lcf")),
+            ("back_by_an_end.lcf", include_str!("../routing-cases/back_by_an_end.lcf")),
+            ("back_by_ends.lcf", include_str!("../routing-cases/back_by_ends.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {
