@@ -1,0 +1,18 @@
+labcraft 1
+
+use core
+
+fn walk(
+    values: [f64] = [1.0, 2.0, 4.0],
+    start: Reading = Reading.Value(10.0),
+) -> (total: f64, same: f64, last: i64, got: f64) {
+    got = match start {
+        Reading.Value(v) => yield v
+        Reading.Overload => yield 0.0
+    }
+    total, same, last = for x in values, i in 0..3, carry t = 0.0, carry k = 5.0, carry j = 0 {
+        next j = i
+        next k = k
+        next t = core.add(t, x)
+    }
+}

@@ -652,13 +652,15 @@ mod tests {
     }
 
     /// A drawing through `postcard` and back, as the worker of the web viewer sends it to the page (architecture 11.5):
-    /// the same bytes again, and the same drawing but its warnings, which the report carries. A path of an icon can hold
+    /// the same bytes again, and the same drawing but its warnings, which the report carries, and its plan of a trace. A path of an icon can hold
     /// a NaN, which no drawing equals: the bytes still say that it came back whole.
     fn crosses(mut drawing: labcraft_diagram::Drawing, what: &str) -> labcraft_diagram::Drawing {
         let bytes = postcard::to_allocvec(&drawing).unwrap_or_else(|error| panic!("{what}: {error}"));
         let back: labcraft_diagram::Drawing = postcard::from_bytes(&bytes).unwrap_or_else(|error| panic!("{what}: {error}"));
         assert_eq!(postcard::to_allocvec(&back).unwrap(), bytes, "{what}: other bytes came back");
         drawing.warnings.clear();
+        // Nor its plan of a trace: the browser shows no trace in M0 (architecture 11.5).
+        drawing.trace = labcraft_diagram::values::TracePlan::default();
         let reflexive = drawing == drawing.clone();
         assert!(!reflexive || back == drawing, "{what}: another drawing came back");
         back

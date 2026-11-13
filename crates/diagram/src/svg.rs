@@ -6,6 +6,7 @@ use std::fmt::Write as _;
 use crate::shape::{Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons};
 use crate::style;
 use crate::theme::{TOKENS, variable};
+use crate::values::Overlay;
 
 /// The schema of the attributes, stable under this name (`docs/cli.md`, 4.4).
 pub const SCHEMA: &str = "labcraft-diagram/1";
@@ -73,10 +74,17 @@ fn attribute(name: &str, value: &str, out: &mut String) {
 
 fn style(paint: &Paint) -> String {
     let fill = paint.fill.map_or_else(|| "none".to_owned(), |token| format!("var({})", variable(token)));
-    match paint.stroke {
+    let mut style = match paint.stroke {
         Some(stroke) => format!("fill: {fill}; stroke: var({}); stroke-width: {}", variable(stroke), n(paint.width)),
         None => format!("fill: {fill}"),
+    };
+    if paint.dashed && paint.stroke.is_some() {
+        style.push_str("; stroke-dasharray: 3 2");
     }
+    if paint.opacity < 100 {
+        let _ = write!(style, "; opacity: {}", decimal(i128::from(paint.opacity), 2));
+    }
+    style
 }
 
 /// The values of the tokens of a drawing (`crate::style`), light or dark.
@@ -91,10 +99,18 @@ fn values(style: &style::Style, dark: bool) -> String {
 
 /// The SVG of a drawing.
 pub fn svg(drawing: &Drawing, theme: Theme) -> String {
+    svg_with(drawing, None, theme)
+}
+
+/// The SVG of a drawing with the values of a run over it (`docs/cli.md`, 7.3): the banner above the drawing, which makes
+/// the image taller, then the veils, the hatching and the counters, then the bubbles, each in a `<g data-value>`.
+pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> String {
     let mut out = String::new();
-    let (width, height) = (n(drawing.width), n(drawing.height));
+    let top = overlay.map_or(0, |overlay| overlay.top);
+    let width = n(drawing.width.max(overlay.map_or(0, |overlay| overlay.width)));
+    let height = n(drawing.height + top);
     out.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\"");
-    attribute("viewBox", &format!("0 0 {width} {height}"), &mut out);
+    attribute("viewBox", &format!("0 {} {width} {height}", n(-top)), &mut out);
     attribute("width", &width, &mut out);
     attribute("height", &height, &mut out);
     attribute("font-family", FONT_FAMILY, &mut out);
@@ -117,7 +133,11 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
         }
     }
     out.push_str("text { direction: ltr; unicode-bidi: isolate; white-space: pre; }\n</style>\n");
-    let _ = writeln!(out, "<rect width=\"{width}\" height=\"{height}\" style=\"fill: var(--canvas-fill)\"/>");
+    if top > 0 {
+        let _ = writeln!(out, "<rect y=\"{}\" width=\"{width}\" height=\"{height}\" style=\"fill: var(--canvas-fill)\"/>", n(-top));
+    } else {
+        let _ = writeln!(out, "<rect width=\"{width}\" height=\"{height}\" style=\"fill: var(--canvas-fill)\"/>");
+    }
     let icons = icons(drawing, &mut out);
     for shape in &drawing.loose {
         write_shape(shape, &icons, &mut out);
@@ -163,6 +183,9 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
         }
         out.push_str("</g>\n");
     }
+    for layer in overlay.iter().flat_map(|overlay| overlay.under.iter()) {
+        group(&layer.shapes, &icons, &mut out);
+    }
     for mark in &drawing.marks {
         out.push_str("<g");
         attribute("data-code", &mark.code, &mut out);
@@ -172,8 +195,33 @@ pub fn svg(drawing: &Drawing, theme: Theme) -> String {
         }
         out.push_str("</g>\n");
     }
+    if let Some(overlay) = overlay {
+        if !overlay.banner.is_empty() {
+            group(&overlay.banner, &icons, &mut out);
+        }
+        for bubble in &overlay.bubbles {
+            out.push_str("<g");
+            attribute("data-value", &bubble.wire, &mut out);
+            out.push_str("><title>");
+            escape(&bubble.title, &mut out);
+            out.push_str("</title>\n");
+            for shape in &bubble.layer.shapes {
+                write_shape(shape, &icons, &mut out);
+            }
+            out.push_str("</g>\n");
+        }
+    }
     out.push_str("</svg>\n");
     out
+}
+
+/// Shapes in a `<g>` of their own, with no attribute.
+fn group(shapes: &[Shape], icons: &[String], out: &mut String) {
+    out.push_str("<g>\n");
+    for shape in shapes {
+        write_shape(shape, icons, out);
+    }
+    out.push_str("</g>\n");
 }
 
 fn runs(runs: &[Run], out: &mut String) {

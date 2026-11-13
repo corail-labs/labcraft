@@ -21,6 +21,7 @@ labcraft-graph = { path = "../crates/graph" }
 labcraft-libs = { path = "../libs/embedded" }
 labcraft-mcp = { path = "../crates/mcp" }
 labcraft-runtime = { path = "../crates/runtime" }
+labcraft-trace = { path = "../crates/trace" }
 labcraft-types = { path = "../crates/types" }
 labcraft-visa = { path = "../libs/visa" }
 libfuzzer-sys = "0.4"
@@ -72,6 +73,13 @@ bench = false
 [[bin]]
 name = "mcp"
 path = "fuzz_targets/mcp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trace"
+path = "fuzz_targets/trace.rs"
 test = false
 doc = false
 bench = false

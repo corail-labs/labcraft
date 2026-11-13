@@ -2005,6 +2005,7 @@ dependencies = [
  "labcraft-check",
  "labcraft-format",
  "labcraft-graph",
+ "labcraft-trace",
  "labcraft-types",
  "serde",
  "toml",

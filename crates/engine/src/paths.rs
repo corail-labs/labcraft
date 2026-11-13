@@ -40,6 +40,8 @@ pub enum Wanted {
     FileOrFolder,
     /// A library folder.
     Folder,
+    /// The trace of a run, which is only read: any file.
+    Trace,
 }
 
 fn outside(parameter: &str, message: impl Into<String>) -> CommandError {
@@ -222,6 +224,7 @@ fn judge_extension(path: &Path, shown: &str, exists: bool, is_folder: bool, para
         Wanted::FileOrFolder if is_folder || program => Ok(()),
         Wanted::FileOrFolder => Err(invalid(parameter, format!("`{shown}` is neither a folder nor a `.lcf` or `.lct` file"))),
         _ if is_folder => Err(invalid(parameter, format!("`{shown}` is a folder, not a file"))),
+        Wanted::Trace => Ok(()),
         Wanted::File if program || simulation => Ok(()),
         Wanted::Simulation if simulation => Ok(()),
         Wanted::Simulation => Err(invalid(parameter, format!("`{shown}` is not a simulation file: the extension is `.toml`"))),

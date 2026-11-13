@@ -9,7 +9,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
 use labcraft_check::{Checked, check};
-use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, Theme, ViewState, draw, mark, svg, undrawn};
+use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, Overlay, Theme, ViewState, draw, mark, svg_with, undrawn};
 use labcraft_types::{CheckCounts, CheckSummary, Code, Diagnostic, Fix, Interner, Limits, Report, Status, cut_text};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -48,6 +48,9 @@ pub struct Loaded {
     pub functions: Vec<Function>,
     /// The folder, as reports show it; none when it could not be read.
     pub root: Option<String>,
+    /// The SHA-256 of each file of the folder that `check` read, by its name in reports: what a trace is judged
+    /// against (notation 6.1).
+    pub hashes: Vec<(String, String)>,
 }
 
 /// Reads and checks `folder` with the folders of `--lib-path`, its paths shown from `current`, keeping the first
@@ -65,13 +68,15 @@ pub fn load(ws: &dyn Workspace, shipped: &Shipped, folder: &Path, lib_paths: &[P
     let host = Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current, limits, seen: None };
     let mut names = Interner::new();
     let Some(root) = roots(ws, &folders, current).into_iter().next() else {
-        return Loaded { report, counts: CheckCounts::default(), checked: None, names, functions: Vec::new(), root: None };
+        return Loaded { report, counts: CheckCounts::default(), checked: None, names, functions: Vec::new(), root: None, hashes: Vec::new() };
     };
     let functions = functions_of(&root.real, &walked);
     let has_types = walked.files.iter().any(|found| found.path.extension().is_some_and(|extension| extension == "lct"));
     let mut counts = CheckCounts::default();
+    let mut hashes = Vec::new();
     let checked = match library_of(ws, &root.real, &root.shown, &mut walked, limits, None) {
         Some(source) => {
+            crate::folders::hash_files(&source, &mut hashes);
             let work = || check(source, &host, &mut names, limits);
             match panic::catch_unwind(AssertUnwindSafe(work)) {
                 Ok(mut checked) => {
@@ -94,7 +99,7 @@ pub fn load(ws: &dyn Workspace, shipped: &Shipped, folder: &Path, lib_paths: &[P
     if functions.is_empty() && has_types {
         report.push(Diagnostic::new(Code::Lc7003, "no function to draw here, only types", root.shown.as_str()));
     }
-    Loaded { report, counts, checked, names, functions, root: Some(root.shown) }
+    Loaded { report, counts, checked, names, functions, root: Some(root.shown), hashes }
 }
 
 /// Every `.lcf` file under the folder, read or not, named from the folder by its path: `dmm_driver/measure.lcf` is
@@ -251,6 +256,149 @@ pub fn drawings(asked: &[&Function], loaded: &Loaded, limits: &DiagramLimits, re
     asked.iter().map(|function| drawing_of(function, loaded.checked.as_ref(), &files, &loaded.names, &ViewState::default(), limits, report)).collect()
 }
 
+/// The `trace` part of `labcraft-diagram/1` (`docs/cli.md`, 7.5).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct TracePart {
+    pub file: String,
+    /// The events read.
+    pub events: u64,
+    /// That of its `end` event; absent when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// The run or a limit of reading cut it.
+    pub cut: bool,
+    /// The files that have changed or are gone since the run.
+    pub stale: Vec<String>,
+    /// The events counted by `LC7104`.
+    pub ignored: u64,
+}
+
+/// `--max-trace-size` by default: twice the 256 MiB after which a run stops tracing, and its most (`docs/cli.md`, 7.4).
+pub const DEFAULT_TRACE_SIZE: u64 = 512 << 20;
+pub const MAX_TRACE_SIZE: u64 = 4 << 30;
+
+/// What a trace is read in, a part at a time, so that reading never holds the whole file.
+const TRACE_PART: usize = 64 * 1024;
+
+/// Reads the trace at `path`, shown as `shown`, for the drawing of `function`, within `max_size` (`--max-trace-size`,
+/// `docs/cli.md`, 7.4): the values to draw over it, and the `trace` part of the report; the diagnostics of reading it
+/// (`LC71`) join `report`. A function that is not drawn has no values, but its trace is still read and judged. Whether it
+/// matches is judged on the files of the folder that the run read, and always on the file of the function (notation
+/// 6.1), each named from `FOLDER` (cli.md 7.2): the trace names them from where the run started, so a file is the one
+/// whose name ends with ours, at a `/`.
+#[allow(clippy::too_many_arguments)]
+pub fn read_trace(
+    ws: &dyn Workspace,
+    path: &Path,
+    shown: &str,
+    drawing: Option<&Drawing>,
+    function: &Function,
+    loaded: &Loaded,
+    max_size: u64,
+    report: &mut Report,
+) -> (Option<Overlay>, TracePart) {
+    let shown = cut_text(shown).into_owned();
+    let mut part = TracePart { file: shown.clone(), ..TracePart::default() };
+    let limits = labcraft_trace::ReadLimits { file: max_size, ..labcraft_trace::ReadLimits::default() };
+    let expected =
+        drawing.map_or_else(|| labcraft_trace::Expected { function: function.name.clone(), ..Default::default() }, labcraft_diagram::expected);
+    let mut reader = labcraft_trace::Reader::new(expected, limits);
+    let opened = match ws.metadata(path) {
+        Ok(metadata) if metadata.kind == crate::workspace::Kind::Folder => Err("it is a folder".to_owned()),
+        Ok(_) => ws.open(path, 0).map_err(|error| walk::io_text(&error)),
+        Err(error) => Err(walk::io_text(&error)),
+    };
+    let mut file = match opened {
+        Ok(file) => file,
+        Err(why) => {
+            report.push(labcraft_diagram::values::unreadable(&shown, &why));
+            return (None, part);
+        }
+    };
+    let mut buffer = vec![0u8; TRACE_PART];
+    loop {
+        match std::io::Read::read(&mut file, &mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                if !reader.feed(buffer.get(..read).unwrap_or_default()) {
+                    break;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => {
+                report.push(labcraft_diagram::values::unreadable(&shown, &walk::io_text(&error)));
+                return (None, part);
+            }
+        }
+    }
+    let trace = reader.finish();
+    // Without a drawing, every event fits nothing: that says nothing of the trace.
+    for diagnostic in labcraft_diagram::values::diagnostics(&trace, &shown) {
+        if drawing.is_some() || diagnostic.code() != labcraft_types::Code::Lc7104 {
+            report.push(diagnostic);
+        }
+    }
+    let Ok(header) = &trace.header else { return (None, part) };
+    if trace.other_function {
+        return (None, part);
+    }
+    // The files of the folder that the run read, each once, and the file of the function, whatever the trace lists.
+    let root = loaded.root.as_deref().unwrap_or(".");
+    let from_folder = |file: &str| -> String {
+        let prefix = format!("{root}/");
+        if root == "." { file.to_owned() } else { file.strip_prefix(prefix.as_str()).unwrap_or(file).to_owned() }
+    };
+    let ours: HashMap<String, &str> = loaded.hashes.iter().map(|(file, sha)| (from_folder(file), sha.as_str())).collect();
+    // The name of ours that a name of the trace ends with, at a `/`, the longest first.
+    let ours_of = |file: &str| -> Option<(String, &str)> {
+        let mut at = Some(file);
+        while let Some(rest) = at {
+            if let Some(sha) = ours.get(rest) {
+                return Some((rest.to_owned(), *sha));
+            }
+            at = rest.split_once('/').map(|(_, rest)| rest);
+        }
+        None
+    };
+    let mut stale: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (file, recorded) in &header.files {
+        let Some((name, sha)) = ours_of(file) else { continue };
+        if seen.insert(name.clone()) && !recorded.eq_ignore_ascii_case(sha) {
+            stale.push(cut_text(&name).into_owned());
+        }
+    }
+    if !seen.contains(&function.source) && !stale.contains(&function.source) {
+        stale.insert(0, cut_text(&function.source).into_owned());
+    }
+    part.events = trace.events;
+    part.status = trace.end.as_deref().map(|status| cut_text(status).into_owned());
+    part.cut = trace.cut();
+    part.ignored = if drawing.is_some() { trace.ignored } else { 0 };
+    part.stale.clone_from(&stale);
+    let judged = labcraft_diagram::Judged { stale, written: None };
+    (drawing.map(|drawing| labcraft_diagram::values(drawing, &trace, &judged, &labcraft_diagram::Choice::default())), part)
+}
+
+/// The values of a run over the one function asked for (`docs/cli.md`, 7.3), as `labcraft-cli diagram --trace` and
+/// `diagram.svg` draw them; for an unknown function, only the `trace` part, which names the file.
+#[allow(clippy::too_many_arguments)]
+pub fn trace_over(
+    ws: &dyn Workspace,
+    path: &Path,
+    shown: &str,
+    asked: &[&Function],
+    drawn: &[Drawn3],
+    loaded: &Loaded,
+    max_size: u64,
+    report: &mut Report,
+) -> (Option<Overlay>, TracePart) {
+    match (asked.first(), drawn.first()) {
+        (Some(function), Some((drawing, _, _))) => read_trace(ws, path, shown, drawing.as_ref(), function, loaded, max_size, report),
+        _ => (None, TracePart { file: cut_text(shown).into_owned(), ..TracePart::default() }),
+    }
+}
+
 /// What became of one function, as an entry of `diagrams` says it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Entry {
@@ -272,6 +420,8 @@ pub struct Document<'a> {
     pub status: Status,
     pub summary: Summary,
     pub diagrams: Vec<JsonEntry<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trace: Option<&'a TracePart>,
     pub check: CheckPart<'a>,
 }
 
@@ -316,7 +466,7 @@ pub fn failed(entries: &[Entry], report: &Report, written: bool) -> bool {
 }
 
 /// `labcraft-diagram/1` (`docs/cli.md`, 7.5), the entries in code point order of their names.
-pub fn document<'a>(entries: &'a [Entry], report: &'a Report, counts: CheckCounts, failed: bool) -> Document<'a> {
+pub fn document<'a>(entries: &'a [Entry], report: &'a Report, counts: CheckCounts, failed: bool, trace: Option<&'a TracePart>) -> Document<'a> {
     let drawn = entries.iter().filter(|entry| entry.drawn).count() as u64;
     Document {
         schema: SCHEMA,
@@ -334,6 +484,7 @@ pub fn document<'a>(entries: &'a [Entry], report: &'a Report, counts: CheckCount
                 codes: &entry.codes,
             })
             .collect(),
+        trace,
         check: CheckPart { summary: report.check_document(counts, false).summary, diagnostics: report.diagnostics() },
     }
 }
@@ -374,15 +525,42 @@ pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandE
         _ => Theme::Both,
     };
     let max_nodes = params.u64("max_diagram_nodes").unwrap_or(DiagramLimits::default().max_nodes);
+    // The values of a run, from a trace of the project, on one function (`docs/cli.md`, 7.3).
+    let trace = match params.str("trace") {
+        Some(given) => {
+            if names.len() != 1 {
+                return Err(CommandError::of(
+                    "params.invalid",
+                    "trace",
+                    "`trace` draws the values of a run on one function: give exactly one in `functions`",
+                ));
+            }
+            match paths::judge(session.workspace(), session.root(), given, "trace", Wanted::Trace, false)? {
+                Place::Project { path, shown, .. } => Some((path, shown)),
+                Place::Shipped(shown) => {
+                    return Err(CommandError::of("path.outside_project", "trace", format!("`{shown}` is not a trace of the project")));
+                }
+            }
+        }
+        None => None,
+    };
+    let max_trace_size = params.u64("max_trace_size").unwrap_or(DEFAULT_TRACE_SIZE);
     let config = session.config();
     let mut loaded = load(session.workspace(), &config.shipped, &path, &config.lib_paths, &config.limits, Some(session.root()));
     let mut report = std::mem::replace(&mut loaded.report, Report::new(0));
     let Some(root) = loaded.root.as_deref() else {
         report.finish();
-        return to_json(&document(&[], &report, CheckCounts::default(), true));
+        return to_json(&document(&[], &report, CheckCounts::default(), true, None));
     };
     let (asked, mut entries) = asked(&names, &loaded.functions, root, &mut report);
     let drawn = drawings(&asked, &loaded, &DiagramLimits { max_nodes }, &mut report);
+    let (overlay, part) = match &trace {
+        Some((path, shown)) => {
+            let (overlay, part) = trace_over(session.workspace(), path, shown, &asked, &drawn, &loaded, max_trace_size, &mut report);
+            (overlay, Some(part))
+        }
+        None => (None, None),
+    };
     // The drawings wait, by the index of their entry, until the room left for their SVG is known.
     let mut pending: Vec<Option<(&Function, Option<Drawing>)>> = std::iter::repeat_with(|| None).take(entries.len()).collect();
     for (function, (drawing, nodes, codes)) in asked.iter().zip(drawn) {
@@ -410,9 +588,12 @@ pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandE
     }
     report.finish();
     let failed = failed(&sorted, &report, false);
-    let mut result = to_json(&document(&sorted, &report, loaded.counts, failed))?;
+    let mut result = to_json(&document(&sorted, &report, loaded.counts, failed, part.as_ref()))?;
     fill_images(&mut result, crate::bound::MAX_RESULT, |index| {
-        waiting.get_mut(index).and_then(Option::take).map(|(function, drawing)| svg(&picture(function, drawing, &report), theme))
+        waiting
+            .get_mut(index)
+            .and_then(Option::take)
+            .map(|(function, drawing)| svg_with(&picture(function, drawing, &report), overlay.as_ref(), theme))
     });
     Ok(result)
 }

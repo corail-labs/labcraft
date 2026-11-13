@@ -68,15 +68,19 @@ fn what_the_writer_writes_the_reader_reads() {
     writer.event(0, &Event::Ran { frame: 0, node: "dmm", loops: &[], iter: &[], out: &[("dmm", &session), ("e1", &none)], types: &[] });
     for iteration in 0..3u64 {
         let raw = move |w: &mut ValueWriter<'_>| w.f64(iteration as f64 + 0.5, None);
-        writer.event(0, &Event::Ran { frame: 0, node: "raw", loops: &[], iter: &[iteration], out: &[("raw", &raw)], types: &[] });
+        writer.event(0, &Event::Ran { frame: 0, node: "raw", loops: &["readings"], iter: &[iteration], out: &[("raw", &raw)], types: &[] });
         let even = iteration % 2 == 0;
-        writer.event(0, &Event::Arm { frame: 0, node: "v", loops: &[], iter: &[iteration], arm: if even { "true" } else { "false" } });
+        writer.event(0, &Event::Arm { frame: 0, node: "v", loops: &["readings"], iter: &[iteration], arm: if even { "true" } else { "false" } });
         let text = |w: &mut ValueWriter<'_>| w.string("even");
         let odd = move |w: &mut ValueWriter<'_>| w.i64(iteration as i64, None);
         if even {
-            writer.event(0, &Event::Ran { frame: 0, node: "x", loops: &[], iter: &[iteration], out: &[("x", &text)], types: &[("x", "string")] });
+            writer.event(
+                0,
+                &Event::Ran { frame: 0, node: "x", loops: &["readings"], iter: &[iteration], out: &[("x", &text)], types: &[("x", "string")] },
+            );
         } else {
-            writer.event(0, &Event::Ran { frame: 0, node: "x", loops: &[], iter: &[iteration], out: &[("x", &odd)], types: &[("x", "i32")] });
+            writer
+                .event(0, &Event::Ran { frame: 0, node: "x", loops: &["readings"], iter: &[iteration], out: &[("x", &odd)], types: &[("x", "i32")] });
         }
     }
     let readings = |w: &mut ValueWriter<'_>| {
@@ -120,15 +124,15 @@ fn what_fits_nothing_is_counted_and_the_rest_shown() {
         CALL,
         r#"{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"nowhere","out":{"a":1}}"#,
         r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"dmm","out":{"e1":null,"other":1}}"#, // a wire it does not have
-        r#"{"seq":4,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[0],"out":{"raw":"1 V"},"types":{"raw":"f64[V]"}}"#,
+        r#"{"seq":4,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[0],"out":{"raw":"1 V"},"types":{"raw":"f64[V]"}}"#,
         r#"{"seq":5,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","out":{"raw":1.0}}"#, // no iteration in a loop
-        r#"{"seq":6,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[9223372036854775808],"out":{"raw":1.0}}"#,
-        r#"{"seq":7,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[1],"out":{"raw":1.0}}"#,
-        r#"{"seq":8,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[1],"out":{"raw":2.0}}"#, // given already
-        r#"{"seq":9,"t_ms":0.0,"event":"ran","frame":0,"node":"x","iter":[1],"out":{"x":"a"}}"#,     // no arm taken yet
-        r#"{"seq":10,"t_ms":0.0,"event":"ran","frame":3,"node":"y","out":{"y":1}}"#,                 // a frame that no call opened
-        r#"{"seq":11,"t_ms":0.0,"event":"arm","frame":0,"node":"v","iter":[1],"arm":"true"}"#,
-        r#"{"seq":12,"t_ms":0.0,"event":"arm","frame":0,"node":"v","iter":[1],"arm":"false"}"#, // given already
+        r#"{"seq":6,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[9223372036854775808],"out":{"raw":1.0}}"#,
+        r#"{"seq":7,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[1],"out":{"raw":1.0}}"#,
+        r#"{"seq":8,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[1],"out":{"raw":2.0}}"#, // given already
+        r#"{"seq":9,"t_ms":0.0,"event":"ran","frame":0,"node":"x","loops":["readings"],"iter":[1],"out":{"x":"a"}}"#,     // no arm taken yet
+        r#"{"seq":10,"t_ms":0.0,"event":"ran","frame":3,"node":"y","out":{"y":1}}"#, // a frame that no call opened
+        r#"{"seq":11,"t_ms":0.0,"event":"arm","frame":0,"node":"v","loops":["readings"],"iter":[1],"arm":"true"}"#,
+        r#"{"seq":12,"t_ms":0.0,"event":"arm","frame":0,"node":"v","loops":["readings"],"iter":[1],"arm":"false"}"#, // given already
         r#"{"seq":13,"t_ms":0.0,"event":"other","frame":0}"#,
         r#"{"seq":14,"t_ms":0.0,"event":"call","frame":0,"function":"f","in":[],"types":{}}"#, // frame 0 again
         r#"{"seq":15,"t_ms":0.0,"event":"end","status":"ok"}"#,
@@ -145,7 +149,10 @@ fn what_fits_nothing_is_counted_and_the_rest_shown() {
 
 #[test]
 fn a_value_longer_than_a_run_writes_fits_nothing() {
-    let long = format!(r#"{{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"v","iter":[0],"out":{{"v":"{}"}}}}"#, "a".repeat(VALUE_BUDGET));
+    let long = format!(
+        r#"{{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"v","loops":["readings"],"iter":[0],"out":{{"v":"{}"}}}}"#,
+        "a".repeat(VALUE_BUDGET)
+    );
     let trace = read(&[FIRST, CALL, &long]);
     assert_eq!((trace.ignored, trace.value(V, 0, &[0])), (1, None));
 }
@@ -205,7 +212,7 @@ fn a_line_that_does_not_read_ends_the_values_there() {
         "not json",
         "",
         r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":-1}"#,
-        r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[-1],"out":{}}"#,
+        r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[-1],"out":{}}"#,
         r#"{"seq":-3,"t_ms":0.0,"event":"end","status":"ok"}"#,
         r#"{"t_ms":0.0,"event":"end","status":"ok"}"#,
         r#"{"seq":3,"t_ms":0.0,"event":"end"}"#,
@@ -226,7 +233,7 @@ fn a_line_that_does_not_read_ends_the_values_there() {
 
 #[test]
 fn the_limits_of_reading_stop_it_with_their_line() {
-    let event = r#"{"seq":2,"t_ms":0.0,"event":"arm","frame":0,"node":"v","iter":[0],"arm":"true"}"#;
+    let event = r#"{"seq":2,"t_ms":0.0,"event":"arm","frame":0,"node":"v","loops":["readings"],"iter":[0],"arm":"true"}"#;
     let line_limit = ReadLimits { line: CALL.len(), ..ReadLimits::default() };
     let long = event.replace("\"true\"", &format!("\"{}\"", "t".repeat(CALL.len())));
     let trace = read_with(&[FIRST, CALL, &long], line_limit);
@@ -260,7 +267,7 @@ fn bytes_can_come_in_any_parts() {
     let lines = [
         FIRST,
         CALL,
-        r#"{"seq":2,"t_ms":0.0,"event":"arm","frame":0,"node":"v","iter":[0],"arm":"true"}"#,
+        r#"{"seq":2,"t_ms":0.0,"event":"arm","frame":0,"node":"v","loops":["readings"],"iter":[0],"arm":"true"}"#,
         r#"{"seq":3,"t_ms":0.0,"event":"end","status":"ok"}"#,
     ];
     let whole = read(&lines);
@@ -279,7 +286,7 @@ fn bytes_can_come_in_any_parts() {
 #[test]
 fn a_hostile_trace_costs_its_length() {
     let levels = format!(
-        r#"{{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[{}],"out":{{"raw":1.0}}}}"#,
+        r#"{{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[{}],"out":{{"raw":1.0}}}}"#,
         vec!["18446744073709551615"; 100_000].join(",")
     );
     let keys: Vec<String> = (0..100_000).map(|index| format!(r#""k{index}":{index}"#)).collect();
@@ -349,8 +356,8 @@ fn values_within_an_outer_iteration() {
     let lines = [
         FIRST,
         CALL,
-        r#"{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[1],"out":{"raw":1.0}}"#,
-        r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","iter":[0],"out":{"raw":0.0}}"#,
+        r#"{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[1],"out":{"raw":1.0}}"#,
+        r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"raw","loops":["readings"],"iter":[0],"out":{"raw":0.0}}"#,
     ];
     let trace = read(&lines);
     assert_eq!(trace.values_within(RAW, 0, &[1]).collect::<Vec<_>>(), [(&[1][..], "1.0")]);
@@ -374,4 +381,36 @@ fn the_order_of_fields_and_the_shape_of_a_later_version_do_not_matter() {
     assert_eq!(later.header, Err(HeaderProblem::LaterVersion));
     let bom = format!("\u{feff}{FIRST}");
     assert!(read(&[&bom, CALL]).header.is_ok());
+}
+
+/// Two loops that bind the same names (the two branches of `two_benches`): each event names its loops (`loops`,
+/// `docs/commands.md`, 8), which tell the two `m` apart; loops that no node has fit nothing.
+#[test]
+fn the_names_of_the_loops_tell_two_nodes_apart() {
+    let expected = Expected {
+        function: "f".into(),
+        inputs: Vec::new(),
+        nodes: vec![
+            node("n_a", &[], &[], &[("n_a", "f64")]),
+            node("m", &[0], &[], &[("m", "f64")]),
+            node("n_b", &[], &[], &[("n_b", "f64")]),
+            node("m", &[2], &[], &[("m", "f64")]),
+        ],
+    };
+    let call = r#"{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"f","in":[],"types":{"n_a":"f64","n_b":"f64","m":"f64"}}"#;
+    let lines = [
+        FIRST,
+        call,
+        r#"{"seq":2,"t_ms":0.0,"event":"ran","frame":0,"node":"m","loops":["n_a"],"iter":[0],"out":{"m":1.0}}"#,
+        r#"{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"m","loops":["n_b"],"iter":[0],"out":{"m":2.0}}"#,
+        r#"{"seq":4,"t_ms":0.0,"event":"ran","frame":0,"node":"m","loops":["n_c"],"iter":[0],"out":{"m":3.0}}"#,
+        r#"{"seq":5,"t_ms":0.0,"event":"ran","frame":0,"node":"m","iter":[1],"out":{"m":4.0}}"#,
+        r#"{"seq":6,"t_ms":0.0,"event":"end","status":"ok"}"#,
+    ];
+    let mut reader = Reader::new(expected, ReadLimits::default());
+    reader.feed(lines.join("\n").as_bytes());
+    let trace = reader.finish();
+    assert_eq!((trace.value(1, 0, &[0]), trace.value(3, 0, &[0])), (Some("1.0"), Some("2.0")));
+    assert_eq!((trace.ignored, trace.first_ignored), (2, Some(5)));
+    assert_eq!((trace.iterations(0, &[]), trace.iterations(2, &[])), (1, 1));
 }

@@ -29,10 +29,12 @@ mod names;
 mod place;
 mod route;
 mod shape;
+mod short;
 mod size;
 pub mod style;
 mod svg;
 pub mod theme;
+pub mod values;
 
 pub use labcraft_check::PathSegment;
 pub use marks::{MAX_LINES, mark, undrawn};
@@ -40,7 +42,8 @@ pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint,
     Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons,
 };
-pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg};
+pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
+pub use values::{Choice, Judged, Overlay, expected, values};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
 use size::{Sizer, Text};
@@ -303,6 +306,18 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         }
     }
     let within = |body: usize| inside.get(body).copied().flatten();
+    // Where each node is in `drawing.placed`, which takes the nodes placed in their order; and what a trace needs.
+    let mut count = 0;
+    let placed_of: Vec<Option<usize>> = (0..graph.nodes.len())
+        .map(|index| {
+            placement.nodes.get(index).and_then(Option::as_ref).map(|_| {
+                count += 1;
+                count - 1
+            })
+        })
+        .collect();
+    let (plan, sources) = values::plan(graph, &placement, &placed_of);
+    drawing.trace = plan;
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
         drawing.loose = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, None, "frame.stroke");
@@ -310,7 +325,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
         .map(|body| {
-            let mut groups = wire_groups(graph, body, &placement, &sized);
+            let mut groups = wire_groups(graph, body, &placement, &sized, &sources);
             groups.iter_mut().for_each(|group| group.within = within(body));
             groups
         })
@@ -470,6 +485,14 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         }
         for hint in &mut drawing.hints {
             (hint.x, hint.y) = (hint.x + dx, hint.y + dy);
+        }
+        for anchor in &mut drawing.trace.anchors {
+            *anchor = (anchor.0 + dx, anchor.1 + dy);
+        }
+        for node in &mut drawing.trace.nodes {
+            if let values::PlanKind::Loop { counter, .. } = &mut node.kind {
+                *counter = (counter.0 + dx, counter.1 + dy, counter.2 + dx);
+            }
         }
         for tab in &mut drawing.tabs {
             (tab.x, tab.y) = (tab.x + dx, tab.y + dy);
@@ -1131,7 +1154,7 @@ fn frame_fill(depth: u32) -> Token {
 
 /// The wires of a body, one group per value: its branches, each from the source to one reader, the trunk drawn by each,
 /// and its junction points (notation 2.2, 4).
-fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, sized: &[size::Sized]) -> Vec<Group> {
+fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, sized: &[size::Sized], sources: &values::Sources) -> Vec<Group> {
     let (Some(of), Some(routes)) = (graph.bodies.get(body), placement.routes.get(body)) else { return Vec::new() };
     let core = frame_fill(placement.frames.get(body).map_or(0, |frame| frame.depth));
     // What a name must not cover: the nodes of the body, its wires, the pills.
@@ -1254,6 +1277,10 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 })
                 .collect();
             let error = routed.wires.iter().filter_map(|&wire| of.wires.get(wire)).any(|wire| wire.family == graph::Family::ERROR);
+            // A value that enters by a notch shows outside, where it starts (notation 6.1); an order carries none.
+            let starts =
+                !matches!(first.from, graph::End::Left(index) if of.left.get(index).is_some_and(|terminal| terminal.edge == graph::Edge::Notch));
+            let source = (first.family != graph::Family::ORDER).then(|| sources.get(&(body, first.from)).copied()).flatten();
             Some(Group {
                 node: String::new(),
                 title: String::new(),
@@ -1273,6 +1300,8 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                         .iter()
                         .filter_map(|&wire| graph.pills.get(&(body, wire)).and_then(|pill| pill.conversion.clone()))
                         .collect(),
+                    source,
+                    starts,
                 }),
                 placed: None,
                 within: None,

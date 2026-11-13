@@ -153,6 +153,7 @@ dependencies = [
  "labcraft-check",
  "labcraft-format",
  "labcraft-graph",
+ "labcraft-trace",
  "labcraft-types",
  "toml",
 ]
@@ -195,6 +196,7 @@ dependencies = [
  "labcraft-libs",
  "labcraft-mcp",
  "labcraft-runtime",
+ "labcraft-trace",
  "labcraft-types",
  "labcraft-visa",
  "libfuzzer-sys",

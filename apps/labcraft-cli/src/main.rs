@@ -47,6 +47,8 @@ options of diagram:
   --lib-path DIR         as for check
   --theme light|dark     one theme only, instead of both under prefers-color-scheme
   --max-diagram-nodes N  a function with more nodes is not drawn, default 20000, at most 100000
+  --trace FILE           draw the values of a run on the wires of the one FUNCTION, from its trace
+  --max-trace-size BYTES read the trace up to this size, default 536870912 (512 MiB), at most 4 GiB
 
 options of run:
   --deny-warnings, --lib-path DIR             as for check

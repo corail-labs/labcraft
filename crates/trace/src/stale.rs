@@ -20,12 +20,19 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// the order given. A file that the first line does not list is stale too: the run did not read it, or the line
 /// dropped it, and either way the trace cannot be said to match it.
 pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Vec<&'a str> {
+    let hashed: Vec<(&'a str, Option<String>)> = files.iter().map(|(name, bytes)| (*name, bytes.map(sha256_hex))).collect();
+    let hashed: Vec<(&'a str, Option<&str>)> = hashed.iter().map(|(name, sha)| (*name, sha.as_deref())).collect();
+    stale_hashed(header, &hashed)
+}
+
+/// [`stale`], from the SHA-256 of each file, in lowercase or uppercase hexadecimal, rather than its bytes.
+pub fn stale_hashed<'a>(header: &TraceHeader, files: &[(&'a str, Option<&str>)]) -> Vec<&'a str> {
     files
         .iter()
-        .filter(|(name, bytes)| {
-            let recorded = header.files.iter().find(|(file, _)| file == name).map(|(_, sha)| sha.as_str());
-            match (recorded, bytes) {
-                (Some(recorded), Some(bytes)) => !recorded.eq_ignore_ascii_case(&sha256_hex(bytes)),
+        .filter(|(name, sha)| {
+            let recorded = header.files.iter().find(|(file, _)| file == name).map(|(_, recorded)| recorded.as_str());
+            match (recorded, sha) {
+                (Some(recorded), Some(sha)) => !recorded.eq_ignore_ascii_case(sha),
                 _ => true,
             }
         })

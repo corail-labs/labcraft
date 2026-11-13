@@ -113,6 +113,7 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         pill: None,
         ty_text: String::new(),
         default: None,
+        traced: None,
     }
 }
 

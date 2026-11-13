@@ -154,6 +154,10 @@ pub struct DiagramOptions {
     pub max_nodes: u64,
     /// The functions asked for, each once, in the order given; none for every function.
     pub functions: Vec<String>,
+    /// `--trace FILE`: the values of a run on the one function asked for (`docs/cli.md`, 7.3).
+    pub trace: Option<PathBuf>,
+    /// `--max-trace-size BYTES` (`docs/cli.md`, 7.4).
+    pub max_trace_size: u64,
 }
 
 /// The default and the most of `--max-diagram-nodes` (`docs/cli.md`, 7.6).
@@ -161,7 +165,8 @@ pub const DEFAULT_DIAGRAM_NODES: u64 = 20_000;
 pub const MAX_DIAGRAM_NODES: u64 = 100_000;
 
 /// The options that take one value, which `diagram` refuses twice (`docs/cli.md`, 7.1).
-const ONCE: [&str; 6] = ["--out", "--theme", "--max-diagram-nodes", "--max-report", "--max-file-size", "--max-nesting"];
+const ONCE: [&str; 8] =
+    ["--out", "--theme", "--max-diagram-nodes", "--max-report", "--max-file-size", "--max-nesting", "--trace", "--max-trace-size"];
 
 pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
     // An option that takes one value, given twice; what follows `--` is a path, and the value of an option is not one.
@@ -183,6 +188,7 @@ pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
         }
     }
     let (mut svg, mut out, mut theme, mut max_nodes) = (false, None, Theme::Both, DEFAULT_DIAGRAM_NODES);
+    let (mut trace, mut max_trace_size) = (None, labcraft_engine::drawings::DEFAULT_TRACE_SIZE);
     let mut lib_paths = Vec::new();
     let common = parse_common(args, |option, rest| match option {
         "--svg" => {
@@ -212,8 +218,14 @@ pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
             }
             Ok(true)
         }
-        // The values of a run come with a later version (`docs/cli.md`, 7.3).
-        "--trace" | "--max-trace-size" => Err(format!("{option}: this version does not draw the values of a run yet")),
+        "--trace" => {
+            trace = Some(PathBuf::from(rest.next().ok_or("--trace needs a file")?));
+            Ok(true)
+        }
+        "--max-trace-size" => {
+            max_trace_size = count(option, text_of(option, rest.next())?, 1, labcraft_engine::drawings::MAX_TRACE_SIZE)?;
+            Ok(true)
+        }
         _ => Ok(false),
     })?;
     if !svg {
@@ -233,8 +245,11 @@ pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
             functions.push(text);
         }
     }
+    if trace.is_some() && functions.len() != 1 {
+        return Err("--trace draws the values of a run on one function: give exactly one FUNCTION".to_owned());
+    }
     let check = CheckOptions { deny_warnings: false, json: common.json, lib_paths, limits: common.limits, folders: vec![folder] };
-    Ok(DiagramOptions { check, out, theme, max_nodes, functions })
+    Ok(DiagramOptions { check, out, theme, max_nodes, functions, trace, max_trace_size })
 }
 
 /// `check` and `diagram` take folders (`docs/cli.md`, sections 3 and 7), and a file is wrong usage. A path that does not exist is not: it is
@@ -639,8 +654,12 @@ mod tests {
             &["--svg", "--out", "d", "--max-report", "3", "--max-report", "3", "."],
             &["--svg", "--out", "d", "--max-diagram-nodes", "0", "."],
             &["--svg", "--out", "d", "--max-diagram-nodes", "100001", "."],
-            &["--svg", "--out", "d", "--trace", "t.jsonl", ".", "f"],
-            &["--svg", "--out", "d", "--max-trace-size", "9", "."],
+            // `--trace` draws one function (`docs/cli.md`, 7.1), within at most 4 GiB (7.4).
+            &["--svg", "--out", "d", "--trace", "t.jsonl", "."],
+            &["--svg", "--out", "d", "--trace", "t.jsonl", ".", "f", "g"],
+            &["--svg", "--out", "d", "--trace", "t.jsonl", "--trace", "u.jsonl", ".", "f"],
+            &["--svg", "--out", "d", "--trace", "t.jsonl", "--max-trace-size", "0", ".", "f"],
+            &["--svg", "--out", "d", "--trace", "t.jsonl", "--max-trace-size", "4294967297", ".", "f"],
             &["--svg", "--out", "d", "--deny-warnings", "."],
         ];
         for args in cases {
@@ -648,6 +667,9 @@ mod tests {
         }
         // After `--`, a path; and a value is not an option given twice.
         assert_eq!(diagram(&["--svg", "--out", "--out", "--", "--theme"]).unwrap().check.folders, [PathBuf::from("--theme")]);
+        let traced = diagram(&["--svg", "--out", "d", "--trace", "t.jsonl", "--max-trace-size", "4294967296", ".", "f"]).unwrap();
+        assert_eq!((traced.trace, traced.max_trace_size), (Some(PathBuf::from("t.jsonl")), 4 << 30));
+        assert_eq!(diagram(&["--svg", "--out", "d", ".", "f"]).unwrap().max_trace_size, 512 << 20);
     }
 
     fn run(args: &[&str]) -> Result<RunOptions, String> {

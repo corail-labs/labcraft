@@ -1154,8 +1154,9 @@ pub fn stale<'a>(header: &TraceHeader, files: &[(&'a str, Option<&[u8]>)]) -> Ve
   or of the event), a name that the `arm` events before it do not tell apart from another, an iteration whose
   levels are not the loops around the node or that reaches 2^63, a value given twice, an event of a frame that no
   `call` opened, a value whose text passes the 64 KiB that the writer never passes (commands.md 5). A name shared
-  by several nodes is resolved in a few lookups, however many share it: a node becomes a candidate once the `arm`
-  of its innermost structure is taken, that structure having been resolved the same way. A line is decoded only as
+  by several nodes is resolved in a few lookups, however many share it: by the names of the loops around it, which
+  the `loops` of an event gives (two loops that bind the same names, M0v step 8), and a node becomes a candidate once
+  the `arm` of its innermost structure is taken, that structure having been resolved the same way. A line is decoded only as
   far as its frame, whatever the order of its fields: the events of frame 0 are kept, the other frames are skipped. What it keeps is
   an index sorted by node, wire and iterations, a node and a wire as their numbers in what the caller gave
   (`Trace::value`, `Trace::values`); the `arm` and `skipped` events by node and iteration, which choose the tab
@@ -1187,8 +1188,12 @@ with the SVG of the frames, the nodes and the wires, their names and their pills
 (`tests/harness/routing-cases/`) and, by the fuzz target `diagram`, on the drawings it makes; their time and memory
 are bounded by `cargo xtask bounds`. Structures are unfolded, as an export shows them, unless `ViewState::tabs` asks for
 the tabs of the viewer (step 6). With step 5 of 11.7, the marks of diagnostics on a drawing and the SVG of a function that is
-not drawn (`mark`, `undrawn`), which `labcraft-cli diagram` uses.* `draw` takes the index of the file of the
-function in `Checked::files`, as `ir::lower` does, and the `Interner`.
+not drawn (`mark`, `undrawn`), which `labcraft-cli diagram` uses. With step 8a, the values of a run (`values`): a
+`Drawing` holds its `TracePlan`, found when it is drawn, the nodes that `expected` gives the reader and where each wire
+takes its value from, so that `values` reads only the drawing and the trace, and `Judged` says which files have changed
+(the caller reads them) and `Choice` which iteration each loop shows; the selectors, the curves and the tabs of the
+viewer come with step 8b.* `draw` takes the index of the file of the function in `Checked::files`, as `ir::lower` does,
+and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
 gives (scenario 6). It reads `check::Checked` and never resolves again: names, callees, the terminals of each call
@@ -1205,8 +1210,8 @@ pub fn draw(checked: &Checked, function: &FunctionRef, view: &ViewState, limits:
 pub enum Drawn { Drawing(Drawing), NotDrawn(Vec<Diagnostic>) }      // LC7002, or a function that is not drawable
 // Drawing::warnings: what drawing finds about the file (LC7005), which the caller adds to its report
 pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the reader keeps (11.2)
-pub fn values(drawing: &Drawing, checked: &Checked, trace: &trace::Trace, shown: &Shown) -> Overlay;  // 6.1
-pub fn svg(drawing: &Drawing, overlay: Option<&Overlay>, shown: &Shown, theme: Theme) -> String;  // cli.md 7.2
+pub fn values(drawing: &Drawing, trace: &trace::Trace, judged: &Judged, choice: &Choice) -> Overlay;  // 6.1
+pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> String;  // cli.md 7.2 and 7.3
 pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: Theme) -> String;
 ```
 
@@ -1460,7 +1465,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | The rules of 2.2, checked on every drawing by a checker of their own, not by comparing with an output: no wire crosses a node, a label, a pill, a band or a wire name, no bubble covers a node, a pill or another bubble, parallel wires 8 units apart, nothing but error wires below the main chain, which no other wire crosses | `tests/harness` | 6.1 |
 | The figure of stability: a neutral node on each data wire between two nodes, the nodes that move, and those whose column holds other nodes or another order (2.1) | `tests/harness/tests/figures.rs`, `cargo xtask figures`, in the summary of the job `checks` | 6.3 |
 | The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | the same | — |
-| The SVG of `diagram --trace` for the runs of `examples/`, as a snapshot, *with M0b* | `tests/harness` | 6.7 |
+| The SVG of `diagram --trace` for each case of the corpus of runs that traces, as a snapshot in `tests/harness/snapshots/trace/`, native and WASM; every trace of that corpus fits its drawing, no event ignored | `tests/harness` | 6.7 |
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
 | The drawings that the web viewer sends, through `postcard` and back, the same bytes again: every function of `examples/`, `libs/` and `docs/rfc/` as its file gives it, in standard view and in tabs; those of the corpora of scenarios 2 and 4, with their marks; a function not drawn; an icon with every kind of segment. A token that the theme does not name is refused both ways | `tests/harness` | 6.1 |
 | Every function of the repository painted on the canvas without a window: both themes, unfolded and in tabs, each arm shown, at the three zooms of notation 7; no colour of an unknown token. The tabs, the glide, the zoom, the font installed by the canvas, the grid | `tests/harness`, `editor` tests | 6.1 |
@@ -1491,5 +1496,6 @@ Each step ends with something testable.
    once M0b has merged it (`engine::view`, done after step 6).
 7. **`apps/labcraft-web`**.
 8. **The values of a run** (6.1), once M0b has written `trace` (section 10.11): `diagram::values`, `--trace`, the
-   family Traces, the fuzzing of the reader.
+   family Traces, the fuzzing of the reader (8a); the viewer, `view.open_trace`, the selectors of iterations, the
+   curves and the button that hides the values (8b).
 9. **Before the tag**: 60 frames/s by hand, 8 hours of fuzzing for each new target.

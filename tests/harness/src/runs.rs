@@ -353,3 +353,315 @@ fn the_nodes_of_two_loops_of_one_name_are_told_apart() {
         );
     }
 }
+
+/// The folder of a case read and checked, its function and its drawing, as `labcraft-cli diagram` and `diagram.svg` draw
+/// it (`engine::drawings`), in the repository in memory.
+fn drawing_of_case(
+    memory: &Arc<Memory>,
+    params: &Json,
+) -> (labcraft_engine::drawings::Loaded, labcraft_engine::drawings::Function, labcraft_diagram::Drawing) {
+    use labcraft_engine::drawings;
+    let folder = params["folder"].as_str().unwrap_or(".");
+    let function = params["function"].as_str().unwrap().to_owned();
+    let shipped = crate::engine::shipped();
+    let mut loaded =
+        drawings::load(&**memory, &shipped, std::path::Path::new(&format!("/{folder}")), &[], &Limits::default(), Some(std::path::Path::new("/")));
+    let mut report = std::mem::replace(&mut loaded.report, labcraft_types::Report::new(0));
+    let root = loaded.root.clone().unwrap();
+    let (asked, _) = drawings::asked(std::slice::from_ref(&function), &loaded.functions, &root, &mut report);
+    let mut drawn = drawings::drawings(&asked, &loaded, &labcraft_diagram::DiagramLimits::default(), &mut report);
+    let found = asked[0].clone();
+    let drawing = drawn.remove(0).0.unwrap_or_else(|| panic!("{function}: not drawn"));
+    (loaded, found, drawing)
+}
+
+/// Every trace of the corpus fits the drawing of its function (`docs/cli.md`, 7.4: a trace that matches its files never
+/// holds an event that fits nothing): the reader keeps every event of frame 0, so that each node of the drawing is named
+/// as the runtime names it, each wire with the type the runtime gives it, each loop and each arm told apart.
+#[test]
+fn every_trace_of_the_corpus_fits_the_drawing_of_its_function() {
+    let memory = repository();
+    let mut read = 0;
+    for case in RUNS {
+        let params: Json = serde_json::from_str(case.run).unwrap();
+        if real_time(&params) {
+            continue;
+        }
+        let Some(trace) = run_case_on(case, &memory).trace else { continue };
+        let (_, _, drawing) = drawing_of_case(&memory, &params);
+        let mut reader = Reader::new(labcraft_diagram::expected(&drawing), ReadLimits::default());
+        reader.feed(&trace);
+        let found = reader.finish();
+        let text = String::from_utf8_lossy(&trace);
+        let first = found.first_ignored.and_then(|line| text.lines().nth(usize::try_from(line).unwrap() - 1)).unwrap_or_default();
+        assert!(found.header.is_ok(), "{}: {:?}", case.name, found.header);
+        assert_eq!((found.ignored, found.stop), (0, None), "{}: the first ignored: {first}", case.name);
+        read += 1;
+    }
+    // The cases that trace: every one that is not refused, 20 when this was written.
+    assert!(read >= 10, "{read} traces read");
+}
+
+/// The SVG of the function of each case that traces, with the values of its run, as `labcraft-cli diagram --trace` draws
+/// it, through `engine::drawings::read_trace`, compared byte for byte with its snapshot in
+/// `tests/harness/snapshots/trace/`, natively and in WASM (scenario 6, point 7; architecture 11.6). With
+/// `LABCRAFT_BLESS=1`, natively, the snapshots are written again, to be read by hand and opened in a browser before a
+/// commit.
+#[test]
+fn the_values_of_each_run_draw_their_snapshot() {
+    let memory = repository();
+    let mut written = std::collections::BTreeMap::new();
+    for case in RUNS {
+        let params: Json = serde_json::from_str(case.run).unwrap();
+        if real_time(&params) {
+            continue;
+        }
+        let ran = run_case_on(case, &memory);
+        let Some(file) = ran.report["trace"]["file"].as_str() else { continue };
+        let (loaded, function, drawing) = drawing_of_case(&memory, &params);
+        let mut report = labcraft_types::Report::new(0);
+        let path = std::path::PathBuf::from(format!("/{file}"));
+        let (overlay, part) = labcraft_engine::drawings::read_trace(
+            &*memory,
+            &path,
+            file,
+            Some(&drawing),
+            &function,
+            &loaded,
+            labcraft_engine::drawings::DEFAULT_TRACE_SIZE,
+            &mut report,
+        );
+        report.finish();
+        assert_eq!(
+            (part.ignored, part.stale.len(), report.diagnostics().len()),
+            (0, 0, 0),
+            "{}: {:?} {:?}",
+            case.name,
+            report.diagnostics(),
+            part.stale
+        );
+        let svg = labcraft_diagram::svg_with(&drawing, overlay.as_ref(), labcraft_diagram::Theme::Both);
+        written.insert(format!("tests/harness/snapshots/trace/{}.svg", case.name), svg);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if std::env::var_os("LABCRAFT_BLESS").is_some() {
+        let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for (path, text) in &written {
+            let path = base.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        return;
+    }
+    let stored: std::collections::BTreeMap<&str, &str> =
+        crate::TRACED.iter().map(|snapshot| (snapshot.path, std::str::from_utf8(snapshot.bytes).unwrap())).collect();
+    assert_eq!(
+        stored.keys().copied().collect::<Vec<_>>(),
+        written.keys().map(String::as_str).collect::<Vec<_>>(),
+        "snapshots without a case, or cases without a snapshot"
+    );
+    for (path, text) in &written {
+        assert_eq!(stored.get(path.as_str()).copied(), Some(text.as_str()), "{path}: write the snapshots again with LABCRAFT_BLESS=1");
+    }
+}
+
+/// What a node does not bind is worked out from the trace (notation 6.1), at the last iteration of the loop: by hand, for
+/// `values` = [1.0, 2.0, 4.0] and `start` = `Reading.Value(10.0)`, at iteration 2 the element `x` is 4.0 and the index `i`
+/// is 2; the carry `t` is its `next` of iteration 1, 1.0 + 2.0 = 3.0, and the `next t` of iteration 2 is 3.0 + 4.0 =
+/// 7.0; the carry `k`, passed on unchanged, is its first value 5.0 at every iteration; `v`, bound by the arm
+/// `Reading.Value(v)`, is 10.0. The loop gives 7.0, 5.0 and 2 (the `next j` of iteration 2, which `last` converts from
+/// `i32` to `i64`); `j` has no wire, nothing reading it, so no value.
+#[test]
+fn the_values_that_no_node_binds_are_worked_out() {
+    let memory = repository();
+    memory.put(
+        "/walk/Reading.lct",
+        b"labcraft 1
+
+type Reading = enum { Value(f64), Overload }
+"
+        .to_vec(),
+    );
+    memory.put(
+        "/walk/walk.lcf",
+        b"labcraft 1
+
+use core
+
+fn walk(
+    values: [f64] = [1.0, 2.0, 4.0],
+    start: Reading = Reading.Value(10.0),
+) -> (total: f64, same: f64, last: i64, got: f64) {
+    got = match start {
+        Reading.Value(v) => yield v
+        Reading.Overload => yield 0.0
+    }
+    total, same, last = for x in values, i in 0..3, carry t = 0.0, carry k = 5.0, carry j = 0 {
+        next j = i
+        next k = k
+        next t = core.add(t, x)
+    }
+}
+"
+        .to_vec(),
+    );
+    let params = serde_json::json!({ "function": "walk", "folder": "walk" });
+    #[cfg(not(target_arch = "wasm32"))]
+    let report = session(&memory).execute("run.start", &params).unwrap();
+    #[cfg(target_arch = "wasm32")]
+    let report = labcraft_engine::run_to_end(&session(&memory), &params).unwrap();
+    assert_eq!(report["status"], "ok", "{report}");
+    let file = report["trace"]["file"].as_str().unwrap();
+    let (loaded, function, drawing) = drawing_of_case(&memory, &params);
+    let mut diagnostics = labcraft_types::Report::new(0);
+    let path = std::path::PathBuf::from(format!("/{file}"));
+    let (overlay, part) = labcraft_engine::drawings::read_trace(
+        &*memory,
+        &path,
+        file,
+        Some(&drawing),
+        &function,
+        &loaded,
+        labcraft_engine::drawings::DEFAULT_TRACE_SIZE,
+        &mut diagnostics,
+    );
+    assert_eq!((part.ignored, part.stale.len()), (0, 0), "{part:?}");
+    let values: Vec<(String, String)> = overlay.unwrap().bubbles.into_iter().map(|bubble| (bubble.wire, bubble.title)).collect();
+    let expected = [
+        ("values", "[1.0,2.0,4.0]"),
+        ("start", r#"{"Reading.Value":[10.0]}"#),
+        ("got", "10.0"),
+        ("v", "10.0"),
+        ("total", "7.0"),
+        ("same", "5.0"),
+        ("last", "2"),
+        ("i", "2"),
+        ("k", "5.0"),
+        ("t", "3.0"),
+        ("x", "4.0"),
+        ("t", "7.0"),
+    ];
+    assert_eq!(values, expected.map(|(wire, title)| (wire.to_owned(), title.to_owned())));
+}
+
+/// What reading `bytes` for `drawing` says: its diagnostics, by code and line (`docs/cli.md`, 7.4 and 7.6).
+fn read_codes(drawing: &labcraft_diagram::Drawing, bytes: &[u8], limits: ReadLimits) -> Vec<(String, u32)> {
+    let mut reader = Reader::new(labcraft_diagram::expected(drawing), limits);
+    reader.feed(bytes);
+    let trace = reader.finish();
+    // The values over the drawing are worked out whatever the trace holds, and the SVG written.
+    let overlay = labcraft_diagram::values(drawing, &trace, &labcraft_diagram::Judged::default(), &labcraft_diagram::Choice::default());
+    assert!(labcraft_diagram::svg_with(drawing, Some(&overlay), labcraft_diagram::Theme::Both).ends_with("</svg>\n"));
+    labcraft_diagram::values::diagnostics(&trace, "t.jsonl")
+        .into_iter()
+        .map(|diagnostic| (diagnostic.code().as_str().to_owned(), diagnostic.span.map_or(0, |span| span.start.line)))
+        .collect()
+}
+
+/// The family Traces of scenario 4 (`docs/acceptance-m0.md`), through the reader of the viewer, on the trace of
+/// `check_voltage` against `dmm-230V` (case `s1-pass-230V`), each case built from it by hand and its diagnostic worked out
+/// from `docs/cli.md`, 7.4: what reading stops at gives `LC7103` at its line, what fits nothing `LC7104` at the line of
+/// the first, a first line that gives no values `LC7101`, a trace of another function `LC7102`. And every prefix of every
+/// trace of the corpus, byte by byte, reads without a fault.
+#[test]
+fn the_family_traces_reads_without_a_fault() {
+    let memory = repository();
+    let case = RUNS.iter().find(|case| case.name == "s1-pass-230V").unwrap();
+    let params: Json = serde_json::from_str(case.run).unwrap();
+    let base = String::from_utf8(run_case_on(case, &memory).trace.unwrap()).unwrap();
+    let (_, _, drawing) = drawing_of_case(&memory, &params);
+    let lines: Vec<&str> = base.lines().collect();
+    let joined = |lines: &[String]| lines.join("\n") + "\n";
+    let owned: Vec<String> = lines.iter().map(|line| (*line).to_owned()).collect();
+    let with = |line: usize, text: &str| {
+        let mut changed = owned.clone();
+        changed[line] = text.to_owned();
+        joined(&changed)
+    };
+    let inserted = |line: usize, text: &str| {
+        let mut changed = owned.clone();
+        changed.insert(line, text.to_owned());
+        joined(&changed)
+    };
+    let code = |code: &str, line: usize| vec![(code.to_owned(), u32::try_from(line).unwrap())];
+    let defaults = ReadLimits::default();
+    assert_eq!(read_codes(&drawing, base.as_bytes(), defaults), vec![], "the trace as the run wrote it");
+    // The first line.
+    assert_eq!(read_codes(&drawing, with(0, "{").as_bytes(), defaults), code("LC7101", 1));
+    assert_eq!(read_codes(&drawing, with(0, &lines[0].replace("labcraft-trace/1", "other/1")).as_bytes(), defaults), code("LC7101", 1));
+    assert_eq!(read_codes(&drawing, with(0, &lines[0].replace("labcraft-trace/1", "labcraft-trace/2")).as_bytes(), defaults), code("LC7101", 1));
+    assert_eq!(read_codes(&drawing, with(0, &lines[0].replace("\"check_voltage\"", "\"other\"")).as_bytes(), defaults), code("LC7102", 1));
+    // A line that does not read, in the middle: line 4 of the file.
+    assert_eq!(read_codes(&drawing, with(3, "not json").as_bytes(), defaults), code("LC7103", 4));
+    // Each limit, just passed: the file by a byte, the longest line by a byte, the lines by one, the values kept.
+    let length = base.len() as u64;
+    let file = read_codes(&drawing, base.as_bytes(), ReadLimits { file: length - 1, ..defaults });
+    assert_eq!(file.first().map(|found| found.0.as_str()), Some("LC7103"), "{file:?}");
+    // The first line is the longest of this trace: over the limit of a line, it gives no values.
+    let header = lines[0].len();
+    assert_eq!(read_codes(&drawing, base.as_bytes(), ReadLimits { line: header - 1, ..defaults }), code("LC7101", 1));
+    let events = lines.len() as u64 - 1;
+    assert_eq!(read_codes(&drawing, base.as_bytes(), ReadLimits { lines: events - 1, ..defaults }), code("LC7103", lines.len()));
+    assert_eq!(read_codes(&drawing, base.as_bytes(), ReadLimits { kept: 1, ..defaults }), code("LC7103", 1));
+    // The `ran` of the node `raw`: a value over the 64 KiB a run writes, a value nested deeper than a line reads.
+    let raw = lines.iter().position(|line| line.contains("\"node\":\"raw\"") && line.contains("\"ran\"") && line.contains("\"frame\":0")).unwrap();
+    let long =
+        format!("{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"raw\",\"out\":{{\"raw\":\"{}\"}}}}", "a".repeat(65 * 1024));
+    assert_eq!(read_codes(&drawing, with(raw, &long).as_bytes(), defaults), code("LC7104", raw + 1));
+    // A line of an event, just over the limit of a line.
+    assert_eq!(read_codes(&drawing, with(raw, &long).as_bytes(), ReadLimits { line: long.len() - 1, ..defaults }), code("LC7103", raw + 1));
+    let deep = format!(
+        "{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"raw\",\"out\":{{\"raw\":{}1{}}}}}",
+        "[".repeat(300),
+        "]".repeat(300)
+    );
+    assert_eq!(read_codes(&drawing, with(raw, &deep).as_bytes(), defaults), code("LC7103", raw + 1));
+    // Numbers: negative ones do not read, huge ones fit nothing; so do an unknown node, and iterations whose levels are
+    // not the loops around the node. Each event goes before the last line.
+    let last = lines.len() - 1;
+    for (fields, expected) in [
+        (r#""frame":0,"node":"raw","iter":[-1]"#, "LC7103"),
+        (r#""frame":-1,"node":"raw""#, "LC7103"),
+        (r#""frame":0,"node":"raw","loops":["x"],"iter":[9223372036854775808]"#, "LC7104"),
+        (r#""frame":18446744073709551615,"node":"raw""#, "LC7104"),
+        (r#""frame":0,"node":"nowhere""#, "LC7104"),
+        (r#""frame":0,"node":"raw","loops":["x"],"iter":[0]"#, "LC7104"),
+    ] {
+        let event = format!("{{\"seq\":99,\"t_ms\":0.0,\"event\":\"ran\",{fields},\"out\":{{\"raw\":1.0}}}}");
+        assert_eq!(read_codes(&drawing, inserted(last, &event).as_bytes(), defaults), code(expected, last + 1), "{fields}");
+    }
+    let seq = lines[raw].split(",\"t_ms\"").nth(1).map(|rest| format!("{{\"seq\":-1,\"t_ms\"{rest}")).unwrap();
+    assert_eq!(read_codes(&drawing, with(raw, &seq).as_bytes(), defaults), code("LC7103", raw + 1));
+    // A value of another type than its wire, and the same value twice.
+    let typed = lines[raw].replacen("\"out\":", "\"types\":{\"raw\":\"string\"},\"out\":", 1);
+    assert_eq!(read_codes(&drawing, with(raw, &typed).as_bytes(), defaults), code("LC7104", raw + 1));
+    assert_eq!(read_codes(&drawing, inserted(raw + 1, lines[raw]).as_bytes(), defaults), code("LC7104", raw + 2));
+    // Every prefix of every trace of the runs of `examples/`, byte by byte; natively, where it takes a few seconds.
+    #[cfg(target_arch = "wasm32")]
+    return;
+    let mut prefixes = 0;
+    for case in RUNS {
+        let params: Json = serde_json::from_str(case.run).unwrap();
+        if real_time(&params) || params["folder"] != "examples" {
+            continue;
+        }
+        let Some(trace) = run_case_on(case, &memory).trace else { continue };
+        let (_, _, drawing) = drawing_of_case(&memory, &params);
+        // One reader fed a byte at a time; each prefix read to its end on a clone of it.
+        let mut reader = Reader::new(labcraft_diagram::expected(&drawing), defaults);
+        let mut going = true;
+        for end in 0..=trace.len() {
+            if end > 0 && going {
+                going = reader.feed(&trace[end - 1..end]);
+            }
+            let found = reader.clone().finish();
+            assert!(found.events <= trace[..end].iter().filter(|byte| **byte == b'\n').count() as u64 + 1);
+            // The values and the SVG worked out at the end of each line, where what is read changes.
+            if end == trace.len() || trace.get(end) == Some(&b'\n') {
+                read_codes(&drawing, &trace[..end], defaults);
+            }
+            prefixes += 1;
+        }
+    }
+    assert!(prefixes > 1000, "{prefixes}");
+}

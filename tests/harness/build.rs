@@ -33,6 +33,14 @@ fn main() {
     }
     writeln!(out, "pub static DIAGRAMS: &[Embedded] = &[{}];", embedded(&root, &drawn)).unwrap();
 
+    // The SVG of the function of each case of the corpus of runs, with the values of its trace (`docs/cli.md`, 7.3).
+    let traced = snapshots.join("trace");
+    let mut with_values = Vec::new();
+    if traced.is_dir() {
+        walk_with(&traced, &mut with_values, "svg");
+    }
+    writeln!(out, "pub static TRACED: &[Embedded] = &[{}];", embedded(&root, &with_values)).unwrap();
+
     for (name, folder) in [("HOSTILE", "tests/acceptance/hostile"), ("TYPE_ERRORS", "tests/acceptance/type-errors")] {
         let corpus = root.join(folder);
         println!("cargo::rerun-if-changed={}", corpus.display());

@@ -13,6 +13,7 @@ workspace, with its own `Cargo.lock`: nothing here reaches the product, which bu
 | `simulation` | On any simulation file up to 64 KiB, `runtime::simulation::read` and the judgement of `visa` end, with the codes they declare, errors at well-formed spans, and the same judgement twice; on a file they accept, each instrument opens, is sent every command its section names (each query of `commands`, which answers as the file says, each of `measure`, which answers a finite number, each `set` with a number in range, out of range and not a number, each prefix of `accept`, each command of `faults`, a query of `timeout` timing out), the error queue and the reserved commands (`*IDN?` answers its `idn`), and closes, after which its session is refused; on the first instrument a second session leaves an answer unread (`-410`), reads, has a call cancelled and is released, which are run and not compared with what they should give; at most 4,000 calls in a run, past which the run makes no other call; every call ends in a few steps, the clock does not overflow, the log keeps its bounds and its order, and two runs of the file give the same answers and the same log (`libs/visa/simulation.md`) |
 | `run` | On a library as for `diagram`, each file named after what it declares, a run of its first function through `engine::run_to_end`, against the instruments of `bench.toml`, with its trace inline, under small limits (200 iterations, 20,000 nodes, a call depth of 64, 1 MiB of memory, 4 MiB made, 60 s simulated), ends with a report of a status of spec 8.2 or `refused`, never with `LC8004`, and gives the same report run again, the real time aside |
 | `mcp` | On any input, one request per line, the MCP server on a project in memory, a function that counts and one that doubles, with the shipped libraries, reads it to its end and stops, and every line it writes is JSON-RPC 2.0: an answer with an `id`, or a notification. Requests are bounded to 64 KiB, the input of libFuzzer |
+| `trace` | On any input, read as the trace of a run of a fixed function (`trace/walk.lcf`: a `for` over an array with a range and three carries, a `match` that binds a value), the reader of the viewer ends within its limits (cli.md 7.4) and gives the same fed whole or in three parts; its diagnostics are `LC7101` to `LC7104`, each at a line of the file; a trace that gives no values shows none; and the values over the drawing (notation 6.1) and their SVG are the same worked out twice. The seed is the trace of a run of that function |
 
 Larger inputs belong to the Size family of the corpus (`LC0006`), and their time and memory to `cargo xtask bounds`
 (`tests/harness/tests/bounds.rs`).
@@ -31,6 +32,7 @@ bash fuzz/run.sh diagram 60
 bash fuzz/run.sh simulation 60
 bash fuzz/run.sh run 60
 bash fuzz/run.sh mcp 60
+bash fuzz/run.sh trace 60
 ```
 
 The workflow `fuzz` (`.github/workflows/fuzz.yml`) builds every target and `deep_seeds` once, then runs the targets

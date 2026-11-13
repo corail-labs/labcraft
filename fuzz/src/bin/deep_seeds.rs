@@ -9,7 +9,8 @@
 //!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2);
 //! - for the target `mcp`, a session of the scripted loop of scenario 1 on the project of the target, a run followed and
 //!   aborted, and lines that are not requests, so that the fuzzer starts from requests the server reads; and requests at
-//!   the bound of nesting of the server and above it, and one after a byte order mark.
+//!   the bound of nesting of the server and above it, and one after a byte order mark;
+//! - for the target `trace`, the trace of a run of its function (`trace/walk.lcf`).
 //!
 //! Run from `fuzz/`.
 
@@ -47,6 +48,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(folder.join(format!("simulation-tables-{depth}.toml")), tables)?;
     }
     fs::write(folder.join("mcp-session.jsonl"), MCP_SESSION)?;
+    // The trace of a run of the function of the target `trace`, which no folder of the repository holds.
+    fs::write(folder.join("trace-walk.jsonl"), include_bytes!("../../trace/walk.trace.jsonl"))?;
     // Requests at the bound of nesting of the server and one level above it, and one after a byte order mark (mcp.md 1, 5).
     let bound = usize::try_from(Limits::default().max_nesting().saturating_add(labcraft_mcp::NESTING_OF_THE_ENVELOPE))?;
     let mut limits = String::from("\u{feff}{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n");

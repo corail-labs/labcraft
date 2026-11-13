@@ -147,6 +147,13 @@ numbers! {
     mark_around: "marks"."around" = 300, Length, 0..=1200, "4.2", "Between a node marked and its mark.";
     mark_width: "marks"."width" = 200, Length, 50..=800, "4.2", "The stroke of a mark.";
 
+    probe_height: "probe"."height" = 1600, Length, 800..=6400, "6.1", "A bubble of the value of a wire.";
+    probe_above: "probe"."above" = 400, Length, 0..=1600, "6.1", "Between a wire and the bubble of its value.";
+    probe_radius: "probe"."radius" = 300, Length, 0..=1600, "6.1", "The corners of a bubble.";
+    probe_apart: "probe"."apart" = 2000, Length, 0..=8000, "6.1", "Outputs of a node nearer than this have their bubbles side by side.";
+    probe_gap: "probe"."gap" = 400, Length, 0..=1600, "6.1", "Between two bubbles side by side, and before a value at an input.";
+    banner_height: "probe"."banner" = 2000, Length, 1200..=8000, "6.1", "The banner of a run that did not end well, or of a trace that no longer matches.";
+
     coarse_zoom: "zoom"."coarse" = 40, Percent, 10..=100, "7", "Below it, a node is a plain rectangle.";
     names_zoom: "zoom"."names" = 75, Percent, 10..=200, "7", "Below it, no name of a terminal.";
 }

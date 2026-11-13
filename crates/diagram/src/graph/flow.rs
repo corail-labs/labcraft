@@ -89,6 +89,7 @@ impl<'a> Builder<'a> {
         BodyOf {
             caption,
             pattern: String::new(),
+            traced: String::new(),
             arm: None,
             nodes: Vec::new(),
             owner: None,
@@ -167,6 +168,7 @@ impl<'a> Builder<'a> {
         let mut frame = BodyOf {
             caption: String::new(),
             pattern: String::new(),
+            traced: String::new(),
             arm,
             nodes: Vec::new(),
             owner: None,
@@ -257,9 +259,18 @@ impl<'a> Builder<'a> {
                     })
                     .collect();
                 frame.pattern = cut_text(&written.join(", ")).into_owned();
+                // As the runtime writes it, whole: two arms never read the same (`runtime::trace`).
+                let traced: Vec<String> = arm_of.patterns().map(|pattern| write_pattern(pattern, self.names, usize::MAX)).collect();
+                frame.traced = traced.join(", ");
                 for pattern in arm_of.patterns() {
-                    for binding in pattern.bindings() {
-                        frame.left.push(self.frame_terminal(self.text(binding.name), self.resolved().ty(binding.id), Edge::Bound));
+                    let variant = match pattern {
+                        Pattern::Variant { path, .. } => path.segments().last().map(|name| self.names.resolve(name).to_owned()),
+                        _ => None,
+                    };
+                    for (place, binding) in pattern.bindings().iter().enumerate() {
+                        let mut terminal = self.frame_terminal(self.text(binding.name), self.resolved().ty(binding.id), Edge::Bound);
+                        terminal.bound = Some((variant.clone(), place));
+                        frame.left.push(terminal);
                     }
                 }
                 for (index, target) in targets.iter().enumerate() {

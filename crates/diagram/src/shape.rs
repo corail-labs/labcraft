@@ -22,19 +22,31 @@ pub struct Paint {
     pub stroke: Option<Token>,
     /// In hundredths of a unit.
     pub width: i64,
+    /// The outline dashed: a value of a trace that no longer matches its files (notation 6.1).
+    pub dashed: bool,
+    /// From 0 to 100: a veil over what a run did not reach, an arm it did not take (notation 6.1). 100 elsewhere.
+    pub opacity: u8,
 }
 
 impl Paint {
     pub const fn fill(token: Token) -> Paint {
-        Paint { fill: Some(token), stroke: None, width: 0 }
+        Paint { fill: Some(token), stroke: None, width: 0, dashed: false, opacity: 100 }
     }
 
     pub const fn stroke(token: Token, width: i64) -> Paint {
-        Paint { fill: None, stroke: Some(token), width }
+        Paint { fill: None, stroke: Some(token), width, dashed: false, opacity: 100 }
     }
 
     pub const fn both(fill: Token, stroke: Token, width: i64) -> Paint {
-        Paint { fill: Some(fill), stroke: Some(stroke), width }
+        Paint { fill: Some(fill), stroke: Some(stroke), width, dashed: false, opacity: 100 }
+    }
+
+    pub const fn dashed(self) -> Paint {
+        Paint { dashed: true, ..self }
+    }
+
+    pub const fn veiled(self, opacity: u8) -> Paint {
+        Paint { opacity, ..self }
     }
 }
 
@@ -399,6 +411,12 @@ pub struct WireOf {
     /// The whole conversions that its pills show in part (`f32→f64`, notation 4.2), in the order of its readers: its
     /// `data-conversion` (`docs/cli.md`, 7.2).
     pub conversions: Vec<String>,
+    /// Where its value comes from in a trace, by its index in [`crate::values::TracePlan::sources`]; none for an order
+    /// wire. Not in the SVG.
+    pub source: Option<u32>,
+    /// Whether its value starts in this body, where its bubble shows: not a value that enters by a notch, which shows
+    /// outside (notation 6.1). Not in the SVG.
+    pub starts: bool,
 }
 
 /// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input
@@ -451,6 +469,10 @@ pub struct Drawing {
     /// in the SVG.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub warnings: Vec<labcraft_types::Diagnostic>,
+    /// What a trace needs of it: its nodes for the reader, where each wire takes its value from (notation 6.1). Not in
+    /// the SVG, nor sent to the web viewer, which shows no trace in M0 (architecture 11.5).
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub trace: crate::values::TracePlan,
 }
 
 /// The mark of a diagnostic: what shows where it is, and its code.

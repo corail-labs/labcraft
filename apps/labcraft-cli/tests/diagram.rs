@@ -214,7 +214,7 @@ fn wrong_usage_writes_nothing() {
     for args in [
         &["--out", "d", "lib"][..],
         &["--svg", "lib"],
-        &["--svg", "--out", "d", "--trace", "t.jsonl", "lib", "power"],
+        &["--svg", "--out", "d", "--trace", "t.jsonl", "lib"],
         &["--svg", "--out", "d", "--theme", "sepia", "lib"],
         &["--svg", "--out", "d", "lib", "a..b"],
         &["--svg", "--out", "d", "lib/power.lcf"],
@@ -405,4 +405,65 @@ fn nodes_that_the_file_places_one_over_the_other_are_drawn_and_warned() {
     assert!(text.contains("lib/sum4.lcf:13:5: warning[LC7005]: node `cd` overlaps node `y`"), "{text}");
     assert_eq!(text.matches("LC7005").count(), 2, "{text}");
     assert!(text.ends_with("\ndiagram: 1 function, 1 drawn, 0 not drawn: 0 errors, 2 warnings\n"), "{text}");
+}
+
+const DOUBLE: &str = "labcraft 1\n\nuse core\n\nfn double(x: f64 = 2.0) -> (y: f64) {\n    y = core.add(x, x)\n}\n";
+const HALF: &str = "labcraft 1\n\nuse core\n\nfn half(x: f64 = 3.0) -> (y: f64) {\n    y = core.div(x, 2.0)\n}\n";
+
+/// `--trace` (`docs/cli.md`, 7.3 to 7.5): the values of the last run on the wires, each in a `<g data-value>` whose
+/// `<title>` holds the value as the trace gives it; the `trace` part of the report; a trace that no longer matches its
+/// files, a trace file that is missing, and the trace of another function, none of which changes the exit code. By hand:
+/// `double` with its default, 2.0, gives 2.0 + 2.0 = 4.0.
+#[test]
+fn the_values_of_a_run_are_drawn_on_the_wires() {
+    let folder = Folder::new("trace");
+    folder.file("lib/double.lcf", DOUBLE).file("lib/half.lcf", HALF);
+    let ran = Command::new(env!("CARGO_BIN_EXE_labcraft-cli")).current_dir(&folder.0).args(["run", "lib", "double"]).output().unwrap();
+    assert_eq!(ran.status.code(), Some(0), "{}", String::from_utf8_lossy(&ran.stderr));
+    let trace = "lib/.labcraft/runs/double.trace.jsonl";
+    let (exit, document) = folder.json(&["--svg", "--out", "d", "--trace", trace, "lib", "double"]);
+    assert_eq!(exit, 0, "{document}");
+    assert_eq!(
+        document["trace"],
+        serde_json::json!({ "file": trace, "events": 3, "status": "ok", "cut": false, "stale": [], "ignored": 0 }),
+        "{document}"
+    );
+    let svg = folder.read("d/double.svg");
+    assert!(svg.contains("<g data-value=\"y\"><title>4.0</title>"), "{svg}");
+    assert!(svg.contains("<g data-value=\"x\"><title>2.0</title>"), "{svg}");
+    // The image grows by no banner: the run ended well and its files are the same.
+    assert!(svg.contains("viewBox=\"0 0 "), "{svg}");
+    // The same SVG from the folder itself, though the run named its files from the folder above (cli.md 7.2).
+    let inside = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
+        .current_dir(folder.0.join("lib"))
+        .args(["diagram", "--svg", "--out", "../e", "--trace", ".labcraft/runs/double.trace.jsonl", ".", "double"])
+        .output()
+        .unwrap();
+    assert_eq!(inside.status.code(), Some(0), "{}", String::from_utf8_lossy(&inside.stdout));
+    assert_eq!(folder.read("e/double.svg"), svg);
+    // The line of the trace in the human-readable report (cli.md 7.5).
+    let text = String::from_utf8(folder.run(&["--svg", "--out", "d", "--trace", trace, "lib", "double"]).stdout).unwrap();
+    assert!(text.contains(&format!("trace: {trace}, 3 events, ok\n")), "{text}");
+
+    // The file changed since the run: its values are muted, and the banner names it, from the folder.
+    folder.file("lib/double.lcf", DOUBLE.replace("2.0", "3.0"));
+    let (exit, document) = folder.json(&["--svg", "--out", "d", "--trace", trace, "lib", "double"]);
+    assert_eq!((exit, &document["trace"]["stale"]), (0, &serde_json::json!(["double.lcf"])), "{document}");
+    let svg = folder.read("d/double.svg");
+    assert!(svg.contains("`double.lcf` has changed since this run") && svg.contains("stroke-dasharray: 3 2"), "{svg}");
+
+    // A missing file, and the trace of another function: a warning each, the function drawn without values.
+    let (exit, document) = folder.json(&["--svg", "--out", "d", "--trace", "lib/none.jsonl", "lib", "double"]);
+    assert_eq!((exit, codes(&document)), (0, vec!["LC7101".to_owned()]), "{document}");
+    let (exit, document) = folder.json(&["--svg", "--out", "d", "--trace", trace, "lib", "half"]);
+    assert_eq!((exit, codes(&document)), (0, vec!["LC7102".to_owned()]), "{document}");
+    assert!(!folder.read("d/half.svg").contains("data-value"));
+    // A function that is not drawn: no values, but its trace is still read and judged.
+    folder.file("lib/double.lcf", "labcraft 1\n\nfn double(x: f64 = 2.0) -> (y: f64) {\n    y = nowhere(x)\n}\n");
+    let (_, document) = folder.json(&["--svg", "--out", "d", "--trace", trace, "lib", "double"]);
+    assert_eq!(
+        (&document["trace"]["events"], &document["trace"]["stale"]),
+        (&serde_json::json!(3), &serde_json::json!(["double.lcf"])),
+        "{document}"
+    );
 }

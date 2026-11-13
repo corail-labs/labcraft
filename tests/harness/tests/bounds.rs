@@ -12,6 +12,11 @@
 //! to a default limit of the run, takes at most 2 s and 512 MB, and a run that fills its memory at most `--max-memory` and 30 %.
 //! Each case must end with the fault of its limit, so that a run that stops early cannot pass for a fast one.
 //!
+//! Scenario 4 and `docs/cli.md`, 7.4: reading a trace at the limits of reading, and working out its values over the
+//! drawing with their SVG, takes at most 5 s and 512 MB, whatever the numbers it holds: a million events of a loop, values
+//! kept up to the bound of what the reader keeps, a file of 512 MiB of events of other frames. The trace is made as it is
+//! read, a part at a time, so that the memory measured is that of the reader. Each case must end with the code it reaches.
+//!
 //! In release only, since the crates of the workspace are not optimized in tests: `cargo xtask bounds`. Each case runs in a
 //! process of its own, this one started again, which times its own work and, on Linux, reads the peak of its resident memory
 //! (`VmHWM`). Elsewhere only the time is measured.
@@ -47,6 +52,7 @@ enum Tool {
     Check,
     Diagram,
     Run,
+    Trace,
 }
 
 impl Tool {
@@ -56,6 +62,7 @@ impl Tool {
             Tool::Check => "check",
             Tool::Diagram => "diagram",
             Tool::Run => "run",
+            Tool::Trace => "trace",
         }
     }
 }
@@ -303,6 +310,145 @@ const RUN_BOUNDS: &[RunBound] = &[
     },
 ];
 
+/// Reading a trace, its values worked out and drawn (`docs/cli.md`, 7.4) *(proposed)*.
+const TRACE_SECONDS: f64 = 5.0;
+
+/// What takes each line of a trace as it is made.
+type Line<'a> = dyn FnMut(&str) + 'a;
+
+/// A trace read at a limit: its lines, made as they are read, and the code that reading it ends with, if any.
+struct TraceBound {
+    name: &'static str,
+    /// The function the trace is read for.
+    drawing: fn() -> labcraft_diagram::Drawing,
+    /// Its lines, from what the reader keeps of that function.
+    lines: fn(&labcraft_trace::Expected, &mut Line<'_>),
+    code: &'static str,
+}
+
+const TRACE_BOUNDS: &[TraceBound] = &[
+    TraceBound { name: "trace-of-1000000-events", drawing: walk_drawing, lines: million_events, code: "" },
+    TraceBound { name: "trace-kept-to-its-bound", drawing: walk_drawing, lines: kept_to_its_bound, code: "LC7103" },
+    TraceBound { name: "trace-of-512-mib", drawing: walk_drawing, lines: file_of_512_mib, code: "LC7103" },
+    // A value on every wire of the chain of 20,000 nodes: every bubble placed among the others.
+    TraceBound { name: "trace-on-a-chain-of-20000-nodes", drawing: chain_drawing, lines: value_of_every_node, code: "" },
+];
+
+/// The first line and the call of frame 0 of a trace of `walk` (`fuzz/trace/walk.lcf`).
+fn start_of_walk(line: &mut Line<'_>) {
+    line(r#"{"schema":"labcraft-trace/1","run":"r1","function":"walk","mode":"deterministic","files":[]}"#);
+    line(
+        r#"{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"walk","in":[{"name":"values","type":"[f64]","value":[1.0]},{"name":"start","type":"Reading","value":"Reading.Overload"}],"types":{"got":"f64","v":"f64","total":"f64","same":"f64","last":"i32","x":"f64","i":"i32","t":"f64","k":"f64","j":"i32","next.t":"f64"}}"#,
+    );
+}
+
+/// A value of every wire of every node, `1.0`, as a run of a function without loops writes them.
+fn value_of_every_node(expected: &labcraft_trace::Expected, line: &mut Line<'_>) {
+    line(&format!(r#"{{"schema":"labcraft-trace/1","run":"r1","function":"{}","mode":"deterministic","files":[]}}"#, expected.function));
+    let types: Vec<String> =
+        expected.nodes.iter().flat_map(|node| node.wires.iter()).map(|wire| format!(r#""{}":"{}""#, wire.name, wire.ty)).collect();
+    line(&format!(r#"{{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"{}","in":[],"types":{{{}}}}}"#, expected.function, types.join(",")));
+    for (seq, node) in expected.nodes.iter().enumerate() {
+        let out: Vec<String> = node.wires.iter().map(|wire| format!(r#""{}":1.0"#, wire.name)).collect();
+        line(&format!(r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"{}","out":{{{}}}}}"#, seq + 2, node.name, out.join(",")));
+    }
+    line(&format!(r#"{{"seq":{},"t_ms":0.0,"event":"end","status":"ok"}}"#, expected.nodes.len() + 2));
+}
+
+/// The drawing of the chain of 20,000 nodes.
+fn chain_drawing() -> labcraft_diagram::Drawing {
+    let folder = drawn_chain().into_iter().next().unwrap();
+    let files = folder.into_iter().map(|(shown, bytes)| SourceFile { shown, content: Content::Bytes(Cow::Owned(bytes)) }).collect();
+    let root = LibrarySource { files, ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+    let mut names = Interner::new();
+    let checked = check(root, &Shipped, &mut names, &Limits::default());
+    match draw(&checked, 0, &names, &ViewState::default(), &DiagramLimits::default()) {
+        Drawn::Drawing(drawing) => drawing,
+        Drawn::NotDrawn(diagnostics) => panic!("the chain is not drawn: {diagnostics:?}"),
+    }
+}
+
+/// The 1,000,000 events of a run, each a value of the loop at its own iteration, then `end`: every one is kept.
+fn million_events(_: &labcraft_trace::Expected, line: &mut Line<'_>) {
+    start_of_walk(line);
+    for iteration in 0..999_999u64 {
+        line(&format!(
+            r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"@16","loops":["total"],"iter":[{iteration}],"out":{{"next.t":{iteration}.5}}}}"#,
+            iteration + 2
+        ));
+    }
+    line(r#"{"seq":1000001,"t_ms":0.0,"event":"end","status":"ok"}"#);
+}
+
+/// Values of 2 KiB, each kept, until what the reader keeps passes its bound of 384 MiB.
+fn kept_to_its_bound(_: &labcraft_trace::Expected, line: &mut Line<'_>) {
+    start_of_walk(line);
+    let value = "7".repeat(2048);
+    for iteration in 0..400_000u64 {
+        line(&format!(
+            r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"@16","loops":["total"],"iter":[{iteration}],"out":{{"next.t":{value}}}}}"#,
+            iteration + 2
+        ));
+    }
+}
+
+/// Events of a frame called by frame 0, each of 600 bytes, until the file passes 512 MiB: read only as far as their frame.
+fn file_of_512_mib(_: &labcraft_trace::Expected, line: &mut Line<'_>) {
+    start_of_walk(line);
+    line(r#"{"seq":2,"t_ms":0.0,"event":"call","frame":1,"parent":0,"node":"got","function":"core.add","in":[],"types":{}}"#);
+    let padding = "x".repeat(520);
+    for seq in 3..1_000_000u64 {
+        line(&format!(r#"{{"seq":{seq},"t_ms":0.0,"event":"ran","frame":1,"node":"n","out":{{"p":"{padding}"}}}}"#));
+    }
+}
+
+/// The drawing of `walk`, as `labcraft-cli diagram` draws it.
+fn walk_drawing() -> labcraft_diagram::Drawing {
+    let files =
+        [("walk.lcf", &include_bytes!("../../../fuzz/trace/walk.lcf")[..]), ("Reading.lct", &include_bytes!("../../../fuzz/trace/Reading.lct")[..])];
+    let files = files.iter().map(|(shown, bytes)| SourceFile { shown: (*shown).to_owned(), content: Content::Bytes(Cow::Borrowed(bytes)) }).collect();
+    let root = LibrarySource { files, ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+    let mut names = Interner::new();
+    let checked = check(root, &Shipped, &mut names, &Limits::default());
+    let index = checked.files.iter().position(|file| file.shown == "walk.lcf").unwrap();
+    match draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) {
+        Drawn::Drawing(drawing) => drawing,
+        Drawn::NotDrawn(diagnostics) => panic!("walk is not drawn: {diagnostics:?}"),
+    }
+}
+
+/// A trace read a part of 64 KiB at a time, as `engine::drawings::read_trace` reads a file, then its values and their SVG:
+/// the time it takes, and the codes of reading it.
+#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
+fn trace_bound(case: &TraceBound) -> (Duration, String) {
+    let drawing = (case.drawing)();
+    let expected = labcraft_diagram::expected(&drawing);
+    let start = Instant::now();
+    let mut reader = labcraft_trace::Reader::new(expected.clone(), labcraft_trace::ReadLimits::default());
+    let mut part: Vec<u8> = Vec::with_capacity(1 << 17);
+    let mut going = true;
+    (case.lines)(&expected, &mut |line: &str| {
+        if !going {
+            return;
+        }
+        part.extend_from_slice(line.as_bytes());
+        part.push(b'\n');
+        if part.len() >= 1 << 16 {
+            going = reader.feed(&part);
+            part.clear();
+        }
+    });
+    if going {
+        reader.feed(&part);
+    }
+    let trace = reader.finish();
+    let overlay = labcraft_diagram::values(&drawing, &trace, &labcraft_diagram::Judged::default(), &labcraft_diagram::Choice::default());
+    std::hint::black_box(labcraft_diagram::svg_with(&drawing, Some(&overlay), Theme::Both));
+    let took = start.elapsed();
+    let codes: Vec<&str> = labcraft_diagram::values::diagnostics(&trace, "t.jsonl").iter().map(|diagnostic| diagnostic.code().as_str()).collect();
+    (took, codes.join(","))
+}
+
 /// The whole run: each case and command in a process of its own, then the table, then the verdict.
 #[test]
 #[ignore = "in release only: cargo xtask bounds"]
@@ -364,6 +510,29 @@ fn every_case_stays_within_the_bounds() {
             over.push(format!("{} run: {seconds:.2} s, {shown} MB", case.name));
         }
     }
+    for case in TRACE_BOUNDS {
+        let mut measure = run(case.name, Tool::Trace);
+        for _ in 0..2 {
+            if measure.0 <= TRACE_SECONDS {
+                break;
+            }
+            let again = run(case.name, Tool::Trace);
+            if again.0 < measure.0 {
+                measure = again;
+            }
+        }
+        let (seconds, peak, codes) = measure;
+        let expected: BTreeSet<String> = case.code.split(',').filter(|code| !code.is_empty()).map(str::to_owned).collect();
+        if codes != expected {
+            over.push(format!("{} trace: ended with {codes:?}, expected {expected:?}", case.name));
+        }
+        let shown = peak.map_or_else(|| "-".to_owned(), |bytes| (bytes / (1024 * 1024)).to_string());
+        let listed: Vec<&str> = codes.iter().map(String::as_str).collect();
+        println!("{:<38} {:<6} {seconds:>8.2} {shown:>8}  {}", case.name, "trace", listed.join(" "));
+        if seconds > TRACE_SECONDS || peak.is_some_and(|bytes| bytes > BYTES) {
+            over.push(format!("{} trace: {seconds:.2} s, {shown} MB", case.name));
+        }
+    }
     if peak_memory().is_none() {
         println!("memory is measured on Linux only");
     }
@@ -399,6 +568,13 @@ fn run(name: &str, command: Tool) -> (f64, Option<u64>, BTreeSet<String>) {
 fn one_case() {
     let Ok(which) = std::env::var(CASE) else { return };
     let (name, command) = which.split_once(':').unwrap();
+    if command == "trace" {
+        let case = TRACE_BOUNDS.iter().find(|case| case.name == name).unwrap();
+        let (took, codes) = trace_bound(case);
+        let peak = peak_memory().map_or_else(|| "-".to_owned(), |bytes| bytes.to_string());
+        println!("bounds: {} {peak} {codes}", took.as_secs_f64());
+        return;
+    }
     if command == "run" {
         let case = RUN_BOUNDS.iter().find(|case| case.name == name).unwrap();
         let (took, code) = std::thread::Builder::new().stack_size(STACK_SIZE).spawn(|| run_bound(case)).unwrap().join().unwrap();
@@ -476,8 +652,8 @@ fn work(folder: Folder, command: Tool, drawn: bool, codes: &mut BTreeSet<&'stati
             }
             return longest;
         }
-        // A run is measured by `run_bound`, on a session of `engine`.
-        Tool::Run => {}
+        // A run is measured by `run_bound`, on a session of `engine`, and a trace by `trace_bound`.
+        Tool::Run | Tool::Trace => {}
     }
     start.elapsed()
 }
