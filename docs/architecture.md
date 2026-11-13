@@ -1191,8 +1191,12 @@ the tabs of the viewer (step 6). With step 5 of 11.7, the marks of diagnostics o
 not drawn (`mark`, `undrawn`), which `labcraft-cli diagram` uses. With step 8a, the values of a run (`values`): a
 `Drawing` holds its `TracePlan`, found when it is drawn, the nodes that `expected` gives the reader and where each wire
 takes its value from, so that `values` reads only the drawing and the trace, and `Judged` says which files have changed
-(the caller reads them) and `Choice` which iteration each loop shows; the selectors, the curves and the tabs of the
-viewer come with step 8b.* `draw` takes the index of the file of the function in `Checked::files`, as `ir::lower` does,
+(the caller reads them) and `Choice` which iteration each loop shows. With step 8b2, the viewer's own parts of the
+overlay: the value of every wire (`Overlay::wires`, those that enter by a notch too), the iteration selectors
+(`Overlay::selectors`, with where a click steps back, types a number or steps forward), the arm that the run took
+(`Overlay::taken`), and, worked out on demand, the values of a wire over the iterations of its loop (`series`), the
+values at the inputs of a node (`inputs_of`), the loops inside a loop (`loops_inside`) and the shapes of the selection
+(`selected_node`, `selected_wire`).* `draw` takes the index of the file of the function in `Checked::files`, as `ir::lower` does,
 and the `Interner`.
 
 What the notation says, computed once, for the canvas and the SVG alike: the canvas paints only what this crate
@@ -1211,6 +1215,8 @@ pub enum Drawn { Drawing(Drawing), NotDrawn(Vec<Diagnostic>) }      // LC7002, o
 // Drawing::warnings: what drawing finds about the file (LC7005), which the caller adds to its report
 pub fn expected(drawing: &Drawing) -> trace::Expected;              // what the reader keeps (11.2)
 pub fn values(drawing: &Drawing, trace: &trace::Trace, judged: &Judged, choice: &Choice) -> Overlay;  // 6.1
+pub fn series(drawing: &Drawing, trace: &trace::Trace, choice: &Choice, group: usize) -> Option<Series>; // a wire in a loop
+pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Shape>;  // hovered or selected
 pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> String;  // cli.md 7.2 and 7.3
 pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: Theme) -> String;
 ```
@@ -1300,7 +1306,8 @@ looks, at each frame, whether the family is there, and when it is not (a host th
 pub struct Canvas { /* the drawing shown, the viewport, caches, the glide; the overlay with step 8 */ }
 impl Canvas {
     pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool);   // glide: the file of the function shown changed
-    pub fn show(&mut self, ui: &mut egui::Ui, theme: Theme, shown: &Shown) -> CanvasResponse;  // hover, a click on a tab
+    pub fn show(&mut self, ui: &mut egui::Ui, theme: Theme, shown: &Shown) -> CanvasResponse;  // hover, a tab, an iteration
+    pub fn set_values(&mut self, overlay: Option<Arc<Overlay>>, run: Option<(Arc<Trace>, Choice)>);
     pub fn set_reduced_motion(&mut self, reduced: bool);
     pub fn set_viewport(&mut self, zoom: f32, origin: Vec2); pub fn fit(&mut self);
 }
@@ -1310,7 +1317,11 @@ impl Canvas {
 apart from the drawing (`Canvas::set_values`), its layers, its banner and its bubbles cached as the groups are, culled
 by their boxes, not painted while nodes glide, the bubbles from `zoom.values` on and their values on hover down to
 `zoom.coarse`, the value of the run under the name of a wire in its tooltip, and `Canvas::set_values_shown` for the
-button that hides them; without the folds and the selectors of iterations. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
+button that hides them; with step 8b2, the iteration selectors (a click, the wheel, a number typed, each coming back
+as `CanvasResponse::iteration`), the selection of a node or a wire (`Canvas::selected_node`, `select_node`), the values
+at the inputs of the node hovered or selected, and the values of a wire over the iterations of its loop, from the
+trace that `set_values` gives with the overlay, worked out once per wire, in its tooltip or pinned. The selection is
+the canvas's own, as the hover is, until the editor of M1 makes it a command. Without the folds. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
 400 %; the first drawing is fitted, at 100 % at most (notation 7), and a new one keeps the viewport. Tested without a
 window (`editor` tests, and every function of the repository painted in both themes, unfolded and in tabs, each arm
 shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand before the tag (11.6).*
@@ -1366,7 +1377,13 @@ and read again within the same 50 ms, and publishes them with the drawing, which
 The trace (cli.md 8; decisions of the owner, 2026-11-13): after each command the thread of the session publishes the
 drawing, then calls `Session::look_at_trace`, which reads the trace of the function shown when the drawing is new or
 the file of the trace changed (its length or its time), and publishes the overlay and the `trace` part, the diagnostics
-of reading it joining the report; and it calls it every second, when no message comes. The trace is looked at, not
+of reading it joining the report; and it calls it every second, when no message comes. The trace read is kept with
+the drawing: choosing an iteration (`view.set_state`) works the values out again from it, without reading the file, and
+publishes them with the trace and the iterations chosen, from which the canvas works out a series. The trace read thus
+stays in memory while its function is shown, within the limits of reading (cli.md 7.4), one copy shared by the
+session and the canvas; while a new one is read, the one shown stays, so that its values do not go away meanwhile. The arm shown of a
+structure is the one the developer picked, else the one the run took; the picks give way when an iteration moves or
+another trace arrives (notation 6.1). The trace is looked at, not
 watched by `notify`: it may be in a folder above the one open, and a second is the time a person reads a run in. A trace
 replaced while it is read is read again, three times at most. `Session::open_trace_at` takes a trace that the window
 chose anywhere on the disk, which a command cannot name (commands.md 2): not a command, as `files_changed`. The watcher

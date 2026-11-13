@@ -12,6 +12,7 @@ use labcraft_graph::{
     Arg, Body, Branching, Call, Clause, ClauseKind, Function, Id, Operand, OrderRef, PanelItem, Pattern, Rhs, Signature, Statement, StatementKind,
     Target as Line,
 };
+use labcraft_types::text::grouped;
 use labcraft_types::{Code, Diagnostic, Name, Related, Ty, TyId, cut_text};
 
 use super::super::{Pass, Scope, path_text};
@@ -38,19 +39,6 @@ const MAX_REFS: usize = 16;
 /// (`docs/architecture.md`, section 5). Beyond it nothing more is said, and that is a warning less on a file built for it.
 const WORK_PER_ITEM: u64 = 64;
 const MIN_WORK: u64 = 1 << 24;
-
-/// A number in groups of three digits, as the spec writes it.
-fn grouped(number: u64) -> String {
-    let digits = number.to_string();
-    let mut text = String::new();
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            text.push(',');
-        }
-        text.push(digit);
-    }
-    text
-}
 
 /// What only this pass says: the programs that test the other passes are written for what those judge.
 #[cfg(test)]

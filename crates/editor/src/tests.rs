@@ -423,7 +423,7 @@ fn the_values_of_a_run_show_over_their_drawing_and_hide_with_their_button() {
     frame(&ctx, &mut canvas, &shown, input(0.0));
     let (none, _) = frame(&ctx, &mut canvas, &shown, input(0.2));
     assert!(!texts(&none).iter().any(|text| text == "21.5"), "{:?}", texts(&none));
-    canvas.set_values(Some(values_of(&drawn, 10.75, 21.5)));
+    canvas.set_values(Some(values_of(&drawn, 10.75, 21.5)), None);
     let (with, _) = frame(&ctx, &mut canvas, &shown, input(0.4));
     let painted = texts(&with);
     assert!(painted.iter().any(|text| text == "21.5") && painted.iter().any(|text| text == "10.75"), "{painted:?}");
@@ -446,4 +446,171 @@ fn the_values_of_a_run_show_over_their_drawing_and_hide_with_their_button() {
     canvas.set_drawing(drawing(DOUBLE, &ViewState::default()), false);
     let (after, _) = frame(&ctx, &mut canvas, &shown, input(1.6));
     assert!(!texts(&after).iter().any(|text| text == "21.5"));
+}
+
+const COUNT: &str = "labcraft 1\n\nuse core\n\nfn main() -> (n: f64) {\n    n = loop carry i = 0.0 {\n        m = core.add(i, 1.0)\n        \
+                     done = core.ge(m, 3.0)\n        next i = m\n        until done\n    }\n}\n";
+
+/// A run of `COUNT` by hand: 3 iterations, `m` 1, 2, 3, `done` true at the last.
+fn run_of_count(drawing: &Drawing) -> (Arc<Overlay>, Arc<labcraft_diagram::Trace>) {
+    let mut lines = vec![
+        r#"{"schema":"labcraft-trace/1","run":"r1","function":"main","mode":"deterministic","files":[]}"#.to_owned(),
+        r#"{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"main","in":[],"types":{"n":"f64","m":"f64","done":"bool"}}"#.to_owned(),
+    ];
+    for k in 0..3u32 {
+        let m = f64::from(k + 1);
+        lines
+            .push(format!(r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"m","loops":["n"],"iter":[{k}],"out":{{"m":{m:?}}}}}"#, 2 + 2 * k));
+        lines.push(format!(
+            r#"{{"seq":{},"t_ms":0.0,"event":"ran","frame":0,"node":"done","loops":["n"],"iter":[{k}],"out":{{"done":{}}}}}"#,
+            3 + 2 * k,
+            k == 2
+        ));
+    }
+    lines.push(r#"{"seq":8,"t_ms":0.0,"event":"ran","frame":0,"node":"n","out":{"n":3.0}}"#.to_owned());
+    lines.push(r#"{"seq":9,"t_ms":0.0,"event":"end","status":"ok"}"#.to_owned());
+    let text = lines.join("\n") + "\n";
+    let mut reader = labcraft_trace::Reader::new(labcraft_diagram::expected(drawing), labcraft_trace::ReadLimits::default());
+    reader.feed(text.as_bytes());
+    let trace = Arc::new(reader.finish());
+    assert_eq!(trace.ignored, 0);
+    let overlay = labcraft_diagram::values(drawing, &trace, &labcraft_diagram::Judged::default(), &labcraft_diagram::Choice::default());
+    (Arc::new(overlay), trace)
+}
+
+/// A frame with these events, at 100 % from the corner of the drawing: what the canvas painted and the iteration it asks for.
+fn frame_with(ctx: &egui::Context, canvas: &mut Canvas, time: f64, events: Vec<egui::Event>) -> (Vec<ClippedShape>, Option<(String, u64)>) {
+    let mut raw = input(time);
+    raw.events = events;
+    let mut iteration = None;
+    let mut output = ctx.run_ui(raw, |ui| iteration = canvas.show(ui, Theme::Light, &Shown::default()).iteration);
+    let shapes = std::mem::take(&mut output.shapes);
+    output.drop_without_applying_deltas();
+    (shapes, iteration)
+}
+
+/// A click at `at`, over two frames, from `time`: what the second asks for.
+fn click(ctx: &egui::Context, canvas: &mut Canvas, at: Pos2, time: f64) -> Option<(String, u64)> {
+    let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let (_, first) = frame_with(ctx, canvas, time, vec![egui::Event::PointerMoved(at), button(true)]);
+    let (_, second) = frame_with(ctx, canvas, time + 0.05, vec![egui::Event::PointerMoved(at), button(false)]);
+    first.or(second)
+}
+
+fn middle((left, top, right, bottom): (i64, i64, i64, i64)) -> Pos2 {
+    Pos2::new((left + right) as f32 / 200.0, (top + bottom) as f32 / 200.0)
+}
+
+#[test]
+fn a_selector_steps_its_iterations_and_a_click_selects_a_node_until_escape() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(COUNT, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let (overlay, trace) = run_of_count(&drawn);
+    canvas.set_values(Some(overlay.clone()), Some((trace, labcraft_diagram::Choice::default())));
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    let (shapes, _) = frame_with(&ctx, &mut canvas, 0.1, Vec::new());
+    let selector = overlay.selectors.first().unwrap().clone();
+    assert_eq!((selector.count, selector.shown), (3, 2));
+    assert!(texts(&shapes).iter().any(|text| text == "3/3"), "{:?}", texts(&shapes));
+    // Back from the last: the second, from 0; forward from the last: nothing.
+    assert_eq!(click(&ctx, &mut canvas, middle(selector.back), 0.2), Some((selector.key.clone(), 1)));
+    // Until the values of the second come, a step goes from it.
+    assert_eq!(click(&ctx, &mut canvas, middle(selector.forward), 0.3), Some((selector.key.clone(), 2)));
+    // The values of the last come back: forward from it asks nothing.
+    canvas.set_values(Some(overlay.clone()), Some((run_of_count(&drawn).1, labcraft_diagram::Choice::default())));
+    assert_eq!(click(&ctx, &mut canvas, middle(selector.forward), 0.4), None);
+    assert!(canvas.selected_node().is_none(), "a click on a selector selects nothing");
+    // A click on `done` selects it; its input `m`, 3 at the last iteration, shows once more than its bubble alone.
+    let done = drawn.placed.iter().find(|placed| placed.key.ends_with("done")).unwrap();
+    let at = Pos2::new((done.x + done.width / 2) as f32 / 100.0, (done.y + done.height / 2) as f32 / 100.0);
+    let away = Pos2::new(1.0, 550.0);
+    let (unselected, _) = frame_with(&ctx, &mut canvas, 0.6, vec![egui::Event::PointerMoved(away)]);
+    click(&ctx, &mut canvas, at, 0.8);
+    assert_eq!(canvas.selected_node(), Some(done.key.as_str()));
+    let (selected, _) = frame_with(&ctx, &mut canvas, 1.0, vec![egui::Event::PointerMoved(away)]);
+    let threes = |shapes: &[ClippedShape]| texts(shapes).iter().filter(|text| *text == "3").count();
+    assert_eq!(threes(&selected), threes(&unselected) + 1, "{:?}", texts(&selected));
+    // Escape selects nothing.
+    let escape = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+    frame_with(&ctx, &mut canvas, 1.2, vec![escape.clone()]);
+    assert!(canvas.selected_node().is_none());
+    // A click on the wire `m` selects it and pins its values over the 3 iterations: a curve from 1 to 3, by hand.
+    let m = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "m")).unwrap();
+    let path = &drawn.groups[m].wire.as_ref().unwrap().readers[0].1;
+    let ((x0, y0), (x1, y1)) = (path[0], path[1]);
+    let on_wire = Pos2::new((x0 + x1) as f32 / 200.0, (y0 + y1) as f32 / 200.0);
+    let (before, _) = frame_with(&ctx, &mut canvas, 1.4, vec![egui::Event::PointerMoved(away)]);
+    assert!(!texts(&before).iter().any(|text| text == "3 iterations"));
+    click(&ctx, &mut canvas, on_wire, 1.6);
+    assert_eq!(canvas.selected_wire(), Some(m));
+    let (pinned, _) = frame_with(&ctx, &mut canvas, 1.8, vec![egui::Event::PointerMoved(away)]);
+    let painted = texts(&pinned);
+    assert!(["1", "3", "3 iterations"].iter().all(|wanted| painted.iter().any(|text| text == wanted)), "{painted:?}");
+    frame_with(&ctx, &mut canvas, 2.0, vec![escape]);
+    assert_eq!(canvas.selected_wire(), None);
+}
+
+/// The wheel turned up over a selector steps back, and never scrolls the canvas; down from the last, nothing.
+#[test]
+fn the_wheel_over_a_selector_steps_its_iterations_and_does_not_scroll() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(COUNT, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let (overlay, trace) = run_of_count(&drawn);
+    canvas.set_values(Some(overlay.clone()), Some((trace, labcraft_diagram::Choice::default())));
+    let selector = overlay.selectors.first().unwrap().clone();
+    let at = middle(selector.number);
+    let wheel = |y: f32| egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: Vec2::new(0.0, y),
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers: egui::Modifiers::NONE,
+    };
+    let turn = |canvas: &mut Canvas, y: f32, from: f64| {
+        let mut asked = Vec::new();
+        let (_, first) = frame_with(&ctx, canvas, from, vec![egui::Event::PointerMoved(at), wheel(y)]);
+        asked.extend(first);
+        // The smoothing of the wheel spreads it over the frames that follow.
+        for frame in 1..40 {
+            let (_, next) = frame_with(&ctx, canvas, from + f64::from(frame) * 0.02, vec![egui::Event::PointerMoved(at)]);
+            asked.extend(next);
+        }
+        asked
+    };
+    frame_with(&ctx, &mut canvas, 0.0, vec![egui::Event::PointerMoved(at)]);
+    let before = canvas.viewport();
+    assert!(turn(&mut canvas, -60.0, 0.1).is_empty(), "down from the last: nothing");
+    let back = turn(&mut canvas, 60.0, 2.0);
+    assert_eq!(back.first(), Some(&(selector.key.clone(), 1)), "{back:?}");
+    assert_eq!(canvas.viewport(), before, "the canvas did not scroll");
+}
+
+/// A number typed into the selector replaces the one shown: the field opens empty, `5` then Enter asks for the fifth.
+#[test]
+fn a_number_typed_into_a_selector_chooses_that_iteration() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(COUNT, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let (overlay, trace) = run_of_count(&drawn);
+    canvas.set_values(Some(overlay.clone()), Some((trace, labcraft_diagram::Choice::default())));
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    let selector = overlay.selectors.first().unwrap().clone();
+    assert_eq!(click(&ctx, &mut canvas, middle(selector.number), 0.1), None, "the field opens");
+    frame_with(&ctx, &mut canvas, 0.2, Vec::new());
+    let (_, typed) = frame_with(&ctx, &mut canvas, 0.3, vec![egui::Event::Text("2".to_owned())]);
+    assert_eq!(typed, None);
+    let enter = egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+    let (_, asked) = frame_with(&ctx, &mut canvas, 0.4, vec![enter]);
+    assert_eq!(asked, Some((selector.key.clone(), 1)), "the second, from 0");
 }

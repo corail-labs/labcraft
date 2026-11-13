@@ -1052,14 +1052,17 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   `<path>` being that of `FOLDER` from there, as a session whose root that folder is writes it for an agent
   (commands.md 8); of those that exist, the most recent, and at the same time the nearest. The viewer looks at it every second, and a new run shows within that second; the traces that a run writes
   check nothing again, nor does anything under a hidden name. A bar above the canvas names the trace and says how its run
-  ended; a button hides the values and shows them again, for the window only; **Open a trace…** shows the values of
+  ended; a button hides the values and shows them again, for the window only. In the canvas, the selector of a loop
+  chooses its iteration (a click on `‹` or `›`, the wheel over it, or its number typed), a click selects a node, whose
+  input values stay shown, or a wire, whose value stays pinned, and for a wire inside a loop its values over its
+  iterations, a click on one of them choosing it; Escape selects nothing (notation 6.1). **Open a trace…** shows the values of
   another trace, anywhere on the disk, looked at in the same way, until another function is shown, and its name has a
   cross that goes back to the last run (decisions of the owner, 2026-11-13). The diagnostics of reading a trace
   (`LC71`, section 7.6) are in `Problems`.
 - `--theme light` or `--theme dark`: the theme of this window, instead of the one of the preferences. The viewer
   keeps its preferences (the theme, every node in standard view, no glide) in the folder of settings of the
   system. It writes no file of a program, and keeps no view state on the disk: the arm shown in tabs, a structure
-  unfolded, a node in standard view last as long as the window.
+  unfolded, a node in standard view, the iteration chosen of a loop, the selection last as long as the window.
 - `--style FILE`: draw with the values of the notation in `FILE` (visual-notation, 10), a file of TOML, read again
   each time it is saved; when it does not exist, the viewer writes the defaults into it, the one file it writes
   besides its preferences. A value unknown or out of its range leaves the values before, and the window says why; colours below the

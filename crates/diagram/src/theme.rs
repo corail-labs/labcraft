@@ -47,6 +47,7 @@ pub const TOKENS: &[TokenValue] = &[
     token("tab.fill", "#E1E4E8", "#2B3038"),
     token("band.fill", "#E1E4E8", "#2B3038"),
     token("band.text", "#1F2328", "#ECEFF3"),
+    token("select.stroke", "#0E7490", "#22D3EE"),
 ];
 
 /// The name of the CSS variable of a token: `wire.error` gives `--wire-error` (notation 8).
@@ -70,8 +71,8 @@ pub fn contrasts() -> Vec<(&'static str, &'static str, f64)> {
         "ink.faint",
         "pill.text",
     ];
-    const OUTLINES: [&str; 5] = ["node.stroke", "frame.stroke", "pill.stroke", "probe.stroke", "node.active"];
-    const OWN: [(&str, &str); 11] = [
+    const OUTLINES: [&str; 6] = ["node.stroke", "frame.stroke", "pill.stroke", "probe.stroke", "node.active", "select.stroke"];
+    const OWN: [(&str, &str); 12] = [
         ("node.title", "node.fill"),
         ("ink.muted", "node.fill"),
         ("ink.faint", "node.fill"),
@@ -79,6 +80,7 @@ pub fn contrasts() -> Vec<(&'static str, &'static str, f64)> {
         ("badge.text", "badge.fill"),
         ("band.text", "band.fill"),
         ("node.title", "tab.fill"),
+        ("ink.muted", "tab.fill"),
         ("node.title", "probe.fill"),
         ("ink.muted", "probe.fill"),
         ("wire.error", "probe.fill"),
@@ -133,7 +135,7 @@ mod tests {
     #[test]
     fn the_contrasts_of_notation_8_hold() {
         assert_eq!(crate::style::contrast_problems(&crate::style::Style::default()), Vec::<String>::new());
-        assert_eq!(contrasts().len(), 5 * 15 + 11);
+        assert_eq!(contrasts().len(), 5 * 16 + 12);
     }
 
     /// The ratio of WCAG 2, by hand: white on black 21:1, a colour on itself 1:1, `#777777` on white 4.48:1.

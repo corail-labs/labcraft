@@ -717,8 +717,14 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
     value then read on hover; an input without a default, as any other start of a wire, above the wire that leaves it. A value that a register, a branch or a bus binds has its bubble where it starts
     inside the frame: the inner box of a register, the bound terminal of a branch, the top of a bus.
   - **Inputs.** Hovering or selecting a node also shows the values at its input terminals, to the left of each,
-    side by side as those of outputs, each ending 4 units before the start of the one below; the values are
-    never drawn at every input, which would repeat a value at each of its readers.
+    side by side as those of outputs, each ending 4 units before the start of the one below, 4 units above their
+    wire; the values are never drawn at every input, which would repeat a value at each of its readers. A value that
+    enters a frame by a notch shows at the inputs it reaches inside, as the value outside.
+  - **Selection.** In the viewer, a click selects a node, outlined in `select.stroke` 6 units from its block (twice the
+    room of the outline of a node that produced an error, which it stays outside), `marks.width` wide; or a wire, under
+    a halo of `select.stroke` 8 units wide at 35 % *(proposed)*. Escape, or a click on nothing, selects nothing. A node
+    selected keeps the values at its inputs shown while the view moves, and stays selected across a change of its file,
+    found by its key (decisions of the owner, 2026-11-13). Neither is in an SVG.
   - **Order.** Bubbles are drawn after everything else: those of the inputs of the function in the order of
     the signature, then the others in the canonical order of the lines that bind their values (spec 5.2), so
     that the SVG is the same every time.
@@ -769,7 +775,15 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   - a value bound by a branch (`Reading.Value(v)`, `io.timeout(err)`): taken from the selector of the
     `match` or `handle`.
 - **Loops.** A wire inside a loop has one value per iteration (the `iter` of the trace). The frame of
-  the loop gets an iteration selector next to its counter (`× 6`), on the last iteration by default.
+  the loop gets an iteration selector next to its counter (`× 6`), on the last iteration by default: before it in the
+  header, `canvas.grid` from it, a box `node.pill_height` high, as wide for every iteration as for the widest number, in `tab.fill` outlined in `pill.stroke`, its corners those of a
+  bubble, the arrow that leads nowhere in `ink.muted` (`‹ 6/6 › × 6`). Where the header has room for only one, the
+  viewer shows the selector in the place of the counter, its `6/6` giving the count; with room for neither, no
+  selector, and the iteration is chosen on the values of a wire (below). A click on `‹` or `›` steps back or forward;
+  the wheel over the selector steps, down forward, and does not scroll; a click on the number opens a field where a
+  number is typed (decisions of the owner, 2026-11-13). The iteration chosen is kept, by the key of its loop, across
+  the runs that follow and a change of the file, bounded by the last iteration of each; choosing the last follows the
+  last of the runs to come.
   What a person reads counts iterations from 1, as the counter does: the selector (`‹ 6/6 ›` next to `× 6`)
   and the message of a fault (`LC8001`); the fields of JSON (`iter` of a trace, `status.loops.iteration`) count
   from 0, as indices. The bubbles inside show the chosen iteration, and stepping it forward or back shows the values
@@ -779,7 +793,11 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   their loop in that outer iteration. In a `for parallel`, the last iteration is the one with the
   highest index. Hovering a wire inside a loop shows its values over the iterations of its own loop,
   within the iterations chosen outside: a small curve for a number, a list otherwise, cut after its
-  first 1,000 values with a note.
+  first 1,000 values with a note. The curve goes from the lowest value at the bottom to the highest at the top, the two
+  written above and below it in short, a line between two iterations that both give a finite value; the iteration
+  shown is marked. A click on the wire selects it and pins its values next to where it was clicked: a click on a
+  point of the curve, or a line of the list, chooses that iteration, and every bubble follows (decisions of the owner,
+  2026-11-13).
 - **`match` and `handle`.** The branch shown by default is the one that the run took, at the chosen
   iterations (the `arm` event of the trace); without a trace, or when the branch of the trace no longer
   exists, the first (N-2). A tab that the developer picks then wins until an iteration selector moves
@@ -834,7 +852,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 real diagrams (`tools/lcf-figcraft`): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
 `coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
-compact view, 3.2). Their values are LabCraft's own, in a light theme and a dark theme (the table
+compact view, 3.2), `select.stroke` (the node or wire selected in the viewer, 6.1). Their values are LabCraft's own, in a light theme and a dark theme (the table
 below), with no reference to another editor's palette (D-23). Whatever library draws the panels of the
 IDE, the diagram takes its colors from this table.
 
@@ -842,10 +860,10 @@ IDE, the diagram takes its colors from this table.
   mark token, and every text token (`node.title`, `ink.muted`, `ink.faint`, `pill.text`), against
   `canvas.fill` and each `frame.fill`; and every text on its own fill: `node.title`, `ink.muted` and
   `ink.faint` on `node.fill`, `pill.text` on `pill.fill`, `badge.text` on `badge.fill`, `band.text` on
-  `band.fill`, `node.title` on `tab.fill`, and the texts of a value bubble (`node.title`, `ink.muted`,
+  `band.fill`, `node.title` and `ink.muted` on `tab.fill` (a tab, an iteration selector), and the texts of a value bubble (`node.title`, `ink.muted`,
   `wire.error`, `mark.invalid`) on `probe.fill`.
 - **Outlines of at least 3:1**, checked by the same test: `node.stroke`, `frame.stroke`, `pill.stroke`,
-  `probe.stroke` and `node.active` against `canvas.fill` and each `frame.fill`, in both themes. A node, a pill or a
+  `probe.stroke`, `node.active` and `select.stroke` against `canvas.fill` and each `frame.fill`, in both themes. A node, a pill or a
   structure is told from its background by its outline, at every level. The dividers inside a node or
   a frame (`node.divider`, `frame.divider`) are decoration and stay outside the rule.
 - **"Muted" does not exempt from contrast.** `wire.order` is told apart by its pattern (thin
@@ -869,7 +887,7 @@ IDE, the diagram takes its colors from this table.
   when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
 - **Where the values come from.** The light values of the first list of tokens come from the board
   `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
-  from `tools/lcf-figcraft/build_notation.py`; `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new. Changed on
+  from `tools/lcf-figcraft/build_notation.py`; `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new, and `select.stroke` (2026-11-13), a cyan told apart from the blue of `wire.resource` and the green of `node.active`. Changed on
   2026-11-08 for the two rules above: in the light theme, `frame.fill.1..4`, `wire.resource`,
   `wire.error`, `wire.order`, `mark.coercion`, `mark.invalid`, `ink.muted`, `ink.faint` (now that of
   `ink.muted`), `node.stroke`, `frame.stroke` and `pill.stroke`; in the dark theme, `frame.fill.1..4`,
@@ -910,6 +928,7 @@ IDE, the diagram takes its colors from this table.
 | `tab.fill` | `#E1E4E8` | `#2B3038` |
 | `band.fill` | `#E1E4E8` | `#2B3038` |
 | `band.text` | `#1F2328` | `#ECEFF3` |
+| `select.stroke` | `#0E7490` | `#22D3EE` |
 
 ## 9. Open questions
 

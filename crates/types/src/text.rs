@@ -81,6 +81,19 @@ pub fn grapheme_cells(grapheme: &str) -> u64 {
     }
 }
 
+/// A count as the documents write it, its thousands grouped: `1000` as `1,000`.
+pub fn grouped(number: u64) -> String {
+    let digits = number.to_string();
+    let mut text = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            text.push(',');
+        }
+        text.push(digit);
+    }
+    text
+}
+
 /// The cells of a text.
 pub fn cells(text: &str) -> u64 {
     graphemes(text).map(grapheme_cells).fold(0, u64::saturating_add)
@@ -427,6 +440,11 @@ impl<'a> Iterator for Graphemes<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_count_is_grouped_by_thousands() {
+        assert_eq!([0, 999, 1000, 1_234_567].map(grouped), ["0", "999", "1,000", "1,234,567"]);
+    }
 
     /// Spec 14.1, version of Unicode: tables of another version change the spec in the same pull request.
     #[test]

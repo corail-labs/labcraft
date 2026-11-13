@@ -39,7 +39,16 @@ impl Default for Viewport {
 impl Viewport {
     /// Pans and zooms as the pointer says; fits the drawing the first time, with `above` units over it, and as wide as
     /// `width` when that is more: the banner of the values of a run (notation 6.1).
-    pub fn read_input(&mut self, ctx: &egui::Context, response: &Response, rect: Rect, drawing: &Drawing, (above, width): (f32, f32)) {
+    /// `wheel_taken`: the wheel turns an iteration selector, and does not scroll (notation 6.1); it still zooms with Ctrl.
+    pub fn read_input(
+        &mut self,
+        ctx: &egui::Context,
+        response: &Response,
+        rect: Rect,
+        drawing: &Drawing,
+        (above, width): (f32, f32),
+        wheel_taken: bool,
+    ) {
         let now = ctx.input(|input| input.time);
         if !self.fitted && rect.width() > 0.0 && rect.height() > 0.0 {
             let size = Vec2::new((drawing.width as f32 / 100.0).max(width), drawing.height as f32 / 100.0 + above);
@@ -61,7 +70,7 @@ impl Viewport {
                 self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
                 self.origin = before - (anchor - rect.min) / self.zoom;
                 self.changed = now;
-            } else if scroll != Vec2::ZERO {
+            } else if scroll != Vec2::ZERO && !wheel_taken {
                 self.origin -= scroll / self.zoom;
             }
         }
@@ -224,14 +233,14 @@ impl Grid {
         found
     }
 
+    /// Whether a node shows: every arm in tabs around it is shown.
+    pub fn shown(&self, placed: usize, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
+        visible(self.within.get(placed).copied().flatten())
+    }
+
     /// The innermost node shown under `at`: the last drawn that holds it.
     pub fn node_at(&self, _drawing: &Drawing, at: Pos2, visible: &dyn Fn(Option<usize>) -> bool) -> Option<usize> {
-        self.nodes
-            .iter()
-            .enumerate()
-            .filter(|(index, area)| area.contains(at) && visible(self.within.get(*index).copied().flatten()))
-            .map(|(index, _)| index)
-            .last()
+        self.nodes.iter().enumerate().filter(|(index, area)| area.contains(at) && self.shown(*index, visible)).map(|(index, _)| index).last()
     }
 }
 
