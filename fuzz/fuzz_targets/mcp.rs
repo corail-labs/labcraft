@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use labcraft_engine::{Config, Memory, Session, Shipped, ShippedFile, ShippedLibrary, Still};
 use labcraft_format::STACK_SIZE;
-use labcraft_mcp::{Options, serve};
+use labcraft_mcp::{NESTING_OF_THE_ENVELOPE, Options, serve};
 use labcraft_types::Limits;
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value as Json;
@@ -78,11 +78,51 @@ fn answers_a_request(line: &str) -> bool {
 }
 
 /// The id of a line that the server reads as a request and answers, with that id: a JSON object whose `id` is not null,
-/// with a `method` or without one (`-32600`, "a request has a `method`").
+/// with a `method` or without one (`-32600`, "a request has a `method`"). A byte order mark at the very start of the line
+/// is skipped, as the server does (`docs/mcp.md`, 1); serde_json refuses one. A line nested deeper than the bound of the
+/// server, `--max-nesting` plus the envelope, a container a level (mcp.md 5), is refused unread, with a null id; one
+/// within it is read at any depth, where serde_json stops at 128 levels.
 fn request_id(line: &[u8]) -> Option<Json> {
-    let message: Json = serde_json::from_slice(line).ok()?;
+    let line = line.strip_prefix("\u{feff}".as_bytes()).unwrap_or(line);
+    let bound = Limits::default().max_nesting().saturating_add(NESTING_OF_THE_ENVELOPE);
+    if nesting(line) > usize::try_from(bound).unwrap_or(usize::MAX) {
+        return None;
+    }
+    let mut reader = serde_json::Deserializer::from_slice(line);
+    reader.disable_recursion_limit();
+    let mut values = reader.into_iter::<Json>();
+    let message = values.next()?.ok()?;
+    if values.next().is_some() {
+        return None;
+    }
     message.as_object()?;
     message.get("id").filter(|id| !id.is_null()).cloned()
+}
+
+/// The deepest nesting of arrays and objects in `line`, outside strings.
+fn nesting(line: &[u8]) -> usize {
+    let (mut depth, mut deepest, mut in_string, mut escaped) = (0usize, 0usize, false, false);
+    for &byte in line {
+        if in_string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'[' | b'{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    deepest
 }
 
 /// The input of the server, as a client writes it: a line, then, for a request, its answer waited for, within 5 s for the

@@ -24,7 +24,8 @@ labcraft-runtime = { path = "../crates/runtime" }
 labcraft-types = { path = "../crates/types" }
 labcraft-visa = { path = "../libs/visa" }
 libfuzzer-sys = "0.4"
-serde_json = "1"
+# `unbounded_depth`: the target `mcp` reads a request as deep as the server does, beyond the 128 levels of serde_json.
+serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [[bin]]
 name = "read"

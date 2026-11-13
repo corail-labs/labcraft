@@ -8,7 +8,8 @@
 //! - for the target `simulation`, simulation files of arrays and of inline tables nested at the limit of the reader of `toml`
 //!   and one level above it (`runtime::simulation::TOML_NESTING`, cli.md 6.2);
 //! - for the target `mcp`, a session of the scripted loop of scenario 1 on the project of the target, a run followed and
-//!   aborted, and lines that are not requests, so that the fuzzer starts from requests the server reads.
+//!   aborted, and lines that are not requests, so that the fuzzer starts from requests the server reads; and requests at
+//!   the bound of nesting of the server and above it, and one after a byte order mark.
 //!
 //! Run from `fuzz/`.
 
@@ -46,6 +47,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         fs::write(folder.join(format!("simulation-tables-{depth}.toml")), tables)?;
     }
     fs::write(folder.join("mcp-session.jsonl"), MCP_SESSION)?;
+    // Requests at the bound of nesting of the server and one level above it, and one after a byte order mark (mcp.md 1, 5).
+    let bound = usize::try_from(Limits::default().max_nesting().saturating_add(labcraft_mcp::NESTING_OF_THE_ENVELOPE))?;
+    let mut limits = String::from("\u{feff}{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n");
+    for (id, depth) in [(2, bound), (3, bound + 1)] {
+        // The request and its `params` are two levels.
+        let inner = depth.saturating_sub(2);
+        limits +=
+            &format!("{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"ping\",\"params\":{{\"x\":{}{}}}}}\n", "[".repeat(inner), "]".repeat(inner));
+    }
+    fs::write(folder.join("mcp-limits.jsonl"), limits)?;
     let mut libraries = Vec::new();
     for root in ["../examples", "../libs", "../docs/rfc", "../tests/acceptance", "../tests/harness/routing-cases"] {
         libraries_under(Path::new(root), &mut libraries)?;
