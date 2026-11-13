@@ -44,8 +44,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="dmm_b" data-from="dmm_b.session" data-to="cb.session n_b.dmm_b">
 <path d="M380.48 688 L385.98 688 Q391.48 688 391.48 682.5 L391.48 86 Q391.48 80 397.48 80 L1318.54 80 Q1324.54 80 1324.54 86 L1324.54 626.5 Q1324.54 632 1330.04 632 L1335.54 632" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<path d="M391.48 384 L468.54 384" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<circle cx="391.48" cy="384" r="3" style="fill: var(--wire-resource)"/>
+<path d="M391.48 360 L468.54 360" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<circle cx="391.48" cy="360" r="3" style="fill: var(--wire-resource)"/>
 <text x="395.48" y="77" font-size="10" style="fill: var(--ink-muted)">dmm_b</text>
 </g>
 <g data-wire="err_b" data-from="n_b.err_b" data-to="cb.err">
@@ -76,7 +76,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="count" data-from="fn.count" data-to="n_a.count n_b.count">
 <path d="M19 816 L203.48 816 Q209.48 816 209.48 810 L209.48 638 Q209.48 632 215.48 632 L417.48 632 Q423.48 632 423.48 638 L423.48 754 Q423.48 760 429.48 760 L468.54 760" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M423.48 632 L423.48 358 Q423.48 352 429.48 352 L468.54 352" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M423.48 632 L423.48 390 Q423.48 384 429.48 384 L468.54 384" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="423.48" cy="632" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-wire="period" data-from="fn.period" data-to="n_a.period n_b.period">
@@ -299,10 +299,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="984.65" y="165" font-size="10" style="fill: var(--ink-muted)">m</text>
 </g>
 <g data-wire="count" data-to="full.b">
-<path d="M468.54 352 L534.66 352 Q540.66 352 540.66 346 L540.66 230 Q540.66 224 546.66 224 L748.66 224 Q754.66 224 754.66 230 L754.66 242 Q754.66 248 760.66 248 L789.66 248" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M468.54 384 L534.66 384 Q540.66 384 540.66 378 L540.66 230 Q540.66 224 546.66 224 L748.66 224 Q754.66 224 754.66 230 L754.66 242 Q754.66 248 760.66 248 L789.66 248" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="dmm_b" data-to="x.session">
-<path d="M468.54 384 L550.66 384 Q556.66 384 556.66 390 L556.66 402.5 Q556.66 408 562.16 408 L567.66 408" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<path d="M468.54 360 L550.66 360 Q556.66 360 556.66 366 L556.66 402.5 Q556.66 408 562.16 408 L567.66 408" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>
 <g data-wire="e" data-to="x.err">
 <path d="M468.54 456 L567.66 456" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
@@ -357,12 +357,12 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="465.83" y="459.28" font-size="9" style="fill: var(--node-title)">↻</text>
 <rect x="476.54" y="450.18" width="14.02" height="11.64" style="fill: var(--frame-fill-1)"/>
 <text x="480.54" y="459.65" font-size="10" style="fill: var(--node-title)">e</text>
-<rect x="466.54" y="345" width="4" height="14" style="fill: var(--wire-data)"/>
-<rect x="471.54" y="346.18" width="43.1" height="11.64" style="fill: var(--frame-fill-1)"/>
-<text x="480.54" y="355.65" font-size="10" style="fill: var(--node-title)">count</text>
-<rect x="466.54" y="377" width="4" height="14" style="fill: var(--wire-resource)"/>
+<rect x="466.54" y="377" width="4" height="14" style="fill: var(--wire-data)"/>
 <rect x="471.54" y="378.18" width="43.1" height="11.64" style="fill: var(--frame-fill-1)"/>
-<text x="480.54" y="387.65" font-size="10" style="fill: var(--node-title)">dmm_b</text>
+<text x="480.54" y="387.65" font-size="10" style="fill: var(--node-title)">count</text>
+<rect x="466.54" y="353" width="4" height="14" style="fill: var(--wire-resource)"/>
+<rect x="471.54" y="354.18" width="43.1" height="11.64" style="fill: var(--frame-fill-1)"/>
+<text x="480.54" y="363.65" font-size="10" style="fill: var(--node-title)">dmm_b</text>
 <rect x="466.54" y="401" width="4" height="14" style="fill: var(--wire-data)"/>
 <rect x="471.54" y="402.18" width="49.12" height="11.64" style="fill: var(--frame-fill-1)"/>
 <text x="480.54" y="411.65" font-size="10" style="fill: var(--node-title)">period</text>

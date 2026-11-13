@@ -1256,7 +1256,8 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
   3. **Placement** (2.1): each body on its own, the innermost first, so that a structure is a node of the size of
      its frame in the body around it; columns, the error chain on one line through every level, stacks ordered by
      four sweeps of barycentres each way, the terminals of each frame, the positions of a `layout` section and the
-     unplaced nodes around them. The `Drawing` keeps where each node is, by the key that follows it across a change
+     unplaced nodes around them; then, when what feeds the notches of a frame outside asks for another order than
+     the text's, all once more with the notches in that order (notation 5), a fixed number of passes. The `Drawing` keeps where each node is, by the key that follows it across a change
      of the file (notation 2.1), with its column and its rank: for the glide, and for the figure of stability.
   4. **Routing** (2.2), `route.rs`, in two passes: a plan on the heights alone, before anything is placed across,
      so that each channel is as wide as its verticals need (their slots, from a tree over their intervals, after

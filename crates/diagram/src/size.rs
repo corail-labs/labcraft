@@ -479,22 +479,73 @@ fn label_height(lines: &[Text]) -> i64 {
     line_height(label_size()).saturating_mul(lines.len() as i64)
 }
 
-/// The gaps between the lines, from the top: one pitch, whatever the lines carry, so that a node has the size of its
-/// signature at every call (notation 3.2).
-fn gaps(lines: &[Line]) -> Vec<i64> {
-    vec![style::compact_pitch(); lines.len().saturating_sub(1)]
+/// Where the terminals of a compact block stand (notation 3.2, the defaults of N-15).
+struct Places {
+    /// The lines of the left and right sides, from the top, and the height of each.
+    lines: Vec<Line>,
+    ys: Vec<i64>,
+    /// The height of the block: 8 above its first place, 8 below its last.
+    height: i64,
 }
 
-/// The heights of the lines, from the top, the last one `bottom` above the lower edge of a block `height` high.
-fn heights(gaps: &[i64], height: i64, bottom: i64) -> Vec<i64> {
-    let mut y = height - bottom;
-    let mut found = vec![y];
-    for gap in gaps.iter().rev() {
-        y -= gap;
-        found.push(y);
+/// The places of a compact block `width` wide and at least `least` high, a multiple of the grid: its lines from the top,
+/// one per place, `node.pitch` apart, the first 8 below the top, the line of the `err` pair on the last place, so that a line has the same height on every
+/// block whatever follows it. When they do not hold, the block grows by two places; every input stays on the left (the
+/// top side comes with the `terminals` section, M1).
+fn places(node: &Node<'_>, least: i64) -> Places {
+    let (grid, pitch) = (style::grid(), style::compact_pitch());
+    let holds = |count: usize, height: i64| grid + (count.max(1) as i64 - 1) * pitch + grid <= height;
+    let lines = lines(&node.inputs, &node.outputs);
+    let mut height = least;
+    while !holds(lines.len(), height) {
+        height = up(height.saturating_add(2 * pitch));
     }
-    found.reverse();
-    found
+    let error = |line: &Line| {
+        line.0.and_then(|input| node.inputs.get(input)).is_some_and(|terminal| terminal.family.base == Base::Error)
+            || line.1.and_then(|output| node.outputs.get(output)).is_some_and(|terminal| terminal.family.base == Base::Error)
+    };
+    let count = lines.len();
+    let ys =
+        lines.iter().enumerate().map(|(row, line)| if row + 1 == count && error(line) { height - grid } else { grid + row as i64 * pitch }).collect();
+    Places { lines, ys, height }
+}
+
+/// The terminals of a block as drawn: how far its pills reach to the left, where each terminal is, and how far left of
+/// its terminal each pill starts.
+struct AtPlaces {
+    left: i64,
+    inputs: Vec<(i64, i64)>,
+    outputs: Vec<(i64, i64)>,
+    reaches: Vec<Option<i64>>,
+}
+
+/// A compact block (a square or an oblong) from its terminals on their places (notation 3.2).
+fn compact(width: i64, height: i64, above: i64, shapes: Vec<Shape>, drawn: AtPlaces, order: Option<(i64, i64)>) -> Sized {
+    Sized {
+        above,
+        left: drawn.left,
+        right: style::terminal() / 2,
+        inputs: drawn.inputs,
+        outputs: drawn.outputs,
+        order,
+        reaches: drawn.reaches,
+        ..Sized::new(width, height, shapes)
+    }
+}
+
+/// The pill outside an input: its inline constant, else the pill of its wire (a field, a conversion), and whether it is
+/// a constant, which the block draws (notation 3.2).
+fn pill_text(terminal: &Terminal) -> Option<(Text, bool)> {
+    match (&terminal.constant, &terminal.pill) {
+        (Some(constant), _) => Some((Text::new(constant, compact_constant(), medium()), true)),
+        (None, Some(pill)) => Some((Text::new(pill, label_line(), medium()), false)),
+        (None, None) => None,
+    }
+}
+
+/// The wire from a constant that stepped away from its terminal to that terminal (notation 3.2).
+fn lead(family: Family, from: (i64, i64), to: (i64, i64)) -> Shape {
+    Shape::Poly { points: vec![from, to], closed: false, paint: Paint::stroke(wire_token(family), wire_style(family, "node.fill").width) }
 }
 
 pub struct Sizer<'a> {
@@ -587,11 +638,7 @@ impl Sizer<'_> {
         let mut placed: Vec<(i64, i64, i64)> = Vec::new();
         for (input, x, y) in order {
             let Some(terminal_of) = node.inputs.get(input) else { continue };
-            let (text, constant) = match (&terminal_of.constant, &terminal_of.pill) {
-                (Some(constant), _) => (Text::new(constant, compact_constant(), medium()), true),
-                (None, Some(pill)) => (Text::new(pill, label_line(), medium()), false),
-                (None, None) => continue,
-            };
+            let Some((text, constant)) = pill_text(terminal_of) else { continue };
             let width = pill_width(&text);
             let edge = x - style::terminal() / 2;
             let mut end = edge - style::grid();
@@ -616,11 +663,7 @@ impl Sizer<'_> {
             if constant {
                 shapes.extend(pill(&text, start, y));
                 if end < edge - style::grid() {
-                    shapes.push(Shape::Poly {
-                        points: vec![(end, y), (edge, y)],
-                        closed: false,
-                        paint: Paint::stroke(wire_token(terminal_of.family), wire_style(terminal_of.family, "node.fill").width),
-                    });
+                    shapes.push(lead(terminal_of.family, (end, y), (edge, y)));
                 }
             }
             if let Some(slot) = reaches.get_mut(input) {
@@ -632,16 +675,14 @@ impl Sizer<'_> {
         (left, reaches)
     }
 
-    /// A compact block (notation 3.2): `node.square` wide, as tall as its lines need and at least as tall as wide, the
+    /// A compact block (notation 3.2): `node.square` wide, as tall as its places need and at least as tall as wide, the
     /// icon or the name in its centre. Neither the name nor the band makes it larger.
     fn square(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>) -> Sized {
-        let lines = lines(&node.inputs, &node.outputs);
-        let gaps = gaps(&lines);
         let width = block_width();
-        let side = up(style::square().max(style::grid() + gaps.iter().sum::<i64>() + style::grid()));
+        let places = places(node, style::square());
+        let side = places.height;
         let label = if icon.is_none() { label_lines(short, name_cells()) } else { Vec::new() };
         let band = band.map(|band| Text::measured(band.clone(), small()));
-        let ys = heights(&gaps, side, style::grid());
         let mut shapes = vec![Shape::Rect {
             x: 0,
             y: 0,
@@ -674,56 +715,33 @@ impl Sizer<'_> {
                 }
             }
         }
-        let (left, inputs, outputs, reaches) = self.terminals(node, &lines, &ys, width, 100, &mut shapes);
+        let drawn = self.terminals(node, &places, width, &mut shapes);
         let order = self.compact_marks(node, width, side, band.is_some(), &mut shapes);
-        Sized {
-            width,
-            height: side,
-            above,
-            left,
-            right: style::terminal() / 2,
-            shapes,
-            inputs,
-            outputs,
-            order,
-            label_end: None,
-            arms: Vec::new(),
-            reaches,
-        }
+        compact(width, side, above, shapes, drawn, order)
     }
 
-    /// The terminals of a block on its lines, and the pills of its constants; how far the pills reach to the left, where
-    /// each terminal is, and how far left of its terminal each pill starts.
-    #[allow(clippy::type_complexity)]
-    fn terminals(
-        &self,
-        node: &Node<'_>,
-        lines: &[Line],
-        ys: &[i64],
-        width: i64,
-        scale: i64,
-        shapes: &mut Vec<Shape>,
-    ) -> (i64, Vec<(i64, i64)>, Vec<(i64, i64)>, Vec<Option<i64>>) {
+    /// The terminals of a block on its places, and the pills of its constants.
+    fn terminals(&self, node: &Node<'_>, places: &Places, width: i64, shapes: &mut Vec<Shape>) -> AtPlaces {
         let mut pills = Vec::new();
         let mut inputs = vec![(0, 0); node.inputs.len()];
         let mut outputs = vec![(width, 0); node.outputs.len()];
-        for (line, &y) in lines.iter().zip(ys) {
+        for (line, &y) in places.lines.iter().zip(&places.ys) {
             if let Some(input) = line.0.and_then(|index| node.inputs.get(index).map(|terminal| (index, terminal))) {
-                shapes.extend(terminal(input.1.family, 0, y, scale, false));
+                shapes.extend(terminal(input.1.family, 0, y, 100, false));
                 pills.push((input.0, 0, y));
                 if let Some(at) = inputs.get_mut(input.0) {
                     *at = (0, y);
                 }
             }
             if let Some((index, output)) = line.1.and_then(|index| node.outputs.get(index).map(|output| (index, output))) {
-                shapes.extend(terminal(output.family, width, y, scale, output.ignored));
+                shapes.extend(terminal(output.family, width, y, 100, output.ignored));
                 if let Some(at) = outputs.get_mut(index) {
                     *at = (width, y);
                 }
             }
         }
         let (left, reaches) = self.outside_pills(node, &pills, shapes);
-        (left, inputs, outputs, reaches)
+        AtPlaces { left, inputs, outputs, reaches }
     }
 
     /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal, whose
@@ -744,13 +762,10 @@ impl Sizer<'_> {
     /// A construction, a variant constructor or a node of `ui`: as wide as its label, never a square (notation 3.2). Its
     /// band, cut to its width, never makes it wider.
     fn oblong(&self, node: &Node<'_>, label: Vec<Text>, band: Option<&ShownText>) -> Sized {
-        let lines = lines(&node.inputs, &node.outputs);
-        let gaps = gaps(&lines);
-        let need = style::grid() + gaps.iter().sum::<i64>() + style::grid();
         let band = band.map(|band| Text::measured(band.clone(), small()));
         let width = oblong_width(&label);
-        let height = up(style::square().max(need).max(label_height(&label) + 2 * style::grid()));
-        let ys = heights(&gaps, height, style::grid());
+        let places = places(node, up(style::square().max(label_height(&label) + 2 * style::grid())));
+        let height = places.height;
         let mut shapes = vec![Shape::Rect {
             x: 0,
             y: 0,
@@ -777,9 +792,9 @@ impl Sizer<'_> {
         for (index, line) in label.iter().enumerate() {
             shapes.push(line.centred(width / 2, top + row * index as i64 + row / 2, "node.title"));
         }
-        let (left, inputs, outputs, reaches) = self.terminals(node, &lines, &ys, width, 100, &mut shapes);
+        let drawn = self.terminals(node, &places, width, &mut shapes);
         let order = self.compact_marks(node, width, height, band.is_some(), &mut shapes);
-        Sized { width, height, above, left, right: style::terminal() / 2, shapes, inputs, outputs, order, label_end: None, arms: Vec::new(), reaches }
+        compact(width, height, above, shapes, drawn, order)
     }
 
     /// A primitive of `core` with a glyph: a circle of 28, or a capsule (notation 3.2).

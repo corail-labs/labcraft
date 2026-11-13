@@ -785,16 +785,18 @@ fn edge_terminal(terminal: &graph::FrameTerminal, x: i64, y: i64) -> Vec<Shape> 
         graph::Edge::Range => {
             let text = Text::new(terminal.start.as_deref().unwrap_or(".."), crate::size::any_text(), crate::size::small());
             let width = (text.width + 2 * 300).max(1400);
+            // Two wired bounds: a place more below, where the end enters; the text between the two points.
+            let more = if terminal.two_points { style::compact_pitch() } else { 0 };
             vec![
                 Shape::Rect {
                     x: x + 700 - width,
                     y: y - 700,
                     width,
-                    height: 1400,
+                    height: 1400 + more,
                     radius: 300,
                     paint: Paint::both("node.fill", size::wire_token(family), style::outline()),
                 },
-                text.centred(x + 700 - width / 2, y, "node.title"),
+                text.centred(x + 700 - width / 2, y + more / 2, "node.title"),
             ]
         }
         _ => size::terminal(family, x, y, 100, false),
@@ -851,7 +853,7 @@ fn structure_shapes(
             // The selector, then the notches of the outer values that the arms read.
             for (index, (input, &(x, y))) in node.inputs.iter().zip(inputs).enumerate() {
                 let edge = if index == 0 { graph::Edge::Input } else { graph::Edge::Notch };
-                shapes.extend(edge_terminal(&graph::FrameTerminal { terminal: input.clone(), edge, start: None }, at.x + x, at.y + y));
+                shapes.extend(edge_terminal(&graph::FrameTerminal::new(input.clone(), edge), at.x + x, at.y + y));
             }
             for (output, &(x, y)) in node.outputs.iter().zip(outputs) {
                 shapes.extend(size::terminal(output.family, at.x + x, at.y + y, 100, output.ignored));
@@ -1093,10 +1095,11 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
         for (&wire, branch) in routed.wires.iter().zip(&routed.branches) {
             let (Some(pill), Some(&(x, y))) = (graph.pills.get(&(body, wire)), branch.last()) else { continue };
             let text = Text::new(&pill.text, crate::size::label_line(), crate::size::medium());
-            let kept = match of.wires.get(wire).map(|wire| wire.to) {
-                Some(graph::End::Node { node, terminal }) => sized.get(node).and_then(|found| found.reaches.get(terminal)).copied().flatten(),
+            let reader = match of.wires.get(wire).map(|wire| wire.to) {
+                Some(graph::End::Node { node, terminal }) => sized.get(node).map(|found| (found, terminal)),
                 _ => None,
             };
+            let kept = reader.and_then(|(found, terminal)| found.reaches.get(terminal)).copied().flatten();
             let start = x - kept.unwrap_or_else(|| pill_reach(pill));
             obstacles.rect(start, y - style::pill_height() / 2, start + size::pill_width(&text), y + style::pill_height() / 2);
             pills.entry(wire).or_default().extend(size::wire_pill(&text, start, y, pill.conversion.is_some()));
