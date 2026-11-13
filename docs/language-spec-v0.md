@@ -1333,7 +1333,8 @@ icon 32 {
 - **Color**: monochrome, the ink color of the theme and of the node state (skipped, failed).
   `accent` gives a shape an accent color, designated by a theme token (`accent wire.error`), never
   by a value: a token of the visual notation, section 8, whose parts are names (`frame.fill.1` is not
-  one).
+  one), but `select.stroke` and `node.active`, the colours of what the viewer selects and of what runs, which would
+  make the icon seem selected or running.
 - **No script, no link, no image**: the notation can neither run nor load anything. An icon coming
   from a third-party package can be drawn safely. The IDE imports and exports SVG (commands
   `icon.import`, `icon.export`) for drawing in a drawing program.
@@ -1811,7 +1812,7 @@ What the grammar alone does not say:
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). Without a variadic parameter, a positional argument can wire a parameter with a default value. A variadic parameter takes positional arguments only. |
 | R-12 | **The `string.format` template is a literal**, written on the node; its fields and the named arguments match exactly, and a field is `{name}` or `{name:format}` (5.4). |
 | R-13 | **An external function has no body and has an output `err: error`** (4.1), with that type written as such: an alias of `error` does not do. |
-| R-14 | **An icon is valid**: grid written `32` in v0, `path` strings conforming to the SVG path syntax, numbers without a unit, a radius or a size above zero, `accent` token of the visual notation (section 8), at most 256 shapes, and 4 096 segments and 64 KiB of path in all; a shape that leaves the grid gives a warning; an icon that is not valid is not drawn, its calls show the label (11.1). |
+| R-14 | **An icon is valid**: grid written `32` in v0, `path` strings conforming to the SVG path syntax, numbers without a unit, a radius or a size above zero, `accent` token of the visual notation (section 8) but `select.stroke` and `node.active`, at most 256 shapes, and 4 096 segments and 64 KiB of path in all; a shape that leaves the grid gives a warning; an icon that is not valid is not drawn, its calls show the label (11.1). |
 | R-15 | **`after:` is the order input of every call** (5.3): it takes a value, a label (`after: #beep`) or a parenthesized list of values and labels (`after: (#beep, e2)`), never a literal, and only once in a call. It counts as a named argument, so a positional one cannot follow it. A variant construction has it too. No parameter is named `after`, nor an argument of a function type. |
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. A variant construction can stand alone in the same way. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. An `after:` sees a label of its own body or of a body around it, not one inside a sub-body or a neighboring arm, whose node may not run. |

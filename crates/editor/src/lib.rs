@@ -165,6 +165,11 @@ fn boxed(shapes: &[Shape]) -> Option<Rect> {
     shapes.iter().map(extent).reduce(|a, b| a.union(b))
 }
 
+/// Whether two boxes share some area: boxes that only touch do not.
+fn overlaps(a: &Rect, b: &Rect) -> bool {
+    a.min.x < b.max.x && b.min.x < a.max.x && a.min.y < b.max.y && b.min.y < a.max.y
+}
+
 impl Default for Canvas {
     fn default() -> Self {
         Canvas::new()
@@ -551,6 +556,8 @@ impl Canvas {
         }
         // `zoom.values` may be set below `zoom.coarse`, under which no value shows (notation 7).
         let bubbles_drawn = !coarse && zoom >= style::factor(style::values_zoom());
+        // The bubbles that a value at an input covers, by their index: neither drawn nor read on hover.
+        let mut hidden = std::collections::BTreeSet::new();
         if let Some(Values { overlay, banner, bubbles, selectors, .. }) = shown_values {
             if banner.intersects(seen)
                 && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Banner, theme, step)
@@ -566,24 +573,41 @@ impl Canvas {
                     put(&painted, Vec2::ZERO);
                 }
             }
+            // The values at the inputs of the node hovered and of the node selected: the bubble of the same wire that one
+            // covers gives the same value and is not drawn (notation 6.1; decision of the owner, 2026-11-13).
+            let nodes: std::collections::BTreeSet<usize> =
+                if coarse { std::collections::BTreeSet::new() } else { [hovered, selected_placed].into_iter().flatten().collect() };
+            for &placed in &nodes {
+                let boxes = self.painter.input_boxes(placed, || {
+                    labcraft_diagram::input_boxes(&drawing, overlay, placed)
+                        .into_iter()
+                        .map(|(group, (left, top, right, bottom))| {
+                            let area = Rect::from_min_max(Pos2::new(left as f32, top as f32) / 100.0, Pos2::new(right as f32, bottom as f32) / 100.0);
+                            (group, area)
+                        })
+                        .collect()
+                });
+                for (index, (bubble, area)) in overlay.bubbles.iter().zip(bubbles).enumerate() {
+                    if boxes.iter().any(|(group, input)| bubble.group == Some(*group) && overlaps(input, area)) {
+                        hidden.insert(index);
+                    }
+                }
+            }
             for (index, bubble) in overlay.bubbles.iter().enumerate() {
                 if bubbles_drawn
                     && visible_arm(bubble.layer.within)
+                    && !hidden.contains(&index)
                     && bubbles.get(index).is_some_and(|area| area.intersects(seen))
                     && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Bubble(index), theme, step)
                 {
                     put(&painted, Vec2::ZERO);
                 }
             }
-            // The values at the inputs of the node hovered and of the node selected, over everything (notation 6.1).
-            if !coarse {
-                let nodes: std::collections::BTreeSet<usize> = [hovered, selected_placed].into_iter().flatten().collect();
-                for placed in nodes {
-                    let painted = self
-                        .painter
-                        .made(&ctx, &drawing, Over::Inputs(placed), theme, step, || labcraft_diagram::inputs_of(&drawing, overlay, placed));
-                    put(&painted, Vec2::ZERO);
-                }
+            // The values at the inputs, over everything (notation 6.1).
+            for placed in nodes {
+                let painted =
+                    self.painter.made(&ctx, &drawing, Over::Inputs(placed), theme, step, || labcraft_diagram::inputs_of(&drawing, overlay, placed));
+                put(&painted, Vec2::ZERO);
             }
         }
         // A click on a selector: a step back or forward, or the number, which opens a field to type one.
@@ -698,13 +722,12 @@ impl Canvas {
         // The tooltip under the pointer: a bubble, its value whole (notation 6.1); a terminal, its name, its exact type and
         // the default of an input that no argument wires (notation 3.2, 4.1); else the node, the full name of what it calls
         // (notation 3.2); else a wire, its name, its exact type, its value, and its values over the iterations of its loop.
-        let bubble =
-            || {
-                let (unit, readable) = (at?, readable?);
-                readable.overlay.bubbles.iter().zip(&readable.bubbles).rev().find_map(|(bubble, area)| {
-                    (bubbles_drawn && visible_arm(bubble.layer.within) && area.contains(unit)).then(|| bubble.title.clone())
-                })
-            };
+        let bubble = || {
+            let (unit, readable) = (at?, readable?);
+            readable.overlay.bubbles.iter().zip(&readable.bubbles).enumerate().rev().find_map(|(index, (bubble, area))| {
+                (bubbles_drawn && !hidden.contains(&index) && visible_arm(bubble.layer.within) && area.contains(unit)).then(|| bubble.title.clone())
+            })
+        };
         let hint = at.and_then(|unit| {
             drawing.hints.iter().rev().filter(|hint| visible_arm(hint.within)).find_map(|hint| {
                 let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + offset_of(hint.placed);

@@ -956,6 +956,15 @@ fn an_iteration_chosen_shows_its_values_and_is_kept_across_runs_unless_it_is_the
     session.files_changed();
     run_and_look(&mut session, "spin");
     assert_eq!(the_loop(&session), (key.clone(), 9, 8));
+    // The seventh chosen, a run of 5 shows its last, and the next run of 9 the seventh again (decision of the owner,
+    // 2026-11-13).
+    ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 6 } } }));
+    for (last, count, shown) in [(5, 5, 4), (9, 9, 6)] {
+        counting.memory.put("/p/spin.lcf", counting_to(last));
+        session.files_changed();
+        run_and_look(&mut session, "spin");
+        assert_eq!(the_loop(&session), (key.clone(), count, shown), "a run of {count}");
+    }
     // Past the last: the last.
     ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 1000 } } }));
     assert_eq!(the_loop(&session).2, 8);
@@ -980,7 +989,7 @@ fn the_values_of_a_wire_over_the_iterations_and_at_the_inputs_of_a_node_come_fro
     // By hand: `m` is 1 to 5, a real number, its curve marks the third.
     let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
     assert_eq!((series.key.as_str(), series.count, series.shown, series.curve), (key.as_str(), 5, 2, true));
-    let numbers: Vec<Option<f64>> = series.values.iter().map(|value| value.as_ref().and_then(|(_, number)| *number)).collect();
+    let numbers: Vec<Option<f64>> = series.values.iter().map(|sample| sample.value.as_ref().and_then(|(_, number)| *number)).collect();
     assert_eq!(numbers, [1.0, 2.0, 3.0, 4.0, 5.0].map(Some));
     // A wire outside the loop has none.
     let n = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "n")).unwrap();
@@ -1025,7 +1034,7 @@ fn when_an_outer_loop_moves_the_inner_ones_go_to_their_last_iteration() {
     let (trace, choice) = view.run.clone().unwrap();
     let group = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "v")).unwrap();
     let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
-    let texts: Vec<&str> = series.values.iter().map(|value| value.as_ref().map_or("", |(text, _)| text.as_str())).collect();
+    let texts: Vec<&str> = series.values.iter().map(|sample| sample.value.as_ref().map_or("", |(text, _)| text.as_str())).collect();
     assert_eq!((series.key.as_str(), texts, series.curve), (inner.as_str(), vec!["1", "2"], true));
 }
 

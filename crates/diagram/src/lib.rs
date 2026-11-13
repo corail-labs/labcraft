@@ -45,7 +45,8 @@ pub use shape::{
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
 pub use values::{
-    Choice, Judged, Overlay, Selector, Series, Valued, expected, inputs_of, loops_inside, selected_node, selected_wire, series, values,
+    Choice, Judged, Overlay, Sample, Selector, Series, Valued, expected, input_boxes, inputs_of, loops_inside, selected_node, selected_wire, series,
+    values,
 };
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};

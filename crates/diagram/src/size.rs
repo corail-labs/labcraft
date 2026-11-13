@@ -1085,7 +1085,8 @@ impl Sizer<'_> {
     }
 }
 
-/// An accent token of an icon (spec 11.1): a token of notation 8 whose parts are names.
+/// An accent token of an icon (spec 11.1): a token of notation 8 whose parts are names; `labcraft_check::icon_refused`
+/// has already refused an icon whose accent is none, or a colour of a state of the viewer.
 fn accent(path: &labcraft_graph::Path, names: &Interner) -> Option<Token> {
     let mut text = names.resolve(path.first).to_owned();
     for segment in &path.rest {

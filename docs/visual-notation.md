@@ -719,7 +719,8 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   - **Inputs.** Hovering or selecting a node also shows the values at its input terminals, to the left of each,
     side by side as those of outputs, each ending 4 units before the start of the one below, 4 units above their
     wire; the values are never drawn at every input, which would repeat a value at each of its readers. A value that
-    enters a frame by a notch shows at the inputs it reaches inside, as the value outside.
+    enters a frame by a notch shows at the inputs it reaches inside, as the value outside. A bubble of an output that
+    one of them covers gives the same value and is not drawn while they show (decision of the owner, 2026-11-13).
   - **Selection.** In the viewer, a click selects a node, outlined in `select.stroke` 6 units from its block (twice the
     room of the outline of a node that produced an error, which it stays outside), `marks.width` wide; or a wire, under
     a halo of `select.stroke` 8 units wide at 35 % *(proposed)*. Escape, or a click on nothing, selects nothing. A node
@@ -782,8 +783,8 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   selector, and the iteration is chosen on the values of a wire (below). A click on `‹` or `›` steps back or forward;
   the wheel over the selector steps, down forward, and does not scroll; a click on the number opens a field where a
   number is typed (decisions of the owner, 2026-11-13). The iteration chosen is kept, by the key of its loop, across
-  the runs that follow and a change of the file, bounded by the last iteration of each; choosing the last follows the
-  last of the runs to come.
+  the runs that follow and a change of the file, bounded by the last iteration of each: a shorter run shows its last,
+  and a longer one after it the iteration chosen again; choosing the last follows the last of the runs to come.
   What a person reads counts iterations from 1, as the counter does: the selector (`‹ 6/6 ›` next to `× 6`)
   and the message of a fault (`LC8001`); the fields of JSON (`iter` of a trace, `status.loops.iteration`) count
   from 0, as indices. The bubbles inside show the chosen iteration, and stepping it forward or back shows the values
@@ -792,10 +793,14 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   its own iteration selector: when an outer one moves, the inner ones go to the last iteration of
   their loop in that outer iteration. In a `for parallel`, the last iteration is the one with the
   highest index. Hovering a wire inside a loop shows its values over the iterations of its own loop,
-  within the iterations chosen outside: a small curve for a number, a list otherwise, cut after its
-  first 1,000 values with a note. The curve goes from the lowest value at the bottom to the highest at the top, the two
-  written above and below it in short, a line between two iterations that both give a finite value; the iteration
-  shown is marked. A click on the wire selects it and pins its values next to where it was clicked: a click on a
+  within the iterations chosen outside: a small curve for a number, over the whole run, a list otherwise, of at most
+  1,000 iterations in a row around the one shown, with a note that says which. The curve reads every iteration up to
+  10,000, the iterations of a loop by default (cli.md 6.2, `--max-iterations`), beyond that 10,000 spread evenly from the
+  first to the last, and the one shown, each at the place
+  of its iteration in the run, so that a pixel that holds many shows the lowest and the highest of them, with a note
+  that says how many were read (decision of the owner, 2026-11-13). It goes from the lowest value at the bottom to the
+  highest at the top, the two written above and below it in short, a line between two iterations read that both give
+  a finite value; the iteration shown is marked. A click on the wire selects it and pins its values next to where it was clicked: a click on a
   point of the curve, or a line of the list, chooses that iteration, and every bubble follows (decisions of the owner,
   2026-11-13).
 - **`match` and `handle`.** The branch shown by default is the one that the run took, at the chosen

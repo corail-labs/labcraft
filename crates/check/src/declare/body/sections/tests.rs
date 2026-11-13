@@ -370,6 +370,9 @@ fn an_invalid_shape_is_an_error() {
         "path \"M1 1 A 1 1 0 2 0 3 3\"",
         "line (1, 1) (2, 2) accent wire.nothing",
         "line (1, 1) (2, 2) accent canvas",
+        // The colour of a selection in the viewer (decision of the owner, 2026-11-13).
+        "line (1, 1) (2, 2) accent select.stroke",
+        "line (1, 1) (2, 2) accent node.active",
     ] {
         assert_eq!(icon(item), ["LC5008"], "{item}");
     }

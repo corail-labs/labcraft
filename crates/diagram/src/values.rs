@@ -8,6 +8,7 @@
 //! budget of steps, so that a carry passed on unchanged over a million iterations costs a bound, never the stack.
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -547,9 +548,66 @@ pub struct Selector {
 struct Reading<'a> {
     plan: &'a TracePlan,
     trace: &'a Trace,
+    /// The elements of each array that a `for x in` walks, by the source of the array and the iterations around it,
+    /// found in one pass: a series reads thousands of elements of one array, which a scan from its start each time would
+    /// make quadratic.
+    arrays: RefCell<HashMap<ArrayAt, Arc<Elements>>>,
+}
+
+/// An array that a `for x in` walks: its source and the iterations around it.
+type ArrayAt = (u32, Vec<u64>);
+
+/// The elements of an array of the trace: its text, and where each element is in it; none for one the trace cut.
+struct Elements {
+    text: String,
+    spans: Vec<Option<(usize, usize)>>,
+}
+
+impl Elements {
+    /// The elements of `array`, the JSON of an array or of an array cut with its head (`{"$len": …, "$head": […]}`);
+    /// none when it does not read as one, and those before the first that does not read, as [`element`] finds them.
+    fn of(array: &str) -> Option<Elements> {
+        let trimmed = array.trim();
+        let items = if trimmed.starts_with('{') { head_of(trimmed)?.1 } else { trimmed };
+        let base = items.as_ptr() as usize;
+        let mut scanner = Scanner::new(items, DEPTH);
+        scanner.begin_array().ok()?;
+        let mut first = true;
+        let mut spans = Vec::new();
+        while let Ok(true) = scanner.element(&mut first) {
+            let Ok(value) = scanner.value() else { break };
+            let start = (value.as_ptr() as usize).saturating_sub(base);
+            spans.push((!crate::short::is_cut_mark(value)).then_some((start, start + value.len())));
+        }
+        Some(Elements { text: items.to_owned(), spans })
+    }
+
+    fn get(&self, at: u64) -> Option<&str> {
+        let (start, end) = (*self.spans.get(usize::try_from(at).ok()?)?)?;
+        self.text.get(start..end)
+    }
 }
 
 impl<'a> Reading<'a> {
+    fn new(plan: &'a TracePlan, trace: &'a Trace) -> Reading<'a> {
+        Reading { plan, trace, arrays: RefCell::new(HashMap::new()) }
+    }
+
+    /// The element `at` of the array `array` at the iterations `outer` around it.
+    fn element(&self, array: u32, outer: &[u64], at: u64) -> Option<String> {
+        let key = (array, outer.to_vec());
+        let cached = self.arrays.borrow().get(&key).cloned();
+        let elements = match cached {
+            Some(elements) => elements,
+            None => {
+                let elements = Arc::new(Elements::of(&self.value(array, outer)?)?);
+                self.arrays.borrow_mut().insert(key, elements.clone());
+                elements
+            }
+        };
+        elements.get(at).map(str::to_owned)
+    }
+
     /// The key of a loop, by its node.
     fn loop_key(&self, looped: u32) -> &'a str {
         match self.plan.nodes.get(looped as usize).map(|node| &node.kind) {
@@ -609,8 +667,7 @@ impl<'a> Reading<'a> {
                 Source::Element { looped, array } => {
                     let level = self.loops_of(*looped);
                     let iteration = *iters.get(level)?;
-                    let array = self.value(*array, iters.get(..level)?)?;
-                    return element(&array, iteration).map(|text| Cow::Owned(text.to_owned()));
+                    return self.element(*array, iters.get(..level)?, iteration).map(Cow::Owned);
                 }
                 Source::Index { looped, start } => {
                     let level = self.loops_of(*looped);
@@ -704,6 +761,17 @@ fn bound<'t>(selector: &'t str, variant: &str, place: u32) -> Option<&'t str> {
     None
 }
 
+/// What stopped the reading of a trace, as a diagnostic says it.
+fn limit_text(limit: Limit) -> &'static str {
+    match limit {
+        Limit::Unreadable => "a line that does not read",
+        Limit::File => "the size of the file (--max-trace-size)",
+        Limit::Line => "the size of a line, 16 MiB",
+        Limit::Lines => "the number of lines, 1,000,002 after the first",
+        Limit::Kept => "what the viewer keeps of the values, 384 MiB",
+    }
+}
+
 /// The diagnostics of reading a trace (`docs/cli.md`, 7.4 and 7.6), located in its file, `shown`.
 pub fn diagnostics(trace: &Trace, shown: &str) -> Vec<Diagnostic> {
     let mut found = Vec::new();
@@ -714,9 +782,10 @@ pub fn diagnostics(trace: &Trace, shown: &str) -> Vec<Diagnostic> {
     match &trace.header {
         Err(problem) => {
             let why = match problem {
-                HeaderProblem::Unreadable => "its first line does not read as the first line of a trace",
-                HeaderProblem::OtherSchema => "its first line names another schema than `labcraft-trace`",
-                HeaderProblem::LaterVersion => "its first line names a later version of `labcraft-trace` than 1",
+                HeaderProblem::Unreadable => "its first line does not read as the first line of a trace".to_owned(),
+                HeaderProblem::OtherSchema => "its first line names another schema than `labcraft-trace`".to_owned(),
+                HeaderProblem::LaterVersion => "its first line names a later version of `labcraft-trace` than 1".to_owned(),
+                HeaderProblem::Cut(limit) => format!("its first line passes a limit, {}", limit_text(*limit)),
             };
             found.push(at_line(Code::Lc7101, format!("the trace gives no values: {why}"), 1));
             return found;
@@ -729,13 +798,7 @@ pub fn diagnostics(trace: &Trace, shown: &str) -> Vec<Diagnostic> {
         Ok(_) => {}
     }
     if let Some(stop) = trace.stop {
-        let limit = match stop.limit {
-            Limit::Unreadable => "a line that does not read",
-            Limit::File => "the size of the file (--max-trace-size)",
-            Limit::Line => "the size of a line, 16 MiB",
-            Limit::Lines => "the number of lines, 1,000,002 after the first",
-            Limit::Kept => "what the viewer keeps of the values, 384 MiB",
-        };
+        let limit = limit_text(stop.limit);
         found.push(at_line(
             Code::Lc7103,
             format!("reading the trace stopped at line {}: {limit}; the values up to there are shown", stop.line),
@@ -769,7 +832,7 @@ pub fn values(drawing: &Drawing, trace: &Trace, judged: &Judged, choice: &Choice
     if trace.header.is_err() || trace.other_function {
         return overlay;
     }
-    let reading = Reading { plan: &drawing.trace, trace };
+    let reading = Reading::new(&drawing.trace, trace);
     let plan = &drawing.trace;
     // The iterations of each body, the last by default; none for a body that the run did not reach.
     let contexts: Vec<Option<Vec<u64>>> =
@@ -1366,8 +1429,23 @@ pub fn loops_inside(drawing: &Drawing, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// The values of a series that a tooltip shows, at most (notation 6.1).
+/// The lines of a list of values that a tooltip shows, at most: that many iterations in a row, around the one shown
+/// (notation 6.1).
 pub const SERIES: u64 = 1_000;
+/// The iterations a curve reads, at most: every one up to that many, the iterations a run makes by default
+/// (`--max-iterations`, cli.md 6.2), else that many spread evenly over the run, with the one shown (decision of the
+/// owner, 2026-11-13).
+pub const CURVE_READS: u64 = 10_000;
+
+/// The value of a wire at one iteration of a series.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Sample {
+    /// The iteration, from 0.
+    pub iteration: u64,
+    /// Its short form, and the number of a real number; none where the iteration gives no value (a node skipped, an arm
+    /// not taken, a value cut).
+    pub value: Option<(String, Option<f64>)>,
+}
 
 /// The values of a wire over the iterations of its own loop, within the iterations chosen outside it (notation 6.1).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1376,9 +1454,10 @@ pub struct Series {
     pub key: String,
     pub count: u64,
     pub shown: u64,
-    /// The value at each of its first [`SERIES`] iterations: its short form, and the number of a real number; none
-    /// where the iteration gives no value (a node skipped, an arm not taken, a value cut).
-    pub values: Vec<Option<(String, Option<f64>)>>,
+    /// The values read, in the order of their iterations, the one shown among them: for a curve, the whole run, every
+    /// iteration up to [`CURVE_READS`], else that many spread evenly, the last among them; for a list, at most
+    /// [`SERIES`] iterations in a row around the one shown.
+    pub values: Vec<Sample>,
     /// A real number, whose values make a curve; a list otherwise.
     pub curve: bool,
     /// The unit of the type: `V` for `f64[V]`.
@@ -1395,7 +1474,7 @@ pub fn series(drawing: &Drawing, trace: &Trace, choice: &Choice, group: usize) -
     let source = wire.source?;
     let body = plan.bodies.get(wire.body)?;
     let (&own, outer) = body.loops.split_last()?;
-    let reading = Reading { plan, trace };
+    let reading = Reading::new(plan, trace);
     let mut iters = reading.shown_in(outer, choice)?;
     let count = trace.iterations(own, &iters);
     if count == 0 {
@@ -1403,27 +1482,66 @@ pub fn series(drawing: &Drawing, trace: &Trace, choice: &Choice, group: usize) -
     }
     let key = reading.loop_key(own).to_owned();
     let curve = crate::short::is_real(&wire.ty);
+    let shown = choice.shown(&key, count);
     let mut values = Vec::new();
-    for at in 0..count.min(SERIES) {
-        iters.push(at);
+    for iteration in sampled(count, shown, curve) {
+        iters.push(iteration);
         let value = if reading.took_arms(body, &iters) { reading.value(source, &iters) } else { None };
-        values.push(value.and_then(|json| {
-            let shown = short(&json, &wire.ty)?;
-            Some((shown.text, if curve { crate::short::real(&json) } else { None }))
-        }));
+        let value = value.and_then(|json| {
+            let short = short(&json, &wire.ty)?;
+            Some((short.text, if curve { crate::short::real(&json) } else { None }))
+        });
+        values.push(Sample { iteration, value });
         iters.pop();
     }
     let unit = crate::short::unit_of(&wire.ty).to_owned();
-    Some(Series { shown: choice.shown(&key, count), key, count, values, curve, unit })
+    Some(Series { shown, key, count, values, curve, unit })
+}
+
+/// The iterations a series reads, from 0, in order, `shown` among them: for a curve, all of `count` up to
+/// [`CURVE_READS`], else that many spread evenly from the first to the last; for a list, at most [`SERIES`] in a row,
+/// `shown` in the middle unless near an end.
+pub fn sampled(count: u64, shown: u64, curve: bool) -> Vec<u64> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let shown = shown.min(count - 1);
+    if !curve {
+        let start = shown.saturating_sub(SERIES / 2).min(count.saturating_sub(SERIES));
+        return (start..count.min(start.saturating_add(SERIES))).collect();
+    }
+    if count <= CURVE_READS {
+        return (0..count).collect();
+    }
+    // The k-th of `CURVE_READS` at k × (count − 1) / (CURVE_READS − 1), in 128 bits so that no product overflows.
+    let last = u128::from(count - 1);
+    let steps = u128::from(CURVE_READS - 1);
+    let mut picked: Vec<u64> =
+        (0..u128::from(CURVE_READS)).map(|k| u64::try_from(k * last / steps).unwrap_or(count - 1)).chain(std::iter::once(shown)).collect();
+    picked.sort_unstable();
+    picked.dedup();
+    picked
 }
 
 /// The values at the input terminals of a placed node, `placed` in [`Drawing::placed`], which hovering or selecting it
 /// shows (notation 6.1): to the left of each, 4 units above its wire, side by side from the bottom line up as those of the
 /// outputs, each ending 4 units before the start of the one below. Drawn over everything, covering what is under them.
 pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Shape> {
+    input_bubbles(drawing, overlay, placed).into_iter().flat_map(|(_, _, shapes)| shapes).collect()
+}
+
+/// The group of the wire of each value that [`inputs_of`] shows, in [`Drawing::groups`], and its box, left, top, right,
+/// bottom: the bubble of that wire, when one covers it, gives the same value and is not drawn while it shows (notation
+/// 6.1; decision of the owner, 2026-11-13).
+pub fn input_boxes(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<(usize, (i64, i64, i64, i64))> {
+    input_bubbles(drawing, overlay, placed).into_iter().map(|(group, area, _)| (group, area)).collect()
+}
+
+/// The values at the inputs of a placed node, each with the group of its wire and its box.
+fn input_bubbles(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<(usize, Area, Vec<Shape>)> {
     let Some(block) = drawing.placed.get(placed) else { return Vec::new() };
     let reach = style::terminal();
-    let mut inputs: Vec<(i64, i64, &Valued)> = Vec::new();
+    let mut inputs: Vec<(i64, i64, usize, &Valued)> = Vec::new();
     for (index, group) in drawing.groups.iter().enumerate() {
         let (Some(wire), Some(valued)) = (&group.wire, overlay.wires.get(&index)) else { continue };
         for (_, points) in &wire.readers {
@@ -1431,15 +1549,15 @@ pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Sha
                 && (x - block.x).abs() <= reach
                 && (block.y..=block.y + block.height).contains(&y)
             {
-                inputs.push((x, y, valued));
+                inputs.push((x, y, index, valued));
             }
         }
     }
     inputs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    inputs.dedup_by_key(|(x, y, _)| (*x, *y));
-    let mut shapes = Vec::new();
+    inputs.dedup_by_key(|(x, y, _, _)| (*x, *y));
+    let mut bubbles = Vec::new();
     let mut below: Option<(i64, i64)> = None;
-    for (x, y, valued) in inputs {
+    for (x, y, group, valued) in inputs {
         let text = Text::new(&valued.text, size::any_text(), size::medium());
         let width = text.width + 2 * style::padding();
         let mut end = x - style::probe_gap();
@@ -1448,10 +1566,11 @@ pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Sha
         }
         let top = y - style::probe_above() - style::probe_height();
         let shown = Short { text: valued.text.clone(), error: valued.error };
-        shapes.extend(bubble_shapes(end - width, top, width, &text, &shown, overlay.stale));
+        let area = (end - width, top, end, top + style::probe_height());
+        bubbles.push((group, area, bubble_shapes(end - width, top, width, &text, &shown, overlay.stale)));
         below = Some((y, end - width));
     }
-    shapes
+    bubbles
 }
 
 /// The opacity of the halo of a wire selected *(proposed)*: the wire stays read through it.
@@ -1513,6 +1632,26 @@ fn hatching((x0, y0, x1, y1): Area) -> Vec<Shape> {
 mod tests {
     use super::*;
 
+    /// By hand: k × 10,000 / 9,999 is k for every k below 9,999, so a run of 10,001 iterations reads 0 to 9,998 and
+    /// 10,000, skipping 9,999 unless it is shown; a list of 5,000 shows 1,000 in a row, the one shown in the middle.
+    #[test]
+    fn a_curve_reads_the_whole_run_and_a_list_the_iterations_around_the_one_shown() {
+        assert_eq!(sampled(0, 0, true), Vec::<u64>::new());
+        assert_eq!(sampled(10_000, 7, true), (0..10_000).collect::<Vec<_>>());
+        let spread = sampled(10_001, 5, true);
+        assert_eq!((spread.len(), spread.contains(&9_999), spread.last()), (10_000, false, Some(&10_000)));
+        let shown = sampled(10_001, 9_999, true);
+        assert_eq!((shown.len(), shown.contains(&9_999)), (10_001, true));
+        // The largest count: the first and the last read, in order, without overflow.
+        let huge = sampled(u64::MAX, 12, true);
+        assert_eq!((huge.first(), huge.last(), huge.len()), (Some(&0), Some(&(u64::MAX - 1)), 10_001));
+        assert!(huge.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(sampled(5_000, 1_500, false), (1_000..2_000).collect::<Vec<_>>());
+        assert_eq!(sampled(5_000, 4_900, false), (4_000..5_000).collect::<Vec<_>>());
+        assert_eq!(sampled(5_000, 10, false), (0..1_000).collect::<Vec<_>>());
+        assert_eq!(sampled(3, 9, false), [0, 1, 2]);
+    }
+
     #[test]
     fn a_constant_of_the_text_reads_as_json() {
         assert_eq!(literal("0.0").as_deref(), Some("0.0"));
@@ -1534,6 +1673,28 @@ mod tests {
         assert_eq!(element(r#"[1, {"$cut":true}]"#, 1), None);
         assert_eq!(bound(r#"{"Reading.Value":["230.0 V", 3]}"#, "Value", 1), Some("3"));
         assert_eq!(bound(r#"{"Reading.Value":["230.0 V"]}"#, "Other", 0), None);
+    }
+
+    /// The elements found in one pass are those that a scan from the start finds, element by element: in a whole array,
+    /// an array cut with its head, one with a cut element, one that stops reading, and what is not an array.
+    #[test]
+    fn the_elements_of_an_array_are_those_a_scan_finds() {
+        let arrays = [
+            "[1.0, 2.0, 3.0]",
+            " [ \"a\" , [1, 2] , {\"k\": 3} ] ",
+            r#"{"$len":100,"$head":[5,6]}"#,
+            r#"[1, {"$cut":true}, 3]"#,
+            "[1, 2, x, 4]",
+            "[]",
+            "7",
+        ];
+        for array in arrays {
+            let indexed = Elements::of(array);
+            for at in 0..6 {
+                assert_eq!(indexed.as_ref().and_then(|elements| elements.get(at)), element(array, at), "{array} at {at}");
+            }
+        }
+        assert_eq!(Elements::of(" [ \"a\" , [1, 2] ] ").and_then(|elements| elements.get(1).map(str::to_owned)).as_deref(), Some("[1, 2]"));
     }
 
     #[test]

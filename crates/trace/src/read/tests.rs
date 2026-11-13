@@ -193,6 +193,30 @@ fn a_first_line_that_does_not_read_gives_no_values() {
     assert!(!reader.feed(b"\xff\xfe\n"));
     assert_eq!(reader.finish().header, Err(HeaderProblem::Unreadable), "not UTF-8");
     assert_eq!(Reader::new(expected(), ReadLimits::default()).finish().header, Err(HeaderProblem::Unreadable), "an empty file");
+    // A limit reached within the first line gives no values, and says which limit (`LC7101`), never a stop (`LC7103`):
+    // the size of the file one byte short of its end, or a line one byte shorter than it (cli.md 7.4; decision of the
+    // owner, 2026-11-13).
+    let length = FIRST.len();
+    let cut = [
+        (ReadLimits { file: length as u64 - 1, ..ReadLimits::default() }, Limit::File),
+        (ReadLimits { line: length - 1, ..ReadLimits::default() }, Limit::Line),
+    ];
+    for (limits, limit) in cut {
+        let mut reader = Reader::new(expected(), limits);
+        reader.feed(format!("{FIRST}\n{CALL}\n").as_bytes());
+        let trace = reader.finish();
+        assert_eq!((trace.header, trace.stop, trace.events), (Err(HeaderProblem::Cut(limit)), None, 0), "{limits:?}");
+    }
+    // The size of the file exactly that of the first line, its line feed cut: the first line is whole and reads; reading
+    // stops at the second line, at the size of the file. Exactly the line limit: it reads too.
+    let mut reader = Reader::new(expected(), ReadLimits { file: length as u64, ..ReadLimits::default() });
+    reader.feed(format!("{FIRST}\n{CALL}\n").as_bytes());
+    let trace = reader.finish();
+    assert!(trace.header.is_ok(), "{:?}", trace.header);
+    assert_eq!((trace.stop, trace.events), (Some(Stop { line: 2, limit: Limit::File }), 0));
+    let mut reader = Reader::new(expected(), ReadLimits { line: length, ..ReadLimits::default() });
+    reader.feed(format!("{FIRST}\n").as_bytes());
+    assert!(reader.finish().header.is_ok());
 }
 
 #[test]
