@@ -10,18 +10,18 @@ use labcraft_engine::{CommandError, Config, Memory, ReadOnly, Session, Still};
 use labcraft_types::{Limits, Report};
 use serde_json::{Value, json};
 
-use crate::protocol::{Answer, Failure, Folder, Listed, State, ToWorker};
+use crate::protocol::{Answer, Failure, Folder, Listed, Listing, State, ToWorker};
 
 /// Where the folder given lies in the memory of the worker: every path of a report is shown from it.
 const ROOT: &str = "/folder";
 
-/// The session of the worker, the drawing it sent last, and the report its text of `Problems` was written from.
+/// The session of the worker, and the drawing and the report whose listing it sent last.
 #[derive(Default)]
 pub struct Host {
     session: Option<Session>,
     before_drawing: Option<fn(&str)>,
     sent: Option<Arc<Drawing>>,
-    problems: Option<(Arc<Report>, String)>,
+    listed: Option<Arc<Report>>,
 }
 
 impl Host {
@@ -50,6 +50,9 @@ impl Host {
         let memory = Memory::new();
         memory.put_folder(ROOT);
         memory.set_current(ROOT);
+        for path in folder.folders.iter().filter_map(|path| inside(path)) {
+            memory.put_folder(path);
+        }
         for file in folder.files {
             if let Some(path) = inside(&file.path) {
                 memory.put(path, file.bytes);
@@ -79,6 +82,7 @@ impl Host {
         }
         self.session = Some(session);
         self.sent = None;
+        self.listed = None;
         opened
     }
 
@@ -92,36 +96,35 @@ impl Host {
     fn answer(&mut self, result: Result<Value, CommandError>) -> Answer {
         let result = result.map(|value| value.to_string()).map_err(|error| Failure { code: error.code.to_owned(), message: error.message });
         let Some(session) = &self.session else {
-            return Answer { result, state: State::default(), drawing: None };
+            return Answer { result, state: State::default(), listing: None, drawing: None };
         };
         let view = session.view();
-        // The text of `Problems` is written again only for a new report.
-        let problems = match (&view.report, &self.problems) {
-            (Some(report), Some((from, text))) if Arc::ptr_eq(report, from) => text.clone(),
-            (Some(report), _) => {
-                let text = labcraft_types::printed::diagnostics_text(report);
-                self.problems = Some((report.clone(), text.clone()));
-                text
+        // The functions and the text of `Problems` go again only with a new report.
+        let listing = match &view.report {
+            Some(report) if !self.listed.as_ref().is_some_and(|listed| Arc::ptr_eq(listed, report)) => {
+                self.listed = Some(report.clone());
+                Some(Listing {
+                    functions: view
+                        .functions
+                        .iter()
+                        .map(|listed| Listed {
+                            function: listed.function.clone(),
+                            file: listed.file.clone(),
+                            drawable: listed.drawable,
+                            errors: listed.errors,
+                        })
+                        .collect(),
+                    problems: labcraft_types::printed::diagnostics_text(report),
+                    errors: view.errors,
+                    warnings: view.warnings,
+                })
             }
-            (None, _) => String::new(),
+            _ => None,
         };
         let mut arms: Vec<(String, usize)> = view.arms.iter().map(|(key, arm)| (key.clone(), *arm)).collect();
         arms.sort();
         let state = State {
             folder: view.folder.clone(),
-            functions: view
-                .functions
-                .iter()
-                .map(|listed| Listed {
-                    function: listed.function.clone(),
-                    file: listed.file.clone(),
-                    drawable: listed.drawable,
-                    errors: listed.errors,
-                })
-                .collect(),
-            problems,
-            errors: view.errors,
-            warnings: view.warnings,
             function: view.function.clone(),
             opened: view.opened.clone(),
             glide: view.glide,
@@ -133,7 +136,7 @@ impl Host {
         if let Some(drawing) = &drawing {
             self.sent = Some(drawing.clone());
         }
-        Answer { result, state, drawing }
+        Answer { result, state, listing, drawing }
     }
 }
 
@@ -156,7 +159,11 @@ mod tests {
     const DOUBLE: &str = "labcraft 1\n\nuse core\n\nfn double(x: f64) -> (y: f64) {\n    y = core.add(x, x)\n}\n";
 
     fn folder() -> Arc<Folder> {
-        Arc::new(Folder { name: "f".to_owned(), files: vec![File { path: "double.lcf".to_owned(), bytes: DOUBLE.as_bytes().to_vec() }] })
+        Arc::new(Folder {
+            name: "f".to_owned(),
+            files: vec![File { path: "double.lcf".to_owned(), bytes: DOUBLE.as_bytes().to_vec() }],
+            folders: Vec::new(),
+        })
     }
 
     fn command(id: &str, params: Value) -> ToWorker {
@@ -185,13 +192,51 @@ mod tests {
         let answer = host.handle(ToWorker::Open { folder: folder(), standard_everywhere: false, skipped: Vec::new(), show: None });
         assert!(answer.result.is_ok(), "{:?}", answer.result);
         assert_eq!(answer.state.function.as_deref(), Some("double"));
-        assert!(answer.drawing.is_some());
+        assert!(answer.drawing.is_some() && answer.listing.is_some());
         let again = host.handle(command("view.show_function", json!({ "function": "double" })));
         assert!(again.result.is_ok());
         assert!(again.drawing.is_some(), "a new drawing of the same function is sent");
         let state = host.handle(command("view.set_standard_view", json!({ "on": false })));
         assert!(state.drawing.is_none(), "nothing new to draw");
-        assert_eq!(state.state.problems, again.state.problems);
+        assert!(state.listing.is_none(), "nothing new to list");
+    }
+
+    /// What the walk of `engine` finds in a whole tree, and in what the page gives of it (`folder::plan`): the same.
+    #[test]
+    fn the_session_judges_what_the_page_gives_as_it_judges_the_whole_folder() {
+        use labcraft_engine::walk::BOUNDS;
+        let at = |levels: usize, name: &str| format!("{}{name}", "d/".repeat(levels));
+        let function = |name: &str| DOUBLE.replace("double", name).into_bytes();
+        let tree = [
+            ("top.lcf", function("top")),
+            ("notes.txt", b"not a program".to_vec()),
+            (".git/hidden.lcf", function("hidden")),
+            ("sub/.hidden_file.lcf", function("hidden_file")),
+            (at(BOUNDS.levels - 1, "deep.lcf").as_str(), function("deep")),
+            (at(BOUNDS.levels, "deeper.lcf").as_str(), function("deeper")),
+            (at(BOUNDS.levels + 4, "deepest.lcf").as_str(), function("deepest")),
+        ]
+        .map(|(path, bytes)| File { path: path.to_owned(), bytes });
+        let folders = vec!["empty".to_owned(), at(BOUNDS.levels + 6, "")];
+        let whole = Folder { name: "f".to_owned(), files: tree.to_vec(), folders: folders.clone() };
+        let paths: Vec<String> = tree.iter().map(|file| file.path.clone()).collect();
+        let plan = crate::folder::plan(&paths, &folders);
+        let given = Folder {
+            name: "f".to_owned(),
+            files: plan.read.iter().filter_map(|&index| tree.get(index).cloned()).collect(),
+            folders: plan.folders.clone(),
+        };
+        assert!(given.files.len() < whole.files.len(), "{plan:?}");
+        let listing = |folder: Folder| {
+            let open = ToWorker::Open { folder: Arc::new(folder), standard_everywhere: false, skipped: Vec::new(), show: None };
+            Host::new(None).handle(open).listing.unwrap()
+        };
+        let (whole, given) = (listing(whole), listing(given));
+        assert_eq!(given, whole);
+        assert!(whole.problems.contains("LC0010"), "{}", whole.problems);
+        // A function is named by its folders (cli.md 7): the deepest that is read, the hidden file, the top one.
+        let names: Vec<&str> = whole.functions.iter().map(|listed| listed.function.rsplit('.').next().unwrap_or_default()).collect();
+        assert_eq!(names, ["deep", "hidden_file", "top"]);
     }
 
     #[test]

@@ -8,11 +8,14 @@ use std::sync::Arc;
 use labcraft_diagram::Drawing;
 use serde::{Deserialize, Serialize};
 
-/// A folder as the page read it: its name, as the window shows it, and its program files.
+/// A folder as the page read it: its name, as the window shows it, its program files, and the folders that no file
+/// makes (`folder::plan`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
     pub name: String,
     pub files: Vec<File>,
+    /// From the folder, with `/`.
+    pub folders: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +54,9 @@ pub struct Answer {
     /// What the command returned, as JSON, or why it failed.
     pub result: Result<String, Failure>,
     pub state: State,
+    /// The functions and the diagnostics, when they are not those the worker sent last: they change with a check, not
+    /// with a click.
+    pub listing: Option<Listing>,
     /// The drawing of [`State::function`], when it is not the one the worker sent last.
     pub drawing: Option<Arc<Drawing>>,
 }
@@ -62,15 +68,10 @@ pub struct Failure {
     pub message: String,
 }
 
-/// What the window shows of the session: `engine::view::Published`, with the diagnostics as text, without the drawing.
+/// What the window shows of the session: `engine::view::Published`, without the drawing and the [`Listing`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct State {
     pub folder: Option<String>,
-    pub functions: Vec<Listed>,
-    /// The diagnostics, as `labcraft-cli check` prints them.
-    pub problems: String,
-    pub errors: u64,
-    pub warnings: u64,
     pub function: Option<String>,
     pub opened: Vec<String>,
     pub glide: bool,
@@ -78,6 +79,16 @@ pub struct State {
     /// The arm shown of each structure in tabs, by its key.
     pub arms: Vec<(String, usize)>,
     pub standard_everywhere: bool,
+}
+
+/// The functions of the folder and its diagnostics, from one report.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Listing {
+    pub functions: Vec<Listed>,
+    /// The diagnostics, as `labcraft-cli check` prints them.
+    pub problems: String,
+    pub errors: u64,
+    pub warnings: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

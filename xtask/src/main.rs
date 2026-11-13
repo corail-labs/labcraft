@@ -270,7 +270,13 @@ fn wasm() -> Result<(), String> {
 /// The tests run here only through an attribute that the harness imports for WASM: without it, the runner
 /// finds no test and succeeds. So some test must have passed.
 fn wasm_tests() -> Result<(), String> {
-    let args = ["test", "--locked", "--target", WASM_TARGET, "--package", "labcraft-harness", "--package", "labcraft-web", "--lib"];
+    // Each package on its own, so that each must have run some test.
+    wasm_tests_of("labcraft-harness")?;
+    wasm_tests_of("labcraft-web")
+}
+
+fn wasm_tests_of(package: &str) -> Result<(), String> {
+    let args = ["test", "--locked", "--target", WASM_TARGET, "--package", package, "--lib"];
     let what = format!("cargo {}", args.join(" "));
     eprintln!("$ {what}");
     let output =

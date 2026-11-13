@@ -27,19 +27,16 @@ fn main() {
 }
 
 /// The `.lcf` and `.lct` files under `folder`, each with its path from `base` with `/`; hidden folders left out, as a walk
-/// leaves them.
+/// of `engine` leaves them, and hidden files read, as it reads them.
 fn programs(base: &Path, folder: &Path, found: &mut Vec<(String, PathBuf)>) {
     let mut entries: Vec<PathBuf> = fs::read_dir(folder).unwrap().map(|entry| entry.unwrap().path()).collect();
     entries.sort();
     for entry in entries {
         let name = entry.file_name().unwrap().to_str().unwrap();
-        if name.starts_with('.') {
-            continue;
-        }
-        if entry.is_dir() {
+        if entry.is_dir() && !name.starts_with('.') {
             println!("cargo::rerun-if-changed={}", entry.display());
             programs(base, &entry, found);
-        } else if entry.extension().is_some_and(|extension| extension == "lcf" || extension == "lct") {
+        } else if entry.is_file() && entry.extension().is_some_and(|extension| extension == "lcf" || extension == "lct") {
             let path = entry.strip_prefix(base).unwrap().components().map(|part| part.as_os_str().to_str().unwrap()).collect::<Vec<_>>().join("/");
             found.push((path, entry));
         }

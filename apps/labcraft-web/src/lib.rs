@@ -48,7 +48,7 @@ impl Bundled {
     /// As the page would read it.
     pub fn folder(&self) -> Folder {
         let files = self.files.iter().map(|file| File { path: file.path.to_owned(), bytes: file.bytes.to_vec() }).collect();
-        Folder { name: self.name.to_owned(), files }
+        Folder { name: self.name.to_owned(), files, folders: Vec::new() }
     }
 }
 
@@ -64,7 +64,7 @@ mod tests {
     use crate::protocol::{Answer, ToWorker, decode, encode};
 
     /// Every function of each bundled folder, opened and drawn by the worker, and its drawing read back by the page:
-    /// natively, and in WASM on the stack of a worker (`cargo xtask wasm`).
+    /// natively, and in WASM under Node, with the stack of a worker (`cargo xtask wasm`).
     #[test]
     fn every_bundled_function_is_drawn_and_crosses_to_the_page() {
         assert_eq!(BUNDLED.iter().map(|bundled| bundled.name).collect::<Vec<_>>(), ["examples", "docs/rfc"]);
@@ -74,8 +74,9 @@ mod tests {
             let open = ToWorker::Open { folder: std::sync::Arc::new(bundled.folder()), standard_everywhere: false, skipped: Vec::new(), show: None };
             let answer: Answer = decode(&encode(&host.handle(open)).unwrap()).unwrap();
             assert!(answer.result.is_ok(), "{}: {:?}", bundled.name, answer.result);
-            assert_eq!((answer.state.errors, answer.state.problems.as_str()), (0, ""), "{}", bundled.name);
-            let functions: Vec<String> = answer.state.functions.iter().map(|listed| listed.function.clone()).collect();
+            let listing = answer.listing.unwrap_or_else(|| panic!("{}: no listing", bundled.name));
+            assert_eq!((listing.errors, listing.problems.as_str()), (0, ""), "{}", bundled.name);
+            let functions: Vec<String> = listing.functions.iter().map(|listed| listed.function.clone()).collect();
             assert!(!functions.is_empty(), "{}", bundled.name);
             for function in functions {
                 let message = ToWorker::Command { id: "view.show_function".to_owned(), params: json!({ "function": function }).to_string() };

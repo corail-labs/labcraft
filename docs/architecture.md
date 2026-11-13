@@ -1412,22 +1412,34 @@ served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
   drawing trapped is never drawn by it: `Session::skip_drawing`. Neither is a command, as `files_changed` is not:
   only the page knows what trapped. The state of the view that the file does not hold (the tab of a `match`) starts
   again.
-- **A folder dropped or chosen** (the dialog of the browser, which gives the path of each file) is walked by the page
-  with the bounds of a walk of `engine` (`walk::BOUNDS`: 32 levels, 100,000 files, hidden folders left out); only
-  program files are opened and read, each one byte past the largest file that `check` reads, so that a larger one is
-  still refused by its size, and 256 MiB of them in all *(proposed)*. The page keeps them for a restart and holds them
-  about three times while it sends them; the worker, about twice while it takes them, then once. Past a limit the
-  page reads no further and says so. A drop of files and folders together opens them as the files of a folder named
-  `dropped`.
+- **A folder dropped or chosen** (the dialog of the browser, which gives the path of each file) is not judged by the
+  page: it gives the session the tree that a walk of `engine` sees, its folders and its program files, and that walk
+  judges it with its bounds and its diagnostics (`LC0010`), as on the desktop; a test compares the two on a tree that
+  passes every bound. The page only bounds what it lists and what it reads (`folder::plan`): no hidden folder; a
+  folder deeper than the walk goes, given empty, so that the walk says it left it out; the first 100,001 program files
+  in the order of their paths; at most 400,000 files and folders listed of a drop; each file read one byte past the
+  largest file that `check` reads, so that a larger one is still refused by its size; and 64 MiB of them in all
+  *(proposed)*, the page saying where it stopped. The page keeps the files for a restart and holds them about three
+  times while it sends them; the worker, about twice while it takes them, then once. A drop of files and folders
+  together opens them as the files of a folder named `dropped`.
 - **Large folders.** The lists of functions and of diagnostics lay out only the rows in sight; the page takes what the
-  supervisor shows once after each message, not at each frame; the worker writes the text of `Problems` again only
-  for a new report, and sends a drawing only when it is a new one.
+  supervisor shows once after each message, not at each frame; the worker sends the functions and the text of
+  `Problems` only with a new report, and a drawing only when it is a new one.
+- **A failure** of a command is said until the next one that succeeds. A worker that never says it listens (its WASM
+  could not be loaded) is said as such, not as a trap of the folder, and not started again for the same files. The
+  preference of the standard view kept in the browser is the one the session has: a command that trapped changed
+  nothing.
 - **The preferences** (theme, standard view everywhere) are kept in the storage of the browser; the theme follows the
   system until it is chosen, and the glide follows `prefers-reduced-motion`.
 - **The smoke test**, `cargo xtask web-smoke`, serves `target/web` on the loopback and opens `?smoke` in headless
   Chrome, as a browser opens it, then `?smoke&webgl`: a runner has no GPU, so both draw with WebGL2 on SwiftShader,
   the first by falling back to it. The page opens the examples, traps its worker once it drew, and posts to the server
-  whether a new worker drew again; CI fails otherwise. WebGPU itself is seen only in a browser that has it.
+  whether a new worker drew anew, not the drawing the page kept; CI fails otherwise. WebGPU itself is seen only in a
+  browser that has it. The server serves only the names of `target/web`, on the loopback, one request at a time.
+- **The order of a trap.** A trap is put down to a drawing when the message that names it reaches the page before the
+  error of the worker. Messages of a worker come in order, but the HTML standard does not order them with its error;
+  Chrome kept that order 400 times out of 400 with a real trap. Were it reversed, a drawing that traps would count as a
+  trap of the folder: two would close the folder with `LC0099`, never a loop.
 
 **`labcraft-cli diagram`** (cli.md 7) reads, checks and draws through `engine::drawings`, as `diagram.svg` does, and
 writes the files, with `craft-atomic`: an SVG of 20,000 nodes can pass the 4 MiB of a command result (commands.md,

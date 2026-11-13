@@ -32,7 +32,9 @@ pub fn start() {
         let answer = match message {
             Ok(ToWorker::Trap) => core::arch::wasm32::unreachable(),
             Ok(message) => host.handle(message),
-            Err(message) => Answer { result: Err(Failure { code: "params.invalid".to_owned(), message }), state: State::default(), drawing: None },
+            Err(message) => {
+                Answer { result: Err(Failure { code: "params.invalid".to_owned(), message }), state: State::default(), listing: None, drawing: None }
+            }
         };
         post(&FromWorker::Answer(answer));
     });
@@ -51,7 +53,8 @@ fn post(message: &FromWorker) {
     let bytes = match encode(message) {
         Ok(bytes) => bytes,
         Err(message) => {
-            let failed = Answer { result: Err(Failure { code: "internal".to_owned(), message }), state: State::default(), drawing: None };
+            let failed =
+                Answer { result: Err(Failure { code: "internal".to_owned(), message }), state: State::default(), listing: None, drawing: None };
             encode(&FromWorker::Answer(failed)).unwrap_or_default()
         }
     };

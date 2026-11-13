@@ -13,7 +13,7 @@ use std::sync::Arc;
 use labcraft_diagram::Drawing;
 use serde_json::Value;
 
-use crate::protocol::{Folder, FromWorker, State, ToWorker, decode, encode};
+use crate::protocol::{Folder, FromWorker, Listing, State, ToWorker, decode, encode};
 
 /// What the page must do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +53,8 @@ enum Traps {
     Once,
     /// Twice: `LC0099` for the folder, until the files change.
     Twice,
+    /// A worker that never said it listens: its WASM could not be loaded or started. The same files are not tried again.
+    NoWorker,
 }
 
 #[derive(Default)]
@@ -66,6 +68,7 @@ pub struct Supervisor {
     /// The functions whose drawing trapped a worker.
     trapped: BTreeSet<String>,
     state: Arc<State>,
+    listing: Arc<Listing>,
     /// The last drawing of each function, which a function whose drawing trapped keeps.
     drawings: BTreeMap<String, Arc<Drawing>>,
     failure: Option<String>,
@@ -75,6 +78,7 @@ pub struct Supervisor {
 #[derive(Clone, Debug, Default)]
 pub struct Shown {
     pub state: Arc<State>,
+    pub listing: Arc<Listing>,
     pub drawing: Option<Arc<Drawing>>,
     /// The function shown is not drawable now, or its drawing trapped: its last drawing stays.
     pub kept: bool,
@@ -100,7 +104,7 @@ impl Supervisor {
 
     /// A command of the viewer (`docs/commands.md`, 6.5), sent when the one in flight has its answer.
     pub fn command(&mut self, id: &str, params: Value) -> Vec<Action> {
-        if self.traps == Traps::Twice || self.folder.is_none() {
+        if self.stopped() || self.folder.is_none() {
             return Vec::new();
         }
         self.pending.push_back(Request::Command { id: id.to_owned(), params });
@@ -127,8 +131,10 @@ impl Supervisor {
             Ok(FromWorker::Answer(answer)) => {
                 self.waiting = Waiting::Nothing;
                 self.drawing = None;
-                if let Err(failure) = &answer.result {
-                    self.failure = Some(format!("{}: {}", failure.code, failure.message));
+                // A failure is said until the next command that succeeds.
+                self.failure = answer.result.as_ref().err().map(|failure| format!("{}: {}", failure.code, failure.message));
+                if let Some(listing) = answer.listing {
+                    self.listing = Arc::new(listing);
                 }
                 if let (Some(drawing), Some(function)) = (answer.drawing, &answer.state.function) {
                     self.drawings.insert(function.clone(), drawing);
@@ -145,6 +151,9 @@ impl Supervisor {
 
     /// The worker trapped: a function it said it was drawing is not drawn again; otherwise the folder is to blame.
     pub fn trapped(&mut self) -> Vec<Action> {
+        if self.waiting == Waiting::Ready {
+            return self.not_started("it stopped before it listened");
+        }
         if let Some(function) = self.drawing.take() {
             self.trapped.insert(function.clone());
             Arc::make_mut(&mut self.state).function = Some(function);
@@ -162,6 +171,19 @@ impl Supervisor {
         self.start()
     }
 
+    /// The worker could not be started, or stopped before it listened: said, and not tried again for these files.
+    pub fn not_started(&mut self, why: &str) -> Vec<Action> {
+        self.traps = Traps::NoWorker;
+        self.failure = Some(format!("the worker of the viewer could not start: {why}"));
+        self.pending.clear();
+        self.waiting = Waiting::Nothing;
+        Vec::new()
+    }
+
+    fn stopped(&self) -> bool {
+        matches!(self.traps, Traps::Twice | Traps::NoWorker)
+    }
+
     fn start(&mut self) -> Vec<Action> {
         self.waiting = Waiting::Ready;
         self.drawing = None;
@@ -170,7 +192,7 @@ impl Supervisor {
 
     /// Sends what waits, if nothing is in flight.
     fn next(&mut self) -> Vec<Action> {
-        if self.waiting != Waiting::Nothing || self.traps == Traps::Twice {
+        if self.waiting != Waiting::Nothing || self.stopped() {
             return Vec::new();
         }
         let Some(request) = self.pending.pop_front() else { return Vec::new() };
@@ -227,6 +249,7 @@ impl Supervisor {
         }
         Shown {
             state: self.state.clone(),
+            listing: self.listing.clone(),
             kept: self.state.kept || (trapped.is_some() && drawing.is_some()),
             drawing,
             notices,
@@ -326,7 +349,7 @@ mod tests {
     }
 
     fn folder() -> Folder {
-        Folder { name: "bench".to_owned(), files: vec![function("alpha"), function("beta")] }
+        Folder { name: "bench".to_owned(), files: vec![function("alpha"), function("beta")], folders: Vec::new() }
     }
 
     fn shown_function(supervisor: &Supervisor) -> Option<String> {
@@ -442,6 +465,34 @@ mod tests {
         assert_eq!(shown.state.function.as_deref(), Some("beta"), "the function shown before");
         assert!(shown.state.standard_everywhere, "the preference");
         assert!(shown.notices.is_empty() && shown.drawing.is_some());
+    }
+
+    #[test]
+    fn a_worker_that_does_not_load_is_said_and_not_blamed_on_the_folder() {
+        let mut supervisor = Supervisor::new(false);
+        assert_eq!(supervisor.open(folder()), [Action::Start]);
+        assert!(supervisor.trapped().is_empty(), "not started again");
+        let shown = supervisor.shown();
+        assert!(!shown.busy);
+        assert_eq!(shown.notices, ["the worker of the viewer could not start: it stopped before it listened"]);
+        assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
+        assert_eq!(supervisor.open(folder()), [Action::Start], "another folder tries again");
+        assert!(supervisor.shown().notices.is_empty());
+    }
+
+    #[test]
+    fn a_failure_is_said_until_a_command_succeeds() {
+        poison(&[]);
+        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+        let actions = supervisor.open(folder());
+        drive(&mut supervisor, &mut worker, actions);
+        let actions = supervisor.command("view.show_function", json!({ "function": "nowhere" }));
+        drive(&mut supervisor, &mut worker, actions);
+        assert!(supervisor.shown().notices.iter().any(|notice| notice.starts_with("params.invalid")), "{:?}", supervisor.shown().notices);
+        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
+        drive(&mut supervisor, &mut worker, actions);
+        assert!(supervisor.shown().notices.is_empty());
+        assert_eq!(supervisor.shown().listing.functions.len(), 2, "the listing stays when an answer has none");
     }
 
     #[test]

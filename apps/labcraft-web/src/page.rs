@@ -26,8 +26,8 @@ use web_sys::{
 };
 
 use crate::BUNDLED;
-use crate::folder::{self, Taken, Walk};
-use crate::protocol::{File, Folder, State};
+use crate::folder::{self, Budget};
+use crate::protocol::{File, Folder, Listing};
 use crate::supervisor::{Action, Shown, Supervisor};
 
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
@@ -133,10 +133,11 @@ enum Smoke {
     Drawing {
         since: f64,
     },
-    /// Trapped the worker after the first drawing; waits for a new one to draw.
+    /// Trapped the worker after the first drawing, `before`; waits for a new worker to draw anew.
     Trapped {
         since: f64,
         first: String,
+        before: Option<Arc<Drawing>>,
     },
     Done,
 }
@@ -152,8 +153,10 @@ struct Viewer {
     painted: Option<Arc<Drawing>>,
     theme: Theme,
     shown: Shown,
-    /// The lines of `Problems`, from the state they were written from.
-    problems: (Arc<State>, Vec<String>),
+    /// The lines of `Problems`, from the listing they were written from.
+    problems: (Arc<Listing>, Vec<String>),
+    /// The preference last kept in the storage of the browser: the one that the session has.
+    standard_stored: Option<bool>,
     /// A folder was opened: fit its first drawing.
     fit: bool,
     /// The dialog that chooses a folder is open, or the folder is being read.
@@ -191,6 +194,7 @@ impl Viewer {
             theme,
             shown: Shown::default(),
             problems: Default::default(),
+            standard_stored: None,
             fit: false,
             reading: false,
             folder_notice: None,
@@ -225,7 +229,9 @@ impl Viewer {
                     self.started += 1;
                     match spawn(self.started, &self.inbox) {
                         Ok(running) => self.running = Some(running),
-                        Err(error) => self.folder_notice = Some(format!("the worker of the viewer could not start: {error}")),
+                        Err(error) => {
+                            let _ = self.supervisor.not_started(&error);
+                        }
                     }
                 }
                 Action::Send(bytes) => {
@@ -254,8 +260,14 @@ impl Viewer {
                 self.fit = false;
             }
         }
-        if !Arc::ptr_eq(&self.problems.0, &self.shown.state) {
-            self.problems = (self.shown.state.clone(), self.shown.state.problems.lines().map(str::to_owned).collect());
+        if !Arc::ptr_eq(&self.problems.0, &self.shown.listing) {
+            self.problems = (self.shown.listing.clone(), self.shown.listing.problems.lines().map(str::to_owned).collect());
+        }
+        // The preference is the session's: a command that trapped did not change it.
+        let standard = self.shown.state.standard_everywhere;
+        if self.standard_stored != Some(standard) {
+            store(STANDARD_KEY, if standard { "true" } else { "false" });
+            self.standard_stored = Some(standard);
         }
     }
 
@@ -304,7 +316,6 @@ impl Viewer {
             let mut standard = self.shown.state.standard_everywhere;
             if ui.checkbox(&mut standard, "Standard view everywhere").changed() {
                 self.command("view.set_standard_view", json!({ "on": standard }));
-                store(STANDARD_KEY, if standard { "true" } else { "false" });
             }
             if ui.button("Fit").clicked() {
                 self.canvas.fit();
@@ -335,11 +346,11 @@ impl Viewer {
     /// The functions of the folder: only the rows in sight are laid out, however many there are.
     fn functions(&mut self, ui: &mut egui::Ui) {
         ui.heading("Functions");
-        let state = self.shown.state.clone();
+        let (state, listing) = (self.shown.state.clone(), self.shown.listing.clone());
         let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
         let mut clicked = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row, state.functions.len(), |ui, rows| {
-            for listed in state.functions.get(rows).unwrap_or_default() {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row, listing.functions.len(), |ui, rows| {
+            for listed in listing.functions.get(rows).unwrap_or_default() {
                 let shown = state.function.as_ref() == Some(&listed.function);
                 // A function that is not drawn gives the number of errors of its file (architecture 11.5).
                 let text = if listed.drawable || listed.errors == 0 {
@@ -359,8 +370,8 @@ impl Viewer {
 
     /// The diagnostics: only the lines in sight are laid out.
     fn problems(&self, ui: &mut egui::Ui) {
-        let state = &self.shown.state;
-        ui.label(egui::RichText::new(format!("Problems: {} errors, {} warnings", state.errors, state.warnings)).strong());
+        let listing = &self.shown.listing;
+        ui.label(egui::RichText::new(format!("Problems: {} errors, {} warnings", listing.errors, listing.warnings)).strong());
         if self.shown.kept {
             ui.label("This function is not drawn now: its last drawing stays, with the diagnostics of its file.");
         }
@@ -382,11 +393,17 @@ impl Viewer {
         self.smoke = Some(match step {
             Smoke::Drawing { .. } if drawn && self.started == 1 => {
                 let groups = self.shown.drawing.as_ref().map_or(0, |drawing| drawing.groups.len());
+                let before = self.shown.drawing.clone();
                 let actions = self.supervisor.trap();
                 self.perform(actions);
-                Smoke::Trapped { since: now, first: format!("drew `{function}` ({groups} groups)") }
+                Smoke::Trapped { since: now, first: format!("drew `{function}` ({groups} groups)"), before }
             }
-            Smoke::Trapped { first, .. } if drawn && self.started == 2 => {
+            // The new worker drew anew: not the drawing that the page kept.
+            Smoke::Trapped { first, before, .. }
+                if drawn
+                    && self.started == 2
+                    && !before.as_ref().zip(self.shown.drawing.as_ref()).is_some_and(|(before, now)| Arc::ptr_eq(before, now)) =>
+            {
                 report(&format!("ok: {}; {first}; the worker trapped and restarted; drew `{function}` again", self.backend));
                 Smoke::Done
             }
@@ -497,27 +514,37 @@ impl Found {
     }
 }
 
-/// Reads the files of a folder, each by its path from the folder, as [`Walk`] decides, and opens them.
-async fn read_folder(name: String, found: Vec<(String, Found)>, inbox: Inbox) {
-    let mut walk = Walk::new();
+/// A folder as the browser listed it: its name, its files, each with its path from it, its folders, and why the listing
+/// stopped, if it did.
+struct Listed {
+    name: String,
+    files: Vec<(String, Found)>,
+    folders: Vec<String>,
+    stopped: Option<String>,
+}
+
+/// Reads the files of a folder that [`folder::plan`] keeps, and opens it.
+async fn read_folder(listed: Listed, inbox: Inbox) {
+    let paths: Vec<String> = listed.files.iter().map(|(path, _)| path.clone()).collect();
+    let plan = folder::plan(&paths, &listed.folders);
+    let mut found: Vec<Option<(String, Found)>> = listed.files.into_iter().map(Some).collect();
+    let mut budget = Budget::default();
     let mut files = Vec::new();
-    for (path, found) in found {
-        match walk.file(&path) {
-            None => break,
-            Some(Taken::Other | Taken::Left) => continue,
-            Some(Taken::Program) => {}
-        }
+    for index in plan.read {
+        let Some((path, found)) = found.get_mut(index).and_then(Option::take) else { continue };
         let file = match found.file().await {
             Ok(file) => file,
             Err(why) => return inbox.unreadable(&path, why),
         };
-        let Some(most) = walk.read(file.size() as u64) else { break };
+        let Some(most) = budget.take(file.size() as u64) else { break };
         match bytes_of(&file, most).await {
             Ok(bytes) => files.push(File { path, bytes }),
             Err(why) => return inbox.unreadable(&path, why),
         }
     }
-    inbox.push(Incoming::Folder(Folder { name, files }, walk.stopped().map(str::to_owned)));
+    let notice = [listed.stopped, budget.notice()].into_iter().flatten().collect::<Vec<_>>().join("; ");
+    let folder = Folder { name: listed.name, files, folders: plan.folders };
+    inbox.push(Incoming::Folder(folder, (!notice.is_empty()).then_some(notice)));
 }
 
 /// The dialog of the browser that chooses a folder: its files come with their paths, the name of the folder first.
@@ -530,18 +557,16 @@ fn pick_folder(inbox: &Inbox) {
     let chosen = input.clone();
     let to = inbox.clone();
     let on_change = Closure::once_into_js(move || match chosen.files() {
-        Some(files) => {
-            let (name, found) = chosen_files(&files);
-            spawn_local(read_folder(name, found, to));
-        }
+        Some(files) => spawn_local(read_folder(chosen_files(&files), to)),
         None => to.push(Incoming::Failed("no folder was chosen".to_owned())),
     });
     input.set_onchange(Some(on_change.unchecked_ref()));
     input.click();
 }
 
-/// The files of a folder chosen, each with its path from the folder, and the name of the folder.
-fn chosen_files(files: &FileList) -> (String, Vec<(String, Found)>) {
+/// The files of a folder chosen, each with its path from the folder, and the name of the folder: the dialog lists
+/// them all, and no empty folder.
+fn chosen_files(files: &FileList) -> Listed {
     let mut name = None;
     let mut found = Vec::new();
     for file in (0..files.length()).filter_map(|index| files.item(index)) {
@@ -554,7 +579,7 @@ fn chosen_files(files: &FileList) -> (String, Vec<(String, Found)>) {
         name.get_or_insert_with(|| root.to_owned());
         found.push((under.to_owned(), Found::File(file)));
     }
-    (name.unwrap_or_default(), found)
+    Listed { name: name.unwrap_or_default(), files: found, folders: Vec::new(), stopped: None }
 }
 
 /// What is dropped on the page: a folder, read as a folder chosen is; files and folders together, as the files of a
@@ -574,7 +599,7 @@ fn listen_to_drops(inbox: &Inbox) {
         let to = to.clone();
         spawn_local(async move {
             match dropped_files(roots).await {
-                Ok((name, found)) => read_folder(name, found, to).await,
+                Ok(listed) => read_folder(listed, to).await,
                 Err((path, why)) => to.unreadable(&path, why),
             }
         });
@@ -584,48 +609,53 @@ fn listen_to_drops(inbox: &Inbox) {
     on_drop.forget();
 }
 
-/// The files under what was dropped, each with its path from the folder, hidden and too deep folders left out, at most
-/// as many as a walk takes; and the name of the folder.
-async fn dropped_files(roots: Vec<FileSystemEntry>) -> Result<(String, Vec<(String, Found)>), (String, String)> {
-    let mut found = Vec::new();
-    let mut folders: Vec<(FileSystemDirectoryEntry, String)> = Vec::new();
-    let name = match roots.as_slice() {
+/// What was dropped, as a walk of the browser lists it: hidden folders left out, a folder deeper than a walk of `engine`
+/// goes listed without what it holds, and [`folder::MAX_LISTED`] files and folders at most.
+async fn dropped_files(roots: Vec<FileSystemEntry>) -> Result<Listed, (String, String)> {
+    let mut listed = Listed { name: "dropped".to_owned(), files: Vec::new(), folders: Vec::new(), stopped: None };
+    let mut pending: Vec<(FileSystemDirectoryEntry, String)> = Vec::new();
+    match roots.as_slice() {
         [only] if only.is_directory() => {
-            folders.push((only.clone().unchecked_into(), String::new()));
-            only.name()
+            pending.push((only.clone().unchecked_into(), String::new()));
+            listed.name = only.name();
         }
         _ => {
             for root in roots {
-                take(root, String::new(), &mut folders, &mut found);
+                take(root, "", &mut pending, &mut listed);
             }
-            "dropped".to_owned()
         }
-    };
-    while let Some((folder, prefix)) = folders.pop() {
+    }
+    while let Some((folder, prefix)) = pending.pop() {
         let reader = folder.create_reader();
         // A reader gives the entries of a folder in batches, until an empty one.
         loop {
             let batch = read_entries(&reader).await.map_err(|why| (prefix.clone(), why))?;
-            if batch.length() == 0 || found.len() > labcraft_engine::walk::BOUNDS.files {
+            if batch.length() == 0 {
                 break;
             }
             for value in batch.iter() {
-                take(value.unchecked_into(), prefix.clone(), &mut folders, &mut found);
+                if listed.files.len() + listed.folders.len() >= folder::MAX_LISTED {
+                    listed.stopped =
+                        Some(format!("the folder holds more than {} files and folders: the viewer reads no further", folder::MAX_LISTED));
+                    return Ok(listed);
+                }
+                take(value.unchecked_into(), &prefix, &mut pending, &mut listed);
             }
         }
     }
-    Ok((name, found))
+    Ok(listed)
 }
 
-/// An entry of a dropped folder: a file found, or a folder to walk when the walk enters it.
-fn take(entry: FileSystemEntry, prefix: String, folders: &mut Vec<(FileSystemDirectoryEntry, String)>, found: &mut Vec<(String, Found)>) {
+/// An entry of a dropped folder: a file, or a folder, walked when the walk enters it.
+fn take(entry: FileSystemEntry, prefix: &str, pending: &mut Vec<(FileSystemDirectoryEntry, String)>, listed: &mut Listed) {
     let path = format!("{prefix}{}", entry.name());
     if entry.is_directory() {
         if folder::enters(&path) {
-            folders.push((entry.unchecked_into(), format!("{path}/")));
+            pending.push((entry.unchecked_into(), format!("{path}/")));
         }
+        listed.folders.push(path);
     } else if entry.is_file() {
-        found.push((path, Found::Entry(entry.unchecked_into())));
+        listed.files.push((path, Found::Entry(entry.unchecked_into())));
     }
 }
 

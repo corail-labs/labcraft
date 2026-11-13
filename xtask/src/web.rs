@@ -16,6 +16,10 @@ pub const TRUNK: &str = "0.21.14";
 /// What the page must give, besides itself.
 const BUILT: [&str; 5] = ["index.html", "labcraft-web_bg.wasm", "labcraft-web.js", "labcraft-worker_bg.wasm", "labcraft-worker_loader.js"];
 
+/// The longest line of a request, and the most headers, that the server reads.
+const LINE: u64 = 8 * 1024;
+const HEADERS: usize = 64;
+
 /// How long the smoke test waits for the page to report.
 const PATIENCE: Duration = Duration::from_secs(180);
 
@@ -168,17 +172,26 @@ pub fn serve(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The file of the site that a path of a request names: only names of the site, no `..`, no drive or root (`C:`, `\\`),
+/// nothing that leaves `target/web`.
+fn site_file<'a>(site: &Path, path: &'a str) -> (&'a str, Option<PathBuf>) {
+    let name = if path == "/" { "index.html" } else { path.strip_prefix('/').unwrap_or(path) };
+    let plain = |part: &str| !part.is_empty() && part != "." && part != ".." && !part.contains([':', '\\']);
+    (name, name.split('/').all(plain).then(|| site.join(name)))
+}
+
 /// Answers one request: a file of the site, or the report of the page, which it returns.
 fn answer(stream: TcpStream, site: &Path, served: &mut usize) -> Option<String> {
     let _ = stream.set_nonblocking(false);
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+    // One request at a time: a client that says nothing holds the server for this long at most.
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let mut reader = BufReader::new(stream);
     let mut request = String::new();
-    reader.read_line(&mut request).ok()?;
+    (&mut reader).take(LINE).read_line(&mut request).ok()?;
     let mut length = 0usize;
-    loop {
+    for _ in 0..HEADERS {
         let mut header = String::new();
-        if reader.read_line(&mut header).ok()? == 0 || header.trim().is_empty() {
+        if (&mut reader).take(LINE).read_line(&mut header).ok()? == 0 || header.trim().is_empty() {
             break;
         }
         if let Some((name, value)) = header.split_once(':')
@@ -197,8 +210,7 @@ fn answer(stream: TcpStream, site: &Path, served: &mut usize) -> Option<String> 
         let _ = stream.write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
         return Some(String::from_utf8_lossy(&body).into_owned());
     }
-    let name = if path == "/" { "index.html" } else { path.trim_start_matches('/') };
-    let file = (!name.split('/').any(|part| part == ".." || part.is_empty())).then(|| site.join(name));
+    let (name, file) = site_file(site, path);
     match file.and_then(|file| std::fs::read(file).ok()) {
         Some(bytes) => {
             *served += 1;
@@ -216,4 +228,19 @@ fn answer(stream: TcpStream, site: &Path, served: &mut usize) -> Option<String> 
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_server_serves_only_the_files_of_the_site() {
+        let site = Path::new("site");
+        assert_eq!(site_file(site, "/"), ("index.html", Some(site.join("index.html"))));
+        assert_eq!(site_file(site, "/snippets/a/b.js").1, Some(site.join("snippets/a/b.js")));
+        for path in ["/../Cargo.toml", "/C:/Windows/win.ini", "/a/../../b", "//etc/passwd", "/a\\..\\b", "/./index.html"] {
+            assert_eq!(site_file(site, path).1, None, "{path}");
+        }
+    }
 }
