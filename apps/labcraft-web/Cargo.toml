@@ -46,6 +46,7 @@ web-sys = { workspace = true, features = [
     "FileSystemFileEntry",
     "HtmlCanvasElement",
     "HtmlElement",
+    "History",
     "HtmlInputElement",
     "Location",
     "MediaQueryList",

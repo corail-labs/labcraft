@@ -71,15 +71,9 @@ impl Host {
         session.skip_drawing(skipped.into_iter().collect());
         session.before_drawing(self.before_drawing);
         session.execute("view.set_standard_view", &json!({ "on": standard_everywhere }))?;
+        // The function shown before a restart, or that the address names, when the folder has it: the only one drawn.
+        session.open_on(show);
         let opened = session.execute("view.open", &json!({ "folder": "." }));
-        // The function shown before a restart, when the folder still has it.
-        if let Some(show) = show
-            && opened.is_ok()
-            && session.view().function.as_deref() != Some(show.as_str())
-            && session.view().functions.iter().any(|listed| listed.function == show)
-        {
-            let _ = session.execute("view.show_function", &json!({ "function": show }));
-        }
         self.session = Some(session);
         self.sent = None;
         self.listed = None;

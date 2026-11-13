@@ -166,9 +166,17 @@ impl Session {
         self.view.skipped = functions;
     }
 
+    /// The next `view.open` shows this function, when the folder has it, instead of its first one: the function that
+    /// the address of the web viewer names, or the one shown before a worker trapped (`docs/architecture.md`, 11.5).
+    /// The first function is then neither drawn nor opened; the `view.open` after it shows the first one again. Not a
+    /// command, as [`Session::skip_drawing`]: what the page shows is its own.
+    pub fn open_on(&mut self, function: Option<String>) {
+        self.view.open_on = function;
+    }
+
     /// Calls `hook` with the name of each function just before the viewer draws it: the worker of the web viewer tells
     /// its page, so that a trap while drawing is put down to that function, whichever command drew it (`view.open` draws
-    /// the first one). Not a command, as [`Session::skip_drawing`].
+    /// the first one, or that of [`Session::open_on`]). Not a command, as [`Session::skip_drawing`].
     pub fn before_drawing(&mut self, hook: Option<fn(&str)>) {
         self.view.before_drawing = hook;
     }

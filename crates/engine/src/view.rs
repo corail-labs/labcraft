@@ -132,6 +132,9 @@ pub struct View {
     pub(crate) stale: bool,
     /// The functions never drawn, whose drawing stopped a worker of the web viewer before (architecture 11.5).
     pub(crate) skipped: BTreeSet<String>,
+    /// The function that the next `view.open` shows instead of the first one, when the folder has it (architecture
+    /// 11.5).
+    pub(crate) open_on: Option<String>,
     /// Called with the name of each function just before it is drawn: the worker of the web viewer tells its page, so
     /// that a trap while drawing is put down to that function (architecture 11.5).
     pub(crate) before_drawing: Option<fn(&str)>,
@@ -173,8 +176,10 @@ pub fn open(session: &mut Session, params: &Params) -> Result<Value, CommandErro
     view.opened.clear();
     load(session);
     let view = &mut session.view;
-    // The first function, so that the window shows something.
-    if let Some(first) = view.published.functions.first().map(|listed| listed.function.clone()) {
+    // The function the app asked for, else the first one, so that the window shows something.
+    let functions = &view.published.functions;
+    let asked = view.open_on.take().filter(|asked| functions.iter().any(|listed| listed.function == *asked));
+    if let Some(first) = asked.or_else(|| functions.first().map(|listed| listed.function.clone())) {
         choose(view, &first);
     }
     draw(view, false);

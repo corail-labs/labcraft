@@ -653,6 +653,27 @@ fn a_function_skipped_is_shown_without_a_drawing() {
     assert!(session.view().drawing.is_some());
 }
 
+/// The function that the app asks for is the only one `view.open` draws and opens; one that the folder lacks gives way
+/// to the first.
+#[test]
+fn view_open_shows_the_function_asked_for_and_draws_no_other() {
+    for (asked, shown) in [(Some("double"), "double"), (Some("nowhere"), "b"), (None, "b")] {
+        let (mut session, counting) = session();
+        counting.memory.put("/p/b.lcf", MAIN.replace("double", "b"));
+        ANNOUNCED.with_borrow_mut(Vec::clear);
+        session.before_drawing(Some(|name| ANNOUNCED.with_borrow_mut(|announced| announced.push(name.to_owned()))));
+        session.open_on(asked.map(str::to_owned));
+        ok(&mut session, "view.open", json!({ "folder": "." }));
+        let view = session.view();
+        assert_eq!((view.function.as_deref(), view.opened.clone()), (Some(shown), vec![shown.to_owned()]), "{asked:?}");
+        assert_eq!(view.drawing.as_ref().map(|drawing| drawing.function.as_str()), Some(shown));
+        assert_eq!(ANNOUNCED.with_borrow(Clone::clone), [shown], "{asked:?}");
+        // Asked once: the next `view.open` shows the first function.
+        ok(&mut session, "view.open", json!({ "folder": "." }));
+        assert_eq!(session.view().function.as_deref(), Some("b"), "{asked:?}");
+    }
+}
+
 thread_local! {
     static ANNOUNCED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
 }
