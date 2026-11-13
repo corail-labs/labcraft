@@ -1,0 +1,3 @@
+labcraft 1
+
+type Reading = enum { Value(f64), Overload }

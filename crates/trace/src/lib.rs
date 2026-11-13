@@ -14,7 +14,7 @@
 )]
 #![forbid(unsafe_code)]
 
-mod json;
+pub mod json;
 pub mod number;
 mod read;
 mod stale;
@@ -22,6 +22,6 @@ pub mod value;
 mod write;
 
 pub use read::{ArmOf, Expected, ExpectedNode, ExpectedWire, HeaderProblem, Limit, ReadLimits, Reader, Stop, Trace, TraceHeader};
-pub use stale::{sha256_hex, stale};
+pub use stale::{sha256_hex, stale, stale_hashed};
 pub use value::{ErrorValue, Origin, Place, ValueWriter, WriteValue, Written, write_value};
 pub use write::{Caller, Event, Header, Input, SCHEMA, TraceWriter, WriteLimits};

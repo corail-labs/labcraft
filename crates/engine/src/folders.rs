@@ -152,7 +152,7 @@ pub fn check_folder_for_run(
     RunChecked { report, counts, checked, hashes }
 }
 
-fn hash_files(source: &LibrarySource, hashes: &mut Vec<(String, String)>) {
+pub(crate) fn hash_files(source: &LibrarySource, hashes: &mut Vec<(String, String)>) {
     let mut pending = vec![source];
     while let Some(library) = pending.pop() {
         for file in &library.files {

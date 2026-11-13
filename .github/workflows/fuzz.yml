@@ -60,8 +60,8 @@ jobs:
       # At most four at a time, the vCPUs of the runner, so that two targets never share one.
       - name: Fuzz the parser, the round trip of fmt, check and diagram
         run: bash fuzz/side_by_side.sh 60 read round_trip check diagram
-      - name: Fuzz the simulation files, runs and the MCP server
-        run: bash fuzz/side_by_side.sh 60 simulation run mcp
+      - name: Fuzz the simulation files, runs, the MCP server and the reader of a trace
+        run: bash fuzz/side_by_side.sh 60 simulation run mcp trace
       - name: Keep what crashed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

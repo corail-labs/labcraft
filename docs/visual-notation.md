@@ -702,13 +702,19 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   - **Neighbouring outputs.** The outputs of a node less than 20 apart have their bubbles side by side, from the
     bottom line up, each starting 4 units after the end of the one below.
   - **What it covers.** A bubble covers the wires and the wire names under it, never a node, a pill or another
-    bubble: it moves along the first horizontal segment of its wire to the first place where it covers none.
-    When there is none, no bubble is drawn and its value is read on hover; the SVG still holds it, in a
+    bubble: its start moves along the first horizontal segment of its wire, from the terminal, to the first place where
+    it covers none, and it may reach past the end of that segment, over the wire that turns there. A node is one of
+    its own body, a structure with its whole frame; the headers of structures and arms, the tabs, and the terminals of
+    frames with their names are never covered either, a text by what it shows, from the top of its capitals to the
+    bottom of its descenders. A bubble stays inside the frame of its body.
+    When there is no such place, no bubble is drawn and its value is read on hover; the SVG still holds it, in a
     `<g data-value>` with its `<title>` and no shape (cli.md 7.2).
-  - **The name of the wire** follows the bubble when the segment has room (section 4), and is otherwise in the
-    tooltip while the values are shown.
+  - **The name of the wire** follows the bubble when the segment has room (section 4): where the bubble covers it,
+    it is hidden under the fill of the frame and written again just after the bubble; it is otherwise in the tooltip
+    while the values are shown.
   - **Other starts.** An input of the function shows its value at its terminal on the edge of the frame, in place
-    of the pill of its default. A value that a register, a branch or a bus binds has its bubble where it starts
+    of the pill of its default, at least as wide as that pill, unless it would leave the frame or cover a node, its
+    value then read on hover; an input without a default, as any other start of a wire, above the wire that leaves it. A value that a register, a branch or a bus binds has its bubble where it starts
     inside the frame: the inner box of a register, the bound terminal of a branch, the top of a bus.
   - **Inputs.** Hovering or selecting a node also shows the values at its input terminals, to the left of each,
     side by side as those of outputs, each ending 4 units before the start of the one below; the values are
@@ -746,10 +752,16 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
 - **Where a value comes from**, in the frame of the function drawn (frame 0):
   - an input of the function: the `in` of the `call` event of frame 0;
   - a value that a node binds: the `out` of its `ran` event, under the name of the wire;
-  - a node that did not produce its results, because it was skipped (`skipped` event) or because its
+  - a node that did not produce its results, because it was skipped or because its
     own error output carries a new error: no value on the outputs that it fills with defaults, which
     would read like results (spec 7.2). The error it passes on shows, and so does a value that it
-    passes through unchanged (a session);
+    passes through unchanged (a session). A node was skipped when the trace says so (`skipped` event), and when it
+    is a call whose error input held an error, which the trace writes as `ran` for a function written in LabCraft,
+    the nodes of its body being skipped; never a node that runs `always`. A skipped node has its block veiled in
+    `node.fill` and hatched in `ink.muted`, lines at 45 degrees 6 units apart *(proposed)*. A node whose error output
+    carries a new error is outlined in `wire.error`, `marks.around` from its block, with a badge of the category above
+    its right end. A structure that ends on an error gives its last values, never defaults: a loop keeps the last
+    `next` of its carries (spec 6.3);
   - the current value of a carry (`v`): its initial value at the first iteration, then the `next v` of
     the iteration before;
   - the element of a `for x in` (`x`): the element of the array at that iteration, and no value when
@@ -761,7 +773,8 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   What a person reads counts iterations from 1, as the counter does: the selector (`‹ 6/6 ›` next to `× 6`)
   and the message of a fault (`LC8001`); the fields of JSON (`iter` of a trace, `status.loops.iteration`) count
   from 0, as indices. The bubbles inside show the chosen iteration, and stepping it forward or back shows the values
-  change. A loop that made no iteration shows `× 0` and no iteration selector. Each nested loop has
+  change. A loop that made no iteration shows `× 0` and no iteration selector; one that the run did not reach shows no
+  counter. Each nested loop has
   its own iteration selector: when an outer one moves, the inner ones go to the last iteration of
   their loop in that outer iteration. In a `for parallel`, the last iteration is the one with the
   highest index. Hovering a wire inside a loop shows its values over the iterations of its own loop,
@@ -771,19 +784,22 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   iterations (the `arm` event of the trace); without a trace, or when the branch of the trace no longer
   exists, the first (N-2). A tab that the developer picks then wins until an iteration selector moves
   or another trace arrives. A branch that the run did not take, in a tab or in the unfolded view, is
-  muted and carries no values.
+  muted, under a veil of the fill of its frame at 60 % *(proposed)*, and carries no values.
 - **A run that did not end well.** A wire with no value in the trace (a node that never ran, after a
   `fault`, an `aborted` run or a cut trace) shows nothing, and a banner gives the status that the `end` event gives ("aborted", "fault"), or says that the trace was cut, or that it has no end (the
   run did not finish writing it). With a cut trace, the last iteration shown is the last one traced,
   and the banner says so. The banner is 20 units high, above the drawing of the function and never over the
-  drawing; a trace that no longer matches (below) and did not end well has one banner, which names the files
-  first.
+  drawing, and its text is whole: the image is as wide as it needs; a trace that no longer matches (below) and did
+  not end well has one banner, which names the files first.
 - **A trace that no longer matches.** The first line of the trace gives the SHA-256 of every file the
   run read. The viewer compares only the files that it resolved itself to draw the function; one that
   has changed or is gone mutes every value (its bubble takes the fill of the canvas and a dashed outline, and its text
   `ink.muted`), and a
   banner names it, with the time when the trace was written (the time of its file): "`check_voltage.lcf` has changed since this run (14:02)", or "and 2
   other files" when there are more. Nothing is hidden, and nothing looks current that is not.
+- **Worked out within a bound.** A value that a node does not bind is worked out from those that it reads, in at
+  most 10,000 steps *(proposed)*: a carry that its loop passes on unchanged steps back once per iteration, and past
+  the bound shows no value.
 - **The trace is an input like a file.** Reading it is bounded and never crashes the viewer: a line
   that does not read ends the values there, as a cut trace would, and a first line that does not read
   gives a diagnostic and no values. Its limits are those of [cli.md](cli.md), section 7.4
@@ -993,5 +1009,11 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `marks.line_pitch` | 20 units | 10 to 80 | 4.2 | Between the lines of a function that is not drawn. |
 | `marks.around` | 3 units | 0 to 12 | 4.2 | Between a node marked and its mark. |
 | `marks.width` | 2 units | 0.5 to 8 | 4.2 | The stroke of a mark. |
+| `probe.height` | 16 units | 8 to 64 | 6.1 | A bubble of the value of a wire. |
+| `probe.above` | 4 units | 0 to 16 | 6.1 | Between a wire and the bubble of its value. |
+| `probe.radius` | 3 units | 0 to 16 | 6.1 | The corners of a bubble. |
+| `probe.apart` | 20 units | 0 to 80 | 6.1 | Outputs of a node nearer than this have their bubbles side by side. |
+| `probe.gap` | 4 units | 0 to 16 | 6.1 | Between two bubbles side by side, and before a value at an input. |
+| `probe.banner` | 20 units | 12 to 80 | 6.1 | The banner of a run that did not end well, or of a trace that no longer matches. |
 | `zoom.coarse` | 40 % | 10 to 100 | 7 | Below it, a node is a plain rectangle. |
 | `zoom.names` | 75 % | 10 to 200 | 7 | Below it, no name of a terminal. |

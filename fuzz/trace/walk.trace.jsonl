@@ -1,0 +1,9 @@
+{"schema":"labcraft-trace/1","run":"r1","function":"walk","mode":"deterministic","files":[{"file":"lib/walk.lcf","sha256":"7593281b2f76784627ad2226d0bf83edb38226ac1256217eafae4c88ccf2dd95"},{"file":"lib/Reading.lct","sha256":"d58db786f52fefdc2fb01bc10a3d563e36a2aae8a59c59f59988ca00515453cf"}]}
+{"seq":1,"t_ms":0.0,"event":"call","frame":0,"function":"walk","in":[{"name":"values","type":"[f64]","value":[1.0,2.0,4.0]},{"name":"start","type":"Reading","value":{"Reading.Value":[10.0]}}],"types":{"got":"f64","v":"f64","total":"f64","same":"f64","last":"i32","x":"f64","i":"i32","t":"f64","k":"f64","j":"i32","next.t":"f64"}}
+{"seq":2,"t_ms":0.0,"event":"arm","frame":0,"node":"got","arm":"Reading.Value(v)"}
+{"seq":3,"t_ms":0.0,"event":"ran","frame":0,"node":"got","out":{"got":10.0}}
+{"seq":4,"t_ms":0.0,"event":"ran","frame":0,"node":"@16","loops":["total"],"iter":[0],"out":{"next.t":1.0}}
+{"seq":5,"t_ms":0.0,"event":"ran","frame":0,"node":"@16","loops":["total"],"iter":[1],"out":{"next.t":3.0}}
+{"seq":6,"t_ms":0.0,"event":"ran","frame":0,"node":"@16","loops":["total"],"iter":[2],"out":{"next.t":7.0}}
+{"seq":7,"t_ms":0.0,"event":"ran","frame":0,"node":"total","out":{"total":7.0,"same":5.0,"last":2}}
+{"seq":8,"t_ms":0.0,"event":"end","status":"ok"}

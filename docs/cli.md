@@ -505,6 +505,10 @@ section 3), not a diagnostic.
 | `LC7003` | error | `FOLDER` holds no function to draw, only types | section 7.6 |
 | `LC7004` | error | An SVG cannot be written, with the message of the system; the other functions are still written | section 7.6 |
 | `LC7005` | warning | Two nodes that the `layout` section places, in one body, whose blocks overlap. Both stay where the file puts them. Going from the left, then from the top, each node that overlaps one met before it gets one warning, at its entry, naming the nearest above it of those. Touching edges are not an overlap. Judged in the view drawn (the export of `diagram`, or the view of the viewer), whose sizes it uses; a node is compared with the 64 placed nodes nearest above it at most *(proposed)*, so that thousands in one column stay linear | notation 2.1 |
+| `LC7101` | warning | The trace file does not exist or cannot be read, or its first line does not read, or names another schema or a later version: no values | section 7.4 |
+| `LC7102` | warning | The trace is that of another function: no values | section 7.3 |
+| `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit: the values up to there, as in a cut trace. Gives the line and the limit | section 7.4 |
+| `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored. Gives how many, and the line of the first | section 7.4 |
 
 ## 6. `run`
 
@@ -764,8 +768,8 @@ with `--json` or when stderr is not a terminal.
 
 ## 7. `diagram`
 
-*Status: implemented for milestone M0v (step 5 of [architecture.md](architecture.md), 11.7), except the values of a
-run: until they come (7.3, 7.4), `--trace` and `--max-trace-size` are wrong usage, and `LC71` is not given.*
+*Status: implemented for milestone M0v (steps 5 and 8 of [architecture.md](architecture.md), 11.7), the values of a
+run included (7.3, 7.4).*
 
 Draws the functions of a library as SVG, following the [visual notation](visual-notation.md): the
 drawing of the viewer's canvas, which paints only the shapes that the `diagram` crate computes, for tests
@@ -920,7 +924,12 @@ value.
 The trace is named on the command line, never taken from `.labcraft/runs/` on its own, so that a
 snapshot does not depend on the last run. A trace of another function gives `LC7102`, and the function
 is drawn without values. Whether the trace matches the files is judged as in the viewer, on the files
-that `diagram` resolved to draw the function.
+that `diagram` resolved to draw the function: the file of the function, and each file of `FOLDER` that the first line of
+the trace lists, each once. The report and the banner name them from `FOLDER`, so that the SVG does not depend on the
+current folder (7.2); the first line names them from where the run started, so a file of the trace is the one whose
+name ends with that of `FOLDER`, at a `/`. A function that is not drawn shows no values, and its trace is still read
+and judged. Through MCP, `diagram.svg` takes the same trace
+in its parameter `trace`, a file of the project, with exactly one function in `functions` (commands.md 6.5).
 
 ### 7.4 Reading a trace: limits (scenario 4)
 
@@ -977,7 +986,7 @@ An unknown `FUNCTION` has the line `not drawn powr: unknown function`, and an SV
 
 With `--trace`, a line before the summary says what was read: `trace: …/check_voltage.trace.jsonl, 41
 events, ok`: the status of its `end` event or `no end`, then `cut` when the run or a limit of
-  reading cut it, and the files that have changed since the run.
+reading cut it, and the files that have changed since the run (`changed since the run: check_voltage.lcf`).
 
 `--json` prints `labcraft-diagram/1`:
 

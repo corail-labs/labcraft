@@ -33,11 +33,11 @@ pub struct ExpectedNode {
 }
 
 /// An arm of a `match` or a `handle`: the node of the structure, by index in `nodes`, and the arm as the trace writes
-/// its pattern.
+/// its pattern. The text is shared: every node of an arm, at any depth, names it, and a pattern may be long.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ArmOf {
     pub node: u32,
-    pub arm: String,
+    pub arm: std::sync::Arc<str>,
 }
 
 /// A wire, by the name of its value, with its type as the trace writes it (`f64[V]`).
@@ -111,6 +111,8 @@ pub enum Limit {
     Kept,
 }
 
+/// Between the names of two loops, in the list that numbers the loops of a node: a name of the language never holds it.
+const LOOPS_APART: &str = "\u{0}";
 /// An iteration from 2^63 on fits nothing.
 const ITERATION_END: u64 = 1 << 63;
 /// What an entry of the index costs beyond its text and its iterations: its share of the nodes of the map, the box of
@@ -229,7 +231,9 @@ impl Trace {
     }
 }
 
-/// Reads a trace from its bytes, given in parts: [`Reader::feed`], then [`Reader::finish`].
+/// Reads a trace from its bytes, given in parts: [`Reader::feed`], then [`Reader::finish`]. A clone reads on from where
+/// it was, so that what each prefix of a file gives can be had without reading it again.
+#[derive(Clone)]
 pub struct Reader {
     expected: Expected,
     limits: ReadLimits,
@@ -238,15 +242,19 @@ pub struct Reader {
     node_names: Vec<u32>,
     /// The node of each name that one node alone has: checked against its arms at once.
     single: HashMap<u32, u32>,
-    /// The nodes of a shared name in no arm, by name and number of loops.
-    plain: HashMap<(u32, usize), Vec<u32>>,
+    /// The loops around each node, as the `loops` of an event names them (`docs/commands.md`, 8), each list as a number:
+    /// two nodes of one name in two loops that bind the same names are told apart by it.
+    loop_ids: HashMap<Box<str>, u32>,
+    node_loops: Vec<u32>,
+    /// The nodes of a shared name in no arm, by name and loops.
+    plain: HashMap<(u32, u32), Vec<u32>>,
     /// The nodes of a shared name whose innermost arm is this arm of this structure, two at most for each name and
     /// number of loops, since a third could only make it ambiguous again.
     inside: HashMap<(u32, Box<str>), Vec<u32>>,
-    /// The nodes whose arms the trace took, by name, the iteration of their innermost structure and their number of
-    /// loops: at most two each, since two already tell nothing apart. So a name is resolved in a few lookups, however
-    /// many nodes share it.
-    active: HashMap<(u32, Iter, usize), Vec<u32>>,
+    /// The nodes whose arms the trace took, by name, the iteration of their innermost structure and their loops: at most
+    /// two each, since two already tell nothing apart. So a name is resolved in a few lookups, however many nodes share
+    /// it.
+    active: HashMap<(u32, Iter, u32), Vec<u32>>,
     wires: Vec<HashMap<Box<str>, u32>>,
     inputs: HashMap<Box<str>, u32>,
     /// Every name of a wire: an entry of `types` for another name is not kept.
@@ -274,6 +282,7 @@ struct Fields<'a> {
     frame: Option<u64>,
     node: Option<std::borrow::Cow<'a, str>>,
     iter: Option<&'a str>,
+    loops: Option<&'a str>,
     out: Option<&'a str>,
     types: Option<&'a str>,
     inputs: Option<&'a str>,
@@ -287,7 +296,15 @@ impl Reader {
     pub fn new(expected: Expected, limits: ReadLimits) -> Self {
         let mut name_ids: HashMap<Box<str>, u32> = HashMap::new();
         let mut node_names = Vec::with_capacity(expected.nodes.len());
-        let mut plain: HashMap<(u32, usize), Vec<u32>> = HashMap::new();
+        let mut plain: HashMap<(u32, u32), Vec<u32>> = HashMap::new();
+        let mut loop_ids: HashMap<Box<str>, u32> = HashMap::new();
+        let mut node_loops = Vec::with_capacity(expected.nodes.len());
+        for node in &expected.nodes {
+            let names: Vec<&str> =
+                node.loops.iter().map(|looped| expected.nodes.get(*looped as usize).map_or("", |looped| looped.name.as_str())).collect();
+            let next = u32::try_from(loop_ids.len()).unwrap_or(u32::MAX);
+            node_loops.push(*loop_ids.entry(names.join(LOOPS_APART).into()).or_insert(next));
+        }
         let mut inside: HashMap<(u32, Box<str>), Vec<u32>> = HashMap::new();
         let mut wires = Vec::with_capacity(expected.nodes.len());
         let mut wire_names = HashSet::new();
@@ -309,7 +326,7 @@ impl Reader {
         }
         let mut single = HashMap::new();
         // How many nodes of a name and a number of loops each group holds already.
-        type Group<'a> = (Option<(u32, &'a str)>, u32, usize);
+        type Group<'a> = (Option<(u32, &'a str)>, u32, u32);
         let mut alike: HashMap<Group<'_>, u8> = HashMap::new();
         for (name, nodes) in &sharing {
             if let [node] = nodes.as_slice() {
@@ -318,14 +335,15 @@ impl Reader {
             }
             for &index in nodes {
                 let Some(node) = expected.nodes.get(index as usize) else { continue };
-                let innermost = node.arms.last().map(|arm| (arm.node, arm.arm.as_str()));
-                let count = alike.entry((innermost, *name, node.loops.len())).or_default();
+                let innermost = node.arms.last().map(|arm| (arm.node, &*arm.arm));
+                let loops = node_loops.get(index as usize).copied().unwrap_or(u32::MAX);
+                let count = alike.entry((innermost, *name, loops)).or_default();
                 if *count >= 2 {
                     continue;
                 }
                 *count += 1;
                 match innermost {
-                    None => plain.entry((*name, node.loops.len())).or_default().push(index),
+                    None => plain.entry((*name, loops)).or_default().push(index),
                     Some((structure, arm)) => inside.entry((structure, arm.into())).or_default().push(index),
                 }
             }
@@ -341,6 +359,8 @@ impl Reader {
             name_ids,
             node_names,
             single,
+            loop_ids,
+            node_loops,
             plain,
             inside,
             active: HashMap::new(),
@@ -510,6 +530,7 @@ impl Reader {
                 "arm" => set(&mut fields.arm, scanner.string()?)?,
                 "status" => set(&mut fields.status, scanner.string()?)?,
                 "iter" => set(&mut fields.iter, scanner.value()?)?,
+                "loops" => set(&mut fields.loops, scanner.value()?)?,
                 "out" => set(&mut fields.out, scanner.value()?)?,
                 "types" => set(&mut fields.types, scanner.value()?)?,
                 "in" => set(&mut fields.inputs, scanner.value()?)?,
@@ -677,29 +698,58 @@ impl Reader {
         Ok(fits.then_some(iter))
     }
 
-    /// The one node of this name whose loops have these iterations and whose arms were taken; `None` when there are
-    /// none or several. A node is in `active` once the `arm` of its innermost structure was taken, and that structure
-    /// was itself resolved so: so each of its arms was taken.
-    fn resolve(&self, name: &str, iter: &[u64]) -> Option<u32> {
+    /// The `loops` of an event, as the number of its list of names: `None` when no node has these loops.
+    fn read_loops(&self, text: Option<&str>) -> Result<Option<u32>, Bad> {
+        let Some(text) = text else { return Ok(self.loop_ids.get("").copied()) };
+        let mut scanner = Scanner::new(text, self.limits.nesting);
+        scanner.begin_array()?;
+        let mut first = true;
+        let mut names: Vec<std::borrow::Cow<'_, str>> = Vec::new();
+        let mut fits = true;
+        while scanner.element(&mut first)? {
+            let name = scanner.string()?;
+            if names.len() < self.deepest {
+                names.push(name);
+            } else {
+                fits = false;
+            }
+        }
+        scanner.end()?;
+        Ok(if fits { self.loop_ids.get(names.join(LOOPS_APART).as_str()).copied() } else { None })
+    }
+
+    /// The one node of this name in these loops whose loops have these iterations and whose arms were taken; `None` when
+    /// there are none or several. A node is in `active` once the `arm` of its innermost structure was taken, and that
+    /// structure was itself resolved so: so each of its arms was taken.
+    fn resolve(&self, name: &str, loops: u32, iter: &[u64]) -> Option<u32> {
+        let node = self.resolve_name(name, loops, iter)?;
+        let expected = self.expected.nodes.get(node as usize)?;
+        (expected.loops.len() == iter.len()).then_some(node)
+    }
+
+    fn resolve_name(&self, name: &str, loops: u32, iter: &[u64]) -> Option<u32> {
         let name = *self.name_ids.get(name)?;
         if let Some(&node) = self.single.get(&name) {
+            if self.node_loops.get(node as usize) != Some(&loops) {
+                return None;
+            }
             let expected = self.expected.nodes.get(node as usize)?;
             let taken = expected.arms.iter().all(|arm| {
                 let depth = self.expected.nodes.get(arm.node as usize).map_or(usize::MAX, |structure| structure.loops.len());
                 iter.get(..depth)
                     .and_then(|outer| self.trace.arms.get(&(arm.node, Iter::from(outer))))
-                    .is_some_and(|span| self.trace.text_of(*span) == arm.arm)
+                    .is_some_and(|span| self.trace.text_of(*span) == &*arm.arm)
             });
-            return (expected.loops.len() == iter.len() && taken).then_some(node);
+            return taken.then_some(node);
         }
         let mut found: Vec<u32> = Vec::new();
-        found.extend(self.plain.get(&(name, iter.len())).into_iter().flatten().take(2));
+        found.extend(self.plain.get(&(name, loops)).into_iter().flatten().take(2));
         for level in 0..=iter.len() {
             if found.len() > 1 {
                 return None;
             }
             let outer: Iter = iter.get(..level).unwrap_or_default().into();
-            found.extend(self.active.get(&(name, outer, iter.len())).into_iter().flatten().take(2));
+            found.extend(self.active.get(&(name, outer, loops)).into_iter().flatten().take(2));
         }
         match found.as_slice() {
             [node] => Some(*node),
@@ -711,8 +761,8 @@ impl Reader {
     fn activate(&mut self, structure: u32, arm: &str, iter: &[u64]) {
         let Some(nodes) = self.inside.get(&(structure, Box::from(arm))) else { return };
         for node in nodes {
-            let (Some(name), Some(expected)) = (self.node_names.get(*node as usize), self.expected.nodes.get(*node as usize)) else { continue };
-            let entry = self.active.entry((*name, Iter::from(iter), expected.loops.len())).or_default();
+            let (Some(name), Some(loops)) = (self.node_names.get(*node as usize), self.node_loops.get(*node as usize)) else { continue };
+            let entry = self.active.entry((*name, Iter::from(iter), *loops)).or_default();
             if entry.len() < 2 {
                 entry.push(*node);
                 self.kept = self.kept.saturating_add(iter.len() * 8 + ENTRY_COST);
@@ -749,8 +799,9 @@ impl Reader {
         if let Some(types) = fields.types {
             self.read_types(types, Some(&mut own))?;
         }
-        let node = match (&iter, self.frame0) {
-            (Some(iter), true) => self.resolve(name, iter),
+        let loops = self.read_loops(fields.loops)?;
+        let node = match (&iter, loops, self.frame0) {
+            (Some(iter), Some(loops), true) => self.resolve(name, loops, iter),
             _ => None,
         };
         let mut scanner = Scanner::new(out, self.limits.nesting);
@@ -815,8 +866,9 @@ impl Reader {
         let name = fields.node.as_deref().ok_or(Bad)?;
         let arm = fields.arm.as_deref().ok_or(Bad)?;
         let iter = self.read_iter(fields.iter)?;
-        let node = match (&iter, self.frame0) {
-            (Some(iter), true) => self.resolve(name, iter),
+        let loops = self.read_loops(fields.loops)?;
+        let node = match (&iter, loops, self.frame0) {
+            (Some(iter), Some(loops), true) => self.resolve(name, loops, iter),
             _ => None,
         };
         let (Some(node), Some(iter)) = (node, iter) else {

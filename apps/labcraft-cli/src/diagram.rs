@@ -8,8 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use labcraft_diagram::{DiagramLimits, Theme, svg};
-use labcraft_engine::drawings::{self, Drawn3, Entry, Function, Loaded};
+use labcraft_diagram::{DiagramLimits, Overlay, Theme, svg_with};
+use labcraft_engine::drawings::{self, Drawn3, Entry, Function, Loaded, TracePart};
 use labcraft_types::{CheckCounts, Code, Diagnostic, Report, cut_text};
 
 use crate::args::{self, DiagramOptions};
@@ -21,19 +21,28 @@ pub fn run(options: &DiagramOptions) -> ExitCode {
     let current = std::env::current_dir().ok();
     let shipped = crate::shipped();
     let Some(folder) = options.check.folders.first() else {
-        return answer(options, Report::new(options.check.limits.max_report), CheckCounts::default(), Vec::new());
+        return answer(options, Report::new(options.check.limits.max_report), CheckCounts::default(), Vec::new(), None);
     };
     let mut loaded = drawings::load(&Disk, &shipped, folder, &options.check.lib_paths, &options.check.limits, current.as_deref());
     let mut report = std::mem::replace(&mut loaded.report, Report::new(0));
     let Some(root) = loaded.root.clone() else {
         // The folder could not be read: the walk said why, and there is nothing to draw.
-        return answer(options, report, CheckCounts::default(), Vec::new());
+        return answer(options, report, CheckCounts::default(), Vec::new(), None);
     };
     // The functions asked for, or every one; an unknown name gets `LC7001`, with the nearest names. Two files can give
     // one name (`a.b.lcf` and `a/b.lcf`): both are drawn, each at its path.
     let (asked, mut entries) = drawings::asked(&options.functions, &loaded.functions, &root, &mut report);
     let drawn = drawings::drawings(&asked, &loaded, &DiagramLimits { max_nodes: options.max_nodes }, &mut report);
-    let written = write(&asked, drawn, options, current.as_deref(), &report);
+    // The values of a run, on the one function asked for (`docs/cli.md`, 7.3): read beside the drawing.
+    let (overlay, part) = match &options.trace {
+        Some(path) => {
+            let shown = shown_of(&Disk, path, fs::canonicalize(path).ok().as_deref(), current.as_deref());
+            let (overlay, part) = drawings::trace_over(&Disk, path, &shown, &asked, &drawn, &loaded, options.max_trace_size, &mut report);
+            (overlay, Some(part))
+        }
+        None => (None, None),
+    };
+    let written = write(&asked, drawn, options, current.as_deref(), &report, overlay.as_ref());
     for (entry, failure) in written {
         if let Some(failure) = failure {
             report.push(failure);
@@ -43,7 +52,21 @@ pub fn run(options: &DiagramOptions) -> ExitCode {
     report.finish();
     entries.sort_by(|a, b| a.function.cmp(&b.function));
     let Loaded { counts, .. } = loaded;
-    answer(options, report, counts, entries)
+    answer(options, report, counts, entries, part.as_ref())
+}
+
+/// The line of `--trace` in the human-readable report (`docs/cli.md`, 7.5): the file, the events, the status of its `end`
+/// or `no end`, `cut`, and the files that have changed since the run.
+fn trace_line(part: &TracePart) -> String {
+    let events = if part.events == 1 { "1 event".to_owned() } else { format!("{} events", part.events) };
+    let mut line = format!("trace: {}, {events}, {}", part.file, part.status.as_deref().unwrap_or("no end"));
+    if part.cut {
+        line.push_str(", cut");
+    }
+    if !part.stale.is_empty() {
+        line.push_str(&format!(", changed since the run: {}", part.stale.join(", ")));
+    }
+    line
 }
 
 /// Each SVG, with the marks or the lines of its first diagnostics, written to its path under `DIR` through a temporary
@@ -55,6 +78,7 @@ fn write(
     options: &DiagramOptions,
     current: Option<&Path>,
     report: &Report,
+    overlay: Option<&Overlay>,
 ) -> Vec<(Entry, Option<Diagnostic>)> {
     let theme = match options.theme {
         args::Theme::Both => Theme::Both,
@@ -81,8 +105,10 @@ fn write(
                     format!("cannot write this SVG: on this file system, it is `{before}`, written before it, whose path differs only in case");
                 return (entry, Some(Diagnostic::new(Code::Lc7004, message, function.shown.as_str())));
             }
-            let written =
-                path.parent().map_or(Ok(()), fs::create_dir_all).and_then(|()| craft_atomic::atomic_write(&path, svg(&picture, theme).as_bytes()));
+            let written = path
+                .parent()
+                .map_or(Ok(()), fs::create_dir_all)
+                .and_then(|()| craft_atomic::atomic_write(&path, svg_with(&picture, overlay, theme).as_bytes()));
             let shown = shown_of(&Disk, &path, fs::canonicalize(&path).ok().as_deref(), current.as_deref());
             match written {
                 Ok(()) => {
@@ -103,11 +129,11 @@ fn write(
 
 /// The report, then the exit code: 1 when a function is not drawn, a name is unknown, there is nothing to draw, or an
 /// SVG could not be written (`docs/cli.md`, 7.1).
-fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, entries: Vec<Entry>) -> ExitCode {
+fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, entries: Vec<Entry>, trace: Option<&TracePart>) -> ExitCode {
     report.finish();
     let failed = drawings::failed(&entries, &report, true);
     if options.check.json {
-        output::write_json(&drawings::document(&entries, &report, counts, failed));
+        output::write_json(&drawings::document(&entries, &report, counts, failed, trace));
     } else {
         let drawn = entries.iter().filter(|entry| entry.drawn).count();
         let not_drawn = entries.len() - drawn;
@@ -124,6 +150,9 @@ fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, ent
             let name = cut_text(&entry.function);
             let line = if entry.file.is_some() { format!("{state} {name}: {place}, {what}") } else { format!("{state} {name}: {what}") };
             labcraft_types::printed::push_line(&mut out, &line);
+        }
+        if let Some(part) = trace {
+            labcraft_types::printed::push_line(&mut out, &trace_line(part));
         }
         let _ = write!(
             out,
@@ -146,5 +175,5 @@ fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, ent
 pub fn internal_failure(options: &DiagramOptions, what: &str) -> ExitCode {
     let mut report = Report::new(options.check.limits.max_report);
     report.push(Diagnostic::new(Code::Lc0099, format!("the tool could not finish: {what}"), "labcraft-cli"));
-    answer(options, report, CheckCounts::default(), Vec::new())
+    answer(options, report, CheckCounts::default(), Vec::new(), None)
 }

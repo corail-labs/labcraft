@@ -76,6 +76,10 @@ pub struct Terminal {
     pub ty_text: String,
     /// The default of a parameter that no argument wires, as the text writes it, for its tooltip (notation 3.2).
     pub default: Option<String>,
+    /// The type of the value of an output as a trace writes it, when `check` converts it into what the line binds
+    /// (spec 3.3): the node gives the value before the conversion, as `ir` lowers it, and so does the trace
+    /// (`docs/commands.md`, 8).
+    pub traced: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -164,11 +168,14 @@ pub struct FrameTerminal {
     pub start: Option<String>,
     /// A range whose two bounds are wires: its box is two places high, a point for each, the start above (notation 5.1).
     pub two_points: bool,
+    /// What a value that an arm binds is, of the value of the selector (notation 6.1): the variant whose values it takes
+    /// and its place among them, or none for a wildcard, which binds the whole value.
+    pub bound: Option<(Option<String>, usize)>,
 }
 
 impl FrameTerminal {
     pub fn new(terminal: Terminal, edge: Edge) -> FrameTerminal {
-        FrameTerminal { terminal, edge, start: None, two_points: false }
+        FrameTerminal { terminal, edge, start: None, two_points: false, bound: None }
     }
 }
 
@@ -243,6 +250,9 @@ pub struct Node<'a> {
     pub standard: bool,
     pub inputs: Vec<Terminal>,
     pub outputs: Vec<Terminal>,
+    /// The name of each output as a trace writes it in `out` (`docs/commands.md`, 8): `m`, `next.s`; none for one that
+    /// the line binds to `_`.
+    pub values: Vec<Option<String>>,
 }
 
 /// A body: the function's, or one that a structure holds, with its frame and its wires.
@@ -254,6 +264,8 @@ pub struct BodyOf {
     /// The patterns of an arm as the text writes them (`State.Init`), for its `data-arm` (`docs/cli.md`, 7.2); empty
     /// otherwise.
     pub pattern: String,
+    /// The same as the `arm` event of a trace writes it (`docs/commands.md`, 8): `_` for a wildcard, never cut.
+    pub traced: String,
     /// The number of its arm, from 0.
     pub arm: Option<usize>,
     /// Indices in `Graph::nodes`, in canonical order.
@@ -409,6 +421,8 @@ pub struct Builder<'a> {
     /// Whether a construction whose fields are all constants is folded (notation 3.1): never in an exported image.
     fold: bool,
     callees: HashMap<CalleeKey, Rc<Callee<'a>>>,
+    /// The type before each conversion that `check` puts where a line binds a value (spec 3.3), by the target.
+    converted: HashMap<Id, TyId>,
 }
 
 impl<'a> Builder<'a> {
@@ -416,7 +430,8 @@ impl<'a> Builder<'a> {
         let declared = checked.libraries.get(file.library as usize);
         let own = declared.map_or("", |library| library.name.as_str());
         let own_id = declared.map(|library| library.id);
-        Builder { checked, file, names, own, own_id, fold: false, callees: HashMap::new() }
+        let converted = file.resolved.coercions().iter().map(|coercion| (coercion.at, coercion.from)).collect();
+        Builder { checked, file, names, own, own_id, fold: false, callees: HashMap::new(), converted }
     }
 
     /// Folds the constructions whose fields are all constants, as the viewer does by default (notation 3.1).
@@ -751,6 +766,17 @@ impl<'a> Builder<'a> {
             standard: false,
             inputs,
             outputs,
+            values: match &statement.kind {
+                StatementKind::Binding { targets, .. } => targets
+                    .iter()
+                    .map(|target| match target {
+                        Target::Name(_, name) => Some(self.names.resolve(*name).to_owned()),
+                        Target::Next(_, name) => Some(format!("next.{}", self.names.resolve(*name))),
+                        Target::Skip(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
         })
     }
 
@@ -764,12 +790,18 @@ impl<'a> Builder<'a> {
 
     /// The output of a line that makes one value.
     fn output_of(&self, targets: &[Target], index: usize, name: &str) -> Terminal {
-        let (ty, ignored) = match targets.get(index) {
-            Some(Target::Name(id, _) | Target::Next(id, _)) => (self.resolved().ty(*id), false),
-            Some(Target::Skip(id)) => (self.resolved().ty(*id), true),
-            None => (TyId::ERROR, false),
+        let (ty, ignored, id) = match targets.get(index) {
+            Some(Target::Name(id, _) | Target::Next(id, _)) => (self.resolved().ty(*id), false, Some(*id)),
+            Some(Target::Skip(id)) => (self.resolved().ty(*id), true, Some(*id)),
+            None => (TyId::ERROR, false, None),
         };
-        self.terminal(name.to_owned(), ty, None, ignored)
+        let mut terminal = self.terminal(name.to_owned(), ty, None, ignored);
+        if let (Some(id), Some(own)) = (id, self.own_id)
+            && let Some(&from) = self.converted.get(&id)
+        {
+            terminal.traced = Some(self.types().display(from, own, self.names));
+        }
+        terminal
     }
 
     fn terminal(&self, name: String, ty: TyId, constant: Option<String>, ignored: bool) -> Terminal {
@@ -784,6 +816,7 @@ impl<'a> Builder<'a> {
             pill: None,
             ty_text: self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names)),
             default: None,
+            traced: None,
         }
     }
 
