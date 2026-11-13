@@ -28,11 +28,13 @@ pub struct Viewport {
     pub fitted: bool,
     /// When the zoom last changed.
     pub changed: f64,
+    /// The host moved the zoom, as a gesture does: the next frame counts it as changed then.
+    pub zoom_moved: bool,
 }
 
 impl Default for Viewport {
     fn default() -> Self {
-        Viewport { zoom: 1.0, origin: Vec2::ZERO, fitted: false, changed: f64::NEG_INFINITY }
+        Viewport { zoom: 1.0, origin: Vec2::ZERO, fitted: false, changed: f64::NEG_INFINITY, zoom_moved: false }
     }
 }
 
@@ -50,6 +52,9 @@ impl Viewport {
         wheel_taken: bool,
     ) {
         let now = ctx.input(|input| input.time);
+        if std::mem::take(&mut self.zoom_moved) {
+            self.changed = now;
+        }
         if !self.fitted && rect.width() > 0.0 && rect.height() > 0.0 {
             let size = Vec2::new((drawing.width as f32 / 100.0).max(width), drawing.height as f32 / 100.0 + above);
             let zoom = (rect.width() / size.x.max(1.0)).min(rect.height() / size.y.max(1.0)).clamp(MIN_ZOOM, 1.0);

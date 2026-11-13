@@ -23,9 +23,11 @@ use craft_settings::{Location, Settings, SettingsStore};
 use craft_ui::fonts::{Family, I18nScripts, SystemFonts, UiFonts};
 use egui::{FontData, FontFamily};
 use labcraft::args::{self, Asked, Options};
+use labcraft::frames::{self, Frames};
 use std::sync::mpsc::Receiver;
 
 use labcraft::session::{CommandError, Handle, Published};
+use labcraft_diagram::style;
 use labcraft_editor::{Canvas, Shown, Theme};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -113,6 +115,116 @@ struct Viewer {
     fit_at: Option<u64>,
     /// The first drawing of a folder was fitted before its values came: fit it again with the room of their banner.
     fit_values: bool,
+    /// `LABCRAFT_FRAMES`: the time of each frame, and the motion it is measured over.
+    timing: Option<Timing>,
+}
+
+/// Where the motion of `LABCRAFT_FRAMES` is.
+#[derive(Clone, Copy, PartialEq)]
+enum Motion {
+    /// No drawing yet, or one too recent: when it is.
+    Waiting(Option<f64>),
+    /// Since when.
+    Running(f64),
+    /// The window moves by hand.
+    Done,
+}
+
+/// The time of the frames, and the motion it is measured over (`labcraft::frames`).
+struct Timing {
+    frames: Frames,
+    motion: Motion,
+    /// The canvas, at the frame before.
+    canvas: Option<egui::Rect>,
+    /// The centres of the nodes of a drawing, which the motion follows.
+    centres: Option<(Arc<labcraft_diagram::Drawing>, Vec<egui::Vec2>)>,
+    /// The move of the motion under way.
+    current: Option<(usize, &'static str)>,
+    /// The adapter of wgpu has been said on stderr.
+    adapter_said: bool,
+}
+
+impl Timing {
+    fn new() -> Timing {
+        let _ = writeln!(
+            std::io::stderr(),
+            "labcraft: {} is set: the window paints without pause and times each frame; a motion of {} s starts {} s after \
+             the first drawing, then move it by hand",
+            frames::VARIABLE,
+            frames::motion_seconds(),
+            frames::MOTION_DELAY
+        );
+        Timing { frames: Frames::new(), motion: Motion::Waiting(None), canvas: None, centres: None, current: None, adapter_said: false }
+    }
+
+    /// Moves the viewport of `canvas` as the motion says at `now`, and says on stderr how the motion went once it ends.
+    fn drive(&mut self, canvas: &mut Canvas, now: f64) {
+        let (Some(drawing), Some(rect)) = (canvas.drawing().cloned(), self.canvas) else { return };
+        let start = match self.motion {
+            Motion::Waiting(None) => {
+                self.motion = Motion::Waiting(Some(now));
+                return;
+            }
+            Motion::Waiting(Some(seen)) if now - seen < frames::MOTION_DELAY => return,
+            Motion::Waiting(Some(_)) => {
+                // What came before, the first drawing and its fit, is not counted.
+                self.frames.next_phase();
+                self.motion = Motion::Running(now);
+                now
+            }
+            Motion::Running(start) => start,
+            Motion::Done => return,
+        };
+        let size = egui::Vec2::new(drawing.width as f32, drawing.height as f32) / 100.0;
+        let coarse = style::scope(&drawing.style, || style::factor(style::coarse_zoom()));
+        let centres = match &self.centres {
+            Some((of, centres)) if Arc::ptr_eq(of, &drawing) => centres,
+            _ => &self.centres.insert((drawing.clone(), frames::centres(&drawing))).1,
+        };
+        // A line for each move, once it is over.
+        let current = frames::move_at(now - start);
+        if current.map(|(at, _)| at) != self.current.map(|(at, _)| at) {
+            let part = self.frames.next_part();
+            if let Some((_, what)) = self.current {
+                let _ = writeln!(std::io::stderr(), "labcraft:   {what}: {}", part.line());
+            }
+            self.current = current;
+        }
+        match frames::viewport_at(now - start, size, centres, rect.size(), coarse) {
+            Some((zoom, origin)) => canvas.move_viewport(zoom, origin),
+            None => {
+                self.motion = Motion::Done;
+                let stats = self.frames.next_phase();
+                let _ = writeln!(std::io::stderr(), "labcraft: the motion, {} nodes: {}", drawing.placed.len(), stats.line());
+            }
+        }
+    }
+
+    /// The last 2 seconds, in the top-right corner of the canvas.
+    fn corner(&self, ui: &egui::Ui, rect: egui::Rect, now: f64) {
+        let stats = self.frames.recent();
+        let phase = match self.motion {
+            Motion::Waiting(_) => "before the motion".to_owned(),
+            Motion::Running(start) => format!("motion, {:.0} of {} s", now - start, frames::motion_seconds()),
+            Motion::Done => "by hand".to_owned(),
+        };
+        let spread = |spread: &frames::Spread| format!("p50 {:5.1}  p95 {:5.1}  max {:5.1} ms", spread.p50, spread.p95, spread.max);
+        let text = format!(
+            "{:.1} frames/s, {}  ({phase})\nframe {}\ncpu   {}\nlate  {} of {}",
+            stats.per_second(),
+            if stats.holds_60() { "holds 60" } else { "below 60" },
+            spread(&stats.interval),
+            stats.cpu.as_ref().map_or("not given".to_owned(), spread),
+            stats.late,
+            stats.frames
+        );
+        let painter = ui.painter_at(rect);
+        let visuals = ui.visuals();
+        let galley = painter.layout_no_wrap(text, egui::FontId::monospace(12.0), visuals.strong_text_color());
+        let at = rect.right_top() + egui::Vec2::new(-galley.size().x - 14.0, 10.0);
+        painter.rect_filled(egui::Rect::from_min_size(at, galley.size()).expand(6.0), 4.0, visuals.extreme_bg_color);
+        painter.galley(at, galley, visuals.strong_text_color());
+    }
 }
 
 impl Viewer {
@@ -148,6 +260,7 @@ impl Viewer {
             opening: None,
             fit_at: None,
             fit_values: false,
+            timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
         };
         if let Some(folder) = options.folder {
             viewer.open(&folder);
@@ -266,6 +379,17 @@ impl Viewer {
 impl eframe::App for Viewer {
     #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let now = ui.ctx().input(|input| input.time);
+        if let Some(timing) = &mut self.timing {
+            timing.frames.tick(now, frame.info().cpu_usage);
+            ui.ctx().request_repaint();
+            // What the time is measured on.
+            if !std::mem::replace(&mut timing.adapter_said, true) {
+                let adapter = frame.wgpu_render_state().map(|state| state.adapter.get_info());
+                let said = adapter.map_or("no wgpu adapter".to_owned(), |info| format!("{} ({:?})", info.name, info.backend));
+                let _ = writeln!(std::io::stderr(), "labcraft: drawn by {said}");
+            }
+        }
         let published = self.session.published();
         if let Some(answer) = self.opening.as_ref().and_then(|opening| opening.try_recv().ok()) {
             self.opening = None;
@@ -322,7 +446,14 @@ impl eframe::App for Viewer {
                 return;
             }
             let shown = Shown { arms: self.published.view.arms.clone() };
+            if let Some(timing) = &mut self.timing {
+                timing.drive(&mut self.canvas, now);
+            }
             let response = self.canvas.show(ui, self.theme, &shown);
+            if let Some(timing) = &mut self.timing {
+                timing.canvas = Some(response.response.rect);
+                timing.corner(ui, response.response.rect, now);
+            }
             if let (Some((structure, arm)), Some(function)) = (response.tab, self.published.view.function.clone()) {
                 self.session.post("view.set_state", json!({ "function": function, "state": { "arms": { structure: arm } } }));
             }
@@ -336,6 +467,14 @@ impl eframe::App for Viewer {
     }
 
     fn on_exit(&mut self) {
+        if let Some(timing) = &self.timing {
+            let phase = match timing.motion {
+                Motion::Waiting(_) => "before the motion, the first drawing counted",
+                Motion::Running(_) => "the motion, cut by the window closed",
+                Motion::Done => "by hand",
+            };
+            let _ = writeln!(std::io::stderr(), "labcraft: {phase}: {}", timing.frames.phase().line());
+        }
         let _ = self.prefs.flush();
     }
 }

@@ -740,3 +740,44 @@ fn a_list_of_values_opens_on_the_iteration_shown() {
     assert!(painted.iter().any(|text| text.contains("901  v900")), "{painted:?}");
     assert!(!painted.iter().any(|text| text.contains("  1  v0")), "{painted:?}");
 }
+
+/// A zoom that the host moves counts as moving, as a gesture's (11.3): the frame asks for the one where it settles, and
+/// its texts are laid out again there. A zoom set, or a pan, does not.
+#[test]
+fn a_zoom_moved_by_the_host_settles_as_a_gesture() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawing(ARMS, &ViewState::default()), false);
+    let repaint_after = |time: f64, canvas: &mut Canvas| {
+        let output = ctx.run_ui(input(time), |ui| {
+            canvas.show(ui, Theme::Light, &Shown::default());
+        });
+        let delay = output.viewport_output.get(&egui::ViewportId::ROOT).map(|viewport| viewport.repaint_delay);
+        output.drop_without_applying_deltas();
+        delay
+    };
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    // The fonts, the first frames.
+    for time in [0.0, 0.1, 0.2] {
+        repaint_after(time, &mut canvas);
+    }
+    // The frame after a change, which may ask for one more at once.
+    let after = |time: f64, canvas: &mut Canvas| {
+        repaint_after(time, canvas);
+        repaint_after(time + 0.05, canvas).unwrap_or_default()
+    };
+    let never = std::time::Duration::from_secs(3600);
+    canvas.set_viewport(0.9, Vec2::ZERO);
+    let set = after(1.0, &mut canvas);
+    assert!(set > never, "{set:?}");
+    canvas.move_viewport(0.8, Vec2::new(10.0, 0.0));
+    let moved = after(2.0, &mut canvas);
+    assert!(moved > std::time::Duration::ZERO && moved <= std::time::Duration::from_millis(70), "{moved:?}");
+    // Settled, then panned only.
+    after(2.5, &mut canvas);
+    canvas.move_viewport(0.8, Vec2::new(20.0, 0.0));
+    let panned = after(3.0, &mut canvas);
+    assert!(panned > never, "{panned:?}");
+    assert_eq!(canvas.viewport(), (0.8, Vec2::new(20.0, 0.0)));
+}
