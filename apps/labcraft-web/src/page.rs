@@ -3,8 +3,9 @@
 //! [`Supervisor`] starts, feeds and restarts; the folders it bundles, or one dropped on the page or chosen, read once.
 //! There is no trace in the browser in M0 (scenario 6, point 7).
 //!
-//! `?smoke`: the page opens the examples, traps its worker once it drew, and says to the server that served it whether
-//! the worker came back and drew again (`cargo xtask web-smoke`).
+//! The address names the bundled folder and the function shown ([`link`](crate::link)), and the page writes it back as
+//! the developer moves. `?smoke`: the page opens the examples, traps its worker once it drew, and says to the server
+//! that served it whether the worker came back and drew again (`cargo xtask web-smoke`).
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -27,6 +28,7 @@ use web_sys::{
 
 use crate::BUNDLED;
 use crate::folder::{self, Budget};
+use crate::link::{self, Link};
 use crate::protocol::{File, Folder, Listing};
 use crate::supervisor::{Action, Shown, Supervisor};
 
@@ -42,6 +44,9 @@ const WORKER: &str = "./labcraft-worker_loader.js";
 const THEME_KEY: &str = "labcraft.viewer.theme";
 const STANDARD_KEY: &str = "labcraft.viewer.standard";
 
+/// Where the welcome line of the page leads.
+const REPOSITORY: &str = "https://github.com/corail-labs/labcraft";
+
 /// How long the smoke test waits for each step, in seconds.
 const SMOKE_PATIENCE: f64 = 90.0;
 
@@ -51,7 +56,7 @@ pub fn start() {
         let Some(document) = web_sys::window().and_then(|window| window.document()) else { return };
         let Some(canvas) = document.get_element_by_id("labcraft").and_then(|element| element.dyn_into::<HtmlCanvasElement>().ok()) else { return };
         let mut options = eframe::WebOptions::default();
-        if asked("webgl") {
+        if address().webgl {
             let mut setup = eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle();
             setup.instance_descriptor.backends = eframe::wgpu::Backends::GL;
             options.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::CreateNew(setup);
@@ -61,18 +66,22 @@ pub fn start() {
         let loading = document.get_element_by_id("loading");
         match (started, loading) {
             (Ok(()), Some(loading)) => loading.remove(),
+            // `index.html` says it in `#loading`, which stops waiting.
             (Err(error), Some(loading)) => {
-                loading.set_text_content(Some(&format!("LabCraft could not start: {}. It needs a browser with WebGPU or WebGL2.", js(error))));
+                let _ = loading.set_attribute("data-failed", "");
+                loading.set_text_content(Some(&format!(
+                    "LabCraft could not start: {}. It needs a browser with WebGPU or WebGL2. LabCraft on GitHub: {REPOSITORY}",
+                    js(error)
+                )));
             }
             _ => {}
         }
     });
 }
 
-/// Whether the address of the page has this parameter: `?webgl`, `?smoke`.
-fn asked(parameter: &str) -> bool {
-    let search = web_sys::window().and_then(|window| window.location().search().ok()).unwrap_or_default();
-    search.trim_start_matches('?').split('&').any(|part| part == parameter || part.starts_with(&format!("{parameter}=")))
+/// What the address of the page asks for.
+fn address() -> Link {
+    Link::parse(&web_sys::window().and_then(|window| window.location().search().ok()).unwrap_or_default())
 }
 
 /// An error of the browser, as text.
@@ -163,6 +172,8 @@ struct Viewer {
     reading: bool,
     /// Why the walk of the last folder read stopped, or why it could not be read.
     folder_notice: Option<String>,
+    /// The bundled folder open, which has an address; `None` for a folder of the developer's.
+    bundled: Option<&'static str>,
     backend: String,
     smoke: Option<Smoke>,
 }
@@ -198,20 +209,29 @@ impl Viewer {
             fit: false,
             reading: false,
             folder_notice: None,
+            bundled: None,
             backend,
-            smoke: asked("smoke").then_some(Smoke::Drawing { since: 0.0 }),
+            smoke: None,
         };
-        if let Some(examples) = BUNDLED.first() {
-            viewer.open(examples.folder(), None);
+        // The folder and the function of the address, else the examples on `check_voltage`.
+        let link = address();
+        viewer.smoke = link.smoke.then_some(Smoke::Drawing { since: 0.0 });
+        let names: Vec<&'static str> = BUNDLED.iter().map(|bundled| bundled.name).collect();
+        if let Some(opening) = link.resolve(&names)
+            && let Some(bundled) = BUNDLED.iter().find(|bundled| bundled.name == opening.folder)
+        {
+            viewer.open(bundled.folder(), Some(bundled.name), opening.notice, opening.function);
         }
         viewer
     }
 
-    fn open(&mut self, folder: Folder, notice: Option<String>) {
+    /// A folder of the developer's (`bundled`: `None`) or a bundled one, on `function` when it has it.
+    fn open(&mut self, folder: Folder, bundled: Option<&'static str>, notice: Option<String>, function: Option<String>) {
+        self.bundled = bundled;
         self.folder_notice = notice;
         self.reading = false;
         self.fit = true;
-        let actions = self.supervisor.open(folder);
+        let actions = self.supervisor.open(folder, function);
         self.perform(actions);
     }
 
@@ -269,6 +289,25 @@ impl Viewer {
             store(STANDARD_KEY, if standard { "true" } else { "false" });
             self.standard_stored = Some(standard);
         }
+        if !self.shown.busy {
+            self.write_address();
+        }
+    }
+
+    /// The address and the title of the page, as what is on screen: a link to it, for a bundled folder.
+    fn write_address(&self) {
+        let Some(window) = web_sys::window() else { return };
+        let function = self.shown.state.function.as_deref();
+        let search = Link::search(self.bundled, function, address().webgl);
+        if let (Ok(history), Ok(path)) = (window.history(), window.location().pathname()) {
+            // `?smoke` keeps its address: its server reads nothing else, but the address is not the page's to change.
+            if self.smoke.is_none() {
+                let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&format!("{path}{search}")));
+            }
+        }
+        if let Some(document) = window.document() {
+            document.set_title(&function.map_or_else(|| "LabCraft viewer".to_owned(), |function| format!("{function} · LabCraft viewer")));
+        }
     }
 
     /// What came since the last frame.
@@ -285,7 +324,7 @@ impl Viewer {
                     let actions = self.supervisor.trapped();
                     self.perform(actions);
                 }
-                Incoming::Folder(folder, notice) => self.open(folder, notice),
+                Incoming::Folder(folder, notice) => self.open(folder, None, notice, None),
                 Incoming::Failed(why) => {
                     self.reading = false;
                     self.folder_notice = Some(why);
@@ -295,17 +334,27 @@ impl Viewer {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
+        // What the page is, for whoever comes to it from a link.
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new("LabCraft").strong());
+            ui.label("A graphical dataflow language, in pure Rust. This viewer draws programs; the files you open stay in your browser.");
+            ui.add(egui::Hyperlink::from_label_and_url("Source on GitHub", REPOSITORY).open_in_new_tab(true));
+        });
+        ui.separator();
         ui.horizontal_wrapped(|ui| {
             if ui.button("Open a folder…").on_hover_text("Or drop a folder on the page").clicked() {
                 self.reading = true;
                 pick_folder(&self.inbox);
             }
             for bundled in BUNDLED {
-                if ui.button(bundled.name).on_hover_text("A folder bundled with the viewer").clicked() {
-                    self.open(bundled.folder(), None);
+                let open = self.bundled == Some(bundled.name);
+                if ui.selectable_label(open, bundled.name).on_hover_text("A folder bundled with the viewer").clicked() && !open {
+                    self.open(bundled.folder(), Some(bundled.name), None, link::default_function(bundled.name));
                 }
             }
-            ui.label(self.supervisor.folder_name().unwrap_or("no folder open"));
+            if let (None, Some(name)) = (self.bundled, self.supervisor.folder_name()) {
+                ui.selectable_label(true, name).on_hover_text("The folder you opened");
+            }
             ui.separator();
             let mut dark = self.theme == Theme::Dark;
             if ui.checkbox(&mut dark, "Dark").changed() {
@@ -420,11 +469,30 @@ impl eframe::App for Viewer {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_incoming();
         egui::Panel::top("labcraft-top").show(ui, |ui| self.top_bar(ui));
-        egui::Panel::bottom("labcraft-problems").resizable(true).default_size(160.0).show(ui, |ui| self.problems(ui));
+        egui::Panel::bottom("labcraft-problems").resizable(true).default_size(120.0).show(ui, |ui| self.problems(ui));
         egui::Panel::left("labcraft-functions").resizable(true).default_size(240.0).show(ui, |ui| self.functions(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             if self.shown.drawing.is_none() {
-                ui.centered_and_justified(|ui| ui.label("Open a folder, or drop one on the page, to see its functions."));
+                let text = match (self.supervisor.folder_name(), &self.shown.state.function) {
+                    _ if self.reading => "Reading the folder…".to_owned(),
+                    (Some(name), _) if self.shown.busy => format!("Opening `{name}`…"),
+                    // Not drawn: the diagnostics of its file, or the notice of a trap, say why.
+                    (Some(_), Some(function)) => format!("`{function}` is not drawn: the notices and Problems say why."),
+                    (Some(_), None) if !self.shown.notices.is_empty() => "The notices above say why nothing is drawn.".to_owned(),
+                    (Some(name), None) if self.shown.listing.functions.is_empty() => {
+                        format!("`{name}` has no function to draw. Open another folder, or drop one on the page.")
+                    }
+                    (Some(_), None) => "Choose a function on the left.".to_owned(),
+                    (None, _) => "Open a folder, or drop one on the page, to see its functions.".to_owned(),
+                };
+                let working = self.reading || self.shown.busy;
+                ui.vertical_centered(|ui| {
+                    ui.add_space((ui.available_height() / 2.0 - 24.0).max(0.0));
+                    if working {
+                        ui.spinner();
+                    }
+                    ui.label(text);
+                });
                 return;
             }
             let tabs = Tabs { arms: self.shown.state.arms.iter().cloned().collect() };

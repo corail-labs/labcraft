@@ -1450,11 +1450,13 @@ served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
 - **A worker says when it listens** (`Ready`), once its WASM is loaded: a message that comes before is lost, so the
   page sends nothing until then, and one message at a time. It names each function just before it draws it
   (`Drawing`), through `Session::before_drawing`, which `engine` calls before each drawing, whichever command draws
-  (`view.open` draws the first function): a trap after that name is put down to that drawing, any other to the folder.
-- **After a trap**, the new session opens the same files and shows the function shown before. A function whose
-  drawing trapped is never drawn by it: `Session::skip_drawing`. Neither is a command, as `files_changed` is not:
-  only the page knows what trapped. The state of the view that the file does not hold (the tab of a `match`) starts
-  again.
+  (`view.open` draws the first function, or that of `Session::open_on`): a trap after that name is put down to that
+  drawing, any other to the folder.
+- **After a trap**, the new session opens the same files and shows the function shown before: `Session::open_on`
+  makes `view.open` show it, when the folder has it, instead of drawing and opening the first function. A function
+  whose drawing trapped is never drawn by it: `Session::skip_drawing`. Neither is a command, as `files_changed` is
+  not: only the page knows what trapped and what it shows. The state of the view that the file does not hold (the
+  tab of a `match`) starts again.
 - **A folder dropped or chosen** (the dialog of the browser, which gives the path of each file) is not judged by the
   page: it gives the session the tree that a walk of `engine` sees, its folders and its program files, and that walk
   judges it with its bounds and its diagnostics (`LC0010`), as on the desktop; a test compares the two on a tree that
@@ -1475,6 +1477,19 @@ served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
   nothing.
 - **The preferences** (theme, standard view everywhere) are kept in the storage of the browser; the theme follows the
   system until it is chosen, and the glide follows `prefers-reduced-motion`.
+- **The address** (`link`, tested without a browser): `?folder=` names a bundled folder and `?fn=` its function;
+  without them, the page opens the examples, which open on `check_voltage` however they are opened, through
+  `Session::open_on`, so that no other function is drawn or opened. A folder that the viewer does not bundle opens
+  the examples, and a function that the folder lacks its first function; the page says so, the second until another
+  function is shown (`supervisor`). An address is anyone's to write: the page does not repeat a folder that it does
+  not bundle, and takes as a function only a name of letters, digits, `_` and `.`, of 128 bytes at most. As the
+  developer moves, the page writes the address of what is on screen, without a new entry in the history, and the name
+  of the function in the title: the address is always a link to it. A folder of the developer's has no address.
+  `?webgl` stays in it.
+- **Welcome and loading.** The top of the window says in one line what LabCraft is, that the files opened stay in the
+  browser, and links to the repository. While its WASM loads, the page says what it loads; when it cannot start (no
+  WebAssembly, a file that does not load, eframe that finds neither WebGPU nor WebGL2) it says why, in place of the
+  canvas. Until the first drawing, the canvas says that the folder opens.
 - **The smoke test**, `cargo xtask web-smoke`, serves `target/web` on the loopback and opens `?smoke` in headless
   Chrome, as a browser opens it, then `?smoke&webgl`: a runner has no GPU, so both draw with WebGL2 on SwiftShader,
   the first by falling back to it. The page opens the examples, traps its worker once it drew, and posts to the server

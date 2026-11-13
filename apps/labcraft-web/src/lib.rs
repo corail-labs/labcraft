@@ -3,7 +3,8 @@
 //!
 //! The library is what both ends need, and what is tested without a browser: what they say to each other
 //! ([`protocol`]), what the worker does ([`host`]), what the page knows of its worker and does when it traps
-//! ([`supervisor`]), the walk of a folder dropped on the page ([`folder`]), the folders it bundles. The page and the
+//! ([`supervisor`]), the walk of a folder dropped on the page ([`folder`]), its address ([`link`]), the folders it
+//! bundles. The page and the
 //! worker themselves, in the browser only, carry bytes and draw.
 #![deny(
     clippy::unwrap_used,
@@ -19,6 +20,7 @@
 
 pub mod folder;
 pub mod host;
+pub mod link;
 #[cfg(target_arch = "wasm32")]
 pub mod page;
 pub mod protocol;
@@ -88,5 +90,21 @@ mod tests {
             }
         }
         assert!(drawn > 15, "{drawn} functions");
+    }
+
+    /// The page opens without an address on a function that the bundled folders have.
+    #[test]
+    fn the_page_opens_on_a_bundled_function() {
+        use crate::link::{DEFAULT_FOLDER, DEFAULT_FUNCTION};
+        let bundled = BUNDLED.iter().find(|bundled| bundled.name == DEFAULT_FOLDER).unwrap();
+        let open = ToWorker::Open {
+            folder: std::sync::Arc::new(bundled.folder()),
+            standard_everywhere: false,
+            skipped: Vec::new(),
+            show: Some(DEFAULT_FUNCTION.to_owned()),
+        };
+        let answer = Host::new(None).handle(open);
+        assert_eq!(answer.state.function.as_deref(), Some(DEFAULT_FUNCTION));
+        assert_eq!(answer.drawing.map(|drawing| drawing.function.clone()).as_deref(), Some(DEFAULT_FUNCTION));
     }
 }

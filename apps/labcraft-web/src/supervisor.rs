@@ -3,7 +3,7 @@
 //! drawing, and what a trap leaves out. Plain Rust, tested natively: the page only starts workers and carries the bytes.
 //!
 //! - A trap after the worker named a function it was drawing: that function is not drawn again, and shows `LC0099` with
-//!   its last drawing, whichever command drew it (`view.open` draws the first function).
+//!   its last drawing, whichever command drew it (`view.open` draws the function asked for, else the first one).
 //! - Any other trap (reading or checking the folder): the worker restarts once for that set of files; a second trap
 //!   shows `LC0099` for the folder until the files change. A file that traps cannot restart the worker forever.
 
@@ -72,6 +72,10 @@ pub struct Supervisor {
     /// The last drawing of each function, which a function whose drawing trapped keeps.
     drawings: BTreeMap<String, Arc<Drawing>>,
     failure: Option<String>,
+    /// The function that [`Supervisor::open`] was asked to show, until the worker answers.
+    asked: Option<String>,
+    /// The function asked that the folder lacks, and the one shown instead.
+    missing: Option<(String, Option<String>)>,
 }
 
 /// What the window shows.
@@ -95,9 +99,12 @@ impl Supervisor {
 
     /// A folder read by the page: in a new worker, in place of the folder open; the traps of the files before are
     /// forgotten.
-    pub fn open(&mut self, folder: Folder) -> Vec<Action> {
+    /// It shows `function` when the folder has it (what the address of the page asks for), else its first function, and
+    /// then says that the folder has none of that name, until another function is shown.
+    pub fn open(&mut self, folder: Folder, function: Option<String>) -> Vec<Action> {
         let standard_everywhere = self.state.standard_everywhere;
-        *self = Supervisor { folder: Some(Arc::new(folder)), ..Supervisor::new(standard_everywhere) };
+        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function.clone(), ..Supervisor::new(standard_everywhere) };
+        Arc::make_mut(&mut self.state).function = function;
         self.pending.push_back(Request::Open);
         self.start()
     }
@@ -138,6 +145,18 @@ impl Supervisor {
                 }
                 if let (Some(drawing), Some(function)) = (answer.drawing, &answer.state.function) {
                     self.drawings.insert(function.clone(), drawing);
+                }
+                // The first answer, to the folder opened: when it opened it, the function asked is shown, or the folder
+                // lacks it.
+                if let Some(asked) = self.asked.take()
+                    && answer.result.is_ok()
+                    && answer.state.function.as_ref() != Some(&asked)
+                {
+                    self.missing = Some((asked, answer.state.function.clone()));
+                }
+                // Said until another function is shown.
+                if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.state.function) {
+                    self.missing = None;
                 }
                 self.state = Arc::new(answer.state);
             }
@@ -243,6 +262,11 @@ impl Supervisor {
             notices.push(format!(
                 "LC0099: drawing `{function}` stopped the viewer, which is a bug of LabCraft: it is not drawn again until the files change{kept}"
             ));
+        }
+        if let Some((asked, instead)) = &self.missing {
+            let folder = self.folder_name().unwrap_or_default();
+            let instead = instead.as_ref().map(|function| format!(": here is `{function}`")).unwrap_or_default();
+            notices.push(format!("`{folder}` has no function `{asked}`{instead}"));
         }
         if let Some(failure) = &self.failure {
             notices.push(failure.clone());
@@ -364,7 +388,7 @@ mod tests {
     fn a_folder_opens_and_draws_its_first_function() {
         poison(&[]);
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         let shown = supervisor.shown();
         assert_eq!(shown.state.function.as_deref(), Some("alpha"));
@@ -374,11 +398,62 @@ mod tests {
         assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"));
     }
 
+    /// The address of the page names a function: the folder opens on it, or on its first function when it has none
+    /// of that name, which the window says until another function is shown.
+    #[test]
+    fn a_folder_opens_on_the_function_asked_for_when_it_has_it() {
+        poison(&[]);
+        for (asked, shown) in [(Some("beta"), "beta"), (Some("gamma"), "alpha"), (None, "alpha")] {
+            let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+            let actions = supervisor.open(folder(), asked.map(str::to_owned));
+            // Nothing is drawn before the worker answers, whatever was asked, and nothing is said yet.
+            assert!(supervisor.shown().drawing.is_none() && supervisor.shown().busy && supervisor.shown().notices.is_empty());
+            drive(&mut supervisor, &mut worker, actions);
+            assert_eq!((shown_function(&supervisor).as_deref(), drawn_function(&supervisor).as_deref()), (Some(shown), Some(shown)), "{asked:?}");
+            let said: &[&str] = if asked == Some("gamma") { &["`bench` has no function `gamma`: here is `alpha`"] } else { &[] };
+            assert_eq!(supervisor.shown().notices, said, "{asked:?}");
+            let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
+            drive(&mut supervisor, &mut worker, actions);
+            assert!(supervisor.shown().notices.is_empty(), "{asked:?}: said until another function is shown");
+            let actions = supervisor.command("view.show_function", json!({ "function": "alpha" }));
+            drive(&mut supervisor, &mut worker, actions);
+            assert!(supervisor.shown().notices.is_empty(), "{asked:?}: and not again");
+        }
+    }
+
+    /// The function asked for traps as it is first drawn: it is shown with `LC0099` and no drawing, the folder is not
+    /// blamed, and nothing says that the folder lacks it.
+    #[test]
+    fn a_function_asked_for_that_traps_is_its_own_fault() {
+        poison(&["beta"]);
+        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+        let actions = supervisor.open(folder(), Some("beta".to_owned()));
+        drive(&mut supervisor, &mut worker, actions);
+        let shown = supervisor.shown();
+        assert_eq!((shown.state.function.as_deref(), shown.drawing.is_none(), worker.started), (Some("beta"), true, 2));
+        assert_eq!(shown.notices.len(), 1, "{:?}", shown.notices);
+        assert!(shown.notices.iter().all(|notice| notice.starts_with("LC0099: drawing `beta`")), "{:?}", shown.notices);
+    }
+
+    /// The function asked for is missing, and the first function, shown instead, traps: both are said.
+    #[test]
+    fn a_function_missing_and_the_first_that_traps_are_both_said() {
+        poison(&["alpha"]);
+        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+        let actions = supervisor.open(folder(), Some("gamma".to_owned()));
+        drive(&mut supervisor, &mut worker, actions);
+        let shown = supervisor.shown();
+        assert_eq!(shown.state.function.as_deref(), Some("alpha"));
+        assert_eq!(shown.notices.len(), 2, "{:?}", shown.notices);
+        assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: drawing `alpha`")), "{:?}", shown.notices);
+        assert!(shown.notices.iter().any(|notice| notice == "`bench` has no function `gamma`: here is `alpha`"), "{:?}", shown.notices);
+    }
+
     #[test]
     fn a_drawing_that_traps_keeps_its_last_drawing_and_is_not_drawn_again() {
         poison(&[]);
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
         drive(&mut supervisor, &mut worker, actions);
@@ -402,7 +477,7 @@ mod tests {
         assert_eq!((worker.started, drawn_function(&supervisor).as_deref()), (2, Some("beta")));
         // New files: forgotten.
         poison(&[]);
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
         drive(&mut supervisor, &mut worker, actions);
@@ -414,7 +489,7 @@ mod tests {
         poison(&["alpha"]);
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
         // `view.open` draws `alpha`, the first function, and traps: the new worker shows it without drawing it.
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         assert_eq!(worker.started, 2);
         let shown = supervisor.shown();
@@ -430,7 +505,7 @@ mod tests {
     fn a_folder_that_traps_twice_shows_lc0099_until_its_files_change() {
         poison(&[]);
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         // Two traps that no drawing explains.
         let actions = supervisor.trap();
@@ -444,7 +519,7 @@ mod tests {
         assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: reading this folder")), "{:?}", shown.notices);
         assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
         assert!(!shown.busy);
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         assert_eq!(worker.started, 3);
         assert!(supervisor.shown().notices.is_empty() && supervisor.shown().drawing.is_some());
@@ -454,7 +529,7 @@ mod tests {
     fn a_trap_restarts_the_worker_on_the_same_files_and_the_function_shown() {
         poison(&[]);
         let (mut supervisor, mut worker) = (Supervisor::new(true), Worker::default());
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
         drive(&mut supervisor, &mut worker, actions);
@@ -470,13 +545,13 @@ mod tests {
     #[test]
     fn a_worker_that_does_not_load_is_said_and_not_blamed_on_the_folder() {
         let mut supervisor = Supervisor::new(false);
-        assert_eq!(supervisor.open(folder()), [Action::Start]);
+        assert_eq!(supervisor.open(folder(), None), [Action::Start]);
         assert!(supervisor.trapped().is_empty(), "not started again");
         let shown = supervisor.shown();
         assert!(!shown.busy);
         assert_eq!(shown.notices, ["the worker of the viewer could not start: it stopped before it listened"]);
         assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
-        assert_eq!(supervisor.open(folder()), [Action::Start], "another folder tries again");
+        assert_eq!(supervisor.open(folder(), None), [Action::Start], "another folder tries again");
         assert!(supervisor.shown().notices.is_empty());
     }
 
@@ -484,7 +559,7 @@ mod tests {
     fn a_failure_is_said_until_a_command_succeeds() {
         poison(&[]);
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder());
+        let actions = supervisor.open(folder(), None);
         drive(&mut supervisor, &mut worker, actions);
         let actions = supervisor.command("view.show_function", json!({ "function": "nowhere" }));
         drive(&mut supervisor, &mut worker, actions);
@@ -498,7 +573,7 @@ mod tests {
     #[test]
     fn nothing_goes_to_a_worker_before_it_listens_and_one_message_at_a_time() {
         let mut supervisor = Supervisor::new(false);
-        assert_eq!(supervisor.open(folder()), [Action::Start]);
+        assert_eq!(supervisor.open(folder(), None), [Action::Start]);
         assert!(supervisor.shown().busy);
         assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
         let actions = supervisor.received(&encode(&FromWorker::Ready).unwrap());
