@@ -191,7 +191,7 @@ with a code of `visa`, which keeps its meaning forever as a code of the tool doe
 | `visa:S001` | error | A key that the format does not have; fix: the nearest key |
 | `visa:S002` | error | A value of the wrong TOML type (`latency_ms = "5"`, `accept = [5]`, `seed = 1.5`) |
 | `visa:S003` | error | An instrument without `resource`, a resource that does not start with `SIM::`, or a quantity with a noise and no `seed` |
-| `visa:S004` | error | A resource defined twice |
+| `visa:S004` | error | A resource defined again: once for each instrument whose `resource` is the same text as an earlier one's, case included (`SIM::dmm0` is another resource than `SIM::DMM0`), at its `resource`; the rest of that instrument is not judged |
 | `visa:S005` | error | A number out of its range (section 3): a time below 0 or above one day, a noise below 0, a value above 10^100 in size, `nan` or `inf` anywhere, a seed or an error code out of its range |
 | `visa:S006` | error | `measure` or `set` names a quantity the instrument does not have, or `set` names a quantity that has a `source` |
 | `visa:S007` | error | A `source` that names no quantity of the file, a chain of sources that loops, or a `source` with `value`, `initial`, `start_ms` or `settle_ms` |

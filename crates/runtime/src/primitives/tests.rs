@@ -648,6 +648,22 @@ fn numbers_read_from_texts() {
     for text in ["", "abc", "1e", "1e+", ".", "infinity", "0x10", "1_000", "1,5", "--1", "1.2.3", "e5"] {
         assert_eq!(real(text), None, "{text:?}");
     }
+    // Beyond the f64, a failure rather than an infinity; below it, zero with its sign (decision of the owner, 2026-11-13).
+    // Worked out by hand: f64::MAX is about 1.797e308, its smallest subnormal about 4.9e-324.
+    for text in ["1e999", "-1e999", "2e308", "+1.8e308"] {
+        assert_eq!(real(text), None, "{text:?}");
+    }
+    assert_eq!(real("1.7e308"), Some(1.7e308));
+    // The boundary is where the nearest f64 becomes infinite: halfway between f64::MAX (1.7976931348623157e308) and
+    // 2^1024, about 1.7976931348623158079e308. Below it the text rounds down to f64::MAX, above it fails.
+    assert_eq!(real("1.7976931348623158e308"), Some(f64::MAX));
+    assert_eq!(real("1.7976931348623159e308"), None);
+    assert_eq!(real("\u{1c}1"), None, "U+001C is not white space");
+    assert_eq!(real("1e-999").map(f64::to_bits), Some(0.0f64.to_bits()));
+    assert_eq!(real("-1e-999").map(f64::to_bits), Some((-0.0f64).to_bits()));
+    assert_eq!(real("\u{a0}\t2\r\n"), Some(2.0), "any Unicode white space around");
+    let (error, _) = read("1e999", "to_f64", f64_ty).fails(Strings, "to_f64");
+    assert_eq!((&*error.category, &*error.message), ("string.parse", "beyond an f64: \"1e999\""));
     let (error, _) = read("abc", "to_f64", f64_ty).fails(Strings, "to_f64");
     assert_eq!(&*error.category, "string.parse");
     assert_eq!(&*error.message, "not a number: \"abc\"");
@@ -667,7 +683,8 @@ fn numbers_read_from_texts() {
     assert_eq!(int(" -7 "), Some(-7));
     assert_eq!(int("+3"), Some(3));
     assert_eq!(int("-2147483648"), Some(i32::MIN));
-    for text in ["2147483648", "1.0", "", "+", "1e3", "0x1"] {
+    assert_eq!(int("\u{3000}5\u{85}"), Some(5), "any Unicode white space around, as for to_f64");
+    for text in ["2147483648", "1.0", "", "+", "1e3", "0x1", "\u{1c}12"] {
         assert_eq!(int(text), None, "{text:?}");
     }
 }

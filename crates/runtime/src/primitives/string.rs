@@ -116,11 +116,16 @@ fn is_real(text: &str) -> bool {
     mantissa_ok && exponent_ok
 }
 
-/// The nearest `f64` to the decimal text, as Rust and Python both read it; the spaces around it do not count.
+/// The nearest `f64` to the decimal text, ties to even, as Rust and Python both read it; the Unicode white space around it
+/// does not count (spec A.2). A finite text beyond the `f64` fails rather than give an infinity that would look measured;
+/// one too small gives zero with its sign (decision of the owner, 2026-11-13).
 pub fn to_f64(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
     let text = text_of(input(call, 0)?, "string.to_f64")?;
     let trimmed = text.trim();
     match is_real(trimmed).then(|| trimmed.parse::<f64>().ok()).flatten() {
+        Some(value) if value.is_infinite() && !trimmed.trim_start_matches(['+', '-']).eq_ignore_ascii_case("inf") => {
+            Ok(Outcome::Fail(host.error("string.parse", 0, format!("beyond an f64: {}", shown(text)))))
+        }
         Some(value) => Ok(Outcome::Done(vec![Value::F64(value), Value::NONE])),
         None => Ok(Outcome::Fail(host.error("string.parse", 0, format!("not a number: {}", shown(text))))),
     }

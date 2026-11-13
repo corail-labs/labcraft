@@ -572,9 +572,9 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 | `--timeout DURATION` | Aborts the run after `DURATION` on its clock: simulated in deterministic mode, real otherwise (spec 8.2, `abort.by` = `timeout`). A finite duration above 0, as for `--max-real-time` |
 | `--max-iterations N` | Iterations of each `loop`, counted again each time the loop starts. Default 10,000 in deterministic mode, none in real time *(proposed, scenario 4)*. A `for` ends with its array and does not count here, only in `--max-nodes`. Reached: fault `LC8001` |
 | `--max-nodes N` | Nodes run in all, a skipped node (spec 7.2) and the node of a call included. A node counts when it starts, or when it is skipped: N nodes run, and the fault is on the next one. Default 1,000,000 in deterministic mode, none in real time *(proposed)*. Reached: fault `LC8002` |
-| `--max-call-depth N` | Depth of calls, always limited. Default 1,024, at most 4,096 *(proposed)*: a stack is sized from it. Reached: fault `LC8003` |
+| `--max-call-depth N` | Depth of calls, always limited. The top-level function is depth 1, and each call of a function written in LabCraft adds one; a primitive or an `extern` function adds none. N allows N: the fault is at the node of the call that would go deeper, before the function it calls starts. Default 1,024, at most 4,096 *(proposed)*: a stack is sized from it. Reached: fault `LC8003` |
 | `--max-memory BYTES` | The logical size of the values the run holds at once, default 1 GiB, at least 1 MiB *(proposed)*. Reached: fault `LC8005`, at the node that would pass it, or at no node for a setting of `--set` that would pass it; a setting of `run.set_element` that would is refused instead, and the run goes on (commands.md 6.4) |
-| `--max-made BYTES` | The bytes of logical size of the values that the nodes make, in all: an output of a node that nothing held, a copy or a new text or array, but not one that the node changed in place or passed through, a part read out of a value (a field, `array.get`), nor a value without parts (a number, a `bool`). A new value counts its parts that nothing else holds; a part that another value holds counts only its place, 16 bytes, so that a struct built again to change one field does not count the array it shares. Whether a change copies depends on which read of a value comes last (D-11), so with `--schedule-seed` the node where the limit is reached can change; for one seed it is always the same. Default 1 GiB in deterministic mode, none in real time; `none` removes it *(proposed: about 1 s of copies of a large array on a runner of CI, where 2 GiB took up to 2.09 s; decisions of the owner, 2026-11-11)*. Reached: fault `LC8009`, at the node whose outputs pass it |
+| `--max-made BYTES` | The bytes of logical size of the values that the nodes make, in all: an output of a node that nothing held, a copy or a new text or array, but not one that the node changed in place or passed through, a part read out of a value (a field, `array.get`), nor a value without parts. A part of a value is an element of an array, a field of a struct or a value of a variant; only a text, `bytes`, an `error` other than `none`, an array, a struct or a variant is counted as made, never a number, a `bool`, a `duration`, a `timestamp`, a function reference or an opaque value. A new value counts its parts that nothing else holds; a part that another value holds counts only its place, 16 bytes, so that a struct built again to change one field does not count the array it shares. Whether a change copies depends on which read of a value comes last (D-11), so with `--schedule-seed` the node where the limit is reached can change; for one seed it is always the same. Default 1 GiB in deterministic mode, none in real time; `none` removes it *(proposed: about 1 s of copies of a large array on a runner of CI, where 2 GiB took up to 2.09 s; decisions of the owner, 2026-11-11)*. Reached: fault `LC8009`, at the node whose outputs pass it |
 | `--max-real-time DURATION` | Deterministic mode only: the real time the run may take, default 10 min *(proposed)*, since `--timeout` there counts simulated time, which a long computation does not advance. Reached: fault `LC8006`, at the node that was running. The only limit whose outcome depends on the speed of the machine, and the fault says so. With `--real-time`, `--timeout` counts real time already |
 | `--trace FILE` | Writes the trace to `FILE` instead of `.labcraft/runs/` (commands.md, section 8). A `FILE` that ends in `.lcf`, `.lct`, `.toml` or `.json`, in any case (`main.LCF`), or that exists and does not start with the first line of a trace, is wrong usage, so that a typo cannot replace a program or a file of arguments |
 | `--no-trace` | Writes no trace |
@@ -586,7 +586,7 @@ The `N` of the `--max-` options is an integer from 1 to 2^63−1, and `none` rem
 process: 16 bytes for each value, and inside it for each element of an array, each field of a struct and
 each value of a variant, so that an empty string or an empty array still costs something; plus the bytes
 of each number by its type (1 for a `bool`, 4 for an `f32`, 8 for an `f64`, an `i64` or a `duration`,
-twice that for a complex number, 16 for a `timestamp`, 8 for a function reference and for an opaque value), and the
+twice that for a complex number, 16 for a `timestamp`, 8 for a function reference and for an opaque value, 4 for which variant a variant is), and the
 bytes of a `string` in UTF-8 and of `bytes`. An `error` counts its fields as a struct does. So `array.repeat("", 2147483647)` counts 32 GiB,
 and the limit stops it. A value counts once while some wire holds it, however many share it (D-11), and a
 value given to a panel element by `--set` or `run.set_element` counts until the run ends, since `panel` of the
@@ -597,7 +597,8 @@ millions of elements reaches the limit as a fault rather than the memory of the 
 
 **The clock of a run** counts whole nanoseconds from 0, and ends at 2^62 ns, about 146 years *(proposed)*: a wait or
 a timeout that would take it further ends the run with the fault `LC8007`, in deterministic mode and in real
-time, rather than wrapping around.
+time, rather than wrapping around. The fault comes when the wait starts, at its node, and the clock stays where it was;
+a `--timeout` of the run past that end is the fault at the start, at no node.
 
 **At one time on the clock**, a run does in this order: the `--set` settings of that time, then the
 timeout if it is reached, which aborts before the nodes ready at that time run, then those nodes, which
@@ -731,8 +732,8 @@ ships its own format, and the tool does not read it.
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |
 | `LC8103` | error | An input with no default has no `--arg` |
-| `LC8104` | error | A value does not read as its type, or as JSON where JSON is needed, or nests too deep; an `--args` file that is not a JSON object, or that gives a key twice |
-| `LC8105` | error | A value has no unit, or a unit of another dimension, for a type with a unit or a `duration` |
+| `LC8104` | error | A value does not read as its type (for a number with a unit or a `duration`, a JSON value that is neither a number nor a string: `true`, `null`), or as JSON where JSON is needed, or nests too deep; an `--args` file that is not a JSON object, or that gives a key twice |
+| `LC8105` | error | A value has no unit (a JSON number, or a text without one), or a unit of another dimension, for a type with a unit or a `duration` |
 | `LC8106` | error | A value is out of the range of its type (`300` for a `u8`, `1e999`), or an integer is not exact |
 | `LC8107` | error | An input whose type holds an opaque type or a function reference, which an argument cannot give; it replaces `LC8103` for such an input |
 | `LC8108` | error | A `--set` names no panel element of the function, an element that is an input or an output, or one whose type is not settled, or sets a `button` to `false` |

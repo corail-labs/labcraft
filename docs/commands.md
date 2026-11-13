@@ -139,14 +139,16 @@ A run can last for days on a bench, or a few milliseconds of real time in determ
 the task model of SolidCraft (`render.start`, `render.status`, `render.cancel`), with one change for
 agents: **`run.start` waits**. It returns the report of the run if the run ends within `wait` (30 s by
 default, at most 300 s *proposed*), which is what nearly every deterministic run does, so that one call
-runs a program and reads its result. Otherwise it returns
+runs a program and reads its result. Otherwise it returns, here for a run of `two_benches` whose `count` and
+`period` keep it going past the wait,
 
 ```json
 {
   "schema": "labcraft-run/1", "status": "running", "run": "r3", "function": "two_benches",
   "mode": "real_time", "outputs": [], "clock": { "real_ms": 30000 },
   "resources": { "opened": 2, "open": [], "leaked": [] },
-  "loops": [ { "function": "two_benches", "node": "mean_a", "iteration": 4 } ],
+  "loops": [ { "function": "two_benches", "node": "n_a", "iteration": 4 },
+             { "function": "two_benches", "node": "n_b", "iteration": 4 } ],
   "check": {
     "summary": { "libraries": 1, "functions": 2, "types": 0, "errors": 0, "warnings": 0, "truncated": false },
     "diagnostics": []
@@ -186,7 +188,7 @@ example, the same through `--json` and MCP (decision of the owner, 2026-11-11):
 | `bool` | a boolean | `true` |
 | integers | a number, exact; an `i64` or `u64` beyond ±(2^53−1) as a string of digits | `12`, `"9007199254740993"` |
 | `f32`, `f64` without a unit | a number: the fewest digits that read back the same, in decimal notation from 10^-5 up to below 10^16 and with an exponent outside, written as the language writes it (`1.5e-7`, `1e16`); between two texts as short and as near, the one whose last digit is even, as Python writes them (`1658206780088562.2`); a float with no fraction keeps `.0`, so that it is not taken for an integer; `"nan"`, `"inf"`, `"-inf"` | `0.5`, `12.0`, `0.0015` |
-| a number with a unit | a string, as the language writes a constant, in the unit of the type: the number as above, a space, the unit | `"230.03 V"`, `"-0.0015 A"`, `"-3 mV"` |
+| a number with a unit | a string, as the language writes a constant, in the unit of the type: the number as above, a space, the unit | `"230.03 V"`, `"-0.0015 A"`, `"-3.0 mV"` (an `f64[mV]`; the same value in an `f64[V]` is `"-0.003 V"`) |
 | `duration` | a string, written in seconds, exactly from its nanoseconds; read in any unit of time | `"0.1 s"`, `"2 s"`; `"100 ms"` as an argument |
 | `c64`, `c128` | `{ "re": …, "im": … }`, each as above | `{ "re": "1.0 V", "im": "0.0 V" }` |
 | `string` | a string | `"MEAS:VOLT:DC?"` |
@@ -208,6 +210,13 @@ example, the same through `--json` and MCP (decision of the owner, 2026-11-11):
 }
 ```
 
+`origin` is the node that made the error, always in a function written in LabCraft: the call of the primitive or of
+the library function that failed (`text`, the `visa.query` inside `scpi.query_f64`, not `visa.query` itself). It gives
+its `function`, its `node`, named as in section 8, its `file`, a path as reports write it (`<labcraft>/…` for a shipped
+library), and the `line` where its statement starts. `callers` are the nodes of the calls that led there, innermost
+first, up to the top-level function, each the same way, and `[]` for an error made in the top-level function; they are
+cut as any list (section 2).
+
 `others` is flat: the errors that `errors.merge` gathered, each without its own `others`, however they
 were merged, at most 32 *(proposed)*, then `others_more` gives how many are left out.
 
@@ -221,7 +230,8 @@ were merged, at most 32 *(proposed)*, then `others_more` gives how many are left
   `"30 s"`, `"500 ms"`.
 - **Order.** Objects and lists keep the order of the program: inputs and outputs in the order of the
   signature, the values of a node in the order of its outputs, the types of a frame in the order of the
-  lines, resources in the order they were opened, loops outermost first. Resources are in code point order
+  lines, resources in the order they were opened, loops in the global order of spec 8, whatever
+  `schedule_seed`, so that each loop comes before the loops inside it. Resources are in code point order
   of their names (section 7). So two runs of one program write the same text, apart from the clock of real
   time.
 - **A value too large for a report** is cut in the report, never in the program *(proposed figures)*:
@@ -403,12 +413,12 @@ prints. One example, then the fields.
 | `status` | yes | `ok`, `error`, `aborted`, `fault` (spec 8.2); `running` while it goes on (section 4); `refused` when `check` found an error in what the run can reach (or, under `deny_warnings`, a warning in a file of the folder that the run can reach), or the function is unknown, or an argument, a setting or the simulation file was refused, and nothing ran (cli.md, section 6.1). `labcraft-cli run` exits with 1 on `refused`, as `check` does on an error |
 | `outputs` | yes | The outputs of the function, in the order of its signature, each with its type and its value (section 5); `[]` when it did not finish (`aborted`, `fault`, `refused`). Those that the bound of a result leaves no room for, even with their value cut, are counted in `outputs_more` (section 2) |
 | `error` | no | When `status` is `error`: the error on the `err` output, as in section 5, repeated here so that it is found without looking for the output |
-| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `function`, `node` (`null` for a fault at no node), `file`, `span`, `loops`, the loops around it as below, at most 1,000 *(proposed)*, then `loops_more`, and for `LC8001` `iteration`, that of the loop itself which would pass the limit, from 0 |
+| `fault` | no | When `status` is `fault`: `code` (an `LC` code, family `LC80`, cli.md, section 6.6), `message`, `function`, `node` (`null` for a fault at no node), `file`, `span` (that of the statement of the node, from its start to its end, a loop or an arm with its body; `null` with `node`), `loops`, the loops around it as below, at most 1,000 *(proposed)*, then `loops_more`, and for `LC8001` `iteration`, that of the loop itself which would pass the limit, from 0 |
 | `abort` | no | When `status` is `aborted`: `by` (`request`, `timeout`, `interrupt`), `at_ms` on the clock of the run, `loops` (as below, when the abort came), and `warning`: the instruments are in an unknown state. When a native call was in progress, the run ends after `at_ms`: when that call ends, or when the grace period ends if it is abandoned (spec 8.2); `clock` says when |
-| `loops` | no | When `status` is `running`: each loop going, outermost first, with its `function`, its `node` (section 8) and its `iteration`, from 0 |
+| `loops` | no | When `status` is `running`: each loop going, in the global order of spec 8, each loop before the loops inside it, with its `function`, its `node` (section 8) and its `iteration`, from 0 |
 | `clock` | yes | `simulated_ms` in deterministic mode; `real_ms` always. In real time, the times of the report and of the trace (`at_ms`, `t_ms`) are on the real clock, from the start of the run |
 | `resources` | yes | The resources the run opened (spec 8.1: a session of `visa`, or any opaque type a library declares as one). `opened`: how many; `open`: those still open at its end, each with its `type` (`visa.session`), what it designates (`resource`: `SIM::DMM0`) and where it was opened (`function`, `node`, `file`, `span`), which scenario 1 wants empty; `leaked`: those an abort could not release (spec 8.2), the same way. At most 1,000 of each *(proposed)*, then `"truncated": true` |
-| `instruments` | no | With a simulation: per resource, in code point order of the resource names so that two seeds give the same list, the commands it received in order, dated, with their answers, each text cut as a string is (section 5). At most 64 resources and 1,000 commands per resource in the report *(proposed)*: past them, a resource says `"truncated": true` and how many commands it leaves out in `more`, and `instruments_more` after the list how many resources; the bound of a result (section 2) can shorten it further |
+| `instruments` | no | With a simulation: per resource that received a command, in code point order of the resource names so that two seeds give the same list, the commands it received in order, each text cut as a string is (section 5). Each command gives `t_ms`, when the instrument handled it, after its latency; `sent`, the command as the instrument read it (simulation.md, section 4); and `answer`, its answer, or `null` for a command that has none: a write, or a query never answered (a timeout, an unknown query). A resource that received no command is not listed; when none did, or the run has no simulation, the field is absent. At most 64 resources and 1,000 commands per resource in the report *(proposed)*: past them, a resource says `"truncated": true` and how many commands it leaves out in `more`, and `instruments_more` after the list how many resources; the bound of a result (section 2) can shorten it further |
 | `logs` | no | What libraries kept of the values a run gave them, such as `results_log.append_csv` (spec A.4), which writes no file in M0: `{ "entries": [ … ], "truncated": false }`, one entry per call, in the order of the calls, `{ "library": "results_log", "function": "append_csv", "t_ms": 0.0, "type": "[results_log.StepResult]", "value": … }`, the value as in section 5, with the type of the input of the signature it was given on. At most 1,000 entries for each library *(proposed)*, and what the libraries of a run keep for its report, the commands of `instruments` included, within 16 MiB *(proposed)*, or `--max-memory` when lower, a value counting its logical size (cli.md 6.2): the entries after them are counted, not kept, and `truncated` is then `true`, with their number in `more`, so that the log of each library, as the commands of each instrument, is the start of what it was given, and what they keep stays within that bound. Entries of two libraries come in the order of `t_ms`, then of the libraries. The bound of a result (section 2) can shorten it further |
 | `panel` | no | Each setting of `set` or `run.set_element`, in the order applied: `element`, `value`, `at_ms` on the clock of the run when it applied (in real time, a setting of `set` can apply a little after the time it was given for; decision of the owner, 2026-11-11), `by` (`set`, `run.set_element`), and `applied` (`false` for a setting after the end of the run); then those that never applied, a setting of `run.set_element` given as the run ended with `at_ms: null` |
 | `check` | yes | The `check` made before the run: its `summary`, which counts everything found in the folder, and its `diagnostics`, the fields of `labcraft-check/1` (cli.md, section 4.2): those of what the run can reach, and the errors found elsewhere in the folder, which do not refuse the run but are listed, so that the counts and the list agree |
@@ -464,7 +474,9 @@ The example leaves lines out, and files from the first line.
   `ran` of the calling node); `arm` (a `match` or `handle` took `arm`, written as its pattern); `set` (a
   panel element changed by `ui.set`, `set` or `run.set_element`: `element`, `value`, `by`); `truncated`;
   `end` (the last line, with the status; absent if the process died).
-- **`t_ms`** is the clock of the run when the event happened: simulated in deterministic mode.
+- **`t_ms`** is the clock of the run when the event happened: simulated in deterministic mode. Events come in
+  the order the run made them: among the nodes ready at one time, the global order of spec 8, or the order drawn from
+  `schedule_seed`.
 - **Bounded** *(proposed figures)*. Values are cut as in section 5. A whole line stays within 16 MiB, its
   `types` and the `files` of the first line included: past it, the values of the line that are left show as
   `{ "$cut": true }`, then the entries of `types` and `files` that are left are dropped and the line says

@@ -1967,8 +1967,10 @@ lengths equal, and nothing converts between the arrays of `array.concat` (3.4). 
 what its line binds (3.5) or a type argument. `string.split` gives the parts between each separator, empty ones included (`"a,,b"` at `","` is `["a", "", "b"]`);
 an empty separator splits nothing, which is a fault (8.2). `time.wait` of a negative duration waits nothing. `array.sum`
 adds from the first item to the last. `string.to_f64` and
-`string.to_i32` fail with `string.parse`. Both ignore the spaces around the text: `to_f64` reads an
-optional sign, digits with decimals, an exponent, or `nan` and `inf` in any case; `to_i32` reads an
+`string.to_i32` fail with `string.parse`. Both ignore the white space around the text, any Unicode white space:
+`to_f64` reads an optional sign, digits with decimals, an exponent, or `nan` and `inf` in any case, and gives the
+`f64` nearest to it, ties to even; a finite text whose nearest `f64` would be infinite fails, rather than give an
+infinity that would look measured, and one too small gives zero with its sign (decision of the owner, 2026-11-13); `to_i32` reads an
 optional sign and digits, in the range of `i32`. `errors.make` produces an error of the given category and
 code; `errors.raise_if` produces an error of the given category when `condition` is true, `none`
 otherwise.

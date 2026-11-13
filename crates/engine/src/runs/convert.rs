@@ -363,8 +363,12 @@ impl Converter<'_> {
 
 /// A duration: a string with a unit of time, `"100 ms"`; a number alone is refused, the unit being what a run cannot guess.
 fn duration_of(json: &Json, max_nesting: u32) -> Result<i64, Problem> {
-    let Json::String(text) = json else {
-        return Err(problem("LC8105", format!("{} has no unit: a duration is written with one, `\"100 ms\"`", shown(json))));
+    // A JSON number has no unit (`LC8105`); a `bool`, `null`, an array or an object does not read as a duration at all
+    // (`LC8104`), as for a number with a unit (decision of the owner, 2026-11-13).
+    let text = match json {
+        Json::String(text) => text,
+        Json::Number(_) => return Err(problem("LC8105", format!("{} has no unit: a duration is written with one, `\"100 ms\"`", shown(json)))),
+        other => return Err(problem("LC8104", format!("{} is not a duration: it is written with a unit of time, `\"100 ms\"`", shown(other)))),
     };
     let (numeral, unit) = numeral(text, "a duration", max_nesting)?;
     let Some(unit) = unit else {
