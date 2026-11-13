@@ -1,6 +1,6 @@
 # The MCP server
 
-*Last updated: 2026-11-11. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
+*Last updated: 2026-11-13. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
 with `guide_read` and the skills of [skills/](../skills/README.md) it serves (step 9b).*
 
 `labcraft-cli mcp` lets an agent write, check, run and fix LabCraft programs on its own (D-18). It is a
@@ -21,7 +21,11 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
 ```
 
 - **Transport:** stdio, JSON-RPC 2.0, one message per line, as MCP defines it. Nothing but MCP messages
-  on stdout; stderr is for wrong usage at start, as for the other commands of cli.md.
+  on stdout; stderr is for wrong usage at start, as for the other commands of cli.md. A line of whitespace
+  only is read as nothing, and a line may end with CR LF. A byte order mark at the very start of a line is
+  skipped before its JSON, as when `--args` reads a file (RFC 8259, 8.1, lets a reader ignore one);
+  anywhere else outside a string, the line is not JSON (`-32700`), and so is a line of a byte order mark
+  alone or followed by spaces only.
 - **Protocol revisions:** 2025-11-25, and 2025-06-18, which clients still send *(proposed)*; the server
   answers `initialize` with the one the client asked for, or the latest. Not 2025-03-26, which requires
   accepting batches of JSON-RPC messages, which the later revisions removed.

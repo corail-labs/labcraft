@@ -463,6 +463,26 @@ fn a_line_of_spaces_and_a_crlf_are_read_as_nothing_and_as_a_feed() {
     assert_eq!(server.out.messages().len(), 1);
 }
 
+/// mcp.md 1: a byte order mark at the very start of a line is skipped; after a space it is no part of JSON, a parse
+/// error (`-32700`) with a null id.
+#[test]
+fn a_byte_order_mark_is_skipped_at_the_start_of_a_line_only() {
+    let server = Server::start(crate::MAX_REQUEST);
+    server.line("\u{feff}{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}");
+    server.line(" \u{feff}{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}");
+    server.request(3, "ping", json!({}));
+    assert_eq!(server.out.answer(1)["result"], json!({}));
+    assert_eq!(server.out.answer(3)["result"], json!({}));
+    let messages = server.out.messages();
+    assert_eq!(messages.len(), 3);
+    let errors: Vec<(Json, Json)> = messages
+        .iter()
+        .filter(|message| message.get("error").is_some())
+        .map(|message| (message["id"].clone(), message["error"]["code"].clone()))
+        .collect();
+    assert_eq!(errors, vec![(Json::Null, json!(-32700))]);
+}
+
 #[test]
 fn the_requests_waiting_hold_at_most_the_bytes_of_one_request() {
     // A bound of 4,096 bytes: each call below takes about 1,500 bytes as text, so two wait and the third is refused.
