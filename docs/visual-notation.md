@@ -153,9 +153,10 @@ are the nodes that a `layout` section does not place (spec 11).
   through its terminals and its notches (section 5).
 - A wire whose two ends are at the same height is straight. Between neighbouring columns, it otherwise
   has a single vertical segment, in the channel between them. A wire that skips columns, other than an
-  error wire, runs on a horizontal track above the nodes it passes over (`low` and `high` in
-  `check_voltage`), with one vertical segment at each end; a secondary error wire does the same below
-  the chain.
+  error wire, runs on a horizontal track, with one vertical segment at each end: through a lane free across all
+  the nodes it passes over, between them or under them and above the main chain (`voltage` in `check_voltage`,
+  under the `match`), or above them (`low` and `high`), whichever is nearest its source *(decided 2026-11-11)*;
+  a secondary error wire runs below the chain.
 - Two wires never share a segment: parallel wires are 8 units apart. Two values that reach one terminal share the
   way into it: an input that reads several values, or a value bound twice, which `check` refuses.
 - **Narrow channels** *(proposed)*. The channel between two columns is as wide as its vertical segments need,
@@ -164,11 +165,16 @@ are the nodes that a `layout` section does not place (spec 11).
   pills stand just before the block they lead to, in the room that its inline constants take (3.2). The name of a
   wire never widens it (section 4), nor does a value of a run (6.1): they take the room that is there, or none.
 - **The numbers of routing** *(proposed)*. The wires of one value (its readers, an `after:` that names it) are one
-  net: from its source, a vertical in the channel after it reaches the readers of the next column and rises to its
-  track, which runs 16 above what the columns it passes over hold, 8 above another track, and drops in the channel
-  before each column further on. A track that would start at the height of its source starts there, with no
-  vertical, when no other wire ends within 8 of that height in that channel. A secondary error wire runs 16 below
-  the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
+  net: from its source, a vertical in the channel after it reaches the readers of the next column and goes to its
+  track, which drops in the channel before each column further on. The track runs at the height nearest its source
+  that is 16 from every node of the columns it passes over (what is above a node included), 8 from every other
+  track over them, 8 from where another wire ends in the channel where it starts or the one where it ends, and 8
+  above the main chain: at the height of its source when that one is free, with no vertical; otherwise on the grid
+  of 8, the upper one on a tie. Two nodes stacked 24 apart leave no lane between them; above them all is always free.
+  The shortest tracks are laid first. In a body so large that the searches for lanes would read more than its budget
+  (architecture 11.3), the tracks laid past it go over the nodes. A wire that goes back to the left runs over the
+  nodes and the other tracks, 8 above where another wire ends in the channels at its ends. A secondary error wire
+  runs 16 below the chain. In a channel, a wire that enters at the height where another leaves (within 8) has its vertical left of
   the other's; otherwise those that rise stand left of those that fall. Wires that must each stand left of the next,
   round a cycle, cannot all keep 8 apart: all but the first of the cycle jog, a vertical where they enter, across at a
   height of the grid that no other wire of the channel enters, leaves or crosses within 8 (a track over it included),

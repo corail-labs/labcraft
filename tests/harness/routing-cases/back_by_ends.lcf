@@ -1,0 +1,14 @@
+labcraft 1
+
+use core
+
+fn back_by_ends(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64) -> (o0: f64) {
+    v0 = core.neg(a3)
+    v1, err = s(a4, err: err)
+    v2, err = s(v0, err: err)
+    v3 = core.neg(a3)
+    v4, err = s(a0, err: err)
+    v5, err = s(a3, err: err)
+    v6, err = s(v3, err: err)
+    v7 = core.neg(a1)
+}

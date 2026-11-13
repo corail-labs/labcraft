@@ -1009,6 +1009,28 @@ extern rust(crate: \"labcraft-dev\", function: \"step\")
 fn step(v: f64, err: error = none) -> (w: f64, err: error)
 ";
 
+/// S3 (notation 2.2): `k` skips the columns of `a` and `b` to reach `y`, at the height of its second input, which the
+/// D of `a` and `b` (32 high, the same top) holds. Over them is 24 + 16 from there, under them 8 + 16: the track runs
+/// under them, 16 below their bottom, and nothing of `k` goes over them. Worked out from the rule, not from a drawing.
+#[test]
+fn a_track_takes_a_lane_under_the_nodes_when_it_is_nearer() {
+    let main =
+        "labcraft 1\n\nuse core\n\nfn main(x: f64, k: f64) -> (y: f64) {\n    a = core.neg(x)\n    b = core.abs(a)\n    y = core.add(b, k)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let placed = placed_of(&checked, &names, "main.lcf");
+    let (a, b, y) = (&placed["a"], &placed["b"], &placed["y"]);
+    assert_eq!((a.y, b.y, a.height, b.height), (y.y, y.y, 3200, 3200));
+    let drawing = drawing_of(main);
+    let points: Vec<(i64, i64)> = branches(wire_of(&drawing, "k")).into_iter().flatten().copied().collect();
+    // The horizontal that passes the columns of `a` and `b`.
+    let under = points
+        .windows(2)
+        .find(|pair| pair[0].1 == pair[1].1 && pair[0].0.min(pair[1].0) < a.x && pair[0].0.max(pair[1].0) > b.x + b.width)
+        .map(|pair| pair[0].1);
+    assert_eq!(under, Some(a.y + 3200 + 1600));
+    assert!(points.iter().all(|&(_, height)| height >= a.y), "{points:?}");
+}
+
 /// A node stands in the column after the last node that feeds it; one fed only by the inputs of the function in the
 /// first; a node with no input just before its leftmost reader, or in the last column when nothing reads it.
 #[test]

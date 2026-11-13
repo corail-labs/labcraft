@@ -853,13 +853,13 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         }
     }
     // The plan of the wires, on the heights alone: how wide each channel must be (notation 2.2).
-    let extents = extents(&body, &columns, column_count);
     let sources: Vec<(End, crate::graph::Family)> = wires.iter().map(|wire| (wire.from, wire.family)).collect();
     let ys: Vec<i64> = (0..count).map(|local| body.top(local)).collect();
+    let blocks = column_blocks(&body, &columns, column_count, &ys);
     let ends = wire_ends(&body, frame, &columns, column_count, &vec![0; count], &ys, &left, &right, 0);
     let axis = has_axis.then_some(0);
     let vias: Vec<Option<Vec<(i64, i64)>>> = (0..wires.len()).map(|wire| graph.vias.get(&(index, wire)).cloned()).collect();
-    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, extents: &extents, axis, vias: &vias });
+    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, blocks: &blocks, axis, vias: &vias });
     // Across: each column as wide as its widest node, its blocks aligned on the left, each channel as wide as its wires.
     let left_zone =
         frame.left.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| style::label_start() + widest + style::grid());
@@ -950,16 +950,9 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let left_at: Vec<i64> = left.iter().map(|y| y + shift).collect();
     let right_at: Vec<i64> = right.iter().map(|y| y + shift).collect();
     let ends = wire_ends(&body, frame, &columns, column_count, &xs, &ys, &left_at, &right_at, width);
-    let mut placed_extents: Vec<Option<(i64, i64)>> = vec![None; column_count + 2];
-    for (local, &column) in columns.iter().enumerate() {
-        let (Some(sized), Some(&y)) = (body.sized.get(local), ys.get(local)) else { continue };
-        if let Some(slot) = placed_extents.get_mut(column + 1) {
-            let (top, bottom) = (y - sized.above, y + sized.height);
-            *slot = Some(slot.map_or((top, bottom), |(a, b)| (a.min(top), b.max(bottom))));
-        }
-    }
+    let placed_blocks = column_blocks(&body, &columns, column_count, &ys);
     let axis = has_axis.then_some(shift);
-    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, extents: &placed_extents, axis, vias: &vias });
+    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, blocks: &placed_blocks, axis, vias: &vias });
     let routes = route::geometry(&plan, &ends, &channel_at);
     if let Some(track) = plan.highest {
         highest = highest.min(track - style::track_room());
@@ -990,16 +983,16 @@ fn wire_right<'f>(frame: &'f BodyOf, wire: &crate::graph::Wire) -> Option<&'f Fr
     }
 }
 
-/// The top and the bottom of what each column holds, by column from the left edge (0) to the right edge (`n + 1`).
-fn extents(body: &Body<'_>, columns: &[usize], column_count: usize) -> Vec<Option<(i64, i64)>> {
-    let mut extents: Vec<Option<(i64, i64)>> = vec![None; column_count + 2];
+/// The top and the bottom of each node that each column holds, what is above it included, by column from the left edge
+/// (0) to the right edge (`n + 1`): node `local` from `ys[local]`.
+fn column_blocks(body: &Body<'_>, columns: &[usize], column_count: usize, ys: &[i64]) -> Vec<Vec<(i64, i64)>> {
+    let mut blocks: Vec<Vec<(i64, i64)>> = vec![Vec::new(); column_count + 2];
     for (local, &column) in columns.iter().enumerate() {
-        let (top, bottom) = (body.top(local) - body.above(local), body.top(local) + body.height(local));
-        if let Some(slot) = extents.get_mut(column + 1) {
-            *slot = Some(slot.map_or((top, bottom), |(a, b)| (a.min(top), b.max(bottom))));
+        if let (Some(&y), Some(list)) = (ys.get(local), blocks.get_mut(column + 1)) {
+            list.push((y - body.above(local), y + body.height(local)));
         }
     }
-    extents
+    blocks
 }
 
 /// Where each wire of a body leaves and reaches its terminals, with the columns of its ends: a node at `xs` and `ys`, a

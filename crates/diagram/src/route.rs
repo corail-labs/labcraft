@@ -61,8 +61,8 @@ pub struct BodyIn<'a> {
     pub sources: &'a [(End, Family)],
     /// The columns of nodes, `n`.
     pub columns: usize,
-    /// By column `0..=n + 1`: the top of what it holds (a band or a label included) and its bottom; `None` when empty.
-    pub extents: &'a [Option<(i64, i64)>],
+    /// By column `0..=n + 1`: the top and the bottom of each node it holds, a band or a label included.
+    pub blocks: &'a [Vec<(i64, i64)>],
     /// The height of the main error chain.
     pub axis: Option<i64>,
     /// By wire: the waypoints that the file gives it (spec 11).
@@ -106,7 +106,7 @@ type Back = (usize, i64, Option<usize>, Option<usize>, Option<usize>);
 pub struct Plan {
     /// By channel `0..=n + 1` (channel 0 is never used).
     pub slots: Vec<u32>,
-    /// The highest track above the nodes, and the lowest below the chain.
+    /// The highest track and the lowest: above the nodes or between them, and below the chain.
     pub highest: Option<i64>,
     pub lowest: Option<i64>,
     verticals: Vec<Vertical>,
@@ -194,12 +194,18 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         let first = *first_of.entry((source, false)).or_insert(index);
         by_source.entry(first).or_default().push(index);
     }
-    let mut tops = Tree::new(body.extents.iter().map(|extent| extent.map_or(i64::MAX, |(top, _)| top)).collect(), i64::MAX, i64::min);
-    let mut bottoms = Tree::new(body.extents.iter().map(|extent| extent.map_or(i64::MIN, |(_, bottom)| bottom)).collect(), i64::MIN, i64::max);
+    // By column, the top of what it holds and its bottom.
+    let extents: Vec<Option<(i64, i64)>> = body
+        .blocks
+        .iter()
+        .map(|blocks| blocks.iter().copied().reduce(|(top, bottom), (other_top, other_bottom)| (top.min(other_top), bottom.max(other_bottom))))
+        .collect();
+    let mut tops = Tree::new(extents.iter().map(|extent| extent.map_or(i64::MAX, |(top, _)| top)).collect(), i64::MAX, i64::min);
+    let mut bottoms = Tree::new(extents.iter().map(|extent| extent.map_or(i64::MIN, |(_, bottom)| bottom)).collect(), i64::MIN, i64::max);
     // An error from the axis to the axis runs straight along it when no column on its way holds a node there: the main
     // chain past a structure off the chain, or to the `err` of the frame.
     let mut on_axis = vec![0usize; channels + 1];
-    for (column, extent) in body.extents.iter().enumerate() {
+    for (column, extent) in extents.iter().enumerate() {
         let held = body.axis.is_some_and(|axis| extent.is_some_and(|(top, bottom)| top <= axis && bottom > axis));
         if let Some(slot) = on_axis.get_mut(column + 1) {
             *slot = usize::from(held);
@@ -267,6 +273,17 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
     let positions = 2 * channels;
     let mut above = Tree::new(vec![i64::MAX; positions], i64::MAX, i64::min);
     let mut below = Tree::new(vec![i64::MIN; positions], i64::MIN, i64::max);
+    // The lanes: the nodes held before each column, to count what a search reads, and the tracks laid, by positions.
+    let held_before: Vec<usize> = std::iter::once(0)
+        .chain(body.blocks.iter().scan(0, |held, blocks| {
+            *held += blocks.len();
+            Some(*held)
+        }))
+        .collect();
+    let held = |from: usize, to: usize| held_before.get(to + 1).copied().unwrap_or(0).saturating_sub(held_before.get(from).copied().unwrap_or(0));
+    let mut laid: Vec<(usize, usize, i64)> = Vec::new();
+    let mut work = 0usize;
+    let budget = LANE_WORK.0.saturating_add(LANE_WORK.1.saturating_mul(held(0, channels.saturating_sub(1)).saturating_add(body.ends.len())));
     for &(_, from_column, index) in &spans {
         let Some(net) = nets.get_mut(index) else { continue };
         let farthest = net.wires.iter().filter_map(|&wire| reach(wire)).max().unwrap_or(0);
@@ -274,28 +291,66 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         let leaves_chain = error && body.axis == Some(net.source.y);
         let (start, end) = (2 * (from_column + 1), 2 * farthest);
         let columns = (from_column + 1, farthest.saturating_sub(1));
-        if leaves_chain {
+        let track = if leaves_chain {
             let lowest = bottoms.query(columns.0, columns.1).max(body.axis.unwrap_or(i64::MIN));
             let track = lowest.saturating_add(style::clear()).max(below.query(start, end).saturating_add(style::wire_gap()));
             below.update(start, end, track);
-            net.track = Some(track);
-            plan.lowest = Some(plan.lowest.map_or(track, |lowest| lowest.max(track)));
+            track
         } else {
+            // Over the nodes and the tracks there, at the height of its source when it is free: no search. Otherwise a
+            // lane, while the searches of the body read less than its budget: the nodes of the columns crossed, the
+            // tracks laid, the ends of its two channels; past it, over the nodes, as the skyline stacks them.
             let limit =
                 tops.query(columns.0, columns.1).saturating_sub(style::clear()).min(above.query(start, end).saturating_sub(style::wire_gap()));
-            let track = if net.source.y <= limit && alone(from_column + 1, net.source.y, index) { net.source.y } else { limit };
+            let source = net.source.y;
+            let ends = [from_column + 1, farthest].map(|channel| ends_in.get(channel).map_or(&[][..], Vec::as_slice));
+            let cost = held(columns.0, columns.1) + laid.len() + ends.iter().map(|list| list.len()).sum::<usize>();
+            let track = if source <= limit
+                && alone(from_column + 1, source, index)
+                && alone(farthest, source, index)
+                && body.axis.is_none_or(|axis| source <= axis - style::wire_gap())
+            {
+                source
+            } else if work.saturating_add(cost) <= budget {
+                work += cost;
+                lane(body, columns, &laid, ends, index, source)
+            } else if source <= limit && alone(from_column + 1, source, index) {
+                source
+            } else {
+                limit
+            };
             above.update(start, end, track);
-            net.track = Some(track);
             plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
-        }
+            track
+        };
+        laid.push((start, end, track));
+        net.track = Some(track);
+        plan.lowest = Some(plan.lowest.map_or(track, |lowest| lowest.max(track)));
     }
-    // A wire that goes back: a track over every column from its reader to its source, as the others stack.
+    // A wire that goes back: a track over every column from its reader to its source, as the others stack, and 8 above
+    // where another wire ends in the two channels at its ends (the others are those of the nodes it passes over). It
+    // rises past each end in its way; past the budget of the body, over them all.
     for &wire in &plan.back_wires.clone() {
         let Some(ends) = body.ends.get(wire).copied().flatten() else { continue };
         let (low, high) = (ends.to_column.max(1), ends.from_column.max(ends.to_column));
         let (start, end) = (2 * low, 2 * (high + 1));
         let limit = tops.query(low, high).saturating_sub(style::clear()).min(above.query(start, end).saturating_sub(style::wire_gap()));
-        let track = limit.min(ends.from.y - style::clear()).min(ends.to.approach - style::clear());
+        let mut track = limit.min(ends.from.y - style::clear()).min(ends.to.approach - style::clear());
+        let lists = [low, high + 1].map(|channel| ends_in.get(channel).map_or(&[][..], Vec::as_slice));
+        let gap = style::wire_gap();
+        while let Some(near) = lists
+            .iter()
+            .filter_map(|list| list.get(list.partition_point(|&(other, _)| other <= track - gap)).filter(|&&(other, _)| other < track + gap))
+            .map(|&(other, _)| other)
+            .min()
+        {
+            work += 1;
+            if work > budget {
+                track = lists.iter().filter_map(|list| list.first()).map(|&(other, _)| other - gap).fold(track, i64::min);
+                break;
+            }
+            track = near - gap;
+        }
         above.update(start, end, track);
         plan.highest = Some(plan.highest.map_or(track, |highest| highest.min(track)));
         plan.back.push((wire, track, None, None, None));
@@ -346,6 +401,41 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
     jogs(&mut plan, channels, body.axis);
     slots(&mut plan, channels);
     plan
+}
+
+/// What the searches for lanes may read in one body, in nodes, tracks and ends: so much for each node and wire of the
+/// body, and a little more, so that routing stays linear; past it, a track goes over the nodes.
+const LANE_WORK: (usize, usize) = (4096, 64);
+
+/// The height of the track of net `net` over columns `columns.0..=columns.1`: the free height nearest its source,
+/// `source`, itself when it is free. Free is 16 from every node of those columns, 8 from every track laid over them and
+/// from the end of another net in the channel where the track starts or the one where it ends, and above the main chain
+/// by 8: a lane between the nodes when there is one across them all, otherwise over them.
+fn lane(body: &BodyIn<'_>, columns: (usize, usize), laid: &[(usize, usize, i64)], ends: [&[(i64, usize)]; 2], net: usize, source: i64) -> i64 {
+    let clear = style::clear();
+    // The positions of the skylines that the track runs over: from the channel after the source to the last one.
+    let (start, end) = (2 * columns.0, 2 * (columns.1 + 1));
+    let mut blocked: BTreeMap<i64, i64> = BTreeMap::new();
+    for blocks in body.blocks.get(columns.0..=columns.1).unwrap_or_default() {
+        for &(top, bottom) in blocks {
+            block(&mut blocked, top - clear + 1, bottom + clear - 1);
+        }
+    }
+    for &(from, to, height) in laid {
+        if from <= end && start <= to {
+            block_near(&mut blocked, height);
+        }
+    }
+    for &(height, other) in ends.into_iter().flatten() {
+        if other != net {
+            block_near(&mut blocked, height);
+        }
+    }
+    if let Some(axis) = body.axis {
+        block(&mut blocked, axis - style::wire_gap() + 1, i64::MAX / 4);
+    }
+    let held = blocked.range(..=source).next_back().is_some_and(|(_, &end)| end >= source);
+    if held { nearest_free(&blocked, source) } else { source }
 }
 
 /// Wires that cross in a channel so that each must stand left of the next, round a cycle (an entry of each within 8 of
@@ -464,6 +554,11 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             block(&mut blocked, across - style::wire_gap() + 1, across + style::wire_gap() - 1);
         }
     }
+}
+
+/// Blocks the heights closer than 8 to `height`, where a wire runs.
+fn block_near(list: &mut BTreeMap<i64, i64>, height: i64) {
+    block(list, height - style::wire_gap() + 1, height + style::wire_gap() - 1);
 }
 
 /// Adds `[start, end]` to disjoint intervals, merging those it meets or touches, so that just outside an interval is free.
@@ -1108,6 +1203,39 @@ mod tests {
         // A second interval in the way upward: past it too.
         block(&mut blocked, 8100, 8900);
         assert_eq!(nearest_free(&blocked, 9900), 11200);
+    }
+
+    /// S3 (notation 2.2): a lane needs 16 from each node, so a gap of 24 between two nodes stacked holds none and one of 32
+    /// holds one, in its middle; 8 from a track laid and from the end of another net; above the chain by 8. Worked out by
+    /// hand from the blocked heights, on the grid of 8.
+    #[test]
+    fn a_track_takes_the_free_lane_nearest_its_source() {
+        // In units of 1/100.
+        const U: i64 = 100;
+        fn at(blocks: &[Vec<(i64, i64)>], axis: Option<i64>, laid: &[(usize, usize, i64)], ends: &[(i64, usize)], source: i64) -> i64 {
+            let blocks: Vec<Vec<(i64, i64)>> = blocks.iter().map(|list| list.iter().map(|&(top, bottom)| (top * U, bottom * U)).collect()).collect();
+            let laid: Vec<(usize, usize, i64)> = laid.iter().map(|&(start, end, height)| (start, end, height * U)).collect();
+            let ends: Vec<(i64, usize)> = ends.iter().map(|&(height, net)| (height * U, net)).collect();
+            let body = BodyIn { ends: &[], sources: &[], columns: 2, blocks: &blocks, axis: axis.map(|axis| axis * U), vias: &[] };
+            lane(&body, (1, 2), &laid, [ends.as_slice(), &[]], 0, source * U) / U
+        }
+        // Column 1: a node from -32 to 0 and one 24 above it, from -88 to -56; column 2: a node from -32 to 0. Blocked:
+        // -103.99 to 15.99. From -40, up to -104 is 64, down to 16 is 56: below.
+        let gap_24 = [vec![], vec![(-32, 0), (-88, -56)], vec![(-32, 0)], vec![]];
+        assert_eq!(at(&gap_24, None, &[], &[], -40), 16);
+        // A source that nothing blocks: the track starts at its height.
+        assert_eq!(at(&gap_24, None, &[], &[], -120), -120);
+        // The chain at 16 blocks from 8.01 down: up, over the nodes.
+        assert_eq!(at(&gap_24, Some(16), &[], &[], -40), -104);
+        // A gap of 32: the nodes block -47.99 to 15.99 and -111.99 to -48.01; -48 is free, 16 from each.
+        let gap_32 = [vec![], vec![(-32, 0), (-96, -64)], vec![(-32, 0)], vec![]];
+        assert_eq!(at(&gap_32, None, &[], &[], -40), -48);
+        // A track laid there over those positions, or the end of another net in the first channel, takes it: down to 16.
+        assert_eq!(at(&gap_32, None, &[(4, 8, -48)], &[], -40), 16);
+        assert_eq!(at(&gap_32, None, &[(7, 8, -48)], &[], -40), -48);
+        assert_eq!(at(&gap_32, None, &[], &[(-44, 1)], -40), 16);
+        // The end of its own net does not.
+        assert_eq!(at(&gap_32, None, &[], &[(-44, 0)], -40), -48);
     }
 
     #[test]
