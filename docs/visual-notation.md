@@ -478,7 +478,10 @@ view (block, no band).
 and last places (8 and 24); three on the first, the middle and the last (8, 16, 24), `select` with its condition on
 the first; the output at the middle of the right edge. More inputs (the values of a variadic `add`, or an argument too
 many that `check` refuses and the drawing still shows) take the places from the top, 8 apart, and the D grows by two
-places (16) each time they no longer hold, its output still at the middle, on the grid.
+places (16) each time they no longer hold, its output still at the middle, on the grid. Targets too many for its one
+value (`y, z = core.add(a, b)`, which `check` refuses and the drawing still shows) give it as many outputs, one per place
+of 8 on the straight part of the right edge from its top (8 and 16 for two), so that no two wires leave from one point;
+the D grows by two places at a time to hold the longer of its two sides.
 
 **Constant on a primitive input**: the pill lies where a wire would, 8 left of the terminal, as on a block (`◂ 0.5` in
 front of `>`); two neighbouring pills step outward in the same way (above), so the D never grows for its pills.

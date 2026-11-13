@@ -1,0 +1,7 @@
+labcraft 1
+
+use core
+
+fn targets_too_many(a: f64, b: f64) -> (y: f64, z: f64) {
+    y, z = core.add(a, b)
+}

@@ -689,6 +689,38 @@ fn a_d_holds_all_its_inputs() {
     assert_eq!(sized.outputs, [(3200, 2400)]);
 }
 
+/// Notation 3.2: targets too many for the one value of a primitive, an error that is still drawn, give it outputs on the
+/// places of the straight part of its right edge from the top, never two on one point (a case of the fuzzing of
+/// `diagram`).
+#[test]
+fn the_outputs_too_many_of_a_d_take_places() {
+    let size_of = |targets: &str, style: &crate::style::Style| {
+        let outputs: Vec<String> = targets.split(", ").map(|name| format!("{name}: f64")).collect();
+        let source =
+            format!("labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> ({}) {{\n    {targets} = core.add(a, b)\n}}\n", outputs.join(", "));
+        let (checked, names) = checked(&[("main.lcf", &source)]);
+        let graph = graph(&checked, &names, "main.lcf");
+        let sizer = Sizer { names: &names, standard_everywhere: false };
+        crate::style::scope(&std::sync::Arc::new(style.clone()), || sizer.size(&graph.nodes[0], None, None))
+    };
+    let defaults = crate::style::Style::default();
+    let two = size_of("y, z", &defaults);
+    assert_eq!((two.width, two.height), (3200, 3200));
+    assert_eq!(two.outputs, [(3200, 800), (3200, 1600)]);
+    assert_eq!(two.inputs, [(0, 800), (0, 2400)]);
+    // Four targets: 8 + 3 × 8 + 8 = 40 do not hold in 32: two places more, 48; the outputs at 8, 16, 24, 32.
+    let four = size_of("w, x, y, z", &defaults);
+    assert_eq!(four.height, 4800);
+    assert_eq!(four.outputs, [(3200, 800), (3200, 1600), (3200, 2400), (3200, 3200)]);
+    // A cut of 16, tried with `--style`: the straight edge starts at 16, so two outputs at 16 and 24, and 16 + 8 + 16 = 40
+    // needs 48.
+    let mut tried = defaults.clone();
+    tried.numbers.chamfer = 1600;
+    let cut = size_of("y, z", &tried);
+    assert_eq!(cut.height, 4800);
+    assert_eq!(cut.outputs, [(3200, 1600), (3200, 2400)]);
+}
+
 /// Notation 3.2: the band of a construction is inside it, at its top, and its label in the middle of what the band
 /// leaves; a variant constructor, two lines under a band, grows by two places.
 #[test]

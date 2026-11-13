@@ -529,7 +529,12 @@ fn places(node: &Node<'_>, least: i64) -> Places {
 /// between two, growing by two places at a time (notation 3.2).
 fn grown(count: usize, least: i64) -> i64 {
     let (grid, pitch) = (style::grid(), style::compact_pitch());
-    let needed = grid + (count.max(1) as i64 - 1).saturating_mul(pitch) + grid;
+    grown_to(grid + (count.max(1) as i64 - 1).saturating_mul(pitch) + grid, least)
+}
+
+/// The height of a compact node that `needed` must hold, `least` at least, growing by two places at a time (notation 3.2).
+fn grown_to(needed: i64, least: i64) -> i64 {
+    let pitch = style::compact_pitch();
     let mut height = least;
     while height < needed {
         height = up(height.saturating_add(2 * pitch));
@@ -825,7 +830,8 @@ impl Sizer<'_> {
     }
 
     /// A primitive of `core` with a glyph (notation 3.2): a D with its right corners chamfered, 32 × 32, its terminals on
-    /// the grid. A unit that does not hold makes it wider; more than three inputs make it taller, by two places at a time.
+    /// the grid. A unit that does not hold makes it wider; more than three inputs, or more than one output, make it
+    /// taller, by two places at a time.
     fn primitive(&self, node: &Node<'_>, glyph: &Glyph) -> Sized {
         let (text, struck) = match glyph {
             Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
@@ -834,7 +840,14 @@ impl Sizer<'_> {
         let width = style::primitive().max(up(text.width + 600));
         let (grid, pitch) = (style::grid(), style::compact_pitch());
         let count = node.inputs.len();
-        let height = grown(count, style::primitive());
+        // More than one output (targets too many, an error of `check` that is still drawn) on the straight part of the right
+        // edge, one per place from its top, so that no two wires leave from one point and none leaves the outline.
+        let many = node.outputs.len() as i64;
+        let first = up(style::chamfer().max(grid));
+        let mut height = grown(count, style::primitive());
+        if many > 1 {
+            height = grown_to(first.saturating_add((many - 1).saturating_mul(pitch)).saturating_add(style::chamfer()), height);
+        }
         let middle = height / 2;
         // One input at the middle, two on the first and last places, three on the first, the middle and the last; more
         // from the top, one per place (an error of `check` that is still drawn, or a variadic `add`).
@@ -866,12 +879,13 @@ impl Sizer<'_> {
             pills.push((index, 0, y));
             inputs.push((0, y));
         }
-        if let Some(output) = node.outputs.first() {
-            shapes.extend(terminal(output.family, width, middle, 100, output.ignored));
+        let outputs: Vec<(i64, i64)> = if many > 1 { (0..many).map(|index| (width, first + index * pitch)).collect() } else { vec![(width, middle)] };
+        for (output, &(x, y)) in node.outputs.iter().zip(&outputs) {
+            shapes.extend(terminal(output.family, x, y, 100, output.ignored));
         }
         let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
         let order = self.compact_marks(node, width, height, &mut shapes);
-        Sized { left, right: style::terminal() / 2, inputs, outputs: vec![(width, middle)], order, reaches, ..Sized::new(width, height, shapes) }
+        Sized { left, right: style::terminal() / 2, inputs, outputs, order, reaches, ..Sized::new(width, height, shapes) }
     }
 
     /// A block in standard view (notation 3.1, with the numbers decided at step 2 of M0v): the name as a header, the
