@@ -37,7 +37,12 @@ pub(super) struct Flow {
 
 impl<'a> Builder<'a> {
     fn frame_terminal(&self, name: String, ty: TyId, edge: Edge) -> FrameTerminal {
-        FrameTerminal { terminal: self.terminal(name, ty, None, false), edge, start: None }
+        FrameTerminal::new(self.terminal(name, ty, None, false), edge)
+    }
+
+    /// Whether both bounds of a range are wires: the end then enters a place below the start (notation 5.1).
+    fn both_wired(&self, start: &Operand, end: &Operand) -> bool {
+        !super::is_constant(start, self.resolved()) && !super::is_constant(end, self.resolved())
     }
 
     /// The frame of the function: its inputs on the left, its outputs on the right, in signature order (notation 2).
@@ -103,6 +108,7 @@ impl<'a> Builder<'a> {
         let text = |operand: &Operand| cut_text(&write_operand(operand, self.names, CONSTANT_BYTES)).into_owned();
         let input = |name: String, operand: &Operand| self.input(name, operand, None);
         let mut inputs = Vec::new();
+        let mut range_ends = Vec::new();
         let (kind, header, badge, parallel) = match value {
             Rhs::Loop(structure) => {
                 inputs.extend(structure.clauses.iter().filter_map(|clause| match &clause.kind {
@@ -120,7 +126,11 @@ impl<'a> Builder<'a> {
                             let mut terminal = input(self.text(clause.name), &clause.source);
                             let source = match &clause.end {
                                 Some(end) => {
-                                    terminal.reads.extend(self.reads(end));
+                                    let ends = self.reads(end);
+                                    if let (true, Some(&(read, _))) = (self.both_wired(&clause.source, end), ends.first()) {
+                                        range_ends.push((inputs.len(), read));
+                                    }
+                                    terminal.reads.extend(ends);
                                     format!("{}..{}", text(&clause.source), text(end))
                                 }
                                 None => text(&clause.source),
@@ -145,7 +155,7 @@ impl<'a> Builder<'a> {
         let outputs = (0..targets.len())
             .map(|index| self.output_of(targets, index, &targets.get(index).map(|target| self.target_text(target)).unwrap_or_default()))
             .collect();
-        let structure = Structure { kind, header: cut_text(&header).into_owned(), badge, parallel, inputs_at: Vec::new(), pair: None };
+        let structure = Structure { kind, header: cut_text(&header).into_owned(), badge, parallel, inputs_at: Vec::new(), pair: None, range_ends };
         (Kind::Structure(structure), inputs, outputs)
     }
 
@@ -192,6 +202,7 @@ impl<'a> Builder<'a> {
                                     if super::is_constant(operand, self.resolved()) { self.constant_text(operand) } else { "\u{B7}".to_owned() }
                                 };
                                 terminal.start = Some(format!("{}..{}", bound(&clause.source), bound(end)));
+                                terminal.two_points = self.both_wired(&clause.source, end);
                             }
                             frame.left.push(terminal)
                         }
@@ -259,7 +270,7 @@ impl<'a> Builder<'a> {
                     {
                         terminal.constant = Some(self.constant_text(operand));
                     }
-                    frame.right.push(FrameTerminal { terminal, edge: Edge::Yield, start: None });
+                    frame.right.push(FrameTerminal::new(terminal, Edge::Yield));
                 }
             }
             Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => {}

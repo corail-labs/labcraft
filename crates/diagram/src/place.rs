@@ -8,7 +8,9 @@
 //!   barycentres gives, ties broken by the canonical order of lines;
 //! - **the terminals of the frame** in their order, each at the height of what it feeds or what feeds it, as far as
 //!   the order allows, `err` on the axis;
-//! - **the `layout` section**: a node that it places keeps its place, the others move up out of its way.
+//! - **the `layout` section**: a node that it places keeps its place, the others move up out of its way;
+//! - **the notches** of each frame in the order of the height of what feeds them outside (S1, notation 5): once with
+//!   the order of the text, then once more with that order when it differs.
 //!
 //! Every step is linear in the nodes and the wires of a body, but for the sorts of a column.
 
@@ -136,6 +138,89 @@ pub struct Titles {
 /// Places every body, the innermost first; `sized` gets the size of each structure, from its frame. `titles` is the
 /// width that the title of each body needs, `origin` where the frame of the function goes.
 pub fn place(graph: &Graph<'_>, sized: &mut [Sized], titles: &Titles, origin: (i64, i64)) -> Placement {
+    // Once with the notches in the order of the text, then, when what feeds them outside asks for another order, once
+    // more with that order (S1, notation 5): a fixed number of passes.
+    let first = place_with(graph, sized, titles, origin, None);
+    let ranks = notch_ranks(graph, sized, &first);
+    let slots: Vec<Vec<Vec<crate::graph::Slot>>> = graph.bodies.iter().zip(&ranks).map(|(frame, ranks)| ordered_slots(frame, ranks)).collect();
+    if graph.bodies.iter().zip(&slots).all(|(frame, slots)| *slots == frame.slots) {
+        return first;
+    }
+    place_with(graph, sized, titles, origin, Some(&slots))
+}
+
+/// For each body, the height of what feeds each of its notches from outside, by the index of its terminal on the left.
+fn notch_ranks(graph: &Graph<'_>, sized: &[Sized], placement: &Placement) -> Vec<Vec<Option<i64>>> {
+    let mut ranks: Vec<Vec<Option<i64>>> = graph.bodies.iter().map(|body| vec![None; body.left.len()]).collect();
+    for (outer, body) in graph.bodies.iter().enumerate() {
+        for wire in &body.wires {
+            let End::Node { node, terminal } = wire.to else { continue };
+            let Some(found) = graph.nodes.get(node) else { continue };
+            let Kind::Structure(structure) = &found.kind else { continue };
+            let y = match wire.from {
+                End::Node { node: from, terminal: output } => {
+                    placement.nodes.get(from).copied().flatten().and_then(|at| Some(at.y + sized.get(from)?.outputs.get(output)?.1))
+                }
+                // A terminal on the left of a frame: what feeds it from outside, already known since a body comes after
+                // the one that holds its structure, so that nested frames follow one order; else its own height.
+                End::Left(index) => ranks
+                    .get(outer)
+                    .and_then(|ranks| ranks.get(index))
+                    .copied()
+                    .flatten()
+                    .or_else(|| placement.frames.get(outer).and_then(|frame| Some(frame.y + frame.left.get(index)?))),
+                End::Order(_) | End::Right(_) => None,
+            };
+            let Some(y) = y else { continue };
+            for &(position, left) in structure.inputs_at.get(terminal).map_or(&[][..], Vec::as_slice) {
+                let Some(&inner) = found.bodies.get(position) else { continue };
+                if let Some(slot) = ranks.get_mut(inner).and_then(|ranks| ranks.get_mut(left)) {
+                    // The highest of what feeds it, when several wires do.
+                    *slot = Some(slot.map_or(y, |known| known.min(y)));
+                }
+            }
+        }
+    }
+    ranks
+}
+
+/// The slots of a frame, its notches ordered by the height of what feeds them outside, a tie keeping the order of the
+/// text, so that their wires do not cross outside (S1, notation 5); its error stays where it is.
+fn ordered_slots(frame: &BodyOf, ranks: &[Option<i64>]) -> Vec<Vec<crate::graph::Slot>> {
+    let rank = |slot: &crate::graph::Slot| -> Option<i64> {
+        let left = slot.left.filter(|&left| slot.right.is_none() && Some(left) != frame.pair.0)?;
+        frame.left.get(left).filter(|terminal| terminal.edge == crate::graph::Edge::Notch)?;
+        ranks.get(left).copied().flatten()
+    };
+    frame
+        .slots
+        .iter()
+        .map(|list| {
+            // The notches, each with its rank and its place in the list; sorted by rank, the sort keeping a tie in order,
+            // they take the same places.
+            let mut moved: Vec<(i64, usize, crate::graph::Slot)> =
+                list.iter().enumerate().filter_map(|(place, slot)| Some((rank(slot)?, place, *slot))).collect();
+            let places: Vec<usize> = moved.iter().map(|&(_, place, _)| place).collect();
+            moved.sort_by_key(|&(rank, _, _)| rank);
+            let mut out = list.clone();
+            for (place, (_, _, slot)) in places.into_iter().zip(moved) {
+                if let Some(at) = out.get_mut(place) {
+                    *at = slot;
+                }
+            }
+            out
+        })
+        .collect()
+}
+
+/// Places every body, with the slots of `slots` instead of those of each frame when it is given.
+fn place_with(
+    graph: &Graph<'_>,
+    sized: &mut [Sized],
+    titles: &Titles,
+    origin: (i64, i64),
+    slots: Option<&[Vec<Vec<crate::graph::Slot>>]>,
+) -> Placement {
     let count = graph.bodies.len();
     let mut bodies: Vec<BodyPlace> = vec![BodyPlace::default(); count];
     // Where each body of a structure is in the block of its structure, and how wide its frame is.
@@ -158,7 +243,8 @@ pub fn place(graph: &Graph<'_>, sized: &mut [Sized], titles: &Titles, origin: (i
         };
         let title = titles.bodies.get(index).copied().unwrap_or(0);
         if let Some(slot) = bodies.get_mut(index) {
-            *slot = layout_body(graph, index, sized, header, title);
+            let slots = slots.and_then(|slots| slots.get(index)).map_or(&body.slots[..], Vec::as_slice);
+            *slot = layout_body(graph, index, sized, header, title, slots);
         }
     }
     // From the function inwards: each frame at its place, then its nodes.
@@ -606,7 +692,7 @@ impl Body<'_> {
 }
 
 /// Places one body, from the top-left corner of its frame.
-fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, title: i64) -> BodyPlace {
+fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, title: i64, slots: &[Vec<crate::graph::Slot>]) -> BodyPlace {
     let Some(frame) = graph.bodies.get(index) else { return BodyPlace::default() };
     let nodes = frame.nodes.as_slice();
     let count = nodes.len();
@@ -620,7 +706,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         pseudo_left: vec![0; frame.left.len()],
         pseudo_right: vec![0; frame.right.len()],
     };
-    for list in &frame.slots {
+    for list in slots {
         let last = list.len().saturating_sub(1);
         for (place, slot) in list.iter().enumerate() {
             let y = -((last - place) as i64) * style::slot();
@@ -724,7 +810,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
             *slot = Some(index);
         }
     }
-    for list in &frame.slots {
+    for list in slots {
         let prefer: Vec<Option<i64>> = list
             .iter()
             .map(|slot| {
@@ -985,7 +1071,18 @@ fn wire_ends(
         .iter()
         .map(|wire| {
             let (from_column, from) = start(&wire.from)?;
-            let (to_column, to) = finish(&wire.to)?;
+            let (to_column, mut to) = finish(&wire.to)?;
+            // The end of a range whose two bounds are wires enters a place below its start (notation 5.1).
+            if let (End::Node { node, terminal }, Some(read)) = (wire.to, wire.read)
+                && body
+                    .graph
+                    .nodes
+                    .get(node)
+                    .is_some_and(|found| matches!(&found.kind, Kind::Structure(structure) if structure.is_range_end(terminal, read)))
+            {
+                to.y += style::compact_pitch();
+                to.approach += style::compact_pitch();
+            }
             Some(Ends { from_column, from, to_column, to })
         })
         .collect()

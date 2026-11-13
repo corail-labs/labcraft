@@ -120,6 +120,17 @@ pub struct Structure {
     pub inputs_at: Vec<Vec<(usize, usize)>>,
     /// The error pair of the structure, by its input and its output (notation 2.1).
     pub pair: Option<(usize, usize)>,
+    /// Each input of a range whose two bounds are wires, with the read of its end: the end enters a place below the start
+    /// (notation 5.1).
+    pub range_ends: Vec<(usize, Id)>,
+}
+
+impl Structure {
+    /// Whether `read`, into the input `input`, is the end of a range whose two bounds are wires: `range_ends` is in the
+    /// order of the inputs, one entry each at most, so that a header of many clauses costs a search, not a scan.
+    pub fn is_range_end(&self, input: usize, read: Id) -> bool {
+        self.range_ends.binary_search_by_key(&input, |&(at, _)| at).ok().and_then(|at| self.range_ends.get(at)).is_some_and(|&(_, end)| end == read)
+    }
 }
 
 /// What a terminal of the frame of a body is (notation 2, 5).
@@ -151,6 +162,14 @@ pub struct FrameTerminal {
     /// The text of the box of a range (notation 5.1): each bound that is a constant written in its place, `·` for one
     /// that a wire gives (`0..10`, `0..·`, `·..10`).
     pub start: Option<String>,
+    /// A range whose two bounds are wires: its box is two places high, a point for each, the start above (notation 5.1).
+    pub two_points: bool,
+}
+
+impl FrameTerminal {
+    pub fn new(terminal: Terminal, edge: Edge) -> FrameTerminal {
+        FrameTerminal { terminal, edge, start: None, two_points: false }
+    }
 }
 
 /// A place on the edges of a frame, from the top: a register has a box on each side at one height (notation 5.1).

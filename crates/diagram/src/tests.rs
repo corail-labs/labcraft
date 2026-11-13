@@ -272,14 +272,15 @@ fn a_primitive_has_its_size_whatever_a_call_wires() {
     for key in ["a", "b"] {
         assert_eq!(of(key).inputs.iter().map(|input| input.family.base).collect::<Vec<_>>(), [Base::Number, Base::Error], "{key}");
         let sized = sizer.size(of(key), None, None);
-        // Two lines, `duration` alone, then the `err` pair: 8 above the bottom of 40, at 32, and 8 above it, at 24.
-        assert_eq!((sized.inputs.clone(), sized.outputs.clone()), (vec![(0, 2400), (0, 3200)], vec![(4000, 3200)]), "{key}");
+        // Two lines, `duration` alone on the first place, 8 below the top, then the `err` pair on the last one, 8 above
+        // the bottom of 40, at 32.
+        assert_eq!((sized.inputs.clone(), sized.outputs.clone()), (vec![(0, 800), (0, 3200)], vec![(4000, 3200)]), "{key}");
     }
     assert!(of("c").inputs.is_empty());
 }
 
-/// Notation 3.2: lines counted from the bottom, 8 above the lower edge and `node.pitch` apart, whatever they carry; past
-/// four lines, the block grows down, never across.
+/// Notation 3.2: lines from the top, 8 below the upper edge and `node.pitch` apart, whatever they carry; past four
+/// lines, the block grows down by two places, never across.
 #[test]
 fn a_block_grows_by_its_lines_only() {
     let size_of = |count: usize| {
@@ -301,11 +302,45 @@ fn a_block_grows_by_its_lines_only() {
             _ => None,
         })
         .collect();
-    // From the bottom: 40 - 8 = 32, then 24, 16, 8; a terminal of 6 has a radius of 3.
+    // From the top: 8, then 16, 24, 32; a terminal of 6 has a radius of 3.
     assert_eq!(inputs, [(800, 300), (1600, 300), (2400, 300), (3200, 300)]);
-    // Five lines need 8 + 32 + 8 = 48.
+    // Five lines do not hold in four places: two more, 40 + 16 = 56.
     let five = size_of(5);
-    assert_eq!((five.width, five.height), (4000, 4800));
+    assert_eq!((five.width, five.height), (4000, 5600));
+}
+
+/// Notation 3.2: five lines do not hold in four places: the block grows by two places, to 56, every input on the left,
+/// an optional one too, and the `err` pair on the last place, 8 above the bottom. `after:` changes nothing of it.
+#[test]
+fn a_block_of_five_lines_grows_by_two_places() {
+    let callee =
+        "labcraft 1\n\nfn wide(a: f64, b: f64, c: f64, d: f64 = 1.0, err: error = none) -> (y: f64, err: error) {\n    y = a\n    err = err\n}\n";
+    let plain = "labcraft 1\n\nfn main(x: f64, e: error) -> (y: f64, err: error) {\n    y, err = wide(x, x, x, 2.0, err: e)\n}\n";
+    let ordered = "labcraft 1\n\nfn main(x: f64, z: f64, e: error) -> (y: f64, err: error) {\n    y, err = wide(x, x, x, 2.0, after: z, err: e)\n}\n";
+    for source in [plain, ordered] {
+        let (checked, names) = checked(&[("main.lcf", source), ("wide.lcf", callee)]);
+        assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+        let graph = graph(&checked, &names, "main.lcf");
+        let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+        // 8, 16, 24, 32 for `a` (with `y`), `b`, `c`, `d`; 56 - 8 = 48 for the `err` pair.
+        assert_eq!((sized.width, sized.height), (4000, 5600));
+        assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4800)]);
+        assert_eq!(sized.outputs, [(4000, 800), (4000, 4800)]);
+    }
+}
+
+/// Notation 3.2: a construction, an oblong, takes the places of a square: its five fields from the top, 8 apart, then
+/// two places more, 56 high.
+#[test]
+fn an_oblong_takes_the_places_of_a_square() {
+    let ty = "labcraft 1\n\ntype Five = struct { a: f64, b: f64, c: f64, d: f64, e: f64 }\n";
+    let source = "labcraft 1\n\nfn main(x: f64) -> (y: Five) {\n    y = Five { a: x, b: x, c: x, d: x, e: x }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", source), ("Five.lct", ty)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    assert_eq!(sized.height, 5600);
+    assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4000)]);
 }
 
 /// Notation 3.2: two pills less than a pill apart step outward, the lower one past the upper one, 8 from it, and the
@@ -317,7 +352,7 @@ fn neighbouring_pills_step_outward() {
     let (checked, names) = checked(&[("main.lcf", source), ("three.lcf", callee)]);
     let graph = graph(&checked, &names, "main.lcf");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
-    // Lines at 16, 24 and 32. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
+    // Lines at 8, 16 and 24. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
     // end 8 left of the half terminal of 6: -11; it starts at -37.06. The second, 8 lower, under 14, ends 8 left of that,
     // -45.06, and starts at -71.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
     // its place.
@@ -331,7 +366,7 @@ fn neighbouring_pills_step_outward() {
             _ => None,
         })
         .collect();
-    assert_eq!(leads, [&vec![(-4506, 2400), (-300, 2400)]]);
+    assert_eq!(leads, [&vec![(-4506, 1600), (-300, 1600)]]);
 }
 
 /// Notation 3.2: a circle of 28; two inputs at 8 above and below the middle, on the edge; `select` with two constants
@@ -828,8 +863,8 @@ fn the_error_chain_is_one_straight_line() {
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let placed = placed_of(&checked, &names, "main.lcf");
     let (a, b, y, c, d) = (&placed["a"], &placed["b"], &placed["y"], &placed["c"], &placed["d"]);
-    // `step` is a block of 40. Its lines are 8 apart, the last 8 from the bottom, at 24 and 32: its error pair at 32 from
-    // its top.
+    // `step` is a block of 40. Its lines from the top, `x` at 8, and its error pair on the last place, 8 above the bottom:
+    // at 32 from its top.
     assert_eq!((a.height, b.y, y.y), (4000, a.y, a.y));
     assert_eq!((a.column, b.column, d.column, y.column), (0, 1, 2, 3));
     let axis = a.y + 3200;
@@ -942,7 +977,12 @@ fn the_notches_are_terminals() {
 
 /// The drawing of `main.lcf`, which must check without a diagnostic.
 fn drawing_of(main: &str) -> crate::Drawing {
-    let (checked, names) = checked(&[("main.lcf", main)]);
+    drawing_with(&[("main.lcf", main)])
+}
+
+/// The drawing of `main.lcf` among `files`, which must check without a diagnostic.
+fn drawing_with(files: &[(&str, &str)]) -> crate::Drawing {
+    let (checked, names) = checked(files);
     assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
     let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
         panic!()
@@ -1487,4 +1527,53 @@ fn the_wire_of_a_constant_node_is_not_named_at_its_start() {
         })
         .collect();
     assert!(!names.iter().any(|name| name == "gain"), "{names:?}");
+}
+
+/// The end of the first branch of the wire that leaves `from` (`fn.a`).
+fn end_of(drawing: &crate::Drawing, from: &str) -> (i64, i64) {
+    let group = drawing.groups.iter().find(|group| group.wire.as_ref().is_some_and(|wire| wire.from.as_deref() == Some(from))).unwrap();
+    *branches(group).first().unwrap().last().unwrap()
+}
+
+/// S1 (notation 5): the notches of a loop are in the order of the height of what feeds them outside, not in the order in
+/// which the body reads them: `b` is read first, but `a`, above it on the frame of the function, has the upper notch.
+#[test]
+fn the_notches_follow_what_feeds_them() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = loop carry v = 0.0 {\n        s = core.sub(b, a)\n        next v = s\n        until true\n    }\n}\n";
+    let drawing = drawing_of(main);
+    let (a, b) = (end_of(&drawing, "fn.a"), end_of(&drawing, "fn.b"));
+    assert!(a.1 < b.1, "{a:?} {b:?}");
+}
+
+/// Notation 5.1: a range whose two bounds are wires has a point for each, the start a place above the end.
+#[test]
+fn the_two_wired_bounds_of_a_range_enter_at_two_points() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(first: i32, n: i32) -> (total: i32) {\n    total = for i in first..n, carry acc = 0 {\n        next acc = core.add(acc, i)\n    }\n}\n";
+    let drawing = drawing_of(main);
+    let (first, n) = (end_of(&drawing, "fn.first"), end_of(&drawing, "fn.n"));
+    assert_eq!(n.1 - first.1, crate::style::compact_pitch(), "{first:?} {n:?}");
+    // One wired bound: one point, as before.
+    let main = "labcraft 1\n\nuse core\n\nfn main(n: i32) -> (total: i32) {\n    total = for i in 0..n, carry acc = 0 {\n        next acc = core.add(acc, i)\n    }\n}\n";
+    let drawing = drawing_of(main);
+    let svg = crate::svg(&drawing, crate::Theme::Light);
+    assert!(svg.contains("0..\u{B7}"), "{svg}");
+    // The wire of `n` ends where `i` leaves inside: at the height of the box, not a place below.
+    let start_of_i = *branches(wire_of(&drawing, "i")).first().unwrap().first().unwrap();
+    assert_eq!(end_of(&drawing, "fn.n").1, start_of_i.1);
+}
+
+/// S1 in nested frames: the notches of an inner loop follow what feeds them at the end, through the notches of the outer
+/// one, so that `a` stays above `b` at both levels and their wires do not cross between the frames.
+#[test]
+fn nested_notches_follow_one_order() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = loop carry v = 0.0 {\n        w = loop carry u = 0.0 {\n            s = core.sub(b, a)\n            next u = s\n            until true\n        }\n        next v = w\n        until true\n    }\n}\n";
+    let drawing = drawing_of(main);
+    // The wires into the inner loop, in the body of the outer one: each from its notch to the notch inside.
+    let end_in = |value: &str| -> i64 {
+        let group = drawing.groups.iter().find(|group| group.wire.as_ref().is_some_and(|wire| wire.value == value && wire.body == 1)).unwrap();
+        branches(group).first().unwrap().last().unwrap().1
+    };
+    assert!(end_in("a") < end_in("b"));
+    let (a, b) = (end_of(&drawing, "fn.a"), end_of(&drawing, "fn.b"));
+    assert!(a.1 < b.1, "{a:?} {b:?}");
 }
