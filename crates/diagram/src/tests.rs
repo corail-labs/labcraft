@@ -207,8 +207,21 @@ fn a_compact_block_has_the_width_of_the_square() {
     let raw = size_of("raw");
     assert_eq!((raw.width, raw.height), (4000, 4000));
     assert_eq!(titles(&raw), ["query", "f64"]);
-    // The band of `dev`: 12 high, above.
-    assert_eq!(raw.above, 1200);
+    // The band of `dev`: 12 high, inside the block, at its top: nothing above it.
+    assert_eq!(raw.above, 0);
+    let band = raw.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill == Some("band.fill"))).unwrap();
+    assert!(matches!(band, Shape::Rect { x: 0, y: 0, width: 4000, height: 1200, .. }), "{band:?}");
+    // The two lines of the name in the middle of what the band leaves, 12 to 40: around 26.
+    let middles: Vec<i64> = raw
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Text { y, runs, .. } if runs.iter().any(|run| run.token == "node.title") => Some(*y),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(middles.len(), 2);
+    assert!(middles[0] < 2600 && middles[1] > 2600 && middles[0] > 1200, "{middles:?}");
     // A band wider than the block, which `bands` would have cut, widens nothing.
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
@@ -369,32 +382,46 @@ fn neighbouring_pills_step_outward() {
     assert_eq!(leads, [&vec![(-4506, 1600), (-300, 1600)]]);
 }
 
-/// Notation 3.2: a circle of 28; two inputs at 8 above and below the middle, on the edge; `select` with two constants
-/// stretches into a capsule for them to be 24 apart, and 16 from the wired input beside them.
+/// Notation 3.2: a primitive is a D of 32, its right corners cut by 8; one input at the middle, two on the first and
+/// last places, three on the first, the middle and the last, all on the left edge and on the grid; `select` with two
+/// constants keeps its size, and its neighbouring pills step outward as on a block.
 #[test]
-fn a_primitive_is_a_circle() {
-    let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, ok: bool) -> (y: f64, z: f64) {\n    y = core.add(a, b)\n    z = core.select(ok, 1.0, 0.0)\n}\n";
+fn a_primitive_is_a_d() {
+    let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, ok: bool) -> (y: f64, z: f64, w: f64) {\n    y = core.add(a, b)\n    z = core.select(ok, 1.0, 0.0)\n    w = core.neg(a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
     let sizer = Sizer { names: &names, standard_everywhere: false };
-    let add = sizer.size(&graph.nodes[0], None, None);
-    assert_eq!((add.width, add.height), (2800, 2800));
-    // At 8 from the middle of a circle of radius 14: 14 - √(14² - 8²) = 14 - √132 = 14 - 11.489 = 2.511; the integer
-    // root of 1,320,000 hundredths² is 1148, so 252.
-    let inputs: Vec<(i64, i64)> = add
-        .shapes
-        .iter()
-        .filter_map(|shape| match shape {
-            // A terminal of 6: a radius of 3.
-            Shape::Circle { x, y, radius: 300, .. } if *x < 1400 => Some((*x, *y)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(inputs, [(252, 600), (252, 2200)]);
-    // `select`: -10, 0, 10; 16 between `ok` and the first constant, which goes to 6; 24 between the two constants, the
-    // second at 30; a span of 40 and a pill of 14 make 54.
-    let select = sizer.size(&graph.nodes[1], None, None);
-    assert_eq!((select.width, select.height), (2800, 5400));
+    let node = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
+    let add = sizer.size(node("y"), None, None);
+    assert_eq!((add.width, add.height), (3200, 3200));
+    assert_eq!(add.inputs, [(0, 800), (0, 2400)]);
+    assert_eq!(add.outputs, [(3200, 1600)]);
+    let outline = add.shapes.iter().find_map(|shape| match shape {
+        Shape::Poly { points, closed: true, .. } => Some(points.clone()),
+        _ => None,
+    });
+    assert_eq!(outline, Some(vec![(0, 0), (2400, 0), (3200, 800), (3200, 2400), (2400, 3200), (0, 3200)]));
+    let select = sizer.size(node("z"), None, None);
+    assert_eq!((select.width, select.height), (3200, 3200));
+    assert_eq!(select.inputs, [(0, 800), (0, 1600), (0, 2400)]);
+    // `1.0` at 16, 3 cells at 10 and 4 on each side, 26.06, its right end 8 left of the half terminal: from -37.06. `0.0`,
+    // 8 lower, steps past it: its right end 8 left of -37.06, from -71.12.
+    assert_eq!(select.reaches, [None, Some(3706), Some(7112)]);
+    let neg = sizer.size(node("w"), None, None);
+    assert_eq!((neg.inputs.clone(), neg.outputs.clone()), (vec![(0, 1600)], vec![(3200, 1600)]));
+}
+
+/// Notation 3.2: a unit that does not hold in a D of 32 makes it wider, with 3 on each side, up to the grid; its
+/// output stays on the right edge.
+#[test]
+fn a_long_unit_widens_the_d() {
+    let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[kg/(m*s)]) {\n    y = core.with_unit(a, [kg/(m*s)])\n}\n";
+    let (checked, names) = checked(&[("main.lcf", source)]);
+    let graph = graph(&checked, &names, "main.lcf");
+    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    // `[kg/(m*s)]`, 10 cells at 10: 10 × 1233 × 10 / 2048 = 60.21, and 3 on each side, 66.21: 72 on the grid.
+    assert_eq!((sized.width, sized.height), (7200, 3200));
+    assert_eq!(sized.outputs, [(7200, 1600)]);
 }
 
 /// Decided at step 2 of M0v: 24 for the header, the first line at 40, lines 24 apart, the last 16 above the bottom, 12
@@ -647,25 +674,54 @@ fn an_icon_number_has_no_exponent() {
     assert_eq!(crate::size::icon_number("0.006", false), 1);
 }
 
-/// More than three inputs on a circle, an error that is still drawn, stretch it so that each input is on its edge.
+/// More than three inputs on a D, a variadic `add`, from the top, one per place: the D grows by two places at a time,
+/// its output at the middle, on the grid.
 #[test]
-fn a_circle_holds_all_its_inputs() {
+fn a_d_holds_all_its_inputs() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = core.add(a, b, a, b, a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
     let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
-    // Five inputs 8 apart: a span of 32, and a pill of 14: 46 high; their centres from 7 to 39.
-    assert_eq!(sized.height, 4600);
-    let ys: Vec<i64> = sized
-        .shapes
-        .iter()
-        .filter_map(|shape| match shape {
-            // A terminal of 6: a radius of 3.
-            Shape::Circle { y, radius: 300, x, .. } if *x < 1400 => Some(*y),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(ys, [700, 1500, 2300, 3100, 3900]);
+    // Five inputs 8 apart from 8: 8 + 32 + 8 = 48, two places more than 32.
+    assert_eq!(sized.height, 4800);
+    let ys: Vec<i64> = sized.inputs.iter().map(|&(_, y)| y).collect();
+    assert_eq!(ys, [800, 1600, 2400, 3200, 4000]);
+    assert_eq!(sized.outputs, [(3200, 2400)]);
+}
+
+/// Notation 3.2: the band of a construction is inside it, at its top, and its label in the middle of what the band
+/// leaves; a variant constructor, two lines under a band, grows by two places.
+#[test]
+fn the_band_of_an_oblong_is_inside() {
+    let ty = "labcraft 1\n\ntype StepResult = struct { name: string, ok: bool }\n";
+    let reading = "labcraft 1\n\ntype Reading = enum { Value(f64), Missing }\n";
+    let main = "labcraft 1\n\nuse results_log\n\nfn main(x: f64, s: string, b: bool) -> (r: results_log.StepResult, v: results_log.Reading) {\n    r = results_log.StepResult { name: s, ok: b }\n    v = results_log.Reading.Value(x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("results_log/StepResult.lct", ty), ("results_log/Reading.lct", reading)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands = crate::bands(&graph);
+    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sized = |key: &str| {
+        let index = graph.nodes.iter().position(|node| node.key == key).unwrap();
+        sizer.size(&graph.nodes[index], bands[index].as_ref(), None)
+    };
+    let construction = sized("r");
+    // 12 of band, a line of 9 (2384 × 9 / 2048 = 10.48) with 8 above and below: 38.48, so the square of 40.
+    assert_eq!((construction.height, construction.above), (4000, 0));
+    let band = construction.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill == Some("band.fill")));
+    assert!(matches!(band, Some(Shape::Rect { x: 0, y: 0, height: 1200, .. })), "{band:?}");
+    // The label in the middle of what the band leaves, 12 to 40: at 26.
+    let label = construction.shapes.iter().find_map(|shape| match shape {
+        Shape::Text { y, runs, .. } if runs.iter().any(|run| run.text == "StepResult") => Some(*y),
+        _ => None,
+    });
+    let baseline = |middle: i64| match crate::size::Text::new("StepResult", 40, crate::size::label_size()).centred(0, middle, "node.title") {
+        Shape::Text { y, .. } => y,
+        _ => 0,
+    };
+    assert_eq!(label, Some(baseline(2600)));
+    // A variant constructor: 12, two lines (20.95) and 16, 48.95, rounded up to the grid: 56.
+    assert_eq!(sized("v").height, 5600);
 }
 
 /// Two libraries whose bands would read the same show their full path, and cut in the middle when they still do
@@ -677,9 +733,96 @@ fn bands_that_read_the_same_show_more() {
     let (checked, names) = checked(&[("main.lcf", main), ("measurement_a/f.lcf", f), ("measurement_b/f.lcf", f)]);
     let graph = graph(&checked, &names, "main.lcf");
     let bands: Vec<String> = crate::bands(&graph).into_iter().map(|band| band.unwrap().text()).collect();
-    // Above a block of 40: 40 less 4 on each side, 32; at 9 a cell is 1233 × 9 / 2048 = 5.42, 5 cells are 27.09, 6 are
+    // In a block of 40: 40 less 5 on each side, 30; at 9 a cell is 1233 × 9 / 2048 = 5.42, 5 cells are 27.09, 6 are
     // 32.51: 5 cells. `meas…` for both; the full path is the same; in the middle, 2 cells, `…`, 2 cells.
     assert_eq!(bands, ["me\u{2026}_a", "me\u{2026}_b"]);
+}
+
+/// Notation 3.2: on a node with `after:`, the text of the band starts past the chevron on the top edge, 8 from the left
+/// corner: half a terminal (3) beyond it and 2, at 13, so that it holds fewer cells; the chevron stays at (8, 0).
+#[test]
+fn the_band_keeps_clear_of_the_chevron_of_after() {
+    let f = "labcraft 1\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n";
+    let main = "labcraft 1\n\nuse results_log\n\nfn main(x: f64, z: f64) -> (y: f64, w: f64) {\n    y = results_log.f(x)\n    w = results_log.f(x, after: z)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("results_log/f.lcf", f)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands = crate::bands(&graph);
+    let index = |key: &str| graph.nodes.iter().position(|node| node.key == key).unwrap();
+    // 40 less 5 on each side, 30: 5 cells at 9 (27.09), `resu…`. With `after:`, 40 less 13 and 5, 22: 4 cells (21.67).
+    assert_eq!(bands[index("y")].as_ref().unwrap().text(), "resu\u{2026}");
+    assert_eq!(bands[index("w")].as_ref().unwrap().text(), "res\u{2026}");
+    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sized = sizer.size(&graph.nodes[index("w")], bands[index("w")].as_ref(), None);
+    assert_eq!(sized.order, Some((800, 0)));
+    // `res…`, 4 cells, centred between 13 and 35: from 24 - 21.67 / 2 = 13.17 to 34.84, past the chevron, which ends at
+    // 11, and short of the output terminal, which starts at 37.
+    assert_eq!(band_span(&sized), Some((1317, 3484)));
+}
+
+/// Where the text of the band of a node starts and ends, in hundredths.
+fn band_span(sized: &crate::size::Sized) -> Option<(i64, i64)> {
+    sized.shapes.iter().find_map(|shape| match shape {
+        Shape::Text { x, width, runs, .. } if runs.iter().any(|run| run.token == "band.text") => Some((*x, *x + *width)),
+        _ => None,
+    })
+}
+
+/// Notation 3.2 and 4.1: the brackets of an array terminal on the first line reach into the block, beside the band, and
+/// its text keeps past them. Two dimensions: half a terminal (3), 2.5 per bracket and half its stroke of 1.2, 8.6, then
+/// 2: 10.6 on each side.
+#[test]
+fn the_band_keeps_clear_of_the_brackets_of_an_array() {
+    let f = "labcraft 1\n\nfn f(x: [[f64]]) -> (y: [[f64]]) {\n    y = x\n}\n";
+    let main = "labcraft 1\n\nuse results_log\n\nfn main(x: [[f64]]) -> (y: [[f64]]) {\n    y = results_log.f(x)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("results_log/f.lcf", f)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands = crate::bands(&graph);
+    // 40 less 21.2 is 18.8: 3 cells at 9 (16.25), `re…`.
+    assert_eq!(bands[0].as_ref().unwrap().text(), "re\u{2026}");
+    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], bands[0].as_ref(), None);
+    // Centred at 20: from 20 - 8.13 = 11.87 to 28.13, between 10.6 and 29.4.
+    assert_eq!(band_span(&sized), Some((1187, 2813)));
+}
+
+/// Notation 3.2: the name of a node `always` without an icon is on one line, cut, between the band and the `▴`, which
+/// it never meets: `query_f64` gives `query…`.
+#[test]
+fn the_name_of_an_always_node_is_on_one_line() {
+    let (checked, names) = bench();
+    let graph = graph(&checked, &names, "main.lcf");
+    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let band = labcraft_types::text::ShownText::plain("dev");
+    let mut node = graph.nodes.iter().find(|node| node.key == "raw").unwrap().clone();
+    node.always = true;
+    let texts = |band: Option<&labcraft_types::text::ShownText>| -> Vec<(String, i64)> {
+        sizer
+            .size(&node, band, None)
+            .shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Text { y, runs, .. } if runs.iter().all(|run| run.token == "node.title") => {
+                    Some((runs.iter().map(|run| run.text.as_str()).collect(), *y))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    // The baseline of a line of the name centred at `middle`.
+    let baseline = |middle: i64| match crate::size::Text::new("query_f64", 6, crate::size::label_size()).centred(2000, middle, "node.title") {
+        Shape::Text { y, .. } => y,
+        _ => 0,
+    };
+    // The `▴` is centred 8 above the bottom, at 32, in a line of 2384 × 10 / 2048 = 11.64 at 10: that line starts at
+    // 32 - 5.82 = 26.18. The name is centred between the band and it, (12 + 26.18) / 2 = 19.09; without a band, between
+    // the top edge and it, 13.09. Its line, 10.48 high at 9, never reaches 26.18.
+    for (band, middle) in [(Some(&band), 1909), (None, 1309)] {
+        let texts = texts(band);
+        // At most 6 cells: 5 of `query_f64`, `query`, and `…`; then the `▴`.
+        assert_eq!(texts.iter().map(|(text, _)| text.as_str()).collect::<Vec<_>>(), ["query\u{2026}", "\u{25B4}"]);
+        assert_eq!(texts[0].1, baseline(middle), "{texts:?}");
+    }
 }
 
 /// Notation 3.2: a band is cut to the width of its block; an oblong is as wide as its label, so its band shows more.
@@ -698,9 +841,9 @@ fn a_band_is_cut_to_the_width_of_its_block() {
     };
     // A block of 40 holds 5 cells at 9 (above): `resu…`.
     assert_eq!(band_of("y"), "resu\u{2026}");
-    // `StepResult`, 10 cells at 9 (54.19) and 2 on each side, 58.19: 64 on the grid. 64 less 8 is 56, which holds 10
-    // cells at 9 (54.19), not 11 (59.60): `results_l…`.
-    assert_eq!(band_of("r"), "results_l\u{2026}");
+    // `StepResult`, 10 cells at 9 (54.19) and 2 on each side, 58.19: 64 on the grid. 64 less 10 is 54, which holds 9
+    // cells at 9 (48.77), not 10 (54.19): `results_…`, clear of the terminal of `name` beside the band.
+    assert_eq!(band_of("r"), "results_\u{2026}");
 }
 
 /// A terminal shows the type of its parameter, not that of its argument: `timeout: duration` given `5 s` has no unit
@@ -868,10 +1011,10 @@ fn the_error_chain_is_one_straight_line() {
     assert_eq!((a.height, b.y, y.y), (4000, a.y, a.y));
     assert_eq!((a.column, b.column, d.column, y.column), (0, 1, 2, 3));
     let axis = a.y + 3200;
-    // `c`, a circle of 28, in the column of `a`: 24 above it.
-    assert_eq!(c.y, a.y - 2400 - 2800);
+    // `c`, a D of 32, in the column of `a`: 24 above it.
+    assert_eq!(c.y, a.y - 2400 - 3200);
     // `d` is alone in its column: its bottom 40 above the axis.
-    assert_eq!(d.y + 2800, axis - 4000);
+    assert_eq!(d.y + 3200, axis - 4000);
 }
 
 /// A node that the `layout` section places is there, from the top-left corner of the frame of the function; a node
@@ -885,12 +1028,11 @@ fn a_placed_node_keeps_its_place() {
     // `a` stands in the first column: after the name `x` (one cell at 10, 6.02), 12 before it and 8 after it, the
     // narrowest channel, 16, its wire being straight, and the half terminal of 3: 45.02 from the corner of the frame,
     // its right terminal reaching 76.02. It reaches over `y`, at 78, so it
-    // goes up, 24 above it: at 80 - 24 - 28 = 28 from the corner, higher than the header of 24 and its margin of 16 (40).
-    // The frame grows up by 12, 16 on the grid, so that it holds it: its top is at the margin, 16, its corner 16 lower,
-    // at 32 (notation 5).
+    // goes up, 24 above it: at 80 - 24 - 32 = 24 from the corner, higher than the header of 24 and its margin of 16 (40).
+    // The frame grows up by 16 so that it holds it: its top is at the margin, 16, its corner 16 lower, at 32 (notation 5).
     // Across, the margin of 16 is around everything: the terminal of `x` reaches 3 left of the frame, at 19.
     assert_eq!((y.x, y.y), (1900 + 7800, 3200 + 8000));
-    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 3200 + 2800));
+    assert_eq!((a.x, a.y), (1900 + 1200 + 602 + 800 + 1600 + 300, 3200 + 2400));
 }
 
 /// The terminals of a frame, from the top: each where it prefers, 24 below the one before, the pinned one on the axis.
@@ -1220,9 +1362,9 @@ fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
     assert!(crate::Detail::Label.shown_at(0.4) && !crate::Detail::Label.shown_at(0.39) && crate::Detail::Title.shown_at(0.01));
 }
 
-/// `LC7005` (notation 2.1): two nodes that the file places one over the other, in one body. `core.add` is a circle of
-/// `node.circle`, 28 across (notation 10), so its block spans x to x + 28: at 100 and 127 the blocks share one unit
-/// across and all their height; at 100 and 128 they only touch.
+/// `LC7005` (notation 2.1): two nodes that the file places one over the other, in one body. `core.add` is a D of
+/// `node.primitive`, 32 across (notation 10), so its block spans x to x + 32: at 100 and 131 the blocks share one unit
+/// across and all their height; at 100 and 132 they only touch.
 #[test]
 fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
     let main = |second: &str| {
@@ -1231,7 +1373,7 @@ fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
              layout {{\n    node ab at (100, 40)\n    node y at ({second}, 40)\n}}\n"
         )
     };
-    let warnings = drawing_of(&main("127")).warnings;
+    let warnings = drawing_of(&main("131")).warnings;
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let warning = &warnings[0];
     assert_eq!(warning.code(), labcraft_types::Code::Lc7005);
@@ -1239,12 +1381,12 @@ fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
     // The entry of `y`: line 12 of the file (1 `labcraft`, 3 `use`, 5 `fn`, 10 `layout {`, 11 `node ab`, 12 `node y`).
     assert_eq!(warning.span.map(|span| span.start.line), Some(12));
     assert_eq!(warning.file, "main.lcf");
-    assert!(drawing_of(&main("128")).warnings.is_empty());
+    assert!(drawing_of(&main("132")).warnings.is_empty());
     // A node that the file does not place moves out of the way and is never named.
     let unplaced = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, c: f64) -> (y: f64) {\n    ab = core.add(a, b)\n    y = core.add(ab, c)\n}\n\n\
                     layout {\n    node ab at (100, 40)\n}\n";
     assert!(drawing_of(unplaced).warnings.is_empty());
-    // Three in a diagonal, `y` at (100, 100), `w` at (105, 105), `a` at (110, 110), each 28 across and down: from the
+    // Three in a diagonal, `y` at (100, 100), `w` at (105, 105), `a` at (110, 110), each 32 across and down: from the
     // left `y`, `w`, `a`. `w` overlaps `y`; `a` overlaps both, and names the nearest above it, `w` (105 against 100).
     let diagonal = "labcraft 1\n\nuse core\n\nfn main(p: f64, q: f64, r: f64, s: f64) -> (y: f64) {\n    a = core.add(p, q)\n    \
                     w = core.add(a, r)\n    y = core.add(w, s)\n}\n\nlayout {\n    node a at (110, 110)\n    node w at (105, 105)\n    \

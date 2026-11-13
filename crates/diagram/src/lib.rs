@@ -188,7 +188,11 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
         .nodes
         .iter()
         .zip(&libraries)
-        .map(|(node, library)| if library.is_some() { crate::size::band_cells(crate::size::band_room(node)) } else { 0 })
+        .map(
+            |(node, library)| {
+                if library.is_some() { crate::size::band_cells(crate::size::band_room(node), crate::size::band_insets(node)) } else { 0 }
+            },
+        )
         .collect();
     let mut at: BTreeMap<u64, BTreeMap<&String, String>> = BTreeMap::new();
     for (library, &cells) in libraries.iter().zip(&cells) {

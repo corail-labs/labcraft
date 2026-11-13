@@ -81,7 +81,7 @@ pub struct Terminal {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind<'a> {
     /// A call: `qualified` as the text writes it (`visa.open`), the library of the callee for its band, and its glyph
-    /// when it is a primitive drawn as a circle (notation 3.2).
+    /// when it is a primitive drawn as a D (notation 3.2).
     Call { qualified: String, short: String, library: Option<String>, glyph: Option<Glyph>, icon: Option<&'a Icon> },
     /// A struct construction: the name of its type without its library, which goes to the band.
     Construction { ty: String, library: Option<String> },
@@ -206,7 +206,7 @@ pub struct Wire {
     pub read: Option<Id>,
 }
 
-/// The glyph of a primitive drawn as a circle (notation 3.2, closed list).
+/// The glyph of a primitive drawn as a D (notation 3.2, closed list).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Glyph {
     Sign(&'static str),
@@ -1217,7 +1217,7 @@ fn path_text(path: &labcraft_graph::Path, names: &Interner) -> String {
     text
 }
 
-/// The glyph of a primitive of `core` drawn as a circle (notation 3.2); `unit` for those that show a unit.
+/// The glyph of a primitive of `core` drawn as a D (notation 3.2); `unit` for those that show a unit.
 fn sign_of(name: &str) -> Option<&'static str> {
     Some(match name {
         "add" => "+",
