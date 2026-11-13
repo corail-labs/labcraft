@@ -390,7 +390,8 @@ exception (verified at step 1).
 product builds and ships on stable, and a separate CI job fuzzes on Linux with a pinned nightly. That job is
 the workflow `fuzz`, next to `checks`, which knows nothing of it and stays the only check GitHub requires on
 `main`; a red `fuzz` still stops the merge unless the owner decides otherwise for that pull request. It builds
-the targets once, then runs them side by side, one per CPU of the runner.
+the targets once, then runs them side by side, one per CPU of the runner. Like the jobs of `checks`, it keeps a
+cache of its own, which only `main` saves.
 `fuzz/README.md` says how to run a target and what becomes of a crash.
 
 The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (the Python checks of
