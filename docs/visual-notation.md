@@ -568,7 +568,14 @@ trunk is drawn with each.
 ## 5. Structures
 
 A structure is a **frame** with, as header, the keyword of the text (`loop continue_on_error`,
-`for x in readings`, `match state`, `handle e6`). Its outputs are terminals on the right edge, in
+`for x in readings`, `match state`, `handle e6`), after a **mark of its family**, so that the kind of a structure
+still reads when a zoom (7) makes its title too small: a circular arrow `↻` for a loop (`loop`, `for`), a stem that
+splits at a right angle `-⊏` for a choice (`match`, `handle`), two arrows `⇉` for `for parallel`. The mark stands in a
+square of `frame.mark` (12), 12 from the left edge (`place.label_start`), in the middle of the header; the title follows
+4 further (`node.padding`), and the width that the header asks of the frame counts both. It is drawn in lines of 1.5, in
+the color of the frame (that of an error for a `handle`). A shape in a corner, not a styled frame (D-23), and not a color, since the background says the
+depth (decided 2026-11-12 on renders, size 2026-11-13 on `station`). The frame of the function has none. Its outputs
+are terminals on the right edge, in
 the order of the text, except its error output, which is always on the bottom line, so that the error
 chain crosses the frame in a straight line (2.1).
 
@@ -593,7 +600,7 @@ chain crosses the frame in a straight line (2.1).
 ### 5.1 `loop` and `for`
 
 ```text
-        ┌─ loop ───────────────────────────────┐
+        ┌─ ↻ loop ─────────────────────────────┐
  0 V ──┤↻├ v ─────── …               … ── next v ┤↻├───── value
         │                             until ◆  │
  err ──┤↻├ e ───›─── …               … ─›─ next e ┤↻├───›── err_out
@@ -630,7 +637,7 @@ chain crosses the frame in a straight line (2.1).
 - **Error register**: box in error style, on the bottom line of the frame; it is a reminder that the loop stops when it contains
   an error (spec 6.3). **`continue_on_error`**: badge in the header, since it changes this default
   behavior.
-- **`for parallel`**: header `for parallel`, double-line frame.
+- **`for parallel`**: header `for parallel`, double-line frame, and the mark `⇉` instead of `↻` (5).
 
 ### 5.2 `match` and `handle`
 
@@ -641,7 +648,7 @@ chain crosses the frame in a straight line (2.1).
   branch moves nothing around it. A tab bar in the header lists the branches (`true`, `false`;
   `Init`, `WaitDut` …, the variant alone (3.3); `_` is written `other`). A branch with several patterns is one
   tab, which lists them (`1, other`). The displayed branch is highlighted. *(proposed)* The tabs stand in a row
-  of 24 under the title, each 20 high and 4 apart, from the start of the title: the branch shown filled with
+  of 24 under the header, each 20 high and 4 apart, from where the header starts (its mark, 5): the branch shown filled with
   `tab.fill` and outlined like the frame, the others outlined with `frame.divider`, their text in `ink.muted`. The
   number of branches never sets the width of the frame, which its branches and its title set: when the tabs do not
   hold in it, a **selector** stands for them, `‹ WaitDut ▾ 2/5 ›`: its two steps as wide as a tab is high, and a
@@ -794,7 +801,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 |---|---|
 | ≥ 75% | everything |
 | 40 to 75% | no terminal names or units, and a wire that leaves a terminal of a frame shows up to it (5); the names of the wires stay; the values of a run (6.1) down to 50 %, only on hover below |
-| < 40% | shapes, wires, structure titles; nodes as plain rectangles; no values |
+| < 40% | shapes, wires, structure titles and the marks of their families (5); nodes as plain rectangles; no values |
 
 ## 8. Theme tokens
 
@@ -956,6 +963,7 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `place.label_above` | 4 units | 0 to 16 | 2.1 | Between the label of a structure and its frame. |
 | `frame.header` | 24 units | 16 to 128 | 5 | The title of a structure. |
 | `frame.pad` | 16 units | 0 to 64 | 5 | Inside a frame, on each side. |
+| `frame.mark` | 12 units | 4 to 40 | 5 | The mark of the family of a structure, before its title. |
 | `frame.arm_header` | 24 units | 0 to 96 | 5.2 | The title of an arm of a `match` or `handle` unfolded. |
 | `frame.arm_gap` | 16 units | 0 to 64 | 5.2 | Between two arms unfolded. |
 | `tabs.row` | 24 units | 12 to 96 | 5.2 | The row of tabs of a `match` or `handle` in tabs. |

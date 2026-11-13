@@ -200,7 +200,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="measured"><title>match below</title>
 <rect x="709.84" y="104" width="176" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="721.84" y="119.65" font-size="10" style="fill: var(--node-title)">match below</text>
+<polyline points="721.84,116 726.64,116" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="733.84,111.2 726.64,111.2 726.64,120.8 733.84,120.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="737.84" y="119.65" font-size="10" style="fill: var(--node-title)">match below</text>
 <polygon points="709.84,113 712.84,116 709.84,119 706.84,116" style="fill: var(--wire-data)"/>
 <polygon points="882.84,289 888.84,292 882.84,295" style="fill: var(--wire-data)"/>
 <path d="M869.84 196 L873.84 196 Q877.84 196 877.84 200 L877.84 288 Q877.84 292 881.84 292 L885.84 292" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -231,7 +233,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="verdict"><title>handle e3</title>
 <rect x="901.84" y="104" width="184" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--wire-error); stroke-width: 1"/>
-<text x="913.84" y="119.65" font-size="10" style="fill: var(--node-title)">handle e3</text>
+<polyline points="913.84,116 918.64,116" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<polyline points="925.84,111.2 918.64,111.2 918.64,120.8 925.84,120.8" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<text x="929.84" y="119.65" font-size="10" style="fill: var(--node-title)">handle e3</text>
 <polygon points="898.84,317 904.84,320 898.84,323 900.84,320" style="fill: var(--wire-error)"/>
 <rect x="899.84" y="189" width="4" height="14" style="fill: var(--wire-data)"/>
 <polygon points="1082.84,289 1088.84,292 1082.84,295" style="fill: var(--wire-data)"/>

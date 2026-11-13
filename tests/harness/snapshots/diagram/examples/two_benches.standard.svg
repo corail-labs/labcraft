@@ -154,7 +154,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="n_a"><title>loop</title>
 <rect x="468.54" y="512" width="816" height="384" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="480.54" y="527.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="491.05,523.57 491.34,525.2 491.05,526.83 490.21,528.28 488.94,529.35 487.36,529.92 485.72,529.92 484.14,529.35 482.87,528.28 482.03,526.83 481.74,525.2 482.03,523.57 482.87,522.12 484.14,521.05 485.72,520.48 487.36,520.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="486.85,523.43 490.32,520.99 487.88,517.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="496.54" y="527.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="431.48" y="681" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="435.48" y="691.65" font-size="10" style="fill: var(--pill-text)">0.0</text>
 <rect x="431.48" y="729" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
@@ -282,7 +284,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="n_b"><title>loop</title>
 <rect x="468.54" y="104" width="816" height="384" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="480.54" y="119.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="491.05,115.57 491.34,117.2 491.05,118.83 490.21,120.28 488.94,121.35 487.36,121.92 485.72,121.92 484.14,121.35 482.87,120.28 482.03,118.83 481.74,117.2 482.03,115.57 482.87,114.12 484.14,113.05 485.72,112.48 487.36,112.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="486.85,115.43 490.32,112.99 487.88,109.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="496.54" y="119.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="431.48" y="273" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="435.48" y="283.65" font-size="10" style="fill: var(--pill-text)">0.0</text>
 <rect x="431.48" y="321" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>

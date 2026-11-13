@@ -62,7 +62,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="present"><title>loop</title>
 <rect x="332.28" y="56" width="1216" height="344" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="344.28" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
+<polyline points="354.79,67.57 355.08,69.2 354.79,70.83 353.95,72.28 352.68,73.35 351.1,73.92 349.46,73.92 347.88,73.35 346.61,72.28 345.77,70.83 345.48,69.2 345.77,67.57 346.61,66.12 347.88,65.05 349.46,64.48 351.1,64.48" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="350.59,67.43 354.06,64.99 351.62,61.52" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="360.28" y="71.65" font-size="10" style="fill: var(--node-title)">loop</text>
 <rect x="283.18" y="177" width="38.1" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="287.18" y="187.65" font-size="10" style="fill: var(--pill-text)">false</text>
 </g>

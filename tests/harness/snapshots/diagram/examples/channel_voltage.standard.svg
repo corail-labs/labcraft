@@ -24,7 +24,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="voltage"><title>match channel</title>
 <rect x="97.14" y="56" width="184" height="328" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="109.14" y="71.65" font-size="10" style="fill: var(--node-title)">match channel</text>
+<polyline points="109.14,68 113.94,68" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="121.14,63.2 113.94,63.2 113.94,72.8 121.14,72.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="125.14" y="71.65" font-size="10" style="fill: var(--node-title)">match channel</text>
 <circle cx="97.14" cy="68" r="3" style="fill: var(--wire-data)"/>
 <circle cx="281.14" cy="340" r="3" style="fill: var(--wire-data)"/>
 <path d="M265.14 148 L269.14 148 Q273.14 148 273.14 152 L273.14 336 Q273.14 340 277.14 340 L281.14 340" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

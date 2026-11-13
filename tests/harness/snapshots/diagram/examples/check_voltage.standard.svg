@@ -210,7 +210,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="measured"><title>match in_range</title>
 <rect x="995.48" y="96" width="176" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="1007.48" y="111.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
+<polyline points="1007.48,108 1012.28,108" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="1019.48,103.2 1012.28,103.2 1012.28,112.8 1019.48,112.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="1023.48" y="111.65" font-size="10" style="fill: var(--node-title)">match in_range</text>
 <polygon points="995.48,105 998.48,108 995.48,111 992.48,108" style="fill: var(--wire-data)"/>
 <polygon points="1168.48,281 1174.48,284 1168.48,287" style="fill: var(--wire-data)"/>
 <path d="M1155.48 188 L1159.48 188 Q1163.48 188 1163.48 192 L1163.48 280 Q1163.48 284 1167.48 284 L1171.48 284" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -241,7 +243,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="verdict"><title>handle e2</title>
 <rect x="1187.48" y="96" width="184" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--wire-error); stroke-width: 1"/>
-<text x="1199.48" y="111.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
+<polyline points="1199.48,108 1204.28,108" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<polyline points="1211.48,103.2 1204.28,103.2 1204.28,112.8 1211.48,112.8" style="fill: none; stroke: var(--wire-error); stroke-width: 1.5"/>
+<text x="1215.48" y="111.65" font-size="10" style="fill: var(--node-title)">handle e2</text>
 <polygon points="1184.48,309 1190.48,312 1184.48,315 1186.48,312" style="fill: var(--wire-error)"/>
 <rect x="1185.48" y="181" width="4" height="14" style="fill: var(--wire-data)"/>
 <polygon points="1368.48,281 1374.48,284 1368.48,287" style="fill: var(--wire-data)"/>

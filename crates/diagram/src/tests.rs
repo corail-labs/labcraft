@@ -1751,3 +1751,69 @@ fn nested_notches_follow_one_order() {
     let (a, b) = (end_of(&drawing, "fn.a"), end_of(&drawing, "fn.b"));
     assert!(a.1 < b.1, "{a:?} {b:?}");
 }
+
+/// Where the title of a frame starts, the frame's own `x`, and the open lines drawn in its header before the title with
+/// their color: the mark of its family (notation 5).
+fn header_of(shapes: &[Shape]) -> (i64, i64, Vec<(usize, &'static str)>) {
+    let Some(Shape::Rect { x: frame, y: top, .. }) = shapes.first() else { panic!("{shapes:?}") };
+    let title = shapes
+        .iter()
+        .find_map(|shape| match shape {
+            Shape::Text { x, runs, .. } if runs.iter().all(|run| run.token == "node.title") => Some(*x),
+            _ => None,
+        })
+        .unwrap();
+    let marks = shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Poly { points, closed: false, paint }
+                if points.iter().all(|&(x, y)| x > frame + 900 && x < title && y > top - 1000 && y < top + 2400) =>
+            {
+                Some((points.len(), paint.stroke.unwrap()))
+            }
+            _ => None,
+        })
+        .collect();
+    (*frame, title, marks)
+}
+
+/// Each structure shows the mark of its family before its title, in the color of its frame, and the title follows it:
+/// 12 from the edge (`place.label_start`), a mark of 12 (`frame.mark`) and a gap of 4 (`node.padding`), 28 in all. A
+/// return arc of 16 points and its head of 3; a stem of 2 and a bracket of 4; two arrows of a line and a head each. The
+/// frame of the function has no mark, its title at 12 (notation 5, 10).
+#[test]
+fn a_structure_shows_the_mark_of_its_family_before_its_title() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(xs: [f64], s: bool, err: error = none) -> (ys: [f64], z: f64, w: bool, v: f64, err: error) {\n    ys = for parallel x in xs {\n        y = core.neg(x)\n        collect y\n    }\n    z = match s {\n        true => yield 1.0\n        false => yield 2.0\n    }\n    w = loop carry a = s {\n        next a = a\n        until a\n    }\n    v, e2 = core.div(1.0, 2.0, err)\n    k = handle e2 {\n        ok => yield 0.0\n        _ => yield 1.0\n    }\n    err = none\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!("{:?}", checked.report.diagnostics())
+    };
+    for (node, marks) in [
+        ("ys", vec![(2, "frame.stroke"), (3, "frame.stroke"), (2, "frame.stroke"), (3, "frame.stroke")]),
+        ("z", vec![(2, "frame.stroke"), (4, "frame.stroke")]),
+        ("w", vec![(16, "frame.stroke"), (3, "frame.stroke")]),
+        ("k", vec![(2, "wire.error"), (4, "wire.error")]),
+    ] {
+        let group = drawing.groups.iter().find(|group| group.node == node && group.arm.is_none()).unwrap();
+        let (frame, title, found) = header_of(&group.shapes);
+        assert_eq!(title - frame, 2800, "{node}");
+        assert_eq!(found, marks, "{node}");
+    }
+    let (frame, title, found) = header_of(&drawing.loose);
+    assert_eq!((title - frame, found), (1200, Vec::new()));
+}
+
+/// The mark widens the header that sets the width of a frame: `loop` (4 cells at 10, 24.08) and its badge
+/// `continue_on_error` (8, then 17 cells at 10, 102.35, and 4 on each side), after 12, the mark and its gap (16), and
+/// before 12: 182.43, 184 on the grid of 8 (without the mark, 166.43 and 168).
+#[test]
+fn the_mark_widens_the_header_of_a_frame() {
+    let main = "labcraft 1\n\nfn main(s: bool) -> (z: bool) {\n    z = loop continue_on_error carry a = s {\n        next a = a\n        until a\n    }\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    let group = drawing.groups.iter().find(|group| group.node == "z").unwrap();
+    let Some(Shape::Rect { width, .. }) = group.shapes.first() else { panic!() };
+    assert_eq!(*width, 18_400);
+}

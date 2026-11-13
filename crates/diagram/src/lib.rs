@@ -305,7 +305,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     let within = |body: usize| inside.get(body).copied().flatten();
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
-        drawing.loose = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, false, "frame.stroke");
+        drawing.loose = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, None, "frame.stroke");
     }
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
@@ -517,7 +517,7 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
         let badge = structure
             .badge
             .map_or(0, |badge| style::grid() + Text::new(badge, crate::size::any_text(), crate::size::medium()).width + 2 * style::padding());
-        2 * style::label_start() + header + badge
+        2 * style::label_start() + mark_room(Some(Family::of(structure))) + header + badge
     };
     for (index, body) in graph.bodies.iter().enumerate() {
         let width = match body.owner.and_then(|owner| graph.nodes.get(owner)).map(|owner| &owner.kind) {
@@ -653,8 +653,9 @@ struct TabShapes {
 }
 
 /// A frame: its box, its title in its header, a badge.
-fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, double: bool, stroke: Token) -> Vec<Shape> {
+fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, family: Option<Family>, stroke: Token) -> Vec<Shape> {
     let mut shapes = Vec::new();
+    let double = family == Some(Family::Parallel);
     // The frame of the function has no fill: it is drawn on the canvas, and the first structure takes the first level
     // (notation 5, 8).
     let paint =
@@ -671,10 +672,15 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
         });
     }
     let middle = frame.y + frame.header / 2;
-    shapes.push(title.shown_from(frame.x + style::label_start(), middle, "node.title", shape::Detail::Title));
+    let mut start = frame.x + style::label_start();
+    if let Some(family) = family {
+        shapes.extend(family_mark(family, start + style::frame_mark() / 2, middle, stroke));
+        start += mark_room(Some(family));
+    }
+    shapes.push(title.shown_from(start, middle, "node.title", shape::Detail::Title));
     if let Some(badge) = badge {
         let text = Text::new(badge, crate::size::any_text(), crate::size::medium());
-        let x = frame.x + style::label_start() + title.width + style::grid();
+        let x = start + title.width + style::grid();
         shapes.push(Shape::Rect {
             x,
             y: middle - style::grid(),
@@ -686,6 +692,84 @@ fn frame_shapes(frame: &place::FrameAt, title: &Text, badge: Option<&str>, doubl
         shapes.push(text.at(x + style::padding(), middle, "badge.text"));
     }
     shapes
+}
+
+/// The family of a structure, which a mark before its title shows at every zoom (notation 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Family {
+    /// `loop`, `for`: a return arc, `↻`.
+    Loop,
+    /// `match`, `handle`: a stem that splits at a right angle, `-⊏`.
+    Choice,
+    /// `for parallel`: two arrows, `⇉`, with the double frame.
+    Parallel,
+}
+
+impl Family {
+    fn of(structure: &graph::Structure) -> Family {
+        match structure.kind {
+            StructureKind::Match | StructureKind::Handle => Family::Choice,
+            StructureKind::Loop | StructureKind::For => {
+                if structure.parallel {
+                    Family::Parallel
+                } else {
+                    Family::Loop
+                }
+            }
+        }
+    }
+}
+
+/// What the mark of a family takes before the title: its square and a gap, or nothing without a mark.
+fn mark_room(family: Option<Family>) -> i64 {
+    family.map_or(0, |_| style::frame_mark() + style::padding())
+}
+
+/// The points of the return arc on a circle of 1000, in thousandths, every 20 degrees from -20 to 280, clockwise on
+/// the canvas (y down): the gap is at the top right, where the arrow head points. Written out, so that every platform
+/// draws the same numbers.
+const ARC: [(i64, i64); 16] = [
+    (940, -342),
+    (1000, 0),
+    (940, 342),
+    (766, 643),
+    (500, 866),
+    (174, 985),
+    (-174, 985),
+    (-500, 866),
+    (-766, 643),
+    (-940, 342),
+    (-1000, 0),
+    (-940, -342),
+    (-766, -643),
+    (-500, -866),
+    (-174, -985),
+    (174, -985),
+];
+
+/// The mark of a family in a square of `frame.mark` centred on `(cx, cy)`, in the color of the frame (notation 5).
+fn family_mark(family: Family, cx: i64, cy: i64, stroke: Token) -> Vec<Shape> {
+    let side = style::frame_mark();
+    // In thousandths of the side, from the middle of the square.
+    let at = |x: i64, y: i64| (cx + x * side / 1000, cy + y * side / 1000);
+    let line = |points: Vec<(i64, i64)>| Shape::Poly { points, closed: false, paint: Paint::stroke(stroke, 150) };
+    match family {
+        Family::Loop => {
+            // A circle of 400, 100 below the middle, and an arrow head of 250 at its end, along the arc there: the
+            // direction of a clockwise circle at (x, y) is (-y, x).
+            let on_arc = |(x, y): (i64, i64)| at(x * 400 / 1000, 100 + y * 400 / 1000);
+            let Some(&(x, y)) = ARC.last() else { return Vec::new() };
+            let (dx, dy) = (-y * 250 / 1000, x * 250 / 1000);
+            let end = (x * 400 / 1000, 100 + y * 400 / 1000);
+            let head = vec![at(end.0 - dy, end.1 + dx), at(end.0 + dx, end.1 + dy), at(end.0 + dy, end.1 - dx)];
+            vec![line(ARC.iter().copied().map(on_arc).collect()), line(head)]
+        }
+        Family::Choice => vec![line(vec![at(-500, 0), at(-100, 0)]), line(vec![at(500, -400), at(-100, -400), at(-100, 400), at(500, 400)])],
+        Family::Parallel => [-300, 300]
+            .into_iter()
+            .flat_map(|y| [line(vec![at(-500, y), at(400, y)]), line(vec![at(150, y - 250), at(400, y), at(150, y + 250)])])
+            .collect(),
+    }
 }
 
 /// The terminals of the frame of a body on its edges, their names inside (notation 2, 5). They are drawn over the wires
@@ -828,7 +912,7 @@ fn structure_shapes(
             let Some(frame) = node.bodies.first().and_then(|index| placement.frames.get(*index)) else {
                 return (Vec::new(), Vec::new(), Vec::new());
             };
-            let mut shapes = frame_shapes(frame, &title, structure.badge, structure.parallel, stroke);
+            let mut shapes = frame_shapes(frame, &title, structure.badge, Some(Family::of(structure)), stroke);
             // The inputs follow the clauses, as the left of the frame does: the start of a range is in its box, not on a pill.
             let left = node.bodies.first().and_then(|index| graph.bodies.get(*index)).map_or(&[][..], |body| &body.left[..]);
             for (index, (input, &(_, y))) in node.inputs.iter().zip(inputs).enumerate() {
@@ -853,7 +937,7 @@ fn structure_shapes(
                 .max()
                 .unwrap_or(style::frame_header() + style::frame_pad());
             let outer = place::FrameAt { x: at.x, y: at.y, width, height, header: style::frame_header(), depth, ..place::FrameAt::default() };
-            let mut shapes = frame_shapes(&outer, &title, structure.badge, false, stroke);
+            let mut shapes = frame_shapes(&outer, &title, structure.badge, Some(Family::of(structure)), stroke);
             // The selector, then the notches of the outer values that the arms read.
             for (index, (input, &(x, y))) in node.inputs.iter().zip(inputs).enumerate() {
                 let edge = if index == 0 { graph::Edge::Input } else { graph::Edge::Notch };
