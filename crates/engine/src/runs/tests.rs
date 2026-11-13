@@ -149,6 +149,13 @@ fn each_argument_that_does_not_convert_has_its_code() {
     assert_eq!(with("v", json!(220)), ["LC8105"], "no unit for a type with one");
     assert_eq!(with("v", json!("2 A")), ["LC8105"], "another dimension");
     assert_eq!(with("d", json!("100")), ["LC8105"], "a duration without a unit");
+    assert_eq!(with("d", json!(100)), ["LC8105"], "a JSON number has no unit");
+    // A JSON value that is neither a number nor a string does not read, for a duration as for a number with a unit
+    // (decision of the owner, 2026-11-13).
+    for value in [json!(true), json!(null), json!([]), json!({})] {
+        assert_eq!(with("v", value.clone()), ["LC8104"], "{value} for an f64[V]");
+        assert_eq!(with("d", value.clone()), ["LC8104"], "{value} for a duration");
+    }
     assert_eq!(with("n", json!(300)), ["LC8106"], "beyond a u8");
     assert_eq!(with("v", json!("1e999 mV")), ["LC8106"], "beyond an f64");
     assert_eq!(with("n", json!("1000000000000000000000000000000000000000000")), ["LC8104"], "a u8 is a JSON number");
