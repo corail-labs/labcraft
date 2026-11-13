@@ -679,8 +679,8 @@ fn guide_read_refuses_what_it_does_not_hold_with_the_choices() {
 }
 
 /// `LC7005` has no mark: the viewer lists it with the problems of the folder, for the function shown, and the report
-/// of the check alone comes back with a function that adds nothing. `y` placed 4 units right of `ab`, both circles of
-/// 28 (notation 10), covers it.
+/// of the check alone comes back with a function that adds nothing. `y` placed 4 units right of `ab`, both D of 32
+/// (notation 10), covers it.
 #[test]
 fn the_viewer_lists_the_warnings_of_the_drawing_shown() {
     let memory = Memory::new();

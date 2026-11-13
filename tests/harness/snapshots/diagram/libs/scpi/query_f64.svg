@@ -60,10 +60,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="308.94" y="131.65" font-size="10" style="fill: var(--node-title)">err</text>
 </g>
 <g data-node="text"><title>visa.query</title>
-<rect x="136.18" y="96" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<rect x="136.18" y="84" width="40" height="12" style="fill: var(--band-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="145.35" y="93.28" font-size="9" style="fill: var(--band-text)">visa</text>
-<text x="142.64" y="119.28" font-size="9" style="fill: var(--node-title)">query</text>
+<rect x="136.18" y="96" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="136.18" y="96" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="136.18" y="106" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="136.18,108 176.18,108" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="145.35" y="105.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="136.18" y="96" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="142.64" y="125.28" font-size="9" style="fill: var(--node-title)">query</text>
 <rect x="173.18" y="101.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
 <rect x="133.18" y="109" width="6" height="6" style="fill: var(--wire-resource)"/>
 <rect x="173.18" y="109" width="6" height="6" style="fill: var(--wire-resource)"/>

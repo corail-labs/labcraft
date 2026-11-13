@@ -53,10 +53,29 @@ pub fn name_cells() -> u64 {
     cells_in(block_width() - style::terminal(), label_size())
 }
 
-/// The cells of a band above a block `width` wide (notation 3.2): its width less the padding of a pill on each side;
-/// never less than one, `…`.
-pub fn band_cells(width: i64) -> u64 {
-    cells_in(width - 2 * style::padding(), small()).max(1)
+/// How far a terminal on an edge of a node reaches into it (notation 4.1): half of it, and the brackets of an array.
+fn reach_in(family: Family) -> i64 {
+    let half = style::terminal() / 2;
+    if family.dimensions == 0 { half } else { half + 250 * i64::from(family.dimensions.min(4)) + 60 }
+}
+
+/// How far the text of the band of `node` keeps from the left and the right edges of its block (notation 3.2): past the
+/// terminal of its first line on that side, which is beside the band, or half a terminal where it has none, and past the
+/// chevron of `after:` on the top edge on the left, then the padding of an oblong label.
+pub fn band_insets(node: &Node<'_>) -> (i64, i64) {
+    let first = lines(&node.inputs, &node.outputs).into_iter().next().unwrap_or((None, None));
+    let reach = |terminal: Option<&Terminal>| terminal.map_or(style::terminal() / 2, |terminal| reach_in(terminal.family));
+    let mut left = reach(first.0.and_then(|input| node.inputs.get(input)));
+    if node.after {
+        left = left.max(style::grid() + style::terminal() / 2);
+    }
+    let right = reach(first.1.and_then(|output| node.outputs.get(output)));
+    (left + style::label_padding(), right + style::label_padding())
+}
+
+/// The cells of the band of a block `width` wide (notation 3.2): what its insets leave; never less than one, `…`.
+pub fn band_cells(width: i64, (left, right): (i64, i64)) -> u64 {
+    cells_in(width - left - right, small()).max(1)
 }
 
 /// The width of the block of a node in compact view, which its band takes (notation 3.2): an oblong is as wide as its
@@ -244,7 +263,7 @@ pub fn lines(inputs: &[Terminal], outputs: &[Terminal]) -> Vec<Line> {
 pub struct Sized {
     pub width: i64,
     pub height: i64,
-    /// How far the shapes reach beyond the block: above (band, label), to the left (pills), to the right.
+    /// How far the shapes reach beyond the block: above (its label), to the left (pills), to the right.
     pub above: i64,
     pub left: i64,
     pub right: i64,
@@ -494,12 +513,8 @@ struct Places {
 /// top side comes with the `terminals` section, M1).
 fn places(node: &Node<'_>, least: i64) -> Places {
     let (grid, pitch) = (style::grid(), style::compact_pitch());
-    let holds = |count: usize, height: i64| grid + (count.max(1) as i64 - 1) * pitch + grid <= height;
     let lines = lines(&node.inputs, &node.outputs);
-    let mut height = least;
-    while !holds(lines.len(), height) {
-        height = up(height.saturating_add(2 * pitch));
-    }
+    let height = grown(lines.len(), least);
     let error = |line: &Line| {
         line.0.and_then(|input| node.inputs.get(input)).is_some_and(|terminal| terminal.family.base == Base::Error)
             || line.1.and_then(|output| node.outputs.get(output)).is_some_and(|terminal| terminal.family.base == Base::Error)
@@ -508,6 +523,18 @@ fn places(node: &Node<'_>, least: i64) -> Places {
     let ys =
         lines.iter().enumerate().map(|(row, line)| if row + 1 == count && error(line) { height - grid } else { grid + row as i64 * pitch }).collect();
     Places { lines, ys, height }
+}
+
+/// The height of a compact node of `count` places, `least` at least: 8 above the first place and 8 below the last, `node.pitch`
+/// between two, growing by two places at a time (notation 3.2).
+fn grown(count: usize, least: i64) -> i64 {
+    let (grid, pitch) = (style::grid(), style::compact_pitch());
+    let needed = grid + (count.max(1) as i64 - 1).saturating_mul(pitch) + grid;
+    let mut height = least;
+    while height < needed {
+        height = up(height.saturating_add(2 * pitch));
+    }
+    height
 }
 
 /// The terminals of a block as drawn: how far its pills reach to the left, where each terminal is, and how far left of
@@ -519,10 +546,41 @@ struct AtPlaces {
     reaches: Vec<Option<i64>>,
 }
 
+/// The body of a compact block (notation 3.2): its fill, the band of its library inside, at its top, its outline over
+/// both. Where what the band leaves starts: 0 without a band.
+fn body(band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+    let radius = style::radius();
+    let outline = |paint| Shape::Rect { x: 0, y: 0, width, height, radius, paint };
+    let Some(band) = band else {
+        shapes.push(outline(Paint::both("node.fill", "node.stroke", style::outline())));
+        return 0;
+    };
+    let band_height = style::band_height().min(height);
+    shapes.push(outline(Paint::fill("node.fill")));
+    // Rounded at the top with the block, square at the bottom.
+    shapes.push(Shape::Rect { x: 0, y: 0, width, height: band_height, radius, paint: Paint::fill("band.fill") });
+    let square = radius.min(band_height / 2);
+    if square > 0 {
+        shapes.push(Shape::Rect { x: 0, y: band_height - square, width, height: square, radius: 0, paint: Paint::fill("band.fill") });
+    }
+    shapes.push(Shape::Poly {
+        points: vec![(0, band_height), (width, band_height)],
+        closed: false,
+        paint: Paint::stroke("node.stroke", style::outline()),
+    });
+    shapes.push(band.centred((left + width - right) / 2, band_height / 2, "band.text"));
+    shapes.push(outline(Paint::stroke("node.stroke", style::outline())));
+    band_height
+}
+
+/// The top of the line of the `▴` of `always`, centred 8 above the bottom of a compact node `height` high (notation 3.2).
+fn always_top(height: i64) -> i64 {
+    height - style::grid() - line_height(medium()) / 2
+}
+
 /// A compact block (a square or an oblong) from its terminals on their places (notation 3.2).
-fn compact(width: i64, height: i64, above: i64, shapes: Vec<Shape>, drawn: AtPlaces, order: Option<(i64, i64)>) -> Sized {
+fn compact(width: i64, height: i64, shapes: Vec<Shape>, drawn: AtPlaces, order: Option<(i64, i64)>) -> Sized {
     Sized {
-        above,
         left: drawn.left,
         right: style::terminal() / 2,
         inputs: drawn.inputs,
@@ -560,7 +618,7 @@ impl Sizer<'_> {
         let standard = self.standard_everywhere || node.standard;
         let mut sized = match &node.kind {
             Kind::Constant { name, value } => self.constant(name, value),
-            Kind::Call { glyph: Some(glyph), .. } if !standard => self.circle(node, glyph),
+            Kind::Call { glyph: Some(glyph), .. } if !standard => self.primitive(node, glyph),
             Kind::Call { qualified, short, .. } => {
                 if standard {
                     self.standard(node, qualified)
@@ -595,7 +653,7 @@ impl Sizer<'_> {
         sized.inputs.resize(node.inputs.len(), (0, sized.height / 2));
         sized.outputs.resize(node.outputs.len(), (sized.width, sized.height / 2));
         if let Some(label) = &node.label {
-            // Above the band, or above the block (notation 3.1, 3.2).
+            // Above the block, whose band is inside it (notation 3.1, 3.2).
             // Right of an `after:` terminal on the top edge, which a wire reaches from above (notation 2.2).
             let text = Text::new(&format!("{label}:"), any_text(), medium());
             let start = match sized.order {
@@ -681,43 +739,31 @@ impl Sizer<'_> {
         let width = block_width();
         let places = places(node, style::square());
         let side = places.height;
-        let label = if icon.is_none() { label_lines(short, name_cells()) } else { Vec::new() };
+        // The name of a node `always` on one line, between the band and its `▴`, which it never meets.
+        let label = match icon {
+            Some(_) => Vec::new(),
+            None if node.always => vec![Text::new(short, name_cells(), label_size())],
+            None => label_lines(short, name_cells()),
+        };
         let band = band.map(|band| Text::measured(band.clone(), small()));
-        let mut shapes = vec![Shape::Rect {
-            x: 0,
-            y: 0,
-            width,
-            height: side,
-            radius: style::radius(),
-            paint: Paint::both("node.fill", "node.stroke", style::outline()),
-        }];
-        let mut above = 0;
-        if let Some(band) = &band {
-            shapes.push(Shape::Rect {
-                x: 0,
-                y: -style::band_height(),
-                width,
-                height: style::band_height(),
-                radius: 0,
-                paint: Paint::both("band.fill", "node.stroke", style::outline()),
-            });
-            shapes.push(band.centred(width / 2, -style::band_height() / 2, "band.text"));
-            above = style::band_height();
-        }
-        // In the centre of the block.
+        let mut shapes = Vec::new();
+        let top = body(band.as_ref(), band_insets(node), width, side, &mut shapes);
+        // In the centre of what the band leaves.
+        let centre = top + (side - top) / 2;
         match icon {
-            Some(icon) => shapes.push(Shape::Icon { x: width / 2 - style::icon() / 2, y: side / 2 - style::icon() / 2, side: style::icon(), icon }),
+            Some(icon) => shapes.push(Shape::Icon { x: width / 2 - style::icon() / 2, y: centre - style::icon() / 2, side: style::icon(), icon }),
             None => {
                 let height = line_height(label_size());
-                let top = side / 2 - height * label.len() as i64 / 2;
+                let centre = if node.always { (top + always_top(side)) / 2 } else { centre };
+                let top = centre - height * label.len() as i64 / 2;
                 for (row, line) in label.iter().enumerate() {
                     shapes.push(line.centred(width / 2, top + height * row as i64 + height / 2, "node.title"));
                 }
             }
         }
         let drawn = self.terminals(node, &places, width, &mut shapes);
-        let order = self.compact_marks(node, width, side, band.is_some(), &mut shapes);
-        compact(width, side, above, shapes, drawn, order)
+        let order = self.compact_marks(node, width, side, &mut shapes);
+        compact(width, side, shapes, drawn, order)
     }
 
     /// The terminals of a block on its places, and the pills of its constants.
@@ -746,17 +792,16 @@ impl Sizer<'_> {
 
     /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal, whose
     /// centre it gives.
-    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, band: bool, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
+    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
         if node.always {
             let mark = Text::new("\u{25B4}", 1, medium());
-            shapes.push(mark.centred(width / 2, height - style::grid(), "node.title"));
+            shapes.push(mark.centred(width / 2, always_top(height) + line_height(medium()) / 2, "node.title"));
         }
         if !node.after {
             return None;
         }
-        let at = if band { (0, -style::band_height() / 2) } else { (style::grid(), 0) };
-        shapes.push(order_terminal(at.0, at.1));
-        Some(at)
+        shapes.push(order_terminal(style::grid(), 0));
+        Some((style::grid(), 0))
     }
 
     /// A construction, a variant constructor or a node of `ui`: as wide as its label, never a square (notation 3.2). Its
@@ -764,92 +809,47 @@ impl Sizer<'_> {
     fn oblong(&self, node: &Node<'_>, label: Vec<Text>, band: Option<&ShownText>) -> Sized {
         let band = band.map(|band| Text::measured(band.clone(), small()));
         let width = oblong_width(&label);
-        let places = places(node, up(style::square().max(label_height(&label) + 2 * style::grid())));
+        let band_height = if band.is_some() { style::band_height() } else { 0 };
+        let places = places(node, up(style::square().max(band_height + label_height(&label) + 2 * style::grid())));
         let height = places.height;
-        let mut shapes = vec![Shape::Rect {
-            x: 0,
-            y: 0,
-            width,
-            height,
-            radius: style::radius(),
-            paint: Paint::both("node.fill", "node.stroke", style::outline()),
-        }];
-        let mut above = 0;
-        if let Some(band) = &band {
-            shapes.push(Shape::Rect {
-                x: 0,
-                y: -style::band_height(),
-                width,
-                height: style::band_height(),
-                radius: 0,
-                paint: Paint::both("band.fill", "node.stroke", style::outline()),
-            });
-            shapes.push(band.centred(width / 2, -style::band_height() / 2, "band.text"));
-            above = style::band_height();
-        }
+        let mut shapes = Vec::new();
+        let below = body(band.as_ref(), band_insets(node), width, height, &mut shapes);
         let row = line_height(label_size());
-        let top = height / 2 - row * label.len() as i64 / 2;
+        let top = below + (height - below) / 2 - row * label.len() as i64 / 2;
         for (index, line) in label.iter().enumerate() {
             shapes.push(line.centred(width / 2, top + row * index as i64 + row / 2, "node.title"));
         }
         let drawn = self.terminals(node, &places, width, &mut shapes);
-        let order = self.compact_marks(node, width, height, band.is_some(), &mut shapes);
-        compact(width, height, above, shapes, drawn, order)
+        let order = self.compact_marks(node, width, height, &mut shapes);
+        compact(width, height, shapes, drawn, order)
     }
 
-    /// A primitive of `core` with a glyph: a circle of 28, or a capsule (notation 3.2).
-    fn circle(&self, node: &Node<'_>, glyph: &Glyph) -> Sized {
+    /// A primitive of `core` with a glyph (notation 3.2): a D with its right corners chamfered, 32 × 32, its terminals on
+    /// the grid. A unit that does not hold makes it wider; more than three inputs make it taller, by two places at a time.
+    fn primitive(&self, node: &Node<'_>, glyph: &Glyph) -> Sized {
         let (text, struck) = match glyph {
             Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
             Glyph::Unit { unit, struck } => (Text::new(unit, any_text(), large()), *struck),
         };
-        let width = if text.width + 600 > style::circle() { text.width + 600 } else { style::circle() };
-        // The inputs from the middle: one at it, two at 8 above and below, three at 10; as on a compact block, 16 apart
-        // where one of two neighbours carries a pill (a constant, a field, a conversion), 24 where both do, since a pill is
-        // 18 high.
+        let width = style::primitive().max(up(text.width + 600));
+        let (grid, pitch) = (style::grid(), style::compact_pitch());
         let count = node.inputs.len();
-        let mut offsets: Vec<i64> = match count {
-            0 => Vec::new(),
-            1 => vec![0],
-            2 => vec![-800, 800],
-            3 => vec![-1000, 0, 1000],
-            _ => (0..count as i64).map(|index| (index * 2 - (count as i64 - 1)) * 400).collect(),
-        };
-        // What the inputs before have moved, carried to those after: one pass.
-        let mut stretched = false;
-        let mut shift = 0;
-        for index in 1..count {
-            let carries = |input: usize| node.inputs.get(input).is_some_and(|terminal| terminal.constant.is_some() || terminal.pill.is_some());
-            let gap = match (carries(index - 1), carries(index)) {
-                (true, true) => 2400,
-                (true, false) | (false, true) => 1600,
-                (false, false) => 0,
-            };
-            let before = offsets.get(index - 1).copied();
-            let Some(at) = offsets.get_mut(index) else { continue };
-            *at += shift;
-            if let Some(before) = before
-                && *at - before < gap
-            {
-                let more = gap - (*at - before);
-                *at += more;
-                shift += more;
-                stretched = true;
-            }
-        }
-        if stretched {
-            let middle = (offsets.first().copied().unwrap_or(0) + offsets.last().copied().unwrap_or(0)) / 2;
-            offsets.iter_mut().for_each(|offset| *offset -= middle);
-        }
-        let span = offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0);
-        // More than three inputs (an error that is still drawn) stretch it too, so that none is outside.
-        let height = if stretched || count > 3 { style::circle().max(span + style::pill_height()) } else { style::circle() };
-        let radius = width.min(height) / 2;
+        let height = grown(count, style::primitive());
         let middle = height / 2;
-        let mut shapes = vec![if width == height {
-            Shape::Circle { x: radius, y: radius, radius, paint: Paint::both("node.fill", "node.stroke", style::outline()) }
-        } else {
-            Shape::Rect { x: 0, y: 0, width, height, radius, paint: Paint::both("node.fill", "node.stroke", style::outline()) }
+        // One input at the middle, two on the first and last places, three on the first, the middle and the last; more
+        // from the top, one per place (an error of `check` that is still drawn, or a variadic `add`).
+        let ys: Vec<i64> = match count {
+            0 => Vec::new(),
+            1 => vec![middle],
+            2 => vec![grid, height - grid],
+            3 => vec![grid, middle, height - grid],
+            _ => (0..count as i64).map(|index| grid + index * pitch).collect(),
+        };
+        let chamfer = style::chamfer().min(height / 2).min(width / 2);
+        let mut shapes = vec![Shape::Poly {
+            points: vec![(0, 0), (width - chamfer, 0), (width, chamfer), (width, height - chamfer), (width - chamfer, height), (0, height)],
+            closed: true,
+            paint: Paint::both("node.fill", "node.stroke", style::outline()),
         }];
         shapes.push(text.centred(width / 2, middle, "node.title"));
         if struck {
@@ -859,25 +859,18 @@ impl Sizer<'_> {
                 paint: Paint::stroke("node.title", style::outline()),
             });
         }
-        // On the edge: where the outline is round, the depth of the arc at that height, by an integer square root.
-        let edge = |dy: i64| -> i64 {
-            let straight = (height - width).max(0) / 2;
-            let beyond = (dy.abs() - straight).max(0);
-            if beyond >= radius { radius } else { radius - (radius * radius - beyond * beyond).isqrt() }
-        };
         let mut pills = Vec::new();
         let mut inputs = Vec::new();
-        for (index, (terminal_of, &offset)) in node.inputs.iter().zip(&offsets).enumerate() {
-            let x = edge(offset);
-            shapes.extend(terminal(terminal_of.family, x, middle + offset, 100, false));
-            pills.push((index, x, middle + offset));
-            inputs.push((x, middle + offset));
+        for (index, (terminal_of, &y)) in node.inputs.iter().zip(&ys).enumerate() {
+            shapes.extend(terminal(terminal_of.family, 0, y, 100, false));
+            pills.push((index, 0, y));
+            inputs.push((0, y));
         }
         if let Some(output) = node.outputs.first() {
             shapes.extend(terminal(output.family, width, middle, 100, output.ignored));
         }
         let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
-        let order = self.compact_marks(node, width, height, false, &mut shapes);
+        let order = self.compact_marks(node, width, height, &mut shapes);
         Sized { left, right: style::terminal() / 2, inputs, outputs: vec![(width, middle)], order, reaches, ..Sized::new(width, height, shapes) }
     }
 

@@ -15,8 +15,8 @@ use labcraft_types::text::{ASCENT, DESCENT, scale};
 
 /// Between parallel wires (notation 2.2).
 const PARALLEL: i64 = 800;
-/// How far a wire may run into the box of the node it reaches: a terminal of a circle is inside its square (notation
-/// 3.2), and a terminal is 10 across.
+/// How far a wire may run into the box of the node it reaches: a terminal is on the edge of its node (notation 3.2), and
+/// a terminal is 10 across.
 const TERMINAL: i64 = 600;
 
 #[derive(Clone, Copy, Debug)]

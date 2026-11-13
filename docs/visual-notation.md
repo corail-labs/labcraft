@@ -114,7 +114,7 @@ are the nodes that a `layout` section does not place (spec 11).
   level of nesting. Structures grow upward, and their error lines line up. A structure off the main
   chain keeps its own chain straight along its own bottom.
 - **The numbers** *(proposed)*. In a column, the blocks are aligned on their left edge, and the column is as
-  wide as its widest node. Two nodes stacked are 24 apart, plus what a band or a label adds above the lower one;
+  wide as its widest node. Two nodes stacked are 24 apart, plus what a label adds above the lower one (a band is inside its block, 3.2);
   a column with no node of the chain starts 40 above the axis. The order in a column comes from four sweeps of
   barycentres each way, the order that makes the wires the shortest kept. A channel is as wide as
   its wires need (2.2). A frame has a header of 24 for its title and 16 inside around what it holds; a
@@ -195,8 +195,8 @@ are the nodes that a `layout` section does not place (spec 11).
   wire by its value and the node it reaches, an output of the function or an input named after it; the part inside a
   structure that `wire stop -> n` names does not keep them yet (to do with the editor, M1).
 - A terminal can sit on any side of its node, and the routing leaves it in that direction, so that
-  sides chosen later (N-15) need no other routing. The terminals of a circle are off the grid of 8 (3.2), and the wire reaches them with a short
-  segment.
+  sides chosen later (N-15) need no other routing. Every terminal of a compact block or of a primitive is on the grid
+  of 8 (3.2, decided 2026-11-13).
 
 ### 2.3 Font and text metrics
 
@@ -272,7 +272,7 @@ developer chooses the zoom, and the font of the other panels of the IDE.
 
 A function call has **two views**:
 
-- **Compact, the default**: a small shape with the function's icon or a short label, under a band
+- **Compact, the default**: a small shape with the function's icon or a short label, with a band at its top
   naming its library when it comes from another one, unnamed terminals (3.2). It lets a whole
   function fit on screen.
 - **Standard, on request**: a block with the name as a header and named terminals (3.1).
@@ -281,7 +281,7 @@ The view of a node is changed in the IDE and saved in the `layout` section (`vie
 spec 11); an IDE preference displays everything in standard view. The read-only viewer of M0v
 draws the view that the file gives; a view changed there is a state of the viewer, never written to
 the file, like the branch shown in a `match` (N-2). **Primitives** are not a special
-case: they are the `core` functions whose compact view is a circle with a glyph (3.2); a project's own
+case: they are the `core` functions whose compact view is a D with a glyph (3.2); a project's own
 `add` is an ordinary function, with no glyph. The choice
 of view changes nothing in the program: the text, its canonical form and its diffs stay the same.
 
@@ -361,13 +361,19 @@ terminals (N-15).
 ```
 
 A compact node is a **block** whose center says what the function does: its icon, or a short label.
-When the function comes from another library, a **band** above the block says which.
+When the function comes from another library, a **band** at the top of the block says which.
 
 - **Band**: the name of the library of the function (`visa`, `scpi`, `dmm_driver`, `results_log`), whole
-  when it holds in the width of its block less 4 on each side, beyond that cut to one cell less followed by `…`
-  (cells, 2.3): above a block of 40, 5 cells at 9, `visa`, `resu…` *(proposed)*, in the token `band.text` on `band.fill`, neutral by default,
-  with a contrast of at least 4.5:1 in both themes. The band is 12 units high and as wide as the block,
-  which it never widens; an oblong (below), as wide as its label, holds more of it (`results_log` above
+  when it holds in the width of its block less, on each side, how far the terminal of the first line reaches into the
+  block, since it is beside the band (half a terminal, 3, and the brackets of an array, 4.1; 3 where there is none), and
+  2, beyond that cut to one cell less followed by `…`
+  (cells, 2.3): in a block of 40, 5 cells at 9, `visa`, `resu…`; in `StepResult`, 64 wide, 9 cells, `results_…`; on a node with `after:`, the text starts past its chevron instead, 13 from
+  the left edge (8, half a terminal and 2), so a block of 40 holds 4 cells, `res…` *(proposed)*, in the token `band.text` on `band.fill`, neutral by default,
+  with a contrast of at least 4.5:1 in both themes. The band is **inside the block**, at its top (decided 2026-11-12,
+  drawn 2026-11-13): 12 units high and as wide as the block, rounded at the top with it, square at the bottom, a line of
+  `node.stroke` under it. It never makes a block taller or wider, and the lines keep their places (below), the first one
+  beside the band, so that a line has the same height on a block with a band and on one without and the wire between
+  them stays straight. A block of 40 keeps 28 under its band for its icon or its name; an oblong (below), as wide as its label, holds more of it (`results_…` in the band of
   `StepResult`). The name of a library is whole in the tooltip, and a library mask will give it a shorter
   text (N-11). A call to a function of `core`, of the other primitive libraries of the spec
   (`array`, `string`, `time`, `errors`, `ui`, spec appendix A.2) or of the library that holds the diagram has no
@@ -377,9 +383,10 @@ When the function comes from another library, a **band** above the block says wh
   path in the tooltip; when two bands of one diagram would read the same (`x.util` and `y.util`), each
   shows the full path. The texts compared are those drawn, after the cut: when they still read the
   same, each is cut in the middle instead, keeping its start and its end (above a block of 40,
-  `measurement_a` and `measurement_b` give `me…_a` and `me…_b`). The label (`#close:`) is drawn above the band, or above the block when there is
-  no band, in 10 (`text.medium`) and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. Neither counts in the position: `node x at (40, 80)` places the top-left corner of the block
-  (spec 11), so a band never moves the terminals. A library cannot yet change its band (N-11).
+  `measurement_a` and `measurement_b` give `me…_a` and `me…_b`). The label (`#close:`) is drawn above the block, in 10
+  (`text.medium`) and `ink.muted`, 4 above it, right of an `after:` terminal on the top edge *(proposed)*. It does not
+  count in the position: `node x at (40, 80)` places the top-left corner of the block (spec 11). A library cannot yet
+  change its band, nor give it a colour (N-11, M1); in v0 every band has the colours of `band.fill` and `band.text`.
 - **Block** *(proposed)*: `node.square` wide, 40 units, whatever its label, its band or its lines, so that a node
   reads as an icon and the blocks of a column line up; as tall as its places need (below), with 8 above
   the first place and 8 below the last one, 40 at least, rounded up to the grid: up to four lines a square of 40; past
@@ -388,11 +395,12 @@ When the function comes from another library, a **band** above the block says wh
   make it larger (N-6). A label that does not hold is cut (below): a reason to give the function an icon. A
   construction, a variant constructor and a node of `ui` are not squares: they can have no icon, and their text
   is what they show. Their width is that of their label, in `text.label` (9), with 2 on each side
-  (`node.label_padding`), their height the larger of what their lines need and their label with 8 above and below (two
-  lines, `set` / `live_volt…`, need 36.95, so 40), each at least 40 and rounded up to the grid; their lines take the places of a square (below). A value too many for a
+  (`node.label_padding`), their height the larger of what their lines need and their label with 8 above and below,
+  under their band when they have one (two lines, `set` / `live_volt…`, need 36.95, so 40; `Reading` / `Value` under a
+  band, 48.95, so 56), each at least 40 and rounded up to the grid; their lines take the places of a square (below). A value too many for a
   variant, or an argument too many for a function, which `check` refuses, still has its input, named by its position
   (`1`), so that the drawing shows where.
-- **Center** of the block: the function's icon (`icon` section,
+- **Center** of the block, in the middle of what the band leaves: the function's icon (`icon` section,
   spec 11.1), alone, drawn 28 × 28 units and cut to its grid, so that a shape that leaves it (`LC5009`) never covers
   the block, a terminal or a wire, each of its texts cut at 40 cells (2.3) to bound what is drawn; otherwise a
   short label: the last segment of the name (`visa.open` → `open`), in `text.label` (9), on two lines at most, each
@@ -424,15 +432,17 @@ When the function comes from another library, a **band** above the block says wh
 - **The `err` pair stays on the bottom line**, the last place, as in standard view: the error chain crosses the
   node in a straight line.
 - **What the compact view never hides**: the `always` badge (reduced to `▴` at the bottom center,
-  clear of the `err` terminal, drawn over the icon if they meet), the inline constants (abbreviated to
-  8 cells, 2.3), the label (`#close:`), the `after:` terminal (on the left of the band; with no band, on
-  the top edge of the block, 8 units from its left corner), the conversion marks and the run-time state
+  clear of the `err` terminal, drawn over the icon if they meet; without an icon, the name of a node `always` is on
+  one line, cut as above, centred between the band, or the top edge, and the `▴`, which it never meets, decided
+  2026-11-13), the inline constants (abbreviated to
+  8 cells, 2.3), the label (`#close:`), the `after:` terminal (on the top edge of the block, 8 units from its
+  left corner, over the band when there is one, whose text then starts past it), the conversion marks and the run-time state
   (6). Otherwise the diagram would lie about the execution.
 - **Unwired optional inputs** are drawn, at their place, as in standard view: a node has the size of its
   definition at every call (N-6), and the tooltip of the terminal gives the default value. A variadic primitive
   (`errors.merge`) has the inputs that the call gives.
 - **Construction** (`StepResult { … }`, 3.3): the label is the name of the type, without its library,
-  which goes to the band (`results_log` above `StepResult`). **Variant constructor**: the type and the
+  which goes to the band (`results_…` in the band of `StepResult`). **Variant constructor**: the type and the
   variant on two lines (`Reading` / `Value`).
 - **Nodes of `ui`** (`ui.set`, `ui.get`, 3.1): no band; the label is the operation and the element on
   two lines, each cut at `text.label_line` (`set` / `live_volt…` at 10 cells), so the element stays on the face of the
@@ -442,8 +452,11 @@ When the function comes from another library, a **band** above the block says wh
   indistinguishable in compact view", with the action "show in standard view". This is a warning,
   not an error.
 
-**Primitives.** The compact view of the `core` operations is a **circle** of 28 units with a
-glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
+**Primitives.** The compact view of the `core` operations is a **D** with a glyph, unnamed terminals (name in the
+tooltip): a block whose left edge is straight and whose right corners are cut by 8, a quarter of its least height, the output
+at the middle of the right edge, so that its shape says which way the data go (decided 2026-11-12, A3 of the review of
+M0v). The cut is moderate, so that it reads as a block with cut corners, not as an arrow; and unlike a compact block,
+its corners are cut and not rounded, and it shows a glyph and not an icon. The list is closed (N-4):
 
 | Glyph | Primitives |
 |---|---|
@@ -456,20 +469,19 @@ glyph, unnamed terminals (name in the tooltip). The list is closed (N-4):
 | `?` | `select` (condition on the upper input, then value if true, value if false) |
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
-A unit too long for the circle (`[kg/(m*s)]`) turns it into a capsule of the same height, as wide as
-the unit needs, with 3 on each side *(proposed)*. When an input carries a pill (an inline
-constant, the pill of its wire), the circle stretches into a capsule of the same width, as tall as needed for it to
-be 16 from a neighbour, 24 from a neighbour that carries one too, since a pill is 14 high
-(`select(ok, 1 V, 0 V)`): the span of its inputs and 14 *(proposed)*. More than three inputs, which
-`check` refuses but the drawing still shows, are 8 apart, and the circle stretches the same way. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the
-ordinary compact view (block, no band).
+**Size** *(decided 2026-11-13)*: 32 × 32 (`node.primitive`), the right corners cut by 8 (`node.chamfer`), which a D that grows keeps (at most half its height and its width, for a value tried with `--style`). A unit too
+long for it (`[kg/(m*s)]`) makes it wider, as wide as the unit needs with 3 on each side, rounded up to the grid; it
+keeps its height. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the ordinary compact
+view (block, no band).
 
-**Constant on a primitive input**: the circle has no terminal line, so the pill is attached to the
-left of the terminal, outside the circle (`◂ 0.5` in front of `>`).
+**Terminals of a D**: on its straight left edge, all on the grid of 8. One input at the middle (16); two on the first
+and last places (8 and 24); three on the first, the middle and the last (8, 16, 24), `select` with its condition on
+the first; the output at the middle of the right edge. More inputs (the values of a variadic `add`, or an argument too
+many that `check` refuses and the drawing still shows) take the places from the top, 8 apart, and the D grows by two
+places (16) each time they no longer hold, its output still at the middle, on the grid.
 
-**Terminals of a circle**: on its edge. One input at the middle of the left side, two at 8 units
-above and below the middle, three at 10 above, at the middle and 10 below; the output at the middle
-of the right side. They are not on the grid of 8: the routing of the wires (2.2) joins them.
+**Constant on a primitive input**: the pill lies where a wire would, 8 left of the terminal, as on a block (`◂ 0.5` in
+front of `>`); two neighbouring pills step outward in the same way (above), so the D never grows for its pills.
 
 ### 3.3 Field access, structs, variants
 
@@ -892,7 +904,7 @@ The numbers that `crates/diagram` gives a drawing by name, with their default, t
 give them, and the section that says what they are; the colours are those of section 8. Where the prose of a section
 gives one of these numbers, this table is the reference, and a test checks it against the code: another value is a
 reviewed change of both. Other numbers are still written in the code of a shape or of a size, and are not here yet;
-among them, the gaps between the lines of a compact block and between the inputs of a primitive (3.2), the room around
+among them, the room around
 the glyph of a primitive and between a block and its label, the height of an inline constant, the inset of a double
 frame, the brackets of a terminal of an array, the junctions, the core of a struct wire and the size of a chevron.
 
@@ -917,12 +929,13 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `text.compact_constant` | 8 cells | 2 to 32 | 3.2 | An inline constant in compact view. |
 | `node.terminal` | 6 units | 4 to 40 | 4.1 | The shape of a terminal. |
 | `node.pill_height` | 14 units | 8 to 72 | 3.2 | A pill of an inline constant. |
-| `node.band_height` | 12 units | 6 to 48 | 3.2 | The band of a library above a block. |
+| `node.band_height` | 12 units | 6 to 48 | 3.2 | The band of a library, at the top of a block. |
 | `node.padding` | 4 units | 0 to 16 | 3.2 | Inside a pill, on each side. |
 | `node.label_padding` | 2 units | 0 to 36 | 3.2 | Inside an oblong label, on each side. |
 | `node.square` | 40 units | 16 to 160 | 3.2 | The width of a compact block, and its least height. |
 | `node.pitch` | 8 units | 8 to 48 | 3.2 | Between two lines of terminals of a compact block. |
-| `node.circle` | 28 units | 12 to 112 | 3.2 | The circle of a primitive. |
+| `node.primitive` | 32 units | 16 to 128 | 3.2 | The least width and height of a primitive. |
+| `node.chamfer` | 8 units | 0 to 32 | 3.2 | The right corners of a primitive, cut. |
 | `node.icon` | 28 units | 12 to 112 | 3.2 | An icon in a block. |
 | `node.outline` | 1 units | 0 to 4 | 3 | The outline of a node. |
 | `node.radius` | 2 units | 0 to 16 | 3 | The corners of a node. |

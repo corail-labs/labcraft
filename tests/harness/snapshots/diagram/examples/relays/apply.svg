@@ -59,10 +59,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="137.18" y="107.65" font-size="10" style="fill: var(--pill-text)">&quot;ROUT:C…</text>
 </g>
 <g data-node="b"><title>visa.write</title>
-<rect x="270.34" y="144" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<rect x="270.34" y="132" width="40" height="12" style="fill: var(--band-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="279.51" y="141.28" font-size="9" style="fill: var(--band-text)">visa</text>
-<text x="276.8" y="167.28" font-size="9" style="fill: var(--node-title)">write</text>
+<rect x="270.34" y="144" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="270.34" y="144" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="270.34" y="154" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="270.34,156 310.34,156" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="279.51" y="153.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="270.34" y="144" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="276.8" y="173.28" font-size="9" style="fill: var(--node-title)">write</text>
 <rect x="267.34" y="149" width="6" height="6" style="fill: var(--wire-resource)"/>
 <rect x="307.34" y="149" width="6" height="6" style="fill: var(--wire-resource)"/>
 <rect x="267.34" y="157.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
