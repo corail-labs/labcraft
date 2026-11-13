@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use labcraft_engine::{Config, Memory, Session, Shipped, ShippedFile, ShippedLibrary};
+use labcraft_engine::{Config, Memory, Session};
 use labcraft_types::Limits;
 use serde_json::json;
 #[cfg(target_arch = "wasm32")]
@@ -12,20 +12,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 
 use crate::PROGRAMS;
 
-pub(crate) fn shipped() -> Shipped {
-    let files = |files: &'static [labcraft_libs::File]| files.iter().map(|file| ShippedFile { name: file.name, bytes: file.bytes }).collect();
-    Shipped::new(
-        labcraft_libs::LIBRARIES
-            .iter()
-            .map(|library| ShippedLibrary {
-                name: library.name,
-                manifest: library.manifest,
-                files: files(library.files),
-                simulations: files(library.simulations),
-            })
-            .collect(),
-    )
-}
+pub(crate) use labcraft_libs::shipped;
 
 /// The programs of `examples/`, under `/project`.
 fn examples() -> (Memory, usize) {

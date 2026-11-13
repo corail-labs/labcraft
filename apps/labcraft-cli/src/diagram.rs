@@ -111,7 +111,7 @@ fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, ent
     } else {
         let drawn = entries.iter().filter(|entry| entry.drawn).count();
         let not_drawn = entries.len() - drawn;
-        let mut out = output::diagnostics_text(&report);
+        let mut out = labcraft_types::printed::diagnostics_text(&report);
         for entry in &entries {
             let state = if entry.drawn { "drawn" } else { "not drawn" };
             let place = entry.svg.as_deref().unwrap_or("not written");
@@ -123,7 +123,7 @@ fn answer(options: &DiagramOptions, mut report: Report, counts: CheckCounts, ent
             };
             let name = cut_text(&entry.function);
             let line = if entry.file.is_some() { format!("{state} {name}: {place}, {what}") } else { format!("{state} {name}: {what}") };
-            output::push_line(&mut out, &line);
+            labcraft_types::printed::push_line(&mut out, &line);
         }
         let _ = write!(
             out,

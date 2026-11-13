@@ -2093,6 +2093,7 @@ name = "labcraft-libs"
 version = "0.1.0-m0a"
 dependencies = [
  "labcraft-check",
+ "labcraft-engine",
 ]
 
 [[package]]
@@ -2154,6 +2155,28 @@ dependencies = [
  "labcraft-trace",
  "labcraft-types",
  "toml",
+]
+
+[[package]]
+name = "labcraft-web"
+version = "0.1.0-m0a"
+dependencies = [
+ "craft-ui",
+ "eframe",
+ "egui",
+ "js-sys",
+ "labcraft-diagram",
+ "labcraft-editor",
+ "labcraft-engine",
+ "labcraft-libs",
+ "labcraft-types",
+ "postcard",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]

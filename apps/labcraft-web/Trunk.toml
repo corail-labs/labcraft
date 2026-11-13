@@ -1,0 +1,6 @@
+# The web viewer (docs/architecture.md, 11.5): `cargo xtask web` runs `trunk build --release` here.
+[build]
+target = "index.html"
+dist = "../../target/web"
+public_url = "./"
+filehash = false

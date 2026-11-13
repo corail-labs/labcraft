@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 labcraft-check = { workspace = true }
+labcraft-engine = { workspace = true }
 
 [lints]
 workspace = true

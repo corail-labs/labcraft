@@ -545,7 +545,7 @@ fn run_bound(case: &RunBound) -> (Duration, String) {
         root: "/".into(),
         lib_paths: Vec::new(),
         limits: Limits::default(),
-        shipped: shipped(),
+        shipped: labcraft_libs::shipped(),
         natives: vec![Arc::new(labcraft_visa::Visa)],
         clock: Arc::new(labcraft_engine::Still),
         process: 0,
@@ -561,23 +561,6 @@ fn run_bound(case: &RunBound) -> (Duration, String) {
     std::hint::black_box(serde_json::to_string(&report).unwrap());
     let code = report["fault"]["code"].as_str().map_or_else(|| format!("status-{}", report["status"]), str::to_owned);
     (took, code)
-}
-
-/// The libraries shipped with LabCraft, as `engine` is given them.
-fn shipped() -> labcraft_engine::Shipped {
-    use labcraft_engine::{ShippedFile, ShippedLibrary};
-    let files = |files: &'static [labcraft_libs::File]| files.iter().map(|file| ShippedFile { name: file.name, bytes: file.bytes }).collect();
-    labcraft_engine::Shipped::new(
-        labcraft_libs::LIBRARIES
-            .iter()
-            .map(|library| ShippedLibrary {
-                name: library.name,
-                manifest: library.manifest,
-                files: files(library.files),
-                simulations: files(library.simulations),
-            })
-            .collect(),
-    )
 }
 
 /// The peak of the resident memory of this process, in bytes.

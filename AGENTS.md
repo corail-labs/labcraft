@@ -94,6 +94,8 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 against `docs/cli.md`, the commands against `docs/commands.md`, clippy, tests, WASM.
 It needs the `wasm32-unknown-unknown` target and `wasm-bindgen-test-runner`; `cargo xtask wasm` gives
 the command that installs the runner.
+The web viewer is built by `cargo xtask web` (Trunk 0.21.14) and tried by `cargo xtask web-smoke` (Chrome or Chromium),
+which the job `web` of `checks` runs; neither is part of `ci`.
 
 `fuzz/` is outside the workspace, with its own `Cargo.lock`, and the workflow `fuzz` runs it on a pinned
 nightly, under Linux: `fuzz/README.md` says how to run it, and what to do when it finds something.

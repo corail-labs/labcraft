@@ -54,6 +54,12 @@ serde_json = { version = "1", features = ["preserve_order"] }
 zmij = "1"
 wasm-bindgen-test = "0.3"
 
+# The web viewer (apps/labcraft-web), in the browser only.
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 

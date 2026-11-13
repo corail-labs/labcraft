@@ -579,6 +579,37 @@ fn a_file_written_by_a_command_is_read_again_by_the_next_command_of_the_viewer()
 }
 
 #[test]
+fn a_function_skipped_is_shown_without_a_drawing() {
+    let (mut session, _) = session();
+    session.skip_drawing(["double".to_owned()].into());
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    let view = session.view();
+    assert_eq!(view.function.as_deref(), Some("double"));
+    assert!(view.drawing.is_none() && !view.kept);
+    session.skip_drawing(Default::default());
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert!(session.view().drawing.is_some());
+}
+
+thread_local! {
+    static ANNOUNCED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[test]
+fn each_drawing_is_announced_before_it_is_made() {
+    fn announce(name: &str) {
+        ANNOUNCED.with_borrow_mut(|announced| announced.push(name.to_owned()));
+    }
+    let (mut session, _) = session();
+    session.before_drawing(Some(announce));
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    session.skip_drawing(["double".to_owned()].into());
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(ANNOUNCED.with_borrow(Clone::clone), ["double", "double"], "a function skipped is not drawn, so not announced");
+}
+
+#[test]
 fn a_change_that_the_app_sees_is_drawn_again_and_glides() {
     let (mut session, counting) = session();
     ok(&mut session, "view.open", json!({ "folder": "." }));

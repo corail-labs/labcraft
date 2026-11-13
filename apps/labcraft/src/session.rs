@@ -13,10 +13,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use labcraft_cli::disk::Disk;
-use labcraft_cli::output::diagnostics_text;
 use labcraft_diagram::style::Style;
 use labcraft_engine::view::Published as ViewPublished;
 use labcraft_engine::{Config, ReadOnly, Still};
+use labcraft_types::printed::diagnostics_text;
 use labcraft_types::{Limits, Report};
 use serde_json::{Value, json};
 
