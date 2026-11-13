@@ -284,8 +284,8 @@ const TRACE_PART: usize = 64 * 1024;
 /// `docs/cli.md`, 7.4): the values to draw over it, and the `trace` part of the report; the diagnostics of reading it
 /// (`LC71`) join `report`. A function that is not drawn has no values, but its trace is still read and judged. Whether it
 /// matches is judged on the files of the folder that the run read, and always on the file of the function (notation
-/// 6.1), each named from `FOLDER` (cli.md 7.2): the trace names them from where the run started, so a file is the one
-/// whose name ends with ours, at a `/`.
+/// 6.1), each named from `FOLDER` (cli.md 7.2): the trace names them from where the run started ([`ours_in_trace`]).
+/// `written`, the time of the trace that the viewer gives in its banner; none in an SVG.
 #[allow(clippy::too_many_arguments)]
 pub fn read_trace(
     ws: &dyn Workspace,
@@ -295,6 +295,7 @@ pub fn read_trace(
     function: &Function,
     loaded: &Loaded,
     max_size: u64,
+    written: Option<String>,
     report: &mut Report,
 ) -> (Option<Overlay>, TracePart) {
     let shown = cut_text(shown).into_owned();
@@ -349,21 +350,14 @@ pub fn read_trace(
         if root == "." { file.to_owned() } else { file.strip_prefix(prefix.as_str()).unwrap_or(file).to_owned() }
     };
     let ours: HashMap<String, &str> = loaded.hashes.iter().map(|(file, sha)| (from_folder(file), sha.as_str())).collect();
-    // The name of ours that a name of the trace ends with, at a `/`, the longest first.
-    let ours_of = |file: &str| -> Option<(String, &str)> {
-        let mut at = Some(file);
-        while let Some(rest) = at {
-            if let Some(sha) = ours.get(rest) {
-                return Some((rest.to_owned(), *sha));
-            }
-            at = rest.split_once('/').map(|(_, rest)| rest);
-        }
-        None
-    };
+    let listed: Vec<&str> = header.files.iter().map(|(file, _)| file.as_str()).collect();
+    // Our deepest name, and that of the function, which is ours whatever the trace lists.
+    let depth = ours.keys().chain(std::iter::once(&function.source)).map(|name| name.split('/').count()).max().unwrap_or(1);
     let mut stale: Vec<String> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (file, recorded) in &header.files {
-        let Some((name, sha)) = ours_of(file) else { continue };
+    for ((_, recorded), name) in header.files.iter().zip(ours_in_trace(&listed, &function.source, depth, |name| ours.contains_key(name))) {
+        let Some(name) = name else { continue };
+        let Some(sha) = ours.get(&name) else { continue };
         if seen.insert(name.clone()) && !recorded.eq_ignore_ascii_case(sha) {
             stale.push(cut_text(&name).into_owned());
         }
@@ -376,8 +370,54 @@ pub fn read_trace(
     part.cut = trace.cut();
     part.ignored = if drawing.is_some() { trace.ignored } else { 0 };
     part.stale.clone_from(&stale);
-    let judged = labcraft_diagram::Judged { stale, written: None };
+    let judged = labcraft_diagram::Judged { stale, written };
     (drawing.map(|drawing| labcraft_diagram::values(drawing, &trace, &judged, &labcraft_diagram::Choice::default())), part)
+}
+
+/// Which of the files that a trace lists (`listed`) are ours, by our name, from the folder: none for another one. The
+/// trace names its files from where the run started, which the reader does not know: the name of the file of the
+/// function (`source`) ends one of them at a `/`, which gives where the folder was; every other file of ours is that
+/// place followed by its name, so that a file of a library with the name of one of ours is never taken for it. When the
+/// name of the file of the function ends several of them, the place that gives the most of ours wins, then the shortest,
+/// then the first. When it ends none, a file of ours is the longest end of a name, at a `/`. Only the ends of a name as
+/// deep as our deepest name (`depth` names) are looked at, so the work follows the size of the list (scenario 4).
+fn ours_in_trace(listed: &[&str], source: &str, depth: usize, is_ours: impl Fn(&str) -> bool) -> Vec<Option<String>> {
+    // The ends of each name that are ours, from the shortest, with the place before them.
+    let ends: Vec<Vec<(&str, &str)>> = listed.iter().map(|file| ends_of(file, depth).filter(|(_, end)| is_ours(end)).collect()).collect();
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for (place, _) in ends.iter().flatten() {
+        *counts.entry(place).or_default() += 1;
+    }
+    let best = ends
+        .iter()
+        .flatten()
+        .filter(|(_, end)| *end == source)
+        .map(|(place, _)| *place)
+        .min_by_key(|place| (std::cmp::Reverse(counts.get(place).copied().unwrap_or(0)), place.len()));
+    ends.iter()
+        .map(|found| match best {
+            Some(best) => found.iter().find(|(place, _)| *place == best).map(|(_, end)| (*end).to_owned()),
+            None => found.last().map(|(_, end)| (*end).to_owned()),
+        })
+        .collect()
+}
+
+/// The ends of `file` at a `/`, from the shortest, each with what comes before it, at most `depth` of them: `a/b/c`
+/// gives `("a/b/", "c")`, `("a/", "b/c")`, `("", "a/b/c")`.
+fn ends_of(file: &str, depth: usize) -> impl Iterator<Item = (&str, &str)> {
+    let mut at = Some(file.len());
+    std::iter::from_fn(move || {
+        let end = at?;
+        let start = file.get(..end).and_then(|before| before.rfind('/'));
+        at = start;
+        // The first end is the whole name after the last `/`; the next ones take one more name each.
+        let cut = match start {
+            Some(slash) => slash + 1,
+            None => 0,
+        };
+        Some((file.get(..cut).unwrap_or(""), file.get(cut..).unwrap_or("")))
+    })
+    .take(depth)
 }
 
 /// The values of a run over the one function asked for (`docs/cli.md`, 7.3), as `labcraft-cli diagram --trace` and
@@ -394,7 +434,7 @@ pub fn trace_over(
     report: &mut Report,
 ) -> (Option<Overlay>, TracePart) {
     match (asked.first(), drawn.first()) {
-        (Some(function), Some((drawing, _, _))) => read_trace(ws, path, shown, drawing.as_ref(), function, loaded, max_size, report),
+        (Some(function), Some((drawing, _, _))) => read_trace(ws, path, shown, drawing.as_ref(), function, loaded, max_size, None, report),
         _ => (None, TracePart { file: cut_text(shown).into_owned(), ..TracePart::default() }),
     }
 }
@@ -657,6 +697,35 @@ mod tests {
         assert_eq!(near("check_voltag", "check_voltage"), Some(1));
         assert_eq!(near("abc", "xyz"), None);
         assert_eq!(near("measure", "measure"), Some(0));
+    }
+
+    #[test]
+    fn a_file_of_a_library_with_the_name_of_one_of_ours_is_not_ours() {
+        let ours = |name: &str| ["f.lcf", "g.lcf", "sub/h.lcf"].contains(&name);
+        let some = |name: &str| Some(name.to_owned());
+        // Run from above the folder: the file of the function gives where the folder was, `work/`.
+        let listed = ["libs/visa/g.lcf", "work/f.lcf", "work/g.lcf", "work/sub/h.lcf", "<labcraft>/visa/open.lcf"];
+        assert_eq!(ours_in_trace(&listed, "f.lcf", 2, ours), [None, some("f.lcf"), some("g.lcf"), some("sub/h.lcf"), None]);
+        // Run from the folder itself.
+        assert_eq!(ours_in_trace(&["f.lcf", "../libs/g.lcf"], "f.lcf", 2, ours), [some("f.lcf"), None]);
+        // Two places end with the file of the function: the one that gives the most of ours, then the shortest.
+        assert_eq!(ours_in_trace(&["a/f.lcf", "b/f.lcf", "b/g.lcf"], "f.lcf", 2, ours), [None, some("f.lcf"), some("g.lcf")]);
+        assert_eq!(ours_in_trace(&["ab/f.lcf", "b/f.lcf"], "f.lcf", 2, ours), [None, some("f.lcf")]);
+        // `xf.lcf` does not end with `f.lcf` at a `/`: without the file of the function, the longest end of each name.
+        assert_eq!(ours_in_trace(&["xf.lcf", "w/g.lcf"], "f.lcf", 2, ours), [None, some("g.lcf")]);
+    }
+
+    /// As many files as a first line of 16 MiB lists, each a place of the file of the function: one pass over the list,
+    /// not one per place (scenario 4).
+    #[test]
+    fn a_trace_that_lists_many_places_is_matched_in_one_pass() {
+        let names: Vec<String> = (0..450_000).map(|at| format!("d{at}/f.lcf")).collect();
+        let mut listed: Vec<&str> = names.iter().map(String::as_str).collect();
+        listed.push("d7/g.lcf");
+        let found = ours_in_trace(&listed, "f.lcf", 1, |name| name == "f.lcf" || name == "g.lcf");
+        // `d7/` gives two of ours, every other place one.
+        let at: Vec<usize> = found.iter().enumerate().filter_map(|(at, name)| name.as_ref().map(|_| at)).collect();
+        assert_eq!(at, [7, 450_000]);
     }
 
     #[test]

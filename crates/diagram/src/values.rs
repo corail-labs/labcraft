@@ -476,6 +476,9 @@ pub struct Layer {
 pub struct Bubble {
     /// `data-value`: the name of its wire.
     pub wire: String,
+    /// The group of its wire in [`Drawing::groups`], when it has one: two wires of one name, in two arms (spec R-3),
+    /// are told apart by it. Not in the SVG.
+    pub group: Option<usize>,
     /// The `<title>`: the value whole, as the file gave it, cut at 200 code points.
     pub title: String,
     /// Empty when no place holds it: its value is read on hover.
@@ -845,7 +848,7 @@ pub fn values(drawing: &Drawing, trace: &Trace, judged: &Judged, choice: &Choice
         if item.json.contains("\"$len\"") || item.json.contains("\"$cut\"") {
             title.push_str("\n(cut by the trace)");
         }
-        overlay.bubbles.push(Bubble { wire: item.wire, title, layer });
+        overlay.bubbles.push(Bubble { wire: item.wire, group: item.group, title, layer });
     }
     overlay
 }

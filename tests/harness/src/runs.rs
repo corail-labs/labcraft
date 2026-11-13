@@ -429,6 +429,7 @@ fn the_values_of_each_run_draw_their_snapshot() {
             &function,
             &loaded,
             labcraft_engine::drawings::DEFAULT_TRACE_SIZE,
+            None,
             &mut report,
         );
         report.finish();
@@ -523,6 +524,7 @@ fn walk(
         &function,
         &loaded,
         labcraft_engine::drawings::DEFAULT_TRACE_SIZE,
+        None,
         &mut diagnostics,
     );
     assert_eq!((part.ignored, part.stale.len()), (0, 0), "{part:?}");

@@ -397,3 +397,73 @@ fn the_standard_view_set_before_a_folder_is_open_holds() {
     assert!(session.published().view.standard_everywhere);
     assert_eq!(session.execute("view.set_standard_view", &json!({ "on": false })).unwrap(), json!({ "before": true }));
 }
+
+/// A trace of `main` with `x` in and `y` out, its file named from the folder.
+fn trace_of(x: f64, y: f64) -> String {
+    let header = json!({ "schema": "labcraft-trace/1", "run": "r1", "function": "main", "mode": "deterministic", "files": [] });
+    let call = json!({ "seq": 1, "t_ms": 0.0, "event": "call", "frame": 0, "function": "main",
+        "in": [{ "name": "x", "type": "f64", "value": x }], "types": { "y": "f64" } });
+    let ran = json!({ "seq": 2, "t_ms": 0.0, "event": "ran", "frame": 0, "node": "y", "out": { "y": y } });
+    let end = json!({ "seq": 3, "t_ms": 0.0, "event": "end", "status": "ok" });
+    format!("{header}\n{call}\n{ran}\n{end}\n")
+}
+
+fn value_of_y(published: &labcraft::session::Published) -> Option<String> {
+    let overlay = published.view.overlay.as_ref()?;
+    overlay.bubbles.iter().find(|bubble| bubble.wire == "y").map(|bubble| bubble.title.clone())
+}
+
+/// The last run of the function shown is read after its drawing, and a new run is seen within the second that the
+/// viewer looks at it (decisions of the owner, 2026-11-13); writing a trace draws nothing again.
+#[test]
+#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
+fn a_new_run_shows_its_values_within_a_second_and_a_trace_draws_nothing_again() {
+    let folder = Folder::new(&[("main.lcf", ONE)]);
+    std::fs::create_dir_all(folder.0.join(".labcraft/runs")).unwrap();
+    std::fs::write(folder.0.join(".labcraft/runs/main.trace.jsonl"), trace_of(1.0, 2.0)).unwrap();
+    let session = Handle::spawn(false, Vec::new(), None, Box::new(|| {})).unwrap();
+    session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    let start = Instant::now();
+    while value_of_y(&session.published()).is_none() {
+        assert!(start.elapsed() < Duration::from_secs(10), "no values");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let published = session.published();
+    assert_eq!(value_of_y(&published).as_deref(), Some("2.0"));
+    assert_eq!(published.view.trace.as_ref().map(|trace| trace.file.as_str()), Some(".labcraft/runs/main.trace.jsonl"));
+    let drawn = published.view.drawing_generation;
+    // A run replaces it, as a run does: written beside, then renamed over it.
+    std::thread::sleep(Duration::from_millis(50));
+    let partial = folder.0.join(".labcraft/runs/main.trace.jsonl.1-1-r2.partial");
+    std::fs::write(&partial, trace_of(2.0, 3.0)).unwrap();
+    std::fs::rename(&partial, folder.0.join(".labcraft/runs/main.trace.jsonl")).unwrap();
+    let start = Instant::now();
+    while value_of_y(&session.published()).as_deref() != Some("3.0") {
+        assert!(start.elapsed() < Duration::from_secs(5), "the new run is not shown");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Looked at every second; a loaded runner may take longer.
+    assert!(start.elapsed() < Duration::from_millis(2500), "{:?}", start.elapsed());
+    assert_eq!(session.published().view.drawing_generation, drawn, "a trace is no program file");
+}
+
+/// Each folder has a session of its own, which counts from 0: the window still sees new values for the second folder.
+#[test]
+fn the_values_of_another_folder_are_new_values() {
+    let traced = |x: f64| {
+        let folder = Folder::new(&[("main.lcf", ONE)]);
+        std::fs::create_dir_all(folder.0.join(".labcraft/runs")).unwrap();
+        std::fs::write(folder.0.join(".labcraft/runs/main.trace.jsonl"), trace_of(x, x + 1.0)).unwrap();
+        folder
+    };
+    let (a, b) = (traced(1.0), traced(5.0));
+    let mut session = Session::new(false, Vec::new(), None);
+    open(&mut session, &a.0);
+    assert!(session.look_at_trace());
+    let first = session.published().view.overlay_generation;
+    open(&mut session, &b.0);
+    assert!(session.look_at_trace());
+    let published = session.published();
+    assert!(published.view.overlay_generation > first, "{} after {first}", published.view.overlay_generation);
+    assert_eq!(value_of_y(published).as_deref(), Some("6.0"));
+}

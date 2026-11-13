@@ -179,6 +179,19 @@ impl Session {
         crate::view::set_style(self, style);
     }
 
+    /// Reads the trace of the function shown in the viewer when its drawing is new or the trace changed: the app calls it
+    /// after each command and each second, so that a new run shows (decisions of the owner, 2026-11-13). Whether the
+    /// viewer published anything. Not a command: the change comes from the system, as for [`Session::files_changed`].
+    pub fn look_at_trace(&mut self) -> bool {
+        crate::view::look_at_trace(self)
+    }
+
+    /// Shows the values of the trace at `path` over the function shown, as `view.open_trace` does, for a trace that the
+    /// window chose anywhere on the disk, which a command cannot name (`docs/commands.md`, 2).
+    pub fn open_trace_at(&mut self, path: std::path::PathBuf) -> Result<(), CommandError> {
+        crate::view::open_trace_at(self, path)
+    }
+
     /// Runs a command: the only way in.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         self.execute_waiting(id, params, &Patient)
@@ -249,6 +262,7 @@ impl Session {
             "view.show_function" => crate::view::show_function(self, params),
             "view.set_standard_view" => crate::view::set_standard_view(self, params),
             "view.set_state" => crate::view::set_state(self, params),
+            "view.open_trace" => crate::view::open_trace(self, params),
             #[cfg(not(target_arch = "wasm32"))]
             "run.start" => self.runs.start(self, params, waiter),
             "run.wait" | "run.status" | "run.abort" | "run.set_element" | "run.trace" => {

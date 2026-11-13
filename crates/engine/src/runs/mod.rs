@@ -16,6 +16,8 @@ mod parts;
 mod prepare;
 mod read;
 mod task;
+
+pub(crate) use task::trace_path;
 #[cfg(test)]
 mod tests;
 

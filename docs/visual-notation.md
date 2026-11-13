@@ -795,7 +795,8 @@ the run writes (`labcraft-trace/1`, [commands.md](commands.md), section 8).
   run read. The viewer compares only the files that it resolved itself to draw the function; one that
   has changed or is gone mutes every value (its bubble takes the fill of the canvas and a dashed outline, and its text
   `ink.muted`), and a
-  banner names it, with the time when the trace was written (the time of its file): "`check_voltage.lcf` has changed since this run (14:02)", or "and 2
+  banner names it, with the time when the trace was written (the time of its file, hours and minutes in UTC, marked `Z`
+  as a `timestamp` is): "`check_voltage.lcf` has changed since this run (14:02Z)", or "and 2
   other files" when there are more. Nothing is hidden, and nothing looks current that is not.
 - **Worked out within a bound.** A value that a node does not bind is worked out from those that it reads, in at
   most 10,000 steps *(proposed)*: a carry that its loop passes on unchanged steps back once per iteration, and past
@@ -822,7 +823,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 | Zoom | Shown |
 |---|---|
 | ≥ 75% | everything |
-| 40 to 75% | no terminal names or units, and a wire that leaves a terminal of a frame shows up to it (5); the names of the wires stay; the values of a run (6.1) down to 50 %, only on hover below |
+| 40 to 75% | no terminal names or units, and a wire that leaves a terminal of a frame shows up to it (5); the names of the wires stay; the values of a run (6.1) down to 50 % (`zoom.values`, section 10), only on hover below |
 | < 40% | shapes, wires, structure titles and the marks of their families (5); nodes as plain rectangles; no values |
 
 ## 8. Theme tokens
@@ -1017,3 +1018,4 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `probe.banner` | 20 units | 12 to 80 | 6.1 | The banner of a run that did not end well, or of a trace that no longer matches. |
 | `zoom.coarse` | 40 % | 10 to 100 | 7 | Below it, a node is a plain rectangle. |
 | `zoom.names` | 75 % | 10 to 200 | 7 | Below it, no name of a terminal. |
+| `zoom.values` | 50 % | 10 to 200 | 7 | Below it, the values of a run only on hover; below `zoom.coarse`, none. |

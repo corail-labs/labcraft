@@ -15,6 +15,7 @@ labcraft-types = { workspace = true }
 [dev-dependencies]
 labcraft-check = { workspace = true }
 labcraft-format = { workspace = true }
+labcraft-trace = { workspace = true }
 
 [lints]
 workspace = true

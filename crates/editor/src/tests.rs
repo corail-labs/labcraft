@@ -395,3 +395,55 @@ fn a_path_is_flattened_into_its_subpaths() {
     assert!(arc.iter().any(|&(x, y)| (x - 16.0).abs() < 1e-9 && (y - 12.0).abs() < 1e-9));
     assert_eq!(parts[1], (vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0)], true));
 }
+
+const DOUBLE: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.mul(x, 2.0)\n}\n";
+
+/// The values of a run of `main` with `x` in and `y` out, over `drawing`, as `diagram` works them out.
+fn values_of(drawing: &Drawing, x: f64, y: f64) -> Arc<Overlay> {
+    let trace = format!(
+        "{{\"schema\":\"labcraft-trace/1\",\"run\":\"r1\",\"function\":\"main\",\"mode\":\"deterministic\",\"files\":[]}}\n\
+         {{\"seq\":1,\"t_ms\":0.0,\"event\":\"call\",\"frame\":0,\"function\":\"main\",\"in\":[{{\"name\":\"x\",\"type\":\"f64\",\"value\":{x:?}}}],\"types\":{{\"y\":\"f64\"}}}}\n\
+         {{\"seq\":2,\"t_ms\":0.0,\"event\":\"ran\",\"frame\":0,\"node\":\"y\",\"out\":{{\"y\":{y:?}}}}}\n\
+         {{\"seq\":3,\"t_ms\":0.0,\"event\":\"end\",\"status\":\"ok\"}}\n"
+    );
+    let mut reader = labcraft_trace::Reader::new(labcraft_diagram::expected(drawing), labcraft_trace::ReadLimits::default());
+    reader.feed(trace.as_bytes());
+    let read = reader.finish();
+    Arc::new(labcraft_diagram::values(drawing, &read, &labcraft_diagram::Judged::default(), &labcraft_diagram::Choice::default()))
+}
+
+#[test]
+fn the_values_of_a_run_show_over_their_drawing_and_hide_with_their_button() {
+    let ctx = context();
+    let mut canvas = Canvas::new();
+    let drawn = drawing(DOUBLE, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    let shown = Shown::default();
+    // The first frame installs the fonts.
+    frame(&ctx, &mut canvas, &shown, input(0.0));
+    let (none, _) = frame(&ctx, &mut canvas, &shown, input(0.2));
+    assert!(!texts(&none).iter().any(|text| text == "21.5"), "{:?}", texts(&none));
+    canvas.set_values(Some(values_of(&drawn, 10.75, 21.5)));
+    let (with, _) = frame(&ctx, &mut canvas, &shown, input(0.4));
+    let painted = texts(&with);
+    assert!(painted.iter().any(|text| text == "21.5") && painted.iter().any(|text| text == "10.75"), "{painted:?}");
+    // The button hides them, and shows them again.
+    canvas.set_values_shown(false);
+    let (hidden, _) = frame(&ctx, &mut canvas, &shown, input(0.6));
+    assert!(!texts(&hidden).iter().any(|text| text == "21.5"));
+    canvas.set_values_shown(true);
+    // Below `zoom.values`, no bubble (notation 7).
+    canvas.set_viewport(0.45, Vec2::ZERO);
+    // A frame for the zoom to settle.
+    frame(&ctx, &mut canvas, &shown, input(0.8));
+    let (far, _) = frame(&ctx, &mut canvas, &shown, input(1.0));
+    assert!(!texts(&far).iter().any(|text| text == "21.5"), "{:?}", texts(&far));
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    frame(&ctx, &mut canvas, &shown, input(1.2));
+    let (near, _) = frame(&ctx, &mut canvas, &shown, input(1.4));
+    assert!(texts(&near).iter().any(|text| text == "21.5"));
+    // A new drawing comes without the values of the one before.
+    canvas.set_drawing(drawing(DOUBLE, &ViewState::default()), false);
+    let (after, _) = frame(&ctx, &mut canvas, &shown, input(1.6));
+    assert!(!texts(&after).iter().any(|text| text == "21.5"));
+}

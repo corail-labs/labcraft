@@ -37,15 +37,16 @@ impl Default for Viewport {
 }
 
 impl Viewport {
-    /// Pans and zooms as the pointer says; fits the drawing the first time.
-    pub fn read_input(&mut self, ctx: &egui::Context, response: &Response, rect: Rect, drawing: &Drawing) {
+    /// Pans and zooms as the pointer says; fits the drawing the first time, with `above` units over it, and as wide as
+    /// `width` when that is more: the banner of the values of a run (notation 6.1).
+    pub fn read_input(&mut self, ctx: &egui::Context, response: &Response, rect: Rect, drawing: &Drawing, (above, width): (f32, f32)) {
         let now = ctx.input(|input| input.time);
         if !self.fitted && rect.width() > 0.0 && rect.height() > 0.0 {
-            let size = Vec2::new(drawing.width as f32, drawing.height as f32) / 100.0;
+            let size = Vec2::new((drawing.width as f32 / 100.0).max(width), drawing.height as f32 / 100.0 + above);
             let zoom = (rect.width() / size.x.max(1.0)).min(rect.height() / size.y.max(1.0)).clamp(MIN_ZOOM, 1.0);
             self.zoom = zoom;
             // Centred, or from its corner when it is larger than the canvas.
-            self.origin = ((size - rect.size() / zoom) / 2.0).min(Vec2::ZERO);
+            self.origin = ((size - rect.size() / zoom) / 2.0).min(Vec2::ZERO) - Vec2::new(0.0, above);
             self.fitted = true;
             self.changed = now;
         }
