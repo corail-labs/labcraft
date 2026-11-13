@@ -651,37 +651,132 @@ mod tests {
         });
     }
 
-    /// Every drawing of the repository through `postcard` and back, natively and in WASM, the two ends of the web viewer
-    /// (architecture 11.5): as its file gives it, in standard view, in tabs; the same drawing comes back, but its warnings,
-    /// which the report carries.
+    /// A drawing through `postcard` and back, as the worker of the web viewer sends it to the page (architecture 11.5):
+    /// the same bytes again, and the same drawing but its warnings, which the report carries. A path of an icon can hold
+    /// a NaN, which no drawing equals: the bytes still say that it came back whole.
+    fn crosses(mut drawing: labcraft_diagram::Drawing, what: &str) -> labcraft_diagram::Drawing {
+        let bytes = postcard::to_allocvec(&drawing).unwrap_or_else(|error| panic!("{what}: {error}"));
+        let back: labcraft_diagram::Drawing = postcard::from_bytes(&bytes).unwrap_or_else(|error| panic!("{what}: {error}"));
+        assert_eq!(postcard::to_allocvec(&back).unwrap(), bytes, "{what}: other bytes came back");
+        drawing.warnings.clear();
+        let reflexive = drawing == drawing.clone();
+        assert!(!reflexive || back == drawing, "{what}: another drawing came back");
+        back
+    }
+
+    /// What the drawings that crossed hold, so that each kind is known to have crossed.
+    #[derive(Default)]
+    struct Crossed {
+        drawings: usize,
+        marked: usize,
+        undrawn: usize,
+        tabs: usize,
+        segments: BTreeSet<&'static str>,
+    }
+
+    impl Crossed {
+        fn count(&mut self, drawing: &labcraft_diagram::Drawing) {
+            use labcraft_check::PathSegment;
+            use labcraft_diagram::IconDrawn;
+            self.drawings += 1;
+            self.marked += usize::from(!drawing.marks.is_empty());
+            self.undrawn += usize::from(drawing.undrawn);
+            self.tabs += usize::from(!drawing.tabs.is_empty());
+            for item in drawing.icons.iter().flat_map(|icon| &icon.items) {
+                if let IconDrawn::Path(segments) = &item.drawn {
+                    self.segments.extend(segments.iter().map(|segment| match segment {
+                        PathSegment::Move(_) => "move",
+                        PathSegment::Line(_) => "line",
+                        PathSegment::Cubic(..) => "cubic",
+                        PathSegment::Quadratic(..) => "quadratic",
+                        PathSegment::Arc { .. } => "arc",
+                        PathSegment::Close => "close",
+                    }));
+                }
+            }
+        }
+    }
+
+    /// Every function of a folder drawn as the viewer shows it: its drawing with the marks of the diagnostics of its file,
+    /// or, when it is not drawn, its frame and those diagnostics (`docs/cli.md`, 7.2).
+    fn pictures(root: &str, files: &'static [Embedded], view: &labcraft_diagram::ViewState, each: &mut dyn FnMut(labcraft_diagram::Drawing, String)) {
+        use labcraft_diagram::{DiagramLimits, Drawn, draw, mark, undrawn};
+        let mut names = Interner::new();
+        let mut checked = check(project(root, files), &Shipped, &mut names, &Limits::default());
+        checked.report.finish();
+        for (index, file) in checked.files.iter().enumerate() {
+            if matches!(file.file.decl, Decl::Type(_)) {
+                continue;
+            }
+            let of_file: Vec<_> = checked.report.diagnostics().iter().filter(|diagnostic| diagnostic.file == file.shown).cloned().collect();
+            let picture = match draw(&checked, index, &names, view, &DiagramLimits::default()) {
+                Drawn::Drawing(mut drawing) => {
+                    mark(&mut drawing, &of_file);
+                    drawing
+                }
+                Drawn::NotDrawn(diagnostics) => undrawn(&file.shown, &diagnostics, diagnostics.len() as u64),
+            };
+            each(picture, format!("{root}{}", file.shown));
+        }
+    }
+
+    /// An icon whose path has every kind of segment, and a call that shows it.
+    static ICONS: &[Embedded] = &[
+        Embedded {
+            path: "icons/f.lcf",
+            bytes: b"labcraft 1\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n\nicon 32 {\n    path \"M2 2 L6 6 C8 2 12 2 14 6 Q16 10 20 6 A4 4 0 0 1 28 6 Z\"\n}\n",
+        },
+        Embedded { path: "icons/main.lcf", bytes: b"labcraft 1\n\nfn main(x: f64) -> (y: f64) {\n    y = f(x)\n}\n" },
+    ];
+
+    /// The drawings that the web viewer sends, through `postcard` and back, natively and in WASM: every function of
+    /// `examples/`, `libs/` and `docs/rfc/` as its file gives it, in standard view and in tabs; those of the corpora of
+    /// scenarios 2 and 4, with their marks, or not drawn; an icon with every kind of segment.
     #[test]
-    fn every_drawing_of_the_repository_crosses_to_the_page() {
-        use labcraft_diagram::{DiagramLimits, Drawn, ViewState, draw};
+    fn the_drawings_of_the_viewer_cross_to_the_page() {
+        use labcraft_diagram::ViewState;
         on_the_stack_of_a_host(|| {
-            let mut crossed = 0usize;
+            let mut crossed = Crossed::default();
+            let views = [
+                ViewState::default(),
+                ViewState { standard_everywhere: true, ..ViewState::default() },
+                ViewState { tabs: true, ..ViewState::default() },
+            ];
             for root in ["examples/", "libs/", "docs/rfc/"] {
-                let files = PROGRAMS.iter().filter(|program| program.path.starts_with(root));
-                let mut names = Interner::new();
-                let checked = check(project(root, files), &Shipped, &mut names, &Limits::default());
-                for (index, file) in checked.files.iter().enumerate() {
-                    if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
-                        continue;
-                    }
-                    for (standard_everywhere, tabs) in [(false, false), (true, false), (false, true)] {
-                        let view = ViewState { standard_everywhere, tabs, ..ViewState::default() };
-                        let Drawn::Drawing(mut drawing) = draw(&checked, index, &names, &view, &DiagramLimits::default()) else {
+                let files: Vec<&Embedded> = PROGRAMS.iter().filter(|program| program.path.starts_with(root)).collect();
+                for view in &views {
+                    let mut names = Interner::new();
+                    let checked = check(project(root, files.iter().copied()), &Shipped, &mut names, &Limits::default());
+                    for (index, file) in checked.files.iter().enumerate() {
+                        if !checked.libraries[file.library as usize].checked || matches!(file.file.decl, Decl::Type(_)) {
+                            continue;
+                        }
+                        let labcraft_diagram::Drawn::Drawing(drawing) =
+                            labcraft_diagram::draw(&checked, index, &names, view, &labcraft_diagram::DiagramLimits::default())
+                        else {
                             panic!("{root}{}: not drawn", file.shown)
                         };
-                        let bytes = postcard::to_allocvec(&drawing).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
-                        let back: labcraft_diagram::Drawing =
-                            postcard::from_bytes(&bytes).unwrap_or_else(|error| panic!("{root}{}: {error}", file.shown));
-                        drawing.warnings.clear();
-                        assert!(back == drawing, "{root}{}: another drawing came back", file.shown);
-                        crossed += 1;
+                        crossed.count(&crosses(drawing, &format!("{root}{}", file.shown)));
                     }
                 }
             }
-            assert!(crossed > 60, "{crossed} drawings");
+            let corpora = TYPE_ERRORS.iter().map(|case| (format!("tests/acceptance/type-errors/{}/", case.name), case.files));
+            let hostile = HOSTILE.iter().map(|case| (format!("tests/acceptance/hostile/{}/", case.name), case.files));
+            for (root, files) in corpora.chain(hostile).chain([("icons/".to_owned(), ICONS)]) {
+                pictures(&root, files, &ViewState::default(), &mut |drawing, what| crossed.count(&crosses(drawing, &what)));
+            }
+            // A function that cannot be drawn: a file that does not parse never reaches `draw`, and `engine` shows it so.
+            let broken = [labcraft_types::Diagnostic::new(labcraft_types::Code::Lc2002, "unknown function `nowhere`", "f.lcf")];
+            crossed.count(&crosses(labcraft_diagram::undrawn("f", &broken, 1), "f, not drawn"));
+            assert!(crossed.drawings > 100, "{} drawings", crossed.drawings);
+            assert!(
+                crossed.marked > 0 && crossed.undrawn > 0 && crossed.tabs > 0,
+                "{} marked, {} not drawn, {} in tabs",
+                crossed.marked,
+                crossed.undrawn,
+                crossed.tabs
+            );
+            assert_eq!(crossed.segments.into_iter().collect::<Vec<_>>(), ["arc", "close", "cubic", "line", "move", "quadratic"]);
         });
     }
 

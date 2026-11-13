@@ -347,7 +347,8 @@ character boundary, and these crates hold little numerical code.
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
 `unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
 `thiserror` for the error type of a crate, where a function can fail on something other than the program,
-such as a file that cannot be written (the versions the Craft apps use). In tests: `wasm-bindgen-test`,
+such as a file that cannot be written (the versions the Craft apps use). `serde` is optional in `diagram`, behind its feature
+`serde`, and `postcard` (MIT or Apache-2.0) carries a drawing from the worker of the web viewer to its page (section 11.5). In tests: `wasm-bindgen-test`,
 `cargo-fuzz`. `assets` joined `xtask ci` with the first asset, the font of the notation (section 11.1).
 
 **From the suite.** `craft-atomic`, from [`craft-libs`](https://github.com/storytold/craft-libs)
@@ -1379,8 +1380,8 @@ that set of files, and a second trap shows `LC0099` for the folder until the fil
 cannot restart the worker forever. The drawing crosses to the page in a compact binary form (`postcard`, MIT or
 Apache-2.0), through the derives of `serde` that `diagram` has behind its feature `serde`: a token of the theme as its
 index in the table of the theme, which the worker and the page share, being one build, and refuse when it names nothing;
-the warnings of the drawing stay behind, with the report. A test sends every drawing of the repository through it and
-back, natively and in WASM. It opens the
+the warnings of the drawing stay behind, with the report. A test sends the drawings of the viewer through it and back,
+natively and in WASM (section 11.6). It opens the
 bundled examples and libraries (`libs/embedded`) or a folder dropped on the page, walked with the limits of
 section 6 and read once; there is no trace in the browser in M0 (scenario 6, point 7). The fallback faces are the served faces of
 `craft-ui` when the build has them; otherwise a character that Hack lacks shows in its cells as a missing glyph.
@@ -1401,6 +1402,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | The size of each example and the zoom at which it fits whole in the canvas of the window (notation 7), a figure without a threshold | the same | — |
 | The SVG of `diagram --trace` for the runs of `examples/`, as a snapshot, *with M0b* | `tests/harness` | 6.7 |
 | The contrasts of the tokens (notation 8) | `diagram` tests | |
+| The drawings that the web viewer sends, through `postcard` and back, the same bytes again: every function of `examples/`, `libs/` and `docs/rfc/` as its file gives it, in standard view and in tabs; those of the corpora of scenarios 2 and 4, with their marks; a function not drawn; an icon with every kind of segment. A token that the theme does not name is refused both ways | `tests/harness` | 6.1 |
 | Every function of the repository painted on the canvas without a window: both themes, unfolded and in tabs, each arm shown, at the three zooms of notation 7; no colour of an unknown token. The tabs, the glide, the zoom, the font installed by the canvas, the grid | `tests/harness`, `editor` tests | 6.1 |
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
