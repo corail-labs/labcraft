@@ -8,17 +8,17 @@ cross-platform.
 
 ## Where the project is
 
-LabCraft has **done M0a, the first part of its first milestone in Rust**: `labcraft-cli`
-reads, checks and writes programs, but does not run them yet. The repository holds the language and file format specification, the decisions behind it, example
+LabCraft has **done M0a and M0b, the first two parts of its first milestone in Rust**: `labcraft-cli`
+reads, checks, writes and runs programs against simulated instruments, and serves them to an agent over MCP. The repository holds the language and file format specification, the decisions behind it, example
 programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
 concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
 
-Code contributions in Rust open in stages. Since the tag of milestone M0a (`v0.1.0-m0a`), they have
-been open on what exists: bugs and improvements of `fmt` and `check`, cases for the
-corpora of `tests/acceptance/`, other platforms, the WASM build. The interpreter (M0b) and the
-diagram viewer (M0v) open each when its specification and its section of
-[docs/architecture.md](docs/architecture.md) are written, so that a contribution has a contract to
-meet; [docs/roadmap.md](docs/roadmap.md) lists what is still to write. Feedback on the language
+Code contributions in Rust open in stages. Since the tags of M0a (`v0.1.0-m0a`) and M0b (`v0.2.0-m0b`),
+they have been open on what exists: bugs and improvements of `fmt`, `check`, `run` and the MCP server, the
+interpreter, `visa` and its simulated instruments, cases for the corpora of `tests/acceptance/`, other platforms,
+the WASM build. The diagram viewer (M0v) has its specification and its section of
+[docs/architecture.md](docs/architecture.md), the contract a contribution meets; [docs/roadmap.md](docs/roadmap.md)
+lists what is still to write. Feedback on the language
 remains the most useful help.
 
 ## How to help now
@@ -34,6 +34,8 @@ remains the most useful help.
 - **Fix one.** A pull request to the spec or the examples is welcome; see the checks below.
 - **Improve `fmt` and `check`.** A bug, a missing case in the corpora of `tests/acceptance/`, another
   platform or the WASM build; see the checks below.
+- **Improve `run` and the MCP server.** A bug, a case for the corpus of runs (`tests/acceptance/runs/`), a
+  simulated instrument that `visa` should describe; see the checks below.
 
 The open questions are listed in the spec, section 15; the decisions and their reasons are in
 [docs/decisions.md](docs/decisions.md).
@@ -57,9 +59,9 @@ The tests include the corpora of `tests/acceptance/`, which say what `check` and
 An expected value in a test or a corpus never comes from the output of the program under test: work it
 out by hand or with another tool, and say how.
 
-The proof of concept stays the executable reference for running a program until the interpreter of M0b passes the
-corpus of runs (`docs/architecture.md`, section 10.11).
-It no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
+The proof of concept was the executable reference for running a program until the interpreter of M0b passed the
+corpus of runs (`docs/architecture.md`, section 10.11); that corpus and the Rust `labcraft-cli run` are the
+reference since then. The proof of concept no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
 `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept check
 above that fails only because it lags behind a rule is dropped, in the pull request that brings the rule.
 

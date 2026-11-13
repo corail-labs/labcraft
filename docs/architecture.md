@@ -1,7 +1,7 @@
 # Architecture
 
-*Last updated: 2026-11-10. Status: implemented for M0a (sections 1 to 9); drafts for M0b (section 10)
-and M0v (section 11).*
+*Last updated: 2026-11-13. Status: implemented for M0a (sections 1 to 9) and M0b (section 10); draft for M0v
+(section 11).*
 
 How the Rust code is arranged. Sections 1 to 9: M0a, the crates `types`, `graph`, `format` and `check`, the app
 `labcraft-cli`, and `xtask`. Section 10: M0b, the crates `ir`, `runtime`, `engine` and `mcp`, and the native crate of
@@ -409,7 +409,7 @@ The workflow `checks` also has a job `windows`, which runs the tests of `labcraf
 walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and
 a red one stops the merge in the same way.
 
-The proof of concept remains the reference for what the examples do until the Rust `run` passes the corpus of runs
+The proof of concept was the reference for what the examples do until the Rust `run` passed the corpus of runs
 (section 10.11); it does not judge types, where the corpus decides.
 
 ## 9. Order of work
@@ -430,12 +430,12 @@ Each step ends with something testable, and can be one or a few pull requests. A
 9. **`check`, passes 5 and 6:** warnings, panel, layout, icon, and the rest of scenario 4; fuzzing `check`.
 10. **The agent half of scenario 2,** by hand before the tag.
 
-Rust contributions have been open since the tag of M0a for its crates, and for those of M0b and M0v once their
-sections are written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
+Rust contributions have been open since the tag of M0a for its crates, since that of M0b for its own, and for those
+of M0v since their sections were written ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 10. M0b: running and agents
 
-*Status: draft; steps 0 to 9 of 10.11 implemented, and the bounds of step 10 (10a).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
+*Status: implemented; every step of 10.11 is done, and M0b is tagged `v0.2.0-m0b` (2026-11-13).* How the code of M0b is arranged: the crates `ir`, `runtime`, `engine` and
 `mcp`, the native crates of `visa` and of the example `results_log`, and what `check` and `labcraft-cli` gain. The
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
@@ -1049,9 +1049,9 @@ Each step of work ends with something testable:
    2026-11-11): **10a**, the bounds: the families Instruments and Arguments of scenario 4 in the corpus of runs, runs
    built to cost the most in `xtask bounds`, the limit of the bytes made (`--max-made`, `LC8009`), a faster writer of the
    trace, the fuzz targets `run` and `mcp`, point 3 of scenario 5 with M0b (`tests/harness`, runs of programs written in
-   another order), *done*; **10b**, scenario 1 by hand (`tests/acceptance/agent/scenario-1.sh`), *done*; the long fuzzing of the targets of M0b; **10c**, the tag.
+   another order), *done*; **10b**, scenario 1 by hand (`tests/acceptance/agent/scenario-1.sh`), *done*; the long fuzzing of the targets of M0b, *done* (acceptance-m0.md, scenario 4); **10c**, the tag, *done*.
 
-Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).
+Rust contributions to these crates are open (CONTRIBUTING.md).
 
 ## 11. M0v: the viewer
 

@@ -21,13 +21,12 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-08): M0a, the first part of the first milestone, is done in Rust (tag
-`v0.1.0-m0a`): it reads, checks and writes programs (`labcraft-cli check` and `fmt`); it does not
-run them yet.**
-The language and its text format are described (spec v0), with example programs. Running programs
-is M0b, with a read-only diagram viewer alongside (M0v); until then, a throwaway Python proof of
-concept checks and runs the examples against simulated instruments, and an AI agent drives it over
-MCP. The milestones are described in [docs/roadmap.md](docs/roadmap.md).
+**Status (2026-11-13): M0b, the second part of the first milestone, is done in Rust (tag
+`v0.2.0-m0b`): `labcraft-cli` reads, checks, writes and runs programs against simulated
+instruments (`fmt`, `check`, `run`), and an AI agent drives it over MCP (`labcraft-cli mcp`).**
+The language and its text format are described (spec v0), with example programs. The read-only
+diagram viewer (M0v) is in progress, alongside. The throwaway Python proof of concept that ran the examples before
+Rust remains in `tools/`. The milestones are described in [docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 
@@ -72,28 +71,44 @@ the function runs against a simulated power supply.
 
 ![An agent fixes a check error, shows the diagram of check_power, then runs it: 5.02 V x 0.30 A = 1.52 W, Pass](docs/images/agent-loop.gif)
 
+This was filmed with the proof of concept. Since M0b, the Rust `labcraft-cli mcp` serves the same loop: in five
+sessions of five, an agent wrote, checked, ran and fixed a test program on its own
+([acceptance-m0.md](docs/acceptance-m0.md), scenario 1).
+
 ## Try it
 
-The Rust command line checks the examples, and that they are in canonical form (Rust 1.95 or later):
+The Rust command line checks the examples, that they are in canonical form, and runs one against a simulated
+multimeter (Rust 1.95 or later):
 
 ```sh
 cargo run -p labcraft-cli -- check examples
 cargo run -p labcraft-cli -- fmt --check examples
+cargo run -p labcraft-cli -- run --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
 ```
 
-Its reports and diagnostic codes are described in [docs/cli.md](docs/cli.md).
+`check` reports errors with their line and node; `run` executes a function against a simulated
+instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). The reports and diagnostic codes are
+described in [docs/cli.md](docs/cli.md).
 
-The proof of concept, which also runs programs, is in Python (3.11 or later):
+To let an AI agent write, check and run programs on its own, give it the MCP server of the command line on a
+folder of its own, here in Claude Code:
+
+```sh
+cargo build --release -p labcraft-cli
+claude mcp add labcraft -- <repo>/target/release/labcraft-cli mcp --project <folder>
+```
+
+The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent can install with it in
+[skills/README.md](skills/README.md).
+
+The throwaway proof of concept, which ran programs before Rust did, is in Python (3.11 or later), with its own
+MCP server ([tools/lcf-poc/README.md](tools/lcf-poc/README.md)):
 
 ```sh
 pip install -r tools/lcf-poc/requirements.txt
 python tools/lcf-poc/lcf.py check examples
 python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0
 ```
-
-`check` reports errors with their line and node; `run` executes a function against a simulated
-instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). To let an AI agent drive it over
-MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 
 ## Documents
 
@@ -103,12 +118,12 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 |---|---|
 | [docs/language-spec-v0.md](docs/language-spec-v0.md) | Language and file format, v0 (first draft): types and units, dataflow, errors, structures, grammar, open questions |
 | [docs/visual-notation.md](docs/visual-notation.md) | How a diagram is drawn: nodes, terminals, wire families, structures (first draft) |
-| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a), and the drafts of `run` (M0b) and `diagram` (M0v) |
-| [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (draft for M0b) |
+| [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a), `run` and `mcp` (implemented for M0b), `diagram` and the viewer (M0v) |
+| [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (implemented for M0b) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (implemented for M0b) |
 | [skills/](skills/README.md) | Skills for agents: writing, debugging and testing a program, which the MCP server serves through `guide_read` |
-| [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; draft for M0b) |
-| [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (draft for M0b) |
+| [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; implemented for M0b) |
+| [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (implemented for M0b) |
 | [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |
 
@@ -119,7 +134,7 @@ MCP, see [tools/lcf-poc/README.md](tools/lcf-poc/README.md).
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
-| [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a (implemented), M0b and M0v (drafts) |
+| [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a and M0b (implemented), M0v (draft) |
 | [docs/ir.md](docs/ir.md) | The dataflow IR that a checked program is lowered to and the runtime runs: regions, one node per line, origins, invariants (implemented for M0b) |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |
