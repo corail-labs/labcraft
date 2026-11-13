@@ -1419,7 +1419,8 @@ served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
   folder deeper than the walk goes, given empty, so that the walk says it left it out; the first 100,001 program files
   in the order of their paths; at most 400,000 files and folders listed of a drop; each file read one byte past the
   largest file that `check` reads, so that a larger one is still refused by its size; and 64 MiB of them in all
-  *(proposed)*, the page saying where it stopped. The page keeps the files for a restart and holds them about three
+  *(proposed)*, the page saying where it stopped. The dialog lists files only: an empty folder too deep for the walk,
+  which a drop and the desktop report (`LC0010`), goes unseen from it. The page keeps the files for a restart and holds them about three
   times while it sends them; the worker, about twice while it takes them, then once. A drop of files and folders
   together opens them as the files of a folder named `dropped`.
 - **Large folders.** The lists of functions and of diagnostics lay out only the rows in sight; the page takes what the
