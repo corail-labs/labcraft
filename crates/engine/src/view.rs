@@ -90,6 +90,11 @@ pub struct View {
     style: Arc<Style>,
     /// A command wrote files since the folder was read.
     pub(crate) stale: bool,
+    /// The functions never drawn, whose drawing stopped a worker of the web viewer before (architecture 11.5).
+    pub(crate) skipped: BTreeSet<String>,
+    /// Called with the name of each function just before it is drawn: the worker of the web viewer tells its page, so
+    /// that a trap while drawing is put down to that function (architecture 11.5).
+    pub(crate) before_drawing: Option<fn(&str)>,
 }
 
 impl View {
@@ -357,7 +362,12 @@ fn draw(view: &mut View, glide: bool) -> Value {
     view.published.drawing_generation = view.published.drawing_generation.wrapping_add(1);
     view.published.glide = glide;
     let rendered = match (view.function.clone(), view.file.clone()) {
-        (Some(name), Some(file)) => render(view, &name, &file).map(|rendered| (file, rendered)),
+        (Some(name), Some(file)) if !view.skipped.contains(&name) => {
+            if let Some(before) = view.before_drawing {
+                before(&name);
+            }
+            render(view, &name, &file).map(|rendered| (file, rendered))
+        }
         _ => None,
     };
     let Some((file, (picture, drawn, entry, report))) = rendered else {

@@ -98,10 +98,41 @@ jobs:
         continue-on-error: true
         run: cargo xtask figures >> "$GITHUB_STEP_SUMMARY"
 
+  # The web viewer (docs/architecture.md, 11.5): clippy for WASM and the build of Trunk, then the page in headless Chrome,
+  # which draws, traps its worker and draws again. The site built is kept, to download: nothing is hosted (owner, 2026-11-13).
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # The version that xtask/src/web.rs names; Trunk fetches wasm-bindgen and wasm-opt itself.
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: trunk@0.21.14
+      - name: Clippy for WASM, and the build
+        run: cargo xtask web
+      - name: The page in headless Chrome
+        run: cargo xtask web-smoke
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: labcraft-web
+          path: target/web
+          retention-days: 14
+
   # The check required on main runs even when a part failed or was cancelled, since a skipped required check counts as passed.
   checks:
     if: always()
-    needs: [lint, test, release]
+    needs: [lint, test, release, web]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -110,9 +141,10 @@ jobs:
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
           RELEASE: ${{ needs.release.result }}
+          WEB: ${{ needs.web.result }}
         run: |
-          echo "lint: $LINT, test: $TEST, release: $RELEASE"
-          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$RELEASE" = success ]
+          echo "lint: $LINT, test: $TEST, release: $RELEASE, web: $WEB"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$RELEASE" = success ] && [ "$WEB" = success ]
 
   # Paths, walking folders and atomic writes differ on Windows. The crates are the same everywhere, and
   # the jobs above cover them, so this runs only what touches the file system.

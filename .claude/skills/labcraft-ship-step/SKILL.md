@@ -68,6 +68,6 @@ git switch main
 git pull --ff-only
 ```
 
-Check in the logs of the run that the jobs `lint`, `test` and `release` really ran their steps. If `plan/` exists, do what `plan/ship-step.md` says.
+Check in the logs of the run that the jobs `lint`, `test`, `release` and `web` really ran their steps. If `plan/` exists, do what `plan/ship-step.md` says.
 
 Then stop, and report. Starting the next step is the owner's decision.

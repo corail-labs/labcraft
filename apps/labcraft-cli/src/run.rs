@@ -19,7 +19,8 @@ use serde_json::{Value as Json, json};
 
 use crate::args::{Limit, RunOptions, TraceTo};
 use crate::disk::Disk;
-use crate::output::{counted, push_line, write_json, write_text};
+use crate::output::{counted, write_json, write_text};
+use labcraft_types::printed::push_line;
 
 /// How often the run is asked where it is, and the line of stderr written again.
 const EVERY: &str = "1 s";
@@ -179,7 +180,7 @@ fn show_progress(report: &Json, before: usize) -> usize {
     for at in report["loops"].as_array().map(Vec::as_slice).unwrap_or_default() {
         let _ = write!(text, "; loop `{}` at iteration {}", at["node"].as_str().unwrap_or_default(), at["iteration"].as_u64().unwrap_or(0) + 1);
     }
-    let text = crate::output::printable_line(&text);
+    let text = labcraft_types::printed::printable_line(&text);
     let width = text.chars().count();
     let _ = write!(std::io::stderr(), "\r{text}{}", " ".repeat(before.saturating_sub(width)));
     let _ = std::io::stderr().flush();

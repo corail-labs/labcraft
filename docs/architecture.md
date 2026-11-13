@@ -280,6 +280,8 @@ crates, where WASM reaches it.
   `libs/` at build time. Apps and test harnesses depend on it, including WASM, where `wrong-input-type`
   needs `scpi`; no crate of `crates/` does.
 - **Arguments:** by hand, like `gridcraft-cli` and `solidcraft-cli`, with no parsing crate.
+- **A report as text** (`docs/cli.md`, 4.1) is `labcraft_types::printed`, which the desktop and web viewers show the
+  same way.
 - **Writing a file:** through `craft-atomic` (`craft-libs`), the suite's crash-safe save: a crash leaves
   the old file or the new one. It also keeps a symbolic link a link. A read-only file is refused before it is
   called, since on Windows its rename retries for most of a second. A crash can leave its staging file next to the program, named `.name.pid-n.craft_tmp`, which no
@@ -328,7 +330,7 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `unicode` and `fuzz-licences`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
+| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
 | `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands` and `assets` below, then `clippy -D warnings` |
 | `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side, then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
@@ -337,7 +339,10 @@ character boundary, and these crates hold little numerical code.
 | `codes` | `Code` equals the tables of cli.md, section 5; from M0b, the codes of each native library equal the table of its document (section 10.6) |
 | `commands` | From M0b: the registry of `engine` equals the tables of commands.md, section 6, and no two ids give one MCP tool name (section 10.8) |
 | `bounds` | `fmt` of each file of scenario 4, and `check` of a folder that holds only that file, take at most 2 s and 512 MB, the library of 100,000 files at most 60 s: the corpora, and files built to cost the most just under the limit of size (section 8); `run.start` of programs built to cost the most up to a default limit of the run, 2 s and 512 MB, 4 s when the trace reaches its bound, `--max-memory` and 30 % when the run fills its memory (10.11). In release, each case in a process of its own; the memory on Linux only |
-| `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10) |
+| `wasm` | `format`, `check`, `trace` and `ir` build for `wasm32-unknown-unknown`, and pass the corpora there, on the call stack of V8 in a worker (section 4); some test must have run. From M0b, the deterministic part of `runtime`, and `engine` without runs build there too (section 10); from M0v, `diagram`, `editor` and `labcraft-web`, whose library passes its tests there (section 11.5) |
+| `web` | Clippy of `labcraft-web` for WASM, then `trunk build --release` into `target/web` (section 11.5). Not part of `ci`, which needs no Trunk: the job `web` runs it |
+| `web-smoke` | `target/web` in headless Chrome: the page draws a function, traps its worker, and a new one draws again (section 11.5). Not part of `ci`, which needs no browser: the job `web` runs it |
+| `web-serve` | Not a check: serves `target/web` on the loopback, to try the viewer in a browser |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
 | `spec` | The Python checks of the spec, `examples/`, `docs/rfc/` and `libs/`: `lcf_view.py`, `check` and `fmt --check` of the proof of concept, and its tests. Runs them all, prints `ok` or `FAIL` for each and the output of those that fail; the interpreter is `python`, then `python3`, and a missing interpreter or requirement is an error that says what to install. Not part of `ci`, which needs no Python: the workflow `checks` runs it |
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
@@ -390,7 +395,8 @@ the targets once, then runs them side by side, one per CPU of the runner.
 
 The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (the Python checks of
 `cargo xtask spec`, then `cargo xtask lint`), `test` (`cargo xtask test`, with `cargo-nextest`) and `release`
-(`bounds`, `wasm` and the figures of the viewer). A last job, `checks`, passes only when the three passed. It runs
+(`bounds`, `wasm` and the figures of the viewer) and `web` (`cargo xtask web` and `web-smoke`, which keeps the site
+built to download, section 11.5). A last job, `checks`, passes only when the four passed. It runs
 even when one of them failed or was cancelled, since GitHub counts a skipped required check as passed, and it is
 the only check GitHub requires on `main`. Each job keeps a cache of its own, which only `main` saves and pull
 requests restore. Past the 10 GB that GitHub keeps for a repository, it removes the caches used least recently,
@@ -1049,7 +1055,7 @@ Rust contributions to these crates open when this section is merged (CONTRIBUTIN
 ## 11. M0v: the viewer
 
 *Status: draft; `text` (11.1), `trace` (11.2), `diagram` (11.3) and the canvas of `editor` (11.4) implemented, the
-values of a run aside; the apps (11.5) to come.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+values of a run aside; the apps (11.5) implemented.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5), the trace (commands.md, section 8),
@@ -1386,6 +1392,43 @@ bundled examples and libraries (`libs/embedded`) or a folder dropped on the page
 section 6 and read once; there is no trace in the browser in M0 (scenario 6, point 7). The fallback faces are the served faces of
 `craft-ui` when the build has them; otherwise a character that Hack lacks shows in its cells as a missing glyph.
 
+*Status: implemented (step 7 of 11.7), without hosting: CI builds the site and keeps it to download, and where it is
+served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
+
+- **Build.** Trunk 0.21.14, as the Craft apps build theirs: `cargo xtask web` runs clippy for WASM, then
+  `trunk build --release` into `target/web`, which holds the page (`labcraft-web`) and the worker (`labcraft-worker`),
+  two binaries of one crate, each optimized by `wasm-opt`. `cargo xtask web-serve` serves it on the loopback. eframe
+  draws on wgpu: WebGPU, or WebGL2 when the browser has no WebGPU; `?webgl` asks for WebGL2.
+- **What is tested without a browser** is a library: what the page and the worker say to each other, in `postcard`
+  both ways, a message refused when bytes are left after it (`protocol`); what the worker does with each message,
+  a session of `engine` on the files in memory (`engine::Memory`, read-only), its root `/folder` (`host`); what the page
+  knows of its worker and does when it traps (`supervisor`); the walk of a folder (`folder`). Natively, and in WASM by
+  `cargo xtask wasm`.
+- **A worker says when it listens** (`Ready`), once its WASM is loaded: a message that comes before is lost, so the
+  page sends nothing until then, and one message at a time. It names each function just before it draws it
+  (`Drawing`), through `Session::before_drawing`, which `engine` calls before each drawing, whichever command draws
+  (`view.open` draws the first function): a trap after that name is put down to that drawing, any other to the folder.
+- **After a trap**, the new session opens the same files and shows the function shown before. A function whose
+  drawing trapped is never drawn by it: `Session::skip_drawing`. Neither is a command, as `files_changed` is not:
+  only the page knows what trapped. The state of the view that the file does not hold (the tab of a `match`) starts
+  again.
+- **A folder dropped or chosen** (the dialog of the browser, which gives the path of each file) is walked by the page
+  with the bounds of a walk of `engine` (`walk::BOUNDS`: 32 levels, 100,000 files, hidden folders left out); only
+  program files are opened and read, each one byte past the largest file that `check` reads, so that a larger one is
+  still refused by its size, and 256 MiB of them in all *(proposed)*. The page keeps them for a restart and holds them
+  about three times while it sends them; the worker, about twice while it takes them, then once. Past a limit the
+  page reads no further and says so. A drop of files and folders together opens them as the files of a folder named
+  `dropped`.
+- **Large folders.** The lists of functions and of diagnostics lay out only the rows in sight; the page takes what the
+  supervisor shows once after each message, not at each frame; the worker writes the text of `Problems` again only
+  for a new report, and sends a drawing only when it is a new one.
+- **The preferences** (theme, standard view everywhere) are kept in the storage of the browser; the theme follows the
+  system until it is chosen, and the glide follows `prefers-reduced-motion`.
+- **The smoke test**, `cargo xtask web-smoke`, serves `target/web` on the loopback and opens `?smoke` in headless
+  Chrome, as a browser opens it, then `?smoke&webgl`: a runner has no GPU, so both draw with WebGL2 on SwiftShader,
+  the first by falling back to it. The page opens the examples, traps its worker once it drew, and posts to the server
+  whether a new worker drew again; CI fails otherwise. WebGPU itself is seen only in a browser that has it.
+
 **`labcraft-cli diagram`** (cli.md 7) reads, checks and draws through `engine::drawings`, as `diagram.svg` does, and
 writes the files, with `craft-atomic`: an SVG of 20,000 nodes can pass the 4 MiB of a command result (commands.md,
 section 2), which `diagram.svg`, the way in of MCP, keeps. Both give the same SVG and the same report, but the paths
@@ -1408,6 +1451,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
 | Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
 | File change to new drawing within 200 ms, through the session and the watcher, without a window | `apps/labcraft/tests` | 6.3 |
+| The web viewer: the messages of the page and the worker, the session of the worker on every bundled function, a drawing that traps (the first function's included) and a folder that traps twice, the walk of a folder at its limits, natively and in WASM; the page in headless Chrome, which draws, traps its worker and draws again | `apps/labcraft-web`, `cargo xtask web-smoke` | 6.5 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
 | Fuzzing placement and routing (target `diagram`, which also checks the rules of 2.2), and the reader of a trace | `fuzz/` | 4 |
 | 60 frames/s with 1,000 nodes and 2,000 wires, on a reference machine | by hand, before the tag | 6.4 |

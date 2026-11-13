@@ -219,7 +219,8 @@ fn error_at(report: &mut Report, code: Code, file: &str, message: String) {
     report.push(Diagnostic::new(code, message, file));
 }
 
-fn has_program_extension(path: &Path) -> bool {
+/// A program file, `.lcf` or `.lct`, by its name: what a walk reads.
+pub fn has_program_extension(path: &Path) -> bool {
     // On Windows, `notes.txt:a.lcf` names a stream of `notes.txt`, which is no program and cannot be replaced.
     let a_stream = cfg!(windows) && path.file_name().is_some_and(|name| name.to_string_lossy().contains(':'));
     !a_stream && path.extension().is_some_and(|extension| extension == "lcf" || extension == "lct")

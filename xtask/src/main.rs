@@ -9,6 +9,7 @@ mod libs;
 mod licences;
 mod spec;
 mod unicode;
+mod web;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -29,8 +30,11 @@ commands:
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine and editor build for wasm32-unknown-unknown, and the harness passes there
+  wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
   spec      the Python checks of the spec, examples, docs/rfc and libs, and the proof of concept's tests; ok or FAIL for each, the output of failures only; not part of ci
+  web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
+  web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
+  web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again; not part of ci
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -59,6 +63,9 @@ fn main() -> ExitCode {
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
         Some("figures") => figures(),
+        Some("web") => web::build(&root()),
+        Some("web-serve") => web::serve(&root()),
+        Some("web-smoke") => web::smoke(&root()),
         Some("spec") => spec::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
@@ -254,6 +261,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-engine",
         "--package",
         "labcraft-editor",
+        "--package",
+        "labcraft-web",
     ])?;
     wasm_tests()
 }
@@ -261,7 +270,7 @@ fn wasm() -> Result<(), String> {
 /// The tests run here only through an attribute that the harness imports for WASM: without it, the runner
 /// finds no test and succeeds. So some test must have passed.
 fn wasm_tests() -> Result<(), String> {
-    let args = ["test", "--locked", "--target", WASM_TARGET, "--package", "labcraft-harness", "--lib"];
+    let args = ["test", "--locked", "--target", WASM_TARGET, "--package", "labcraft-harness", "--package", "labcraft-web", "--lib"];
     let what = format!("cargo {}", args.join(" "));
     eprintln!("$ {what}");
     let output =

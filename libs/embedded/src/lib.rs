@@ -36,6 +36,22 @@ pub struct Library {
 
 include!(concat!(env!("OUT_DIR"), "/libraries.rs"));
 
+/// The libraries shipped, as `engine` reads them: every app and harness that makes a session gives it these.
+pub fn shipped() -> labcraft_engine::Shipped {
+    let files = |files: &'static [File]| files.iter().map(|file| labcraft_engine::ShippedFile { name: file.name, bytes: file.bytes }).collect();
+    labcraft_engine::Shipped::new(
+        LIBRARIES
+            .iter()
+            .map(|library| labcraft_engine::ShippedLibrary {
+                name: library.name,
+                manifest: library.manifest,
+                files: files(library.files),
+                simulations: files(library.simulations),
+            })
+            .collect(),
+    )
+}
+
 /// Names are compared exactly, even on a file system that ignores case (`docs/cli.md`, section 3).
 pub fn find(name: &str) -> Option<&'static Library> {
     LIBRARIES.iter().find(|library| library.name == name)

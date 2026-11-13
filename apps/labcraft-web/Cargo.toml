@@ -1,0 +1,64 @@
+[package]
+name = "labcraft-web"
+description = "The LabCraft viewer in the browser, read-only in M0v: the page, and the worker of its session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+labcraft-diagram = { workspace = true, features = ["serde"] }
+labcraft-engine = { workspace = true }
+labcraft-libs = { workspace = true }
+labcraft-types = { workspace = true }
+postcard = { workspace = true }
+serde = { workspace = true, features = ["rc"] }
+serde_json = { workspace = true }
+
+# The page and the worker: only in the browser. Natively, the library is the part tested without one.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+craft-ui = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+labcraft-editor = { workspace = true }
+js-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = [
+    "Blob",
+    "console",
+    "DataTransfer",
+    "DataTransferItem",
+    "DataTransferItemList",
+    "DedicatedWorkerGlobalScope",
+    "Document",
+    "DragEvent",
+    "Element",
+    "ErrorEvent",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "FileSystemDirectoryEntry",
+    "FileSystemDirectoryReader",
+    "FileSystemEntry",
+    "FileSystemFileEntry",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Location",
+    "MediaQueryList",
+    "MessageEvent",
+    "RequestInit",
+    "Response",
+    "Storage",
+    "Window",
+    "Worker",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[lints]
+workspace = true

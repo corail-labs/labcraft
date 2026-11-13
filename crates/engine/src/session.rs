@@ -159,6 +159,20 @@ impl Session {
         crate::view::files_changed(self);
     }
 
+    /// The viewer never draws these functions: their drawing trapped a worker of the web viewer before, which a new
+    /// session must not do again (`docs/architecture.md`, 11.5). Shown, such a function has no drawing. Not a command:
+    /// what traps is the page's to know, not a caller's.
+    pub fn skip_drawing(&mut self, functions: std::collections::BTreeSet<String>) {
+        self.view.skipped = functions;
+    }
+
+    /// Calls `hook` with the name of each function just before the viewer draws it: the worker of the web viewer tells
+    /// its page, so that a trap while drawing is put down to that function, whichever command drew it (`view.open` draws
+    /// the first one). Not a command, as [`Session::skip_drawing`].
+    pub fn before_drawing(&mut self, hook: Option<fn(&str)>) {
+        self.view.before_drawing = hook;
+    }
+
     /// Draws the viewer with these values of the notation (`labcraft --style`, notation 10): a tool to tune the
     /// notation, not a preference, so not a command.
     pub fn set_style(&mut self, style: std::sync::Arc<labcraft_diagram::style::Style>) {
