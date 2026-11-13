@@ -3,7 +3,8 @@
 A dataflow interpreter for the LabCraft v0 subset (`docs/language-spec-v0.md`), with errors,
 structures, units, a simulated clock and simulated instruments. It demonstrates the **AI loop**:
 an agent writes a `.lcf`, checks it, runs it against a simulated instrument, reads the result,
-fixes it. It then serves as the **executable reference** for M0 (same examples, same results).
+fixes it. It served as the **executable reference** for M0 (same examples, same results) until the Rust
+`labcraft-cli run` passed the corpus of runs, in M0b.
 Throwaway code: no performance work, no Rust.
 
 Requirements: `pip install -r tools/lcf-poc/requirements.txt` (Python 3.11 or later; `mcp` 1.x,

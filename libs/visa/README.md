@@ -1,11 +1,11 @@
 # `visa`: sessions on instruments
 
-*Status: draft for milestone M0b. The proof of concept follows it (`tools/lcf-poc/lcfpoc/stdlib.py`), and so does the crate
-`labcraft-visa`, in `src/`, in deterministic mode.*
+*Status: implemented for milestone M0b (tag `v0.2.0-m0b`) by the crate `labcraft-visa`, in `src/`, in deterministic
+mode and in real time. The proof of concept follows it too (`tools/lcf-poc/lcfpoc/stdlib.py`).*
 
 `visa` is the transport library shipped with LabCraft: it opens sessions on instruments, writes commands
 and reads answers. Its functions are declared in this folder (`extern rust`, spec 4.1), and their native
-bodies come with its Rust crate, `labcraft-visa`, in M0b. Instrument drivers and `scpi` are libraries
+bodies are in its Rust crate, `labcraft-visa`, since M0b. Instrument drivers and `scpi` are libraries
 over it. Not every instrument goes through VISA: another transport is another library, with its own
 rules.
 

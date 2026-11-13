@@ -4,8 +4,8 @@ LabCraft is an AI-native graphical dataflow language and IDE, aiming to do at le
 does, in pure Rust, open and cross-platform. It follows the conventions of the Craft apps
 (storytold, SolidCraft); see `docs/craft-ecosystem.md`.
 
-**Current phase: the specifications of M0b and M0v.** M0a is done (tag `v0.1.0-m0a`,
-`docs/architecture.md`, section 9). `tools/` remains throwaway, until Rust replaces it.
+**Current phase: M0v in Rust.** M0a and M0b are done (tags `v0.1.0-m0a` and `v0.2.0-m0b`,
+`docs/architecture.md`, sections 9 and 10). `tools/` remains throwaway, until Rust replaces it.
 
 ## Start every session here
 
@@ -63,8 +63,9 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
   case folders, never the code, the output or your values. When the program disagrees with it, don't
   edit its `expected.json`: the program or the documents are wrong, and a question of the documents
   goes to the owner.
-- The proof of concept is the executable reference for running a program until M0b. It no longer
-  follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
+- The proof of concept was the executable reference for running a program until M0b; the corpus of
+  runs of `tests/acceptance/runs/` and the Rust `labcraft-cli run` are the reference since then. The
+  proof of concept no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
   `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept
   check that fails only because it lags behind a rule is dropped, in the pull request that brings the
   rule.

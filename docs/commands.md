@@ -1,6 +1,6 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-13. Status: draft for milestone M0b, implemented in `engine`. The commands
+*Last updated: 2026-11-13. Status: implemented for milestone M0b (tag `v0.2.0-m0b`), in `engine`. The commands
 of section 6.5 are in `engine::view` and `engine::drawings` (`docs/architecture.md`, 10.8 and 11.5).*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,

@@ -1,8 +1,8 @@
 # Command line: `fmt`, `check`, `run`, `diagram` and the viewer
 
-*Last updated: 2026-11-11. Status: `fmt` and `check` implemented for milestone M0a; `run` a draft for
-M0b (section 6), and `mcp` in [mcp.md](mcp.md), implemented (steps 9a and 9b of M0b); `diagram` implemented for M0v without the values of a run (section 7);
-the desktop viewer `labcraft` implemented for M0v, without the values of a run (section 8).*
+*Last updated: 2026-11-13. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
+([mcp.md](mcp.md)) implemented for M0b (tag `v0.2.0-m0b`); `diagram` (section 7) and the desktop viewer `labcraft`
+(section 8) implemented for M0v.*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
 `labcraft-cli diagram` and of the command line of the desktop viewer `labcraft` (section 8): their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
