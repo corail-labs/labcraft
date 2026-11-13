@@ -42,6 +42,7 @@ pub(super) const TOKENS: &[&str] = &[
     "pill.text",
     "probe.fill",
     "probe.stroke",
+    "select.stroke",
     "tab.fill",
     "wire.data",
     "wire.error",

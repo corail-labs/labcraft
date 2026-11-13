@@ -421,7 +421,7 @@ fn the_values_of_each_run_draw_their_snapshot() {
         let (loaded, function, drawing) = drawing_of_case(&memory, &params);
         let mut report = labcraft_types::Report::new(0);
         let path = std::path::PathBuf::from(format!("/{file}"));
-        let (overlay, part) = labcraft_engine::drawings::read_trace(
+        let (read, part) = labcraft_engine::drawings::read_trace(
             &*memory,
             &path,
             file,
@@ -433,6 +433,7 @@ fn the_values_of_each_run_draw_their_snapshot() {
             &mut report,
         );
         report.finish();
+        let overlay = read.map(|(trace, judged)| labcraft_diagram::values(&drawing, &trace, &judged, &labcraft_diagram::Choice::default()));
         assert_eq!(
             (part.ignored, part.stale.len(), report.diagnostics().len()),
             (0, 0, 0),
@@ -516,7 +517,7 @@ fn walk(
     let (loaded, function, drawing) = drawing_of_case(&memory, &params);
     let mut diagnostics = labcraft_types::Report::new(0);
     let path = std::path::PathBuf::from(format!("/{file}"));
-    let (overlay, part) = labcraft_engine::drawings::read_trace(
+    let (read, part) = labcraft_engine::drawings::read_trace(
         &*memory,
         &path,
         file,
@@ -528,6 +529,7 @@ fn walk(
         &mut diagnostics,
     );
     assert_eq!((part.ignored, part.stale.len()), (0, 0), "{part:?}");
+    let overlay = read.map(|(trace, judged)| labcraft_diagram::values(&drawing, &trace, &judged, &labcraft_diagram::Choice::default()));
     let values: Vec<(String, String)> = overlay.unwrap().bubbles.into_iter().map(|bubble| (bubble.wire, bubble.title)).collect();
     let expected = [
         ("values", "[1.0,2.0,4.0]"),

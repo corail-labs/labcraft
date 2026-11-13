@@ -37,13 +37,16 @@ pub mod theme;
 pub mod values;
 
 pub use labcraft_check::PathSegment;
+pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint,
     Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
-pub use values::{Choice, Judged, Overlay, expected, values};
+pub use values::{
+    Choice, Judged, Overlay, Selector, Series, Valued, expected, inputs_of, loops_inside, selected_node, selected_wire, series, values,
+};
 
 use graph::{Base, Builder, Graph, Kind, StructureKind};
 use size::{Sizer, Text};

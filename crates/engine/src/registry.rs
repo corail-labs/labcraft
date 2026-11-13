@@ -558,7 +558,7 @@ fn catalog() -> Vec<Command> {
             params: object(
                 &[
                     ("function", string("A function of the open folder.")),
-                    ("state", json!({ "type": "object", "description": "`arms`, `unfolded`, `standard`, each optional." })),
+                    ("state", json!({ "type": "object", "description": "`arms`, `unfolded`, `standard`, `iterations`, each optional." })),
                 ],
                 &["function", "state"],
             ),

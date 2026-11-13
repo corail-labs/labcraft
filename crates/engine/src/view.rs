@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use labcraft_diagram::style::{self, Style};
-use labcraft_diagram::{DiagramLimits, Drawing, Overlay, ViewState};
+use labcraft_diagram::{Choice, DiagramLimits, Drawing, Judged, Overlay, ViewState};
+use labcraft_trace::Trace;
 use labcraft_types::{Code, Report};
 use serde_json::{Map, Value, json};
 
@@ -27,10 +28,16 @@ use crate::workspace::Workspace;
 /// across changes of the file, by the keys of its nodes (decided at the start of step 6).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ViewOf {
-    /// The arm shown of each structure in tabs.
+    /// The arm shown of each structure in tabs, as the developer picked it: over the arm that the run took until an
+    /// iteration selector moves or another trace arrives (notation 6.1).
     pub arms: HashMap<String, usize>,
     pub unfolded: BTreeSet<String>,
     pub standard: BTreeSet<String>,
+    /// The iteration chosen of each loop, from 0, kept across runs and bounded by the last of each (decisions of the owner,
+    /// 2026-11-13); a loop not here shows its last.
+    pub iterations: HashMap<String, u64>,
+    /// The trace whose values were shown last over this file: another one is another run, and the tabs picked give way.
+    pub(crate) trace_seen: Option<Stamp>,
 }
 
 /// A function of the folder, as the tree of the window lists it.
@@ -67,8 +74,12 @@ pub struct Published {
     pub glide: bool,
     /// The function is not drawable now: its last drawing stays, with its diagnostics (scenario 6, point 3).
     pub kept: bool,
+    /// The arm shown of each structure in tabs: the one the developer picked, else the one the run took (notation 6.1).
     pub arms: HashMap<String, usize>,
     pub standard_everywhere: bool,
+    /// The trace whose values show and the iterations chosen, from which the canvas works out the values of a wire over
+    /// the iterations of its loop (notation 6.1); published with each overlay.
+    pub run: Option<(Arc<Trace>, Choice)>,
     /// The values of the run over the drawing shown (notation 6.1): none until its trace is read, and none without one.
     pub overlay: Option<Arc<Overlay>>,
     /// Changes with each overlay.
@@ -86,6 +97,9 @@ struct Traced {
     opened: Option<(PathBuf, String)>,
     /// The trace read last, as its file then was; none when none was read.
     read: Option<Stamp>,
+    /// What it gave for the drawing shown, and how it stands against the files: the values are worked out again from it
+    /// when an iteration is chosen, without reading the file.
+    kept: Option<(Arc<Trace>, Judged)>,
     /// The drawing is new: its values must be read again.
     due: bool,
     /// The report of the drawing, without the diagnostics of reading the trace.
@@ -211,18 +225,89 @@ pub fn set_state(session: &mut Session, params: &Params) -> Result<Value, Comman
     let file = file_of(view, name);
     // Read into a copy first.
     let mut of = view.views.get(&file).cloned().unwrap_or_default();
-    let placed = read_state(state, &mut of)?;
-    view.views.insert(file.clone(), of.clone());
-    if view.function.as_deref() == Some(name) {
-        // An arm shown places nothing: only a structure unfolded or a node in another view draws again.
+    let (placed, moved) = read_state(state, &mut of)?;
+    let shown = view.function.as_deref() == Some(name);
+    if !moved.is_empty() {
+        let drawing = view.last.get(&file).cloned();
+        let overlay = view.published.overlay.clone().filter(|_| shown);
+        moved_iterations(&mut of, &moved, drawing.as_deref(), overlay.as_deref());
+        // An iteration moved: the tabs picked before give way to the arms that the run took, those of this call stay.
+        let given: BTreeSet<&str> =
+            state.get("arms").and_then(Value::as_object).map(|arms| arms.keys().map(String::as_str).collect()).unwrap_or_default();
+        if let Some(overlay) = &overlay {
+            of.arms.retain(|structure, _| given.contains(structure.as_str()) || !overlay.taken.contains_key(structure));
+        }
+    }
+    view.views.insert(file.clone(), of);
+    if shown {
+        // An arm shown or an iteration places nothing: only a structure unfolded or a node in another view draws again.
         if placed {
             return Ok(draw(view, false));
         }
-        view.published.arms = of.arms;
-        view.publish();
+        if moved.is_empty() {
+            publish_arms(view);
+            view.publish();
+        } else {
+            revalue(view, false);
+        }
         return Ok(view.entry.clone());
     }
     Ok(render(view, name, &file).map(|(_, _, entry, _)| entry).unwrap_or(Value::Null))
+}
+
+/// After the iterations `moved` were chosen: the loops inside each go to their last iteration in its new one, and a loop
+/// put on its last iteration follows the last of the runs to come (notation 6.1; decisions of the owner, 2026-11-13). The
+/// counts are those of the values shown, unless a loop around it moved too.
+fn moved_iterations(of: &mut ViewOf, moved: &[String], drawing: Option<&Drawing>, overlay: Option<&Overlay>) {
+    let mut inside: BTreeSet<String> = BTreeSet::new();
+    for key in moved {
+        inside.extend(drawing.map(|drawing| labcraft_diagram::loops_inside(drawing, key)).unwrap_or_default());
+    }
+    for key in &inside {
+        if !moved.contains(key) {
+            of.iterations.remove(key);
+        }
+    }
+    for key in moved {
+        let count = overlay.and_then(|overlay| overlay.loops.iter().find(|(looped, _, _)| looped == key)).map(|(_, count, _)| *count);
+        if let (Some(count), Some(&chosen), false) = (count, of.iterations.get(key), inside.contains(key))
+            && chosen.saturating_add(1) >= count
+        {
+            of.iterations.remove(key);
+        }
+    }
+}
+
+/// The arm shown of each structure: the one the developer picked, else the one the run took (notation 6.1).
+fn publish_arms(view: &mut View) {
+    let mut arms = view.file.as_ref().and_then(|file| view.views.get(file)).map(|of| of.arms.clone()).unwrap_or_default();
+    if let Some(overlay) = &view.published.overlay {
+        for (structure, &arm) in &overlay.taken {
+            arms.entry(structure.clone()).or_insert(arm);
+        }
+    }
+    view.published.arms = arms;
+}
+
+/// Works out the values of the trace kept over the drawing shown, at the iterations chosen, and publishes them. With
+/// `forget_picks`, an iteration selector moved or another trace arrived: the tabs the developer picked give way to the
+/// arms the run took (notation 6.1).
+fn revalue(view: &mut View, forget_picks: bool) {
+    let drawing = view.published.drawing.clone().filter(|_| view.drawn);
+    let file = view.file.clone().unwrap_or_default();
+    let choice = Choice { iterations: view.views.get(&file).map(|of| of.iterations.clone()).unwrap_or_default() };
+    let overlay = match (drawing, &view.traced.kept) {
+        (Some(drawing), Some((trace, judged))) => Some(style::scope(&view.style, || labcraft_diagram::values(&drawing, trace, judged, &choice))),
+        _ => None,
+    };
+    if forget_picks && let (Some(overlay), Some(of)) = (&overlay, view.views.get_mut(&file)) {
+        of.arms.retain(|structure, _| !overlay.taken.contains_key(structure));
+    }
+    view.published.run = view.traced.kept.as_ref().filter(|_| overlay.is_some()).map(|(trace, _)| (trace.clone(), choice));
+    view.published.overlay = overlay.map(Arc::new);
+    view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    publish_arms(view);
+    view.publish();
 }
 
 /// `view.open_trace`: the values of the run of `file` over the function shown, until another function is shown; without
@@ -315,7 +400,7 @@ pub fn look_at_trace(session: &mut Session) -> bool {
     view.traced.due = false;
     // The diagnostics of reading the trace, which join those of the drawing.
     let mut read_report = Report::new(usize::MAX);
-    let (mut overlay, mut part) = (None, None);
+    let (mut kept, mut part) = (None, None);
     if let (Some((path, shown)), Some(loaded)) = (&target, &view.loaded)
         && let Some(function) = loaded.functions.iter().find(|function| function.shown == file)
     {
@@ -324,12 +409,14 @@ pub fn look_at_trace(session: &mut Session) -> bool {
         let mut before = stamp.clone();
         let mut settled = false;
         for _ in 0..3 {
+            // The trace of the attempt before goes first: never two read at once.
+            drop(kept.take());
             read_report = Report::new(usize::MAX);
             let written = before.as_ref().and_then(|(_, now)| now.and_then(|(_, time)| time)).map(time_of_day);
-            let (values, read) = style::scope(&view.style, || {
+            let (read, said) = style::scope(&view.style, || {
                 drawings::read_trace(ws, path, shown, drawing.as_deref(), function, loaded, drawings::DEFAULT_TRACE_SIZE, written, &mut read_report)
             });
-            (overlay, part) = (values, Some(read));
+            (kept, part) = (read.map(|(trace, judged)| (Arc::new(trace), judged)), Some(said));
             let after = Some(stamp_of(ws, path));
             if after == before {
                 settled = true;
@@ -345,20 +432,25 @@ pub fn look_at_trace(session: &mut Session) -> bool {
     let mut report = view.traced.report.as_deref().cloned().unwrap_or_else(|| Report::new(usize::MAX));
     report.merge(read_report);
     report.finish();
-    view.published.overlay = overlay.map(Arc::new);
-    view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    // Another trace than the one shown last over this file, not over another function: the tabs picked give way to
+    // the arms that the run took (notation 6.1).
+    let of = view.views.entry(file.clone()).or_default();
+    let arrived = view.traced.read.is_some() && of.trace_seen != view.traced.read;
+    of.trace_seen.clone_from(&view.traced.read);
+    view.traced.kept = kept;
     view.published.trace = part;
     view.published.trace_opened = view.traced.opened.is_some();
     view.published.errors = report.errors();
     view.published.warnings = report.warnings();
     view.published.report = Some(Arc::new(report));
-    view.publish();
+    revalue(view, arrived);
     true
 }
 
-/// Reads `state` into `of`; whether it changes what placement depends on.
-fn read_state(state: &Map<String, Value>, of: &mut ViewOf) -> Result<bool, CommandError> {
+/// Reads `state` into `of`; whether it changes what placement depends on, and the loops whose iteration it chose.
+fn read_state(state: &Map<String, Value>, of: &mut ViewOf) -> Result<(bool, Vec<String>), CommandError> {
     let mut placed = false;
+    let mut moved = Vec::new();
     for (part, value) in state {
         let Some(entries) = value.as_object() else {
             return Err(CommandError::of("params.invalid", "state", format!("`state.{part}` is an object of keys")));
@@ -372,6 +464,14 @@ fn read_state(state: &Map<String, Value>, of: &mut ViewOf) -> Result<bool, Comma
                         .ok_or_else(|| CommandError::of("params.invalid", "state", format!("`state.arms.{key}` is the rank of an arm, from 0")))?;
                     of.arms.insert(key.clone(), arm);
                 }
+                ("iterations", Value::Number(number)) => {
+                    let iteration = number
+                        .as_u64()
+                        .ok_or_else(|| CommandError::of("params.invalid", "state", format!("`state.iterations.{key}` is an iteration, from 0")))?;
+                    if of.iterations.insert(key.clone(), iteration) != Some(iteration) {
+                        moved.push(key.clone());
+                    }
+                }
                 ("unfolded" | "standard", Value::Bool(on)) => {
                     let set = if part == "unfolded" { &mut of.unfolded } else { &mut of.standard };
                     if *on {
@@ -383,12 +483,12 @@ fn read_state(state: &Map<String, Value>, of: &mut ViewOf) -> Result<bool, Comma
                 }
                 _ => {
                     let error = CommandError::of("params.invalid", "state", format!("`state.{part}.{key}` is not part of the view state"));
-                    return Err(error.expecting(&["arms", "unfolded", "standard"]));
+                    return Err(error.expecting(&["arms", "unfolded", "standard", "iterations"]));
                 }
             }
         }
     }
-    Ok(placed)
+    Ok((placed, moved))
 }
 
 /// The files changed: reads and checks the folder again and draws the function shown, its nodes gliding when it is the
@@ -528,6 +628,8 @@ fn draw(view: &mut View, glide: bool) -> Value {
     // The values of the drawing before are not those of this one: they come once its trace is read.
     view.traced.due = true;
     view.drawn = false;
+    view.traced.kept = None;
+    view.published.run = None;
     if view.published.overlay.take().is_some() {
         view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
     }

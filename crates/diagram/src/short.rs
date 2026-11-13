@@ -64,6 +64,28 @@ fn is_number(ty: &str) -> bool {
     is_integer(ty) || matches!(kind_of(ty), "f32" | "f64" | "c64" | "c128")
 }
 
+/// Whether a type is a real number, whose values over the iterations of a loop show as a curve (notation 6.1): an
+/// integer or a float, with its unit.
+pub fn is_real(ty: &str) -> bool {
+    is_integer(ty) || matches!(kind_of(ty), "f32" | "f64")
+}
+
+/// The value of a real number of the trace, without its unit: a number of JSON, or a text that gives it with its unit
+/// (`"230.07 V"`); `nan` and the infinities as such. None for another value.
+pub fn real(json: &str) -> Option<f64> {
+    let raw = json.trim();
+    let text = if raw.starts_with('"') { Scanner::new(raw, DEPTH).string().ok()?.into_owned() } else { raw.to_owned() };
+    text.split(' ').next()?.parse().ok()
+}
+
+/// The unit of a type of a number: `V` for `f64[V]`; nothing for one without, or for another type.
+pub fn unit_of(ty: &str) -> &str {
+    if ty.starts_with('[') {
+        return "";
+    }
+    ty.split_once('[').map_or("", |(_, unit)| unit.strip_suffix(']').unwrap_or(unit))
+}
+
 /// The dimensions of an array type: `[f64]` 1, `[f64; 2]` 2; 1 when it does not say.
 fn dimensions(ty: &str) -> u32 {
     ty.strip_prefix('[')
@@ -339,6 +361,15 @@ fn complex(re: &str, im: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_real_number_and_its_unit_are_read_from_the_trace() {
+        assert_eq!(
+            [r#""230.07 V""#, "12", "-3.5", r#""nan""#, "true"].map(real).map(|value| value.map(|number| number.to_string())),
+            [Some("230.07".to_owned()), Some("12".to_owned()), Some("-3.5".to_owned()), Some("NaN".to_owned()), None]
+        );
+        assert_eq!(["f64[V]", "i32", "[f64]", "f64[m/s^2]"].map(unit_of), ["V", "", "", "m/s^2"]);
+    }
 
     fn text(json: &str, ty: &str) -> String {
         short(json, ty).map(|short| short.text).unwrap_or_else(|| "(nothing)".to_owned())

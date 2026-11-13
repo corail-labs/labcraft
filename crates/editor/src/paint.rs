@@ -62,6 +62,13 @@ pub enum Over {
     Under(usize),
     Banner,
     Bubble(usize),
+    /// The iteration selector of a loop.
+    Selector(usize),
+    /// The values at the inputs of a node, by its index in [`Drawing::placed`], hovered or selected.
+    Inputs(usize),
+    /// The outline of the node selected, or the halo of the wire selected, by its group.
+    SelectedNode(usize),
+    SelectedWire(usize),
 }
 
 impl Painter {
@@ -103,14 +110,35 @@ impl Painter {
         Some(self.marks.entry(index).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, &mark.shapes, theme, step))).clone())
     }
 
+    /// The values of a run changed, an iteration moved: only what is painted of them goes, not the drawing.
+    pub fn clear_values(&mut self) {
+        self.values.clear();
+    }
+
     /// A part of the values of a run, its shapes those of `overlay`.
     pub fn over(&mut self, ctx: &egui::Context, drawing: &Drawing, overlay: &Overlay, over: Over, theme: Theme, step: f32) -> Option<Arc<Painted>> {
         let shapes = match over {
             Over::Under(index) => &overlay.under.get(index)?.shapes,
             Over::Banner => &overlay.banner,
             Over::Bubble(index) => &overlay.bubbles.get(index)?.layer.shapes,
+            Over::Selector(index) => &overlay.selectors.get(index)?.layer.shapes,
+            Over::Inputs(_) | Over::SelectedNode(_) | Over::SelectedWire(_) => return None,
         };
         Some(self.values.entry(over).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, shapes, theme, step))).clone())
+    }
+
+    /// A part over the drawing whose shapes are made when it is first painted: the values at the inputs of a node, the
+    /// selection.
+    pub fn made(
+        &mut self,
+        ctx: &egui::Context,
+        drawing: &Drawing,
+        over: Over,
+        theme: Theme,
+        step: f32,
+        make: impl FnOnce() -> Vec<Shape>,
+    ) -> Arc<Painted> {
+        self.values.entry(over).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, &make(), theme, step))).clone()
     }
 }
 
@@ -230,10 +258,19 @@ fn length(value: i64, step: f32) -> f32 {
     value as f32 / 100.0 * step
 }
 
+/// The colours of a paint, a veil at its opacity (notation 6.1), as the SVG paints it.
 fn fill_and_stroke(paint: &Paint, theme: Theme, step: f32) -> (Color32, Stroke) {
-    let fill = paint.fill.map_or(Color32::TRANSPARENT, |token| theme.color(token));
-    let stroke = paint.stroke.map_or(Stroke::NONE, |token| Stroke::new(length(paint.width, step), theme.color(token)));
+    let veiled = |color: Color32| if paint.opacity < 100 { color.gamma_multiply(f32::from(paint.opacity) / 100.0) } else { color };
+    let fill = paint.fill.map_or(Color32::TRANSPARENT, |token| veiled(theme.color(token)));
+    let stroke = paint.stroke.map_or(Stroke::NONE, |token| Stroke::new(length(paint.width, step), veiled(theme.color(token))));
     (fill, stroke)
+}
+
+/// The outline of a rectangle dashed, as the SVG dashes it (`stroke-dasharray: 3 2`): a value of a trace that no longer
+/// matches its files (notation 6.1).
+fn dashed_outline(rect: Rect, stroke: Stroke, step: f32, out: &mut Vec<Painted2>) {
+    let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom(), rect.left_top()];
+    Painted2::dashed_line_many(&corners, stroke, 3.0 * step, 2.0 * step, out);
 }
 
 /// The shapes of epaint for a shape that is not a text or an icon, as the SVG draws it (`diagram::svg`).
@@ -242,6 +279,12 @@ fn geometry(shape: &Shape, theme: Theme, step: f32) -> Vec<Painted2> {
         Shape::Rect { x, y, width, height, radius, paint } => {
             let (fill, stroke) = fill_and_stroke(paint, theme, step);
             let rect = Rect::from_min_size(point(*x, *y, step), Vec2::new(length(*width, step), length(*height, step)));
+            if paint.dashed {
+                let mut out =
+                    vec![Painted2::Rect(RectShape::new(rect, CornerRadius::from(length(*radius, step)), fill, Stroke::NONE, StrokeKind::Middle))];
+                dashed_outline(rect, stroke, step, &mut out);
+                return out;
+            }
             vec![Painted2::Rect(RectShape::new(rect, CornerRadius::from(length(*radius, step)), fill, stroke, StrokeKind::Middle))]
         }
         Shape::Circle { x, y, radius, paint } => {

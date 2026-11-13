@@ -121,7 +121,14 @@ impl Workspace for Counting {
         self.memory.remove_file(path)
     }
     fn open(&self, path: &Path, offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        self.reads.fetch_add(1, Ordering::SeqCst);
         self.memory.open(path, offset)
+    }
+    fn create(&self, path: &Path) -> io::Result<Box<dyn io::Write + Send>> {
+        self.memory.create(path)
+    }
+    fn try_lock(&self, path: &Path) -> io::Result<Option<crate::workspace::Held>> {
+        self.memory.try_lock(path)
     }
 }
 
@@ -836,4 +843,170 @@ fn a_trace_opened_by_hand_stays_until_another_function_is_shown() {
     // Anywhere on the disk, from the window.
     session.open_trace_at(PathBuf::from("/elsewhere/t.jsonl")).unwrap();
     assert_eq!(session.view().trace.as_ref().unwrap().file, "/elsewhere/t.jsonl");
+}
+
+/// Counts to `last`: at iteration `k`, from 0, the carry `i` is `k` and `m` is `k + 1`; the loop stops when `m` reaches
+/// `last`, so it makes `last` iterations (worked out by hand from spec 6.3).
+fn counting_to(last: u32) -> String {
+    format!(
+        "labcraft 1\n\nuse core\n\nfn spin() -> (n: f64) {{\n    n = loop carry i = 0.0 {{\n        m = core.add(i, 1.0)\n        \
+         done = core.ge(m, {last}.0)\n        next i = m\n        until done\n    }}\n}}\n"
+    )
+}
+
+/// Runs the function shown and reads its trace, as the app does after a run.
+fn run_and_look(session: &mut Session, function: &str) {
+    let report = ok(session, "run.start", json!({ "function": function }));
+    assert_eq!(report["status"], "ok", "{report}");
+    assert!(report["trace"]["file"].is_string(), "{}", report["trace"]);
+    session.look_at_trace();
+}
+
+/// The value of the wire `wire` as a number: its value whole, as the trace wrote it.
+fn number_on(session: &Session, wire: &str) -> Option<f64> {
+    value_on(session, wire)?.parse().ok()
+}
+
+/// The loop of `spin` reached by the run: its key, its iterations, the one shown.
+fn the_loop(session: &Session) -> (String, u64, u64) {
+    let view = session.view();
+    let overlay = view.overlay.clone().unwrap_or_else(|| panic!("no values: {:?} {:?}", view.trace, codes_of(session)));
+    assert_eq!(overlay.loops.len(), 1, "{:?}", overlay.loops);
+    overlay.loops[0].clone()
+}
+
+#[test]
+fn an_iteration_chosen_shows_its_values_and_is_kept_across_runs_unless_it_is_the_last() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/spin.lcf", counting_to(5));
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "spin" }));
+    run_and_look(&mut session, "spin");
+    // By hand: 5 iterations, the last shown, where `i` is 4 and `m` 5.
+    let (key, count, shown) = the_loop(&session);
+    assert_eq!((count, shown), (5, 4));
+    assert_eq!((number_on(&session, "i"), number_on(&session, "m")), (Some(4.0), Some(5.0)));
+    let overlay = session.view().overlay.clone().unwrap();
+    assert_eq!(overlay.selectors.len(), 1);
+    assert_eq!((overlay.selectors[0].key.as_str(), overlay.selectors[0].count, overlay.selectors[0].shown), (key.as_str(), 5, 4));
+    // The second iteration: `i` is 1, `m` 2; the trace is not read again for it.
+    let reads = counting.reads.load(Ordering::SeqCst);
+    ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 1 } } }));
+    assert_eq!(counting.reads.load(Ordering::SeqCst), reads, "the trace kept, not read again");
+    assert_eq!(the_loop(&session).2, 1);
+    assert_eq!((number_on(&session, "i"), number_on(&session, "m")), (Some(1.0), Some(2.0)));
+    // The program changed and run again: the iteration chosen stays (decisions of the owner, 2026-11-13).
+    counting.memory.put("/p/spin.lcf", counting_to(7));
+    session.files_changed();
+    run_and_look(&mut session, "spin");
+    assert_eq!(the_loop(&session), (key.clone(), 7, 1));
+    // The last chosen follows the last of the next runs.
+    ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 6 } } }));
+    counting.memory.put("/p/spin.lcf", counting_to(9));
+    session.files_changed();
+    run_and_look(&mut session, "spin");
+    assert_eq!(the_loop(&session), (key.clone(), 9, 8));
+    // Past the last: the last.
+    ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 1000 } } }));
+    assert_eq!(the_loop(&session).2, 8);
+    // An iteration is a number from 0.
+    let refused = error(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): -1 } } }));
+    assert_eq!(refused.code, "params.invalid");
+}
+
+#[test]
+fn the_values_of_a_wire_over_the_iterations_and_at_the_inputs_of_a_node_come_from_the_trace_kept() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/spin.lcf", counting_to(5));
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "spin" }));
+    run_and_look(&mut session, "spin");
+    let (key, _, _) = the_loop(&session);
+    ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 2 } } }));
+    let view = session.view();
+    let (drawing, overlay) = (view.drawing.clone().unwrap(), view.overlay.clone().unwrap());
+    let (trace, choice) = view.run.clone().unwrap();
+    let group = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "m")).unwrap();
+    // By hand: `m` is 1 to 5, a real number, its curve marks the third.
+    let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
+    assert_eq!((series.key.as_str(), series.count, series.shown, series.curve), (key.as_str(), 5, 2, true));
+    let numbers: Vec<Option<f64>> = series.values.iter().map(|value| value.as_ref().and_then(|(_, number)| *number)).collect();
+    assert_eq!(numbers, [1.0, 2.0, 3.0, 4.0, 5.0].map(Some));
+    // A wire outside the loop has none.
+    let n = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "n")).unwrap();
+    assert!(labcraft_diagram::series(&drawing, &trace, &choice, n).is_none());
+    // `done` reads `m`, 3 at the third iteration, and a constant, whose pill shows already.
+    let done = drawing.placed.iter().position(|placed| placed.key.ends_with("done")).unwrap();
+    let texts: Vec<String> = labcraft_diagram::inputs_of(&drawing, &overlay, done).iter().filter_map(text_of).collect();
+    assert_eq!(texts, ["3"]);
+}
+
+/// Two `for` one in the other: `v` is `i + j` (worked out by hand), 3 rows of 2.
+const GRID: &str = "labcraft 1\n\nuse core\n\nfn grid() -> (out: [[i32]]) {\n    out = for i in 0..3 {\n        row = for j in 0..2 {\n            \
+                    v = core.add(i, j)\n            collect v\n        }\n        collect row\n    }\n}\n";
+
+#[test]
+fn when_an_outer_loop_moves_the_inner_ones_go_to_their_last_iteration() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/grid.lcf", GRID);
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "grid" }));
+    run_and_look(&mut session, "grid");
+    let loops = session.view().overlay.clone().unwrap().loops.clone();
+    assert_eq!(loops.iter().map(|(_, count, shown)| (*count, *shown)).collect::<Vec<_>>(), [(3, 2), (2, 1)], "outer, then inner");
+    let (outer, inner) = (loops[0].0.clone(), loops[1].0.clone());
+    let drawing = session.view().drawing.clone().unwrap();
+    assert_eq!(labcraft_diagram::loops_inside(&drawing, &outer), std::slice::from_ref(&inner));
+    assert!(labcraft_diagram::loops_inside(&drawing, &inner).is_empty());
+    // By hand: at the last iterations, `v` is 2 + 1.
+    assert_eq!(value_on(&session, "v").as_deref(), Some("3"));
+    ok(&mut session, "view.set_state", json!({ "function": "grid", "state": { "iterations": { inner.as_str(): 0 } } }));
+    assert_eq!(value_on(&session, "v").as_deref(), Some("2"));
+    // The outer one moves: the inner one goes back to its last, `v` 1 + 1.
+    ok(&mut session, "view.set_state", json!({ "function": "grid", "state": { "iterations": { outer.as_str(): 1 } } }));
+    assert_eq!(value_on(&session, "v").as_deref(), Some("2"));
+    let loops = session.view().overlay.clone().unwrap().loops.clone();
+    assert_eq!(loops.iter().map(|(_, _, shown)| *shown).collect::<Vec<_>>(), [1, 1]);
+    // Both in one call: each as given, `v` 1 + 0.
+    ok(&mut session, "view.set_state", json!({ "function": "grid", "state": { "iterations": { outer.as_str(): 1, inner.as_str(): 0 } } }));
+    assert_eq!(value_on(&session, "v").as_deref(), Some("1"));
+    // The values of `v` over `j`, within `i` = 1: 1 and 2, an integer as a curve.
+    let view = session.view();
+    let (trace, choice) = view.run.clone().unwrap();
+    let group = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "v")).unwrap();
+    let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
+    let texts: Vec<&str> = series.values.iter().map(|value| value.as_ref().map_or("", |(text, _)| text.as_str())).collect();
+    assert_eq!((series.key.as_str(), texts, series.curve), (inner.as_str(), vec!["1", "2"], true));
+}
+
+/// Picks by `x`: `0` takes the first arm (worked out by hand from spec 6.2).
+const PICK: &str = "labcraft 1\n\nuse core\n\nfn pick(x: i32) -> (y: f64) {\n    y = match x {\n        0 => yield 1.0\n        _ => {\n            \
+                    z = core.add(2.0, 0.5)\n            yield z\n        }\n    }\n}\n";
+
+#[test]
+fn a_tab_picked_gives_way_to_the_arm_the_run_took_when_another_trace_arrives() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/pick.lcf", PICK);
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "pick" }));
+    let report = ok(&mut session, "run.start", json!({ "function": "pick", "args": { "x": 0 } }));
+    assert_eq!(report["status"], "ok", "{report}");
+    session.look_at_trace();
+    let taken = session.view().overlay.clone().unwrap().taken.clone();
+    let (structure, arm) = taken.iter().next().map(|(structure, arm)| (structure.clone(), *arm)).unwrap();
+    assert_eq!(arm, 0, "the first arm");
+    assert_eq!(session.view().arms.get(&structure), Some(&0), "shown by default");
+    // The developer picks the other tab: it wins, and stays when another function is shown and this one again.
+    ok(&mut session, "view.set_state", json!({ "function": "pick", "state": { "arms": { structure.as_str(): 1 } } }));
+    assert_eq!(session.view().arms.get(&structure), Some(&1));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    session.look_at_trace();
+    ok(&mut session, "view.show_function", json!({ "function": "pick" }));
+    session.look_at_trace();
+    assert_eq!(session.view().arms.get(&structure), Some(&1), "no new trace: the pick stays");
+    // Another run, which takes the first arm again: the pick gives way to it.
+    let report = ok(&mut session, "run.start", json!({ "function": "pick", "args": { "x": 0 } }));
+    assert_eq!(report["status"], "ok", "{report}");
+    session.look_at_trace();
+    assert_eq!(session.view().arms.get(&structure), Some(&0), "a new trace: the arm the run took");
 }

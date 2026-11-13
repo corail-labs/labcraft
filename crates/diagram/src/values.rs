@@ -503,6 +503,44 @@ pub struct Overlay {
     pub taken: BTreeMap<String, usize>,
     /// Each loop that the run reached: its key, how many iterations it made, and the one shown.
     pub loops: Vec<(String, u64, u64)>,
+    /// The value of each wire that has one, by its group in [`Drawing::groups`]: those of the bubbles, and the values that
+    /// enter a frame by a notch, which the inputs of a node show (notation 6.1). Not in the SVG.
+    pub wires: BTreeMap<usize, Valued>,
+    /// The iteration selector of each loop that the run reached and that its header has room for: the viewer's, never in
+    /// an SVG, where an image shows the last iteration (`docs/cli.md`, 7.2).
+    pub selectors: Vec<Selector>,
+    /// The files have changed since the run: every value is muted (notation 6.1).
+    pub stale: bool,
+}
+
+/// The value of a wire: its short form and its value whole, as its bubble and its tooltip give them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Valued {
+    pub text: String,
+    /// An error that carries an error: shown in `wire.error`.
+    pub error: bool,
+    pub title: String,
+}
+
+/// The iteration selector of a loop, `‹ 3/6 ›` in its header, next to its counter (notation 6.1): what a click on each
+/// part asks for, and its shapes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Selector {
+    /// The key of the loop, that `view.set_state` names.
+    pub key: String,
+    /// The iterations that the loop made, within the iterations chosen outside it, and the one shown, from 0.
+    pub count: u64,
+    pub shown: u64,
+    /// Where a click steps back, where it types a number, where it steps forward: left, top, right, bottom.
+    pub back: (i64, i64, i64, i64),
+    pub number: (i64, i64, i64, i64),
+    pub forward: (i64, i64, i64, i64),
+    pub layer: Layer,
+    /// The counter of the loop in [`Overlay::under`], when the header has room for the selector only in its place: the
+    /// viewer then shows the selector, whose `6/6` gives the count, and not the counter.
+    pub replaces: Option<usize>,
 }
 
 /// Works out values in a trace.
@@ -512,6 +550,36 @@ struct Reading<'a> {
 }
 
 impl<'a> Reading<'a> {
+    /// The key of a loop, by its node.
+    fn loop_key(&self, looped: u32) -> &'a str {
+        match self.plan.nodes.get(looped as usize).map(|node| &node.kind) {
+            Some(PlanKind::Loop { key, .. }) => key,
+            _ => "",
+        }
+    }
+
+    /// The iterations shown of the loops `loops`, outermost first, each within those before it: the one chosen, or the
+    /// last; none when one of them made no iteration there.
+    fn shown_in(&self, loops: &[u32], choice: &Choice) -> Option<Vec<u64>> {
+        let mut iters = Vec::with_capacity(loops.len());
+        for &looped in loops {
+            let count = self.trace.iterations(looped, &iters);
+            if count == 0 {
+                return None;
+            }
+            iters.push(choice.shown(self.loop_key(looped), count));
+        }
+        Some(iters)
+    }
+
+    /// Whether the run took every arm around `body` at the iterations `iters` of its loops.
+    fn took_arms(&self, body: &PlanBody, iters: &[u64]) -> bool {
+        body.arms.iter().all(|(structure, arm)| {
+            let prefix = iters.get(..self.loops_of(*structure)).unwrap_or(&[]);
+            self.trace.arm(*structure, prefix) == Some(&**arm)
+        })
+    }
+
     fn loops_of(&self, node: u32) -> usize {
         self.plan.nodes.get(node as usize).and_then(|node| self.plan.bodies.get(node.body as usize)).map_or(0, |body| body.loops.len())
     }
@@ -704,34 +772,13 @@ pub fn values(drawing: &Drawing, trace: &Trace, judged: &Judged, choice: &Choice
     let reading = Reading { plan: &drawing.trace, trace };
     let plan = &drawing.trace;
     // The iterations of each body, the last by default; none for a body that the run did not reach.
-    let mut contexts: Vec<Option<Vec<u64>>> = Vec::with_capacity(plan.bodies.len());
-    for body in &plan.bodies {
-        let mut iters: Vec<u64> = Vec::with_capacity(body.loops.len());
-        let mut live = true;
-        for &looped in &body.loops {
-            let count = trace.iterations(looped, &iters);
-            if count == 0 {
-                live = false;
-                break;
-            }
-            let key = match plan.nodes.get(looped as usize).map(|node| &node.kind) {
-                Some(PlanKind::Loop { key, .. }) => key.as_str(),
-                _ => "",
-            };
-            iters.push(choice.shown(key, count));
-        }
-        if live {
-            live = body.arms.iter().all(|(structure, arm)| {
-                let prefix = iters.get(..reading.loops_of(*structure)).unwrap_or(&[]);
-                trace.arm(*structure, prefix) == Some(&**arm)
-            });
-        }
-        contexts.push(live.then_some(iters));
-    }
+    let contexts: Vec<Option<Vec<u64>>> =
+        plan.bodies.iter().map(|body| reading.shown_in(&body.loops, choice).filter(|iters| reading.took_arms(body, iters))).collect();
     let context_of = |node: &PlanNode| contexts.get(node.body as usize).cloned().flatten();
     let stale = !judged.stale.is_empty();
+    overlay.stale = stale;
     banner(drawing, trace, judged, &mut overlay);
-    under(drawing, &reading, &contexts, &mut overlay);
+    under(drawing, &reading, &contexts, choice, &mut overlay);
     // The loops reached, for the selectors of the viewer.
     for (index, node) in plan.nodes.iter().enumerate() {
         if let (PlanKind::Loop { key, .. }, Some(iters)) = (&node.kind, context_of(node)) {
@@ -755,12 +802,25 @@ pub fn values(drawing: &Drawing, trace: &Trace, judged: &Judged, choice: &Choice
     }
     let mut found: Vec<Found> = Vec::new();
     let mut inputs_wired = vec![false; plan.inputs.len()];
+    // A value of the trace that several wires read (one that enters frames by their notches) is put in short once: by
+    // where its text is in the trace, and its type.
+    let mut once: ShortOnce<'_> = HashMap::new();
     for (index, group) in drawing.groups.iter().enumerate() {
         let Some(wire) = &group.wire else { continue };
-        let (Some(source), true) = (wire.source, wire.starts) else { continue };
+        let Some(source) = wire.source else { continue };
         let Some(Some(iters)) = contexts.get(wire.body) else { continue };
         let Some(json) = reading.value(source, iters) else { continue };
-        let Some(shown) = short(&json, &wire.ty) else { continue };
+        let worked = || short(&json, &wire.ty).map(|shown| (shown, title_of(&json)));
+        let made = match &json {
+            Cow::Borrowed(text) => once.entry((text.as_ptr() as usize, text.len(), wire.ty.as_str())).or_insert_with(worked).clone(),
+            Cow::Owned(_) => worked(),
+        };
+        let Some((shown, title)) = made else { continue };
+        overlay.wires.insert(index, Valued { text: shown.text.clone(), error: shown.error, title });
+        // A value that enters by a notch shows outside, where it starts.
+        if !wire.starts {
+            continue;
+        }
         let (key, anchor, node) = match plan.sources.get(source as usize) {
             Some(Source::Input(input)) => {
                 if let Some(slot) = inputs_wired.get_mut(*input as usize) {
@@ -844,14 +904,23 @@ pub fn values(drawing: &Drawing, trace: &Trace, judged: &Judged, choice: &Choice
         let group = item.group.and_then(|group| drawing.groups.get(group));
         layer.within = group.and_then(|group| group.within);
         layer.placed = group.and_then(|group| group.placed);
-        let mut title = cut_text(&item.json).into_owned();
-        if item.json.contains("\"$len\"") || item.json.contains("\"$cut\"") {
-            title.push_str("\n(cut by the trace)");
-        }
+        let title = title_of(&item.json);
         overlay.bubbles.push(Bubble { wire: item.wire, group: item.group, title, layer });
     }
     overlay
 }
+
+/// A value whole, as its tooltip gives it: cut at 200 code points, saying when the trace cut it (notation 6.1).
+fn title_of(json: &str) -> String {
+    let mut title = cut_text(json).into_owned();
+    if json.contains("\"$len\"") || json.contains("\"$cut\"") {
+        title.push_str("\n(cut by the trace)");
+    }
+    title
+}
+
+/// The short form and the title of each value of the trace already put in short, by where its text is and its type.
+type ShortOnce<'a> = HashMap<(usize, usize, &'a str), Option<(Short, String)>>;
 
 /// Where a wire starts, and where its first horizontal segment ends: `(x, y, end)`.
 fn start_of(drawing: &Drawing, group: Option<usize>) -> Option<(i64, i64, i64)> {
@@ -1111,7 +1180,7 @@ fn banner(drawing: &Drawing, trace: &Trace, judged: &Judged, overlay: &mut Overl
 
 /// The veils over the arms that the run did not take, the hatching of the nodes it skipped, the outline and badge of the
 /// nodes that produced an error, the counters of the loops.
-fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>], overlay: &mut Overlay) {
+fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>], choice: &Choice, overlay: &mut Overlay) {
     let plan = reading.plan;
     let trace = reading.trace;
     let mut within_of: HashMap<usize, Option<usize>> = HashMap::new();
@@ -1146,7 +1215,7 @@ fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>]
                     overlay.under.push(Layer { shapes: vec![veil], within: arm_within, placed });
                 }
             }
-            PlanKind::Loop { counter: (from, middle, to), .. } => {
+            PlanKind::Loop { key, counter: (from, middle, to) } => {
                 let count = trace.iterations(index32, iters);
                 // `× 0` for a loop that ran and made no iteration; nothing for one that the run did not reach.
                 let ran = (0..node.wires.len()).any(|wire| trace.value(index32, u32::try_from(wire).unwrap_or(u32::MAX), iters).is_some());
@@ -1155,8 +1224,27 @@ fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>]
                 }
                 let text = Text::new(&format!("\u{D7} {count}"), size::any_text(), size::medium());
                 let left = to - text.width;
-                if left >= from + style::grid() {
+                let counter = (left >= from + style::grid()).then(|| {
                     overlay.under.push(Layer { shapes: vec![text.at(left, *middle, "ink.muted")], within, placed });
+                    overlay.under.len() - 1
+                });
+                // The selector before the counter; in its place when the header has room for only one (notation 6.1).
+                if count > 0 {
+                    let shown = choice.shown(key, count);
+                    let end = if counter.is_some() { left - style::grid() } else { *to };
+                    let fits = |end: i64| end - selector_width(count) >= from + style::grid();
+                    let (end, replaces) = match counter {
+                        _ if fits(end) => (Some(end), None),
+                        Some(counter) if fits(*to) => (Some(*to), Some(counter)),
+                        _ => (None, None),
+                    };
+                    if let Some(end) = end {
+                        let mut selector = selector(key, shown, count, end, *middle);
+                        selector.layer.within = within;
+                        selector.layer.placed = placed;
+                        selector.replaces = replaces;
+                        overlay.selectors.push(selector);
+                    }
                 }
             }
             PlanKind::Node => {
@@ -1208,6 +1296,201 @@ fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>]
             }
         }
     }
+}
+
+/// The text of an iteration selector, which counts from 1 as its counter does (notation 6.1): `‹ 3/6 ›`.
+fn selector_number(shown: u64, count: u64) -> String {
+    format!("{}/{count}", shown.saturating_add(1))
+}
+
+/// As wide whatever iteration it shows, so that stepping never moves it nor the counter: room for the widest number.
+fn selector_width(count: u64) -> i64 {
+    // `‹`, a space, the number, a space, `›`.
+    let cell = Text::new("\u{2039}", size::any_text(), size::medium()).width;
+    Text::new(&selector_number(count.saturating_sub(1), count), size::any_text(), size::medium()).width + 4 * cell + 2 * style::padding()
+}
+
+/// The selector of a loop that made `count` iterations, `shown` shown, ending at `end`, on the middle of its header: a box
+/// of the fill of a tab, as a control is, the arrow that leads nowhere muted.
+fn selector(key: &str, shown: u64, count: u64, end: i64, middle: i64) -> Selector {
+    let width = selector_width(count);
+    let (left, height) = (end - width, style::pill_height());
+    let top = middle - height / 2;
+    let arrow = |glyph: &str| Text::new(glyph, size::any_text(), size::medium());
+    let (back, forward) = (arrow("\u{2039}"), arrow("\u{203A}"));
+    let cell = back.width;
+    let number = Text::new(&selector_number(shown, count), size::any_text(), size::medium());
+    let x_back = left + style::padding();
+    let x_number = x_back + 2 * cell;
+    let x_forward = left + width - style::padding() - cell;
+    let ink = |muted: bool| if muted { "ink.muted" } else { "node.title" };
+    let shapes = vec![
+        Shape::Rect {
+            x: left,
+            y: top,
+            width,
+            height,
+            radius: style::probe_radius(),
+            paint: Paint::both("tab.fill", "pill.stroke", style::outline()),
+        },
+        back.at(x_back, middle, ink(shown == 0)),
+        number.at(x_number, middle, "node.title"),
+        forward.at(x_forward, middle, ink(shown.saturating_add(1) >= count)),
+    ];
+    let bottom = top + height;
+    Selector {
+        key: key.to_owned(),
+        count,
+        shown,
+        back: (left, top, x_number - cell / 2, bottom),
+        number: (x_number - cell / 2, top, x_forward - cell / 2, bottom),
+        forward: (x_forward - cell / 2, top, left + width, bottom),
+        layer: Layer { shapes, ..Layer::default() },
+        replaces: None,
+    }
+}
+
+/// The keys of the loops inside the loop `key`, at every depth: when it moves, they go to their last iteration in its
+/// new one (notation 6.1).
+pub fn loops_inside(drawing: &Drawing, key: &str) -> Vec<String> {
+    let plan = &drawing.trace;
+    let is_loop = |node: &PlanNode, wanted: &str| matches!(&node.kind, PlanKind::Loop { key, .. } if key == wanted);
+    let Some(outer) = plan.nodes.iter().position(|node| is_loop(node, key)) else { return Vec::new() };
+    let outer = u32::try_from(outer).unwrap_or(u32::MAX);
+    plan.nodes
+        .iter()
+        .filter_map(|node| match &node.kind {
+            PlanKind::Loop { key, .. } if plan.bodies.get(node.body as usize).is_some_and(|body| body.loops.contains(&outer)) => Some(key.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The values of a series that a tooltip shows, at most (notation 6.1).
+pub const SERIES: u64 = 1_000;
+
+/// The values of a wire over the iterations of its own loop, within the iterations chosen outside it (notation 6.1).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Series {
+    /// The loop, by its key, the iterations it made there and the one shown, from 0.
+    pub key: String,
+    pub count: u64,
+    pub shown: u64,
+    /// The value at each of its first [`SERIES`] iterations: its short form, and the number of a real number; none
+    /// where the iteration gives no value (a node skipped, an arm not taken, a value cut).
+    pub values: Vec<Option<(String, Option<f64>)>>,
+    /// A real number, whose values make a curve; a list otherwise.
+    pub curve: bool,
+    /// The unit of the type: `V` for `f64[V]`.
+    pub unit: String,
+}
+
+/// The series of the wire of the group `group`: none for a wire outside every loop, or in a loop the run did not reach.
+pub fn series(drawing: &Drawing, trace: &Trace, choice: &Choice, group: usize) -> Option<Series> {
+    if trace.header.is_err() || trace.other_function {
+        return None;
+    }
+    let plan = &drawing.trace;
+    let wire = drawing.groups.get(group)?.wire.as_ref()?;
+    let source = wire.source?;
+    let body = plan.bodies.get(wire.body)?;
+    let (&own, outer) = body.loops.split_last()?;
+    let reading = Reading { plan, trace };
+    let mut iters = reading.shown_in(outer, choice)?;
+    let count = trace.iterations(own, &iters);
+    if count == 0 {
+        return None;
+    }
+    let key = reading.loop_key(own).to_owned();
+    let curve = crate::short::is_real(&wire.ty);
+    let mut values = Vec::new();
+    for at in 0..count.min(SERIES) {
+        iters.push(at);
+        let value = if reading.took_arms(body, &iters) { reading.value(source, &iters) } else { None };
+        values.push(value.and_then(|json| {
+            let shown = short(&json, &wire.ty)?;
+            Some((shown.text, if curve { crate::short::real(&json) } else { None }))
+        }));
+        iters.pop();
+    }
+    let unit = crate::short::unit_of(&wire.ty).to_owned();
+    Some(Series { shown: choice.shown(&key, count), key, count, values, curve, unit })
+}
+
+/// The values at the input terminals of a placed node, `placed` in [`Drawing::placed`], which hovering or selecting it
+/// shows (notation 6.1): to the left of each, 4 units above its wire, side by side from the bottom line up as those of the
+/// outputs, each ending 4 units before the start of the one below. Drawn over everything, covering what is under them.
+pub fn inputs_of(drawing: &Drawing, overlay: &Overlay, placed: usize) -> Vec<Shape> {
+    let Some(block) = drawing.placed.get(placed) else { return Vec::new() };
+    let reach = style::terminal();
+    let mut inputs: Vec<(i64, i64, &Valued)> = Vec::new();
+    for (index, group) in drawing.groups.iter().enumerate() {
+        let (Some(wire), Some(valued)) = (&group.wire, overlay.wires.get(&index)) else { continue };
+        for (_, points) in &wire.readers {
+            if let Some(&(x, y)) = points.last()
+                && (x - block.x).abs() <= reach
+                && (block.y..=block.y + block.height).contains(&y)
+            {
+                inputs.push((x, y, valued));
+            }
+        }
+    }
+    inputs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    inputs.dedup_by_key(|(x, y, _)| (*x, *y));
+    let mut shapes = Vec::new();
+    let mut below: Option<(i64, i64)> = None;
+    for (x, y, valued) in inputs {
+        let text = Text::new(&valued.text, size::any_text(), size::medium());
+        let width = text.width + 2 * style::padding();
+        let mut end = x - style::probe_gap();
+        if let Some((_, start)) = below.filter(|(under, _)| under - y < style::probe_apart()) {
+            end = end.min(start - style::probe_gap());
+        }
+        let top = y - style::probe_above() - style::probe_height();
+        let shown = Short { text: valued.text.clone(), error: valued.error };
+        shapes.extend(bubble_shapes(end - width, top, width, &text, &shown, overlay.stale));
+        below = Some((y, end - width));
+    }
+    shapes
+}
+
+/// The opacity of the halo of a wire selected *(proposed)*: the wire stays read through it.
+const HALO: u8 = 35;
+/// The width of the halo of a wire selected, in hundredths: wider than the widest wire, an error's 4 units
+/// *(proposed)*.
+const HALO_WIDTH: i64 = 800;
+
+/// The outline of a node selected in the viewer, in `select.stroke` (notation 6.1, 8): outside the outline of a node that
+/// produced an error, twice as far from its block.
+pub fn selected_node(drawing: &Drawing, placed: usize) -> Vec<Shape> {
+    let Some(block) = drawing.placed.get(placed) else { return Vec::new() };
+    let around = 2 * style::mark_around();
+    vec![Shape::Rect {
+        x: block.x - around,
+        y: block.y - around,
+        width: block.width + 2 * around,
+        height: block.height + 2 * around,
+        radius: style::radius() + around,
+        paint: Paint::stroke("select.stroke", style::mark_width()),
+    }]
+}
+
+/// The halo of a wire selected in the viewer, along its paths, in `select.stroke` (notation 6.1, 8): each segment once,
+/// though every reader's path goes from the source, so that the trunk they share is not veiled several times over.
+pub fn selected_wire(drawing: &Drawing, group: usize) -> Vec<Shape> {
+    let Some(wire) = drawing.groups.get(group).and_then(|group| group.wire.as_ref()) else { return Vec::new() };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut halo = Vec::new();
+    for (_, points) in &wire.readers {
+        for pair in points.windows(2) {
+            if let [a, b] = pair
+                && seen.insert(if a <= b { (*a, *b) } else { (*b, *a) })
+            {
+                halo.push(Shape::Poly { points: vec![*a, *b], closed: false, paint: Paint::stroke("select.stroke", HALO_WIDTH).veiled(HALO) });
+            }
+        }
+    }
+    halo
 }
 
 /// Lines at 45 degrees across an area, `HATCH` apart, in `ink.muted`.

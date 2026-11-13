@@ -291,7 +291,7 @@ impl eframe::App for Viewer {
         if published.view.overlay_generation != self.values_generation {
             self.values_generation = published.view.overlay_generation;
             // Published with the drawing they were made for, which the canvas has just taken.
-            self.canvas.set_values(published.view.overlay.clone());
+            self.canvas.set_values(published.view.overlay.clone(), published.view.run.clone());
             if std::mem::take(&mut self.fit_values) && published.view.overlay.as_ref().is_some_and(|overlay| overlay.top > 0) {
                 self.canvas.fit();
             }
@@ -325,6 +325,10 @@ impl eframe::App for Viewer {
             let response = self.canvas.show(ui, self.theme, &shown);
             if let (Some((structure, arm)), Some(function)) = (response.tab, self.published.view.function.clone()) {
                 self.session.post("view.set_state", json!({ "function": function, "state": { "arms": { structure: arm } } }));
+            }
+            // An iteration chosen by a selector or on the values pinned of a wire (notation 6.1).
+            if let (Some((looped, iteration)), Some(function)) = (response.iteration, self.published.view.function.clone()) {
+                self.session.post("view.set_state", json!({ "function": function, "state": { "iterations": { looped: iteration } } }));
             }
         });
         self.prefs.tick(Instant::now());

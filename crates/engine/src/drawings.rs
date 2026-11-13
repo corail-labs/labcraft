@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use labcraft_check::{Checked, check};
 use labcraft_diagram::{DiagramLimits, Drawing, Drawn, MAX_LINES, Overlay, Theme, ViewState, draw, mark, svg_with, undrawn};
+use labcraft_trace::Trace;
 use labcraft_types::{CheckCounts, CheckSummary, Code, Diagnostic, Fix, Interner, Limits, Report, Status, cut_text};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -281,7 +282,8 @@ pub const MAX_TRACE_SIZE: u64 = 4 << 30;
 const TRACE_PART: usize = 64 * 1024;
 
 /// Reads the trace at `path`, shown as `shown`, for the drawing of `function`, within `max_size` (`--max-trace-size`,
-/// `docs/cli.md`, 7.4): the values to draw over it, and the `trace` part of the report; the diagnostics of reading it
+/// `docs/cli.md`, 7.4): the trace and how it stands against the files, from which the values over the drawing come, and
+/// the `trace` part of the report; the diagnostics of reading it
 /// (`LC71`) join `report`. A function that is not drawn has no values, but its trace is still read and judged. Whether it
 /// matches is judged on the files of the folder that the run read, and always on the file of the function (notation
 /// 6.1), each named from `FOLDER` (cli.md 7.2): the trace names them from where the run started ([`ours_in_trace`]).
@@ -297,7 +299,7 @@ pub fn read_trace(
     max_size: u64,
     written: Option<String>,
     report: &mut Report,
-) -> (Option<Overlay>, TracePart) {
+) -> (Option<(Trace, labcraft_diagram::Judged)>, TracePart) {
     let shown = cut_text(shown).into_owned();
     let mut part = TracePart { file: shown.clone(), ..TracePart::default() };
     let limits = labcraft_trace::ReadLimits { file: max_size, ..labcraft_trace::ReadLimits::default() };
@@ -371,7 +373,7 @@ pub fn read_trace(
     part.ignored = if drawing.is_some() { trace.ignored } else { 0 };
     part.stale.clone_from(&stale);
     let judged = labcraft_diagram::Judged { stale, written };
-    (drawing.map(|drawing| labcraft_diagram::values(drawing, &trace, &judged, &labcraft_diagram::Choice::default())), part)
+    (drawing.is_some().then_some((trace, judged)), part)
 }
 
 /// Which of the files that a trace lists (`listed`) are ours, by our name, from the folder: none for another one. The
@@ -434,7 +436,14 @@ pub fn trace_over(
     report: &mut Report,
 ) -> (Option<Overlay>, TracePart) {
     match (asked.first(), drawn.first()) {
-        (Some(function), Some((drawing, _, _))) => read_trace(ws, path, shown, drawing.as_ref(), function, loaded, max_size, None, report),
+        (Some(function), Some((drawing, _, _))) => {
+            let (read, part) = read_trace(ws, path, shown, drawing.as_ref(), function, loaded, max_size, None, report);
+            let values = drawing
+                .as_ref()
+                .zip(read)
+                .map(|(drawing, (trace, judged))| labcraft_diagram::values(drawing, &trace, &judged, &labcraft_diagram::Choice::default()));
+            (values, part)
+        }
         _ => (None, TracePart { file: cut_text(shown).into_owned(), ..TracePart::default() }),
     }
 }
