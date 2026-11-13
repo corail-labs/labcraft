@@ -6,15 +6,15 @@
 # only: no shell and no MCP server, so it cannot run the checker, and its first fix is the one judged. A case is fixed
 # when `check --deny-warnings` then reports nothing.
 #
-#   bash tests/acceptance/agent/run.sh OUT_DIR          all the cases
-#   ONLY=implicit-narrowing bash tests/acceptance/agent/run.sh OUT_DIR
+#   bash tests/acceptance/agent/scenario-2.sh OUT_DIR          all the cases
+#   ONLY=implicit-narrowing bash tests/acceptance/agent/scenario-2.sh OUT_DIR
 #
 # OUT_DIR must not exist yet, and must be outside the repository. Each case leaves there: the prompt, the transcript
 # (stream-json), the diff of the fix and the report of `check` after it; `versions.txt` says what ran. MODEL picks the
 # model (default claude-opus-5-5).
 set -u
 REPO=$(cd "$(dirname "$0")/../../.." && pwd -P)
-OUT=${1:?usage: run.sh OUT_DIR}
+OUT=${1:?usage: scenario-2.sh OUT_DIR}
 MODEL=${MODEL:-claude-opus-5-5}
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 

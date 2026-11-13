@@ -1041,7 +1041,7 @@ Each step of work ends with something testable:
    2026-11-11): **10a**, the bounds: the families Instruments and Arguments of scenario 4 in the corpus of runs, runs
    built to cost the most in `xtask bounds`, the limit of the bytes made (`--max-made`, `LC8009`), a faster writer of the
    trace, the fuzz targets `run` and `mcp`, point 3 of scenario 5 with M0b (`tests/harness`, runs of programs written in
-   another order), *done*; **10b**, scenario 1 by hand; the long fuzzing of the targets of M0b; **10c**, the tag.
+   another order), *done*; **10b**, scenario 1 by hand (`tests/acceptance/agent/scenario-1.sh`), *done*; the long fuzzing of the targets of M0b; **10c**, the tag.
 
 Rust contributions to these crates open when this section is merged (CONTRIBUTING.md).
 
