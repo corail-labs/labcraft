@@ -13,6 +13,11 @@ labcraft-format = { workspace = true }
 labcraft-graph = { workspace = true }
 labcraft-types = { workspace = true }
 toml = { workspace = true }
+# A drawing as data, for the web viewer, whose worker sends it to the page (architecture 11.5).
+serde = { workspace = true, optional = true, features = ["rc"] }
+
+[features]
+serde = ["dep:serde"]
 
 [lints]
 workspace = true

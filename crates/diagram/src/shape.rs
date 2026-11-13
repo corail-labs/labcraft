@@ -4,13 +4,21 @@
 use crate::style;
 use labcraft_types::text::Ink;
 
+/// A drawing as data, for the web viewer (feature `serde`).
+#[cfg(feature = "serde")]
+#[path = "serial.rs"]
+mod serial;
+
 /// A token of the theme (notation 8), by its name: `node.fill`.
 pub type Token = &'static str;
 
 /// How a shape is painted: a fill, an outline and its width, each optional.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Paint {
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::option_token"))]
     pub fill: Option<Token>,
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::option_token"))]
     pub stroke: Option<Token>,
     /// In hundredths of a unit.
     pub width: i64,
@@ -32,6 +40,7 @@ impl Paint {
 
 /// From which zoom a text is shown on the canvas (notation 7). The SVG shows every text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Detail {
     /// A title of a frame, an arm or a tab: at every zoom.
     Title,
@@ -59,7 +68,9 @@ pub const COARSE_NODE: Paint = Paint::both("node.fill", "node.stroke", 100);
 /// A fill under a text, that hides what passes under it and is shown and hidden with it (notation 5): the name of a
 /// terminal of a frame, over the wire that leaves the terminal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Ground {
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))]
     pub token: Token,
     pub x: i64,
     pub y: i64,
@@ -69,12 +80,15 @@ pub struct Ground {
 
 /// A run of a text in one token.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Run {
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))]
     pub token: Token,
     pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Shape {
     Rect {
         x: i64,
@@ -126,21 +140,26 @@ pub enum Shape {
 
 /// How a wire is drawn (notation 4.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WireStyle {
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))]
     pub token: Token,
     /// In hundredths of a unit.
     pub width: i64,
     pub pattern: Pattern,
     /// A struct is sheathed: its core, in the fill of the frame it runs in.
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::option_token"))]
     pub core: Option<Token>,
     /// An array has a cross-tick per dimension every 8 units, within the width of the wire.
     pub ticks: u8,
     /// What a cut through the wire shows: the fill of the frame it runs in. Nothing is drawn outside the width of a
     /// wire: its pattern is cut into it (notation 4.1).
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))]
     pub ground: Token,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Pattern {
     Solid,
     /// An error: a tape, chevrons cut into it every 8 units, in the direction of the flow.
@@ -186,21 +205,25 @@ pub fn chevrons(points: &[(i64, i64)]) -> Vec<[(i64, i64); 3]> {
 
 /// An icon as the SVG draws it: its grid and its items, in the numbers that the file writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IconDrawing {
     pub grid: String,
     pub items: Vec<IconItem>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IconItem {
     pub shape: IconShape,
     /// The same shape in numbers of its grid, a path in segments: what a canvas draws (decided at step 2 of M0v).
     pub drawn: IconDrawn,
     pub fill: bool,
+    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))]
     pub token: Token,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IconShape {
     Rect {
         x: String,
@@ -234,6 +257,7 @@ pub enum IconShape {
 
 /// An item of an icon in numbers of its grid. A text keeps its runs in [`IconShape::Text`].
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IconDrawn {
     Rect {
         x: f64,
@@ -251,7 +275,7 @@ pub enum IconDrawn {
         from: (f64, f64),
         to: (f64, f64),
     },
-    Path(Vec<labcraft_check::PathSegment>),
+    Path(#[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::segments"))] Vec<labcraft_check::PathSegment>),
     /// Centred on `x`, its baseline at `y`.
     Text {
         x: f64,
@@ -264,6 +288,7 @@ impl Eq for IconDrawn {}
 
 /// What a group of shapes stands for, in the forms of the reports (`docs/cli.md`, 7.2).
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Group {
     /// `data-node`: the name of the line, `#close`, `@12`.
     pub node: String,
@@ -287,6 +312,7 @@ pub struct Group {
 
 /// What a group of the terminals of a frame belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TerminalsOf {
     /// The title of the arm, when the frame is that of an arm of a `match` or a `handle`.
     pub arm: Option<String>,
@@ -303,6 +329,7 @@ impl Group {
 /// An arm of a `match` or a `handle` drawn in tabs (notation 5.2): its arms lie on one another, in one frame as large
 /// as the largest, and the canvas shows the one that the view state chooses.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ArmOf {
     /// The structure, by the key that follows it across a change of the file ([`Placed::key`]).
     pub structure: String,
@@ -314,6 +341,7 @@ pub struct ArmOf {
 
 /// The tab of an arm in the header of its structure: where a click chooses it, and how it is drawn, shown or not.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Tab {
     /// The arm it shows when clicked, by its index in [`Drawing::arms`].
     pub arm: usize,
@@ -336,6 +364,7 @@ pub struct Tab {
 /// A tab of a row, or a part of the selector that stands for the row when its tabs do not hold in the width of the
 /// frame (notation 5.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TabKind {
     Tab,
     /// `‹` or `›`: to the arm before or after.
@@ -349,6 +378,7 @@ pub type Reader = (Option<String>, Vec<(i64, i64)>);
 
 /// What a wire stands for (`docs/cli.md`, 7.2): `data-wire`, `data-from`, `data-to`.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WireOf {
     /// The body that holds it, by its index in the graph. Not in the SVG.
     pub body: usize,
@@ -374,6 +404,7 @@ pub struct WireOf {
 /// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input
 /// that no argument wires (notation 3.2, 4.1). Not in the SVG.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Hint {
     pub x: i64,
     pub y: i64,
@@ -389,6 +420,7 @@ pub struct Hint {
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Drawing {
     /// `data-function`.
     pub function: String,
@@ -417,11 +449,13 @@ pub struct Drawing {
     pub style: std::sync::Arc<crate::style::Style>,
     /// What drawing found to say about the file, its warnings (`LC7005`), with no file name: the caller gives it. Not
     /// in the SVG.
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub warnings: Vec<labcraft_types::Diagnostic>,
 }
 
 /// The mark of a diagnostic: what shows where it is, and its code.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Mark {
     pub code: String,
     pub shapes: Vec<Shape>,
@@ -430,6 +464,7 @@ pub struct Mark {
 /// A body drawn: the height of its main error chain, whether its file places a node of it, and its frame (`x`, `y`,
 /// width, height), which the function has without drawing it (notation 5).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BodyDrawn {
     pub axis: Option<i64>,
     pub from_file: bool,
@@ -438,6 +473,7 @@ pub struct BodyDrawn {
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Placed {
     pub key: String,
     pub x: i64,

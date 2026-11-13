@@ -14,13 +14,15 @@ labcraft-graph = { workspace = true }
 labcraft-types = { workspace = true }
 
 [dev-dependencies]
-labcraft-diagram = { workspace = true }
+# `serde`: the drawings that cross from the worker to the page of the web viewer.
+labcraft-diagram = { workspace = true, features = ["serde"] }
 labcraft-engine = { workspace = true }
 labcraft-ir = { workspace = true }
 labcraft-libs = { workspace = true }
 labcraft-runtime = { workspace = true }
 labcraft-trace = { workspace = true }
 labcraft-visa = { workspace = true }
+postcard = { workspace = true }
 serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
