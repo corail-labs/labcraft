@@ -2019,6 +2019,7 @@ dependencies = [
  "labcraft-check",
  "labcraft-diagram",
  "labcraft-format",
+ "labcraft-trace",
  "labcraft-types",
 ]
 

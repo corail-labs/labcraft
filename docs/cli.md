@@ -926,8 +926,11 @@ snapshot does not depend on the last run. A trace of another function gives `LC7
 is drawn without values. Whether the trace matches the files is judged as in the viewer, on the files
 that `diagram` resolved to draw the function: the file of the function, and each file of `FOLDER` that the first line of
 the trace lists, each once. The report and the banner name them from `FOLDER`, so that the SVG does not depend on the
-current folder (7.2); the first line names them from where the run started, so a file of the trace is the one whose
-name ends with that of `FOLDER`, at a `/`. A function that is not drawn shows no values, and its trace is still read
+current folder (7.2); the first line names them from where the run started: the name of the file of the function
+ends one of them at a `/`, which gives where `FOLDER` was, and every other file of `FOLDER` is that place followed by
+its name, so that a file of a library with the name of one of `FOLDER` is never taken for it. When the name of the file
+of the function ends several, the place that gives the most files of `FOLDER` wins, then the shortest; when it ends
+none, a file of `FOLDER` is the longest end of a name, at a `/`. A function that is not drawn shows no values, and its trace is still read
 and judged. Through MCP, `diagram.svg` takes the same trace
 in its parameter `trace`, a file of the project, with exactly one function in `functions` (commands.md 6.5).
 
@@ -1043,6 +1046,16 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   draws again when a program file (`.lcf`, `.lct`) or a folder of the folder or of a `--lib-path` changes
   (scenario 6, point 3); a `--lib-path` that cannot be watched is looked at every second, and the window says so. Without `FOLDER`, the
   window opens empty, with a button that chooses a folder.
+- **The values of the last run** of the function shown are drawn on its wires (visual-notation 6.1), read once it is
+  drawn: from `FOLDER/.labcraft/runs/<function>.trace.jsonl`, as `labcraft-cli run FOLDER` writes it, or from
+  `.labcraft/runs/<path>/<function>.trace.jsonl` in a folder above `FOLDER`, up to 64 folders above *(proposed)*,
+  `<path>` being that of `FOLDER` from there, as a session whose root that folder is writes it for an agent
+  (commands.md 8); of those that exist, the most recent, and at the same time the nearest. The viewer looks at it every second, and a new run shows within that second; the traces that a run writes
+  check nothing again, nor does anything under a hidden name. A bar above the canvas names the trace and says how its run
+  ended; a button hides the values and shows them again, for the window only; **Open a trace…** shows the values of
+  another trace, anywhere on the disk, looked at in the same way, until another function is shown, and its name has a
+  cross that goes back to the last run (decisions of the owner, 2026-11-13). The diagnostics of reading a trace
+  (`LC71`, section 7.6) are in `Problems`.
 - `--theme light` or `--theme dark`: the theme of this window, instead of the one of the preferences. The viewer
   keeps its preferences (the theme, every node in standard view, no glide) in the folder of settings of the
   system. It writes no file of a program, and keeps no view state on the disk: the arm shown in tabs, a structure

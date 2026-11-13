@@ -156,6 +156,7 @@ numbers! {
 
     coarse_zoom: "zoom"."coarse" = 40, Percent, 10..=100, "7", "Below it, a node is a plain rectangle.";
     names_zoom: "zoom"."names" = 75, Percent, 10..=200, "7", "Below it, no name of a terminal.";
+    values_zoom: "zoom"."values" = 50, Percent, 10..=200, "7", "Below it, the values of a run only on hover; below `zoom.coarse`, none.";
 }
 
 /// A colour, `0xRRGGBB`.

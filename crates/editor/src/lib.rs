@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use egui::{Color32, Pos2, Rect, Sense, Ui, Vec2};
 use labcraft_diagram::style;
-use labcraft_diagram::{COARSE_NODE, Drawing, Shape, TabKind};
+use labcraft_diagram::{COARSE_NODE, Drawing, Overlay, Shape, TabKind};
 
 mod fonts;
 pub(crate) mod paint;
@@ -29,7 +29,7 @@ pub(crate) mod view;
 pub use fonts::{FAMILY, family, has_family, install_fonts};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
-use paint::{Painted, Painter};
+use paint::{Over, Painted, Painter};
 use view::{Glide, Grid, Viewport};
 
 /// The colours of the theme tokens (notation 8): those of the style in force in `diagram`, light or dark.
@@ -74,7 +74,7 @@ pub struct CanvasResponse {
 /// The canvas: the drawing shown, its viewport, its caches, the glide.
 pub struct Canvas {
     drawing: Option<Arc<Drawing>>,
-    /// Changes with each drawing, so that the caches know theirs.
+    /// Changes with each drawing and each overlay, so that the caches know theirs.
     generation: u64,
     viewport: Viewport,
     grid: Grid,
@@ -84,6 +84,38 @@ pub struct Canvas {
     /// The list of the arms of a selector, open: its structure, by its index in [`Drawing::placed`], and the corner it
     /// opens from, in units, so that it follows a pan and a zoom (notation 5.2).
     list: Option<(usize, Pos2)>,
+    /// The values of a run over the drawing, and whether they show (notation 6.1).
+    values: Option<Values>,
+    values_shown: bool,
+}
+
+/// The values of a run over a drawing, with the box of each of their parts, in units, to find what the viewport shows and
+/// what the pointer is over.
+struct Values {
+    overlay: Arc<Overlay>,
+    under: Vec<Rect>,
+    banner: Rect,
+    /// Nothing for a bubble that has no place: its value is read on hover of its wire.
+    bubbles: Vec<Rect>,
+}
+
+impl Values {
+    fn of(overlay: Arc<Overlay>) -> Values {
+        let under = overlay.under.iter().map(|layer| boxed(&layer.shapes).unwrap_or(Rect::NOTHING)).collect();
+        let banner = boxed(&overlay.banner).unwrap_or(Rect::NOTHING);
+        let bubbles = overlay.bubbles.iter().map(|bubble| boxed(&bubble.layer.shapes).unwrap_or(Rect::NOTHING)).collect();
+        Values { overlay, under, banner, bubbles }
+    }
+
+    /// The bubble of the value of the wire of the group `group`: two arms may bind one name (spec R-3).
+    fn bubble_of(&self, group: usize) -> Option<&labcraft_diagram::values::Bubble> {
+        self.overlay.bubbles.iter().find(|bubble| bubble.group == Some(group))
+    }
+}
+
+/// The box of shapes, in units; none for no shape.
+fn boxed(shapes: &[Shape]) -> Option<Rect> {
+    shapes.iter().map(extent).reduce(|a, b| a.union(b))
 }
 
 impl Default for Canvas {
@@ -103,7 +135,25 @@ impl Canvas {
             reduced_motion: false,
             list: None,
             painter: Painter::default(),
+            values: None,
+            values_shown: true,
         }
+    }
+
+    /// The values of a run over the drawing shown (notation 6.1), made for it; none to show none. A new drawing comes
+    /// without them: its values are those of its own trace.
+    pub fn set_values(&mut self, overlay: Option<Arc<Overlay>>) {
+        self.values = overlay.map(Values::of);
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    /// Hides the values of the run, or shows them again: a state of the view, which places nothing (notation 6.1).
+    pub fn set_values_shown(&mut self, shown: bool) {
+        self.values_shown = shown;
+    }
+
+    pub fn values_shown(&self) -> bool {
+        self.values_shown
     }
 
     /// Shows another drawing, keeping the viewport (scenario 6, point 3). With `glide`, which the host asks for when the
@@ -119,6 +169,7 @@ impl Canvas {
         self.list = None;
         self.generation = self.generation.wrapping_add(1);
         self.drawing = Some(drawing);
+        self.set_values(None);
     }
 
     pub fn drawing(&self) -> Option<&Arc<Drawing>> {
@@ -169,7 +220,9 @@ impl Canvas {
         let Some(drawing) = self.drawing.clone() else { return CanvasResponse { response, tab: None, hovered: None } };
         let ctx = ui.ctx().clone();
         let now = ctx.input(|input| input.time);
-        self.viewport.read_input(&ctx, &response, rect, &drawing);
+        let values = self.values.as_ref().filter(|_| self.values_shown).map(|values| values.overlay.clone());
+        let room = values.as_ref().map_or((0.0, 0.0), |values| (values.top as f32 / 100.0, values.width as f32 / 100.0));
+        self.viewport.read_input(&ctx, &response, rect, &drawing, room);
         let zoom = self.viewport.zoom;
         // A frame when the zoom has settled, to lay its texts out again at the zoom itself.
         if let Some(left) = self.viewport.settles_in(now) {
@@ -313,9 +366,41 @@ impl Canvas {
                 }
             }
         }
+        // The values of the run, but while nodes glide (notation 6.1): the veils, hatching, outlines and counters under the
+        // marks, the banner and the bubbles over everything; the bubbles from `zoom.values` on, and on hover down to
+        // `zoom.coarse` (notation 7).
+        let shown_values = self.values.as_ref().filter(|_| values.is_some() && offsets.is_none());
+        if let Some(Values { overlay, under, .. }) = shown_values {
+            for (index, layer) in overlay.under.iter().enumerate() {
+                if visible_arm(layer.within)
+                    && under.get(index).is_some_and(|area| area.intersects(seen))
+                    && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Under(index), theme, step)
+                {
+                    put(&painted, Vec2::ZERO);
+                }
+            }
+        }
         if offsets.is_none() {
             for index in 0..drawing.marks.len() {
                 if let Some(painted) = self.painter.mark(&ctx, &drawing, index, theme, step) {
+                    put(&painted, Vec2::ZERO);
+                }
+            }
+        }
+        // `zoom.values` may be set below `zoom.coarse`, under which no value shows (notation 7).
+        let bubbles_drawn = !coarse && zoom >= style::factor(style::values_zoom());
+        if let Some(Values { overlay, banner, bubbles, .. }) = shown_values {
+            if banner.intersects(seen)
+                && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Banner, theme, step)
+            {
+                put(&painted, Vec2::ZERO);
+            }
+            for (index, bubble) in overlay.bubbles.iter().enumerate() {
+                if bubbles_drawn
+                    && visible_arm(bubble.layer.within)
+                    && bubbles.get(index).is_some_and(|area| area.intersects(seen))
+                    && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Bubble(index), theme, step)
+                {
                     put(&painted, Vec2::ZERO);
                 }
             }
@@ -325,6 +410,16 @@ impl Canvas {
         // and its exact type (notation 4.1).
         let at = response.hover_pos().map(|at| (self.viewport.origin + (at - rect.min) / zoom).to_pos2());
         let hovered = at.and_then(|unit| self.grid.node_at(&drawing, unit, &visible_arm));
+        // The values read on hover: none below `zoom.coarse` (notation 7).
+        let readable = shown_values.filter(|_| !coarse);
+        // A bubble under the pointer gives its value whole (notation 6.1).
+        let bubble =
+            || {
+                let (unit, readable) = (at?, readable?);
+                readable.overlay.bubbles.iter().zip(&readable.bubbles).rev().find_map(|(bubble, area)| {
+                    (bubbles_drawn && visible_arm(bubble.layer.within) && area.contains(unit)).then(|| bubble.title.clone())
+                })
+            };
         let hint = at.and_then(|unit| {
             drawing.hints.iter().rev().filter(|hint| visible_arm(hint.within)).find_map(|hint| {
                 let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + offset_of(hint.placed);
@@ -345,19 +440,29 @@ impl Canvas {
                 return None;
             }
             let reach = (5.0 / zoom).max(3.0);
-            painted_groups.iter().filter_map(|&index| drawing.groups.get(index)).filter(|group| visible_arm(group.within)).find_map(|group| {
-                let wire = group.wire.as_ref()?;
-                let near = wire.readers.iter().any(|(_, points)| {
-                    points.windows(2).any(|pair| match pair {
-                        [a, b] => near_segment(unit, *a, *b, reach),
-                        _ => false,
+            painted_groups
+                .iter()
+                .filter_map(|&index| Some((index, drawing.groups.get(index)?)))
+                .filter(|(_, group)| visible_arm(group.within))
+                .find_map(|(index, group)| {
+                    let wire = group.wire.as_ref()?;
+                    let near = wire.readers.iter().any(|(_, points)| {
+                        points.windows(2).any(|pair| match pair {
+                            [a, b] => near_segment(unit, *a, *b, reach),
+                            _ => false,
+                        })
+                    });
+                    let value = labcraft_types::cut_text(&wire.value);
+                    let named = if wire.ty.is_empty() { value.into_owned() } else { format!("{value}: {}", wire.ty) };
+                    // While the values show, the value of the run under its name.
+                    let run = readable.and_then(|readable| readable.bubble_of(index)).map(|bubble| bubble.title.clone());
+                    near.then(|| match run {
+                        Some(run) => format!("{named}\n{run}"),
+                        None => named,
                     })
-                });
-                let value = labcraft_types::cut_text(&wire.value);
-                near.then(|| if wire.ty.is_empty() { value.into_owned() } else { format!("{value}: {}", wire.ty) })
-            })
+                })
         };
-        let response = match hint.or_else(title).or_else(wire) {
+        let response = match bubble().or(hint).or_else(title).or_else(wire) {
             Some(text) => response.on_hover_text_at_pointer(text),
             None => response,
         };

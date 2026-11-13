@@ -120,6 +120,9 @@ impl Workspace for Counting {
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         self.memory.remove_file(path)
     }
+    fn open(&self, path: &Path, offset: u64) -> io::Result<Box<dyn io::Read + Send>> {
+        self.memory.open(path, offset)
+    }
 }
 
 fn project() -> Memory {
@@ -391,9 +394,11 @@ fn an_unknown_command_or_parameter_names_the_nearest() {
 #[test]
 fn a_planned_command_is_listed_greyed_with_its_reason_and_refused() {
     let (mut session, _) = session();
-    let refused = error(&mut session, "view.open_trace", json!({ "file": "a.trace.jsonl" }));
-    assert_eq!(refused.code, "command.not_enabled");
-    assert!(refused.message.contains("step 8"), "{}", refused.message);
+    // No command is planned now: one made so says why it is not enabled.
+    let mut planned = crate::registry::command("view.open_trace").unwrap().clone();
+    planned.planned = Some("M9, step 1");
+    assert_eq!(session.not_enabled(&planned).as_deref(), Some("it is planned, and comes with M9, step 1"));
+    assert!(crate::registry::commands().iter().all(|command| command.planned.is_none()));
     let listed = ok(&mut session, "commands.list", json!({ "filter": "run." }));
     let commands = listed["commands"].as_array().unwrap();
     let of = |id: &str| commands.iter().find(|command| command["id"] == id).unwrap();
@@ -560,7 +565,7 @@ fn the_viewer_opens_a_folder_of_the_project_and_shows_its_first_function() {
     assert_eq!((unknown.code, unknown.expected.as_slice()), ("params.invalid", ["double".to_owned()].as_slice()));
     assert_eq!(error(&mut session, "view.set_state", json!({ "function": "double", "state": { "colour": { "a": 1 } } })).code, "params.invalid");
     assert_eq!(error(&mut session, "view.open", json!({ "folder": "nowhere" })).code, "path.not_found");
-    assert_eq!(error(&mut session, "view.open_trace", json!({ "file": "t.jsonl" })).code, "command.not_enabled");
+    assert_eq!(error(&mut session, "view.open_trace", json!({ "file": "../t.jsonl" })).code, "path.outside_project");
 }
 
 #[test]
@@ -703,4 +708,132 @@ fn the_viewer_lists_the_warnings_of_the_drawing_shown() {
     ok(&mut session, "view.show_function", json!({ "function": "double" }));
     assert_eq!(session.view().warnings, 0);
     assert!(session.view().report.as_ref().unwrap().diagnostics().is_empty());
+}
+
+/// A trace of `function` (`docs/commands.md`, 8), its files named as `names` gives them, each with the SHA-256 of its
+/// text: `x` in, `y` out.
+fn trace_of(function: &str, names: &[(&str, &str)], x: f64, y: f64) -> String {
+    let files: Vec<Value> = names.iter().map(|(file, text)| json!({ "file": file, "sha256": labcraft_trace::sha256_hex(text.as_bytes()) })).collect();
+    let header = json!({ "schema": "labcraft-trace/1", "run": "r1", "function": function, "mode": "deterministic", "files": files });
+    let call = json!({ "seq": 1, "t_ms": 0.0, "event": "call", "frame": 0, "function": function,
+        "in": [{ "name": "x", "type": "f64", "value": x }], "types": { "y": "f64" } });
+    let ran = json!({ "seq": 2, "t_ms": 0.0, "event": "ran", "frame": 0, "node": "y", "out": { "y": y } });
+    let end = json!({ "seq": 3, "t_ms": 0.0, "event": "end", "status": "ok" });
+    format!("{header}\n{call}\n{ran}\n{end}\n")
+}
+
+/// The value that the viewer shows on the wire `wire`, whole.
+fn value_on(session: &Session, wire: &str) -> Option<String> {
+    let overlay = session.view().overlay.clone()?;
+    overlay.bubbles.iter().find(|bubble| bubble.wire == wire).map(|bubble| bubble.title.clone())
+}
+
+fn codes_of(session: &Session) -> Vec<&'static str> {
+    session
+        .view()
+        .report
+        .as_ref()
+        .map(|report| report.diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect())
+        .unwrap_or_default()
+}
+
+fn text_of(shape: &labcraft_diagram::Shape) -> Option<String> {
+    match shape {
+        labcraft_diagram::Shape::Text { runs, .. } => Some(runs.iter().map(|run| run.text.as_str()).collect()),
+        _ => None,
+    }
+}
+
+#[test]
+fn the_viewer_shows_the_last_run_of_the_function_and_reads_it_again_when_a_run_replaces_it() {
+    let (mut session, counting) = session();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    // No trace: nothing to read, no values.
+    assert!(session.look_at_trace(), "the drawing is new");
+    assert!(session.view().overlay.is_none() && session.view().trace.is_none());
+    assert!(!session.look_at_trace(), "nothing changed");
+    // `labcraft-cli run p double` from the folder above: the files named from there.
+    counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("p/double.lcf", MAIN)], 2.0, 4.0));
+    assert!(session.look_at_trace());
+    let view = session.view();
+    let part = view.trace.clone().unwrap();
+    assert_eq!((part.file.as_str(), part.events, part.status.as_deref(), part.stale.len()), (".labcraft/runs/double.trace.jsonl", 3, Some("ok"), 0));
+    assert!(!view.trace_opened && view.warnings == 0, "{:?}", codes_of(&session));
+    assert_eq!(value_on(&session, "y").as_deref(), Some("4.0"));
+    assert!(!session.look_at_trace());
+    // A new run replaces it.
+    counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("p/double.lcf", MAIN)], 3.0, 6.0));
+    assert!(session.look_at_trace());
+    assert_eq!(value_on(&session, "y").as_deref(), Some("6.0"));
+    // The file changed since the run: the banner names it, with the time of the trace.
+    counting.memory.put("/p/double.lcf", MAIN.replace("Second line.", "Changed."));
+    session.files_changed();
+    assert!(session.view().overlay.is_none(), "the drawing is new: no values until its trace is read");
+    assert!(session.look_at_trace());
+    let view = session.view();
+    assert_eq!(view.trace.as_ref().unwrap().stale, ["double.lcf"]);
+    let banner: Vec<String> = view.overlay.as_ref().unwrap().banner.iter().filter_map(text_of).collect();
+    assert!(banner.iter().any(|text| text.contains("has changed since this run (00:00Z)")), "{banner:?}");
+}
+
+#[test]
+fn the_last_run_is_the_most_recent_in_the_folder_or_above_it() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/sub/double.lcf", MAIN);
+    ok(&mut session, "view.open", json!({ "folder": "sub" }));
+    // A session whose root is `/p` ran `double` of `sub`.
+    counting.memory.put("/p/.labcraft/runs/sub/double.trace.jsonl", trace_of("double", &[("sub/double.lcf", MAIN)], 1.0, 2.0));
+    session.look_at_trace();
+    assert_eq!(session.view().trace.as_ref().unwrap().file, "../.labcraft/runs/sub/double.trace.jsonl");
+    assert_eq!(value_on(&session, "y").as_deref(), Some("2.0"));
+    // Then `labcraft-cli run sub double`, later: in the folder.
+    counting.memory.put("/p/sub/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("double.lcf", MAIN)], 5.0, 10.0));
+    assert!(session.look_at_trace());
+    assert_eq!(session.view().trace.as_ref().unwrap().file, ".labcraft/runs/double.trace.jsonl");
+    assert_eq!(value_on(&session, "y").as_deref(), Some("10.0"));
+    // The one above runs again: it is the most recent.
+    counting.memory.put("/p/.labcraft/runs/sub/double.trace.jsonl", trace_of("double", &[("sub/double.lcf", MAIN)], 4.0, 8.0));
+    assert!(session.look_at_trace());
+    assert_eq!(value_on(&session, "y").as_deref(), Some("8.0"));
+}
+
+#[test]
+fn a_trace_opened_by_hand_stays_until_another_function_is_shown() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/half.lcf", "labcraft 1\n\nuse core\n\nfn half(x: f64) -> (y: f64) {\n    y = core.div(x, 2)\n}\n");
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(error(&mut session, "view.open_trace", json!({ "file": 1 })).code, "params.invalid");
+    counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("double.lcf", MAIN)], 2.0, 4.0));
+    counting.memory.put("/p/kept/r7.jsonl", trace_of("double", &[("double.lcf", MAIN)], 7.0, 14.0));
+    let part = ok(&mut session, "view.open_trace", json!({ "file": "kept/r7.jsonl" }));
+    assert_eq!((part["file"].as_str(), part["events"].as_u64()), (Some("kept/r7.jsonl"), Some(3)));
+    assert!(session.view().trace_opened);
+    assert_eq!(value_on(&session, "y").as_deref(), Some("14.0"));
+    // A new run does not replace it.
+    counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("double.lcf", MAIN)], 3.0, 6.0));
+    session.look_at_trace();
+    assert_eq!(value_on(&session, "y").as_deref(), Some("14.0"));
+    // Back to the last run; the folder of runs can be named, though its name is hidden (commands.md 2).
+    assert_eq!(ok(&mut session, "view.open_trace", json!({}))["file"], ".labcraft/runs/double.trace.jsonl");
+    assert_eq!(ok(&mut session, "view.open_trace", json!({ "file": ".labcraft/runs/double.trace.jsonl" }))["events"], 3);
+    ok(&mut session, "view.open_trace", json!({}));
+    assert_eq!(value_on(&session, "y").as_deref(), Some("6.0"));
+    // Another function shown goes back to its last run, here none.
+    ok(&mut session, "view.open_trace", json!({ "file": "kept/r7.jsonl" }));
+    ok(&mut session, "view.show_function", json!({ "function": "half" }));
+    session.look_at_trace();
+    let view = session.view();
+    assert!(!view.trace_opened && view.trace.is_none() && view.overlay.is_none());
+    // A trace of another function: no values, `LC7102`, in Problems.
+    let part = ok(&mut session, "view.open_trace", json!({ "file": "kept/r7.jsonl" }));
+    assert_eq!(part["events"], 0);
+    assert!(session.view().overlay.is_none());
+    assert_eq!(codes_of(&session), ["LC7102"]);
+    // A file that does not exist: `LC7101`, not an error of the command.
+    ok(&mut session, "view.open_trace", json!({ "file": "nowhere.jsonl" }));
+    assert_eq!(codes_of(&session), ["LC7101"]);
+    // Anywhere on the disk, from the window.
+    session.open_trace_at(PathBuf::from("/elsewhere/t.jsonl")).unwrap();
+    assert_eq!(session.view().trace.as_ref().unwrap().file, "/elsewhere/t.jsonl");
 }

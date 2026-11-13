@@ -7,19 +7,21 @@
 //! marks the view stale, so that the next `view.*` command reads the folder again (decisions of the owner, 2026-11-11).
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use labcraft_diagram::style::{self, Style};
-use labcraft_diagram::{DiagramLimits, Drawing, ViewState};
+use labcraft_diagram::{DiagramLimits, Drawing, Overlay, ViewState};
 use labcraft_types::{Code, Report};
 use serde_json::{Map, Value, json};
 
-use crate::drawings::{self, Function, Loaded};
+use crate::drawings::{self, Function, Loaded, TracePart};
 use crate::error::CommandError;
 use crate::params::Params;
 use crate::paths::{self, Place, Wanted};
 use crate::session::Session;
+use crate::walk::slashed;
+use crate::workspace::Workspace;
 
 /// The view state of a function that its file does not hold (notation 2.1), kept for the session only, by its file,
 /// across changes of the file, by the keys of its nodes (decided at the start of step 6).
@@ -67,7 +69,31 @@ pub struct Published {
     pub kept: bool,
     pub arms: HashMap<String, usize>,
     pub standard_everywhere: bool,
+    /// The values of the run over the drawing shown (notation 6.1): none until its trace is read, and none without one.
+    pub overlay: Option<Arc<Overlay>>,
+    /// Changes with each overlay.
+    pub overlay_generation: u64,
+    /// The trace read for the function shown, as the `trace` part of `labcraft-diagram/1` says it; none when it has none.
+    pub trace: Option<TracePart>,
+    /// The trace was opened by hand (`view.open_trace` with a `file`): it stays until another function is shown.
+    pub trace_opened: bool,
 }
+
+/// The trace of the function shown (notation 6.1; decisions of the owner, 2026-11-13).
+#[derive(Default)]
+struct Traced {
+    /// The trace opened by hand, and how it is shown; none for the last run of the function.
+    opened: Option<(PathBuf, String)>,
+    /// The trace read last, as its file then was; none when none was read.
+    read: Option<Stamp>,
+    /// The drawing is new: its values must be read again.
+    due: bool,
+    /// The report of the drawing, without the diagnostics of reading the trace.
+    report: Option<Arc<Report>>,
+}
+
+/// A trace file as it is: where, its length and its time; none of the two when it does not exist.
+type Stamp = (PathBuf, Option<(u64, Option<u128>)>);
 
 /// The state of the viewer that the session holds.
 #[derive(Default)]
@@ -95,6 +121,9 @@ pub struct View {
     /// Called with the name of each function just before it is drawn: the worker of the web viewer tells its page, so
     /// that a trap while drawing is put down to that function (architecture 11.5).
     pub(crate) before_drawing: Option<fn(&str)>,
+    /// Whether the function shown was drawn now, and not kept from before: only then are values drawn over it.
+    drawn: bool,
+    traced: Traced,
 }
 
 impl View {
@@ -194,6 +223,137 @@ pub fn set_state(session: &mut Session, params: &Params) -> Result<Value, Comman
         return Ok(view.entry.clone());
     }
     Ok(render(view, name, &file).map(|(_, _, entry, _)| entry).unwrap_or(Value::Null))
+}
+
+/// `view.open_trace`: the values of the run of `file` over the function shown, until another function is shown; without
+/// `file`, those of its last run again (decisions of the owner, 2026-11-13). Returns the `trace` part of
+/// `labcraft-diagram/1`, or `null` when the function has no trace.
+pub fn open_trace(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+    let opened = match params.str("file") {
+        Some(given) => match paths::judge(&*session.ws, &session.root, given, "file", Wanted::Trace, false)? {
+            Place::Project { path, shown, .. } => Some((path, shown)),
+            Place::Shipped(shown) => {
+                return Err(CommandError::of("path.outside_project", "file", format!("`{shown}` is not a trace of the project")));
+            }
+        },
+        None => None,
+    };
+    show_trace(session, opened)?;
+    Ok(session.view.published.trace.as_ref().and_then(|part| serde_json::to_value(part).ok()).unwrap_or(Value::Null))
+}
+
+/// The values of the run of the trace at `path` over the function shown, as `view.open_trace` shows them: a trace that
+/// the viewer's window chose anywhere on the disk, which a command cannot name (commands.md 2). Not a command.
+pub fn open_trace_at(session: &mut Session, path: PathBuf) -> Result<(), CommandError> {
+    let shown = match &session.view.folder {
+        Some((folder, _)) if path.starts_with(folder) => slashed(path.strip_prefix(folder).unwrap_or(&path)),
+        _ => slashed(&path),
+    };
+    show_trace(session, Some((path, shown)))
+}
+
+/// Shows the values of the trace `opened` by hand, or of the last run, over the function shown.
+fn show_trace(session: &mut Session, opened: Option<(PathBuf, String)>) -> Result<(), CommandError> {
+    read_again_if_stale(session);
+    if session.view.function.is_none() {
+        return Err(CommandError::of("params.invalid", "file", "no function is shown: `view.show_function` shows one"));
+    }
+    session.view.traced.opened = opened;
+    session.view.traced.due = true;
+    look_at_trace(session);
+    Ok(())
+}
+
+/// How many folders above the folder open the viewer looks for the last run of a function (as many as a path holds).
+const MAX_ABOVE: usize = 64;
+
+/// The trace of the last run of `function` of `folder` (notation 6.1; decisions of the owner, 2026-11-13): where a
+/// session whose root is the folder, or a folder above it, writes it (commands.md 8), as `labcraft-cli run FOLDER` does
+/// for the folder itself; the most recent, and at the same time the nearest. Shown from the folder.
+fn last_run(ws: &dyn Workspace, folder: &Path, function: &str) -> Option<(PathBuf, String)> {
+    let mut best: Option<(PathBuf, String, Option<u128>)> = None;
+    for (level, above) in folder.ancestors().enumerate().take(MAX_ABOVE) {
+        let below = slashed(folder.strip_prefix(above).unwrap_or(folder));
+        let from_above = crate::runs::trace_path(&below, function);
+        let path = above.join(&from_above);
+        let Ok(metadata) = ws.metadata(&path) else { continue };
+        if metadata.kind != crate::workspace::Kind::File || best.as_ref().is_some_and(|(_, _, time)| metadata.modified <= *time) {
+            continue;
+        }
+        best = Some((path, format!("{}{from_above}", "../".repeat(level)), metadata.modified));
+    }
+    best.map(|(path, shown, _)| (path, shown))
+}
+
+/// A file as it is now.
+fn stamp_of(ws: &dyn Workspace, path: &Path) -> Stamp {
+    (path.to_path_buf(), ws.metadata(path).ok().map(|metadata| (metadata.len, metadata.modified)))
+}
+
+/// The time of day of a time of a file, in UTC, as a short form gives a timestamp (notation 6.1): `14:02Z`.
+fn time_of_day(nanoseconds: u128) -> String {
+    let minutes = nanoseconds / 60_000_000_000;
+    format!("{:02}:{:02}Z", (minutes / 60) % 24, minutes % 60)
+}
+
+/// Reads the trace of the function shown when its drawing is new or the trace changed: the trace opened by hand, or else
+/// that of the last run. Whether anything was published. The app calls it after each command and each second (a new run
+/// replaces the trace), and the drawing shows meanwhile, without values (`docs/cli.md`, 7.4).
+pub fn look_at_trace(session: &mut Session) -> bool {
+    let ws = &*session.ws;
+    let view = &mut session.view;
+    let (Some(name), Some(file)) = (view.function.clone(), view.file.clone()) else { return false };
+    let target = match (&view.traced.opened, &view.folder) {
+        (Some(opened), _) => Some(opened.clone()),
+        (None, Some((folder, _))) => last_run(ws, folder, &name),
+        (None, None) => None,
+    };
+    let stamp = target.as_ref().map(|(path, _)| stamp_of(ws, path));
+    if !view.traced.due && stamp == view.traced.read {
+        return false;
+    }
+    view.traced.due = false;
+    // The diagnostics of reading the trace, which join those of the drawing.
+    let mut read_report = Report::new(usize::MAX);
+    let (mut overlay, mut part) = (None, None);
+    if let (Some((path, shown)), Some(loaded)) = (&target, &view.loaded)
+        && let Some(function) = loaded.functions.iter().find(|function| function.shown == file)
+    {
+        let drawing = view.published.drawing.clone().filter(|_| view.drawn);
+        // A trace that a run replaces while it is read is read again from its start (`docs/cli.md`, 7.4), a few times.
+        let mut before = stamp.clone();
+        let mut settled = false;
+        for _ in 0..3 {
+            read_report = Report::new(usize::MAX);
+            let written = before.as_ref().and_then(|(_, now)| now.and_then(|(_, time)| time)).map(time_of_day);
+            let (values, read) = style::scope(&view.style, || {
+                drawings::read_trace(ws, path, shown, drawing.as_deref(), function, loaded, drawings::DEFAULT_TRACE_SIZE, written, &mut read_report)
+            });
+            (overlay, part) = (values, Some(read));
+            let after = Some(stamp_of(ws, path));
+            if after == before {
+                settled = true;
+                break;
+            }
+            before = after;
+        }
+        // A trace that kept changing while it was read is read again at the next look.
+        view.traced.read = if settled { before } else { None };
+    } else {
+        view.traced.read = stamp;
+    }
+    let mut report = view.traced.report.as_deref().cloned().unwrap_or_else(|| Report::new(usize::MAX));
+    report.merge(read_report);
+    report.finish();
+    view.published.overlay = overlay.map(Arc::new);
+    view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    view.published.trace = part;
+    view.published.trace_opened = view.traced.opened.is_some();
+    view.published.errors = report.errors();
+    view.published.warnings = report.warnings();
+    view.published.report = Some(Arc::new(report));
+    view.publish();
+    true
 }
 
 /// Reads `state` into `of`; whether it changes what placement depends on.
@@ -300,6 +460,10 @@ fn load(session: &mut Session) {
 fn choose(view: &mut View, name: &str) {
     let matching = || view.published.functions.iter().filter(|listed| listed.function == name);
     let file = matching().find(|listed| listed.drawable).or_else(|| matching().next()).map(|listed| listed.file.clone());
+    // A trace opened by hand is that of one function.
+    if view.function.as_deref() != Some(name) {
+        view.traced.opened = None;
+    }
     view.function = Some(name.to_owned());
     view.file = file;
     if !view.opened.iter().any(|opened| opened == name) {
@@ -361,6 +525,12 @@ fn draw(view: &mut View, glide: bool) -> Value {
     view.published.opened.clone_from(&view.opened);
     view.published.drawing_generation = view.published.drawing_generation.wrapping_add(1);
     view.published.glide = glide;
+    // The values of the drawing before are not those of this one: they come once its trace is read.
+    view.traced.due = true;
+    view.drawn = false;
+    if view.published.overlay.take().is_some() {
+        view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    }
     let rendered = match (view.function.clone(), view.file.clone()) {
         (Some(name), Some(file)) if !view.skipped.contains(&name) => {
             if let Some(before) = view.before_drawing {
@@ -373,9 +543,12 @@ fn draw(view: &mut View, glide: bool) -> Value {
     let Some((file, (picture, drawn, entry, report))) = rendered else {
         view.published.drawing = None;
         view.published.kept = false;
+        view.published.trace = None;
+        view.traced.report.clone_from(&view.published.report);
         view.entry = Value::Null;
         return Value::Null;
     };
+    view.drawn = drawn;
     let shown = if drawn {
         view.last.insert(file.clone(), picture.clone());
         view.published.kept = false;
@@ -405,6 +578,7 @@ fn draw(view: &mut View, glide: bool) -> Value {
         view.published.report = Some(Arc::new(loaded.report.clone()));
     }
     view.published.arms = view.views.get(&file).map(|of| of.arms.clone()).unwrap_or_default();
+    view.traced.report.clone_from(&view.published.report);
     view.entry = entry.clone();
     entry
 }

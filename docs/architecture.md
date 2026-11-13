@@ -826,9 +826,9 @@ where it is written: `engine` and the app decide.
 
 ### 10.8 `engine` (L6)
 
-*Status: implemented (steps 6a, 6b, 8 and 9b): the registry, the session, the commands of commands.md 6 but
-`view.open_trace`, which is registered as `planned` (step 8 of M0v; decision of the owner, 2026-11-10), `guide.read`
-having come with the skills (step 9b), `diagram.svg` and the other `view.*` commands having come with M0v (11.5); the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
+*Status: implemented (steps 6a, 6b, 8 and 9b): the registry, the session, the commands of commands.md 6,
+`guide.read` having come with the skills (step 9b), `diagram.svg` and the `view.*` commands with M0v (11.5),
+`view.open_trace` with its step 8; the kept check, runs as tasks with the converter of arguments, `engine::Workspace`
 with the disk in `labcraft-cli` and `engine::Memory`, and `cargo xtask commands`.*
 
 As in the Craft apps: a **session** and a **registry** of commands (D-18).
@@ -929,8 +929,8 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   that of the commands, and a trap restarts the worker with a new session. On the desktop, the session runs on a
   thread of `format::STACK_SIZE`, and the interface sends it commands through a channel.
 - `fmt` and `check` become the commands `file.format` and `library.check`, and `labcraft-cli` calls them like the
-  others. `diagram.svg` and the `view.*` commands came with M0v (commands.md 6.5), `view.open_trace` registered as
-  `planned` until the values of a run; the MCP server exposes each one once it is enabled.
+  others. `diagram.svg` and the `view.*` commands came with M0v (commands.md 6.5); the MCP server exposes each one once
+  it is enabled.
 
 ### 10.9 `mcp` (L7)
 
@@ -1306,8 +1306,11 @@ impl Canvas {
 }
 ```
 
-*Status: implemented (step 6a of 11.7), without the values of a run (step 8), the folds and the selectors of
-iterations. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
+*Status: implemented (step 6a of 11.7), with the values of a run (step 8b): the overlay that `values` gives, set
+apart from the drawing (`Canvas::set_values`), its layers, its banner and its bubbles cached as the groups are, culled
+by their boxes, not painted while nodes glide, the bubbles from `zoom.values` on and their values on hover down to
+`zoom.coarse`, the value of the run under the name of a wire in its tooltip, and `Canvas::set_values_shown` for the
+button that hides them; without the folds and the selectors of iterations. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
 400 %; the first drawing is fitted, at 100 % at most (notation 7), and a new one keeps the viewport. Tested without a
 window (`editor` tests, and every function of the repository painted in both themes, unfolded and in tabs, each arm
 shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand before the tag (11.6).*
@@ -1346,8 +1349,8 @@ shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand befo
 **`apps/labcraft`**, the desktop viewer. eframe with wgpu (DX12, Vulkan or Metal), `craft-ui` for the window
 around the canvas, `craft-window`, `craft-settings` for the preferences (standard view everywhere, theme).
 
-*Status: implemented (step 6b of 11.7), without the trace (step 8) and without `craft-window`, the window keeping
-the frame of the system. The state of the viewer and the `view.*` commands but `view.open_trace` are in `engine::view`,
+*Status: implemented (step 6b of 11.7), with the trace (step 8b, below) and without `craft-window`, the window keeping
+the frame of the system. The state of the viewer and the `view.*` commands are in `engine::view`,
 and the folder is read, checked and drawn by the code that `labcraft-cli diagram` and `diagram.svg` use
 (`engine::drawings`), through `engine::Workspace`. The app makes a session of `engine` for each folder it opens, its
 root that folder and its libraries those of `--lib-path` (decisions of the owner, 2026-11-11), on the disk wrapped in
@@ -1359,7 +1362,16 @@ Only a change of a program file (`.lcf`, `.lct`) or of a folder is a change: a l
 folder checks nothing again. The changes of the 50 ms after the first are taken together, a window that does not
 move. Each path is watched on its own, before it is read; a path that cannot be watched is the only one looked at
 every second. With `--style FILE`, the session draws with the values of `FILE` (notation 10), watched in its folder
-and read again within the same 50 ms, and publishes them with the drawing, which the canvas paints with.*
+and read again within the same 50 ms, and publishes them with the drawing, which the canvas paints with.
+The trace (cli.md 8; decisions of the owner, 2026-11-13): after each command the thread of the session publishes the
+drawing, then calls `Session::look_at_trace`, which reads the trace of the function shown when the drawing is new or
+the file of the trace changed (its length or its time), and publishes the overlay and the `trace` part, the diagnostics
+of reading it joining the report; and it calls it every second, when no message comes. The trace is looked at, not
+watched by `notify`: it may be in a folder above the one open, and a second is the time a person reads a run in. A trace
+replaced while it is read is read again, three times at most. `Session::open_trace_at` takes a trace that the window
+chose anywhere on the disk, which a command cannot name (commands.md 2): not a command, as `files_changed`. The watcher
+leaves out every path under a hidden name below what it watches, which a walk never reads: a run renaming its
+`.partial` in `.labcraft/runs/` checked the folder again.*
 
 - **The session** of `engine` runs on a thread of `format::STACK_SIZE`. It holds the state of the viewer: the
   folder open, the function shown, the view state that the file does not hold, the preference, the trace. The
@@ -1373,9 +1385,10 @@ and read again within the same 50 ms, and publishes them with the drawing, which
   its status; the canvas; `Problems` with the diagnostics. There is no text panel: the text stays in the
   developer's editor, and the IDE of M1 adds it.
 - **Read-only.** Its `Workspace` refuses every write (scenario 6, point 6).
-- **Watching.** `notify` (CC0-1.0) watches the folder, the folders of `--lib-path` and the trace shown, without
+- **Watching.** `notify` (CC0-1.0) watches the folder and the folders of `--lib-path`, without
   following symbolic links (cli.md, section 1); the changes of 50 ms are taken together, then the session checks
-  again what they touch and draws the function shown, or reads the trace again when a run has replaced it. File
+  again what they touch and draws the function shown. The trace shown is looked at every second, and read again when
+  a run has replaced it. File
   change to new drawing within 200 ms (scenario 6, point 3). When the system refuses to watch more (a limit of
   watches), the viewer says so and looks at the files every second.
 - **Fonts.** `craft-ui`'s `UiFonts` installs them: Hack first in the family of the notation, Inter Regular for

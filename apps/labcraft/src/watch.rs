@@ -37,6 +37,12 @@ pub fn concerns(path: &Path) -> bool {
     }
 }
 
+/// Whether `path` is under a hidden name below `watched`, which a walk never reads (`docs/cli.md`, section 1): the traces
+/// that a run writes in `.labcraft/runs/` change no drawing.
+pub fn hidden_below(watched: &Path, path: &Path) -> bool {
+    path.strip_prefix(watched).is_ok_and(|below| below.components().any(|name| name.as_os_str().to_string_lossy().starts_with('.')))
+}
+
 /// Whether an event can change a drawing: a program file written, created, removed or renamed; a folder created,
 /// removed or renamed, whatever its name (`v1.0`); a path that is gone, which may have been either.
 pub fn changes_a_drawing(kind: &EventKind, path: &Path) -> bool {
@@ -62,9 +68,10 @@ pub fn watch(paths: &[PathBuf], changes: Sender<Message>) -> (Watching, Option<S
     let mut refused: Vec<(PathBuf, String)> = Vec::new();
     for path in paths {
         let sender = changes.clone();
+        let watched = path.clone();
         let handler = move |event: notify::Result<Event>| {
             if let Ok(event) = event
-                && event.paths.iter().any(|path| changes_a_drawing(&event.kind, path))
+                && event.paths.iter().any(|path| !hidden_below(&watched, path) && changes_a_drawing(&event.kind, path))
             {
                 let _ = sender.send(Message::Changed);
             }
@@ -148,6 +155,15 @@ mod tests {
         assert!(changes_a_drawing(&written, Path::new("a/main.lcf")));
         assert!(!changes_a_drawing(&written, &here.join("results.log")));
         assert!(!changes_a_drawing(&EventKind::Access(notify::event::AccessKind::Any), Path::new("a/main.lcf")));
+    }
+
+    #[test]
+    fn what_a_run_writes_under_a_hidden_name_is_no_change() {
+        let watched = Path::new("/w/.config/bench");
+        assert!(hidden_below(watched, Path::new("/w/.config/bench/.labcraft/runs/main.trace.jsonl.1-1-r1.partial")));
+        assert!(hidden_below(watched, Path::new("/w/.config/bench/.git")));
+        assert!(!hidden_below(watched, Path::new("/w/.config/bench/main.lcf")), "a hidden name above the folder counts not");
+        assert!(!hidden_below(watched, Path::new("/w/.config/bench/drivers/open.lcf")));
     }
 
     #[test]

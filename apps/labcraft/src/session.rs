@@ -27,6 +27,9 @@ pub use labcraft_engine::CommandError;
 /// The changes that come within this time are taken together (architecture 11.5).
 pub const SETTLE: Duration = Duration::from_millis(50);
 
+/// How often the trace of the function shown is looked at, for a new run (decisions of the owner, 2026-11-13).
+pub const TRACE_POLL: Duration = Duration::from_secs(1);
+
 /// What the window shows, as the session last published it.
 #[derive(Clone, Debug, Default)]
 pub struct Published {
@@ -52,8 +55,8 @@ pub struct Session {
     /// The report that `problems` was written from.
     written_from: Option<Arc<Report>>,
     /// What the generations of the session open count from: each new session counts from 0, and the window must see a
-    /// new drawing all the same.
-    base: (u64, u64),
+    /// new drawing, and new values, all the same.
+    base: (u64, u64, u64),
     /// Where the watcher sends the changes it sees: the thread of the session.
     changes: Option<Sender<Message>>,
     watching: Option<Watching>,
@@ -73,7 +76,7 @@ impl Session {
             standard_everywhere,
             published: Published { view: ViewPublished { standard_everywhere, ..ViewPublished::default() }, ..Published::default() },
             written_from: None,
-            base: (0, 0),
+            base: (0, 0, 0),
             changes,
             watching: None,
             style: Arc::new(Style::default()),
@@ -150,7 +153,7 @@ impl Session {
         let opened = engine.execute("view.open", &json!({ "folder": "." }));
         if opened.is_ok() {
             let view = &self.published.view;
-            self.base = (view.generation.wrapping_add(1), view.drawing_generation.wrapping_add(1));
+            self.base = (view.generation.wrapping_add(1), view.drawing_generation.wrapping_add(1), view.overlay_generation.wrapping_add(1));
             self.engine = Some(engine);
             self.published.folder = Some(folder.display().to_string());
             if let Some((watching, notice)) = watched {
@@ -182,6 +185,26 @@ impl Session {
         result
     }
 
+    /// Reads the trace of the function shown when its drawing is new or a run replaced it; whether anything changed.
+    pub fn look_at_trace(&mut self) -> bool {
+        let Some(engine) = &mut self.engine else { return false };
+        let changed = engine.look_at_trace();
+        if changed {
+            self.sync();
+        }
+        changed
+    }
+
+    /// Shows the values of the trace at `path`, chosen in the window, over the function shown.
+    pub fn open_trace_at(&mut self, path: PathBuf) -> Result<Value, CommandError> {
+        let Some(engine) = &mut self.engine else {
+            return Err(CommandError::new("command.not_enabled", "a trace waits for a folder: open one first"));
+        };
+        let opened = engine.open_trace_at(path);
+        self.sync();
+        opened.map(|()| Value::Null)
+    }
+
     /// The files watched changed: the session reads, checks and draws again.
     pub fn files_changed(&mut self) {
         if let Some(engine) = &mut self.engine {
@@ -197,6 +220,7 @@ impl Session {
         let view = &mut self.published.view;
         view.generation = view.generation.wrapping_add(self.base.0);
         view.drawing_generation = view.drawing_generation.wrapping_add(self.base.1);
+        view.overlay_generation = view.overlay_generation.wrapping_add(self.base.2);
         let report = &self.published.view.report;
         let same = match (report, &self.written_from) {
             (Some(report), Some(before)) => Arc::ptr_eq(report, before),
@@ -223,6 +247,8 @@ pub enum Message {
         params: Value,
         reply: Option<Sender<Result<Value, CommandError>>>,
     },
+    /// A trace chosen in the window, anywhere on the disk.
+    OpenTrace(PathBuf),
     /// A file watched changed.
     Changed,
     /// The file of `--style` changed.
@@ -269,6 +295,11 @@ impl Handle {
         answer
     }
 
+    /// Shows the values of a trace chosen in the window; what it changes shows in what is published.
+    pub fn open_trace(&self, path: &Path) {
+        let _ = self.sender.send(Message::OpenTrace(path.to_path_buf()));
+    }
+
     /// Sends a command whose result the window does not wait for: what it changes shows in what is published.
     pub fn post(&self, id: &str, params: Value) {
         let _ = self.sender.send(Message::Command { id: id.to_owned(), params, reply: None });
@@ -295,16 +326,31 @@ fn caught(work: impl FnOnce() -> Result<Value, CommandError>) -> Result<Value, C
         .unwrap_or_else(|_| Err(CommandError::internal(format!("internal error, which is a bug of the viewer: {}", labcraft_cli::fmt::last_panic()))))
 }
 
-/// The loop of the thread of the session: each command in turn; changes of files taken together for [`SETTLE`].
+/// The loop of the thread of the session: each command in turn; changes of files taken together for [`SETTLE`]. After
+/// each, what it drew is published, then the trace of the function shown is read and its values published (`docs/cli.md`,
+/// 7.4); and every [`TRACE_POLL`], the trace is looked at again.
 #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
 fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Published>, wake: &dyn Fn()) {
     let mut waiting: Option<Message> = None;
+    let publish = |session: &Session| {
+        *published.lock().unwrap_or_else(PoisonError::into_inner) = session.published().clone();
+        wake();
+    };
+    let look = |session: &mut Session| {
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.look_at_trace())).unwrap_or(false) {
+            publish(session);
+        }
+    };
     loop {
         let message = match waiting.take() {
             Some(message) => message,
-            None => match receiver.recv() {
+            None => match receiver.recv_timeout(TRACE_POLL) {
                 Ok(message) => message,
-                Err(_) => return,
+                Err(RecvTimeoutError::Timeout) => {
+                    look(&mut session);
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
             },
         };
         match message {
@@ -312,19 +358,20 @@ fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Pub
             Message::Open { folder, reply } => {
                 let result = caught(|| session.open(&folder));
                 // What it changed is published before it answers.
-                *published.lock().unwrap_or_else(PoisonError::into_inner) = session.published().clone();
-                wake();
+                publish(&session);
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
             }
             Message::Command { id, params, reply } => {
                 let result = caught(|| session.execute(&id, &params));
-                *published.lock().unwrap_or_else(PoisonError::into_inner) = session.published().clone();
-                wake();
+                publish(&session);
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
+            }
+            Message::OpenTrace(path) => {
+                let _ = caught(|| session.open_trace_at(path));
             }
             first @ (Message::Changed | Message::StyleChanged) => {
                 // The changes of the 50 ms after the first one, with it: a window that does not move, so that a file
@@ -356,7 +403,7 @@ fn run(mut session: Session, receiver: &Receiver<Message>, published: &Mutex<Pub
                 }
             }
         }
-        *published.lock().unwrap_or_else(PoisonError::into_inner) = session.published().clone();
-        wake();
+        publish(&session);
+        look(&mut session);
     }
 }

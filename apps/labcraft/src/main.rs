@@ -93,6 +93,7 @@ fn main() -> ExitCode {
 /// What a dialog was asked for.
 enum Ask {
     Folder,
+    Trace,
 }
 
 struct Viewer {
@@ -100,6 +101,7 @@ struct Viewer {
     published: Published,
     canvas: Canvas,
     shown_generation: u64,
+    values_generation: u64,
     prefs: SettingsStore<Prefs>,
     theme: Theme,
     dialogs: Dialogs<Ask>,
@@ -109,6 +111,8 @@ struct Viewer {
     opening: Option<Receiver<Result<serde_json::Value, CommandError>>>,
     /// A folder was just opened: fit its first drawing, that of this generation or a later one.
     fit_at: Option<u64>,
+    /// The first drawing of a folder was fitted before its values came: fit it again with the room of their banner.
+    fit_values: bool,
 }
 
 impl Viewer {
@@ -136,12 +140,14 @@ impl Viewer {
             published: Published::default(),
             canvas,
             shown_generation: 0,
+            values_generation: 0,
             prefs,
             theme,
             dialogs,
             failure: None,
             opening: None,
             fit_at: None,
+            fit_values: false,
         };
         if let Some(folder) = options.folder {
             viewer.open(&folder);
@@ -181,6 +187,7 @@ impl Viewer {
                 self.canvas.fit();
             }
         });
+        self.trace_bar(ui);
         // A tab per function opened.
         ui.horizontal_wrapped(|ui| {
             for name in self.published.view.opened.clone() {
@@ -193,6 +200,37 @@ impl Viewer {
         for notice in [&self.published.notice, &self.failure, &self.published.style_notice].into_iter().flatten() {
             ui.colored_label(ui.visuals().warn_fg_color, notice);
         }
+    }
+
+    /// The trace of the function shown and how its run ended; the button that hides the values, the one that opens
+    /// another trace, and the chip of a trace opened by hand, whose cross goes back to the last run (notation 6.1;
+    /// decisions of the owner, 2026-11-13).
+    fn trace_bar(&mut self, ui: &mut egui::Ui) {
+        if self.published.view.function.is_none() {
+            return;
+        }
+        ui.horizontal_wrapped(|ui| {
+            let mut shown = self.canvas.values_shown();
+            if ui.checkbox(&mut shown, "Values").on_hover_text("Show the values of the run on the wires").changed() {
+                self.canvas.set_values_shown(shown);
+            }
+            let opened = self.published.view.trace_opened;
+            match &self.published.view.trace {
+                Some(trace) => {
+                    ui.label(format!("{}: {}", if opened { "Trace" } else { "Last run" }, trace.file));
+                    if opened && ui.small_button("✕").on_hover_text("Back to the last run").clicked() {
+                        self.session.post("view.open_trace", json!({}));
+                    }
+                    ui.label(trace_status(trace));
+                }
+                None => {
+                    ui.label("No run of this function yet");
+                }
+            }
+            if ui.button("Open a trace…").clicked() {
+                self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace);
+            }
+        });
     }
 
     fn functions(&mut self, ui: &mut egui::Ui) {
@@ -246,7 +284,16 @@ impl eframe::App for Viewer {
                 if self.fit_at.is_some_and(|at| published.view.drawing_generation >= at) {
                     self.canvas.fit();
                     self.fit_at = None;
+                    self.fit_values = true;
                 }
+            }
+        }
+        if published.view.overlay_generation != self.values_generation {
+            self.values_generation = published.view.overlay_generation;
+            // Published with the drawing they were made for, which the canvas has just taken.
+            self.canvas.set_values(published.view.overlay.clone());
+            if std::mem::take(&mut self.fit_values) && published.view.overlay.as_ref().is_some_and(|overlay| overlay.top > 0) {
+                self.canvas.fit();
             }
         }
         self.published = published;
@@ -257,7 +304,12 @@ impl eframe::App for Viewer {
                         self.open(folder);
                     }
                 }
-                (Ask::Folder, Answer::Unavailable(why)) => self.failure = Some(why),
+                (Ask::Trace, Answer::Paths(paths)) => {
+                    if let Some(trace) = paths.first() {
+                        self.session.open_trace(trace);
+                    }
+                }
+                (Ask::Folder | Ask::Trace, Answer::Unavailable(why)) => self.failure = Some(why),
                 _ => {}
             }
         }
@@ -282,6 +334,23 @@ impl eframe::App for Viewer {
     fn on_exit(&mut self) {
         let _ = self.prefs.flush();
     }
+}
+
+/// How the run of a trace ended, in a few words: its events, its status, and what the banner says at length.
+fn trace_status(trace: &labcraft_engine::drawings::TracePart) -> String {
+    let mut said = vec![format!("{} event{}", trace.events, if trace.events == 1 { "" } else { "s" })];
+    if let Some(status) = &trace.status {
+        said.push(status.clone());
+    } else if !trace.cut {
+        said.push("no end".to_owned());
+    }
+    if trace.cut {
+        said.push("cut".to_owned());
+    }
+    if !trace.stale.is_empty() {
+        said.push("the files have changed since".to_owned());
+    }
+    said.join(", ")
 }
 
 /// The fonts of the window (architecture 11.5): Inter for the panels, Hack for the notation and `Problems`, then the

@@ -10,7 +10,7 @@ use egui::epaint::{
     TextShape,
 };
 use egui::{Color32, FontId, Galley, Pos2, Rect, Vec2};
-use labcraft_diagram::{Detail, Drawing, IconDrawing, IconDrawn, IconShape, Paint, PathSegment, Pattern, Run, Shape, WireStyle, chevrons};
+use labcraft_diagram::{Detail, Drawing, IconDrawing, IconDrawn, IconShape, Overlay, Paint, PathSegment, Pattern, Run, Shape, WireStyle, chevrons};
 
 use crate::Theme;
 use crate::fonts::family;
@@ -52,6 +52,16 @@ pub struct Painter {
     groups: HashMap<usize, Arc<Painted>>,
     tabs: HashMap<(usize, bool), Arc<Painted>>,
     marks: HashMap<usize, Arc<Painted>>,
+    values: HashMap<Over, Arc<Painted>>,
+}
+
+/// A part of the values of a run over the drawing (notation 6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Over {
+    /// A layer under the bubbles: a veil, a hatching, an outline, a counter.
+    Under(usize),
+    Banner,
+    Bubble(usize),
 }
 
 impl Painter {
@@ -64,6 +74,7 @@ impl Painter {
             self.groups.clear();
             self.tabs.clear();
             self.marks.clear();
+            self.values.clear();
             self.key = Some(key);
         }
         self.stamp = Some(stamp);
@@ -90,6 +101,16 @@ impl Painter {
     pub fn mark(&mut self, ctx: &egui::Context, drawing: &Drawing, index: usize, theme: Theme, step: f32) -> Option<Arc<Painted>> {
         let mark = drawing.marks.get(index)?;
         Some(self.marks.entry(index).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, &mark.shapes, theme, step))).clone())
+    }
+
+    /// A part of the values of a run, its shapes those of `overlay`.
+    pub fn over(&mut self, ctx: &egui::Context, drawing: &Drawing, overlay: &Overlay, over: Over, theme: Theme, step: f32) -> Option<Arc<Painted>> {
+        let shapes = match over {
+            Over::Under(index) => &overlay.under.get(index)?.shapes,
+            Over::Banner => &overlay.banner,
+            Over::Bubble(index) => &overlay.bubbles.get(index)?.layer.shapes,
+        };
+        Some(self.values.entry(over).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, shapes, theme, step))).clone())
     }
 }
 

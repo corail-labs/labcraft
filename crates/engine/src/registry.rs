@@ -150,6 +150,8 @@ const FILE_ERRORS: &[&str] = &[
     "file.not_simulation",
     "internal",
 ];
+/// `view.open_trace`: a trace that does not exist or does not read is a warning of its `trace` part (`LC7101`).
+const TRACE_ERRORS: &[&str] = &["params.unknown", "params.invalid", "path.outside_project", "path.invalid", "internal"];
 const RUN_ERRORS: &[&str] =
     &["params.unknown", "params.missing", "params.invalid", "path.outside_project", "path.invalid", "run.unknown", "internal"];
 /// `run.set_element` on a deterministic run is not enabled (commands.md 6.4).
@@ -570,13 +572,13 @@ fn catalog() -> Vec<Command> {
             id: "view.open_trace",
             label: "Open Trace",
             summary: "Show the values of a run on the function shown",
-            description: "Reads a trace (`labcraft-trace/1`) and shows its values on the wires of the function shown; returns the `trace` part of `labcraft-diagram/1`.",
-            params: object(&[("file", string("A trace file."))], &["file"]),
-            result: "the trace part of labcraft-diagram/1",
-            errors: CHECK_ERRORS,
+            description: "Reads a trace (`labcraft-trace/1`) and shows its values on the wires of the function shown, until another function is shown; without `file`, those of its last run again. Returns the `trace` part of `labcraft-diagram/1`, or null when the function has no trace.",
+            params: object(&[("file", string("A trace file of the project; without it, the last run of the function."))], &[]),
+            result: "the trace part of labcraft-diagram/1, or null",
+            errors: TRACE_ERRORS,
             effects: &[],
             long: false,
-            planned: Some("M0v, step 8 (the values of a run)"),
+            planned: None,
         },
         // 6.6 The registry itself
         Command {
