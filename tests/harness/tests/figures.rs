@@ -172,7 +172,7 @@ fn the_figures_of_the_examples() {
     let table = format!(
         "## Figures of the viewer\n\nFor each function of `examples/`: its size in units, the zoom at which it fits in 1340 × 560 \
          (notation 7), and the figure of stability (notation 2.1): over the data wires probed, the nodes that move (mean / most) \
-         and the nodes whose column changes (mean / most). No threshold before the tag of M0v.\n\n\
+         and the nodes whose column changes (mean / most). No threshold in M0 (notation 2.1).\n\n\
          | Function | Nodes | Size | Zoom to fit | Wires probed | Moved | Column changed |\n|---|---|---|---|---|---|---|\n{}\n",
         rows.join("\n")
     );

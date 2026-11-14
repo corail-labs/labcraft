@@ -1,0 +1,219 @@
+name: release
+
+# A tag `v<version>` builds `labcraft-cli` and `labcraft` on each platform, and the web viewer, and makes a draft release
+# with them and the note `docs/releases/<tag>.md`: the owner reads the draft, then publishes it (2026-11-14). A pull
+# request that changes this file, or a run by hand, builds and packages the same way, without a release.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml', 'docs/releases/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# No cache: a release is rare, and a clean build is the one we ship.
+jobs:
+
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The version of `[workspace.package]`, the first `version =` of Cargo.toml; a tag must name it, and its note must exist.
+      - name: The version, the tag and the note
+        id: read
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -eu
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          [ -n "$version" ] || { echo "::error::no version in Cargo.toml"; exit 1; }
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::the tag $REF_NAME does not name the version $version of Cargo.toml"
+            exit 1
+          fi
+          [ -f "docs/releases/v$version.md" ] || { echo "::error::docs/releases/v$version.md is missing"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: [version]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04: glibc 2.35, so that the binaries also start on older distributions.
+          - { name: linux-x64, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, exe: '' }
+          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc, exe: .exe }
+          - { name: macos-arm64, os: macos-15, target: aarch64-apple-darwin, exe: '' }
+          # Built on the same Apple Silicon runner, and tried there through Rosetta.
+          - { name: macos-x64, os: macos-15, target: x86_64-apple-darwin, exe: '' }
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      # Windows: the C runtime linked in, so that the binaries need no Visual C++ redistributable.
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+      VERSION: ${{ needs.version.outputs.version }}
+      TARGET: ${{ matrix.target }}
+      EXE: ${{ matrix.exe }}
+      NAME: labcraft-${{ needs.version.outputs.version }}-${{ matrix.name }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install --no-self-update
+          rustup target add "$TARGET"
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET" -p labcraft-cli -p labcraft
+      # The binaries; the licences and notices: ours, those of the fonts and the Unicode data where ATTRIBUTION.md names
+      # them, those of the crates built in (`cargo xtask notices`); the programs of examples/ and the simulated
+      # instruments of visa, to try them as the README and the note say.
+      - name: Package
+        run: |
+          set -eu
+          out="dist/$NAME"
+          mkdir -p "$out/assets/fonts" "$out/crates/types" "$out/sim"
+          cp "target/$TARGET/release/labcraft-cli$EXE" "target/$TARGET/release/labcraft$EXE" "$out/"
+          cp README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$out/"
+          cp "docs/releases/v$VERSION.md" "$out/RELEASE.md"
+          cp assets/fonts/LICENSE-Hack.md assets/fonts/LICENSE-Inter.txt "$out/assets/fonts/"
+          cp crates/types/LICENSE-Unicode.txt "$out/crates/types/"
+          cargo xtask notices "$TARGET" "$out/THIRD-PARTY-LICENSES.txt"
+          find examples -name '*.lcf' -o -name '*.lct' | while read -r file; do
+            mkdir -p "$out/$(dirname "$file")"
+            cp "$file" "$out/$file"
+          done
+          cp libs/visa/sim/*.toml "$out/sim/"
+      # What a user types in the folder of the archive, on a copy of it, so that the trace of the run is not shipped:
+      # the examples check, check_voltage runs against a simulated multimeter, the viewer starts and prints its version.
+      - name: Try the archive
+        run: |
+          set -eu
+          cp -R "dist/$NAME" try
+          cd try
+          ./labcraft-cli$EXE version
+          ./labcraft-cli$EXE check examples
+          ./labcraft-cli$EXE run --sim sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
+          test -f examples/.labcraft/runs/check_voltage.trace.jsonl
+          ./labcraft$EXE --version
+      - name: Archive
+        run: |
+          set -eu
+          cd dist
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z a -tzip -bso0 "$NAME.zip" "$NAME"
+          else
+            tar -czf "$NAME.tar.gz" "$NAME"
+          fi
+          rm -rf "$NAME"
+          ls -l
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # The site of `cargo xtask web`, tried in headless Chrome as the job `web` of `checks` does, then zipped. Nothing is
+  # hosted: the note says to serve the folder with a static server.
+  web:
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      NAME: labcraft-web-${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install --no-self-update
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: trunk@0.21.14
+      - name: Build
+        run: cargo xtask web
+      - name: The page in headless Chrome
+        run: cargo xtask web-smoke
+      - name: Package
+        run: |
+          set -eu
+          out="dist/$NAME"
+          mkdir -p dist
+          cp -R target/web "$out"
+          mkdir -p "$out/assets/fonts" "$out/crates/types"
+          cp LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$out/"
+          cp assets/fonts/LICENSE-Hack.md assets/fonts/LICENSE-Inter.txt "$out/assets/fonts/"
+          cp crates/types/LICENSE-Unicode.txt "$out/crates/types/"
+          cargo xtask notices wasm32-unknown-unknown "$out/THIRD-PARTY-LICENSES.txt"
+          cd dist
+          zip -qr "$NAME.zip" "$NAME"
+          rm -rf "$NAME"
+          ls -l
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-web
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # Only for a tag pushed (a run by hand on a tag makes none): a draft, marked pre-release when the version has a
+  # suffix, which the owner publishes by hand. A release that exists already for the tag stops it: no second draft.
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [version, build, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: |
+          set -eu
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Draft release
+        run: |
+          set -eu
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::a release of $TAG exists already: delete it, or publish it, before running this again"
+            exit 1
+          fi
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" --draft $prerelease --verify-tag \
+            --title "LabCraft $VERSION" --notes-file "docs/releases/$TAG.md" dist/*

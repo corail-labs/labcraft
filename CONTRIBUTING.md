@@ -13,13 +13,12 @@ reads, checks, writes and runs programs against simulated instruments, and serve
 programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
 concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
 
-Code contributions in Rust open in stages. Since the tags of M0a (`v0.1.0-m0a`) and M0b (`v0.2.0-m0b`),
-they have been open on what exists: bugs and improvements of `fmt`, `check`, `run` and the MCP server, the
-interpreter, `visa` and its simulated instruments, cases for the corpora of `tests/acceptance/`, other platforms,
-the WASM build. The diagram viewer (M0v) has its specification and its section of
-[docs/architecture.md](docs/architecture.md), the contract a contribution meets; [docs/roadmap.md](docs/roadmap.md)
-lists what is still to write. Feedback on the language
-remains the most useful help.
+Code contributions in Rust open in stages. Since the tag of M0 (`v0.3.0-m0`, after `v0.1.0-m0a` and
+`v0.2.0-m0b`), they have been open on all that exists: bugs and improvements of `fmt`, `check`, `run` and the MCP
+server, the interpreter, `visa` and its simulated instruments, the drawing of `diagram` and the viewers `labcraft`
+and `labcraft-web`, cases for the corpora of `tests/acceptance/`, other platforms, the WASM build.
+[docs/architecture.md](docs/architecture.md) is the contract a contribution meets; [docs/roadmap.md](docs/roadmap.md)
+says what comes next. Feedback on the language and on the viewer remains the most useful help.
 
 ## How to help now
 
@@ -90,8 +89,8 @@ ci` runs the checks of the Rust code.
 
 1. Every change goes through a pull request, the maintainers' too. Keep it to one topic and say
    what you checked; the `checks` workflow must be green. GitHub requires only its job `checks`, so that a
-   broken nightly or runner can never block `main`, but a red job `windows` or a red `fuzz` workflow also
-   stops the merge unless a maintainer decides otherwise for that pull request
+   broken nightly or runner can never block `main`, but a red job `windows`, a red `fuzz` workflow or a red
+   `release` workflow also stops the merge unless a maintainer decides otherwise for that pull request
    ([fuzz/README.md](fuzz/README.md)).
 2. Pull requests are squash-merged: the title becomes the commit on `main`, so give it a short
    English subject line.

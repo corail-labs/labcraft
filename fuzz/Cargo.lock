@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-check"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-format",
  "labcraft-graph",
@@ -148,7 +148,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-diagram"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-engine"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-diagram",
@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-format"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-graph",
  "labcraft-types",
@@ -205,14 +205,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-graph"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-types",
 ]
 
 [[package]]
 name = "labcraft-ir"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-libs"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-engine",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-mcp"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-engine",
  "labcraft-format",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-runtime"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-trace"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "sha2",
  "zmij",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-types"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "serde",
  "unicode-normalization",
@@ -270,7 +270,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-visa"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-runtime",
  "labcraft-trace",

@@ -1,7 +1,7 @@
 # M0 acceptance scenarios
 
-*Last updated: 2026-11-13. Status: the scenarios of M0a pass (tag `v0.1.0-m0a`), and those of M0b
-(tag `v0.2.0-m0b`); those of M0v are a first draft.*
+*Last updated: 2026-11-14. Status: the scenarios of M0a pass (tag `v0.1.0-m0a`), those of M0b
+(tag `v0.2.0-m0b`) and those of M0v (tag `v0.3.0-m0`, which closes M0).*
 
 M0, the first milestone in Rust, comes in three parts ([roadmap](roadmap.md)): M0a reads, checks
 and writes programs; M0b runs them and opens the agent loop; M0a and M0b are a thin vertical
@@ -367,7 +367,10 @@ agree.
    was drawable.
 4. **Large diagrams.** A generated function of 1,000 nodes and 2,000 wires is placed and routed in
    less than 1 s *(proposed)*, measured in CI, and pans and zooms at 60 frames/s on a reference
-   machine, checked by hand before the M0v tag.
+   machine, checked by hand before the M0v tag. Checked on 2026-11-14 with `cargo xtask frames`
+   (`docs/architecture.md`, 11.6), on a laptop with an Intel Iris Xe through Vulkan and a 60 Hz screen: the
+   scripted motion held 60 frames/s, no frame late of 721; panning and zooming by hand, 59.9 frames/s, 2
+   frames late of 2,551.
 5. **Never a crash.** A hostile file or run trace gives a diagnostic and the viewer stays responsive
    (scenario 4).
 6. **Read-only.** Files are opened read-only: a test opens every example in the viewer and checks
@@ -407,6 +410,6 @@ are ordinary tests, not acceptance scenarios.
 | 1. Agent, PASS/FAIL | M0b | Scripted MCP loop | Five agent sessions | Points 1–4 | |
 | 2. Type error | M0a | Corpus and expected diagnostics | Agent fixes the corpus | Names only; types at run time, some not at all | |
 | 3. Parallel, clean stop | M0b | Points 1–6 | | Points 1–6 in deterministic mode, 2 in real time | |
-| 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | Limits of M0b |
+| 4. Hostile inputs | M0a, M0b, M0v | Corpus, short fuzzing | Long fuzzing | Partial | |
 | 5. Round trip | M0a | All canonical files | | Order and layout checked, no rewriting | |
-| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | `diagram` and `editor` architecture |
+| 6. Viewer | M0v | Points 1, 2, 3, 5, 6, 7; placement time | Frame rate | `lcf-figcraft`, standard view only | |

@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "craft-dialogs",
  "craft-settings",
@@ -1970,7 +1970,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-check"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-format",
  "labcraft-graph",
@@ -1981,7 +1981,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-cli"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "craft-atomic",
  "ctrlc",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-diagram"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2013,7 +2013,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-editor"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "egui",
  "labcraft-check",
@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-engine"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-diagram",
@@ -2043,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-format"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-graph",
  "labcraft-types",
@@ -2053,14 +2053,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-graph"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-types",
 ]
 
 [[package]]
 name = "labcraft-harness"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "egui",
  "labcraft-check",
@@ -2082,7 +2082,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-ir"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2092,7 +2092,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-libs"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-engine",
@@ -2100,7 +2100,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-mcp"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-engine",
  "labcraft-format",
@@ -2110,14 +2110,14 @@ dependencies = [
 
 [[package]]
 name = "labcraft-results-log"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-runtime",
 ]
 
 [[package]]
 name = "labcraft-runtime"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-format",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-trace"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "serde_json",
  "sha2",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-types"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-visa"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-runtime",
  "labcraft-trace",
@@ -2161,7 +2161,7 @@ dependencies = [
 
 [[package]]
 name = "labcraft-web"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "craft-ui",
  "eframe",
@@ -4886,7 +4886,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.2.0-m0b"
+version = "0.3.0-m0"
 dependencies = [
  "labcraft-engine",
  "labcraft-runtime",
