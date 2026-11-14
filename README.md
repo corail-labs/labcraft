@@ -67,12 +67,7 @@ The diagram is drawn from this file by `labcraft-cli diagram --svg`, following t
 An agent (Claude Code) on `labcraft-cli mcp` writes a new function from a request: it reads the
 guide and the functions it can call, writes `check_power`, which `check` accepts, and runs it against a simulated
 power supply. The desktop viewer, open on the folder beside it, draws each file as it is written, and the values of
-the run appear on the wires:
-
-![The diagram of check_power, written by an agent, before its run; then 5.023 V, 0.3006 A, true and Verdict.Pass appear on its wires](docs/images/agent-values.gif)
-
-The whole session, 46 seconds: the request, the agent at work, the run, then a change of the function, redrawn
-and run again:
+the run appear on the wires. Then a change of the function, redrawn and run again (46 seconds):
 
 https://github.com/user-attachments/assets/38106f7d-c1aa-41ad-a4d6-761a483cec2e
 
