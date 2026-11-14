@@ -859,7 +859,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let ends = wire_ends(&body, frame, &columns, column_count, &vec![0; count], &ys, &left, &right, 0);
     let axis = has_axis.then_some(0);
     let vias: Vec<Option<Vec<(i64, i64)>>> = (0..wires.len()).map(|wire| graph.vias.get(&(index, wire)).cloned()).collect();
-    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, blocks: &blocks, axis, vias: &vias });
+    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, blocks: &blocks, axis, vias: &vias, origin: 0 });
     // Across: each column as wide as its widest node, its blocks aligned on the left, each channel as wide as its wires.
     let left_zone =
         frame.left.iter().map(|terminal| TerminalLabel::of(terminal).width()).max().map_or(0, |widest| style::label_start() + widest + style::grid());
@@ -952,7 +952,15 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let ends = wire_ends(&body, frame, &columns, column_count, &xs, &ys, &left_at, &right_at, width);
     let placed_blocks = column_blocks(&body, &columns, column_count, &ys);
     let axis = has_axis.then_some(shift);
-    let plan = route::plan(&route::BodyIn { ends: &ends, sources: &sources, columns: column_count, blocks: &placed_blocks, axis, vias: &vias });
+    let plan = route::plan(&route::BodyIn {
+        ends: &ends,
+        sources: &sources,
+        columns: column_count,
+        blocks: &placed_blocks,
+        axis,
+        vias: &vias,
+        origin: shift,
+    });
     let routes = route::geometry(&plan, &ends, &channel_at);
     if let Some(track) = plan.highest {
         highest = highest.min(track - style::track_room());

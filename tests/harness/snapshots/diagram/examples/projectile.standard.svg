@@ -14,11 +14,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M19 684 L165.75 684 Q171.75 684 171.75 678 L171.75 598 Q171.75 592 177.75 592 L203 592" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="vx0" data-from="fn.vx0" data-to="flight_time.vx">
-<path d="M19 576 L189.75 576 Q195.75 576 195.75 582 L195.75 618 Q195.75 624 201.75 624 L355.75 624 Q361.75 624 361.75 618 L361.75 590 Q361.75 584 367.75 584 L459 584" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="269.72" y="621" font-size="10" style="fill: var(--ink-muted)">vx0</text>
+<path d="M19 576 L189.75 576 Q195.75 576 195.75 582 L195.75 622 Q195.75 628 201.75 628 L355.75 628 Q361.75 628 361.75 622 L361.75 590 Q361.75 584 367.75 584 L459 584" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="269.72" y="625" font-size="10" style="fill: var(--ink-muted)">vx0</text>
 </g>
 <g data-wire="vy0" data-from="fn.vy0" data-to="flight_time.vy">
-<path d="M19 600 L181.75 600 Q187.75 600 187.75 606 L187.75 626 Q187.75 632 193.75 632 L363.75 632 Q369.75 632 369.75 626 L369.75 614 Q369.75 608 375.75 608 L459 608" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 600 L181.75 600 Q187.75 600 187.75 606 L187.75 630 Q187.75 636 193.75 636 L363.75 636 Q369.75 636 369.75 630 L369.75 614 Q369.75 608 375.75 608 L459 608" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="flight_time" data-from="flight_time.flight_time" data-to="fn.flight_time">
 <path d="M2603 248 L2570.81 248 Q2566.81 248 2566.81 244 L2566.81 244 Q2566.81 240 2570.81 240 L2731 240" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -30,8 +30,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M2603 632 L2570.81 632 Q2566.81 632 2566.81 628 L2566.81 628 Q2566.81 624 2570.81 624 L2731 624" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
-<path d="M19 732 L181.75 732 Q187.75 732 187.75 726 L187.75 702 Q187.75 696 193.75 696 L355.75 696 Q361.75 696 361.75 690 L361.75 686 Q361.75 680 367.75 680 L459 680" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="268.73" y="693" font-size="10" style="fill: var(--ink-muted)">dt</text>
+<path d="M19 732 L165.75 732 Q171.75 732 171.75 738 L171.75 758 Q171.75 764 177.75 764 L363.75 764 Q369.75 764 369.75 758 L369.75 686 Q369.75 680 375.75 680 L459 680" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="264.73" y="761" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="g" data-from="g.value" data-to="flight_time.g">
 <path d="M272.98 736 L355.75 736 Q361.75 736 361.75 730 L361.75 710 Q361.75 704 367.75 704 L459 704" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

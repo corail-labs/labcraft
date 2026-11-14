@@ -67,6 +67,10 @@ pub struct BodyIn<'a> {
     pub axis: Option<i64>,
     /// By wire: the waypoints that the file gives it (spec 11).
     pub vias: &'a [Option<Vec<(i64, i64)>>],
+    /// The height that the grid of 8 of the lanes and the jogs counts from: where the main chain runs, or would. The
+    /// plan of a body moved by `d`, with its origin, is the same plan moved by `d`, so that each channel needs as many
+    /// slots once the nodes are placed as when its width was set.
+    pub origin: i64,
 }
 
 /// A vertical of a net in a channel: from `y0` to `y1`, entered from the left at `entry`, left to the right at `outs`.
@@ -398,7 +402,7 @@ pub fn plan(body: &BodyIn<'_>) -> Plan {
         entry.3 = vertical(&mut plan.verticals, net, ends.to_column, entry.1, &[ends.to.approach]);
     }
     plan.nets = nets;
-    jogs(&mut plan, channels, body.axis);
+    jogs(&mut plan, channels, body.axis, body.origin);
     slots(&mut plan, channels);
     plan
 }
@@ -435,7 +439,7 @@ fn lane(body: &BodyIn<'_>, columns: (usize, usize), laid: &[(usize, usize, i64)]
         block(&mut blocked, axis - style::wire_gap() + 1, i64::MAX / 4);
     }
     let held = blocked.range(..=source).next_back().is_some_and(|(_, &end)| end >= source);
-    if held { nearest_free(&blocked, source) } else { source }
+    if held { nearest_free(&blocked, source, body.origin) } else { source }
 }
 
 /// Wires that cross in a channel so that each must stand left of the next, round a cycle (an entry of each within 8 of
@@ -444,7 +448,7 @@ fn lane(body: &BodyIn<'_>, columns: (usize, usize), laid: &[(usize, usize, i64)]
 /// height of the grid, and goes on by its vertical; the part it enters by has no exit that another must stand left of,
 /// the part it goes on by no entry that must stand left of another, so the cycles are gone. The cycles are the strongly
 /// connected parts of the constraints, found in one pass.
-fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
+fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>, origin: i64) {
     let mut by_channel: Vec<Vec<usize>> = vec![Vec::new(); channels];
     for (index, vertical) in plan.verticals.iter().enumerate() {
         if let Some(list) = by_channel.get_mut(vertical.channel) {
@@ -525,9 +529,9 @@ fn jogs(plan: &mut Plan, channels: usize, axis: Option<i64>) {
             let Some(vertical) = plan.verticals.get(index).cloned() else { continue };
             // The free height nearest the middle of the vertical, inside it or not; a track over the channel that it would
             // meet is blocked in its turn, so this ends after as many steps as tracks it meets.
-            let middle = (vertical.y0 + vertical.y1) / 2;
+            let middle = vertical.y0 + (vertical.y1 - vertical.y0) / 2;
             let across = loop {
-                let candidate = nearest_free(&blocked, middle);
+                let candidate = nearest_free(&blocked, middle, origin);
                 match over.range(candidate - style::wire_gap() + 1..=candidate + style::wire_gap() - 1).next() {
                     Some((&track, _)) => block(&mut blocked, track - style::wire_gap() + 1, track + style::wire_gap() - 1),
                     None => break candidate,
@@ -576,24 +580,26 @@ fn block(list: &mut BTreeMap<i64, i64>, start: i64, end: i64) {
 }
 
 /// The height of the grid nearest `middle` outside every blocked interval: on the grid at `middle`, or past either end
-/// of what holds it, each way as far as the next height of the grid that nothing blocks, the upper one on a tie.
-fn nearest_free(blocked: &BTreeMap<i64, i64>, middle: i64) -> i64 {
+/// of what holds it, each way as far as the next height of the grid that nothing blocks, the upper one on a tie. The grid
+/// is 8 apart from `origin`.
+fn nearest_free(blocked: &BTreeMap<i64, i64>, middle: i64, origin: i64) -> i64 {
     let holding = |y: i64| blocked.range(..=y).next_back().filter(|&(_, &end)| end >= y).map(|(&start, &end)| (start, end));
-    let on_grid = middle - middle.rem_euclid(style::wire_gap());
+    let off_grid = |y: i64| y.wrapping_sub(origin).rem_euclid(style::wire_gap());
+    let on_grid = middle - off_grid(middle);
     let Some((start, end)) = holding(on_grid) else { return on_grid };
     // Up: below the start of each interval in the way, down to the grid.
     let mut up = start.saturating_sub(1);
-    up -= up.rem_euclid(style::wire_gap());
+    up -= off_grid(up);
     while let Some((start, _)) = holding(up) {
         up = start.saturating_sub(1);
-        up -= up.rem_euclid(style::wire_gap());
+        up -= off_grid(up);
     }
     // Down: past the end of each interval in the way, up to the grid.
     let mut down = end.saturating_add(1);
-    down += (style::wire_gap() - down.rem_euclid(style::wire_gap())) % style::wire_gap();
+    down += (style::wire_gap() - off_grid(down)) % style::wire_gap();
     while let Some((_, end)) = holding(down) {
         down = end.saturating_add(1);
-        down += (style::wire_gap() - down.rem_euclid(style::wire_gap())) % style::wire_gap();
+        down += (style::wire_gap() - off_grid(down)) % style::wire_gap();
     }
     if middle - up <= down - middle { up } else { down }
 }
@@ -1197,12 +1203,12 @@ mod tests {
         // On the grid of 8: a free middle goes down to the grid, a blocked one out to the grid on either side.
         let mut blocked = BTreeMap::new();
         block(&mut blocked, 9300, 10700);
-        assert_eq!(nearest_free(&blocked, 5000), 4800);
-        assert_eq!(nearest_free(&blocked, 9900), 8800);
-        assert_eq!(nearest_free(&blocked, 10500), 11200);
+        assert_eq!(nearest_free(&blocked, 5000, 0), 4800);
+        assert_eq!(nearest_free(&blocked, 9900, 0), 8800);
+        assert_eq!(nearest_free(&blocked, 10500, 0), 11200);
         // A second interval in the way upward: past it too.
         block(&mut blocked, 8100, 8900);
-        assert_eq!(nearest_free(&blocked, 9900), 11200);
+        assert_eq!(nearest_free(&blocked, 9900, 0), 11200);
     }
 
     /// S3 (notation 2.2): a lane needs 16 from each node, so a gap of 24 between two nodes stacked holds none and one of 32
@@ -1216,7 +1222,7 @@ mod tests {
             let blocks: Vec<Vec<(i64, i64)>> = blocks.iter().map(|list| list.iter().map(|&(top, bottom)| (top * U, bottom * U)).collect()).collect();
             let laid: Vec<(usize, usize, i64)> = laid.iter().map(|&(start, end, height)| (start, end, height * U)).collect();
             let ends: Vec<(i64, usize)> = ends.iter().map(|&(height, net)| (height * U, net)).collect();
-            let body = BodyIn { ends: &[], sources: &[], columns: 2, blocks: &blocks, axis: axis.map(|axis| axis * U), vias: &[] };
+            let body = BodyIn { ends: &[], sources: &[], columns: 2, blocks: &blocks, axis: axis.map(|axis| axis * U), vias: &[], origin: 0 };
             lane(&body, (1, 2), &laid, [ends.as_slice(), &[]], 0, source * U) / U
         }
         // Column 1: a node from -32 to 0 and one 24 above it, from -88 to -56; column 2: a node from -32 to 0. Blocked:
@@ -1236,6 +1242,125 @@ mod tests {
         assert_eq!(at(&gap_32, None, &[], &[(-44, 1)], -40), 16);
         // The end of its own net does not.
         assert_eq!(at(&gap_32, None, &[], &[(-44, 0)], -40), -48);
+    }
+
+    /// A body moved down, with its origin, has the same plan moved: as many slots in each channel, the same jogs and
+    /// lanes. The width of each channel is set on the plan of the body before its nodes are placed, so a plan that needs
+    /// more slots once they are placed puts a vertical inside the column after its channel, over a node (a crash of the
+    /// fuzz target `diagram`, M0v). Here two wires cross in channel 2, so one jogs at the free height nearest its middle,
+    /// and a third goes on to column 3 by a lane between the nodes of column 2: both on the grid of 8.
+    #[test]
+    fn a_body_moved_down_has_the_same_plan_moved() {
+        let number = Family { base: crate::graph::Base::Number, dimensions: 0 };
+        let routed = |dy: i64, origin: i64| {
+            let ends = [(1, 0, 2, 10000), (1, 10000, 2, 0), (1, 2000, 3, 2000)].map(|(from_column, from, to_column, to)| {
+                Some(Ends {
+                    from_column,
+                    from: At::side(10000 * from_column as i64, from + dy, Side::Right),
+                    to_column,
+                    to: At::side(10000 * to_column as i64 - 4000, to + dy, Side::Left),
+                })
+            });
+            let sources = [0, 1, 2].map(|node| (End::Node { node, terminal: 0 }, number));
+            let column = vec![(-2000 + dy, 3000 + dy), (7000 + dy, 12000 + dy)];
+            let blocks = [vec![], column.clone(), column.clone(), column, vec![]];
+            let body = BodyIn { ends: &ends, sources: &sources, columns: 3, blocks: &blocks, axis: None, vias: &[None, None, None], origin };
+            let plan = plan(&body);
+            let routes = geometry(&plan, &ends, &[0, 0, 6000, 16000, 26000]);
+            (plan.slots, plan.highest.map(|track| track - dy), routes.into_iter().map(|routed| routed.moved(0, -dy)).collect::<Vec<_>>())
+        };
+        let at_rest = routed(0, 0);
+        let branches: Vec<&Vec<(i64, i64)>> = at_rest.2.iter().flat_map(|routed| &routed.branches).collect();
+        assert_eq!(branches.iter().map(|branch| branch.len()).collect::<Vec<_>>(), [6, 4, 6], "a jog, a lane");
+        for dy in [1, 300, 1999, -37, 31964] {
+            assert_eq!(routed(dy, dy), at_rest, "moved by {dy}");
+        }
+        // Without its origin, the grid stays where it was, and the jog or the lane moves against the nodes.
+        assert!([300, 1999, 31964].iter().any(|&dy| routed(dy, 0) != at_rest));
+    }
+
+    /// The same, on bodies drawn at random from a fixed seed: stacks of nodes, wires forward, back, to the right edge, to
+    /// a top edge, errors on the main chain. Seed 15256 is one where a middle rounded toward zero, `(y0 + y1) / 2`, put a
+    /// jog elsewhere once the body moved (found by the review of this fix).
+    #[test]
+    fn random_bodies_moved_have_the_same_plan_moved() {
+        struct Draw(u64);
+        impl Draw {
+            fn below(&mut self, n: u64) -> u64 {
+                self.0 ^= self.0 << 13;
+                self.0 ^= self.0 >> 7;
+                self.0 ^= self.0 << 17;
+                self.0 % n.max(1)
+            }
+            fn range(&mut self, low: i64, high: i64) -> i64 {
+                low + self.below(high.abs_diff(low) + 1) as i64
+            }
+        }
+        type Out = (Vec<u32>, Option<i64>, Option<i64>, Vec<Routed>);
+        fn routed(seed: u64, dy: i64, origin: i64) -> Out {
+            let mut draw = Draw(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+            let columns = 1 + draw.below(5) as usize;
+            let unit = [100, 50, 1][draw.below(3) as usize];
+            let mut blocks: Vec<Vec<(i64, i64)>> = vec![Vec::new(); columns + 2];
+            let mut nodes: Vec<(usize, i64, i64)> = Vec::new();
+            for (column, list) in blocks.iter_mut().enumerate().take(columns + 1).skip(1) {
+                let mut y = draw.range(-120, 0) * unit;
+                for _ in 0..=draw.below(3) {
+                    let height = draw.range(8, 60) * unit;
+                    list.push((y + dy, y + height + dy));
+                    nodes.push((column, y, y + height));
+                    y += height + draw.range(8, 60) * unit;
+                }
+            }
+            let node = |draw: &mut Draw| nodes[draw.below(nodes.len() as u64) as usize];
+            let axis = (draw.below(2) == 0).then(|| draw.range(-40, 80) * unit);
+            let wires = 1 + draw.below(10) as usize;
+            let mut sources: Vec<(usize, i64, bool)> = Vec::new();
+            for _ in 0..=draw.below(wires as u64) {
+                let (column, top, bottom) = node(&mut draw);
+                let error = draw.below(4) == 0;
+                let y = match axis {
+                    Some(axis) if error && draw.below(2) == 0 => axis,
+                    _ => draw.range(top / unit, bottom / unit) * unit,
+                };
+                sources.push((column, y, error));
+            }
+            let (mut ends, mut families) = (Vec::new(), Vec::new());
+            for _ in 0..wires {
+                let source = draw.below(sources.len() as u64) as usize;
+                let (from_column, from, error) = sources[source];
+                let (to_column, to) = if draw.below(6) == 0 {
+                    (columns + 1, draw.range(-120, 120) * unit)
+                } else {
+                    let (column, top, bottom) = node(&mut draw);
+                    (column, draw.range(top / unit, bottom / unit) * unit)
+                };
+                let to = if draw.below(8) == 0 {
+                    At { x: 0, y: to + dy, side: Side::Top, approach: to - draw.range(8, 30) * unit + dy }
+                } else {
+                    At::side(0, to + dy, Side::Left)
+                };
+                ends.push(Some(Ends { from_column, from: At::side(0, from + dy, Side::Right), to_column, to }));
+                let family = if error { Family::ERROR } else { Family { base: crate::graph::Base::Number, dimensions: 0 } };
+                families.push((End::Node { node: source, terminal: 0 }, family));
+            }
+            let vias = vec![None; wires];
+            let body = BodyIn { ends: &ends, sources: &families, columns, blocks: &blocks, axis: axis.map(|axis| axis + dy), vias: &vias, origin };
+            let plan = plan(&body);
+            let channels: Vec<i64> = (0..columns as i64 + 2).map(|channel| 100_000 * channel).collect();
+            let routes = geometry(&plan, &ends, &channels).into_iter().map(|routed| routed.moved(0, -dy)).collect();
+            (plan.slots, plan.highest.map(|track| track - dy), plan.lowest.map(|track| track - dy), routes)
+        }
+        let mut without_origin = 0;
+        for seed in (1..1500).chain([15256]) {
+            let at_rest = routed(seed, 0, 0);
+            for dy in [1, 7, 401, -1, -333, 12345, -98765] {
+                assert_eq!(routed(seed, dy, dy), at_rest, "seed {seed} moved by {dy}");
+                without_origin += usize::from(routed(seed, dy, 0).0 != at_rest.0);
+            }
+        }
+        // Without its origin, some channels need other slots once moved: what the fuzzing found.
+        assert!(without_origin > 0);
     }
 
     #[test]

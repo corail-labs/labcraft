@@ -441,8 +441,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="785.48" y="401" font-size="10" style="fill: var(--ink-muted)">s</text>
 </g>
 <g data-wire="tested" data-to="yield.3">
-<path d="M445 476 L503.12 476 Q509.12 476 509.12 470 L509.12 438 Q509.12 432 515.12 432 L783.48 432 Q789.48 432 789.48 438 L789.48 470 Q789.48 476 795.48 476 L1141 476" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="631.24" y="429" font-size="10" style="fill: var(--ink-muted)">tested</text>
+<path d="M445 476 L503.12 476 Q509.12 476 509.12 470 L509.12 442 Q509.12 436 515.12 436 L783.48 436 Q789.48 436 789.48 442 L789.48 470 Q789.48 476 795.48 476 L1141 476" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="631.24" y="433" font-size="10" style="fill: var(--ink-muted)">tested</text>
 </g>
 <g data-wire="e2" data-from="present.err" data-to="yield.4">
 <path d="M600.2 524 L1141 524" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
@@ -622,12 +622,12 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-wire="t2" data-from="t2.result" data-to="again.a yield.3">
 <path d="M608.2 936 L623.2 936 Q627.2 936 627.2 940 L627.2 940 Q627.2 944 631.2 944 L646.2 944" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<path d="M627.2 936 L627.2 922 Q627.2 916 633.2 916 L843.42 916 Q849.42 916 849.42 922 L849.42 954 Q849.42 960 855.42 960 L1141 960" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M627.2 936 L627.2 926 Q627.2 920 633.2 920 L843.42 920 Q849.42 920 849.42 926 L849.42 954 Q849.42 960 855.42 960 L1141 960" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <circle cx="627.2" cy="936" r="3" style="fill: var(--wire-data)"/>
-<text x="732.29" y="913" font-size="10" style="fill: var(--ink-muted)">t2</text>
+<text x="732.29" y="917" font-size="10" style="fill: var(--ink-muted)">t2</text>
 </g>
 <g data-wire="dut_count" data-to="again.b">
-<path d="M445 984 L529.18 984 Q535.18 984 535.18 978 L535.18 906 Q535.18 900 541.18 900 L629.2 900 Q635.2 900 635.2 906 L635.2 954.5 Q635.2 960 640.7 960 L646.2 960" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M445 984 L529.18 984 Q535.18 984 535.18 978 L535.18 910 Q535.18 904 541.18 904 L629.2 904 Q635.2 904 635.2 910 L635.2 954.5 Q635.2 960 640.7 960 L646.2 960" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="again" data-from="again.result" data-to="s.condition">
 <path d="M678.2 952 L685.2 952 Q689.2 952 689.2 948 L689.2 948 Q689.2 944 693.2 944 L798.42 944" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>

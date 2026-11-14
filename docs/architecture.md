@@ -1280,6 +1280,9 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
      so that each channel is as wide as its verticals need (their slots, from a tree over their intervals, after
      the constraints of the wires that enter and leave at one height); then, once the columns are placed, a
      polyline per wire and the junction points of each value. Tracks stack on a skyline over channels and columns.
+     The plan is made again on the placed heights, and is the first one moved: its lanes and jogs are on a grid that
+     starts on the main chain of the body, or where it would run (`BodyIn::origin`), so each channel needs the slots
+     that its width was given (a test on random bodies checks it). A body that the file places can need more.
      The names and the pills of the wires, `names.rs`, are placed where they cover nothing, tested against the
      edges of what the body draws, kept merged by line.
   5. **Shapes**, with their tokens, marks and badges.

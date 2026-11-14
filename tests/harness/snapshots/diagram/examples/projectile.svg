@@ -31,8 +31,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M1339 408 L1298.81 408 Q1294.81 408 1294.81 404 L1294.81 404 Q1294.81 400 1298.81 400 L1467 400" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="dt" data-from="fn.dt" data-to="flight_time.dt">
-<path d="M19 556 L165.75 556 Q171.75 556 171.75 550 L171.75 502 Q171.75 496 177.75 496 L355.75 496 Q361.75 496 361.75 490 L361.75 462 Q361.75 456 367.75 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="260.73" y="493" font-size="10" style="fill: var(--ink-muted)">dt</text>
+<path d="M19 556 L165.75 556 Q171.75 556 171.75 550 L171.75 506 Q171.75 500 177.75 500 L355.75 500 Q361.75 500 361.75 494 L361.75 462 Q361.75 456 367.75 456 L459 456" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="260.73" y="497" font-size="10" style="fill: var(--ink-muted)">dt</text>
 </g>
 <g data-wire="g" data-from="g.value" data-to="flight_time.g">
 <path d="M272.98 408 L355.75 408 Q361.75 408 361.75 414 L361.75 426 Q361.75 432 367.75 432 L459 432" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
