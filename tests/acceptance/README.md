@@ -88,4 +88,5 @@ These families are too large or cannot be stored, so the test harness generates 
 | Library | A symbolic link loop, next to a clean file | `LC0009`, exit 0 |
 
 The families Instruments and Arguments of scenario 4 are in the corpus of runs (`runs/`) since M0b, and MCP in the tests of
-`crates/mcp` and `apps/labcraft-cli`; the family Traces comes with M0v.
+`crates/mcp` and `apps/labcraft-cli`; the family Traces, since M0v, in the tests of the harness
+(`tests/harness/src/runs.rs`), on the traces of the corpus of runs.

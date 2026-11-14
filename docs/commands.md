@@ -1,7 +1,7 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-13. Status: implemented for milestone M0b (tag `v0.2.0-m0b`), in `engine`. The commands
-of section 6.5 are in `engine::view` and `engine::drawings` (`docs/architecture.md`, 10.8 and 11.5).*
+*Last updated: 2026-11-14. Status: implemented for milestone M0b (tag `v0.2.0-m0b`), in `engine`. The commands
+of section 6.5, implemented for M0v (tag `v0.3.0-m0`), are in `engine::view` and `engine::drawings` (`docs/architecture.md`, 10.8 and 11.5).*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,
 the IDE, scripts and plugins call the same ones, with the same parameters, results and errors. This

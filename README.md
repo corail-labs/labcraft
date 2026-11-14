@@ -21,12 +21,14 @@
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
-**Status (2026-11-13): M0b, the second part of the first milestone, is done in Rust (tag
-`v0.2.0-m0b`): `labcraft-cli` reads, checks, writes and runs programs against simulated
-instruments (`fmt`, `check`, `run`), and an AI agent drives it over MCP (`labcraft-cli mcp`).**
-The language and its text format are described (spec v0), with example programs. The read-only
-diagram viewer (M0v) is in progress, alongside. The throwaway Python proof of concept that ran the examples before
-Rust remains in `tools/`. The milestones are described in [docs/roadmap.md](docs/roadmap.md).
+**Status (2026-11-14): M0, the first milestone, is done in Rust (tag `v0.3.0-m0`, with binaries
+on the [releases page](https://github.com/corail-labs/labcraft/releases)): `labcraft-cli` reads, checks, writes and
+runs programs against simulated instruments (`fmt`, `check`, `run`), an AI agent drives it over MCP
+(`labcraft-cli mcp`), and a read-only viewer draws each function as its file changes, with the values of a
+run on the wires (`labcraft`, `labcraft-web`, `labcraft-cli diagram`).**
+The language and its text format are described (spec v0), with example programs. Editing the diagram comes
+next (M1). The throwaway Python proof of concept that ran the examples before Rust remains in `tools/`. The
+milestones are described in [docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 
@@ -78,26 +80,44 @@ In five sessions of five, an agent wrote, checked, ran and fixed a test program 
 
 ## Try it
 
-The Rust command line checks the examples, that they are in canonical form, and runs one against a simulated
-multimeter (Rust 1.95 or later):
+**From a release.** Each [release](https://github.com/corail-labs/labcraft/releases) has an archive for Windows,
+Linux and macOS with `labcraft-cli`, the viewer `labcraft`, the examples and the simulated instruments of `visa`
+in `sim/`. In a terminal, in the folder of the archive (on Windows, in PowerShell):
+
+```sh
+./labcraft-cli check examples
+./labcraft-cli run --sim sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
+./labcraft examples
+```
+
+The run writes its trace in `examples/.labcraft/runs/`, and the viewer shows its values on the wires of
+`check_voltage`. The binaries are not signed yet: the note of each release says how to open them on Windows and
+macOS. The release also has the web viewer, `labcraft-web-<version>.zip`, a folder to serve with any static
+server.
+
+**From the sources.** The Rust command line checks the examples, that they are in canonical form, and runs one
+against a simulated multimeter (Rust 1.95 or later):
 
 ```sh
 cargo run -p labcraft-cli -- check examples
 cargo run -p labcraft-cli -- fmt --check examples
 cargo run -p labcraft-cli -- run --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
+cargo run --release -p labcraft -- examples
 ```
 
 `check` reports errors with their line and node; `run` executes a function against a simulated
 instrument and prints its outputs (here `Verdict.Pass`, 230.071217 V). The reports and diagnostic codes are
-described in [docs/cli.md](docs/cli.md).
+described in [docs/cli.md](docs/cli.md), the viewer in its section 8.
 
 To let an AI agent write, check and run programs on its own, give it the MCP server of the command line on a
-folder of its own, here in Claude Code:
+folder of its own, here in Claude Code, with the `labcraft-cli` of a release or one built from the sources
+(`cargo build --release -p labcraft-cli`, in `target/release/`):
 
 ```sh
-cargo build --release -p labcraft-cli
-claude mcp add labcraft -- <repo>/target/release/labcraft-cli mcp --project <folder>
+claude mcp add labcraft -- <path>/labcraft-cli mcp --project <folder>
 ```
+
+Open the viewer on the same folder to watch the agent's functions drawn as they are written.
 
 The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent can install with it in
 [skills/README.md](skills/README.md).
@@ -135,7 +155,7 @@ python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-2
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
-| [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a and M0b (implemented), M0v (draft) |
+| [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a, M0b and M0v (implemented) |
 | [docs/ir.md](docs/ir.md) | The dataflow IR that a checked program is lowered to and the runtime runs: regions, one node per line, origins, invariants (implemented for M0b) |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |
 | [docs/alternatives.md](docs/alternatives.md) | Existing products and what they teach us |

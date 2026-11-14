@@ -1,22 +1,22 @@
 # Roadmap
 
-*Last updated: 2026-11-13*
+*Last updated: 2026-11-14*
 
-The language is described and tried out by a throwaway Python proof of concept. M0a and M0b,
-the first two parts of the first milestone in Rust, are done ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work)),
-with the tags `v0.1.0-m0a` and `v0.2.0-m0b`. This page says where the project stands, what the milestones
+The language is described and tried out by a throwaway Python proof of concept. M0, the first
+milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
+with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. This page says where the project stands, what the milestones
 are, and how the Rust code is organized.
 
-## Where we are: M0a and M0b done
+## Where we are: M0 done
 
 | Document or tool | Status |
 |---|---|
 | Vision ([vision.md](vision.md)) | First draft |
 | Decisions ([decisions.md](decisions.md)) | D-01 to D-28, all retained |
 | Language and file format ([language-spec-v0.md](language-spec-v0.md)) | First draft with grammar; open questions Q-1 to Q-29 |
-| Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a; `run` and `mcp`: implemented for M0b; `diagram` and the viewer: M0v |
-| Architecture ([architecture.md](architecture.md)) | The crates of M0a and M0b as implemented, those of M0v, and the order of work |
-| Rust code (`crates/`, `apps/labcraft-cli`, `libs/embedded`, `libs/visa`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build. M0b: crates `trace`, `ir`, `runtime`, `engine`, `mcp`, `labcraft-visa`, and that of `examples/results_log`; `labcraft-cli run` and `mcp`; the corpus of runs, the skills of `skills/` |
+| Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a; `run` and `mcp`: implemented for M0b; `diagram` and the viewer: implemented for M0v |
+| Architecture ([architecture.md](architecture.md)) | The crates of M0a, M0b and M0v as implemented, and the order of work |
+| Rust code (`crates/`, `apps/`, `libs/embedded`, `libs/visa`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build. M0b: crates `trace`, `ir`, `runtime`, `engine`, `mcp`, `labcraft-visa`, and that of `examples/results_log`; `labcraft-cli run` and `mcp`; the corpus of runs, the skills of `skills/`. M0v: crates `diagram`, `editor` (read-only), the module `text` of `types`; `labcraft-cli diagram`; the apps `labcraft` and `labcraft-web`; the snapshots of the drawings |
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-14 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
@@ -26,13 +26,10 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M0v**: nothing left. The rules were tried on mock-ups of every rule, which changed the compact
-  view (square blocks), the width of the channels and the place of the values. Written: the architecture of the
-  `trace`, `diagram` and `editor` crates and of the viewers ([architecture.md](architecture.md),
-  section 11), the visual notation
-  (compact view, automatic placement, wire routing, font, values on the wires and theme), the command
-  line of `diagram` and the limits of M0v for scenario 4 ([cli.md](cli.md), section 7). The egui canvas with 1,000 nodes and
-  2,000 wires at 60 frames/s is not a separate prototype: it is a target of M0v.
+- **before M1**: the model of editing (when the file is written, what the editor keeps in `layout`), the
+  commands of editing, the notation of what editing shows (selection, a wire being drawn), the gestures and the
+  keyboard, then the architecture of an editable `editor` and the acceptance scenarios of M1. The threshold of
+  the figure of stability (visual notation, 2.1) is set there too: M0 reports the figure only.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -49,7 +46,7 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 |---|---|---|
 | **M0a** | Read, check, write (done, tag `v0.1.0-m0a`) | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
 | **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
-| **M0v** | Viewer | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
+| **M0v** | Viewer (done, tag `v0.3.0-m0`, which closes M0) | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; the agent and the human edit the same program. Target: 60 frames/s while editing 1,000 nodes |
 | M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, `map<K, V>` and `set<T>` (Q-28), generic functions, manifests of user libraries and their dependencies |
 | M3 | Panel | Controls and indicators, graphs, live update, properties |
@@ -161,5 +158,4 @@ LabCraft/
 
 ## Next
 
-The end of M0v (`diagram`, `editor`, `labcraft` and `labcraft-web` in read-only mode, `labcraft-cli diagram`), and
-with it M0.
+M1, the diagram editor: the specifications listed above come first, then the Rust, on the `editor` canvas of M0v.

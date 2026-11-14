@@ -7,6 +7,7 @@ mod commands;
 mod layers;
 mod libs;
 mod licences;
+mod notices;
 mod spec;
 mod unicode;
 mod web;
@@ -44,6 +45,8 @@ commands:
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
+  notices TARGET OUT  writes into OUT the licences of the crates built into the binaries of a release for TARGET;
+            not part of ci: the workflow release runs it
 ";
 
 const WASM_TARGET: &str = "wasm32-unknown-unknown";
@@ -61,6 +64,10 @@ fn main() -> ExitCode {
         Some("layers") => check_layers(),
         Some("licences") => check_licences(),
         Some("fuzz-licences") => check_fuzz_licences(),
+        Some("notices") => match (std::env::args().nth(2), std::env::args().nth(3)) {
+            (Some(target), Some(out)) => write_notices(&target, Path::new(&out)),
+            _ => Err(format!("notices needs a target and a file\n\n{USAGE}")),
+        },
         Some("libs") => check_libs(),
         Some("codes") => check_codes(),
         Some("commands") => check_commands(),
@@ -210,6 +217,28 @@ fn check_fuzz_licences() -> Result<(), String> {
     command.args(["metadata", "--format-version", "1", "--locked", "--manifest-path", "fuzz/Cargo.toml"]);
     let packages = licences::from_metadata(&metadata_of(command)?)?;
     report("fuzz-licences", packages.len(), "packages", licences::check(&packages))
+}
+
+/// The notices of a release for `target` (`notices.rs`), from the metadata of the workspace filtered for it.
+fn write_notices(target: &str, out: &Path) -> Result<(), String> {
+    let mut command = cargo();
+    command.args(["metadata", "--format-version", "1", "--locked", "--filter-platform", target]);
+    let crates = notices::reached(&metadata_of(command)?, notices::roots(target))?;
+    let mut with_texts = Vec::new();
+    for krate in crates {
+        let mut texts = Vec::new();
+        for file in notices::files_of(&krate) {
+            let bytes = std::fs::read(&file).map_err(|error| format!("{}: {error}", file.display()))?;
+            let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            texts.push((name, String::from_utf8_lossy(&bytes).replace("\r\n", "\n")));
+        }
+        with_texts.push((krate, texts));
+    }
+    let text = notices::render(target, &with_texts);
+    std::fs::write(out, &text).map_err(|error| format!("{}: {error}", out.display()))?;
+    let bare = with_texts.iter().filter(|(_, texts)| texts.is_empty()).count();
+    println!("notices: {} crates for {target}, {} without a licence file, {} bytes in {}", with_texts.len(), bare, text.len(), out.display());
+    Ok(())
 }
 
 fn check_libs() -> Result<(), String> {

@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-09. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are written for M0v.*
+*Last updated: 2026-11-14. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -85,8 +85,8 @@ are the nodes that a `layout` section does not place (spec 11).
   change moves what depends on it, as far as the rules below allow. For each example and each data wire
   between two nodes, CI inserts a neutral node on the wire (`core.select(true, v, v)`, which passes the
   value on unchanged), compares the drawing with the drawing before, and reports how many other nodes
-  change place. M0v reports the figure; the threshold is set before the M0v tag, on measures of the
-  viewer itself.
+  change place. M0 reports the figure, without a threshold; M1 sets one, on measures of the editor, where a
+  node the user places stays in `layout` (owner, 2026-11-14).
 - **Columns.** The flow goes left to right: a node stands in the column after the last of the nodes
   that feed it, and a node fed only by the inputs of the function in the first column. Nodes with no
   input (a named constant, `time.now()`) are left out of that count; each one then stands in the column
@@ -841,7 +841,7 @@ zoom:
 Seeing a whole function without scrolling is a goal, never a rule: the narrow channels (2.2), the square
 blocks (3.2) and the bubbles that make no room (6.1) serve it, and a long sequence of steps stays legitimate.
 CI reports, for each example, its size and the zoom at which it fits whole in the canvas of the window of
-M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1): a figure, never a threshold.
+M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1); the size is a figure, never a threshold.
 
 | Zoom | Shown |
 |---|---|
