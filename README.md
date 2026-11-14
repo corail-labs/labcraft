@@ -74,7 +74,7 @@ the run appear on the wires:
 The whole session, 46 seconds: the request, the agent at work, the run, then a change of the function, redrawn
 and run again:
 
-<!-- The video of the whole session: link to come. -->
+https://github.com/user-attachments/assets/38106f7d-c1aa-41ad-a4d6-761a483cec2e
 
 In five sessions of five, an agent wrote, checked, ran and fixed a test program on its own
 ([acceptance-m0.md](docs/acceptance-m0.md), scenario 1).
