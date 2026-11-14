@@ -45,45 +45,9 @@ pub fn check_folders(ws: &dyn Workspace, shipped: &Shipped, given: &Folders<'_>)
 
 /// As [`check_folders`], keeping what `check` found when `keep` is true, and noting what it saw when `stamp` is.
 pub fn check_folders_keeping(ws: &dyn Workspace, shipped: &Shipped, given: &Folders<'_>, keep: bool, stamp: bool) -> FoldersChecked {
-    let current = given.current.clone();
-    let limits = given.limits;
-    // Every folder given is walked, so that naming one never loses what naming it alone would keep; each file then
-    // belongs to the outermost of them.
-    let mut walked = walk::walk(ws, given.folders, current.as_deref(), limits);
-    let seen = RefCell::new(Seen::of_walk(&walked));
-    // What a walk could not read, a dependency in the same place cannot either, and it is said once.
-    let mut reported: HashSet<String> =
-        walked.report.diagnostics().iter().filter(|diagnostic| diagnostic.code() == Code::Lc0001).map(|diagnostic| diagnostic.file.clone()).collect();
-    let in_the_walk: HashSet<PathBuf> = if given.lib_paths.is_empty() {
-        HashSet::new()
-    } else {
-        walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect()
-    };
-    let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
-    let roots = roots(ws, given.folders, current.as_deref());
-    let lib_paths = readable_lib_paths(ws, given.folders, given.lib_paths, current.as_deref(), &mut report);
-    seen.borrow_mut().lib_paths.clone_from(&lib_paths);
-    let host =
-        Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current: current.as_deref(), limits, seen: stamp.then_some(&seen) };
-    let mut counts = CheckCounts::default();
-    let mut kept = Vec::new();
-    for root in &roots {
-        let Some(source) = library_of(ws, &root.real, &root.shown, &mut walked, limits, stamp.then_some(&seen)) else { continue };
-        let (folder_report, folder_counts, dependencies, checked) = check_folder(source, &host, limits, &root.shown);
-        if let (true, Some(checked)) = (keep, checked) {
-            kept.push(checked);
-        }
-        report.merge(folder_report);
-        counts.libraries += folder_counts.libraries;
-        counts.functions += folder_counts.functions;
-        counts.types += folder_counts.types;
-        for DependencyReport { shown, report: dependency } in dependencies {
-            if reported.insert(shown) {
-                report.merge(dependency);
-            }
-        }
-    }
-    FoldersChecked { report, counts, checked: kept, seen: seen.into_inner() }
+    let purpose = Purpose { keep, stamp, for_run: false };
+    let checks = check_roots(ws, shipped, given.folders, given.lib_paths, given.current.as_deref(), given.limits, purpose);
+    FoldersChecked { report: checks.report, counts: checks.counts, checked: checks.checked, seen: checks.seen }
 }
 
 /// What a run checks before it is lowered (`docs/cli.md`, 6.1): the folder, as `library.check` checks it, and the bodies of
@@ -109,47 +73,81 @@ pub fn check_folder_for_run(
     current: &Path,
     limits: &Limits,
 ) -> RunChecked {
-    let folders = [folder.to_path_buf()];
-    let mut walked = walk::walk(ws, &folders, Some(current), limits);
+    let purpose = Purpose { keep: true, stamp: false, for_run: true };
+    let mut checks = check_roots(ws, shipped, &[folder.to_path_buf()], lib_paths, Some(current), limits, purpose);
+    RunChecked { report: checks.report, counts: checks.counts, checked: checks.checked.pop(), hashes: checks.hashes }
+}
+
+/// What a check of folders is for.
+#[derive(Clone, Copy)]
+struct Purpose {
+    /// Keep what `check` found.
+    keep: bool,
+    /// Note what the check read and found, for a session that compares it later.
+    stamp: bool,
+    /// Check the bodies of every library used too (`check::check_for_run`), and hash the files of the folder.
+    for_run: bool,
+}
+
+/// What [`check_roots`] gives, for either purpose.
+struct Checks {
+    report: Report,
+    counts: CheckCounts,
+    checked: Vec<(Checked, Interner)>,
+    seen: Seen,
+    hashes: Vec<(String, String)>,
+}
+
+/// The one way a folder is checked, for `library.check` and for `run.start`: every folder given walked, its libraries
+/// found, each root checked, and the reports, the counts and the dependencies merged.
+fn check_roots(
+    ws: &dyn Workspace,
+    shipped: &Shipped,
+    folders: &[PathBuf],
+    lib_paths: &[PathBuf],
+    current: Option<&Path>,
+    limits: &Limits,
+    purpose: Purpose,
+) -> Checks {
+    // Every folder given is walked, so that naming one never loses what naming it alone would keep; each file then
+    // belongs to the outermost of them.
+    let mut walked = walk::walk(ws, folders, current, limits);
+    let seen = RefCell::new(Seen::of_walk(&walked));
+    // What a walk could not read, a dependency in the same place cannot either, and it is said once.
+    let mut reported: HashSet<String> =
+        walked.report.diagnostics().iter().filter(|diagnostic| diagnostic.code() == Code::Lc0001).map(|diagnostic| diagnostic.file.clone()).collect();
     let in_the_walk: HashSet<PathBuf> = if lib_paths.is_empty() {
         HashSet::new()
     } else {
         walked.files.iter().map(|found| found.path.clone()).chain(walked.refused.iter().map(|refused| refused.path.clone())).collect()
     };
     let mut report = std::mem::replace(&mut walked.report, Report::for_limits(limits));
-    let lib_paths = readable_lib_paths(ws, &folders, lib_paths, Some(current), &mut report);
-    let host = Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current: Some(current), limits, seen: None };
+    let roots = roots(ws, folders, current);
+    let lib_paths = readable_lib_paths(ws, folders, lib_paths, current, &mut report);
+    seen.borrow_mut().lib_paths.clone_from(&lib_paths);
+    let stamped = purpose.stamp.then_some(&seen);
+    let host = Host { ws, shipped, lib_paths: &lib_paths, in_the_walk: &in_the_walk, current, limits, seen: stamped };
     let mut counts = CheckCounts::default();
-    let mut checked = None;
+    let mut kept = Vec::new();
     let mut hashes = Vec::new();
-    for root in roots(ws, &folders, Some(current)) {
-        let Some(source) = library_of(ws, &root.real, &root.shown, &mut walked, limits, None) else { continue };
-        hash_files(&source, &mut hashes);
-        let work = || {
-            let mut names = Interner::new();
-            let mut found = check_for_run(source, &host, &mut names, limits);
-            let report = std::mem::replace(&mut found.report, Report::for_limits(limits));
-            let dependencies = std::mem::take(&mut found.dependencies);
-            (report, found.counts, dependencies, (found, names))
-        };
-        match panic::catch_unwind(AssertUnwindSafe(work)) {
-            Ok((folder_report, folder_counts, dependencies, found)) => {
-                report.merge(folder_report);
-                counts.libraries += folder_counts.libraries;
-                counts.functions += folder_counts.functions;
-                counts.types += folder_counts.types;
-                for DependencyReport { report: dependency, .. } in dependencies {
-                    report.merge(dependency);
-                }
-                checked = Some(found);
-            }
-            Err(_) => {
-                let message = format!("internal error, which is a bug of the tool: {}", last_panic());
-                report.push(Diagnostic::new(Code::Lc0099, message, root.shown.as_str()));
+    for root in &roots {
+        let Some(source) = library_of(ws, &root.real, &root.shown, &mut walked, limits, stamped) else { continue };
+        if purpose.for_run {
+            hash_files(&source, &mut hashes);
+        }
+        let (folder_report, folder_counts, dependencies, checked) = check_folder(source, &host, limits, &root.shown, purpose.for_run);
+        if let (true, Some(checked)) = (purpose.keep, checked) {
+            kept.push(checked);
+        }
+        report.merge(folder_report);
+        counts += folder_counts;
+        for DependencyReport { shown, report: dependency } in dependencies {
+            if reported.insert(shown) {
+                report.merge(dependency);
             }
         }
     }
-    RunChecked { report, counts, checked, hashes }
+    Checks { report, counts, checked: kept, seen: seen.into_inner(), hashes }
 }
 
 pub(crate) fn hash_files(source: &LibrarySource, hashes: &mut Vec<(String, String)>) {
@@ -308,9 +306,10 @@ impl Tree {
 type OneFolder = (Report, CheckCounts, Vec<DependencyReport>, Option<(Checked, Interner)>);
 
 /// A panic that the crate did not catch is a bug, reported on this folder while the others go on.
-fn check_folder(source: LibrarySource, host: &Host<'_>, limits: &Limits, shown: &str) -> OneFolder {
+fn check_folder(source: LibrarySource, host: &Host<'_>, limits: &Limits, shown: &str, for_run: bool) -> OneFolder {
     let work = || {
         let mut names = Interner::new();
+        let check = if for_run { check_for_run } else { check };
         let mut checked = check(source, host, &mut names, limits);
         let report = std::mem::replace(&mut checked.report, Report::for_limits(limits));
         let dependencies = std::mem::take(&mut checked.dependencies);

@@ -505,6 +505,15 @@ pub struct CheckCounts {
     pub types: u64,
 }
 
+/// The counts of two checks, as one: those of several folders, or of a folder and its dependencies.
+impl std::ops::AddAssign for CheckCounts {
+    fn add_assign(&mut self, other: CheckCounts) {
+        self.libraries = self.libraries.saturating_add(other.libraries);
+        self.functions = self.functions.saturating_add(other.functions);
+        self.types = self.types.saturating_add(other.types);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct CheckSummary {
     pub libraries: u64,
