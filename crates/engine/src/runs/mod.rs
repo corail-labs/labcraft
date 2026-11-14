@@ -339,11 +339,7 @@ impl Runs {
         }
         let params = params::judge(command, params)?;
         // A panic is caught here as the session catches one (commands.md 3): the caller holds no session to do it.
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.dispatch(ws, root, command.id, &params, 64, &Patient)));
-        match outcome {
-            Ok(result) => Ok(crate::bound::fit(result?, crate::bound::MAX_RESULT)),
-            Err(_) => Err(CommandError::internal(format!("a bug of LabCraft in `{id}`, caught: {}", crate::panics::last_panic()))),
-        }
+        crate::panics::guarded(id, || self.dispatch(ws, root, command.id, &params, 64, &Patient)).unwrap_or_else(Err)
     }
 
     /// Makes every wait ask its [`Waiter`] at once whether it still waits: a request was cancelled. The lock is taken

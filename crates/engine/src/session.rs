@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use crate::error::{CommandError, did_you_mean};
 use crate::folders::{Folders, check_folders_keeping};
 use crate::kept::Kept;
-use crate::panics::last_panic;
+use crate::panics::guarded;
 use crate::params::{self, Params};
 use crate::registry::{self, Command};
 use crate::runs::{Clock, Patient, Runs, Waiter};
@@ -217,11 +217,10 @@ impl Session {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
         }
         let params = params::judge(command, params)?;
-        let outcome = panic::catch_unwind(AssertUnwindSafe(|| self.dispatch(command, &params, waiter)));
-        outcome.map(|result| result.map(|value| crate::bound::fit(value, crate::bound::MAX_RESULT))).unwrap_or_else(|_| {
+        guarded(id, || self.dispatch(command, &params, waiter)).unwrap_or_else(|internal| {
             // What the command was changing may be half done: nothing kept is trusted after it.
             self.kept.clear();
-            Err(CommandError::internal(format!("a bug of LabCraft in `{id}`, caught: {}", last_panic())))
+            Err(internal)
         })
     }
 
@@ -234,10 +233,7 @@ impl Session {
         let params = params::judge(command, params)?;
         let runs = self.runs.clone();
         let session = &*self;
-        let outcome = panic::catch_unwind(AssertUnwindSafe(|| runs.start_with(session, &params, line, &Patient)));
-        outcome
-            .map(|result| result.map(|value| crate::bound::fit(value, crate::bound::MAX_RESULT)))
-            .unwrap_or_else(|_| Err(CommandError::internal(format!("a bug of LabCraft in `run.start`, caught: {}", last_panic()))))
+        guarded("run.start", || runs.start_with(session, &params, line, &Patient)).unwrap_or_else(Err)
     }
 
     /// Why a command cannot run now, if it cannot.
