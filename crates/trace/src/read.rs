@@ -14,9 +14,31 @@ use crate::write::SCHEMA;
 pub struct Expected {
     /// Named from the root of the project, as the first line of the trace names it.
     pub function: String,
+    /// Its file, named as `function` is (`double.lcf`); empty when unknown. A run started from a folder above names the
+    /// function from there (`sub.double`, commands.md 8): its trace is of this function when it also names this file from
+    /// there (`sub/double.lcf`).
+    pub source: String,
     /// Its inputs, in the order of its signature: the `in` of the `call` of frame 0.
     pub inputs: Vec<ExpectedWire>,
     pub nodes: Vec<ExpectedNode>,
+}
+
+impl Expected {
+    /// Whether the first line of a trace is of this function: the same name, or the name from a folder above together
+    /// with the file from there.
+    fn names(&self, header: &TraceHeader) -> bool {
+        if header.function == self.function {
+            return true;
+        }
+        let above = header.function.strip_suffix(self.function.as_str()).and_then(|before| before.strip_suffix('.'));
+        match above {
+            Some(above) if !above.is_empty() && !self.source.is_empty() => {
+                let file = format!("{}/{}", above.replace('.', "/"), self.source);
+                header.files.iter().any(|(listed, _)| *listed == file)
+            }
+            _ => false,
+        }
+    }
 }
 
 /// A node of the function drawn, at any level of its bodies.
@@ -500,7 +522,7 @@ impl Reader {
             Err(Bad) => return,
         };
         let cost = header.files.iter().map(|(file, sha)| file.len() + sha.len() + ENTRY_COST).sum::<usize>();
-        let other = header.function != self.expected.function;
+        let other = !self.expected.names(&header);
         self.trace.header = Ok(header);
         if other {
             self.trace.other_function = true;

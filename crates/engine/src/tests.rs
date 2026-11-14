@@ -875,6 +875,47 @@ fn the_last_run_is_the_most_recent_in_the_folder_or_above_it() {
     assert_eq!(value_on(&session, "y").as_deref(), Some("8.0"));
 }
 
+/// An agent whose session has its root above the folder names the function from that root (`run.start` with
+/// `function: "sub.double"` and no `folder`, commands.md 8): the viewer open on the folder shows that run too.
+#[test]
+fn the_last_run_of_the_function_named_from_a_root_above_is_shown() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/sub/double.lcf", MAIN);
+    ok(&mut session, "view.open", json!({ "folder": "sub" }));
+    counting.memory.put("/p/.labcraft/runs/sub.double.trace.jsonl", trace_of("sub.double", &[("sub/double.lcf", MAIN)], 1.0, 2.0));
+    session.look_at_trace();
+    assert_eq!(session.view().trace.as_ref().unwrap().file, "../.labcraft/runs/sub.double.trace.jsonl");
+    assert_eq!(value_on(&session, "y").as_deref(), Some("2.0"));
+    assert!(codes_of(&session).is_empty(), "{:?}", codes_of(&session));
+    // A run given `folder: "sub"`, later, is the most recent.
+    counting.memory.put("/p/.labcraft/runs/sub/double.trace.jsonl", trace_of("double", &[("sub/double.lcf", MAIN)], 5.0, 10.0));
+    assert!(session.look_at_trace());
+    assert_eq!(value_on(&session, "y").as_deref(), Some("10.0"));
+    // Opened by hand, the run named from the root is still of this function.
+    counting.memory.put("/p/.labcraft/runs/sub.double.trace.jsonl", trace_of("sub.double", &[("sub/double.lcf", MAIN)], 7.0, 14.0));
+    ok(&mut session, "view.open_trace", json!({ "file": ".labcraft/runs/sub.double.trace.jsonl" }));
+    assert_eq!(value_on(&session, "y").as_deref(), Some("14.0"));
+    ok(&mut session, "view.open_trace", json!({}));
+    // A trace of another function with that file name is still another function: the name from above must name the
+    // file from there too.
+    counting.memory.put("/p/.labcraft/runs/sub.double.trace.jsonl", trace_of("other.double", &[("sub/double.lcf", MAIN)], 3.0, 6.0));
+    assert!(session.look_at_trace());
+    assert_eq!(codes_of(&session), ["LC7102"]);
+}
+
+/// Two folders below the root: the function named from there is `a.b.double`, its file `a/b/double.lcf`.
+#[test]
+fn the_last_run_named_from_a_root_two_folders_above_is_shown() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/a/b/double.lcf", MAIN);
+    ok(&mut session, "view.open", json!({ "folder": "a/b" }));
+    counting.memory.put("/p/.labcraft/runs/a.b.double.trace.jsonl", trace_of("a.b.double", &[("a/b/double.lcf", MAIN)], 1.5, 3.0));
+    session.look_at_trace();
+    assert_eq!(session.view().trace.as_ref().unwrap().file, "../../.labcraft/runs/a.b.double.trace.jsonl");
+    assert_eq!(value_on(&session, "y").as_deref(), Some("3.0"));
+    assert!(codes_of(&session).is_empty(), "{:?}", codes_of(&session));
+}
+
 #[test]
 fn a_trace_opened_by_hand_stays_until_another_function_is_shown() {
     let (mut session, counting) = session();

@@ -924,7 +924,9 @@ value.
 
 The trace is named on the command line, never taken from `.labcraft/runs/` on its own, so that a
 snapshot does not depend on the last run. A trace of another function gives `LC7102`, and the function
-is drawn without values. Whether the trace matches the files is judged as in the viewer, on the files
+is drawn without values. A trace is of the function drawn when its first line gives its name from `FOLDER`, or its
+name from a folder above, which a run started there gives (`power.check_power` for `check_power` of `power/`,
+commands.md 8), together with the file of the function named from that folder (`power/check_power.lcf`). Whether the trace matches the files is judged as in the viewer, on the files
 that `diagram` resolved to draw the function: the file of the function, and each file of `FOLDER` that the first line of
 the trace lists, each once. The report and the banner name them from `FOLDER`, so that the SVG does not depend on the
 current folder (7.2); the first line names them from where the run started: the name of the file of the function
@@ -1051,9 +1053,11 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   window opens empty, with a button that chooses a folder.
 - **The values of the last run** of the function shown are drawn on its wires (visual-notation 6.1), read once it is
   drawn: from `FOLDER/.labcraft/runs/<function>.trace.jsonl`, as `labcraft-cli run FOLDER` writes it, or from
-  `.labcraft/runs/<path>/<function>.trace.jsonl` in a folder above `FOLDER`, up to 64 folders above *(proposed)*,
-  `<path>` being that of `FOLDER` from there, as a session whose root that folder is writes it for an agent
-  (commands.md 8); of those that exist, the most recent, and at the same time the nearest. The viewer looks at it every second, and a new run shows within that second; the traces that a run writes
+  `.labcraft/runs/<path>/<function>.trace.jsonl` or `.labcraft/runs/<library>.<function>.trace.jsonl` in a folder above
+  `FOLDER`, up to 64 folders above *(proposed)*, `<path>` being that of `FOLDER` from there and `<library>` the same path
+  with `.` for `/`, as a session whose root that folder is writes it for an agent, for a run given that `folder` or for
+  the function named from the root (`power.check_power`, commands.md 8), and as `labcraft-cli run` from that folder
+  writes the second; of those that exist, the most recent, and at the same time the nearest. The viewer looks at it every second, and a new run shows within that second; the traces that a run writes
   check nothing again, nor does anything under a hidden name. A bar above the canvas names the trace and says how its run
   ended; a button hides the values and shows them again, for the window only. In the canvas, the selector of a loop
   chooses its iteration (a click on `‹` or `›`, the wheel over it, or its number typed), a click selects a node, whose

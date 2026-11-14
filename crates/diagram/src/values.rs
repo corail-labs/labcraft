@@ -421,6 +421,8 @@ pub fn expected(drawing: &Drawing) -> Expected {
     let wire = |wire: &PlanWire| ExpectedWire { name: wire.name.clone(), ty: wire.ty.clone() };
     Expected {
         function: drawing.function.clone(),
+        // The drawing does not name its file; the caller that knows it gives it.
+        source: String::new(),
         inputs: plan.inputs.iter().map(wire).collect(),
         nodes: plan
             .nodes

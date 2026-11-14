@@ -287,7 +287,9 @@ const TRACE_PART: usize = 64 * 1024;
 /// (`LC71`) join `report`. A function that is not drawn has no values, but its trace is still read and judged. Whether it
 /// matches is judged on the files of the folder that the run read, and always on the file of the function (notation
 /// 6.1), each named from `FOLDER` (cli.md 7.2): the trace names them from where the run started ([`ours_in_trace`]).
-/// `written`, the time of the trace that the viewer gives in its banner; none in an SVG.
+/// `written`, the time of the trace that the viewer gives in its banner; none in an SVG. A run started from a folder
+/// above names the function from there (`power.check_power`, commands.md 8): its trace is still of this function when
+/// it names its file from there too.
 #[allow(clippy::too_many_arguments)]
 pub fn read_trace(
     ws: &dyn Workspace,
@@ -303,8 +305,9 @@ pub fn read_trace(
     let shown = cut_text(shown).into_owned();
     let mut part = TracePart { file: shown.clone(), ..TracePart::default() };
     let limits = labcraft_trace::ReadLimits { file: max_size, ..labcraft_trace::ReadLimits::default() };
-    let expected =
+    let mut expected =
         drawing.map_or_else(|| labcraft_trace::Expected { function: function.name.clone(), ..Default::default() }, labcraft_diagram::expected);
+    function.source.clone_into(&mut expected.source);
     let mut reader = labcraft_trace::Reader::new(expected, limits);
     let opened = match ws.metadata(path) {
         Ok(metadata) if metadata.kind == crate::workspace::Kind::Folder => Err("it is a folder".to_owned()),

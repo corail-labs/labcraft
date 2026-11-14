@@ -27,6 +27,7 @@ const X_FALSE: u32 = 5;
 fn expected() -> Expected {
     Expected {
         function: "f".into(),
+        source: String::new(),
         inputs: vec![wire("resource", "string"), wire("low", "f64[V]")],
         nodes: vec![
             node("dmm", &[], &[], &[("dmm", "visa.session"), ("e1", "error")]),
@@ -413,6 +414,7 @@ fn the_order_of_fields_and_the_shape_of_a_later_version_do_not_matter() {
 fn the_names_of_the_loops_tell_two_nodes_apart() {
     let expected = Expected {
         function: "f".into(),
+        source: String::new(),
         inputs: Vec::new(),
         nodes: vec![
             node("n_a", &[], &[], &[("n_a", "f64")]),
