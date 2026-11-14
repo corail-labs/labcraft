@@ -4,8 +4,8 @@ LabCraft is an AI-native graphical dataflow language and IDE, aiming to do at le
 does, in pure Rust, open and cross-platform. It follows the conventions of the Craft apps
 (storytold, SolidCraft); see `docs/craft-ecosystem.md`.
 
-**Current phase: M0v in Rust.** M0a and M0b are done (tags `v0.1.0-m0a` and `v0.2.0-m0b`,
-`docs/architecture.md`, sections 9 and 10). `tools/` remains throwaway, until Rust replaces it.
+**Current phase: before M1.** M0 is done: M0a, M0b and M0v (tags `v0.1.0-m0a`, `v0.2.0-m0b` and
+`v0.3.0-m0`, `docs/architecture.md`, sections 9 to 11). `tools/` remains throwaway, until Rust replaces it.
 
 ## Start every session here
 
@@ -100,8 +100,9 @@ which the job `web` of `checks` runs; neither is part of `ci`.
 
 `fuzz/` is outside the workspace, with its own `Cargo.lock`, and the workflow `fuzz` runs it on a pinned
 nightly, under Linux: `fuzz/README.md` says how to run it, and what to do when it finds something.
-GitHub requires only the job `checks`, but a red `fuzz` or a red job `windows` stops the merge unless the owner
-decides otherwise for that pull request.
+GitHub requires only the job `checks`, but a red `fuzz`, a red job `windows` or a red `release` (which runs on a pull
+request that changes it or a note of `docs/releases/`) stops the merge unless the owner decides otherwise for that
+pull request.
 
 The Craft rules apply (see `docs/craft-ecosystem.md`): never crash (no `unwrap`, `expect`, `panic!` or
 `unsafe` in production code), everything is a command, layered crates, never break the WASM build,

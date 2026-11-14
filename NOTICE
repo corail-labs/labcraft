@@ -17,8 +17,11 @@ any NI file format.
 
 Third-party material
 
-This repository bundles no third-party code or assets. The throwaway Python tools in tools/ use
-these packages, installed separately from PyPI:
+The fonts and the Unicode data that this repository holds are listed in ATTRIBUTION.md, with
+their licences. The binaries of a release are built with the Rust crates that
+THIRD-PARTY-LICENSES.txt lists in each archive, with their licences; `cargo xtask notices`
+writes it. The repository holds no code of those crates. The throwaway Python tools in tools/
+use these packages, installed separately from PyPI:
 
 - Lark (lark) — MIT License. https://github.com/lark-parser/lark
 - MCP Python SDK (mcp) — MIT License. https://github.com/modelcontextprotocol/python-sdk

@@ -1,7 +1,7 @@
 # Architecture
 
-*Last updated: 2026-11-13. Status: implemented for M0a (sections 1 to 9) and M0b (section 10); draft for M0v
-(section 11).*
+*Last updated: 2026-11-14. Status: implemented for M0a (sections 1 to 9), M0b (section 10) and M0v
+(section 11); M0 is tagged `v0.3.0-m0`.*
 
 How the Rust code is arranged. Sections 1 to 9: M0a, the crates `types`, `graph`, `format` and `check`, the app
 `labcraft-cli`, and `xtask`. Section 10: M0b, the crates `ir`, `runtime`, `engine` and `mcp`, and the native crate of
@@ -349,6 +349,7 @@ character boundary, and these crates hold little numerical code.
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
+| `notices` | Not a check: `notices TARGET OUT` writes into `OUT` the licences of the crates built into the binaries of a release for `TARGET`, from `cargo metadata` filtered for it, ours left out, each text once. Not part of `ci`: the workflow `release` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
 `unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
@@ -363,8 +364,9 @@ such as a file that cannot be written (the versions the Craft apps use). `serde`
 for the desktop viewer (section 11), `craft-keymap` for editing, `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
 [`craft-common-actions`](https://github.com/storytold/craft-common-actions) (`gate`, `supply-chain`,
-`release`) wait for the first release; `release` is what a signed build for the launcher's catalog
-(D-20) would go through. `gate` was evaluated when the Rust CI started, and not adopted for now: it
+`release`) are not used: its `release` is what a signed build for the launcher's catalog (D-20) will go through,
+with installers and the packaging they need. The first release, `v0.3.0-m0`, goes through a workflow of our own,
+`release` (section 8). `gate` was evaluated when the Rust CI started, and not adopted for now: it
 follows the `main` branch of another organization, and its job name would replace `checks`, the
 check required on `main`. Our jobs take the same steps, split into parts that run side by side (section 8), with
 their actions pinned by commit.
@@ -409,6 +411,25 @@ it changes in a pull request of its own.
 The workflow `checks` also has a job `windows`, which runs the tests of `labcraft-cli` and `labcraft-libs`: paths,
 walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and
 a red one stops the merge in the same way.
+
+The workflow `release` runs on a tag `v<version>`, which must name the version of `Cargo.toml` and have its note in
+`docs/releases/`. It builds `labcraft-cli` and `labcraft` in release for Linux x64 (on Ubuntu 22.04, for an older
+glibc), Windows x64 (the C runtime linked in) and macOS, Apple Silicon and Intel (both on an Apple Silicon runner).
+Each archive holds the binaries, our licences and `ATTRIBUTION.md` with the licences it names, the examples, the
+simulated instruments of `visa`, and `THIRD-PARTY-LICENSES.txt`: `cargo xtask notices` writes there the licences of
+the crates built in for that target, those that the apps reach through normal dependencies, with the licence files
+each ships. A copy of the archive is tried as the note says: `check` of the examples, the run of `check_voltage`, its
+trace, `labcraft --version`. The web viewer is built and tried as in the job `web`, and zipped with the same
+notices. The last job, for a tag pushed only, makes a draft release with the archives and their `SHA256SUMS`, marked
+pre-release when the version has a suffix, and stops when a release of the tag exists already; the owner reads the
+draft and publishes it (decision of the owner, 2026-11-14). A pull request that changes the workflow or a note runs
+it without the release, and so does a run by hand; GitHub does not require it, and a red one stops the merge, as a
+red `windows` does. The binaries are not signed: that is the work of the `release` of the suite, with the launcher
+(D-20).
+
+To release: the version in `Cargo.toml` (and both `Cargo.lock`), the note `docs/releases/v<version>.md`, merged
+through a pull request; then, on the owner's word, the annotated tag on the merge commit, pushed; then the owner
+publishes the draft.
 
 The proof of concept was the reference for what the examples do until the Rust `run` passed the corpus of runs
 (section 10.11); it does not judge types, where the corpus decides.
@@ -1056,8 +1077,7 @@ Rust contributions to these crates are open (CONTRIBUTING.md).
 
 ## 11. M0v: the viewer
 
-*Status: draft; `text` (11.1), `trace` (11.2), `diagram` (11.3) and the canvas of `editor` (11.4) implemented, the
-values of a run aside; the apps (11.5) implemented.* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
+*Status: implemented; every step of 11.7 is done, and M0 is tagged `v0.3.0-m0` (2026-11-14).* How the code of M0v is arranged: the crates `trace`, `diagram` and `editor`,
 the module `text` of `types`, the apps `labcraft` and `labcraft-web`, and what `labcraft-cli` gains. The contract
 is elsewhere: the [visual notation](visual-notation.md), [`diagram`](cli.md) (section 7), the commands of the
 viewer ([commands.md](commands.md), section 6.5), the trace (commands.md, section 8),
@@ -1440,8 +1460,8 @@ bundled examples and libraries (`libs/embedded`) or a folder dropped on the page
 section 6 and read once; there is no trace in the browser in M0 (scenario 6, point 7). The fallback faces are the served faces of
 `craft-ui` when the build has them; otherwise a character that Hack lacks shows in its cells as a missing glyph.
 
-*Status: implemented (step 7 of 11.7), without hosting: CI builds the site and keeps it to download, and where it is
-served is decided at the tag of M0v (decisions of the owner, 2026-11-13).*
+*Status: implemented (step 7 of 11.7), without hosting: CI builds the site and keeps it to download, and each release
+has it as a zip, to serve with any static server (decisions of the owner, 2026-11-13 and 2026-11-14).*
 
 - **Build.** Trunk 0.21.14, as the Craft apps build theirs: `cargo xtask web` runs clippy for WASM, then
   `trunk build --release` into `target/web`, which holds the page (`labcraft-web`) and the worker (`labcraft-worker`),
@@ -1552,4 +1572,5 @@ Each step ends with something testable.
 8. **The values of a run** (6.1), once M0b has written `trace` (section 10.11): `diagram::values`, `--trace`, the
    family Traces, the fuzzing of the reader (8a); the viewer, `view.open_trace`, the selectors of iterations, the
    curves and the button that hides the values (8b).
-9. **Before the tag**: 60 frames/s by hand, 8 hours of fuzzing for each new target.
+9. **Before the tag**: 60 frames/s by hand, 8 hours of fuzzing for each new target ([acceptance-m0.md](acceptance-m0.md),
+   scenarios 4 and 6), the workflow `release` (section 8).
