@@ -14,9 +14,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # A pull request that changes only prose skips the fuzzing: the rule is in the script, the same as for `checks`.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      # The merge commit and its first parent, the base: the script compares the two.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Does the pull request change code
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+        run: bash .github/scripts/code-changed.sh
+
   # A workflow of its own on a pinned nightly, so that `checks` stays on stable (docs/architecture.md, section 8).
   # Scenario 4: each target runs 60 s in each CI run.
   fuzz:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

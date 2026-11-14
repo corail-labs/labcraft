@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Says whether a pull request changes more than prose, for the jobs that build or run code (workflows `checks`
+# and `fuzz`). Writes `code=true` or `code=false` to $GITHUB_OUTPUT.
+#
+# A changed file is prose when it is a Markdown file at the root or directly in docs/, or a file of docs/images/,
+# and no Rust string names it: the tests read docs/language-spec-v0.md, docs/cli.md and docs/visual-notation.md, so
+# those count as code. Every other file is code: docs/rfc/ and docs/releases/, skills/, examples/, the workflows.
+# Anything but a pull request runs everything.
+#
+# The files are those of the merge commit that the job checked out, against its first parent (checkout with
+# fetch-depth 2): the commit under test, whatever its size. A file renamed counts under both names. CHANGED_FILES,
+# one path per line, replaces that list, to try the script by hand.
+#
+# Usage: code-changed.sh, with EVENT set by the workflow.
+set -euo pipefail
+
+say() {
+  echo "code=$1"
+  echo "code=$1" >> "$GITHUB_OUTPUT"
+}
+
+if [ "${EVENT:-}" != pull_request ]; then
+  echo "Not a pull request: everything runs."
+  say true
+  exit 0
+fi
+
+if [ -n "${CHANGED_FILES:-}" ]; then
+  files=$CHANGED_FILES
+else
+  files=$(git diff --name-only --no-renames HEAD^1 HEAD)
+fi
+if [ -z "$files" ]; then
+  echo "No changed file listed: everything runs."
+  say true
+  exit 0
+fi
+
+code=false
+while IFS= read -r file; do
+  case "$file" in
+    */*.md) [[ "$file" == docs/*.md && "$file" != docs/*/* ]] || { echo "code: $file"; code=true; continue; } ;;
+    *.md) ;;
+    docs/images/*) ;;
+    *) echo "code: $file"; code=true; continue ;;
+  esac
+  # A Rust string names a file of docs/ when it ends with its name, whatever comes before: "../../docs/cli.md",
+  # join("docs").join("cli.md") and format!("{}/docs/{}", root, "cli.md") all count, and a document cited in a
+  # comment, in backquotes, does not. A root file must be reached from above ("../README.md") or joined to the root:
+  # a bare "README.md" is a name, not the file. Fixed strings, never a pattern. xtask is left out: what it reads
+  # (docs/cli.md, docs/commands.md), the job lint checks, and lint always runs.
+  name=${file##*/}
+  if [[ "$file" == */* ]]; then
+    strings=(-e "\"$name\"" -e "/$name\"")
+  else
+    strings=(-e "../$name\"" -e "join(\"$name\")")
+  fi
+  status=0
+  grep -rqF --include='*.rs' "${strings[@]}" crates apps fuzz tests || status=$?
+  if [ "$status" -eq 1 ]; then
+    echo "prose: $file"
+  else
+    echo "code (a Rust string names it, or grep failed): $file"
+    code=true
+  fi
+done <<< "$files"
+say "$code"

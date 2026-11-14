@@ -16,6 +16,25 @@ concurrency:
 # The parts of `cargo xtask ci` run side by side, one job each, so that a pull request waits for the longest part only.
 # Each job keeps a cache of its own, since their builds differ (clippy, tests, release and WASM).
 jobs:
+  # A pull request that changes only prose skips the jobs that build and run code; lint always runs, since it checks
+  # the documents too. The rule is in the script.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      # The merge commit and its first parent, the base: the script compares the two.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Does the pull request change code
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+        run: bash .github/scripts/code-changed.sh
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -44,6 +63,8 @@ jobs:
         run: cargo xtask lint
 
   test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -66,6 +87,8 @@ jobs:
         run: cargo xtask test
 
   release:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -101,6 +124,8 @@ jobs:
   # The web viewer (docs/architecture.md, 11.5): clippy for WASM and the build of Trunk, then the page in headless Chrome,
   # which draws, traps its worker and draws again. The site built is kept, to download: nothing is hosted (owner, 2026-11-13).
   web:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -130,25 +155,31 @@ jobs:
           retention-days: 14
 
   # The check required on main runs even when a part failed or was cancelled, since a skipped required check counts as passed.
+  # A part may be skipped only when changes said the pull request is prose alone.
   checks:
     if: always()
-    needs: [lint, test, release, web]
+    needs: [changes, lint, test, release, web]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Every part passed
         env:
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
           LINT: ${{ needs.lint.result }}
           TEST: ${{ needs.test.result }}
           RELEASE: ${{ needs.release.result }}
           WEB: ${{ needs.web.result }}
         run: |
-          echo "lint: $LINT, test: $TEST, release: $RELEASE, web: $WEB"
-          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$RELEASE" = success ] && [ "$WEB" = success ]
+          echo "changes: $CHANGES (code: $CODE), lint: $LINT, test: $TEST, release: $RELEASE, web: $WEB"
+          passed() { [ "$1" = success ] || { [ "$CODE" = false ] && [ "$1" = skipped ]; }; }
+          [ "$CHANGES" = success ] && [ "$LINT" = success ] && passed "$TEST" && passed "$RELEASE" && passed "$WEB"
 
   # Paths, walking folders and atomic writes differ on Windows. The crates are the same everywhere, and
   # the jobs above cover them, so this runs only what touches the file system.
   windows:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     env:

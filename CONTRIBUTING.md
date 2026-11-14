@@ -53,7 +53,8 @@ cargo xtask spec
 
 `cargo xtask spec` runs each check, prints `ok` or `FAIL` for it, and the output of those that fail; the
 list is in `xtask/src/spec.rs`. The `checks` workflow runs it on every pull request, with the parts of
-`cargo xtask ci` (below), which needs no Python.
+`cargo xtask ci` (below), which needs no Python; a pull request that changes only prose skips the parts that build
+and run code (`docs/architecture.md`, section 8).
 The tests include the corpora of `tests/acceptance/`, which say what `check` and `fmt` must report.
 An expected value in a test or a corpus never comes from the output of the program under test: work it
 out by hand or with another tool, and say how.

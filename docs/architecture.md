@@ -400,7 +400,7 @@ cache of its own, which only `main` saves.
 The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (the Python checks of
 `cargo xtask spec`, then `cargo xtask lint`), `test` (`cargo xtask test`, with `cargo-nextest`) and `release`
 (`bounds`, `wasm` and the figures of the viewer) and `web` (`cargo xtask web` and `web-smoke`, which keeps the site
-built to download, section 11.5). A last job, `checks`, passes only when the four passed. It runs
+built to download, section 11.5). A last job, `checks`, passes only when the four passed, or were skipped for prose (below). It runs
 even when one of them failed or was cancelled, since GitHub counts a skipped required check as passed, and it is
 the only check GitHub requires on `main`. Each job keeps a cache of its own, which only `main` saves and pull
 requests restore. Past the 10 GB that GitHub keeps for a repository, it removes the caches used least recently,
@@ -411,6 +411,14 @@ it changes in a pull request of its own.
 The workflow `checks` also has a job `windows`, which runs the tests of `labcraft-cli` and `labcraft-libs`: paths,
 walking folders and atomic writes differ there, and the crates are the same. GitHub does not require it either, and
 a red one stops the merge in the same way.
+
+A pull request that changes only prose skips `test`, `release`, `web`, `windows` and `fuzz`; `lint` always runs,
+since it checks the documents too, and so does every job on `main`. A first job, `changes`, in each of the two
+workflows, decides with `.github/scripts/code-changed.sh`, from the files of the merge commit against the base: a
+changed file is prose when it is a Markdown file at the root or directly in `docs/`, or an image of `docs/images/`,
+and no string of the Rust code of `crates/`, `apps/`, `fuzz/` or `tests/` ends with its name (the tests read the
+spec, `docs/cli.md` and `docs/visual-notation.md`); a mention in a comment does not count. Every other file is
+code. The job `checks` then accepts a skipped part only when `changes` passed and said prose.
 
 The workflow `release` runs on a tag `v<version>`, which must name the version of `Cargo.toml` and have its note in
 `docs/releases/`. It builds `labcraft-cli` and `labcraft` in release for Linux x64 (on Ubuntu 22.04, for an older
