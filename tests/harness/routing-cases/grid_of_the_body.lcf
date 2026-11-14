@@ -1,0 +1,17 @@
+labcraft 1
+fn grid_of_the_body(i0: f64, err: error = none) -> (o0: f64, o1: f64, o2: f64, err: error) {
+    #l1: v1, w1, e1 = t(i0, v0, err: e0)
+    v2, e2 = s(v0, err: e1)
+    #l3: v3 = core.sub(v0, v2)
+    #l4: v4, w4, e4 = t(v3, v0, err: e0)
+    v6, e6 = s(v0, err: e4, after: i0, err: e6, after: #l3)
+    v11, w11, e11 = t(v0, v2, err: e8)
+    #l12: v12 = core.add(w11, w4)
+    o0 = v4
+    below = core.lt(power, limit)
+    measured = match below {
+    }
+    verdict = handle e4 {
+    }
+    err = e4
+}

@@ -468,11 +468,12 @@ fn main(x: f64) -> () {{
     /// an `after:` on the top edge of a labelled block; and six that the fuzzing found: a node that reads its own error,
     /// read on to the right too, an `err` input whose type is unknown, which is then no error, an output bound twice, a constant too many beside a wire on a circle, two order wires into one `after:` from above, a value read twice before it, by a cycle; one of the review: a track over a channel where a jog would go; one that the fuzzing found on `main`, a loop that the file places over a node that it places too; one of its review, two loops that the file places one over the other; a frame whose left terminals are narrower than its file supposed, with a loop placed near its right edge; and one that
     /// the fuzzing found after M0v review 5c, a primitive given two targets for its one value, whose two wires left from one
-    /// point. Each is drawn in both views and checked, whatever `check` says of it (a cycle is an error
-    /// there, and still a drawing).
+    /// point; and one that the long fuzzing found before the tag of M0, where a channel held more verticals once the body
+    /// was placed lower than when its width was set, and a wire that goes back came down through the node after it. Each
+    /// is drawn in both views and checked, whatever `check` says of it (a cycle is an error there, and still a drawing).
     #[test]
     fn the_hard_cases_keep_the_rules() {
-        const CASES: [(&str, &str); 20] = [
+        const CASES: [(&str, &str); 21] = [
             ("s.lcf", include_str!("../routing-cases/s.lcf")),
             ("t.lcf", include_str!("../routing-cases/t.lcf")),
             ("swap.lcf", include_str!("../routing-cases/swap.lcf")),
@@ -493,6 +494,7 @@ fn main(x: f64) -> () {{
             ("targets_too_many.lcf", include_str!("../routing-cases/targets_too_many.lcf")),
             ("back_by_an_end.lcf", include_str!("../routing-cases/back_by_an_end.lcf")),
             ("back_by_ends.lcf", include_str!("../routing-cases/back_by_ends.lcf")),
+            ("grid_of_the_body.lcf", include_str!("../routing-cases/grid_of_the_body.lcf")),
         ];
         let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
         for (shown, text) in CASES {

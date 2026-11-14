@@ -377,13 +377,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M552.1 309.4 L553.9 308 L552.1 306.6 M560.1 309.4 L561.9 308 L560.1 306.6 M568.1 309.4 L569.9 308 L568.1 306.6 M576.1 309.4 L577.9 308 L576.1 306.6 M584.1 309.4 L585.9 308 L584.1 306.6 M592.1 309.4 L593.9 308 L592.1 306.6 M600.1 309.4 L601.9 308 L600.1 306.6 M608.1 309.4 L609.9 308 L608.1 306.6 M616.1 309.4 L617.9 308 L616.1 306.6" style="fill: none; stroke: var(--frame-fill-3); stroke-width: 0.9"/>
 </g>
 <g data-wire="results" data-to="yield.2">
-<path d="M541 236 L605.14 236 Q611.14 236 611.14 230 L611.14 230 Q611.14 224 617.14 224 L747.14 224 Q753.14 224 753.14 230 L753.14 230 Q753.14 236 759.14 236 L1445 236" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
-<path d="M541 236 L605.14 236 Q611.14 236 611.14 230 L611.14 230 Q611.14 224 617.14 224 L747.14 224 Q753.14 224 753.14 230 L753.14 230 Q753.14 236 759.14 236 L1445 236" style="fill: none; stroke: var(--frame-fill-3); stroke-width: 1.6"/>
-<path d="M541 236 L605.14 236 Q611.14 236 611.14 230 L611.14 230 Q611.14 224 617.14 224 L747.14 224 Q753.14 224 753.14 230 L753.14 230 Q753.14 236 759.14 236 L1445 236" style="fill: none; stroke: var(--wire-data); stroke-width: 4; stroke-dasharray: 1 7"/>
+<path d="M541 236 L607.14 236 Q611.14 236 611.14 232 L611.14 232 Q611.14 228 615.14 228 L749.14 228 Q753.14 228 753.14 232 L753.14 232 Q753.14 236 757.14 236 L1445 236" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
+<path d="M541 236 L607.14 236 Q611.14 236 611.14 232 L611.14 232 Q611.14 228 615.14 228 L749.14 228 Q753.14 228 753.14 232 L753.14 232 Q753.14 236 757.14 236 L1445 236" style="fill: none; stroke: var(--frame-fill-3); stroke-width: 1.6"/>
+<path d="M541 236 L607.14 236 Q611.14 236 611.14 232 L611.14 232 Q611.14 228 615.14 228 L749.14 228 Q753.14 228 753.14 232 L753.14 232 Q753.14 236 757.14 236 L1445 236" style="fill: none; stroke: var(--wire-data); stroke-width: 4; stroke-dasharray: 1 7"/>
 <text x="1033.87" y="233" font-size="10" style="fill: var(--ink-muted)">results</text>
 </g>
 <g data-wire="tested" data-to="yield.3">
-<path d="M541 260 L613.14 260 Q619.14 260 619.14 254 L619.14 222 Q619.14 216 625.14 216 L755.14 216 Q761.14 216 761.14 222 L761.14 254 Q761.14 260 767.14 260 L1445 260" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M541 260 L613.14 260 Q619.14 260 619.14 254 L619.14 226 Q619.14 220 625.14 220 L755.14 220 Q761.14 220 761.14 226 L761.14 254 Q761.14 260 767.14 260 L1445 260" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 <text x="1043.89" y="257" font-size="10" style="fill: var(--ink-muted)">tested</text>
 </g>
 <g data-wire="e1" data-from="e1.err" data-to="yield.4">

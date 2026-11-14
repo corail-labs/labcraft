@@ -170,7 +170,8 @@ are the nodes that a `layout` section does not place (spec 11).
   that is 16 from every node of the columns it passes over (what is above a node included), 8 from every other
   track over them, 8 from where another wire ends in the channel where it starts or the one where it ends, and 8
   above the main chain: at the height of its source when that one is free, with no vertical; otherwise on the grid
-  of 8, the upper one on a tie. Two nodes stacked 24 apart leave no lane between them; above them all is always free.
+  of 8, the upper one on a tie. That grid, and the one of the jogs below, starts on the main chain of the body (or
+  where it would run), so that they keep their place against its nodes wherever the body lies. Two nodes stacked 24 apart leave no lane between them; above them all is always free.
   The shortest tracks are laid first. In a body so large that the searches for lanes would read more than its budget
   (architecture 11.3), the tracks laid past it go over the nodes. A wire that goes back to the left runs over the
   nodes and the other tracks, 8 above where another wire ends in the channels at its ends. A secondary error wire
