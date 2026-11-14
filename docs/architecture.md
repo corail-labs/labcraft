@@ -332,7 +332,7 @@ character boundary, and these crates hold little numerical code.
 |---|---|
 | `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `frames`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
 | `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands` and `assets` below, then `clippy -D warnings` |
-| `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side, then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
+| `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side (but the tests that `.config/nextest.toml` runs alone), then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
 | `libs` | No crate of `crates/` depends on `libs/` (`libs/embedded`, and the native crates of libraries such as `libs/visa`), nor, from M0b, on a native crate of `examples/` (`examples/results_log`) |
@@ -1529,7 +1529,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | The seven families of M0a through `diagram`, native and WASM, and Traces through the reader | `tests/harness`, `apps/labcraft-cli/tests` | 4 |
 | Maximum nesting through `diagram`: 256 levels on the stack of a worker, as for `format` (section 4) | `tests/harness` | 4 |
 | Placing and routing within 2 s and 512 MB, 1,000 nodes within 1 s, reading a trace within 5 s and 512 MB, and `diagram --trace` as a whole within 7 s and 1 GB *(proposed)*, on the corpora and on cases built to cost the most (wires over many columns, deep chains of structures, values kept just under 384 MiB): `cargo xtask bounds` | `tests/harness/tests/bounds.rs` | 4, 6.4 |
-| File change to new drawing within 200 ms, through the session and the watcher, without a window | `apps/labcraft/tests` | 6.3 |
+| File change to new drawing within 200 ms, through the session and the watcher, without a window; such a test of the clock goes in `timing.rs`, which runs alone (`.config/nextest.toml`) | `apps/labcraft/tests/timing.rs` | 6.3 |
 | The web viewer: the messages of the page and the worker, the session of the worker on every bundled function, a drawing that traps (the first function's included) and a folder that traps twice, the walk of a folder at its limits, natively and in WASM; the page in headless Chrome, which draws, traps its worker and draws again | `apps/labcraft-web`, `cargo xtask web-smoke` | 6.5 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
 | Fuzzing placement and routing (target `diagram`, which also checks the rules of 2.2), and the reader of a trace | `fuzz/` | 4 |

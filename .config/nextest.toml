@@ -1,0 +1,9 @@
+# cargo-nextest (`cargo xtask test`, the job `test` of the workflow `checks`).
+
+# The tests of `apps/labcraft/tests/timing.rs` measure the clock: each runs alone, with every thread of the run, so that
+# no other test takes the processor meanwhile, and the time it measured is shown when it passes. A test of that file
+# checks that this filter still names it.
+[[profile.default.overrides]]
+filter = 'package(labcraft) & binary(timing)'
+threads-required = 'num-test-threads'
+success-output = 'immediate'

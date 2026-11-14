@@ -1,39 +1,19 @@
 //! The session of the viewer without a window (`docs/architecture.md`, 11.6): the `view.*` commands, the last drawing
-//! of a function that is no longer drawable, read-only on every example, and a file change to a new drawing within
-//! 200 ms through the watcher (scenario 6, points 3 and 6).
+//! of a function that is no longer drawable, read-only on every example (scenario 6, points 3 and 6). The times of 200 ms
+//! through the watchers are in `timing.rs`, which runs alone; the values of a new run shown within a second stay here,
+//! with a bound of 2.5 s.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use labcraft::session::{Handle, Session};
 use serde_json::{Value, json};
 
-/// A folder of its own under the temporary folder, removed at the end.
-struct Folder(PathBuf);
+mod common;
+use common::{Folder, ONE, TWO};
 
-impl Folder {
-    fn new(files: &[(&str, &str)]) -> Folder {
-        static COUNT: AtomicUsize = AtomicUsize::new(0);
-        let path = std::env::temp_dir().join(format!("labcraft-viewer-{}-{}", std::process::id(), COUNT.fetch_add(1, Ordering::Relaxed)));
-        std::fs::create_dir_all(&path).unwrap();
-        for (name, text) in files {
-            std::fs::write(path.join(name), text).unwrap();
-        }
-        Folder(path.canonicalize().unwrap())
-    }
-}
-
-impl Drop for Folder {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-const ONE: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.add(x, 1.0)\n}\n";
-const TWO: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n}\n";
 const BROKEN: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.add(nowhere, 1.0)\n}\n";
 
 fn open(session: &mut Session, folder: &Path) -> Value {
@@ -209,82 +189,6 @@ fn contents(folder: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     found
 }
 
-/// A file change to a new drawing within 200 ms *(proposed)*, through the watcher and the thread of the session, without
-/// a window (scenario 6, point 3): the slowest of three changes.
-#[test]
-#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
-fn a_change_of_the_file_is_drawn_within_200_ms() {
-    let folder = Folder::new(&[("main.lcf", ONE)]);
-    let session = Handle::spawn(false, Vec::new(), None, Box::new(|| {})).unwrap();
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
-    assert!(session.published().notice.is_none(), "{:?}", session.published().notice);
-    // The watcher starts with the folder: let it settle.
-    std::thread::sleep(Duration::from_millis(300));
-    let mut slowest = Duration::ZERO;
-    for text in [TWO, ONE, TWO] {
-        let before = session.published().view.drawing_generation;
-        let start = Instant::now();
-        std::fs::write(folder.0.join("main.lcf"), text).unwrap();
-        loop {
-            if session.published().view.drawing_generation != before {
-                break;
-            }
-            assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        slowest = slowest.max(start.elapsed());
-        let nodes = session.published().view.drawing.as_ref().unwrap().placed.len();
-        assert_eq!(nodes, if text == TWO { 2 } else { 1 });
-        assert!(session.published().view.glide);
-        // The next change starts once this one is settled.
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    println!("file change to new drawing: {} ms at most", slowest.as_millis());
-    assert!(slowest < Duration::from_millis(200), "{slowest:?}");
-}
-
-/// Another program file written without end holds no change back: the 50 ms do not move (architecture 11.5); a
-/// `--lib-path` that cannot be watched leaves the folder watched.
-#[test]
-#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
-fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
-    let folder = Folder::new(&[("main.lcf", ONE)]);
-    let missing = folder.0.join("no-such-library");
-    let session = Handle::spawn(false, vec![missing.clone()], None, Box::new(|| {})).unwrap();
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
-    let notice = session.published().notice.unwrap_or_default();
-    // Only the missing path is looked at every second: one path in the notice.
-    assert!(notice.contains("no-such-library") && notice.matches('`').count() == 2, "{notice}");
-    std::thread::sleep(Duration::from_millis(300));
-    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer = {
-        let (stop, other) = (stop.clone(), folder.0.join("other.lcf"));
-        std::thread::spawn(move || {
-            let mut line = 0u64;
-            while !stop.load(Ordering::Relaxed) {
-                line += 1;
-                let _ = std::fs::write(&other, format!("labcraft 1\n\n/// {line}\nfn other() -> () {{\n}}\n"));
-                std::thread::sleep(Duration::from_millis(5));
-            }
-        })
-    };
-    std::thread::sleep(Duration::from_millis(200));
-    let start = Instant::now();
-    std::fs::write(folder.0.join("main.lcf"), TWO).unwrap();
-    // Each write of `other.lcf` draws again too, sometimes before `main.lcf` is read: what counts is the first drawing
-    // that shows the change of `main.lcf`, its two nodes, not the first new drawing.
-    while session.published().view.drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
-        assert!(start.elapsed() < Duration::from_secs(5), "`main.lcf` not drawn again while the log is written");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    let took = start.elapsed();
-    stop.store(true, Ordering::Relaxed);
-    let _ = writer.join();
-    assert!(took < Duration::from_millis(200), "{took:?}");
-}
-
 /// Inter as `ATTRIBUTION.md` names it (architecture 11.6).
 #[test]
 fn the_face_of_the_panels_is_inter_4_1() {
@@ -350,40 +254,6 @@ fn a_file_of_values_starts_as_the_defaults_and_draws_again_with_what_it_says() {
     session.style_changed();
     assert_eq!(session.published().view.drawing.clone().unwrap(), kept);
     assert_eq!(session.published().view.drawing.as_ref().unwrap().style.numbers.margin, 1600);
-}
-
-/// A file of values saved to a new drawing within 200 ms *(proposed)*, through its watcher and the thread of the session:
-/// the slowest of three saves.
-#[test]
-#[expect(clippy::disallowed_methods, reason = "a native test, never built for WASM, where the clock traps")]
-fn a_file_of_values_saved_is_drawn_within_200_ms() {
-    let folder = Folder::new(&[("main.lcf", TWO)]);
-    let values = Folder::new(&[]);
-    let path = values.0.join("notation.toml");
-    let session = Handle::spawn(false, Vec::new(), Some(path.clone()), Box::new(|| {})).unwrap();
-    assert!(path.exists());
-    assert_eq!(session.published().style_notice, None);
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
-    std::thread::sleep(Duration::from_millis(300));
-    let mut slowest = Duration::ZERO;
-    for margin in [24, 40, 16] {
-        let before = session.published().view.drawing_generation;
-        let start = Instant::now();
-        std::fs::write(&path, format!("[canvas]\nmargin = {margin}\n")).unwrap();
-        loop {
-            if session.published().view.drawing_generation != before {
-                break;
-            }
-            assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
-            std::thread::sleep(Duration::from_millis(2));
-        }
-        slowest = slowest.max(start.elapsed());
-        assert_eq!(session.published().view.drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
-        std::thread::sleep(Duration::from_millis(200));
-    }
-    println!("file of values saved to new drawing: {} ms at most", slowest.as_millis());
-    assert!(slowest < Duration::from_millis(200), "{slowest:?}");
 }
 
 /// The preference set before any folder is open holds, and the folder opened after is drawn with it.
