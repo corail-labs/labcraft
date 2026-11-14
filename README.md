@@ -30,10 +30,12 @@ Rust remains in `tools/`. The milestones are described in [docs/roadmap.md](docs
 
 ## One program, two views
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/read_voltage-dark.svg">
-  <img alt="Diagram of read_voltage: visa.open, scpi.query_f64 and visa.close in a row on a red error wire, the VISA session as a blue wire, the raw reading converted to volts" src="docs/images/read_voltage-light.svg">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/read_voltage-dark.svg">
+    <img width="720" alt="Diagram of read_voltage: visa.open, scpi.query_f64 and visa.close in a row on a red error wire, the VISA session as a blue wire, the raw reading converted to volts" src="docs/images/read_voltage-light.svg">
+  </picture>
+</p>
 
 The error wire (red) orders the actions and carries the error: if the measurement fails, the
 nodes after it are skipped, except `visa.close`, marked `always`, which still closes the session
