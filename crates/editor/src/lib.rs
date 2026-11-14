@@ -289,6 +289,15 @@ impl Canvas {
         self.viewport.fitted = true;
     }
 
+    /// As `set_viewport`, but a new zoom counts as moving, as a gesture's does: its shapes are tessellated at a step of
+    /// it, and its texts laid out again once it has not changed for 120 ms (11.3). For a pan and a zoom that a host
+    /// drives, as the motion that `labcraft` times (`LABCRAFT_FRAMES`).
+    pub fn move_viewport(&mut self, zoom: f32, origin: Vec2) {
+        let zoom = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+        self.viewport.zoom_moved |= zoom != self.viewport.zoom;
+        self.set_viewport(zoom, origin);
+    }
+
     /// The whole drawing in `size`, at 100 % at most (notation 7), at the next frame.
     pub fn fit(&mut self) {
         self.viewport.fitted = false;

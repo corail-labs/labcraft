@@ -37,6 +37,7 @@ use labcraft_types::{Interner, Limits};
 #[path = "../../../crates/format/tests/deep/mod.rs"]
 #[allow(dead_code)]
 mod deep;
+mod frames_case;
 
 /// The case that a started process runs, as `name:command`.
 const CASE: &str = "LABCRAFT_BOUNDS_CASE";
@@ -1175,6 +1176,5 @@ fn drawn_waypoints() -> Vec<Folder> {
 
 /// 1,000 nodes, each reading the two before it: 2,000 wires.
 fn drawn_1000_nodes_2000_wires() -> Vec<Folder> {
-    let lines: String = (2..1000).map(|k| format!("    v{k} = core.add(v{}, v{})\n", k - 1, k - 2)).collect();
-    alone("f.lcf", format!("{HEAD}fn f(x: f64) -> () {{\n    v0 = core.neg(x)\n    v1 = core.add(v0, x)\n{lines}}}\n"))
+    alone(frames_case::FILE, frames_case::nodes_1000_wires_2000())
 }

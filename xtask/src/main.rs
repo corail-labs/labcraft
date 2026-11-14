@@ -11,6 +11,10 @@ mod spec;
 mod unicode;
 mod web;
 
+/// The function of 1,000 nodes and 2,000 wires of `bounds`.
+#[path = "../../tests/harness/tests/frames_case/mod.rs"]
+mod frames_case;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
@@ -35,6 +39,8 @@ commands:
   web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
   web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
   web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again; not part of ci
+  frames    builds labcraft in release and opens it on the function of 1,000 nodes and 2,000 wires of bounds, timing
+            each frame (LABCRAFT_FRAMES), to see 60 frames/s by hand before a tag; not part of ci
   figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
@@ -63,6 +69,7 @@ fn main() -> ExitCode {
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
         Some("figures") => figures(),
+        Some("frames") => frames(),
         Some("web") => web::build(&root()),
         Some("web-serve") => web::serve(&root()),
         Some("web-smoke") => web::smoke(&root()),
@@ -129,6 +136,25 @@ fn bounds() -> Result<(), String> {
         "every_case_stays_within_the_bounds",
         "--nocapture",
     ])
+}
+
+/// 60 frames/s with 1,000 nodes and 2,000 wires, by hand (`docs/architecture.md`, 11.6): the function of `bounds` written
+/// into `target/frames/`, and the viewer, in release, opened on it with `LABCRAFT_FRAMES`, until its window closes.
+fn frames() -> Result<(), String> {
+    let folder = root().join("target").join("frames");
+    std::fs::create_dir_all(&folder).map_err(|error| format!("{}: {error}", folder.display()))?;
+    let file = folder.join(frames_case::FILE);
+    std::fs::write(&file, frames_case::nodes_1000_wires_2000()).map_err(|error| format!("{}: {error}", file.display()))?;
+    run(&["build", "--locked", "--release", "--package", "labcraft"])?;
+    let viewer = root().join("target").join("release").join(format!("labcraft{}", std::env::consts::EXE_SUFFIX));
+    eprintln!("$ LABCRAFT_FRAMES=1 {} {}", viewer.display(), folder.display());
+    let status = Command::new(&viewer)
+        .arg("--")
+        .arg(&folder)
+        .env("LABCRAFT_FRAMES", "1")
+        .status()
+        .map_err(|error| format!("{}: {error}", viewer.display()))?;
+    if status.success() { Ok(()) } else { Err(format!("{}: {status}", viewer.display())) }
 }
 
 /// The figures of the viewer (`docs/visual-notation.md`, 2.1 and 7), on standard output and nothing else, so that CI can

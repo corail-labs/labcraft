@@ -330,7 +330,7 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
+| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `frames`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
 | `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands` and `assets` below, then `clippy -D warnings` |
 | `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side, then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
@@ -343,6 +343,7 @@ character boundary, and these crates hold little numerical code.
 | `web` | Clippy of `labcraft-web` for WASM, then `trunk build --release` into `target/web` (section 11.5). Not part of `ci`, which needs no Trunk: the job `web` runs it |
 | `web-smoke` | `target/web` in headless Chrome: the page draws a function, traps its worker, and a new one draws again (section 11.5). Not part of `ci`, which needs no browser: the job `web` runs it |
 | `web-serve` | Not a check: serves `target/web` on the loopback, to try the viewer in a browser |
+| `frames` | Not a check: writes the function of 1,000 nodes and 2,000 wires of `bounds` into `target/frames/`, builds `labcraft` in release, and opens it there with `LABCRAFT_FRAMES` (cli.md 8), to see 60 frames/s by hand before a tag (section 11.6) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
 | `spec` | The Python checks of the spec, `examples/`, `docs/rfc/` and `libs/`: `lcf_view.py`, `check` and `fmt --check` of the proof of concept, and its tests. Runs them all, prints `ok` or `FAIL` for each and the output of those that fail; the interpreter is `python`, then `python3`, and a missing interpreter or requirement is an error that says what to install. Not part of `ci`, which needs no Python: the workflow `checks` runs it |
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
@@ -1345,7 +1346,11 @@ shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand befo
   changed for 120 ms), and kept; panning and zooming within a step is a transform of the mesh. egui still copies
   and transforms each mesh it paints, every frame, so only what the viewport shows is painted, found through a
   grid of cells of 256 units; if that does not reach 60 frames/s, the meshes go to the GPU once, through a paint
-  callback of wgpu, and only the transform changes. The galleys of the texts are kept with the meshes, laid out
+  callback of wgpu, and only the transform changes. It reaches it, so M0v has no paint callback: measured before the
+  tag of M0 with `cargo xtask frames` (11.6) on a laptop of 2022 (Core i7-12700H, drawn by its integrated Iris Xe
+  through Vulkan, a display at 60 Hz), the motion holds 60 frames/s in each of four runs, no frame late of 721; the
+  CPU time of a frame is under 5 ms at the 95th percentile while the viewport pans, about 11 ms while the zoom moves,
+  and 19 ms at the longest. The galleys of the texts are kept with the meshes, laid out
   again at the end of a zoom, so that a text is never shown scaled for long, and dropped when the atlas of the fonts
   is reset. An icon is tessellated with its group, cut to its square when painted: a text of an icon at twice its grid
   at most, a path at `check::MAX_PATH_SEGMENTS` segments *(proposed)*, a filled path closed for its fill and cut into
@@ -1525,7 +1530,7 @@ of the files, from the same code, which a test compares on `examples/`.
 | The web viewer: the messages of the page and the worker, the session of the worker on every bundled function, a drawing that traps (the first function's included) and a folder that traps twice, the walk of a folder at its limits, natively and in WASM; the page in headless Chrome, which draws, traps its worker and draws again | `apps/labcraft-web`, `cargo xtask web-smoke` | 6.5 |
 | Every example opened, no file changed | `apps/labcraft/tests` | 6.6 |
 | Fuzzing placement and routing (target `diagram`, which also checks the rules of 2.2), and the reader of a trace | `fuzz/` | 4 |
-| 60 frames/s with 1,000 nodes and 2,000 wires, on a reference machine | by hand, before the tag | 6.4 |
+| 60 frames/s with 1,000 nodes and 2,000 wires, on a reference machine | by hand, before the tag: `cargo xtask frames`, its motion of 12 s, then the window moved by hand | 6.4 |
 
 `cargo xtask layers` gets `labcraft-trace` at L1; `wasm` also builds `trace`, `diagram` and `editor`, and passes
 the snapshots there.
