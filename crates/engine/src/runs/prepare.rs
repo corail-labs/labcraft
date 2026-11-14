@@ -555,27 +555,17 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
     let current: PathBuf = given.line.current.clone().unwrap_or_else(|| session.root.clone());
     let from_current = |path: &Path| shown_of(&*session.ws, path, session.ws.canonicalize(path).ok().as_deref(), Some(&current));
     // The folder, a path of the project.
-    let folder = match paths::judge(&*session.ws, &session.root, &given.folder, "folder", Wanted::Folder, false)? {
-        Place::Project { path, shown, exists } => {
-            let shown = match (&given.line.folder, given.line.current.is_some()) {
-                (Some(typed), _) => from_current(typed),
-                (None, true) => from_current(&path),
-                (None, false) => shown,
-            };
-            if !exists {
-                problems.push(diagnostic("LC0001", &format!("cannot read this path: `{shown}` does not exist"), &shown, None, None));
-                None
-            } else {
-                Some((path, shown))
-            }
-        }
-        Place::Shipped(shown) => {
-            return Err(CommandError::of(
-                "path.outside_project",
-                "folder",
-                format!("`{shown}` is shipped with LabCraft: run a function of the project"),
-            ));
-        }
+    let (path, shown, exists) = paths::in_project(&*session.ws, &session.root, &given.folder, "folder", Wanted::Folder)?;
+    let shown = match (&given.line.folder, given.line.current.is_some()) {
+        (Some(typed), _) => from_current(typed),
+        (None, true) => from_current(&path),
+        (None, false) => shown,
+    };
+    let folder = if exists {
+        Some((path, shown))
+    } else {
+        problems.push(diagnostic("LC0001", &format!("cannot read this path: `{shown}` does not exist"), &shown, None, None));
+        None
     };
     // The simulation file, read now, judged by its libraries once the run is lowered.
     let sim = match (&given.line.sim, &given.sim) {

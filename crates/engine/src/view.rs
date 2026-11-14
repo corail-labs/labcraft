@@ -19,7 +19,7 @@ use serde_json::{Map, Value, json};
 use crate::drawings::{self, Function, Loaded, TracePart};
 use crate::error::CommandError;
 use crate::params::Params;
-use crate::paths::{self, Place, Wanted};
+use crate::paths::{self, Wanted};
 use crate::session::Session;
 use crate::walk::slashed;
 use crate::workspace::Workspace;
@@ -156,17 +156,7 @@ impl View {
 /// `view.open`.
 pub fn open(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let folder = params.text("folder")?;
-    let (path, shown) = match paths::judge(&*session.ws, &session.root, folder, "folder", Wanted::Folder, false)? {
-        Place::Project { path, shown, exists: true } => (path, shown),
-        Place::Project { shown, .. } => return Err(CommandError::of("path.not_found", "folder", format!("`{shown}` does not exist"))),
-        Place::Shipped(shown) => {
-            return Err(CommandError::of(
-                "path.outside_project",
-                "folder",
-                format!("`{shown}` is shipped with LabCraft: open a folder of the project"),
-            ));
-        }
-    };
+    let (path, shown) = paths::existing_in_project(&*session.ws, &session.root, folder, "folder", Wanted::Folder)?;
     let view = &mut session.view;
     view.folder = Some((path, shown));
     view.views.clear();
@@ -320,12 +310,10 @@ fn revalue(view: &mut View, forget_picks: bool) {
 /// `labcraft-diagram/1`, or `null` when the function has no trace.
 pub fn open_trace(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let opened = match params.str("file") {
-        Some(given) => match paths::judge(&*session.ws, &session.root, given, "file", Wanted::Trace, false)? {
-            Place::Project { path, shown, .. } => Some((path, shown)),
-            Place::Shipped(shown) => {
-                return Err(CommandError::of("path.outside_project", "file", format!("`{shown}` is not a trace of the project")));
-            }
-        },
+        Some(given) => {
+            let (path, shown, _) = paths::in_project(&*session.ws, &session.root, given, "file", Wanted::Trace)?;
+            Some((path, shown))
+        }
         None => None,
     };
     show_trace(session, opened)?;

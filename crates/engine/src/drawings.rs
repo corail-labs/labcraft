@@ -19,7 +19,7 @@ use crate::error::CommandError;
 use crate::folders::{Host, library_of, readable_lib_paths, roots};
 use crate::panics::last_panic;
 use crate::params::Params;
-use crate::paths::{self, Place, Wanted};
+use crate::paths::{self, Wanted};
 use crate::session::Session;
 use crate::shipped::Shipped;
 use crate::walk::{self, slashed};
@@ -547,21 +547,7 @@ pub fn document<'a>(entries: &'a [Entry], report: &'a Report, counts: CheckCount
 /// `truncated`; what still passes is cut by `Session::execute`, as for any command.
 pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandError> {
     let folder = params.text("folder")?;
-    let path = match paths::judge(session.workspace(), session.root(), folder, "folder", Wanted::Folder, false)? {
-        Place::Project { path, shown, exists } => {
-            if !exists {
-                return Err(CommandError::of("path.not_found", "folder", format!("`{shown}` does not exist")));
-            }
-            path
-        }
-        Place::Shipped(shown) => {
-            return Err(CommandError::of(
-                "path.outside_project",
-                "folder",
-                format!("`{shown}` is shipped with LabCraft: draw a folder of the project"),
-            ));
-        }
-    };
+    let (path, _) = paths::existing_in_project(session.workspace(), session.root(), folder, "folder", Wanted::Folder)?;
     // A function given twice is drawn once, as by `labcraft-cli diagram` (`docs/cli.md`, 7).
     let mut names: Vec<String> = Vec::new();
     if let Some(Value::Array(given)) = params.get("functions") {
@@ -588,12 +574,8 @@ pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandE
                     "`trace` draws the values of a run on one function: give exactly one in `functions`",
                 ));
             }
-            match paths::judge(session.workspace(), session.root(), given, "trace", Wanted::Trace, false)? {
-                Place::Project { path, shown, .. } => Some((path, shown)),
-                Place::Shipped(shown) => {
-                    return Err(CommandError::of("path.outside_project", "trace", format!("`{shown}` is not a trace of the project")));
-                }
-            }
+            let (path, shown, _) = paths::in_project(session.workspace(), session.root(), given, "trace", Wanted::Trace)?;
+            Some((path, shown))
         }
         None => None,
     };

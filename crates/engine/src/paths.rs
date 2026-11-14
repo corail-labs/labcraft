@@ -95,6 +95,24 @@ fn hidden(name: &str) -> bool {
     name.starts_with('.') && name != ".labcraft" && name != "." && name != ".."
 }
 
+/// Judges a path that must be in the project: where it is, how reports show it, and whether it exists. A shipped file
+/// is refused by `judge` itself (`path.outside_project`), so a command that writes, or reads only its own files, takes
+/// its paths here.
+pub fn in_project(ws: &dyn Workspace, root: &Path, given: &str, parameter: &str, wanted: Wanted) -> Result<(PathBuf, String, bool), CommandError> {
+    match judge(ws, root, given, parameter, wanted, false)? {
+        Place::Project { path, shown, exists } => Ok((path, shown, exists)),
+        Place::Shipped(_) => Err(outside(parameter, "a shipped library is never written")),
+    }
+}
+
+/// As `in_project`, for a path that must exist: `path.not_found` otherwise.
+pub fn existing_in_project(ws: &dyn Workspace, root: &Path, given: &str, parameter: &str, wanted: Wanted) -> Result<(PathBuf, String), CommandError> {
+    match in_project(ws, root, given, parameter, wanted)? {
+        (path, shown, true) => Ok((path, shown)),
+        (_, shown, false) => Err(CommandError::of("path.not_found", parameter, format!("`{shown}` does not exist"))),
+    }
+}
+
 /// Judges the path of a parameter against the root of the project, `root` being without links.
 pub fn judge(ws: &dyn Workspace, root: &Path, given: &str, parameter: &str, wanted: Wanted, shipped_allowed: bool) -> Result<Place, CommandError> {
     if given.is_empty() {
@@ -340,5 +358,17 @@ mod tests {
         assert_eq!(error.code, "path.outside_project");
         assert_eq!(code("<labcraft>/visa/../x.lcf"), "path.invalid");
         assert_eq!(judged("<labcraft>/visa/open.lcf", Wanted::Simulation).unwrap_err().code, "path.invalid");
+    }
+
+    #[test]
+    fn a_path_in_the_project_refuses_a_shipped_file_and_may_have_to_exist() {
+        let memory = project();
+        let root = Path::new("/p");
+        let error = in_project(&memory, root, "<labcraft>/visa", "folder", Wanted::Folder).unwrap_err();
+        assert_eq!((error.code, error.message.as_str()), ("path.outside_project", "a shipped library is never written"));
+        assert_eq!(in_project(&memory, root, "new", "folder", Wanted::Folder).unwrap(), (PathBuf::from("/p/new"), "new".to_owned(), false));
+        assert_eq!(existing_in_project(&memory, root, "lib", "folder", Wanted::Folder).unwrap(), (PathBuf::from("/p/lib"), "lib".to_owned()));
+        let error = existing_in_project(&memory, root, "new", "folder", Wanted::Folder).unwrap_err();
+        assert_eq!((error.code, error.message.as_str()), ("path.not_found", "`new` does not exist"));
     }
 }

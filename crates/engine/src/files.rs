@@ -94,12 +94,7 @@ pub(crate) fn text_of(bytes: Cow<'static, [u8]>, parameter: &str, shown: &str) -
 
 /// The path of a file in the project, judged; a shipped file only to read.
 fn project_file(session: &Session, params: &Params, parameter: &str, wanted: Wanted) -> Result<(PathBuf, String, bool), CommandError> {
-    match paths::judge(&*session.ws, &session.root, params.text(parameter)?, parameter, wanted, false)? {
-        Place::Project { path, shown, exists } => Ok((path, shown, exists)),
-        Place::Shipped(shown) => {
-            Err(CommandError::of("path.outside_project", parameter, format!("`{shown}` is shipped with LabCraft, and never written")))
-        }
-    }
+    paths::in_project(&*session.ws, &session.root, params.text(parameter)?, parameter, wanted)
 }
 
 /// `file.read`.
@@ -301,18 +296,6 @@ pub fn format(session: &mut Session, params: &Params) -> Result<Value, CommandEr
 /// `library.check`.
 pub fn library_check(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let folder = params.str("folder").unwrap_or(".");
-    let (path, shown, exists) = match paths::judge(&*session.ws, &session.root, folder, "folder", Wanted::Folder, false)? {
-        Place::Project { path, shown, exists } => (path, shown, exists),
-        Place::Shipped(shown) => {
-            return Err(CommandError::of(
-                "path.outside_project",
-                "folder",
-                format!("`{shown}` is shipped with LabCraft: check a folder of the project"),
-            ));
-        }
-    };
-    if !exists {
-        return Err(CommandError::of("path.not_found", "folder", format!("`{shown}` does not exist")));
-    }
+    let (path, _) = paths::existing_in_project(&*session.ws, &session.root, folder, "folder", Wanted::Folder)?;
     session.check_document(&path, params.bool("deny_warnings"))
 }

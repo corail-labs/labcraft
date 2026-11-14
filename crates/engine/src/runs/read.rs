@@ -16,7 +16,7 @@ use super::task::{in_place, trace_path};
 use super::{Runs, unknown};
 use crate::error::CommandError;
 use crate::params::Params;
-use crate::paths::{self, Place, Wanted};
+use crate::paths::{self, Wanted};
 use crate::walk::io_text;
 use crate::workspace::Workspace;
 
@@ -61,16 +61,11 @@ pub(crate) fn trace(runs: &Runs, ws: &dyn Workspace, root: &Path, params: &Param
     // The last trace of a function run from a folder (decision of the owner, 2026-11-10).
     let last = match params.str("function") {
         Some(function) => {
-            let folder = match paths::judge(ws, root, params.str("folder").unwrap_or("."), "folder", Wanted::Folder, false)? {
-                // `.labcraft` is reached by paths, but no function runs from a hidden folder (commands.md 2).
-                Place::Project { shown, .. } if shown.split('/').any(|name| name.starts_with('.') && name != ".") => {
-                    return Err(CommandError::of("path.outside_project", "folder", format!("`{shown}` is hidden: no function runs from it")));
-                }
-                Place::Project { shown, .. } => shown,
-                Place::Shipped(shown) => {
-                    return Err(CommandError::of("path.outside_project", "folder", format!("`{shown}` is shipped: no run writes there")));
-                }
-            };
+            let (_, folder, _) = paths::in_project(ws, root, params.str("folder").unwrap_or("."), "folder", Wanted::Folder)?;
+            // `.labcraft` is reached by paths, but no function runs from a hidden folder (commands.md 2).
+            if folder.split('/').any(|name| name.starts_with('.') && name != ".") {
+                return Err(CommandError::of("path.outside_project", "folder", format!("`{folder}` is hidden: no function runs from it")));
+            }
             Some(trace_path(&folder, function))
         }
         None => None,
