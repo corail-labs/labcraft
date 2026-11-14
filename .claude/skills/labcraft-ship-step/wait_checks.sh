@@ -2,8 +2,9 @@
 # Waits until the check of a pull request has finished. Exit 0: green. Exit 1: a check failed, or the
 # pull request cannot be read. Exit 2: not finished in time. Read-only.
 #
-# Green means a check run exists for the head commit, all are completed with success, and the pull
-# request is CLEAN: GitHub can report the workflow run as finished while the check is still in progress.
+# Green means a check run exists for the head commit, all are completed with success, or skipped (a job
+# whose `if` is false, such as the publishing job of `release` on a pull request), and the pull request is
+# CLEAN: GitHub can report the workflow run as finished while the check is still in progress.
 #
 # usage: wait_checks.sh PR_NUMBER [SECONDS]
 
@@ -16,7 +17,7 @@ head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || exit 1
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner) || exit 1
 
 while [ "$waited" -le "$limit" ]; do
-    runs=$(gh api "repos/$repo/commits/$head/check-runs" --jq '[.check_runs | length, ([.[] | select(.status != "completed")] | length), ([.[] | select(.status == "completed" and .conclusion != "success")] | length)] | join(" ")' 2>/dev/null)
+    runs=$(gh api "repos/$repo/commits/$head/check-runs" --jq '[.check_runs | length, ([.[] | select(.status != "completed")] | length), ([.[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped")] | length)] | join(" ")' 2>/dev/null)
     state=$(gh pr view "$pr" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null)
     set -- $runs
     total=${1:-0} open=${2:-0} failed=${3:-0}

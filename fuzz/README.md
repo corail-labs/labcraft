@@ -78,6 +78,15 @@ docker run --rm -it --security-opt seccomp=unconfined -v "$PWD:/src" -w /src rus
 
 then the commands of "Running it" above, and `bash fuzz/long.sh <target> 8`.
 
+**On several cores**, the hours can be spread over workers, which counts in worker-hours: `FUZZ_FORK=<N> bash
+fuzz/run.sh <target> <seconds>` runs `N` workers at once (the fork mode of libFuzzer), in one sitting. Give each worker
+a core of its own. libFuzzer first reads the seeds in one process, within `<seconds>` (25 minutes for `diagram`,
+with the corpus of a run of 8 hours); they count as the time of one worker, as in each
+part of `long.sh`, which reads the corpus again within its hour. `run.sh` prints the worker-hours of the run. In that mode libFuzzer goes on past a timeout: at the end `run.sh` runs again alone each timeout written during
+the run, keeps its output in `target/<target>.<artifact>.out`, and fails if one times out alone too. A crash, an
+out-of-memory or a leak stops the run, as with one worker, but on a seed libFuzzer only writes its file and goes on:
+`run.sh` also fails on any other file written during the run, but a slow unit.
+
 ## The stack
 
 The targets run at the default limit of nesting, 256: `read` and `round_trip` on the main thread of libFuzzer, `check` on

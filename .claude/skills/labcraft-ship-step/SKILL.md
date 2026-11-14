@@ -49,7 +49,7 @@ sh .claude/skills/labcraft-ship-step/wait_checks.sh PR_NUMBER
 
 Exit 0 means green, 1 failed, 2 not finished in time.
 
-**Green means all three:** `gh pr checks` passes, the check run of the head commit is `completed` / `success`, and `mergeStateStatus` is `CLEAN`. The status of the workflow run alone can disagree with these, so never report it as green.
+**Green means all three:** `gh pr checks` passes, each check run of the head commit is `completed` / `success`, or `skipped` when its job is meant to be skipped (the publishing job of `release` on a pull request), and `mergeStateStatus` is `CLEAN`. The status of the workflow run alone can disagree with these, so never report it as green.
 
 If no check appears, look at the "Actions" component on githubstatus.com before suspecting the repository. Don't push or reopen anything without asking.
 
