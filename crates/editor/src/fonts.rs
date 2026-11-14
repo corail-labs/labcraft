@@ -11,7 +11,7 @@ pub const FAMILY: &str = "labcraft-notation";
 const HACK_NAME: &str = "labcraft-hack";
 
 /// Hack 3.003 Regular, whose SHA-256 a test of `types` checks (architecture 11.6).
-static HACK: &[u8] = include_bytes!("../../../assets/fonts/Hack-Regular.ttf");
+pub static HACK: &[u8] = include_bytes!("../../../assets/fonts/Hack-Regular.ttf");
 
 pub fn family() -> FontFamily {
     FontFamily::Name(FAMILY.into())

@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::slice::Iter;
 
+use labcraft_diagram::Theme;
 use labcraft_types::{Limits, MAX_FILE_SIZE, MAX_NESTING};
 
 #[derive(Debug)]
@@ -136,14 +137,6 @@ pub fn parse_check(args: &[OsString]) -> Result<CheckOptions, String> {
     Ok(CheckOptions { deny_warnings, json: common.json, lib_paths, limits: common.limits, folders: common.paths })
 }
 
-/// Which theme the SVG holds (`docs/cli.md`, 7.2).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Theme {
-    Both,
-    Light,
-    Dark,
-}
-
 /// `labcraft-cli diagram` (`docs/cli.md`, section 7). `check` holds what it checks: `FOLDER` alone, its `--lib-path`
 /// folders and the options of section 1.
 #[derive(Debug)]
@@ -204,11 +197,7 @@ pub fn parse_diagram(args: &[OsString]) -> Result<DiagramOptions, String> {
             Ok(true)
         }
         "--theme" => {
-            theme = match rest.next().map(|value| value.to_string_lossy()).as_deref() {
-                Some("light") => Theme::Light,
-                Some("dark") => Theme::Dark,
-                _ => return Err("--theme is `light` or `dark`".to_owned()),
-            };
+            theme = rest.next().and_then(|value| Theme::from_name(&value.to_string_lossy())).ok_or("--theme is `light` or `dark`")?;
             Ok(true)
         }
         "--max-diagram-nodes" => {

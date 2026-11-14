@@ -27,7 +27,7 @@ pub(crate) mod paint;
 pub(crate) mod series;
 pub(crate) mod view;
 
-pub use fonts::{FAMILY, family, has_family, install_fonts};
+pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use paint::{Over, Painted, Painter};

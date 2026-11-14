@@ -37,8 +37,6 @@ const WRONG_USAGE: u8 = 2;
 
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
-/// Hack 3.003 Regular, the face of the notation and of `Problems`.
-static HACK: &[u8] = include_bytes!("../../../assets/fonts/Hack-Regular.ttf");
 
 /// The preferences of the viewer, on disk (decided at the start of step 6: the view state is not).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -232,7 +230,7 @@ impl Viewer {
         install_fonts(ctx);
         let (prefs, _) = SettingsStore::<Prefs>::open(Location::Auto);
         let theme = match (options.theme, prefs.get().theme.as_str()) {
-            (Some(args::Theme::Dark), _) | (None, "dark") => Theme::Dark,
+            (Some(labcraft_diagram::Theme::Dark), _) | (None, "dark") => Theme::Dark,
             _ => Theme::Light,
         };
         ctx.set_theme(if theme == Theme::Dark { egui::Theme::Dark } else { egui::Theme::Light });
@@ -502,7 +500,7 @@ fn install_fonts(ctx: &egui::Context) {
     let notation = FontFamily::Name(labcraft_editor::FAMILY.into());
     UiFonts::new(&I18nScripts)
         .app_face("Inter", FontData::from_static(INTER), &[FontFamily::Proportional])
-        .app_face("Hack", FontData::from_static(HACK), &[FontFamily::Monospace, notation])
+        .app_face("Hack", FontData::from_static(labcraft_editor::HACK), &[FontFamily::Monospace, notation])
         .family(Family::named(labcraft_editor::FAMILY).monospaced())
         .system_fonts(SystemFonts::AfterCraft)
         .install(ctx);

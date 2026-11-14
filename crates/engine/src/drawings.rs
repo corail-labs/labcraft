@@ -576,11 +576,7 @@ pub fn svg_command(session: &Session, params: &Params) -> Result<Value, CommandE
     if let Some(empty) = names.iter().find(|name| name.split('.').any(str::is_empty)) {
         return Err(CommandError::of("params.invalid", "functions", format!("`{empty}` is not the name of a function: names joined by `.`")));
     }
-    let theme = match params.str("theme") {
-        Some("light") => Theme::Light,
-        Some("dark") => Theme::Dark,
-        _ => Theme::Both,
-    };
+    let theme = params.str("theme").and_then(Theme::from_name).unwrap_or(Theme::Both);
     let max_nodes = params.u64("max_diagram_nodes").unwrap_or(DiagramLimits::default().max_nodes);
     // The values of a run, from a trace of the project, on one function (`docs/cli.md`, 7.3).
     let trace = match params.str("trace") {

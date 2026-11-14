@@ -8,11 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use labcraft_diagram::{DiagramLimits, Overlay, Theme, svg_with};
+use labcraft_diagram::{DiagramLimits, Overlay, svg_with};
 use labcraft_engine::drawings::{self, Drawn3, Entry, Function, Loaded, TracePart};
 use labcraft_types::{CheckCounts, Code, Diagnostic, Report, cut_text};
 
-use crate::args::{self, DiagramOptions};
+use crate::args::DiagramOptions;
 use crate::disk::Disk;
 use crate::output;
 use crate::walk::{io_text, shown_of, slashed};
@@ -80,11 +80,7 @@ fn write(
     report: &Report,
     overlay: Option<&Overlay>,
 ) -> Vec<(Entry, Option<Diagnostic>)> {
-    let theme = match options.theme {
-        args::Theme::Both => Theme::Both,
-        args::Theme::Light => Theme::Light,
-        args::Theme::Dark => Theme::Dark,
-    };
+    let theme = options.theme;
     let current = current.and_then(|current| fs::canonicalize(current).ok());
     // The paths written, by their spelling in lower case: how the report shows each, and its real path.
     let mut written_before: HashMap<String, (String, PathBuf)> = HashMap::new();

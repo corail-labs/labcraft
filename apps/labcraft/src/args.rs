@@ -3,17 +3,13 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-/// The theme the viewer starts in; without it, the one of its preferences.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Theme {
-    Light,
-    Dark,
-}
+use labcraft_diagram::Theme;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
     pub folder: Option<PathBuf>,
     pub lib_paths: Vec<PathBuf>,
+    /// The theme the viewer starts in; without it, the one of its preferences.
     pub theme: Option<Theme>,
     /// A file of values of the notation (notation 10), read again each time it is saved.
     pub style: Option<PathBuf>,
@@ -62,11 +58,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Asked, String> 
                 if options.theme.is_some() {
                     return Err("--theme is given twice".to_owned());
                 }
-                options.theme = match args.next().as_ref().and_then(|value| value.to_str()) {
-                    Some("light") => Some(Theme::Light),
-                    Some("dark") => Some(Theme::Dark),
-                    _ => return Err("--theme takes light or dark".to_owned()),
-                };
+                let theme = args.next().as_ref().and_then(|value| value.to_str()).and_then(Theme::from_name);
+                options.theme = Some(theme.ok_or("--theme takes light or dark")?);
             }
             Some("--style") if !paths_only => {
                 if options.style.is_some() {

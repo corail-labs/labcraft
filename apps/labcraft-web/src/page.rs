@@ -34,8 +34,6 @@ use crate::supervisor::{Action, Shown, Supervisor};
 
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
-/// Hack 3.003 Regular, the face of the notation and of `Problems`.
-static HACK: &[u8] = include_bytes!("../../../assets/fonts/Hack-Regular.ttf");
 
 /// The worker, as Trunk writes it next to the page: a script that loads its WASM.
 const WORKER: &str = "./labcraft-worker_loader.js";
@@ -530,7 +528,7 @@ fn install_fonts(ctx: &egui::Context) {
     let notation = FontFamily::Name(labcraft_editor::FAMILY.into());
     UiFonts::new(&I18nScripts)
         .app_face("Inter", FontData::from_static(INTER), &[FontFamily::Proportional])
-        .app_face("Hack", FontData::from_static(HACK), &[FontFamily::Monospace, notation])
+        .app_face("Hack", FontData::from_static(labcraft_editor::HACK), &[FontFamily::Monospace, notation])
         .family(Family::named(labcraft_editor::FAMILY).monospaced())
         .install(ctx);
 }

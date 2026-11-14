@@ -23,6 +23,17 @@ pub enum Theme {
     Dark,
 }
 
+impl Theme {
+    /// The one theme a name gives, `light` or `dark`; any other name gives none, and each caller says what that means.
+    pub fn from_name(name: &str) -> Option<Theme> {
+        match name {
+            "light" => Some(Theme::Light),
+            "dark" => Some(Theme::Dark),
+            _ => None,
+        }
+    }
+}
+
 /// `value / 10^scale` in its shortest decimal form, without an exponent.
 pub fn decimal(value: i128, scale: u32) -> String {
     let negative = value < 0;
