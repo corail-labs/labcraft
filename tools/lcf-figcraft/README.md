@@ -4,8 +4,8 @@ Renders a function of a `.lcf` library following `docs/visual-notation.md`, with
 gives the same JSONL. Currently supported: `read_voltage`, `check_voltage` and `settle` (`station` is out of
 scope).
 
-The diagrams of the main README come from this tool: `--fn read_voltage --out build/`, then the same with
-`--theme Dark --out build/dark/`, copied to `docs/images/read_voltage-light.png` and `-dark.png`.
+The diagrams of the main README came from this tool until M0v; they are now drawn by
+`labcraft-cli diagram --svg --theme light` (and `dark`).
 
     python tools/lcf-figcraft/lcf_figcraft.py examples --fn check_voltage --out build/
 
