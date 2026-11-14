@@ -1,8 +1,9 @@
 # The Craft ecosystem
 
-*Last updated: 2026-11-08. Sources: public storytold repositories on GitHub (the documents of
-GridCraft, SolidCraft and MaterialCraft were read again on 2026-11-06), the public
-repository tangency-labs/solidcraft, ArtCraft launcher catalog (v0.10.0, 2026-10-29).*
+*Last updated: 2026-11-14. Sources: public storytold repositories on GitHub (the documents of
+GridCraft, SolidCraft and MaterialCraft were read again on 2026-11-06; the repositories of storytold and
+tangency-labs were surveyed on 2026-11-13 and 14), the public repositories tangency-labs/solidcraft and
+tangency-labs/pcbcraft, ArtCraft launcher catalog (v0.10.0, 2026-10-29).*
 
 ## Who does what
 
@@ -36,13 +37,18 @@ Shared repositories:
 - **craft-common-actions**: shared CI. **craft-fonts**: fonts kept out of the app repositories.
 - **craft-launcher** (ArtCraft Launcher): installs and updates the apps; distinguishes "Official"
   and "Community" apps.
+- **craft-contrib**: the house rules, a block of 15 rules copied into the `AGENTS.md` of each storytold
+  repository, and the RFCs of the suite.
+- **craft-extensions**: a provisional contract for themes, plugins and resources, and a store that hosts
+  nothing (the assets stay in the releases of their authors, pinned by digest). No app uses it yet.
 
 ### tangency-labs (SolidCraft)
 
 - **SolidCraft**: 3D parametric CAD in pure Rust, desktop, browser, CLI and MCP server. A project
   independent of storytold but following its conventions (its `AGENTS.md` cites the storytold
   projects as a reference); entered the launcher catalog as a "community app" on 2026-10-29.
-- **SolidCore**: geometry kernel. **PcbCraft**: printed circuit board design.
+- **SolidCore**: geometry kernel. **PCBCraft**: printed circuit board design, "people and agents" on one
+  document: the MCP server attached to the open window shares its session and its undo history.
 
 LabCraft would be in the same situation as SolidCraft: independent, Craft conventions, candidate
 for the catalog (D-20 in [decisions.md](decisions.md)).
@@ -68,6 +74,9 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 | **Progress docs** | One-page `ROADMAP.md`; detail in `docs/` (parity, ranked gaps, architecture) | Adopted |
 | **One task identifier per commit** | For example `M2.1: borders gallery` | Adopted |
 | **Licence** | MIT OR Apache-2.0, Rust edition 2024 | Adopted (D-19) |
+| **House rules** (craft-contrib) | 15 common rules: pull requests on `main`, a local `plan/`, no secrets… Rule 15: a pull request does not say that an agent wrote it, and no rule of a repository may require it | Most are followed, the block itself not copied. Rule 15 in part: no rule requires saying that an agent helped, but unlike rule 15 an agent's `Co-Authored-By:` is accepted ([AGENTS.md](../AGENTS.md), [CONTRIBUTING.md](../CONTRIBUTING.md)) |
+| **Shared CI** (house rule 11) | Apps call the workflows of `craft-common-actions` (signed release for each platform) instead of copying CI | Not adopted: `checks` and `release` are LabCraft's. To revisit with the installable release (M1r) |
+| **Confined file access** (RFC-0015, a proposal) | `<app>-cli mcp --automation-read-root DIR --automation-write-root DIR`: the folders an agent may read and write, refused without them | In M1, with the MCP server attached to the IDE; `labcraft-cli mcp --project DIR` stays and sets both |
 
 ## What LabCraft can reuse from craft-libs
 
@@ -85,6 +94,12 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 
 What stays specific to LabCraft: the language, the compiler, the runtime, the graph editor, the
 front panel, the instruments.
+
+No crate of the ecosystem offers a canvas of nodes, a graph or an undo history: MaterialCraft's node
+editor lives in its app crate. The `editor` canvas of LabCraft could be the first one shared (D-27). For
+plugins (D-16, M9), two designs exist and are not aligned: `craft-extensions` (wasmi, core modules) and
+SolidCraft's (wasmtime, components and WIT, the choice of D-16). Neither has permissions for hardware
+(instruments, ports, buses), which LabCraft needs.
 
 ## What LabCraft brings that is new to the ecosystem
 

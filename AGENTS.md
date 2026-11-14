@@ -82,7 +82,9 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 - Open the pull request with `gh pr create`; merge only when the owner asks. The skill
   `labcraft-ship-step` goes through it, and the agent `labcraft-reviewer` does the independent review
   before a pull request.
-- Short English subject line; end with the `Co-Authored-By:` trailer, as in the Craft repos.
+- Short English subject line. A `Co-Authored-By:` trailer for an agent is accepted, not required: no rule
+  of this repository requires it, as house rule 15 of the Craft repos asks, but unlike that rule it does not
+  forbid it.
 - Contributions are licensed MIT OR Apache-2.0, inbound = outbound, no DCO or CLA (D-19).
 
 ## Working economically

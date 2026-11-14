@@ -364,8 +364,8 @@ such as a file that cannot be written (the versions the Craft apps use). `serde`
 for the desktop viewer (section 11), `craft-keymap` for editing, `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
 [`craft-common-actions`](https://github.com/storytold/craft-common-actions) (`gate`, `supply-chain`,
-`release`) are not used: its `release` is what a signed build for the launcher's catalog (D-20) will go through,
-with installers and the packaging they need. The first release, `v0.3.0-m0`, goes through a workflow of our own,
+`release`) are not used. Signed installers come with the installable release after M1 (M1r in
+[roadmap.md](roadmap.md)). The first release, `v0.3.0-m0`, goes through a workflow of our own,
 `release` (section 8). `gate` was evaluated when the Rust CI started, and not adopted for now: it
 follows the `main` branch of another organization, and its job name would replace `checks`, the
 check required on `main`. Our jobs take the same steps, split into parts that run side by side (section 8), with
@@ -424,8 +424,8 @@ notices. The last job, for a tag pushed only, makes a draft release with the arc
 pre-release when the version has a suffix, and stops when a release of the tag exists already; the owner reads the
 draft and publishes it (decision of the owner, 2026-11-14). A pull request that changes the workflow or a note runs
 it without the release, and so does a run by hand; GitHub does not require it, and a red one stops the merge, as a
-red `windows` does. The binaries are not signed: that is the work of the `release` of the suite, with the launcher
-(D-20).
+red `windows` does. The binaries are not signed for the platforms: that comes with the installable release after M1 (M1r in
+[roadmap.md](roadmap.md)).
 
 To release: the version in `Cargo.toml` (and both `Cargo.lock`), the note `docs/releases/v<version>.md`, merged
 through a pull request; then, on the owner's word, the annotated tag on the merge commit, pushed; then the owner

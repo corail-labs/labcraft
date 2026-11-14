@@ -73,13 +73,19 @@ in [decisions.md](decisions.md)). Check the licence of any project before reusin
 | GridCraft | Local `plan/`, layers checked by `cargo xtask layers`, "never break WASM" | Project start |
 | craft-libs | Shared building blocks (docking, shortcuts, settings, atomic writes, i18n) | Avoid rewriting what exists |
 | craft-ai-integrations | Connections to AI providers, consent, egui widgets | Built-in assistant (later) |
+| PCBCraft | One session in the window with the MCP server attached to it: one undo history for the human and the agent, the status bar naming who made an edit, a revision on every edit, window commands (selection, zoom) outside undo | M1, the agent and the human on one program |
+| MaterialCraft | Gestures of its node editor: Space opens the search of nodes, one wire per input, a wire that would make a cycle refused with a message, a gesture that becomes a command only when it ends | M1, gestures |
+| SolidCraft | A `batch` of commands rolled back to a checkpoint when one fails, with an outcome for each command | M1, editing commands |
 
 Details: [craft-ecosystem.md](craft-ecosystem.md).
 
 ## Graph editors in egui (references)
 
-- `egui-snarl` and `egui_node_graph`: ways of structuring a node editor in immediate mode. Read
-  them as references; check licence and maintenance before any dependency.
+- `egui-snarl` (MIT OR Apache-2.0), `egui_node_editor` (MIT), `egui-graph-edit` (MIT, the successor of
+  `egui_node_graph`): ways of structuring a node editor in immediate mode, read as references for the hit-testing
+  of terminals, dragging a wire, the selection rectangle and context menus. None is a dependency: each has its own
+  model of nodes, its own drawing and its own placement, where the canvas of LabCraft paints what `diagram`
+  computes (seen on 2026-11-13, when none followed the version of egui that LabCraft uses).
 
 ## UX
 
@@ -89,3 +95,13 @@ Details: [craft-ecosystem.md](craft-ecosystem.md).
 | Automatic wiring, diagram cleanup | Automatic placement when an agent produces a graph without a layout |
 | SolidCraft (manipulators, live previews) | Immediate preview of every change |
 | Browser debuggers | Conditional breakpoints, history of a probe's values |
+| Blueprints, Blender, Houdini, vvvv, Node-RED, Enso, Simulink | A wire dropped on empty canvas opens the search, filtered on what fits there; the node chosen lands at that point, already wired, in one undo step |
+| Pure Data (autopatch) | From the keyboard, a new node is placed under the selection and wired to it |
+| Simulink, Dynamo, KNIME, Blender | The interface of a selection is computed from the wires that cross its border: the same computation extracts a function and wraps a selection in a structure |
+| Simulink, Houdini | Tidy in parts (a selection, a branch, everything), in one undo step, applied only if it improves the drawing; wires routed apart from the placement of nodes |
+| Simulink, Blueprints | While a wire is dragged, show where it can go and, at a refused terminal, why; the filter must be the rule of `check`, or the editor offers what it then refuses |
+| Hazel | An incomplete program is a normal state: a hole is shown where it is, and the rest still checks |
+| ELK (interactive mode) | A node added without a position goes to the free place nearest its source, and nothing else moves |
+| n8n, Blueprints | A visual diff of a change (nodes added, changed, removed; moves apart), to review what an agent did |
+| Enso, PCBCraft | Every edit names the revision it applies to; a stale one is refused |
+| Grasshopper, Dynamo, KNIME, Houdini | Problems shown on the node by severity, still readable when zoomed out, with a list that goes to them |

@@ -47,10 +47,11 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | **M0a** | Read, check, write (done, tag `v0.1.0-m0a`) | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
 | **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer (done, tag `v0.3.0-m0`, which closes M0) | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
-| M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; the agent and the human edit the same program. Target: 60 frames/s while editing 1,000 nodes |
-| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, `map<K, V>` and `set<T>` (Q-28), generic functions, manifests of user libraries and their dependencies |
-| M3 | Panel | Controls and indicators, graphs, live update, properties |
+| M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; tidying a wire, a selection or a whole function again, and a wire routed by hand (`via`); the agent and the human edit the same program, through the MCP server attached to the IDE, which takes the folders an agent may read and write as the other Craft apps do (RFC-0015, [craft-ecosystem.md](craft-ecosystem.md)). Target: 60 frames/s while editing 1,000 nodes |
+| M1r | Installable release | The editor as the first version for people outside the project: installers signed for Windows and macOS, and a package or archive for Linux. Until then the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums |
 | M4 | Real instruments | Transports of the `visa` library: TCP/IP, serial, USBTMC, HiSLIP; binding to an installed VISA; more of the `scpi` library |
+| M3 | Panel | Controls and indicators, graphs, live update, properties |
+| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, `map<K, V>` and `set<T>` (Q-28), generic functions, manifests of user libraries and their dependencies |
 | M5 | Debugger | Probes, breakpoints, single-stepping, execution animation, value history |
 | M6 | Build | Standalone executable, C ABI DLL, .NET facade |
 | M7 | Native compilation | Cranelift, equivalence tests with the interpreter |
@@ -58,6 +59,12 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | M9 | Plugins | WASM, manifest, permissions |
 | M10 | Web | The IDE and simulation in the browser |
 | M11 | Packages | Manifest, locking, install from git, then registry (D-25) |
+
+The table is in the order of work. After the editor come real instruments and the panel, before the
+full language: a user then drives a real bench, first through the agent and the command line, then
+through a panel, with the live elements of M0. The numbers stay the names of the milestones, which the
+documents and the issues already use. What each one holds is outlined before the specifications of M1,
+so that the editor blocks none of them; a part of the events may move to the panel.
 
 **Horizon 2, after v1:** real-time embedded Linux targets (D-24), controller mode and fieldbuses
 (D-26), libraries generated from Craft apps and SolidCraft plugins (D-27). The package manifest
