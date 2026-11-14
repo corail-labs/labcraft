@@ -826,6 +826,7 @@ mod tests {
         let wire = |name: &str, ty: &str| ExpectedWire { name: name.into(), ty: ty.into() };
         let expected = Expected {
             function: "check_voltage".into(),
+            source: String::new(),
             inputs: vec![wire("low", "f64[V]")],
             nodes: vec![ExpectedNode { name: "raw".into(), wires: vec![wire("raw", "[f64]")], ..ExpectedNode::default() }],
         };

@@ -305,6 +305,7 @@ fn the_reader_of_the_viewer_reads_the_trace_of_a_run() {
     // The nodes of `examples/check_voltage.lcf`, in the order of its lines; `measured` is node 7, `verdict` node 8.
     let expected = Expected {
         function: "check_voltage".to_owned(),
+        source: String::new(),
         inputs: vec![wire("resource", "string"), wire("low", "f64[V]"), wire("high", "f64[V]"), wire("err", "error")],
         nodes: vec![
             node("dmm", vec![wire("dmm", "visa.session"), wire("e1", "error")]),

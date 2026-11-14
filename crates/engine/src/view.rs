@@ -359,18 +359,25 @@ const MAX_ABOVE: usize = 64;
 
 /// The trace of the last run of `function` of `folder` (notation 6.1; decisions of the owner, 2026-11-13): where a
 /// session whose root is the folder, or a folder above it, writes it (commands.md 8), as `labcraft-cli run FOLDER` does
-/// for the folder itself; the most recent, and at the same time the nearest. Shown from the folder.
+/// for the folder itself; from a folder above, both for a run given that `folder` and for one of the function named
+/// from the root (`power.check_power`), as an agent names it; the most recent, and at the same time the nearest. Shown
+/// from the folder.
 fn last_run(ws: &dyn Workspace, folder: &Path, function: &str) -> Option<(PathBuf, String)> {
     let mut best: Option<(PathBuf, String, Option<u128>)> = None;
     for (level, above) in folder.ancestors().enumerate().take(MAX_ABOVE) {
         let below = slashed(folder.strip_prefix(above).unwrap_or(folder));
-        let from_above = crate::runs::trace_path(&below, function);
-        let path = above.join(&from_above);
-        let Ok(metadata) = ws.metadata(&path) else { continue };
-        if metadata.kind != crate::workspace::Kind::File || best.as_ref().is_some_and(|(_, _, time)| metadata.modified <= *time) {
-            continue;
+        let mut candidates = vec![crate::runs::trace_path(&below, function)];
+        if !below.is_empty() && below != "." {
+            candidates.push(crate::runs::trace_path("", &format!("{}.{function}", below.replace('/', "."))));
         }
-        best = Some((path, format!("{}{from_above}", "../".repeat(level)), metadata.modified));
+        for from_above in candidates {
+            let path = above.join(&from_above);
+            let Ok(metadata) = ws.metadata(&path) else { continue };
+            if metadata.kind != crate::workspace::Kind::File || best.as_ref().is_some_and(|(_, _, time)| metadata.modified <= *time) {
+                continue;
+            }
+            best = Some((path, format!("{}{from_above}", "../".repeat(level)), metadata.modified));
+        }
     }
     best.map(|(path, shown, _)| (path, shown))
 }

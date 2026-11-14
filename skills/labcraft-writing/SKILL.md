@@ -19,7 +19,8 @@ one step per line, names that say what a wire carries.
    checks the whole project and returns its report: fix every error, and every warning unless you mean it.
    Fix syntax errors (`LC0…`, `LC1…`) first: while a file does not parse, some checks of the other files wait.
 4. `run_start` with `function`, `sim` (a simulation file) and `args` (`{"resource": "SIM::PSU0"}`), then read
-   `status`, `outputs` and `error`. Run more than one bench: the skill `labcraft-testing` says which.
+   `status`, `outputs` and `error`. Run more than one bench: the skill `labcraft-testing` says which. Leave
+   `trace` to its default, `file`: the person who watches the viewer sees the values of the run on the wires.
 5. When a report surprises you, the skill `labcraft-debugging` reads it with you.
 
 The whole language is in `reference.md`, next to this file: `guide_read` with `{"skill": "labcraft-writing",
