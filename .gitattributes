@@ -1,3 +1,11 @@
+# LF everywhere, whatever core.autocrlf says on the machine that checks out (as craft-anything).
+# The rules below say what depends on it, and the exceptions that must stay byte for byte; they
+# come after this line, so they win.
+* text=auto eol=lf
+
+# Images are binary
+*.png binary
+
 # LabCraft sources use LF line endings (spec v0, section 2)
 *.lcf text eol=lf
 *.lct text eol=lf
