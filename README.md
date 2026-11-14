@@ -30,10 +30,12 @@ Rust remains in `tools/`. The milestones are described in [docs/roadmap.md](docs
 
 ## One program, two views
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/read_voltage-dark.png">
-  <img alt="Diagram of read_voltage: visa.open, scpi.query_f64 and visa.close in a row on a red error wire, the VISA session as a blue wire, the raw reading converted to volts" src="docs/images/read_voltage-light.png">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/read_voltage-dark.svg">
+    <img width="720" alt="Diagram of read_voltage: visa.open, scpi.query_f64 and visa.close in a row on a red error wire, the VISA session as a blue wire, the raw reading converted to volts" src="docs/images/read_voltage-light.svg">
+  </picture>
+</p>
 
 The error wire (red) orders the actions and carries the error: if the measurement fails, the
 nodes after it are skipped, except `visa.close`, marked `always`, which still closes the session
@@ -59,20 +61,19 @@ fn read_voltage(resource: string, err: error = none) -> (voltage: f64[V], err: e
 }
 ```
 
-The diagram was rendered from this file by a throwaway tool
-([tools/lcf-figcraft](tools/lcf-figcraft/README.md)), following the draft
-[visual notation](docs/visual-notation.md); the editor does not exist yet.
+The diagram is drawn from this file by `labcraft-cli diagram --svg`, following the
+[visual notation](docs/visual-notation.md); the desktop viewer draws it the same way.
 
 ## An AI agent at work
 
-An agent (Claude Code) writes a new function from a one-line request, using the proof of concept
-over MCP: `check` finds a real error, the agent fixes it, the diagram is drawn from the text, and
-the function runs against a simulated power supply.
+An agent (Claude Code) on `labcraft-cli mcp` writes a new function from a request: it reads the
+guide and the functions it can call, writes `check_power`, which `check` accepts, and runs it against a simulated
+power supply. The desktop viewer, open on the folder beside it, draws each file as it is written, and the values of
+the run appear on the wires. Then a change of the function, redrawn and run again (46 seconds):
 
-![An agent fixes a check error, shows the diagram of check_power, then runs it: 5.02 V x 0.30 A = 1.52 W, Pass](docs/images/agent-loop.gif)
+https://github.com/user-attachments/assets/38106f7d-c1aa-41ad-a4d6-761a483cec2e
 
-This was filmed with the proof of concept. Since M0b, the Rust `labcraft-cli mcp` serves the same loop: in five
-sessions of five, an agent wrote, checked, ran and fixed a test program on its own
+In five sessions of five, an agent wrote, checked, ran and fixed a test program on its own
 ([acceptance-m0.md](docs/acceptance-m0.md), scenario 1).
 
 ## Try it
