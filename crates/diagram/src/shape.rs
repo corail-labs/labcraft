@@ -182,8 +182,61 @@ pub enum Pattern {
     DashDot,
 }
 
+impl Pattern {
+    /// The dashes of the stroke, alternately a dash and a gap, in hundredths of a unit; none for a solid stroke.
+    pub fn dashes(self) -> &'static [i64] {
+        match self {
+            Pattern::Dotted => &[150, 300],
+            Pattern::DashDot => &[600, 300, 150, 300],
+            Pattern::Solid | Pattern::Chevrons => &[],
+        }
+    }
+}
+
+impl WireStyle {
+    /// The cross-ticks of an array, one per dimension every 8 units: alternately a dash and a gap, in hundredths of a
+    /// unit; none when the wire has no tick.
+    pub fn tick_dashes(&self) -> &'static [i64] {
+        match self.ticks {
+            0 => &[],
+            1 => &[100, 700],
+            2 => &[100, 200, 100, 400],
+            _ => &[100, 200, 100, 200, 100, 100],
+        }
+    }
+}
+
 /// How wide the stroke of a chevron cut into an error wire is, in hundredths of a unit.
 pub const CHEVRON_STROKE: i64 = 90;
+
+/// A point of an orthogonal polyline once its corners are rounded: the ends and straight points as they are, a corner as
+/// a quadratic curve from `from` to `to` that bends toward `corner`, of radius `style::wire_radius` at most.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Corner {
+    Point((i64, i64)),
+    Round { from: (i64, i64), corner: (i64, i64), to: (i64, i64) },
+}
+
+/// The points of an orthogonal polyline with its corners rounded: one `Corner` per point (notation 4.1).
+pub fn corners(points: &[(i64, i64)]) -> Vec<Corner> {
+    points
+        .iter()
+        .enumerate()
+        .map(|(index, &(x, y))| {
+            let (Some(&(px, py)), Some(&(nx, ny))) = (index.checked_sub(1).and_then(|before| points.get(before)), points.get(index + 1)) else {
+                return Corner::Point((x, y));
+            };
+            let before = (x - px).abs() + (y - py).abs();
+            let after = (nx - x).abs() + (ny - y).abs();
+            let radius = style::wire_radius().min(before / 2).min(after / 2);
+            Corner::Round {
+                from: (x - (x - px).signum() * radius, y - (y - py).signum() * radius),
+                corner: (x, y),
+                to: (x + (nx - x).signum() * radius, y + (ny - y).signum() * radius),
+            }
+        })
+        .collect()
+}
 
 /// The chevrons cut into an error wire along its polyline: each three points, pointing in the direction of the flow,
 /// 1.8 long and 2.8 across, so that with their stroke they stay inside a wire of 4.

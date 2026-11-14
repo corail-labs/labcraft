@@ -10,7 +10,9 @@ use egui::epaint::{
     TextShape,
 };
 use egui::{Color32, FontId, Galley, Pos2, Rect, Vec2};
-use labcraft_diagram::{Detail, Drawing, IconDrawing, IconDrawn, IconShape, Overlay, Paint, PathSegment, Pattern, Run, Shape, WireStyle, chevrons};
+use labcraft_diagram::{
+    Corner, Detail, Drawing, IconDrawing, IconDrawn, IconShape, Overlay, Paint, PathSegment, Pattern, Run, Shape, WireStyle, chevrons, corners,
+};
 
 use crate::Theme;
 use crate::fonts::family;
@@ -325,25 +327,29 @@ fn geometry(shape: &Shape, theme: Theme, step: f32) -> Vec<Painted2> {
 /// 6 at most, through the corner.
 fn rounded(points: &[(i64, i64)], step: f32) -> Vec<Pos2> {
     let mut out = Vec::with_capacity(points.len() * 4);
-    for (index, &(x, y)) in points.iter().enumerate() {
-        let (Some(&(px, py)), Some(&(nx, ny))) = (index.checked_sub(1).and_then(|before| points.get(before)), points.get(index + 1)) else {
-            out.push(point(x, y, step));
-            continue;
-        };
-        let before = (x - px).abs() + (y - py).abs();
-        let after = (nx - x).abs() + (ny - y).abs();
-        let radius = labcraft_diagram::style::wire_radius().min(before / 2).min(after / 2);
-        let a = point(x - (x - px).signum() * radius, y - (y - py).signum() * radius, step);
-        let c = point(x, y, step);
-        let b = point(x + (nx - x).signum() * radius, y + (ny - y).signum() * radius, step);
-        const PARTS: usize = 6;
-        for part in 0..=PARTS {
-            let t = part as f32 / PARTS as f32;
-            let u = 1.0 - t;
-            out.push(Pos2::new(u * u * a.x + 2.0 * u * t * c.x + t * t * b.x, u * u * a.y + 2.0 * u * t * c.y + t * t * b.y));
+    for corner in corners(points) {
+        match corner {
+            Corner::Point((x, y)) => out.push(point(x, y, step)),
+            Corner::Round { from, corner, to } => {
+                let (a, c, b) = (point(from.0, from.1, step), point(corner.0, corner.1, step), point(to.0, to.1, step));
+                const PARTS: usize = 6;
+                for part in 0..=PARTS {
+                    let t = part as f32 / PARTS as f32;
+                    let u = 1.0 - t;
+                    out.push(Pos2::new(u * u * a.x + 2.0 * u * t * c.x + t * t * b.x, u * u * a.y + 2.0 * u * t * c.y + t * t * b.y));
+                }
+            }
         }
     }
     out
+}
+
+/// Dashes in hundredths of a unit, alternately a dash and a gap, as the lengths of the canvas: the dashes, then the gaps.
+fn dash_lengths(dashes: &[i64], unit: f32) -> (Vec<f32>, Vec<f32>) {
+    let length = |hundredths: i64| hundredths as f32 / 100.0 * unit;
+    let dash = dashes.iter().step_by(2).map(|&hundredths| length(hundredths)).collect();
+    let gap = dashes.iter().skip(1).step_by(2).map(|&hundredths| length(hundredths)).collect();
+    (dash, gap)
 }
 
 /// A wire, as its family draws it (notation 4.1): a stroke, the core of a sheath, the ticks of an array, the chevrons of
@@ -354,25 +360,18 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, theme: Theme, step: f32) -> Ve
     let stroke = Stroke::new(length(style.width, step), color);
     let unit = step;
     let mut out = Vec::new();
-    match style.pattern {
-        Pattern::Dotted => Painted2::dashed_line_many(&path, stroke, 1.5 * unit, 3.0 * unit, &mut out),
-        Pattern::DashDot => {
-            Painted2::dashed_line_many_with_offset(&path, stroke, &[6.0 * unit, 1.5 * unit], &[3.0 * unit, 3.0 * unit], 0.0, &mut out)
-        }
-        Pattern::Solid | Pattern::Chevrons => out.push(Painted2::line(path.clone(), stroke)),
+    let (dashes, gaps) = dash_lengths(style.pattern.dashes(), unit);
+    match (style.pattern, dashes.as_slice(), gaps.as_slice()) {
+        (Pattern::Dotted, &[dash], &[gap]) => Painted2::dashed_line_many(&path, stroke, dash, gap, &mut out),
+        (Pattern::DashDot, _, _) => Painted2::dashed_line_many_with_offset(&path, stroke, &dashes, &gaps, 0.0, &mut out),
+        _ => out.push(Painted2::line(path.clone(), stroke)),
     }
     if let Some(core) = style.core {
         out.push(Painted2::line(path.clone(), Stroke::new(length(style.width - 240, step), theme.color(core))));
     }
     if style.ticks > 0 {
         // A tick is a dash 1 along, one per dimension, every 8.
-        let (dashes, gaps): (&[f32], &[f32]) = match style.ticks {
-            1 => (&[1.0], &[7.0]),
-            2 => (&[1.0, 1.0], &[2.0, 4.0]),
-            _ => (&[1.0, 1.0, 1.0], &[2.0, 2.0, 1.0]),
-        };
-        let dashes: Vec<f32> = dashes.iter().map(|dash| dash * unit).collect();
-        let gaps: Vec<f32> = gaps.iter().map(|gap| gap * unit).collect();
+        let (dashes, gaps) = dash_lengths(style.tick_dashes(), unit);
         // Across the whole width of the wire: a rung of its color in a sheath, a cut showing the ground otherwise.
         let tick = if style.core.is_some() { color } else { theme.color(style.ground) };
         Painted2::dashed_line_many_with_offset(&path, Stroke::new(length(style.width, step), tick), &dashes, &gaps, 0.0, &mut out);

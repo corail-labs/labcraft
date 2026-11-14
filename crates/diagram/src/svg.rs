@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use crate::shape::{Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons};
+use crate::shape::{Corner, Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons, corners};
 use crate::style;
 use crate::theme::{TOKENS, variable};
 use crate::values::Overlay;
@@ -336,22 +336,25 @@ fn write_shape(shape: &Shape, icons: &[String], out: &mut String) {
 /// The data of an orthogonal polyline, its corners rounded.
 fn rounded(points: &[(i64, i64)]) -> String {
     let mut data = String::new();
-    let Some(&(x, y)) = points.first() else { return data };
-    let _ = write!(data, "M{} {}", n(x), n(y));
-    for (index, &(x, y)) in points.iter().enumerate().skip(1) {
-        let (Some(&(px, py)), Some(next)) = (points.get(index - 1), points.get(index + 1)) else {
-            let _ = write!(data, " L{} {}", n(x), n(y));
-            continue;
-        };
-        let (nx, ny) = *next;
-        let before = (x - px).abs() + (y - py).abs();
-        let after = (nx - x).abs() + (ny - y).abs();
-        let radius = style::wire_radius().min(before / 2).min(after / 2);
-        let (ax, ay) = (x - (x - px).signum() * radius, y - (y - py).signum() * radius);
-        let (bx, by) = (x + (nx - x).signum() * radius, y + (ny - y).signum() * radius);
-        let _ = write!(data, " L{} {} Q{} {} {} {}", n(ax), n(ay), n(x), n(y), n(bx), n(by));
+    for corner in corners(points) {
+        match corner {
+            Corner::Point((x, y)) if data.is_empty() => {
+                let _ = write!(data, "M{} {}", n(x), n(y));
+            }
+            Corner::Point((x, y)) => {
+                let _ = write!(data, " L{} {}", n(x), n(y));
+            }
+            Corner::Round { from, corner, to } => {
+                let _ = write!(data, " L{} {} Q{} {} {} {}", n(from.0), n(from.1), n(corner.0), n(corner.1), n(to.0), n(to.1));
+            }
+        }
     }
     data
+}
+
+/// A dash array of the SVG from dashes in hundredths of a unit.
+fn dash_array(dashes: &[i64]) -> String {
+    dashes.iter().map(|&dash| decimal(i128::from(dash), 2)).collect::<Vec<_>>().join(" ")
 }
 
 /// A wire, as its family draws it (notation 4.1): a stroke, the core of a sheath, the ticks of an array, the chevrons of
@@ -359,10 +362,9 @@ fn rounded(points: &[(i64, i64)]) -> String {
 fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
     let data = rounded(points);
     let token = variable(style.token);
-    let dash = match style.pattern {
-        Pattern::Dotted => "; stroke-dasharray: 1.5 3",
-        Pattern::DashDot => "; stroke-dasharray: 6 3 1.5 3",
-        Pattern::Solid | Pattern::Chevrons => "",
+    let dash = match style.pattern.dashes() {
+        [] => String::new(),
+        dashes => format!("; stroke-dasharray: {}", dash_array(dashes)),
     };
     let _ = writeln!(out, "<path d=\"{data}\" style=\"fill: none; stroke: var({token}); stroke-width: {}{dash}\"/>", n(style.width));
     if let Some(core) = style.core {
@@ -371,11 +373,7 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
     if style.ticks > 0 {
         // A tick is a dash across the whole width of the wire, 1 along, one per dimension, every 8: a rung of the wire's
         // color in a sheath, a cut showing the ground in a solid wire.
-        let dashes = match style.ticks {
-            1 => "1 7",
-            2 => "1 2 1 4",
-            _ => "1 2 1 2 1 1",
-        };
+        let dashes = dash_array(style.tick_dashes());
         let tick = if style.core.is_some() { token } else { variable(style.ground) };
         let _ = writeln!(
             out,

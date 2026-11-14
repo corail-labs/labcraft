@@ -1844,3 +1844,27 @@ fn the_mark_widens_the_header_of_a_frame() {
     let Some(Shape::Rect { width, .. }) = group.shapes.first() else { panic!() };
     assert_eq!(*width, 18_400);
 }
+
+/// The corners of a polyline, worked by hand from notation 4.1: radius 6 (600 hundredths) at most, half of a short side at
+/// most, and the ends stay as they are.
+#[test]
+fn corners_round_by_the_radius_or_half_the_shorter_side() {
+    use crate::shape::{Corner, corners};
+    // Sides of 30 units: the radius is 6, so the curve starts 6 before the corner and ends 6 after it.
+    let long = [(0, 0), (3000, 0), (3000, 3000)];
+    assert_eq!(
+        corners(&long),
+        [Corner::Point((0, 0)), Corner::Round { from: (2400, 0), corner: (3000, 0), to: (3000, 600) }, Corner::Point((3000, 3000))]
+    );
+    // Sides of 10 units: half of a side is 5, less than 6.
+    let short = [(0, 0), (1000, 0), (1000, 1000)];
+    assert_eq!(
+        corners(&short),
+        [Corner::Point((0, 0)), Corner::Round { from: (500, 0), corner: (1000, 0), to: (1000, 500) }, Corner::Point((1000, 1000))]
+    );
+    // Going back up and left: the signs of the sides give the sides of the curve.
+    let back = [(3000, 3000), (3000, 0), (0, 0)];
+    assert_eq!(corners(&back)[1], Corner::Round { from: (3000, 600), corner: (3000, 0), to: (2400, 0) });
+    assert!(corners(&[]).is_empty());
+    assert_eq!(corners(&[(7, 9)]), [Corner::Point((7, 9))]);
+}

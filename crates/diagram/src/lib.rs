@@ -40,8 +40,8 @@ pub use labcraft_check::PathSegment;
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use shape::{
-    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark, Paint,
-    Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons,
+    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark,
+    Paint, Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
 pub use values::{

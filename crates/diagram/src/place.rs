@@ -342,32 +342,11 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let last = arms.last();
             // The last arm is on the axis (notation 5.2): the error enters and leaves on that line, whichever arm reads it.
             let axis = last.and_then(|(y, placed)| placed.axis.map(|axis| y + axis));
-            let entry = structure.pair.map(|(input, _)| input);
-            block.inputs = (0..found.inputs.len())
-                .map(|input| {
-                    if let (Some(axis), true) = (axis, entry == Some(input)) {
-                        return (0, axis);
-                    }
-                    if input == 0 {
-                        // The selector of a `handle` is an error: on the bottom line, the axis when there is one.
-                        let y = match structure.kind {
-                            StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
-                            _ => style::frame_header() / 2,
-                        };
-                        return (0, y);
-                    }
-                    // The notch of the last arm that reads it.
-                    let at = structure.inputs_at.get(input).map_or(&[][..], Vec::as_slice);
-                    let found = at.iter().rev().find_map(|&(arm, left)| {
-                        let (y, placed) = arms.get(arm)?;
-                        Some(y + placed.left.get(left).copied()?)
-                    });
-                    (0, found.unwrap_or(style::frame_header() / 2))
-                })
-                .collect();
-            let outer_outputs: Vec<i64> = (0..found.outputs.len())
-                .map(|output| last.and_then(|(y, placed)| Some(y + placed.right.get(output).copied()?)).unwrap_or(height / 2))
-                .collect();
+            block.inputs = frame_inputs(structure, found.inputs.len(), axis, height, |arm, left| {
+                let (y, placed) = arms.get(arm)?;
+                Some(y + placed.left.get(left).copied()?)
+            });
+            let outer_outputs = frame_outputs(found.outputs.len(), height, last.map(|&(y, placed)| (y, placed)));
             // Between the edge of the frame and the boxes of the arms: a value that enters by a notch goes on to the notch
             // of each arm that reads it, and what each arm yields to the output of the frame, a vertical each where they
             // are not at one height.
@@ -396,22 +375,11 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let frame_width = left_gap + width + right_gap;
             block.width = frame_width;
             block.outputs = outer_outputs.iter().map(|&y| (frame_width, y)).collect();
-            let core = "frame.fill.1";
             for (input, ((outer, arms_at), slot)) in entering.iter().zip(&left_slots).enumerate() {
-                let family = found.inputs.get(input).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-                let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
-                let branches: Vec<Vec<(i64, i64)>> =
-                    arms_at.iter().map(|&arm_y| route::simplify(vec![(0, *outer), (x, *outer), (x, arm_y), (left_gap, arm_y)])).collect();
-                gap_shapes(&branches, family, core, &mut block.shapes);
+                left_margin_wire(family_of(&found.inputs, input), *outer, arms_at, *slot, left_gap, &mut block.shapes);
             }
             for (output, ((outer, arms_at), slot)) in leaving.iter().zip(&right_slots).enumerate() {
-                let family = found.outputs.get(output).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-                let x = left_gap + width + style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
-                let branches: Vec<Vec<(i64, i64)>> = arms_at
-                    .iter()
-                    .map(|&arm_y| route::simplify(vec![(left_gap + width, arm_y), (x, arm_y), (x, *outer), (frame_width, *outer)]))
-                    .collect();
-                gap_shapes(&branches, family, core, &mut block.shapes);
+                right_margin_wire(family_of(&found.outputs, output), *outer, arms_at, *slot, left_gap + width, frame_width, &mut block.shapes);
             }
             block
         }
@@ -458,32 +426,12 @@ fn tabs_block(
         (arms.iter().map(|(_, corner, placed)| corner + placed.height).max().unwrap_or(top) + style::frame_pad()).max(top + style::frame_pad());
     let axis = reach.map(|reach| top + reach);
     let last = arms.last();
-    let entry = structure.pair.map(|(input, _)| input);
     let mut block = Sized::new(0, height, Vec::new());
-    block.inputs = (0..found.inputs.len())
-        .map(|input| {
-            if let (Some(axis), true) = (axis, entry == Some(input)) {
-                return (0, axis);
-            }
-            if input == 0 {
-                let y = match structure.kind {
-                    StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
-                    _ => style::frame_header() / 2,
-                };
-                return (0, y);
-            }
-            // The notch of the last arm that reads it, as unfolded.
-            let at = structure.inputs_at.get(input).map_or(&[][..], Vec::as_slice);
-            let found = at.iter().rev().find_map(|&(arm, left)| {
-                let (_, corner, placed) = arms.get(arm)?;
-                Some(corner + placed.left.get(left).copied()?)
-            });
-            (0, found.unwrap_or(style::frame_header() / 2))
-        })
-        .collect();
-    let outer_outputs: Vec<i64> = (0..found.outputs.len())
-        .map(|output| last.and_then(|(_, corner, placed)| Some(corner + placed.right.get(output).copied()?)).unwrap_or(height / 2))
-        .collect();
+    block.inputs = frame_inputs(structure, found.inputs.len(), axis, height, |arm, left| {
+        let (_, corner, placed) = arms.get(arm)?;
+        Some(corner + placed.left.get(left).copied()?)
+    });
+    let outer_outputs = frame_outputs(found.outputs.len(), height, last.map(|&(_, corner, placed)| (corner, placed)));
     // Each arm: what enters it by a notch, and what it yields to the outputs. Only the inputs it reads, so that a `match`
     // of many arms that all read one value costs its readers, not arms times inputs.
     let mut entering: Vec<Vec<(i64, Vec<i64>)>> = vec![Vec::new(); arms.len()];
@@ -525,25 +473,14 @@ fn tabs_block(
     let frame_width = left_gap + width + right_gap;
     block.width = frame_width;
     block.outputs = outer_outputs.iter().map(|&y| (frame_width, y)).collect();
-    let core = "frame.fill.1";
     for (arm, ((lists, (slots, _)), (out_lists, (out_slots, _)))) in entering.iter().zip(&left).zip(leaving.iter().zip(&right)).enumerate() {
         let mut shapes = Vec::new();
         let inputs = slot_of.get(arm).map_or(&[][..], Vec::as_slice);
         for ((&input, (outer, arms_at)), slot) in inputs.iter().zip(lists).zip(slots) {
-            let family = found.inputs.get(input).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-            let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
-            let branches: Vec<Vec<(i64, i64)>> =
-                arms_at.iter().map(|&arm_y| route::simplify(vec![(0, *outer), (x, *outer), (x, arm_y), (left_gap, arm_y)])).collect();
-            gap_shapes(&branches, family, core, &mut shapes);
+            left_margin_wire(family_of(&found.inputs, input), *outer, arms_at, *slot, left_gap, &mut shapes);
         }
         for (output, ((outer, arms_at), slot)) in out_lists.iter().zip(out_slots).enumerate() {
-            let family = found.outputs.get(output).map_or(crate::graph::Family::ERROR, |terminal| terminal.family);
-            let x = left_gap + width + style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
-            let branches: Vec<Vec<(i64, i64)>> = arms_at
-                .iter()
-                .map(|&arm_y| route::simplify(vec![(left_gap + width, arm_y), (x, arm_y), (x, *outer), (frame_width, *outer)]))
-                .collect();
-            gap_shapes(&branches, family, core, &mut shapes);
+            right_margin_wire(family_of(&found.outputs, output), *outer, arms_at, *slot, left_gap + width, frame_width, &mut shapes);
         }
         if let Some(slot) = block.arms.get_mut(arm) {
             *slot = shapes;
@@ -552,6 +489,79 @@ fn tabs_block(
         }
     }
     block
+}
+
+/// Where the inputs of a `match` or `handle` stand on the left edge of its frame, unfolded or in tabs (notation 5.2):
+/// the one that carries the error on the axis, the selector on the top line (a `handle`, whose selector is an error: on
+/// the bottom line, the axis when there is one), the others at the notch of the last arm that reads them. `notch`
+/// gives the height of the notch `left` of the arm `arm`, from the top of the frame.
+fn frame_inputs(
+    structure: &crate::graph::Structure,
+    count: usize,
+    axis: Option<i64>,
+    height: i64,
+    notch: impl Fn(usize, usize) -> Option<i64>,
+) -> Vec<(i64, i64)> {
+    let entry = structure.pair.map(|(input, _)| input);
+    (0..count)
+        .map(|input| {
+            if let (Some(axis), true) = (axis, entry == Some(input)) {
+                return (0, axis);
+            }
+            if input == 0 {
+                let y = match structure.kind {
+                    StructureKind::Handle => axis.unwrap_or(height - style::frame_pad()),
+                    _ => style::frame_header() / 2,
+                };
+                return (0, y);
+            }
+            let at = structure.inputs_at.get(input).map_or(&[][..], Vec::as_slice);
+            (0, at.iter().rev().find_map(|&(arm, left)| notch(arm, left)).unwrap_or(style::frame_header() / 2))
+        })
+        .collect()
+}
+
+/// The heights of the outputs of a `match` or `handle` frame: those of the last arm, given as its corner and its place.
+fn frame_outputs(count: usize, height: i64, last: Option<(i64, &BodyPlace)>) -> Vec<i64> {
+    (0..count).map(|output| last.and_then(|(corner, placed)| Some(corner + placed.right.get(output).copied()?)).unwrap_or(height / 2)).collect()
+}
+
+/// The family of a terminal of a frame, the error one when it is not there.
+fn family_of(terminals: &[crate::graph::Terminal], index: usize) -> crate::graph::Family {
+    terminals.get(index).map_or(crate::graph::Family::ERROR, |terminal| terminal.family)
+}
+
+/// The wire of a value that enters a frame at `outer`, to the notches `arms_at` of its arms, by the vertical `slot` of
+/// the margin on the left.
+fn left_margin_wire(
+    family: crate::graph::Family,
+    outer: i64,
+    arms_at: &[i64],
+    slot: Option<u32>,
+    left_gap: i64,
+    shapes: &mut Vec<crate::shape::Shape>,
+) {
+    let x = style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
+    let branches: Vec<Vec<(i64, i64)>> =
+        arms_at.iter().map(|&arm_y| route::simplify(vec![(0, outer), (x, outer), (x, arm_y), (left_gap, arm_y)])).collect();
+    gap_shapes(&branches, family, "frame.fill.1", shapes);
+}
+
+/// The wire of what the arms yield at `arms_at` to the output of a frame at `outer`, by the vertical `slot` of the margin
+/// on the right, which begins at `body_right`.
+fn right_margin_wire(
+    family: crate::graph::Family,
+    outer: i64,
+    arms_at: &[i64],
+    slot: Option<u32>,
+    body_right: i64,
+    frame_width: i64,
+    shapes: &mut Vec<crate::shape::Shape>,
+) {
+    let x = body_right + style::wire_gap() + style::wire_gap() * i64::from(slot.unwrap_or(0));
+    let branches: Vec<Vec<(i64, i64)>> =
+        arms_at.iter().map(|&arm_y| route::simplify(vec![(body_right, arm_y), (x, arm_y), (x, outer), (frame_width, outer)])).collect();
+    gap_shapes(&branches, family, "frame.fill.1", shapes);
 }
 
 /// The slots of the verticals in a margin of a `match`, taken in the order that `rank` gives, and how wide the margin
