@@ -132,6 +132,7 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | [docs/visual-notation.md](docs/visual-notation.md) | How a diagram is drawn: nodes, terminals, wire families, structures (first draft) |
 | [docs/cli.md](docs/cli.md) | The command line: `fmt` and `check`, their reports and diagnostic codes (implemented for M0a), `run` and `mcp` (implemented for M0b), `diagram` and the viewer (M0v) |
 | [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (implemented for M0b) |
+| [docs/ide.md](docs/ide.md) | The window of the IDE of M1: panels, tabs and views, command palette, planned workspaces, the agent attached, detached windows (specification, before the Rust) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (implemented for M0b) |
 | [skills/](skills/README.md) | Skills for agents: writing, debugging and testing a program, which the MCP server serves through `guide_read` |
 | [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; implemented for M0b) |

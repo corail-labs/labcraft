@@ -56,9 +56,11 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   `openWorldHint`, since it reaches instruments; every other hint is false.
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
-- **Nineteen tools in M0b**, `guide_read` and `diagram_svg` among them, few enough for each to be read. The `view.*` commands serve a session that has a viewer, and
-  reach an agent when the server is attached to the open IDE (D-18): a headless server does not give them
-  (decision of the owner, 2026-11-11), and an agent sees a diagram through `diagram_svg`. When the catalog grows (the commands of the
+- **Nineteen tools in M0b**, `guide_read` and `diagram_svg` among them, few enough for each to be read. The `view.*` commands serve a session that has a viewer: a headless server does not give them
+  (decision of the owner, 2026-11-11), and an agent sees a diagram through `diagram_svg`. Attached to the open IDE,
+  an agent reads the state of the window (`view.get_state`) but never changes what the user sees: the other
+  `view.*` commands are refused to it (decision of the owner, 2026-11-15, which replaces that of 2026-11-11 on
+  this point; [ide.md](ide.md), 8). When the catalog grows (the commands of the
   viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through
   `commands_list`, `commands_describe` and a `commands_execute`, as SolidCraft does *(proposed)*.
 
@@ -179,7 +181,8 @@ Taken from SolidCraft, each when what it serves exists:
 - **Attached to the IDE** (M1): the control channel of the desktop app, on `127.0.0.1` only, a random
   token for each launch in a file only the user can read, a file that gives the port so that `mcp` with no
   option finds the open app, and a `running` tool that says what the app runs for every client. The tools
-  stay those of section 2.
+  stay those of section 2. What the window shows of the agent, and what it asks the user, are in
+  [ide.md](ide.md), section 8.
 - **`batch`** (M1): several editing commands in one call, stopped at the first failure and rolled back. It is the
   command `commands.batch` ([commands.md](commands.md), 9.4), and so the tool `commands_batch`.
 - **`crash_reports`**: the crash reports of this computer, each with the commands that led to the bug,

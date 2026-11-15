@@ -82,7 +82,7 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 
 | Crate | Use in LabCraft |
 |---|---|
-| `craft-ui` | Docking, tabs, SVG icon buttons, themes: the shell of the IDE |
+| `craft-ui` | Docking, tabs, SVG icon buttons, themes: what the shell of the IDE is built on ([ide.md](ide.md), 11) |
 | `craft-keymap` | Shortcuts, conflicts, customization |
 | `craft-settings` | Preferences, portable mode, migrations |
 | `craft-atomic` | Safe saving of programs (never a half-written file) |

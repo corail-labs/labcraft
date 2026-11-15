@@ -362,6 +362,10 @@ Taken directly from the SolidCraft model:
 - MCP tools: create and edit the graph, validate, run, read probes and traces, drive the simulated
   instruments, capture the panel or the diagram.
 - No dialog box during a programmatic call: default parameters or an error.
+  One exception, decided by the owner on 2026-11-15: the window of the IDE may ask the human whether an
+  agent attached to it may connect, and, under the policy Ask, whether it may run a command; the wait is
+  bounded, and an answer that does not come is an error of the command ([ide.md](ide.md), 8). A server
+  with no window and the command line never ask.
 - Later: an assistant in the IDE, through `craft-ai-integrations`.
 
 ## D-19 — Licence

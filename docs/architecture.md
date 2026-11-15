@@ -1624,5 +1624,13 @@ The contract is in the [spec](language-spec-v0.md) (section 11: what the `layout
 - **`mcp`** exposes the same commands, with `expected_revision` and `batch`; an agent and the user edit one
   history.
 
+- **The window** ([ide.md](ide.md)) is written once for the desktop and the web, and replaces the two panels of the
+  viewer (11.5). Its pieces that are not about LabCraft (the text component, the shell: top bar, workspace selector,
+  start page, command palette) are crates that depend on no crate of LabCraft, a rule that `cargo xtask layers` gains with them,
+  so that another IDE can take them; docking, detached windows, menus, keys and settings come from `craft-libs`. The
+  windows of a project share one session; a detached function is a window of the system, a floating panel on the
+  web. The control channel of mcp.md 9 is opened by the app, and the policy of each agent is judged in `engine`,
+  before a command runs (`agent.not_allowed`).
+
 Left to step 8: where the history lives in memory and its bound, the hash, the recovery folder of the `Text`
-panel, the journal of commands (`engine`), the fuzzing of the editing commands (8 hours before the tag of M1).
+panel, the names and layers of the crates of the window, the journal of commands (`engine`), the fuzzing of the editing commands (8 hours before the tag of M1).

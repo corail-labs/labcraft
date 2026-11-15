@@ -48,7 +48,8 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
 ## 2. Calling a command
 
 - **Parameters are a JSON object.** A missing parameter takes its default, or is an error if it has
-  none: a command never asks a question (no dialog on a programmatic call). An unknown parameter is an
+  none: a command never asks a question (no dialog on a programmatic call; the one exception, the consent of the
+  user to an agent attached to the IDE, is in [ide.md](ide.md), 8). An unknown parameter is an
   error, not ignored, since a misspelt `max_iteration` would otherwise run with the default and the
   agent would never know.
 - **Paths** are relative to the root of the project ([mcp.md](mcp.md), section 1), written with `/`
@@ -132,7 +133,7 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `run.busy` | `run.start` while another run of this session is going (section 4); `run` gives its id |
 | `file.stale` | *(M1)* An editing command whose `expected_revision` is not the revision of the file (section 9); `message` gives the current one |
 | `file.unparsed` | *(M1)* An editing command on a file whose text does not parse (9.2) |
-| `path.exists` | *(M1)* A new function or type in a file that already exists |
+| `path.exists` | *(M1)* A new function or type in a file that already exists; a new project in a folder that is not empty |
 | `edit.unknown` | *(M1)* A node, value, wire, terminal, structure or arm that the function does not have (9.2); `expected` gives the nearest names |
 | `edit.ambiguous` | *(M1)* A name that names several things, such as a name defined in two arms; `expected` lists them |
 | `name.taken`, `name.invalid` | *(M1)* A new name that the function already binds, or that only a wire gives (notation 2.4); a name that is not an identifier, or is a keyword |
@@ -140,6 +141,7 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `wire.type_mismatch` | *(M1)* A value or a constant of a type that the input does not take, without `accept_mismatch`; `message` gives both types |
 | `wire.cycle`, `wire.out_of_scope` | *(M1)* A wire that would close a cycle; a wire from a value that the input cannot see (9.4) |
 | `history.empty`, `history.not_yours` | *(M1)* Nothing to undo or redo; a step that an agent may not undo, since it is not its own (9.5) |
+| `agent.not_allowed` | *(M1)* A command of an agent attached to the IDE that its policy does not allow, that the user refused or did not answer in time, or that only the window calls ([ide.md](ide.md), 8) |
 | `internal` | A bug of LabCraft, caught: `message` says where. The session goes on |
 
 A request too large to read is not a command error: no command was reached ([mcp.md](mcp.md), section 5).
@@ -644,8 +646,8 @@ file and calls a command uses one vocabulary.
 
 ### 9.4 The catalog
 
-Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*` and
-`fragment.copy`, which writes nothing. It is an object that maps a path to a revision, for the files that the command may write
+Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*`, the commands of
+the window (`project.*`, `view.*`) and `fragment.copy`, which writes nothing. It is an object that maps a path to a revision, for the files that the command may write
 (9.1). A file it does not name is not judged. The rows below leave it out; once the catalog moves to section 6, each
 row will list it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
 `edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
@@ -738,9 +740,32 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 | `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
 | `history.redo` | | Redoes the last step undone, under the same rules |
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
-| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy` and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
+| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window and `commands.batch` itself are
+`params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
 | `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
 | `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
+
+**The window**
+
+The commands of the window of the IDE ([ide.md](ide.md)). They change what the window shows, and `project.new` writes the first file of a new project; none is a step of
+the history; the layout they change is a setting of the user. An agent attached to the IDE may call
+`view.get_state` only: the others are `agent.not_allowed` (ide.md 8). `project.*` takes a folder anywhere on the
+computer, chosen by the user in a dialog of the system, so it is not a path of a project (section 2); the root of a
+project keeps the rules of mcp.md 1 (the home folder and the root of a disk are refused). In `labcraft-cli` and in the MCP server alone, which
+have no window, they are `command.not_enabled`. The `view.*` commands of the viewer (6.5) stay, for the window; to an attached agent, those that change
+what the window shows are `agent.not_allowed` too (ide.md 8).
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `project.new` | `folder` | Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown (ide.md 10). A folder that exists and is not empty is `path.exists` |
+| `project.open` | `folder` | Opens the folder as a project: in this window when it shows the start page, in a new window otherwise |
+| `view.get_state` | | `{ "workspace": "edit", "windows": [{ "tabs": [{ "function", "file", "view", "split" }], "shown", "selection", "zoom" }], "truncated": false }`: for each window of the project, its tabs (the function named as in 6.5, its file, its view among `diagram`, `text` and `block`, the second view of a split or `null`), the index of the tab shown or `null` on the start page, the selection of the tab shown as the editing commands name it (9.2), at most 1,000 items *(proposed)*, and the zoom. Not `view.set_state` (6.5), which sets the view state of a drawing |
+| `view.set_view` | `function`, `view`, *`split`* (`null`) | Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid` |
+| `view.detach` | `function` | Moves the tab of the function into a window of its own (ide.md 9); on the web, a floating panel |
+| `view.dock` | `function` | Moves it back among the tabs of the window of the project |
+| `view.toggle_panel` | `panel`, *`on`* (the other state) | Shows or hides `project`, `palette`, `inspector`, `problems` or `run` |
+| `view.reset_layout` | | Puts the panels back where ide.md 2 says, and docks every detached tab |
+| `view.set_workspace` | `workspace` | Changes the workspace of the window (ide.md 6); a planned one is `command.not_enabled`, and the message gives its milestone |
 
 ### 9.5 The agent and the work of the user
 
