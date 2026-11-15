@@ -180,8 +180,8 @@ Taken from SolidCraft, each when what it serves exists:
   token for each launch in a file only the user can read, a file that gives the port so that `mcp` with no
   option finds the open app, and a `running` tool that says what the app runs for every client. The tools
   stay those of section 2.
-- **`batch`**: several commands in one call, stopped at the first failure and rolled back, once commands
-  edit the graph (M1).
+- **`batch`** (M1): several editing commands in one call, stopped at the first failure and rolled back. It is the
+  command `commands.batch` ([commands.md](commands.md), 9.4), and so the tool `commands_batch`.
 - **`crash_reports`**: the crash reports of this computer, each with the commands that led to the bug,
   so that it replays.
 - **`mcp setup`**: writes the entry of the server in the configuration of the MCP clients found on the

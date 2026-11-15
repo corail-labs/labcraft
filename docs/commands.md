@@ -130,6 +130,15 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `run.unknown` | A run id that this session does not know, or no longer keeps, or no run at all |
 | `run.busy` | `run.start` while another run of this session is going (section 4); `run` gives its id |
 | `file.stale` | *(M1)* An editing command whose `expected_revision` is not the revision of the file (section 9); `message` gives the current one |
+| `file.unparsed` | *(M1)* An editing command on a file whose text does not parse (9.2) |
+| `path.exists` | *(M1)* A new function or type in a file that already exists |
+| `edit.unknown` | *(M1)* A node, value, wire, terminal, structure or arm that the function does not have (9.2); `expected` gives the nearest names |
+| `edit.ambiguous` | *(M1)* A name that names several things, such as a name defined in two arms; `expected` lists them |
+| `name.taken`, `name.invalid` | *(M1)* A new name that the function already binds, or that only a wire gives (notation 2.4); a name that is not an identifier, or is a keyword |
+| `wire.occupied` | *(M1)* An input that is already wired or that holds a constant, without `replace` (9.4); `message` says what is there |
+| `wire.type_mismatch` | *(M1)* A value or a constant of a type that the input does not take, without `accept_mismatch`; `message` gives both types |
+| `wire.cycle`, `wire.out_of_scope` | *(M1)* A wire that would close a cycle; a wire from a value that the input cannot see (9.4) |
+| `history.empty`, `history.not_yours` | *(M1)* Nothing to undo or redo; a step that an agent may not undo, since it is not its own (9.5) |
 | `internal` | A bug of LabCraft, caught: `message` says where. The session goes on |
 
 A request too large to read is not a command error: no command was reached ([mcp.md](mcp.md), section 5).
@@ -508,11 +517,16 @@ The example leaves lines out, and files from the first line.
   `run.trace` (section 6.4); `labcraft-cli run --trace FILE` writes elsewhere, its `.partial` beside `FILE`, and
   leaves the last trace of the function as it was.
 
-## 9. The editing model (M1)
+## 9. Editing (M1)
 
-M1 adds the commands that edit a function as a graph: add a node, wire, move, rename, arrange. Their catalog
-comes with step 2 of the specifications of M1, in section 6. This section sets what they all share, decided with
-the owner on 2026-11-14 (spec, section 11; [visual-notation.md](visual-notation.md), section 2.4).
+M1 adds the commands that edit a function as a graph: add a node, wire, move, rename, arrange. Their catalog is in
+9.4. It stays in this section until the Rust of M1 registers the commands, first as `planned` (section 1). Then it
+moves to section 6, where `cargo xtask commands` checks it (decision of the owner, 2026-11-15).
+
+### 9.1 The editing model
+
+What all editing commands share, decided with the owner on 2026-11-14 (spec, section 11;
+[visual-notation.md](visual-notation.md), section 2.4).
 
 - **The file is the truth.** A command that succeeds writes the canonical form of each file it touches (spec 5.2)
   at once: there is no unsaved state of a function and no "save". The IDE, the agent and the command line edit
@@ -539,7 +553,14 @@ the owner on 2026-11-14 (spec, section 11; [visual-notation.md](visual-notation.
   key or when the panel loses the focus; each such pause is one step. A text that does not parse stays in the
   IDE, with a banner, and in the recovery folder; the file keeps the last text that parsed.
 - **Incomplete is normal.** A node added without its required inputs writes a file that has `LC2101`: the
-  diagram shows it, and wiring it removes the error.
+  diagram shows it, and wiring it removes the error. **Where the text cannot leave a place out** (a selector, an
+  `until`, a `yield`, `collect`, `next x`, the initial value of a carry, a bound of a range, a value of a variant,
+  of an array or of a variadic parameter, a field of a construction), and before a positional argument, which
+  would otherwise move, a command writes a hole `?` there (spec 5.1), which is `LC2101` too. An input of a call left
+  out is otherwise left out, as before; a removed order wire takes its name out of `after:`, and an empty `after:`
+  goes. So no command ever writes a file that does not
+  parse, and a value removed never shifts the positions after it (decision of the owner, 2026-11-15). Wiring the
+  place, or setting a constant on it, fills the hole; a hole is not an occupied input.
 - **Arrange.** One command, on the selection, a branch or the whole function: it removes the `layout` entries
   of what it arranges (spec 11), and the automatic placement places it again, around the fixed nodes outside
   the selection; one step. An agent calls it only when asked to: arranging is the user's choice.
@@ -549,10 +570,207 @@ the owner on 2026-11-14 (spec, section 11; [visual-notation.md](visual-notation.
   command line; `labcraft.toml` stays the manifest of the libraries (D-25). In `.labcraft/`, git sees `config.toml`
   and the `.gitignore` only; the runs and the traces stay out of it (section 8).
 
+### 9.2 Naming what a command edits
+
+An editing command uses the names of the `layout` section (spec 11), written the same way. So an agent that reads a
+file and calls a command uses one vocabulary.
+
+- **A function is its file.** An editing command takes `file`, the path of a `.lcf` of the project (section 2), or
+  of a `.lct` for `type.rename`; a file holds one function or one type. A command that makes a file takes `path`. The shipped libraries are never written: `path.outside_project`. A file whose text does
+  not parse cannot be edited as a graph: `file.unparsed`, and `file.write` or the `Text` panel mends it. A file with
+  errors of types or of `check` is edited like any other.
+- **A node** is named by its label (`#close`) or by the name of its line, and a named constant by its name (spec 11).
+  A structure is a node. **A wire** is named by `value -> node` or `value -> node.input`, and **a terminal of the
+  frame** by `input x` or `output x`.
+- **An input**, which a command wires or sets (`to`), is named as the end of a wire in spec 11: `verdict`,
+  `sq.b`, `total.sum` (the initial value of the carry `sum`), `n.stop`. A node alone names its only input, or its
+  only input without a name, such as the selector of a `match`; with `arm`, the structure names the `yield` of
+  that arm. There are four additions:
+  - `next x` of a loop `n`, by `n.next.x`, since `n.x` names the initial value of `x`, and an outer value can
+    reach both;
+  - an input without a name, by its position among those of its node, from 0: `r.0` for the value of
+    `r = Reading.Value(v)`;
+  - a value of a variadic parameter, by its position in it (`msg.parts.2`); the position just after the last one
+    adds a value;
+  - a `yield` or a `collect`, by the output of the structure that it gives: `verdict`, for `verdict = match …`.
+    For a `yield`, the command also takes `arm`, the patterns of its arm as the text writes them.
+
+  An order wire ends at `node.after` (spec 5.3).
+- **An output**, where a wire starts (`from`), is named as one of two things:
+  - a value: a name that the body binds (an input of the function, a line, a carry, an `in` clause, a pattern),
+    or a label for an order wire;
+  - `node.output`, an output of a node by its name in the signature. If that output has no name (`_`), it gets
+    one (N-14), which the result gives.
+- **Names that fail.** A name that names nothing is `edit.unknown`, and `expected` gives the nearest names. A name
+  that names several things, such as a name defined in two arms, is `edit.ambiguous`, and `expected` lists them: a
+  label or the name of the input settles it. A node that has no name, such as a call statement without a label, or a
+  name defined in two arms, gets a label from `node.set_label`, which names the node by its line. The editor never
+  makes such a node, since it names every node it places (N-14), but a text written by hand can.
+- **Positions** are `[x, y]` in canvas units, in the frame of what they place (spec 11). They are integers in the
+  range of spec 11; any other value is `params.invalid`.
+- **Text of the language.** Where a command takes a constant (`240 V`, `"MEAS?"`, `Verdict.Pass`), a type
+  (`f64[V]`) or a pattern (`1..=5`, `io.timeout(err)`), it is written as in a file and read by the grammar
+  (spec 14). Text that does not parse is `params.invalid`, with the message of the parser. Where a parameter takes a
+  value or a constant, a bare name is a value.
+
+### 9.3 What an editing command returns
+
+```json
+{
+  "step": 42,
+  "files": [{ "file": "check_voltage.lcf", "revision": "…" }],
+  "names": { "node": "reading2" },
+  "renamed": [{ "file": "check_voltage.lcf", "from": "voltage", "to": "voltage2" }],
+  "diagnostics": [],
+  "summary": { "errors": 1, "warnings": 0 },
+  "truncated": false
+}
+```
+
+- **`step`** is the number of the step of history that the command made (9.1); `history.list` shows it. A command
+  that changes nothing, such as a node moved to where it is, writes nothing and gives `"step": null`.
+- **`files`** gives each file written and its new revision, which the next command can send as
+  `expected_revision`. The revision is opaque text; its hash comes with step 8 of the specifications of M1.
+- **`names`** gives what the command named: the node it added, the output that got a name. The next command can
+  name it without reading the file.
+- **`renamed`** gives each value that the rules of the gestures renamed as well (notation 2.4: a value unwired from
+  an output of the function takes back the name of its node). So an agent never loses track of a name.
+- **`diagnostics`** gives those of the files written, and of each other file whose diagnostics the command
+  changed: a caller that a new required input leaves with `LC2101`. They come from the check of the root that
+  follows every editing command, as after `file.write` (6.2). There are at most 200 diagnostics *(proposed)*; after that, the
+  result says `truncated`. **`summary`** is that of the whole root (cli.md, section 4.2).
+
+### 9.4 The catalog
+
+Every command of this section also takes *`expected_revision`*, except `history.*` and `settings.*`. It is an object that maps a path to a revision, for the files that the command may write
+(9.1). A file it does not name is not judged. The rows below leave it out; once the catalog moves to section 6, each
+row will list it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
+`edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
+makes or renames a file, `path.exists`. Each row names only its other errors. A command that also changes other
+files of the project (a rename that updates the callers) refuses, and writes nothing, when one of them does not
+parse: `file.unparsed`, which names it.
+
+**Nodes and constants**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `node.add` | `file`, `call`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (from its output, N-14), *`into`* | Adds a node. `call` is what quick insertion lists (step 4 of the specifications): a function as a call names it (`visa.open`, `settle`), a struct type or a variant that holds values (a construction, spec 5.1). The command adds the `use` that the file then needs. `inside` names a structure, and `arm` an arm of it, for a node inside it. `at` fixes the node (a `node … at` entry). Without it, the node is free and is placed near its neighbours (spec 11). `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output of the same type goes where the wire went. The required inputs stay unwired (`LC2101`, 9.1). `names.node` gives its name |
+| `constant.add` | `file`, `value`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (`constant`, numbered when taken) | Adds a named constant (spec 5.1): `limit = 240 V` |
+| `node.delete` | `file`, `nodes` | Deletes the nodes, their wires and their entries in `layout`. A structure goes with all it holds. No other node is deleted (decision of the owner, 2026-11-15): an input that a deleted node fed becomes unwired (`LC2101` when it is required), or gets a hole where the text cannot leave it out (9.1), and an output of the function that it gave loses its value |
+| `node.move` | `file`, `nodes`, `by` | Moves nodes of one frame by `[dx, dy]` and fixes each one (notation 2.4). Nodes of several frames are `params.invalid` |
+| `node.place` | `file`, `node`, `at` | Places one node at `at` in its frame, and fixes it |
+| `node.set_view` | `file`, `nodes`, `view` | Writes `view standard` or `view compact` on each node; with `default`, removes it (spec 11) |
+| `value.rename` | `file`, `value`, `name` | Renames a value or a label (`#close` to `#shut`) everywhere in the function: its readers, its `node` line and its `wire` lines. A name that the function already binds is `name.taken`, and so is the name of an output of the function, which only a wire gives (notation 2.4). A name that is not an identifier, or is a keyword, is `name.invalid`. An input or an output of the function is renamed by `signature.rename` |
+| `node.set_label` | `file`, `line`, `label` | Gives a label (`#close`) to the node that starts on line `line` of the file (from 1, as diagnostics count), or replaces its label. This is the one command that names a node by its line, so that a node with no name, or with an ambiguous one, can be named (9.2). A line where no node starts is `edit.unknown` |
+| `input.set_constant` | `file`, `to`, *`arm`*, `value`, *`replace`* (`false`), *`accept_mismatch`* (`false`) | Writes a constant on the input (spec 5.1). For an input that is already wired or that holds a constant, and for a constant of a type that the input does not take, `replace` and `accept_mismatch` act as in `wire.connect` |
+| `input.clear_constant` | `file`, `to`, *`arm`* | Removes the constant of an input: the input goes back to its default, is unwired, or gets a hole (9.1). A constant is never the text `?`: clearing is what writes a hole (`params.invalid`) |
+| `input.remove_value` | `file`, `to` | Removes a value of a variadic parameter or an element of an array (`msg.parts.2`, `k.1`), with its wire or its constant. The values after it move up one place: this command alone moves them, on purpose (9.1) |
+
+**Wires and placement**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `wire.connect` | `file`, `from`, `to`, *`arm`*, *`replace`* (`false`), *`accept_mismatch`* (`false`) | Wires `from` to `to` (9.2); `arm` names the arm of a `yield`. **Occupied input:** an input that is already wired, or that holds a constant, is `wire.occupied`, and the message says what is there. With `replace`, the old wire and its `wire` entry go. The IDE passes `replace` for a drop on such an input, unless its setting "replace only with Alt" is on and Alt is up (notation 2.4); an agent passes it only when it means it (9.5). **Wrong type:** a value of a type that the input does not take is `wire.type_mismatch`, and the message gives both types. With `accept_mismatch`, the wire is written and `check` gives `LC3001`; the IDE passes it when its setting "accept it" is on. **Refused wires:** a wire that would close a cycle is `wire.cycle`. A wire from a value that the input cannot see is `wire.out_of_scope`: a value of another arm, or one from inside a loop to outside it (a `collect` or a carry takes it out: `structure.add_collect`, `structure.add_carry`). **Out of an arm:** a wire from inside an arm of a `match` or `handle` to outside adds an output to the structure. That arm yields it, and the other arms yield a hole for it (9.1). **Names:** wiring a value to an output of the function names the value as notation 2.4 says, and `renamed` lists what that renamed |
+| `wire.disconnect` | `file`, `wire` | Removes the wire and its entry. Its input goes back to its default, is unwired, or gets a hole (9.1). A value unwired from an output of the function takes back the name of its node (notation 2.4) |
+| `wire.route` | `file`, `wire`, `via` | Writes `wire … via` with the points of `via`, in the frame of the wire (spec 11). A branch starts at its first point when that point lies on a wire of the same value (notation 2.4) |
+| `layout.arrange` | `file`, *`nodes`*, *`wires`*, *`terminals`*, *`inside`*, *`arm`* | Arrange (9.1). It removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals` (`input x`, `output x`). With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too. "Remove the fixed position" of a node or a terminal calls it with that node or terminal. An agent calls it only when asked to (9.1) |
+| `frame.resize` | `file`, `size` | Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size. The size of a structure comes with step 5 of the specifications |
+| `terminal.move` | `file`, `terminal`, `y` | Writes `input x at y` or `output x at y` (spec 11), with `y` as given: the grid of 8 and the 24 units between two terminals are rules of the gesture (notation 2.4), and a file that places them closer draws them as written |
+
+**Structures**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `structure.surround` | `file`, `nodes`, `kind`, *`selector`*, *`over`*, *`arm`* (the first arm) | Puts the nodes in a new `match`, `handle`, `for` or `loop`; see 9.6 |
+| `structure.add_arm` | `file`, `structure`, `patterns` | Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure (9.1); in a structure that gives nothing, it has none |
+| `structure.set_patterns` | `file`, `structure`, `arm`, `patterns` | Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`) |
+| `structure.add_carry` | `file`, `structure`, `name`, *`initial`* (a hole), *`type`* (that of `initial`) | Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so |
+| `structure.add_clause` | `file`, `structure`, `name`, `over` | Adds the clause `name in over` to a `for`. `over` is an array value or a range (`0..n`) |
+| `structure.add_collect` | `file`, `structure`, `value`, *`name`* (from the value, N-14) | Adds `collect value` to a loop, and its output |
+| `structure.remove_part` | `file`, `structure`, `part` | Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y` (`y` is its output). The inputs that it fed become unwired, or get a hole (9.1). The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure |
+| `structure.set_option` | `file`, `structure`, `option`, `on` | Turns `continue_on_error` of a `loop` (spec 6.3) or `parallel` of a `for` (spec 6.2) on or off |
+
+**Functions, signatures and types**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `function.create` | `path`, *`doc`* | Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists` |
+| `function.rename` | `file`, `name` | Renames the function and its file. It updates every call and every reference to it in the project, in the same step (decision of the owner, 2026-11-15) |
+| `function.set_doc` | `file`, `doc` | Writes the documentation comment (`///`); an empty text removes it |
+| `signature.add` | `file`, `terminal`, `type`, *`default`* (required), *`position`* (the last, before `err`) | Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101` |
+| `signature.remove` | `file`, `terminal` | Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole (9.1). Callers are not changed: `check` shows each of them |
+| `signature.rename` | `file`, `terminal`, `name` | Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step (decision of the owner, 2026-11-15) |
+| `signature.set_type` | `file`, `terminal`, `type` | Changes the type of an input or an output; `check` judges the wires that it reaches |
+| `signature.set_default` | `file`, `terminal`, `default` | Sets the default value of an input (a constant, spec 4); `null` makes the input required |
+| `type.create` | `path`, `definition`, *`doc`* | Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2). An existing file is `path.exists` |
+| `type.rename` | `file`, `name` | Renames the type and its file, and every use of it in the project, in the same step |
+
+**History, batches and settings**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
+| `history.redo` | | Redoes the last step undone, under the same rules |
+| `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
+| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*` and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
+| `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
+| `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
+
+### 9.5 The agent and the work of the user
+
+The agent and the user share the history, but the agent never undoes or replaces the user's work without
+saying so (decision of the owner, 2026-11-15).
+
+- **The author of a call** is its client. A command from the window of the IDE is the user's. A command from an MCP
+  client, attached to the IDE or not, is the agent's; two MCP clients are two authors, each its own.
+- **Undo.** Called by an agent, `history.undo` undoes the last step only when that step is its own. Otherwise it is
+  `history.not_yours`, and the message names the author and the label of that step. Called by an agent,
+  `history.redo` redoes only a step that this agent undid, so that it never brings back what the user chose to
+  undo. The user's Ctrl+Z undoes the last step, whoever made it (9.1).
+- **Replace.** A wire or a constant on an occupied input is written only with `replace`. The agent passes it when it
+  means to replace what is there, never by default.
+- **Arrange** is called by the agent only when it is asked to (9.1).
+- **The command line** runs one command per process, with no history to undo. In `labcraft-cli`, `history.*` is
+  `command.not_enabled`. Its writes reach an open IDE as external writes (9.1).
+
+### 9.6 Surrounding with a structure
+
+`structure.surround` puts nodes in a new structure, as one step of undo.
+
+- **Where.** The `nodes` are in one frame: the body of the function, of a loop, or an arm. Nodes of several frames
+  are `params.invalid`. The structure goes in that frame, around them. Their entries in `layout` are rewritten in its
+  frame, and the structure gets a `node … at` entry where it stands, so that nothing moves on the screen. Its own size
+  comes with step 5 of the specifications.
+- **The head of each kind:**
+  - `match` needs `selector`, a value. Its arms are those that make it complete: `true` and `false` for a boolean,
+    each variant of an enumeration, and `_` alone for an integer or a string. A variant that holds values binds
+    each of them under a name from its type, as N-14 names a value (spec 6.1).
+    A selector of a type that a `match` does not take (spec 6.1: a float, a struct) is `wire.type_mismatch`; a value
+    with no type yet gets the single arm `_`.
+  - `handle` needs `selector`, an error value. Its arms are `ok` and `_`.
+  - `for` needs `over`, an array value or a range (`0..n`). Its clause takes a name from the value (N-14).
+  - `loop` needs neither. Its `until` is a hole until it is wired (9.1).
+  - `arm` names the arm that receives the nodes, by its patterns; by default, the first, in the order above. A
+    `selector` or an `over` that a kind does not take is `params.invalid`.
+- **What crosses the frame.** A value that the nodes read from outside is passed in (spec 6), and nothing is written
+  for it. A value that the nodes define and that is read outside becomes an output:
+  - in a `match` or a `handle`, the arm that holds the nodes yields it, and the other arms yield a hole for it
+    (9.1). When the nodes give nothing outside, the structure gives nothing: its target is `_`, and its arms have no
+    `yield` (spec 6.1);
+  - in a loop, it becomes a `collect` output, an array of its values. A reader that does not take an array shows
+    `LC3001`.
+- **The error chain.** Sometimes exactly one value of type `error` enters the nodes and exactly one leaves them. In a
+  `match` or a `handle`, that output is then given by the other arms from the error that entered (`yield e1`). In a
+  loop, it becomes a carry of type `error` (`carry err = e1`, `next err = e4`). That carry stops a `loop` on an error
+  (spec 6.3); a `for` runs to its end.
+- `names` gives the name of the structure and of each output that it made.
+
 ## 10. Left for later
 
 Each can be added without breaking anything above: the other commands of the viewer (M0v: zoom, pan), probes and breakpoints (M5),
 scripts of commands in a file, run by `labcraft-cli script` (D-18; `run` runs
-a program), the journal of commands (M1), crash reports that replay the commands
+a program), the journal of commands (M1, step 8 of its specifications), copy and paste (step 4), taking nodes out
+of a structure, reordering a signature, moving a function to another library, editing the fields of a type (the text
+does it in M1), crash reports that replay the commands
 that led to a bug (a Craft rule), real instruments and the consent they need (M4, [mcp.md](mcp.md),
 section 6).

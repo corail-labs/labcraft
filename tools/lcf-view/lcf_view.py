@@ -109,7 +109,8 @@ arg: (NAME ":")? (operand | unit_arg)
 _order_ref: operand | label_ref
 label_ref: "#" NAME
 unit_arg.2: "[" unit_expr "]"
-?operand: path | literal
+?operand: path | literal | hole
+hole: "?"  // a hole (spec 5.1)
 _constant: call | struct_lit | operand
 struct_lit: path "{" field_init ("," field_init)* ","? "}"
 field_init: NAME ":" operand
@@ -143,7 +144,7 @@ handle_pat: "ok" -> h_ok
           | "_" ("(" NAME ")")? -> h_other
 category: NAME ("." NAME)* WILDCARD?
 WILDCARD: ".*"
-arm_body: yield_stmt | "{" statement* yield_stmt "}"
+arm_body: yield_stmt | "{" statement* yield_stmt? "}"
 yield_stmt: "yield" (operand | "(" operand ("," operand)* ")")
 
 panel_section: "panel" "{" panel_item* "}"

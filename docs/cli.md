@@ -416,11 +416,11 @@ section 3), not a diagnostic.
 
 | Code | Severity | Problem | Spec |
 |---|---|---|---|
-| `LC2101` | error | Required input not wired: once per call, on the first one, and not when the arguments of the call have a mistake of their own, which may be the cause | 4 |
+| `LC2101` | error | Required input not wired: once per call, on the first one, and not when the arguments of the call have a mistake of their own, which may be the cause. A hole `?` too, once per hole. A hole is an argument: it takes its place, it is not a mistake of the call, and `core.add(?)` gives two, one for the hole and one for `b` | 4, 5.1 |
 | `LC2102` | error | Too many arguments, or an input wired twice | 4 |
-| `LC2103` | error | Number of targets different from the number of outputs. A loop that gives nothing takes one `_` | 5.1, 6.2 |
+| `LC2103` | error | Number of targets different from the number of outputs. A loop, a `match` or a `handle` that gives nothing takes one `_` | 5.1, 6.1, 6.2 |
 | `LC2104` | error | Positional argument after a named one, `after:` included | 4 |
-| `LC2105` | error | Invalid `after:` (a literal, or two in a call), or a parameter named `after` | R-15 |
+| `LC2105` | error | Invalid `after:` (a literal or a hole, or two in a call), or a parameter named `after` | R-15 |
 | `LC2106` | error | `string.format`: template not a literal, a field or a format not written as 5.4 says, a value without a name, or fields and arguments that differ (one diagnostic per node, with up to 5 names, and none when a field is malformed) | R-12 |
 | `LC2107` | error | Variadic parameter misplaced, or more than one | R-11 |
 
@@ -433,7 +433,7 @@ section 3), not a diagnostic.
 | `LC3003` | error | Wrong type or dimension on a function output | 3.3 | S2 |
 | `LC3004` | error | Implicit narrowing on an input, or two number types with no type that both widen to; the fix names the conversion when there is one; from a float to an integer, the one that rounds (`core.round_to_i32` for an `i32`) | 3.4 | S2 |
 | `LC3005` | error | Unit argument of another dimension, or the unit of a `string.format` field that does not convert each number of its value | 3.3 | S2 |
-| `LC3006` | error | Arms that disagree in number or type of values | R-7 | S2 |
+| `LC3006` | error | Arms that disagree in number or type of values, or an arm without `yield` beside one that has it (6.1) | R-7 | S2 |
 | `LC3007` | error | Carry whose type changes at `next`, or whose initial value does not fit the type on its line | 6.2 | S2 |
 | `LC3008` | error | Function reference of the wrong signature, or a primitive that has no function type: one that takes a unit, a category or an element, `core.call`, `string.format`. When the input receives a function of its own library by its name, not an `extern` one, the fix says to give that function the signature expected and to bind each output | 4, R-2 | S2 |
 | `LC3009` | error | Pattern that cannot apply: of the wrong type, such as a variant of another enumeration, that binds another number of values than its variant holds, or a range that holds no value | 6.1 | S2 |

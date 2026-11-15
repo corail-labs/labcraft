@@ -1593,7 +1593,7 @@ turns it into the arrangement of the code, with `docs/acceptance-m1.md` and the 
 here is a signature.*
 
 The contract is in the [spec](language-spec-v0.md) (section 11: what the `layout` section holds, `frame size`,
-`input` and `output`, a node known by its name), [commands.md](commands.md) (section 9: the editing model) and
+`input` and `output`, a node known by its name), [commands.md](commands.md) (section 9.1: the editing model; 9.4: the catalog) and
 [visual-notation.md](visual-notation.md) (section 2.4: editing by hand). Each crate keeps its layer
 ([roadmap](roadmap.md)); the editor never writes a file itself.
 

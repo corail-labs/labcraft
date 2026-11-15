@@ -420,6 +420,25 @@ dmm, e1 = visa.open(resource)
   label: `#beep: sound.beep()`. It binds no output; it is meant for a function without outputs
   (R-16). If the function has an `err` output, the warning of 7.5 applies: write
   `#close: e9 = visa.close(…)` and wire `e9`.
+- **A hole**: `?` stands for a value that is missing, wherever an operand goes. Examples are the selector of a
+  `match` (`match ? { … }`), an `until`, a `yield`, the initial value of a carry, a value of a variant or an element
+  of an array (`Reading.Range(?, high)`, `[a, ?, c]`), a field of a construction, a value of a variadic parameter.
+  It is how a program being drawn keeps a place that nothing feeds yet. The editor leaves out an input of a call
+  when that moves no other argument, and writes a hole everywhere else: where the text cannot leave the place out,
+  and before a positional argument, which would otherwise move (`g(?, 1, 2)` for `fn g(a: f64, v: f64...)`)
+  (decision of the owner, 2026-11-15, [commands.md](commands.md), 9.1).
+  - **Type:** a hole has the type that its place asks for, as a constant written there would (3.4). Where nothing
+    gives it one (`x = ?`, `x` not being an output of the function), it has none, and what reads it is judged once
+    it is filled. A hole never gives a type to anything else: `[?, 1 V]` takes its type from `1 V`, and the arms of
+    a `match` from those that yield a value (R-7).
+  - **Errors:** each hole is an error (`LC2101`, as an input not wired), so a function that holds one does not
+    check and does not run.
+  - **Where it means nothing:** a hole belongs in a body. Elsewhere it is `LC2101` too, and the rule of the place
+    may add its own error: a default value (`= ?`, `= [?]`) is also `LC3017`, `after: ?` is `LC2105`, and so is
+    a hole in a pattern, an element of the panel or an argument of `extern`, each with the code of its place.
+  - **Canonical form:** `fmt` keeps a hole as it is.
+  - **Drawing:** it is drawn as an empty place marked as an error; how comes with step 3 of the specifications of
+    M1.
 
 ### 5.2 The order of lines has no meaning
 
@@ -706,6 +725,22 @@ What LabVIEW users will look for and not find:
 
 The equivalent of LabVIEW's Case structure.
 
+**A `match` or a `handle` that gives nothing**, for nodes run only for their effects, is written with `_` as its
+only target, as a loop that gives nothing (6.2), and none of its arms has a `yield`; an arm with nothing to do has
+empty braces (decision of the owner, 2026-11-15):
+
+```text
+_ = match beep_on {
+    true => {
+        #beep: sound.beep()
+    }
+    false => {
+    }
+}
+```
+
+A `yield` in one arm and not in another is `LC3006`.
+
 ```text
 verdict = match in_range {
     true => yield Verdict.Pass
@@ -716,7 +751,8 @@ verdict = match in_range {
 Selector: boolean, integer without a unit (values and ranges: `1..=5` includes 5, `0..5` excludes it; bounds can
 be negative, `-5..=5`), string, enumeration. A variant with data binds one name per value:
 `Reading.Value(v) => …`, `Range.Between(low, high) => …`. Each branch ends with exactly one
-`yield`, last, with the same number and the same types of values (R-7). `_` stands for "all the
+`yield`, last, with the same number and the same types of values (R-7), except in a `match` that gives nothing
+(below). `_` stands for "all the
 others", wherever it is written. Every value must have a branch (R-8): an enumeration is handled
 completely, a boolean has `true` and `false`, and an integer or a string has `_`. Overlapping literal
 or range patterns are an error (R-18). A range holds at least one value: `5..=1` and `0..0` are errors.
@@ -1768,7 +1804,8 @@ arg           = [ IDENT ":" ] ( operand | unit_arg )
               | "after" ":" ( "#" IDENT | "(" order_ref { "," order_ref } ")" ) ;   (* R-15 *)
 order_ref     = operand | "#" IDENT ;
 unit_arg      = "[" unit_expr "]" ;                     (* core.with_unit(x, [V]) (R-5) *)
-operand       = path | literal ;                        (* path: value, field, variant, category *)
+operand       = path | literal | "?" ;                  (* path: value, field, variant, category;
+                                                           "?": a hole (5.1) *)
 struct_lit    = path "{" field_init { "," field_init } [ "," ] "}" ;
 field_init    = IDENT ":" operand ;
 
@@ -1805,7 +1842,8 @@ handle_arm    = handle_pat "=>" arm_body ;
 handle_pat    = "ok" | ( category | "code" [ "-" ] INT | "_" ) [ "(" IDENT ")" ] ;
 category      = IDENT { "." IDENT } [ "." "*" ] ;
 
-arm_body      = yield_stmt | "{" { statement } yield_stmt "}" ;       (* exactly one yield, last *)
+arm_body      = yield_stmt | "{" { statement } [ yield_stmt ] "}" ;  (* one yield, last; none in a
+                                                                 structure that gives nothing (6.1) *)
 yield_stmt    = "yield" ( operand | "(" operand { "," operand } ")" ) ;
 ```
 
