@@ -37,6 +37,8 @@ fn markdown_files() -> Vec<PathBuf> {
 const AHEAD_OF_THE_PARSER: &[&str] = &[
     // Spec 11, M1 step 1: the size of the frame of a function.
     "frame size (",
+    // Spec 5.3, M1 step 2: a match whose arms give nothing (an arm with no `yield`).
+    "_ = match beep_on {",
 ];
 
 /// The blocks fenced as `text` or with no word, each with the line of the spec where it starts. A block indented in a
