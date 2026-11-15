@@ -101,6 +101,7 @@ fn hidden(name: &str) -> bool {
 pub fn in_project(ws: &dyn Workspace, root: &Path, given: &str, parameter: &str, wanted: Wanted) -> Result<(PathBuf, String, bool), CommandError> {
     match judge(ws, root, given, parameter, wanted, false)? {
         Place::Project { path, shown, exists } => Ok((path, shown, exists)),
+        // Never reached, as `judge` refuses a shipped file first; said in the same words all the same.
         Place::Shipped(_) => Err(outside(parameter, "a shipped library is never written")),
     }
 }

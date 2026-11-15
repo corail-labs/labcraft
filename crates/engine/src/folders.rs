@@ -441,3 +441,72 @@ pub fn locate(ws: &dyn Workspace, lib_path: &Path, name: &str) -> Result<Option<
 fn unreadable(path: &Path, error: &std::io::Error) -> Box<Diagnostic> {
     Box::new(Diagnostic::new(Code::Lc0001, format!("cannot read this path: {}", io_text(error)), slashed(path)))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+
+    use super::*;
+    use crate::workspace::{Entry, Memory, Metadata, Read};
+
+    /// A project whose folder `libs/helpers`, under `--lib-path libs`, cannot be listed.
+    struct Unlisted(Memory);
+
+    impl Workspace for Unlisted {
+        fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+            self.0.canonicalize(path)
+        }
+        fn absolute(&self, path: &Path) -> io::Result<PathBuf> {
+            self.0.absolute(path)
+        }
+        fn current(&self) -> Option<PathBuf> {
+            self.0.current()
+        }
+        fn metadata(&self, path: &Path) -> io::Result<Metadata> {
+            self.0.metadata(path)
+        }
+        fn link_metadata(&self, path: &Path) -> io::Result<Metadata> {
+            self.0.link_metadata(path)
+        }
+        fn read_dir(&self, path: &Path, each: &mut dyn FnMut(io::Result<Entry>)) -> io::Result<()> {
+            if path == Path::new("/p/libs/helpers") {
+                return Err(io::Error::new(io::ErrorKind::PermissionDenied, "not listed"));
+            }
+            self.0.read_dir(path, each)
+        }
+        fn read(&self, path: &Path, max: u64) -> io::Result<Read> {
+            self.0.read(path, max)
+        }
+        fn write(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+            self.0.write(path, bytes)
+        }
+        fn create_folders(&self, path: &Path) -> io::Result<()> {
+            self.0.create_folders(path)
+        }
+        fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+            self.0.rename(from, to)
+        }
+        fn remove_file(&self, path: &Path) -> io::Result<()> {
+            self.0.remove_file(path)
+        }
+    }
+
+    fn unreadable(report: &Report) -> Vec<String> {
+        report.diagnostics().iter().filter(|diagnostic| diagnostic.code() == Code::Lc0001).map(|diagnostic| diagnostic.file.clone()).collect()
+    }
+
+    #[test]
+    fn a_run_says_an_unreadable_dependency_once_as_a_check_does() {
+        let memory = Memory::new();
+        memory.put("/p/uses.lcf", "labcraft 1\n\nuse helpers\n\nfn uses(x: f64) -> (y: f64) {\n    y = helpers.twice(x)\n}\n");
+        memory.put("/p/libs/helpers/twice.lcf", "labcraft 1\n\nfn twice(x: f64) -> (y: f64) {\n    y = x * 2.0\n}\n");
+        let ws = Unlisted(memory);
+        let (root, lib_paths, limits) = (PathBuf::from("/p"), [PathBuf::from("/p/libs")], Limits::default());
+        let folders = Folders { folders: std::slice::from_ref(&root), lib_paths: &lib_paths, current: Some(root.clone()), limits: &limits };
+        let (checked, _) = check_folders(&ws, &Shipped::default(), &folders);
+        let run = check_folder_for_run(&ws, &Shipped::default(), &root, &lib_paths, &root, &limits);
+        // The walk cannot list `libs/helpers`, and the lookup of `helpers` cannot either: one place, said once.
+        assert_eq!(unreadable(&checked), ["libs/helpers"]);
+        assert_eq!(unreadable(&run.report), unreadable(&checked));
+    }
+}
