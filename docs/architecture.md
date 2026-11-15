@@ -415,10 +415,13 @@ a red one stops the merge in the same way.
 A pull request that changes only prose skips `test`, `release`, `web`, `windows` and `fuzz`; `lint` always runs,
 since it checks the documents too, and so does every job on `main`. A first job, `changes`, in each of the two
 workflows, decides with `.github/scripts/code-changed.sh`, from the files of the merge commit against the base: a
-changed file is prose when it is a Markdown file at the root or directly in `docs/`, or an image of `docs/images/`,
-and no string of the Rust code of `crates/`, `apps/`, `fuzz/` or `tests/` ends with its name (the tests read the
-spec, `docs/cli.md` and `docs/visual-notation.md`); a mention in a comment does not count. Every other file is
-code. A file of `design/` is prose too. For `fuzz` the test of the strings is left out, since the fuzz targets read no
+changed file is prose when it is a Markdown file at the root, directly in `docs/`, in `.claude/agents/` or
+anywhere under `.claude/skills/` (the `*` of the pattern crosses `/`), or a file of `docs/images/` or `design/`,
+and no string of the Rust code of `crates/`, `apps/`, `fuzz/` or `tests/` names it (the tests read the spec,
+`docs/cli.md` and `docs/visual-notation.md`): a file of the root or of `docs/` is named when a string ends with
+its name, a file of `.claude/` when a string holds its whole path or starts with `.claude`; a mention in a comment
+does not count, and `.claude/README.md` and `.claude/skills/README.md` stay code, since neither sits in a
+subfolder. Every other file is code. For `fuzz` the test of the strings is left out, since the fuzz targets read no
 document of `docs/` apart from `docs/rfc/`: a document that a test reads is prose for it (the script takes the name of
 its workflow, `checks` or `fuzz`). The job `checks` then accepts a skipped part only when `changes` passed and said prose.
 
