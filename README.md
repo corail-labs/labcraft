@@ -158,7 +158,7 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | Folder | Content |
 |---|---|
 | [tools/visa-expected](tools/visa-expected/) | The expected values of the tests of `labcraft-visa`, worked out from `libs/visa/simulation.md` alone; run by hand (Python, standard library only) |
-| [design/](design/) | The board of the visual notation, drawn by hand, and the component library of the notation ([FigCraft](https://github.com/storytold/figcraft) files) |
+| [design/](design/) | The board of the visual notation, drawn by hand, the component library of the notation and the sheets of the editing states ([FigCraft](https://github.com/storytold/figcraft) files) |
 | [docs/rfc/](docs/rfc/) | Small programs discussed in the RFCs |
 
 ## Contributing

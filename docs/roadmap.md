@@ -17,7 +17,7 @@ are, and how the Rust code is organized.
 | Command line ([cli.md](cli.md)) | `fmt` and `check`, reports, diagnostic codes: implemented for M0a; `run` and `mcp`: implemented for M0b; `diagram` and the viewer: implemented for M0v |
 | Architecture ([architecture.md](architecture.md)) | The crates of M0a, M0b and M0v as implemented, and the order of work |
 | Rust code (`crates/`, `apps/`, `libs/embedded`, `libs/visa`, `xtask`, `tests/`, `fuzz/`) | M0a: crates `types`, `graph`, `format`, `check`; the declarations of the shipped libraries; `labcraft-cli fmt` and `check`; acceptance corpora, bounds, fuzzing, WASM build. M0b: crates `trace`, `ir`, `runtime`, `engine`, `mcp`, `labcraft-visa`, and that of `examples/results_log`; `labcraft-cli run` and `mcp`; the corpus of runs, the skills of `skills/`. M0v: crates `diagram`, `editor` (read-only), the module `text` of `types`; `labcraft-cli diagram`; the apps `labcraft` and `labcraft-web`; the snapshots of the drawings |
-| Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-14 |
+| Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-15 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
 | Python proof of concept and diagram rendering (`tools/lcf-poc`, `tools/lcf-figcraft`) | Throwaway, retired after M0 (2026-11-15): Rust replaces them |

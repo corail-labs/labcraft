@@ -437,8 +437,8 @@ dmm, e1 = visa.open(resource)
     may add its own error: a default value (`= ?`, `= [?]`) is also `LC3017`, `after: ?` is `LC2105`, and so is
     a hole in a pattern, an element of the panel or an argument of `extern`, each with the code of its place.
   - **Canonical form:** `fmt` keeps a hole as it is.
-  - **Drawing:** it is drawn as an empty place marked as an error; how comes with step 3 of the specifications of
-    M1.
+  - **Drawing:** a pill with `?` in it, outlined dashed in the colour of an error, where a constant would sit
+    (`visual-notation.md`, 2.5).
 
 ### 5.2 The order of lines has no meaning
 

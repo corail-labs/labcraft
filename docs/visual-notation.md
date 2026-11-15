@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-15. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v; editing by hand (2.4) is for M1.*
+*Last updated: 2026-11-15. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v; editing by hand (2.4), the editing states (2.5) and color by type (4.3) are for M1.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -20,13 +20,15 @@ A function rendered from its file by `labcraft-cli diagram`, not drawn by hand
   <img alt="Diagram of check_voltage rendered from its file: error chain in red along the bottom, VISA session in blue, match and handle unfolded on the right" src="images/check_voltage-light.svg">
 </picture>
 
-**Files.** Both open with [FigCraft](https://github.com/storytold/figcraft), a design app of the
+**Files.** All three open with [FigCraft](https://github.com/storytold/figcraft), a design app of the
 Craft family:
 
 - [design/visual-notation-v0.figcraft](../design/visual-notation-v0.figcraft): the board above.
 - [design/notation.figcraft](../design/notation.figcraft): the component library that the throwaway renderer
   `tools/lcf-figcraft` (retired after M0, 2026-11-15) read to draw diagrams (terminals, primitives, pills, node and structure
   samples, one sample per wire family, theme tokens in light and dark modes).
+- [design/editing-states.figcraft](../design/editing-states.figcraft): the six sheets of the editing states (2.5) and of
+  color by type (4.3), the code and the diagram of `check_voltage` face to face (2026-11-15).
 
 ## 1. Principles
 
@@ -39,7 +41,7 @@ Craft family:
 3. **Order and resources first.** On a test bench, the question is "in what order do the actions
    happen, and on which equipment?". The error wire carries the order (spec 5.3), the session
    carries the resource: these are the only two wires drawn in color. Data is drawn in a single
-   neutral ink.
+   neutral ink, unless the developer turns on color by type (4.3).
 4. **The unit is visible.** A physical quantity shows its unit on its terminal and on its wire; an
    implicit conversion (`mV` to `V`) is written on the wire.
 5. **Its own identity (D-23).** A notation designed from the LabCraft spec and from the general
@@ -49,8 +51,10 @@ Craft family:
    LabCraft's own, light and dark (section 8; Craft convention).
 7. **Show that something is there, not always what it is.** Where a value or a detail would weigh on the
    drawing, a mark says that it exists and the tooltip says what it is: a widening conversion is an arrow alone
-   (4.2), a default value is in the tooltip of its input (3.2). A mark never takes a shape that already says a family
-   of type (4.1).
+   (4.2), a default value is in the tooltip of its input (3.2). A mark never takes the shape of a family of type (4.1)
+   where a terminal could stand. The marks of the editor (2.5) that are round or triangular stand elsewhere: the disc
+   and the triangle of a diagnostic carry a `!` and sit on the corner of a body or on a wire, and the dot of a default
+   is smaller than a terminal and away from the edge (decided with the owner, 2026-11-15).
 
 ## 2. The canvas
 
@@ -280,7 +284,7 @@ What the editor of M1 does with the placement, decided with the owner on 2026-11
 One rule governs it: **what the diagram shows, the file keeps** (spec 11). Closing and reopening a function draws the
 same diagram, so the editor never shows a state that the `layout` section cannot write; only a gesture in progress
 (a wire being drawn, a field being typed in) escapes it. How each state is drawn (marks, handles, the wire being
-drawn) comes with step 3 of the specifications of M1; the keys and the gestures in detail, with step 4. Where two
+drawn) is in 2.5; the keys and the gestures in detail come with step 4 of the specifications of M1. Where two
 behaviours are defensible, the other one is a setting of the user or of the project, and the default is the one
 below.
 
@@ -289,7 +293,7 @@ below.
   so the fixed nodes are what keeps the drawing stable. Setting: "fix every node at the first move". A node that an
   agent adds without a position is placed near its neighbours, without moving the others, and stays free until
   someone moves it.
-- **A fixed node shows it.** A pin icon (`pin` of Tabler Icons, MIT, attributed with the other assets) in `ink.muted` (step 3 places it), and on hover: "Position fixed
+- **A fixed node shows it.** A pin icon (`pin` of Tabler Icons, MIT, attributed with the other assets) in `ink.muted` (2.5), and on hover: "Position fixed
   (`node x at (…)` in `layout`). Right-click › Remove the fixed position". Setting: "mark the fixed nodes", on by
   default. Removing the fixed position deletes the entry; the node goes back to the automatic placement.
 - **Arrange** (Ctrl+Alt+R, to confirm with step 4): on the selection, a branch or the whole function, it removes
@@ -307,14 +311,14 @@ below.
 - **A wire to an input already wired** replaces the old one, visibly: the old wire retracts. Setting: "replace only with
   Alt".
 - **A wire of the wrong type** is refused by default, and the reason is shown where it is dropped. Setting: "accept
-  it": the file then holds it, `check` gives `LC3001` and the wire is drawn broken (step 3).
+  it": the file then holds it, `check` gives `LC3001` and the wire is drawn broken (2.5).
 - **Moving a wire.** Alt and a drag on a segment moves it and writes `wire a -> b via (…)`; a plain drag from a wire
   starts a branch instead. "Arrange this wire" removes its entry. The `via` points stay where they are when a node
   moves (to confirm with use).
 - **A branch from a wire** is a wire from the same value: it starts at a junction where the wire was grabbed, and
   that junction follows the trunk. No syntax is added: the first `via` point of a branch that lies on a wire of the
   same value is its junction, a rule of the editor. Its tolerance, and what a junction does when an automatic trunk
-  moves, come with steps 3 and 5.
+  moves, are in 2.5.
 - **A right-click on the empty canvas** opens the palette of functions. Setting: "menu first".
 - **The name of a value bound to an output.** A value bound to an output of the function carries the name of that
   output (`voltage = core.with_unit(…)`, R-2); otherwise, the name that inserting its node would have given it (the
@@ -325,6 +329,83 @@ below.
   another node to an output bound by name renames the old one and folds the new one. So renaming a node to the name
   of an output is refused: the wire gives that name, otherwise the text would bind the output with no wire drawn. A
   file written by hand (`err = e3`) stays as it is: these are rules of the gestures, not of the language.
+
+### 2.5 Editing states (M1)
+
+How the editor of M1 draws what is selected, what a gesture is doing and what `check` says, decided with the owner on
+2026-11-15 on six sheets where the code and the diagram of `check_voltage` face each other. Two kinds of state:
+
+- **States of the editor** (the selection, a hover, a gesture in progress) are never written to the file and never drawn
+  in an export. The pin of a fixed node shows an entry of the file, but it is drawn only by the editor, under its setting
+  (2.4).
+- **States of the file** (a hole, a wire that does not check, a diagnostic, an input left to its default) come from the
+  text: every drawing shows them, the viewer and `diagram --svg` included.
+
+The text and the drawing show the same thing: what is selected or named by a diagnostic is drawn on the canvas and
+highlighted in the code, the line tinted with the color of the state (`select.stroke`, `mark.invalid`, `mark.warning`).
+Nothing is greyed out during a gesture, and nothing moves: a mark stays inside the grid of 8 and never grows a node (N-6).
+
+**Selection and hover.**
+
+- **A node selected**: an outline in `select.stroke`, 3 outside its body; its line is highlighted in the code.
+  `select.stroke` is the color of what the user points at, selects or is placing (a hover, a ghost, a junction being
+  drawn); `node.active` stays the node that runs (6).
+- **A wire selected**: a click on any of its segments selects the whole value, every branch of it, the line that gives
+  it and the lines that read it. The tooltip gives its exact type (4.1) and who reads it.
+- **A terminal hovered**: a ring in `select.stroke` around it, and a tooltip with its name, its exact type and what it
+  holds (its wire, its constant, its default value).
+
+**Drawing a wire.** Nothing is written during the gesture (2.4).
+
+- **In progress**: dragged from a terminal, the wire follows the pointer in the style of its family (4.1); the inputs
+  that would take it get the ring of a hover, a wired one too, since a drop there replaces its wire (2.4) unless "replace
+  only with Alt" is on and Alt is up.
+- **Snapped**: near an input that takes it, the wire snaps and takes the route it will have. Releasing it is one
+  `wire.connect` ([commands.md](commands.md), 9.4), one step of undo.
+- **Refused**: over an input that `wire.connect` would refuse, the wire turns to `mark.invalid`, dashed, and the reason
+  sits where it would be dropped: the message of the refusal (`wire.type_mismatch`, `wire.cycle`, `wire.out_of_scope`,
+  or `wire.occupied` when Alt is needed to replace). Releasing it writes nothing. With the setting "accept it" (2.4), a
+  wire of the wrong type is written and drawn broken.
+
+**What `check` says.** A mark sits on what the diagnostic names (the hole, the wire, the node); each has its tooltip,
+the message of the diagnostic (or, for a required input that a call leaves out, the one below), and its line in the
+list of diagnostics. The shape of a mark doubles its color (principle
+2).
+
+- **A hole** `?` (spec 5.1, `LC2101`): a pill with `?` in it, its outline dashed in `mark.invalid`, where a constant
+  would sit, as the text writes it. A required input that the call leaves out (`LC2101` too, [commands.md](commands.md),
+  9.1) is drawn the same, since for the user who draws it is the same state: a value must reach it and nothing does
+  (decided with the owner, 2026-11-15). Each such pill has its tooltip, "required input, not wired", even where `check`
+  gives one `LC2101` for the call and the list shows that one. It is neither the glyph of `select` nor a hollow
+  terminal, which would read as an output left unwired.
+- **A broken wire** (`LC3001`, written with "accept it"): in `mark.invalid`, stopped short of the terminal as a unit
+  error is (4.2), with the disc of an error on it. An export draws it whole, as 4.2 says.
+- **A diagnostic on a node**: a mark on the top-right corner of its body, a disc of 14 in `mark.invalid` with a white
+  `!` for an error, a triangle of 16 in `mark.warning` with a white `!` for a warning (`LC4101`, an `err` wired nowhere).
+  The top-left corner is the pin's.
+
+**Inserting, fixing, branching.**
+
+- **The ghost of an insertion**: a function taken from the palette follows the pointer as its block, outlined dashed in
+  `select.stroke`. Over a wire it can take, that wire is drawn in `select.stroke`; releasing it there inserts the node into
+  the wire (`node.add` with `into`, one step of undo), and the required inputs it leaves unwired are drawn as holes.
+  Elsewhere, a free node.
+- **A fixed node** (2.4): the pin (`pin` of Tabler Icons) in `ink.muted`, 16 across, on the top-left corner of its body;
+  its tooltip names the `node … at` entry it comes from. Its size is judged at the real scale, in the editor.
+- **A junction** (2.4): a plain drag that starts within 4 of a wire grabs it; the junction goes to the nearest point of
+  the grid of 8 on that wire, drawn in `select.stroke` while the branch is drawn, then in the color of the wire. It
+  follows its trunk: when the trunk moves, the junction keeps its distance from the start of its segment, cut to the
+  length of the segment. If the trunk no longer has that segment (the route of an automatic trunk changed its bends),
+  the first `via` point of the branch is dropped, in the same step of undo as the move, and the junction becomes
+  automatic again; a later `via` point then never becomes the junction, even if it lies on the trunk.
+
+**An input left to its default.** An optional input of a node that nothing wires shows a dot of 5 in `ink.muted`, its
+center 12 to the left of its terminal in compact view, within the place where a pill would sit; in standard view, inside
+the block, where a constant would sit after the name (3.1). There is a value, and the tooltip and the inspector say
+which (principle 7). A dot is not a pill: it never takes the place of a constant, and never grows a node. At a glance an input is
+wired, given a constant (a pill with its value), left to its default (a dot) or a hole (a dashed `?`). The inputs of the
+function keep their value beside them (2): there the default is part of the signature being drawn. An empty pill was
+set aside: too close to a constant at a glance, and heavy on a wide node.
 
 ## 3. Nodes
 
@@ -622,6 +703,54 @@ trunk is drawn with each.
 - Unit error at edit time (`V + A`): the wire is drawn in `mark.invalid`, interrupted at the
   terminal, with the message in the tooltip. An exported image draws the wire again in `mark.invalid`, over
   itself and not interrupted, *(proposed)* ([cli.md](cli.md), 7.2).
+
+### 4.3 Color by type (M1)
+
+Principle 3 draws data in one neutral ink. **"Color wires by type"** is a mode of the editor that the developer turns on
+or off, a setting of the user, for every diagram (decided with the owner on 2026-11-15, N-1). The file never changes:
+the mode is not written in a `.lcf`. Its default, on or off, is decided at the style review at the end of M1, on
+renders, with the palette.
+
+- **One color per family** (4.1), on the wire, its terminals and its name: number, boolean, text, enumeration, struct
+  and function. An array takes the color of its element. The error, resource and order wires keep their tokens.
+- **The color doubles the shape** (principle 2): the patterns and the shapes of the terminals do not change, so a print
+  in grey reads the same, with the mode on or off.
+- **The shape tells the families apart first; the color tells apart the wires of the same shape.** The solid wires 1.5
+  wide (number, boolean, text, enumeration) and the solid resource wire 2.5 wide are the ones a color must tell apart,
+  so their colors are the farthest from one another; a struct or a function is told by its pattern already.
+- **Number is colored too**, in the calmest color of the palette: it is the most frequent family, and a black number
+  among colored wires would read as a family of its own.
+- **The states win over the mode**: `select.stroke`, `mark.invalid` and `mark.coercion` are drawn as without it (2.5,
+  4.2).
+- **The same color in the code.** A literal takes the color of its family: a number, a text, `true` and `false`, a
+  variant. So do the names of struct types and functions. The language server marks them with semantic tokens (LSP):
+  the standard types `number`, `string`, `enumMember`, `struct` and `function`, and a type of LabCraft's own,
+  `boolean`, for `true` and `false`, which the standard list does not have. Each shares the theme token of its family
+  (`type.number`…, below). A name that holds a value is a `variable` and keeps the ink of the code: semantic tokens
+  classify the text, not the type. A theme sets these colors once for the code and the drawing; colors imported from
+  another editor's theme are the user's choice.
+- **Contrast**: 4.5:1 against `canvas.fill` and each `frame.fill`, in both themes, as every wire token (8).
+- **No yellow or olive**: at 4.5:1 on a light ground they turn to mud. And not the palette of another tool (D-23).
+- **Exports and snapshots** keep the colors of section 8, unless asked: an option of `diagram --svg` comes with the
+  mode.
+
+The proposed palette, held to 4.5:1 and at least 18 apart in CIEDE2000 among the solid wires (`wire.resource`
+included); the defaults are fixed at the style review, after other palettes have been tried in the editor. Its tokens
+join the table of section 8 when the Rust draws them.
+
+| Family | Token | Light | Dark |
+|---|---|---|---|
+| Number | `type.number` | `#336B5D` | `#53AC96` |
+| Boolean | `type.boolean` | `#AE1395` | `#EF6CD9` |
+| Text | `type.text` | `#7F593D` | `#BE9679` |
+| Enumeration | `type.enum` | `#346D17` | `#55B326` |
+| Struct | `type.struct` | `#815A0E` | `#CF9117` |
+| Function | `type.function` | `#94476E` | `#C78CAA` |
+
+To watch at the style review, in CIEDE2000 in the light theme: number and enumeration are both green (18.2); the
+struct ochre is close to `mark.warning` (5.1, where the triangle of a warning and the sheath of a struct still differ in
+shape), and the text brown too (10.7); enumeration is close to `node.active` (9.1); and number against `select.stroke`
+(18.2) makes a selected number wire less striking than a selected plain one.
 
 ## 5. Structures
 
@@ -942,6 +1071,10 @@ IDE, the diagram takes its colors from this table.
   `--theme dark`, [cli.md](cli.md), section 7.2). The snapshots of CI use this table.
 - **The developer's colors.** The developer may change the colors of their screen, and the IDE warns
   when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
+- **Tokens of the editor (M1).** The editor adds `mark.warning`, the amber of a warning on the drawing (2.5): `#8A5300`
+  in the light theme, `#F0820D` in the dark one, *(proposed)*, 4.7:1 at worst on `canvas.fill`, each `frame.fill`,
+  `node.fill` and `probe.fill`, and as far as an amber can be from `wire.error` and from the struct of 4.3. The tokens of
+  the families (4.3) come with the mode. They join the table below, and its test, when the Rust draws them.
 - **Where the values come from.** The light values of the first list of tokens come from the board
   `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
   from `build_notation.py` of `tools/lcf-figcraft` (retired after M0); `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new, and `select.stroke` (2026-11-13), a cyan told apart from the blue of `wire.resource` and the green of `node.active`. Changed on
@@ -991,7 +1124,7 @@ IDE, the diagram takes its colors from this table.
 
 | # | Question | Lead |
 |---|---|---|
-| N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough; to revisit on real diagrams |
+| N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough. **Settled (2026-11-15):** a mode of the editor, a setting of the user, for M1 (4.3): one colour per family, doubling the shape, shared with the semantic tokens of the code; its default and its palette are decided at the review of style at the end of M1, on renders |
 | N-2 | Branch displayed by default for a `match` | **Settled (2026-11-08):** the one that the last run took, at the chosen iterations, when a trace is shown (6.1); otherwise the first; a tab that the developer picks wins until an iteration selector moves or another trace arrives. The editor remembers the last one viewed (editor state, not saved in the file) |
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
