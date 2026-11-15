@@ -141,6 +141,22 @@ fn project() -> Memory {
     memory
 }
 
+/// The clock of these sessions: still, as `Still`, but a long time after the times of the files of `Memory`, so that a file
+/// not written again is not read again to tell an external write (architecture 12.5), and the reads count the checks.
+struct Later;
+
+impl crate::Clock for Later {
+    fn real_ns(&self) -> u64 {
+        0
+    }
+    fn utc_ns(&self) -> i64 {
+        1_000_000_000_000_000
+    }
+    fn moves(&self) -> bool {
+        false
+    }
+}
+
 fn session_on(ws: Arc<dyn Workspace>) -> Session {
     let config = Config {
         root: PathBuf::from("/p"),
@@ -148,15 +164,20 @@ fn session_on(ws: Arc<dyn Workspace>) -> Session {
         limits: Limits::default(),
         shipped: Shipped::default(),
         natives: vec![Arc::new(Fake)],
-        clock: Arc::new(crate::Still),
+        clock: Arc::new(Later),
         process: 0,
     };
     Session::new(ws, config, false).unwrap()
 }
 
+/// A session whose first command has read each file of the project once, to follow it (architecture 12.5): the reads are
+/// counted from there.
 fn session() -> (Session, Arc<Counting>) {
     let counting = Arc::new(Counting { memory: project(), reads: AtomicUsize::new(0), panic_on: None });
-    (session_on(counting.clone()), counting)
+    let mut session = session_on(counting.clone());
+    let _ = session.execute("commands.list", &json!({}));
+    counting.reads.store(0, Ordering::SeqCst);
+    (session, counting)
 }
 
 fn ok(session: &mut Session, id: &str, params: Value) -> Value {
@@ -205,6 +226,9 @@ fn a_file_changed_by_the_client_s_own_tools_is_seen_by_the_next_check() {
 fn the_check_of_a_folder_under_the_root_is_kept_too() {
     let (mut session, counting) = session();
     counting.memory.put("/p/sub/b.lcf", MAIN.replace("double", "b"));
+    // A file that appears is read once to be followed, an external write (architecture 12.5): counted from there.
+    let _ = session.execute("commands.list", &json!({}));
+    counting.reads.store(0, Ordering::SeqCst);
     let report = ok(&mut session, "library.check", json!({ "folder": "sub" }));
     assert_eq!(report["summary"]["functions"], 1);
     assert_eq!(counting.reads.load(Ordering::SeqCst), 1);

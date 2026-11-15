@@ -9,7 +9,7 @@ use crate::args::ExecOptions;
 /// What the command returned, or its error, as one JSON document on stdout: 0, or 1 for an error of the command.
 pub fn run(options: &ExecOptions) -> Result<ExitCode, String> {
     let mut session = crate::mcp::session_on(&options.session, false)?;
-    session.without_history();
+    session.for_command_line();
     let (document, code) = match session.execute(&options.id, &options.params) {
         Ok(value) => (value, ExitCode::SUCCESS),
         Err(error) => (error.to_json(), ExitCode::FAILURE),

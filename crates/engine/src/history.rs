@@ -10,6 +10,10 @@ use std::sync::Arc;
 pub const MAX_STEPS: usize = 1_000;
 /// At most this many bytes of texts *(proposed)*: the oldest steps go.
 pub const MAX_BYTES: usize = 64 << 20;
+/// External writes less than this apart, in nanoseconds, are one step *(proposed)*.
+pub const BURST_NS: i64 = 1_000_000_000;
+/// The label of a step of external writes.
+pub const EXTERNAL_LABEL: &str = "Written outside LabCraft";
 
 /// Who made a step (commands.md 9.5).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +76,9 @@ pub struct History {
     undone: Vec<(Step, Author)>,
     /// The number of the last step made.
     last: u64,
+    /// The time of the last burst of external writes, by the times of its files: the next burst merges with it when it is
+    /// less than [`BURST_NS`] away.
+    burst_ns: Option<i64>,
 }
 
 impl History {
@@ -82,6 +89,36 @@ impl History {
         self.done.push(Step { number: self.last, author, label, time_ns, changes });
         self.trim();
         self.last
+    }
+
+    /// External writes (architecture 12.5): a step signed `external` at `time_ns`, or, when the last step is external, the
+    /// last made, nothing undone since and its burst less than [`BURST_NS`] from `burst_ns`, merged into it. A file back to its bytes before the
+    /// step leaves it, and a step left with nothing goes. The number of the step, `None` when nothing is left.
+    pub fn record_external(&mut self, time_ns: i64, burst_ns: i64, changes: Vec<Change>) -> Option<u64> {
+        let merges = self.undone.is_empty()
+            && self.done.last().is_some_and(|last| last.number == self.last && last.author == Author::External)
+            && self.burst_ns.is_some_and(|last| burst_ns.abs_diff(last) < BURST_NS.unsigned_abs());
+        self.burst_ns = Some(burst_ns);
+        let last = match self.done.last_mut() {
+            Some(last) if merges => last,
+            _ => return (!changes.is_empty()).then(|| self.record(Author::External, EXTERNAL_LABEL.to_owned(), time_ns, changes)),
+        };
+        for change in changes {
+            match last.changes.iter_mut().find(|held| held.path == change.path) {
+                Some(held) => held.after = change.after,
+                None => last.changes.push(change),
+            }
+        }
+        last.changes.retain(|change| change.before != change.after);
+        last.time_ns = time_ns;
+        if last.changes.is_empty() {
+            // Its number is not given again.
+            self.done.pop();
+            return None;
+        }
+        let number = last.number;
+        self.trim();
+        Some(number)
     }
 
     fn trim(&mut self) {
@@ -156,6 +193,29 @@ mod tests {
         assert_eq!(history.record(Author::User, "c".to_owned(), 0, change("1", "3")), 3, "numbers are never given twice");
         assert!(history.to_redo().is_none());
         assert_eq!(history.len(), 2);
+    }
+
+    #[test]
+    fn external_writes_of_a_burst_are_one_step() {
+        let mut history = History::default();
+        assert_eq!(history.record_external(7, 0, change("0", "1")), Some(1));
+        assert_eq!(history.record_external(7, BURST_NS - 1, change("1", "2")), Some(1), "less than 1 s after: the same step");
+        let step = history.to_undo().cloned().unwrap();
+        assert_eq!(
+            (step.author, step.changes[0].before.as_deref(), step.changes[0].after.as_deref()),
+            (Author::External, Some(&b"0"[..]), Some(&b"2"[..]))
+        );
+        // The clock of the burst is that of its last write.
+        assert_eq!(history.record_external(7, 2 * BURST_NS - 2, change("2", "3")), Some(1));
+        assert_eq!(history.record_external(7, 3 * BURST_NS, change("3", "4")), Some(2), "1 s after the last write: a new step");
+        assert_eq!(history.record_external(7, 3 * BURST_NS, change("4", "3")), None, "back to the bytes before: the step goes");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.record_external(7, 3 * BURST_NS, change("3", "5")), Some(3), "a number is never given twice");
+        history.record(Author::User, "a".to_owned(), 3 * BURST_NS, change("5", "6"));
+        assert_eq!(history.record_external(7, 3 * BURST_NS, change("6", "7")), Some(5), "after a step of the user: a step of its own");
+        history.undo(Author::User);
+        assert_eq!(history.record_external(7, 3 * BURST_NS, change("6", "8")), Some(6), "after an undo: a step of its own, which drops redo");
+        assert!(history.to_redo().is_none());
     }
 
     #[test]

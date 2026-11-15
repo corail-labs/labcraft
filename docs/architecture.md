@@ -1695,9 +1695,22 @@ fuzzing looks for (12.10).
   external write that changed it is a step of its own first (below). A new step drops what redo would replay.
 - **The revision** of a file is the SHA-256 of its bytes, as lowercase hexadecimal, with `sha256:` before it; it is
   opaque to a caller (commands.md 9.3).
-- **External writes.** The app tells the session of the files that changed (`Session::files_changed`, 11.5). A file
-  whose hash is not that of the last write of the session becomes a step signed `external`; writes of one file less
-  than 1 s *(proposed)* apart merge into one step. In `labcraft-cli`, which runs one command per process, there is no
+- **External writes.** The app tells the session of the files that changed (`Session::files_changed`, 11.5), and the
+  session looks again before each command (decisions of the owner, 2026-11-15), so that `labcraft-cli mcp`, which
+  watches no file, needs no watcher. It follows every `.lcf`, `.lct` and `.toml` file of the project, at most 10,000
+  *(proposed)*, a link and a folder whose name starts with `.` left out, from its first command: it keeps the bytes it
+  last saw of each, 64 MiB *(proposed)* in all (decision of the owner, 2026-11-15; past them a file is followed by its
+  size and time only, and a change of it from outside is no step), and reads a file again unless its size and time of change are those it saw, the file then being
+  older than 2 s (a file system whose clock ticks slowly gives two writes of one tick the same time). A file whose
+  bytes are not those it saw becomes a step signed `external`, and so does a file that appears or goes; writes whose
+  files were modified less than 1 s *(proposed)* apart, by the time the system gives them (the clock of the session for
+  a file removed), merge into one step, of one file or of several, which has the time of the session, and a file written back to its bytes before the step
+  leaves it. The step is a line of the journal, `"author": "external"` and `"id": null`. The commands of files
+  (`file.write`, `file.rename`, `file.delete`, `file.format`) are steps of their caller, as the editing commands are,
+  so that a write of the session is never taken for an external one; a file over `--max-file-size` is replaced or
+  deleted with no step, since the history cannot keep it, and a write of the bytes the file holds makes none. Undo of a
+  rename of the case alone, where the system compares names without their case, takes the old name for missing when
+  the system reaches it only through the new one. In `labcraft-cli`, which runs one command per process, there is no
   history (commands.md 9.5).
 - **`commands.batch`** applies its commands to the texts in memory, one after the other, writes once at the end and
   records one step; a failure writes nothing.
@@ -1708,11 +1721,17 @@ fuzzing looks for (12.10).
   a word never holds the queue of the server (mcp.md 5) for long. A command with no effect does not wait.
 - **The journal.** Every command that a session runs, from any author, is a line of JSON in
   `.labcraft/journal/<process>-<session>.jsonl`, or, for `labcraft-cli`, whose processes run one command each, in
-  `.labcraft/journal/cli.jsonl`, under the lock of that folder (10.8): the time, the author, the id, the parameters (cut beyond 64 KiB
+  `.labcraft/journal/cli.jsonl`, the process holding the lock of that folder (10.8), and `cli.lock` while it appends to
+  `cli.jsonl` or cuts it: the time, the author, the id, the parameters (cut beyond 64 KiB
   *(proposed)*, the cut said), the result as a code (`ok` or the error) and the revisions of the files written. It is
   appended through `Workspace::append`, which the apps implement, at most 16 MiB per file, and the 20 newest files are
   kept *(proposed)*, `cli.jsonl` apart, cut to its newest half when it passes 16 MiB. It is for replaying a bug: the crash reports of mcp.md 9 will be built on it. Git does not see it
-  (commands.md 9.1). In WASM the journal is kept in memory, the last 1,000 lines.
+  (commands.md 9.1). In WASM the journal is kept in memory, the last 1,000 lines. It never fails a command: a journal
+  that cannot be written (a read-only folder, the viewer) is given up, and so is one whose file is a link: a line never
+  goes out of the project. A line names at most 1,000 files *(proposed)*, and `files_cut` counts them all. `labcraft-cli exec` writes `cli.jsonl`;
+  `labcraft-cli run` writes no line, since a run whose trace goes to `--trace FILE` writes nothing under the root
+  (commands.md 8), and nor do the commands that the MCP server answers outside its queue (`run.status`,
+  `run.set_element`, `run.abort`), which never reach the session.
 - **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under
   the path of its file, and removed when the text parses again. When the project opens and a recovery file is newer
   than its file, the window says so and offers to take it back.

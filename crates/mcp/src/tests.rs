@@ -10,7 +10,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use labcraft_engine::workspace::Workspace;
-use labcraft_engine::{Config, Memory, Runs, Session, Shipped, Still};
+use labcraft_engine::{Author, Config, Memory, Runs, Session, Shipped, Still};
 use labcraft_types::Limits;
 use serde_json::{Value as Json, json};
 
@@ -181,12 +181,14 @@ fn initialize_gives_the_revision_asked_for_or_the_latest() {
 }
 
 #[test]
-fn the_tools_are_the_enabled_commands_without_the_viewer() {
+fn the_tools_are_the_direct_commands_enabled_without_the_viewer() {
     let server = Server::start(crate::MAX_REQUEST);
     server.request(1, "tools/list", json!({}));
     let tools = server.out.answer(1)["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|tool| tool["name"].as_str().unwrap()).collect();
-    // commands.md 6 in its order, less `view.*` (decision of the owner, 2026-11-11).
+    // The direct tools of mcp.md 2, in the order of commands.md 6: the nineteen of M0b less `view.*` (decision of the owner,
+    // 2026-11-11), then those of editing built in M1 step 0; `input_set_constant` and `value_rename` come with step 4, and
+    // `view_get_state` with an attached server.
     assert_eq!(
         names,
         [
@@ -209,6 +211,14 @@ fn the_tools_are_the_enabled_commands_without_the_viewer() {
             "diagram_svg",
             "commands_list",
             "commands_describe",
+            "node_add",
+            "constant_add",
+            "node_delete",
+            "wire_connect",
+            "wire_disconnect",
+            "history_undo",
+            "commands_execute",
+            "commands_batch",
         ]
     );
     let tool = |name: &str| tools.iter().find(|tool| tool["name"] == name).unwrap().clone();
@@ -218,8 +228,10 @@ fn the_tools_are_the_enabled_commands_without_the_viewer() {
     };
     assert_eq!(hints("guide_read"), [true, false, false, false]);
     assert_eq!(hints("functions_list"), [true, false, false, false]);
-    assert_eq!(hints("file_write"), [false, true, false, false]);
-    assert_eq!(hints("file_format"), [false, true, false, false]);
+    // A step of history, which undo reverses: not destructive (architecture 12.8).
+    for name in ["file_write", "file_rename", "file_delete", "file_format", "node_delete", "commands_batch"] {
+        assert_eq!(hints(name), [false, false, false, false], "{name}");
+    }
     assert_eq!(hints("run_start"), [false, false, false, true]);
     assert_eq!(hints("run_abort"), [false, false, false, false]);
     for name in names.iter().filter(|name| **name != "run_start") {
@@ -506,4 +518,34 @@ fn the_requests_waiting_hold_at_most_the_bytes_of_one_request() {
     // Answered, they wait no more: a request as large again waits its turn.
     server.call(13, "file_read", json!({ "path": "double.lcf", "pad": pad }));
     assert_eq!(server.out.answer(13)["result"]["isError"], true);
+}
+
+/// The server signs each call with the name of its client (commands.md 9.5): an agent undoes only its own steps.
+#[test]
+fn each_call_is_signed_with_the_name_of_the_client() {
+    let server = Server::start(crate::MAX_REQUEST);
+    server.request(
+        1,
+        "initialize",
+        json!({ "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "claude-code", "version": "1" } }),
+    );
+    server.out.answer(1);
+    server.call(2, "node_add", json!({ "file": "double.lcf", "call": "core.add" }));
+    assert_eq!(server.out.answer(2)["result"]["isError"], false);
+    server.call(3, "commands_execute", json!({ "id": "history.list" }));
+    let listed = server.out.answer(3)["result"]["structuredContent"].clone();
+    assert_eq!(listed["steps"][0]["author"], "claude-code", "{listed}");
+    server.call(4, "history_undo", json!({}));
+    assert_eq!(server.out.answer(4)["result"]["structuredContent"]["author"], "claude-code");
+    // A command of the window is not reached through `commands_execute` with no window.
+    server.call(5, "commands_execute", json!({ "id": "view.open", "params": { "folder": "." } }));
+    let refused = server.out.answer(5)["result"].clone();
+    assert_eq!((refused["isError"].clone(), refused["structuredContent"]["error"]["code"].clone()), (json!(true), json!("command.not_enabled")));
+}
+
+#[test]
+fn a_client_with_no_name_or_the_name_of_another_author_is_agent() {
+    for (name, author) in [(None, "agent"), (Some(""), "agent"), (Some(" User "), "agent"), (Some("external"), "agent"), (Some("codex"), "codex")] {
+        assert_eq!(crate::author_of(name), Author::Agent(author.to_owned()), "{name:?}");
+    }
 }

@@ -268,12 +268,12 @@ static HELD: Mutex<Vec<Lock>> = Mutex::new(Vec::new());
 type Lock = (Arc<dyn Workspace>, PathBuf, Held);
 
 /// The lock of a process, in a folder of `.partial` files.
-fn lock_of(folder: &Path, process: u32) -> PathBuf {
+pub(crate) fn lock_of(folder: &Path, process: u32) -> PathBuf {
     folder.join(format!(".{process}.lock"))
 }
 
 /// Holds the lock of this process in a folder, once for the process; whether the workspace has locks.
-fn hold(ws: &Arc<dyn Workspace>, folder: &Path, process: u32) -> bool {
+pub(crate) fn hold(ws: &Arc<dyn Workspace>, folder: &Path, process: u32) -> bool {
     let path = lock_of(folder, process);
     let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
     if held.iter().any(|(owner, at, _)| *at == path && std::ptr::addr_eq(Arc::as_ptr(owner), Arc::as_ptr(ws))) {
@@ -391,6 +391,9 @@ pub(crate) fn in_place(ws: &dyn Workspace, root: &Path, shown: &str) -> bool {
     ws.canonicalize(&expected).is_ok_and(|real| real == expected)
 }
 
+/// What `.labcraft/.gitignore` holds when a run or the journal makes `.labcraft`: git sees nothing of it.
+pub(crate) const LABCRAFT_GITIGNORE: &[u8] = b"*\n";
+
 /// Makes the folder of the trace (and `.labcraft/.gitignore` holding `*` when it makes `.labcraft`), refuses one that a link
 /// leads elsewhere, holds the lock of the process there, and removes the `.partial` files of the function that this
 /// session left or that a process that no longer runs left (decisions of the owner, 2026-11-10 and 2026-11-11).
@@ -430,7 +433,7 @@ fn trace_file(ws: &Arc<dyn Workspace>, root: &Path, shown: &str, display: &str, 
         file.error = Some(format!("`{folder_shown}` leads out of its place through a link, and a trace is written only in the project"));
         return file;
     }
-    if new && let Err(error) = ws.write(&labcraft.join(".gitignore"), b"*\n") {
+    if new && let Err(error) = ws.write(&labcraft.join(".gitignore"), LABCRAFT_GITIGNORE) {
         file.error = Some(format!("`.labcraft/.gitignore` cannot be written: {}", io_text(&error)));
     }
     let name = shown.rsplit('/').next().unwrap_or(shown);

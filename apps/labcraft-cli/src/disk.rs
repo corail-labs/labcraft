@@ -112,4 +112,10 @@ impl Workspace for Disk {
             Err(fs::TryLockError::Error(error)) => Err(error),
         }
     }
+
+    /// One `write_all` on a file opened to append: the system adds it at the end even when another process appends too.
+    fn append(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        let mut file = fs::OpenOptions::new().append(true).create(true).open(path)?;
+        io::Write::write_all(&mut file, bytes)
+    }
 }

@@ -121,7 +121,8 @@ fn the_scripted_loop_of_scenario_1() {
     let stdin = client.stdin.as_mut().unwrap();
     writeln!(stdin, "{}", json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).unwrap();
     let tools = client.request("tools/list", json!({}));
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 19, "mcp.md 2");
+    // The nineteen of M0b and the eight of editing built in M1 step 0.
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 27, "mcp.md 2");
     assert!(init["result"]["instructions"].as_str().unwrap().contains("`guide_read` once"));
 
     // mcp.md 8, call 1: the skills, and the one that writes a program, built into the binary.

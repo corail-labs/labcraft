@@ -1111,6 +1111,8 @@ It is how a script, or an agent without MCP, edits a project from the command li
 - **No history:** each process runs one command, so there is nothing to undo; `history.*` is
   `command.not_enabled` (commands.md 9.5), and an editing command returns `"step": null`. Its writes reach an open
   IDE as external writes (commands.md 9.1).
+- **Journal:** the command is a line of `.labcraft/journal/cli.jsonl`, which the processes of the command line share
+  ([architecture.md](architecture.md), 12.5).
 - **Exit codes:** 0 when the command succeeds, whatever the diagnostics it returns; 1 when it returns an error; 2 for
   wrong usage (no id, parameters that are not one JSON object, an unknown option), with the reason and the usage on
   stderr, nothing written.
