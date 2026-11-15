@@ -1024,7 +1024,7 @@ impl<'a> Builder<'_, '_, 'a> {
                     self.wire(Start::Value(value), value, end, input, frame);
                 }
             }
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
 

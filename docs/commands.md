@@ -32,7 +32,7 @@ A command lives in the registry of `engine` as data, the same data that `command
 
 From M1 the registry also holds, beside this data, what a caller does with a command: `undoable` (it makes a step of
 history, 9.1), `direct` (it is a tool of its own, [mcp.md](mcp.md) 2), `at_once` (the MCP server answers it outside its
-queue) and `window` (a command of the window, 9.4) ([architecture.md](architecture.md), 12.5).
+queue) and `window` (a command of the window, 6.7) ([architecture.md](architecture.md), 12.5).
 
 `enabled`, as in the Craft apps, is a state, not a field of the description: `commands.list` gives it
 with each command, and a call to a command that is not enabled gets `command.not_enabled` and the
@@ -71,7 +71,7 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   as `no-instrument.toml` may be, is one. The name `labcraft.toml` is refused whatever it holds, since it
   names the manifest of a library. So `Cargo.toml`, `pyproject.toml` and the manifests of the shipped
   libraries are out of reach, and so is a user library's manifest when M2 brings it. One command writes a part of
-  it, the `[mask]` table: `library.set_mask` (9.4, M1).
+  it, the `[mask]` table: `library.set_mask` (6.7, M1).
 - **On every system**, these are refused before any call to the file system, as SolidCraft does on Windows, then
   checked again once the path is resolved, so that a link or a junction cannot lead to them, and a project behaves the
   same wherever it is opened: UNC and device paths
@@ -135,15 +135,15 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `file.not_simulation` | A `.toml` file that does not read as a simulation file, to write, rename or delete (section 2) |
 | `run.unknown` | A run id that this session does not know, or no longer keeps, or no run at all |
 | `run.busy` | `run.start` while another run of this session is going (section 4); `run` gives its id |
-| `file.stale` | *(M1)* An editing command whose `expected_revision` is not the revision of the file (section 9); `message` gives the current one |
+| `file.stale` | *(M1)* An editing command whose `expected_revision` is not the revision of the file (section 9); `message` gives the current one. Also `history.undo` or `history.redo` when a file of the step changed since: the step is not replayed over that change |
 | `file.unparsed` | *(M1)* An editing command on a file whose text does not parse (9.2) |
 | `path.exists` | *(M1)* A new function or type in a file that already exists; a new project in a folder that is not empty |
 | `edit.unknown` | *(M1)* A node, value, wire, terminal, structure or arm that the function does not have (9.2); `expected` gives the nearest names |
 | `edit.ambiguous` | *(M1)* A name that names several things, such as a name defined in two arms; `expected` lists them |
 | `name.taken`, `name.invalid` | *(M1)* A new name that the function already binds, or that only a wire gives (notation 2.4); a name that is not an identifier, or is a keyword |
-| `wire.occupied` | *(M1)* An input that is already wired or that holds a constant, without `replace` (9.4); `message` says what is there |
+| `wire.occupied` | *(M1)* An input that is already wired or that holds a constant, without `replace` (6.7); `message` says what is there |
 | `wire.type_mismatch` | *(M1)* A value or a constant of a type that the input does not take, without `accept_mismatch`; `message` gives both types |
-| `wire.cycle`, `wire.out_of_scope` | *(M1)* A wire that would close a cycle; a wire from a value that the input cannot see (9.4) |
+| `wire.cycle`, `wire.out_of_scope` | *(M1)* A wire that would close a cycle; a wire from a value that the input cannot see (6.7) |
 | `history.empty`, `history.not_yours` | *(M1)* Nothing to undo or redo; a step that an agent may not undo, since it is not its own (9.5) |
 | `gesture.busy` | *(M1)* An editing command of an agent waited 30 s *(proposed)* for the end of a gesture of the user, and changed nothing (9.1) |
 | `agent.not_allowed` | *(M1)* A command of an agent attached to the IDE that its policy does not allow, that the user refused or did not answer in time, or that only the window calls ([ide.md](ide.md), 8) |
@@ -395,6 +395,130 @@ watches the files says so.
 | `commands.list` | *`filter`* | Each command: `id`, `summary`, `effects`, `long`, `enabled` |
 | `commands.describe` | `id` | Its full description (section 1) |
 
+### 6.7 Editing (M1)
+
+Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*`, the commands of
+the window (`project.*`, `view.*`), `fragment.copy`, which writes nothing, and `commands.execute`, whose `params` carry
+the `expected_revision` of the command it runs. It is an object that maps a path to a revision, for the files that the command may write
+(9.1). A file it does not name is not judged. Each row lists it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
+`edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
+makes or renames a file, `path.exists`. Each row names only its other errors. A command that also changes other
+files of the project (a rename that updates the callers) refuses, and writes nothing, when one of them does not
+parse: `file.unparsed`, which names it. The commands that a later step of M1 builds are registered as `planned` (section 1), with that step.
+
+**Nodes and constants**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `node.add` | `file`, `call`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (from its output, N-14), *`into`*, *`expected_revision`* | Adds a node. `call` is what quick insertion lists (notation 2.6): a function as a call names it (`visa.open`, `settle`), a struct type or a variant that holds values (a construction, spec 5.1). The command adds the `use` that the file then needs. `inside` names a structure, and `arm` an arm of it, for a node inside it. `at` fixes the node (a `node … at` entry). Without it, the node is free and is placed near its neighbours (spec 11). `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output of the same type goes where the wire went; a parameter that takes only a literal (the template of `string.format`) never takes it. The required inputs stay unwired (`LC2101`, 9.1). `string.format` is written with the empty template, `string.format("")`. `names.node` gives its name: that of its first output, numbered when taken (`timestamp2`); an output named `result`, which says nothing, gives the name of its function, `sum`, `difference`, `product` and `quotient` for `add`, `sub`, `mul` and `div` of `core` (N-14); the other outputs are `_` until wired (9.2); a node with no output gets a label (`#beep`) |
+| `node.set_template` | `file`, `node`, `template`, *`expected_revision`* | Writes the template of a `string.format` (spec 5.4), a string literal as the text writes it. Each new field gets its named input, unwired; the named argument of each field that is gone goes, with its wire; the others keep their wires, by name. A node that is not a `string.format`, or a template that is not a literal or whose fields do not read (R-12), is `params.invalid`, with the message of `check` |
+| `constant.add` | `file`, `value`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (`constant`, numbered when taken), *`expected_revision`* | Adds a named constant (spec 5.1): `limit = 240 V` |
+| `node.delete` | `file`, `nodes`, *`expected_revision`* | Deletes the nodes, their wires and their entries in `layout`. A structure goes with all it holds. No other node is deleted (decision of the owner, 2026-11-15): an input that a deleted node fed becomes unwired (`LC2101` when it is required), or gets a hole where the text cannot leave it out (9.1), and an output of the function that it gave loses its value |
+| `node.move` | `file`, `nodes`, `by`, *`expected_revision`* | Moves nodes of one frame by `[dx, dy]` and fixes each one (notation 2.4). Nodes of several frames are `params.invalid` |
+| `node.place` | `file`, `node`, `at`, *`expected_revision`* | Places one node at `at` in its frame, and fixes it |
+| `node.set_view` | `file`, `nodes`, `view`, *`expected_revision`* | Writes `view standard` or `view compact` on each node; with `default`, removes it (spec 11) |
+| `value.rename` | `file`, `value`, `name`, *`expected_revision`* | Renames a value or a label (`#close` to `#shut`) everywhere in the function: its readers, its `node` line and its `wire` lines. A name that the function already binds is `name.taken`, and so is the name of an output of the function, which only a wire gives (notation 2.4). A name that is not an identifier, or is a keyword, is `name.invalid`. An input or an output of the function is renamed by `signature.rename` |
+| `node.set_label` | `file`, `line`, `label`, *`expected_revision`* | Gives a label (`#close`) to the node that starts on line `line` of the file (from 1, as diagnostics count), or replaces its label. This is the one command that names a node by its line, so that a node with no name, or with an ambiguous one, can be named (9.2). A line where no node starts is `edit.unknown` |
+| `input.set_constant` | `file`, `to`, *`arm`*, `value`, *`replace`* (`false`), *`accept_mismatch`* (`false`), *`expected_revision`* | Writes a constant on the input (spec 5.1). For an input that is already wired or that holds a constant, and for a constant of a type that the input does not take, `replace` and `accept_mismatch` act as in `wire.connect` |
+| `input.clear_constant` | `file`, `to`, *`arm`*, *`expected_revision`* | Removes the constant of an input: the input goes back to its default, is unwired, or gets a hole (9.1). A constant is never the text `?`: clearing is what writes a hole (`params.invalid`) |
+| `input.remove_value` | `file`, `to`, *`expected_revision`* | Removes a value of a variadic parameter or an element of an array (`msg.parts.2`, `k.1`), with its wire or its constant. The values after it move up one place: this command alone moves them, on purpose (9.1) |
+
+**Wires and placement**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `wire.connect` | `file`, `from`, `to`, *`arm`*, *`replace`* (`false`), *`accept_mismatch`* (`false`), *`expected_revision`* | Wires `from` to `to` (9.2); `arm` names the arm of a `yield`. **Occupied input:** an input that is already wired, or that holds a constant, is `wire.occupied`, and the message says what is there. With `replace`, the old wire and its `wire` entry go. The IDE passes `replace` for a drop on such an input, unless its setting "replace only with Alt" is on and Alt is up (notation 2.4); an agent passes it only when it means it (9.5). **Wrong type:** a value of a type that the input does not take is `wire.type_mismatch`, and the message gives both types. With `accept_mismatch`, the wire is written and `check` gives `LC3001`; the IDE passes it when its setting "accept it" is on. **Refused wires:** a wire that would close a cycle is `wire.cycle`. A wire from a value that the input cannot see is `wire.out_of_scope`: a value of another arm, or one from inside a loop to outside it (a `collect` or a carry takes it out: `structure.add_collect`, `structure.add_carry`). **Out of an arm:** a wire from inside an arm of a `match` or `handle` to outside adds an output to the structure. That arm yields it, and the other arms yield a hole for it (9.1). **Names:** wiring a value to an output of the function names the value as notation 2.4 says, and `renamed` lists what that renamed |
+| `wire.disconnect` | `file`, `wire`, *`expected_revision`* | Removes the wire and its entry. Its input goes back to its default, is unwired, or gets a hole (9.1). A value unwired from an output of the function takes back the name of its node (notation 2.4) |
+| `wire.route` | `file`, `wire`, `via`, *`expected_revision`* | Writes `wire … via` with the points of `via`, in the frame of the wire (spec 11). A branch starts at its first point when that point lies on a wire of the same value (notation 2.4) |
+| `layout.arrange` | `file`, *`nodes`*, *`wires`*, *`terminals`*, *`inside`*, *`arm`*, *`expected_revision`* | Arrange (9.1). It removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals` (`input x`, `output x`). With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too. "Remove the fixed position" of a node or a terminal calls it with that node or terminal. An agent calls it only when asked to (9.1) |
+| `frame.resize` | `file`, `size`, *`expected_revision`* | Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size. The size of a structure comes with step 5 of the specifications |
+| `terminal.move` | `file`, `terminal`, `y`, *`expected_revision`* | Writes `input x at y` or `output x at y` (spec 11), with `y` as given: the grid of 8 and the 24 units between two terminals are rules of the gesture (notation 2.4), and a file that places them closer draws them as written |
+
+**The block of a function and the mask of a library**
+
+These write the file of the function whose block they change, or the manifest of its library, never the file of a
+caller (spec 11.2, 11.3, 11.4). A function or a library that the project does not hold (shipped with LabCraft, or found with
+`--lib-path`) is `path.outside_project`.
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `block.set_terminal` | `file`, `terminal`, `side`, `place`, *`expected_revision`* | Writes the line `side place name` of the `terminals` section (spec 11.2), with `input` or `output` before the name when the name alone would mean the other terminal. `terminal` is `input x` or `output x`, as `layout.arrange` names it; `side` is `top`, `left` or `right`; `place` is a number, `last` or `middle`. A terminal has one line: a new place replaces the old one. `null` removes the line, and the section when nothing is left in it. A place outside its side, a place that another line holds, or the place of `after:` is `params.invalid`; a place that a terminal holds by default is free, and that terminal takes the first free place from the top, as the defaults do. The IDE calls it on the file of the function called when a terminal of a block is dropped on a place (notation 2.4) |
+| `block.set_size` | `file`, *`top`*, *`left`*, *`expected_revision`* | Writes `top N` and `left N`; `null` removes one. A size whose places cannot hold the terminals that the section names is `params.invalid`, and the message gives the smallest |
+| `block.set_band` | `file`, `band`, *`expected_revision`* | Writes `band hidden`, `band inside` or `band above`; `null` removes it, and the function follows the mask of its library |
+| `block.set_outline` | `file`, `outline`, *`expected_revision`* | Writes the `outline` section (spec 11.4) from `outline`, its items one per line (`template d`, or a `path` and its pieces), in canonical form; `null` removes the section, and the block takes the outline of its mask or the ordinary one. Items that do not read, two `path` items, two pieces for one side, a `template` with another item, an unknown template, a `round` outside 1 to 16, an integer outside 0 to 1,024, or more than 64 corners in the body or 16 points in a piece are `params.invalid`; an outline that reads but breaks a guard of 11.4 is written, and `check` gives its warning, as the drawing judges it at every size |
+| `block.reset` | `file`, *`expected_revision`* | Removes the `terminals` and `outline` sections: the block goes back to the defaults of notation 3.2, with the outline of the mask of its library when it has one |
+| `library.set_mask` | `folder`, *`band`*, *`band_place`*, *`color`*, *`outline`*, *`expected_revision`* | Writes these fields of the table `[mask]` of the manifest of the library in `folder` (spec 11.3), and makes the manifest, holding the table alone, when the library has none; `null` removes one, and the table when nothing is left in it. The rest of the manifest, its comments and its order are kept as written. A value that the mask refuses (a colour that is not `#RRGGBB`, an `outline` that `block.set_outline` would refuse) is `params.invalid`; `outline` is written as a multi-line TOML string. The manifest is otherwise out of reach of the commands (section 1) |
+
+**Structures**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `structure.surround` | `file`, `nodes`, `kind`, *`selector`*, *`over`*, *`arm`* (the first arm), *`expected_revision`* | Puts the nodes in a new `match`, `handle`, `for` or `loop`; see 9.6 |
+| `structure.add_arm` | `file`, `structure`, `patterns`, *`expected_revision`* | Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure (9.1); in a structure that gives nothing, it has none |
+| `structure.set_patterns` | `file`, `structure`, `arm`, `patterns`, *`expected_revision`* | Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`) |
+| `structure.add_carry` | `file`, `structure`, `name`, *`initial`* (a hole), *`type`* (that of `initial`), *`expected_revision`* | Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so |
+| `structure.add_clause` | `file`, `structure`, `name`, `over`, *`expected_revision`* | Adds the clause `name in over` to a `for`. `over` is an array value or a range (`0..n`) |
+| `structure.add_collect` | `file`, `structure`, `value`, *`name`* (from the value, N-14), *`expected_revision`* | Adds `collect value` to a loop, and its output |
+| `structure.remove_part` | `file`, `structure`, `part`, *`expected_revision`* | Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y` (`y` is its output). The inputs that it fed become unwired, or get a hole (9.1). The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure |
+| `structure.set_option` | `file`, `structure`, `option`, `on`, *`expected_revision`* | Turns `continue_on_error` of a `loop` (spec 6.3) or `parallel` of a `for` (spec 6.2) on or off |
+
+**Functions, signatures and types**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `function.create` | `path`, *`doc`*, *`expected_revision`* | Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists` |
+| `function.rename` | `file`, `name`, *`expected_revision`* | Renames the function and its file. It updates every call and every reference to it in the project, in the same step (decision of the owner, 2026-11-15) |
+| `function.set_doc` | `file`, `doc`, *`expected_revision`* | Writes the documentation comment (`///`); an empty text removes it |
+| `signature.add` | `file`, `terminal`, `type`, *`default`* (required), *`position`* (the last, before `err`), *`expected_revision`* | Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101` |
+| `signature.remove` | `file`, `terminal`, *`expected_revision`* | Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole (9.1). Callers are not changed: `check` shows each of them |
+| `signature.rename` | `file`, `terminal`, `name`, *`expected_revision`* | Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step (decision of the owner, 2026-11-15) |
+| `signature.set_type` | `file`, `terminal`, `type`, *`expected_revision`* | Changes the type of an input or an output; `check` judges the wires that it reaches |
+| `signature.set_default` | `file`, `terminal`, `default`, *`expected_revision`* | Sets the default value of an input (a constant, spec 4); `null` makes the input required |
+| `type.create` | `path`, `definition`, *`doc`*, *`expected_revision`* | Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2). An existing file is `path.exists` |
+| `type.rename` | `file`, `name`, *`expected_revision`* | Renames the type and its file, and every use of it in the project, in the same step |
+
+**Copy and paste**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `fragment.copy` | `file`, `nodes` | Returns `{ "text": … }`, the nodes as the text of a function `clipboard`, in canonical form, with the `use` they need, the wires between them and their `layout` entries counted from the top-left corner of the selection (notation 2.6). An input wired from outside is left out, or gets a hole (9.1). A node without a name has no entry. Writes nothing, and is not a step of history. Nodes of several frames are `params.invalid`. A text above 4 MiB *(proposed)* is `file.too_large`, never cut |
+| `fragment.paste` | `file`, `text`, `at`, *`inside`* (the body of the function), *`arm`* (the first arm), *`expected_revision`* | Puts the body of the function that `text` holds into the frame, its top-left corner at `at`, each node that has a `node … at` entry fixed. Of its `layout` section, only the `node` and `wire` entries are taken (notation 2.6). It adds the `use` that the file then needs. A name already taken in the function, labels and the outputs of the function included, gets a suffix (N-14), and its readers in the fragment follow; `renamed` lists them. A name that the fragment reads without binding it is left out, or gets a hole (9.1). A `text` that does not parse, or holds no function, is `params.invalid`, with the message of the parser; above 4 MiB *(proposed)*, `file.too_large`, as for `file.write`. `names.nodes` gives the names of the nodes pasted |
+
+**History, batches and settings**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
+| `history.redo` | | Redoes the last step undone, under the same rules |
+| `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
+| `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
+| `commands.batch` | `commands`, *`label`* (the labels of its commands), *`expected_revision`* | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 6.7 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
+| `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
+| `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
+
+**The window**
+
+The commands of the window of the IDE ([ide.md](ide.md)). They change what the window shows, and `project.new` writes the first file of a new project; none is a step of
+the history; the layout they change is a setting of the user. An agent attached to the IDE may call
+`view.get_state` only: the others are `agent.not_allowed` (ide.md 8). `project.*` takes a folder anywhere on the
+computer, chosen by the user in a dialog of the system, so it is not a path of a project (section 2); the root of a
+project keeps the rules of mcp.md 1 (the home folder and the root of a disk are refused). In `labcraft-cli` and in the MCP server alone, which
+have no window, they are `command.not_enabled`. The `view.*` commands of the viewer (6.5) stay, for the window; to an attached agent, those that change
+what the window shows are `agent.not_allowed` too (ide.md 8).
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `project.new` | `folder` | Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown (ide.md 10). A folder that exists and is not empty is `path.exists` |
+| `project.open` | `folder` | Opens the folder as a project: in this window when it shows the start page, in a new window otherwise |
+| `view.get_state` | | `{ "workspace": "edit", "windows": [{ "tabs": [{ "function", "file", "view", "split" }], "shown", "selection", "zoom" }], "truncated": false }`: for each window of the project, its tabs (the function named as in 6.5, its file, its view among `diagram`, `text` and `block`, the second view of a split or `null`), the index of the tab shown or `null` on the start page, the selection of the tab shown as the editing commands name it (9.2), at most 1,000 items *(proposed)*, and the zoom. Not `view.set_state` (6.5), which sets the view state of a drawing |
+| `view.select` | `function`, *`nodes`*, *`wires`*, *`terminals`* (each `[]`) | Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The window calls it on each click and rectangle of selection ([architecture.md](architecture.md), 12.5) |
+| `view.set_view` | `function`, `view`, *`split`* (`null`) | Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid` |
+| `view.detach` | `function` | Moves the tab of the function into a window of its own (ide.md 9); on the web, a floating panel |
+| `view.dock` | `function` | Moves it back among the tabs of the window of the project |
+| `view.toggle_panel` | `panel`, *`on`* (the other state) | Shows or hides `project`, `palette`, `inspector`, `problems` or `run` |
+| `view.reset_layout` | | Puts the panels back where ide.md 2 says, and docks every detached tab |
+| `view.set_workspace` | `workspace` | Changes the workspace of the window (ide.md 6); a planned one is `command.not_enabled`, and the message gives its milestone |
+
 ## 7. The report of a run: `labcraft-run/1`
 
 What `run.start`, `run.wait`, `run.status` and `run.abort` return, and what `labcraft-cli run --json`
@@ -527,9 +651,9 @@ The example leaves lines out, and files from the first line.
 
 ## 9. Editing (M1)
 
-M1 adds the commands that edit a function as a graph: add a node, wire, move, rename, arrange. Their catalog is in
-9.4. It stays in this section until the Rust of M1 registers the commands, first as `planned` (section 1). Then it
-moves to section 6, where `cargo xtask commands` checks it (decision of the owner, 2026-11-15).
+M1 adds the commands that edit a function as a graph: add a node, wire, move, rename, arrange. Their catalog moved to
+6.7 with step 0 of M1, where `cargo xtask commands` checks it against the registry (decision of the owner, 2026-11-15).
+It registers the commands first as `planned` (section 1).
 
 ### 9.1 The editing model
 
@@ -652,129 +776,8 @@ file and calls a command uses one vocabulary.
 
 ### 9.4 The catalog
 
-Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*`, the commands of
-the window (`project.*`, `view.*`), `fragment.copy`, which writes nothing, and `commands.execute`, whose `params` carry
-the `expected_revision` of the command it runs. It is an object that maps a path to a revision, for the files that the command may write
-(9.1). A file it does not name is not judged. The rows below leave it out; once the catalog moves to section 6, each
-row will list it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
-`edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
-makes or renames a file, `path.exists`. Each row names only its other errors. A command that also changes other
-files of the project (a rename that updates the callers) refuses, and writes nothing, when one of them does not
-parse: `file.unparsed`, which names it.
-
-**Nodes and constants**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `node.add` | `file`, `call`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (from its output, N-14), *`into`* | Adds a node. `call` is what quick insertion lists (notation 2.6): a function as a call names it (`visa.open`, `settle`), a struct type or a variant that holds values (a construction, spec 5.1). The command adds the `use` that the file then needs. `inside` names a structure, and `arm` an arm of it, for a node inside it. `at` fixes the node (a `node … at` entry). Without it, the node is free and is placed near its neighbours (spec 11). `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output of the same type goes where the wire went; a parameter that takes only a literal (the template of `string.format`) never takes it. The required inputs stay unwired (`LC2101`, 9.1). `string.format` is written with the empty template, `string.format("")`. `names.node` gives its name |
-| `node.set_template` | `file`, `node`, `template` | Writes the template of a `string.format` (spec 5.4), a string literal as the text writes it. Each new field gets its named input, unwired; the named argument of each field that is gone goes, with its wire; the others keep their wires, by name. A node that is not a `string.format`, or a template that is not a literal or whose fields do not read (R-12), is `params.invalid`, with the message of `check` |
-| `constant.add` | `file`, `value`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (`constant`, numbered when taken) | Adds a named constant (spec 5.1): `limit = 240 V` |
-| `node.delete` | `file`, `nodes` | Deletes the nodes, their wires and their entries in `layout`. A structure goes with all it holds. No other node is deleted (decision of the owner, 2026-11-15): an input that a deleted node fed becomes unwired (`LC2101` when it is required), or gets a hole where the text cannot leave it out (9.1), and an output of the function that it gave loses its value |
-| `node.move` | `file`, `nodes`, `by` | Moves nodes of one frame by `[dx, dy]` and fixes each one (notation 2.4). Nodes of several frames are `params.invalid` |
-| `node.place` | `file`, `node`, `at` | Places one node at `at` in its frame, and fixes it |
-| `node.set_view` | `file`, `nodes`, `view` | Writes `view standard` or `view compact` on each node; with `default`, removes it (spec 11) |
-| `value.rename` | `file`, `value`, `name` | Renames a value or a label (`#close` to `#shut`) everywhere in the function: its readers, its `node` line and its `wire` lines. A name that the function already binds is `name.taken`, and so is the name of an output of the function, which only a wire gives (notation 2.4). A name that is not an identifier, or is a keyword, is `name.invalid`. An input or an output of the function is renamed by `signature.rename` |
-| `node.set_label` | `file`, `line`, `label` | Gives a label (`#close`) to the node that starts on line `line` of the file (from 1, as diagnostics count), or replaces its label. This is the one command that names a node by its line, so that a node with no name, or with an ambiguous one, can be named (9.2). A line where no node starts is `edit.unknown` |
-| `input.set_constant` | `file`, `to`, *`arm`*, `value`, *`replace`* (`false`), *`accept_mismatch`* (`false`) | Writes a constant on the input (spec 5.1). For an input that is already wired or that holds a constant, and for a constant of a type that the input does not take, `replace` and `accept_mismatch` act as in `wire.connect` |
-| `input.clear_constant` | `file`, `to`, *`arm`* | Removes the constant of an input: the input goes back to its default, is unwired, or gets a hole (9.1). A constant is never the text `?`: clearing is what writes a hole (`params.invalid`) |
-| `input.remove_value` | `file`, `to` | Removes a value of a variadic parameter or an element of an array (`msg.parts.2`, `k.1`), with its wire or its constant. The values after it move up one place: this command alone moves them, on purpose (9.1) |
-
-**Wires and placement**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `wire.connect` | `file`, `from`, `to`, *`arm`*, *`replace`* (`false`), *`accept_mismatch`* (`false`) | Wires `from` to `to` (9.2); `arm` names the arm of a `yield`. **Occupied input:** an input that is already wired, or that holds a constant, is `wire.occupied`, and the message says what is there. With `replace`, the old wire and its `wire` entry go. The IDE passes `replace` for a drop on such an input, unless its setting "replace only with Alt" is on and Alt is up (notation 2.4); an agent passes it only when it means it (9.5). **Wrong type:** a value of a type that the input does not take is `wire.type_mismatch`, and the message gives both types. With `accept_mismatch`, the wire is written and `check` gives `LC3001`; the IDE passes it when its setting "accept it" is on. **Refused wires:** a wire that would close a cycle is `wire.cycle`. A wire from a value that the input cannot see is `wire.out_of_scope`: a value of another arm, or one from inside a loop to outside it (a `collect` or a carry takes it out: `structure.add_collect`, `structure.add_carry`). **Out of an arm:** a wire from inside an arm of a `match` or `handle` to outside adds an output to the structure. That arm yields it, and the other arms yield a hole for it (9.1). **Names:** wiring a value to an output of the function names the value as notation 2.4 says, and `renamed` lists what that renamed |
-| `wire.disconnect` | `file`, `wire` | Removes the wire and its entry. Its input goes back to its default, is unwired, or gets a hole (9.1). A value unwired from an output of the function takes back the name of its node (notation 2.4) |
-| `wire.route` | `file`, `wire`, `via` | Writes `wire … via` with the points of `via`, in the frame of the wire (spec 11). A branch starts at its first point when that point lies on a wire of the same value (notation 2.4) |
-| `layout.arrange` | `file`, *`nodes`*, *`wires`*, *`terminals`*, *`inside`*, *`arm`* | Arrange (9.1). It removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals` (`input x`, `output x`). With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too. "Remove the fixed position" of a node or a terminal calls it with that node or terminal. An agent calls it only when asked to (9.1) |
-| `frame.resize` | `file`, `size` | Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size. The size of a structure comes with step 5 of the specifications |
-| `terminal.move` | `file`, `terminal`, `y` | Writes `input x at y` or `output x at y` (spec 11), with `y` as given: the grid of 8 and the 24 units between two terminals are rules of the gesture (notation 2.4), and a file that places them closer draws them as written |
-
-**The block of a function and the mask of a library**
-
-These write the file of the function whose block they change, or the manifest of its library, never the file of a
-caller (spec 11.2, 11.3, 11.4). A function or a library that the project does not hold (shipped with LabCraft, or found with
-`--lib-path`) is `path.outside_project`.
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `block.set_terminal` | `file`, `terminal`, `side`, `place` | Writes the line `side place name` of the `terminals` section (spec 11.2), with `input` or `output` before the name when the name alone would mean the other terminal. `terminal` is `input x` or `output x`, as `layout.arrange` names it; `side` is `top`, `left` or `right`; `place` is a number, `last` or `middle`. A terminal has one line: a new place replaces the old one. `null` removes the line, and the section when nothing is left in it. A place outside its side, a place that another line holds, or the place of `after:` is `params.invalid`; a place that a terminal holds by default is free, and that terminal takes the first free place from the top, as the defaults do. The IDE calls it on the file of the function called when a terminal of a block is dropped on a place (notation 2.4) |
-| `block.set_size` | `file`, *`top`*, *`left`* | Writes `top N` and `left N`; `null` removes one. A size whose places cannot hold the terminals that the section names is `params.invalid`, and the message gives the smallest |
-| `block.set_band` | `file`, `band` | Writes `band hidden`, `band inside` or `band above`; `null` removes it, and the function follows the mask of its library |
-| `block.set_outline` | `file`, `outline` | Writes the `outline` section (spec 11.4) from `outline`, its items one per line (`template d`, or a `path` and its pieces), in canonical form; `null` removes the section, and the block takes the outline of its mask or the ordinary one. Items that do not read, two `path` items, two pieces for one side, a `template` with another item, an unknown template, a `round` outside 1 to 16, an integer outside 0 to 1,024, or more than 64 corners in the body or 16 points in a piece are `params.invalid`; an outline that reads but breaks a guard of 11.4 is written, and `check` gives its warning, as the drawing judges it at every size |
-| `block.reset` | `file` | Removes the `terminals` and `outline` sections: the block goes back to the defaults of notation 3.2, with the outline of the mask of its library when it has one |
-| `library.set_mask` | `folder`, *`band`*, *`band_place`*, *`color`*, *`outline`* | Writes these fields of the table `[mask]` of the manifest of the library in `folder` (spec 11.3), and makes the manifest, holding the table alone, when the library has none; `null` removes one, and the table when nothing is left in it. The rest of the manifest, its comments and its order are kept as written. A value that the mask refuses (a colour that is not `#RRGGBB`, an `outline` that `block.set_outline` would refuse) is `params.invalid`; `outline` is written as a multi-line TOML string. The manifest is otherwise out of reach of the commands (section 1) |
-
-**Structures**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `structure.surround` | `file`, `nodes`, `kind`, *`selector`*, *`over`*, *`arm`* (the first arm) | Puts the nodes in a new `match`, `handle`, `for` or `loop`; see 9.6 |
-| `structure.add_arm` | `file`, `structure`, `patterns` | Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure (9.1); in a structure that gives nothing, it has none |
-| `structure.set_patterns` | `file`, `structure`, `arm`, `patterns` | Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`) |
-| `structure.add_carry` | `file`, `structure`, `name`, *`initial`* (a hole), *`type`* (that of `initial`) | Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so |
-| `structure.add_clause` | `file`, `structure`, `name`, `over` | Adds the clause `name in over` to a `for`. `over` is an array value or a range (`0..n`) |
-| `structure.add_collect` | `file`, `structure`, `value`, *`name`* (from the value, N-14) | Adds `collect value` to a loop, and its output |
-| `structure.remove_part` | `file`, `structure`, `part` | Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y` (`y` is its output). The inputs that it fed become unwired, or get a hole (9.1). The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure |
-| `structure.set_option` | `file`, `structure`, `option`, `on` | Turns `continue_on_error` of a `loop` (spec 6.3) or `parallel` of a `for` (spec 6.2) on or off |
-
-**Functions, signatures and types**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `function.create` | `path`, *`doc`* | Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists` |
-| `function.rename` | `file`, `name` | Renames the function and its file. It updates every call and every reference to it in the project, in the same step (decision of the owner, 2026-11-15) |
-| `function.set_doc` | `file`, `doc` | Writes the documentation comment (`///`); an empty text removes it |
-| `signature.add` | `file`, `terminal`, `type`, *`default`* (required), *`position`* (the last, before `err`) | Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101` |
-| `signature.remove` | `file`, `terminal` | Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole (9.1). Callers are not changed: `check` shows each of them |
-| `signature.rename` | `file`, `terminal`, `name` | Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step (decision of the owner, 2026-11-15) |
-| `signature.set_type` | `file`, `terminal`, `type` | Changes the type of an input or an output; `check` judges the wires that it reaches |
-| `signature.set_default` | `file`, `terminal`, `default` | Sets the default value of an input (a constant, spec 4); `null` makes the input required |
-| `type.create` | `path`, `definition`, *`doc`* | Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2). An existing file is `path.exists` |
-| `type.rename` | `file`, `name` | Renames the type and its file, and every use of it in the project, in the same step |
-
-**Copy and paste**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `fragment.copy` | `file`, `nodes` | Returns `{ "text": … }`, the nodes as the text of a function `clipboard`, in canonical form, with the `use` they need, the wires between them and their `layout` entries counted from the top-left corner of the selection (notation 2.6). An input wired from outside is left out, or gets a hole (9.1). A node without a name has no entry. Writes nothing, and is not a step of history. Nodes of several frames are `params.invalid`. A text above 4 MiB *(proposed)* is `file.too_large`, never cut |
-| `fragment.paste` | `file`, `text`, `at`, *`inside`* (the body of the function), *`arm`* (the first arm) | Puts the body of the function that `text` holds into the frame, its top-left corner at `at`, each node that has a `node … at` entry fixed. Of its `layout` section, only the `node` and `wire` entries are taken (notation 2.6). It adds the `use` that the file then needs. A name already taken in the function, labels and the outputs of the function included, gets a suffix (N-14), and its readers in the fragment follow; `renamed` lists them. A name that the fragment reads without binding it is left out, or gets a hole (9.1). A `text` that does not parse, or holds no function, is `params.invalid`, with the message of the parser; above 4 MiB *(proposed)*, `file.too_large`, as for `file.write`. `names.nodes` gives the names of the nodes pasted |
-
-**History, batches and settings**
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
-| `history.redo` | | Redoes the last step undone, under the same rules |
-| `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
-| `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
-| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window and `commands.batch` itself are
-`params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
-| `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
-| `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
-
-**The window**
-
-The commands of the window of the IDE ([ide.md](ide.md)). They change what the window shows, and `project.new` writes the first file of a new project; none is a step of
-the history; the layout they change is a setting of the user. An agent attached to the IDE may call
-`view.get_state` only: the others are `agent.not_allowed` (ide.md 8). `project.*` takes a folder anywhere on the
-computer, chosen by the user in a dialog of the system, so it is not a path of a project (section 2); the root of a
-project keeps the rules of mcp.md 1 (the home folder and the root of a disk are refused). In `labcraft-cli` and in the MCP server alone, which
-have no window, they are `command.not_enabled`. The `view.*` commands of the viewer (6.5) stay, for the window; to an attached agent, those that change
-what the window shows are `agent.not_allowed` too (ide.md 8).
-
-| Command | Parameters | What it does |
-|---|---|---|
-| `project.new` | `folder` | Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown (ide.md 10). A folder that exists and is not empty is `path.exists` |
-| `project.open` | `folder` | Opens the folder as a project: in this window when it shows the start page, in a new window otherwise |
-| `view.get_state` | | `{ "workspace": "edit", "windows": [{ "tabs": [{ "function", "file", "view", "split" }], "shown", "selection", "zoom" }], "truncated": false }`: for each window of the project, its tabs (the function named as in 6.5, its file, its view among `diagram`, `text` and `block`, the second view of a split or `null`), the index of the tab shown or `null` on the start page, the selection of the tab shown as the editing commands name it (9.2), at most 1,000 items *(proposed)*, and the zoom. Not `view.set_state` (6.5), which sets the view state of a drawing |
-| `view.select` | `function`, *`nodes`*, *`wires`*, *`terminals`* (each `[]`) | Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The window calls it on each click and rectangle of selection ([architecture.md](architecture.md), 12.5) |
-| `view.set_view` | `function`, `view`, *`split`* (`null`) | Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid` |
-| `view.detach` | `function` | Moves the tab of the function into a window of its own (ide.md 9); on the web, a floating panel |
-| `view.dock` | `function` | Moves it back among the tabs of the window of the project |
-| `view.toggle_panel` | `panel`, *`on`* (the other state) | Shows or hides `project`, `palette`, `inspector`, `problems` or `run` |
-| `view.reset_layout` | | Puts the panels back where ide.md 2 says, and docks every detached tab |
-| `view.set_workspace` | `workspace` | Changes the workspace of the window (ide.md 6); a planned one is `command.not_enabled`, and the message gives its milestone |
+The catalog of the editing commands is in 6.7, where `cargo xtask commands` checks it against the registry (decision of
+the owner, 2026-11-15).
 
 ### 9.5 The agent and the work of the user
 

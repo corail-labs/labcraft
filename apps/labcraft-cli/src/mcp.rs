@@ -26,6 +26,12 @@ fn too_wide(root: &Path, home: Option<&Path>) -> Option<&'static str> {
 
 /// The session on the root, checked as it starts; the message of a wrong usage otherwise (exit 2).
 pub fn session(options: &McpOptions) -> Result<Session, String> {
+    session_on(options, true)
+}
+
+/// The session on the root of `--project` or the current folder, checked in the background as it starts when
+/// `background` is: that of `mcp`, and of `exec`, which runs one command.
+pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, String> {
     let given = match &options.project {
         Some(project) => project.clone(),
         None => std::env::current_dir().map_err(|error| format!("the current folder cannot be read: {}", crate::walk::io_text(&error)))?,
@@ -55,7 +61,7 @@ pub fn session(options: &McpOptions) -> Result<Session, String> {
         clock: Arc::new(crate::clock::Real::new()),
         process: std::process::id(),
     };
-    Session::new(Arc::new(Disk), config, true).map_err(|error| error.message)
+    Session::new(Arc::new(Disk), config, background).map_err(|error| error.message)
 }
 
 /// Serves the session until stdin closes, then lets go of the locks of this process (`engine::runs::let_go`): one

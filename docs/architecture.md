@@ -1644,8 +1644,10 @@ pub fn apply(files: &Files, op: &Op, check: &dyn Judge) -> Result<Edited, EditEr
 ```
 
 `Op` is one variant per command of 9.4, read from its parameters by `engine`. `Judge` gives what an operation must know
-of the checked program (the type of an output, the signature of a call, whether a wire would close a cycle), from the
-kept check of the session, so that `edit` reads no library itself, and what it must know of the drawing, which
+of the checked program, from the kept check of the session, so that `edit` reads no library itself: the signature of a
+call (`callable`), and the errors of a file with a text in its place (`errors`), from which `edit` tells a wire of the
+wrong type: one that adds an error of type (`LC30`) to the file is `wire.type_mismatch` (step 0). Scopes and cycles
+are read from the file alone, in `edit`. From step 2, `Judge` also gives what an operation must know of the drawing, which
 `diagram` (L5) computes above it: the place and the box of a node placed automatically (a move by `[dx, dy]` of a free
 node, the top-left corner of what `fragment.copy` copies, where `structure.surround` puts the structure), and the
 smallest size of a frame (`frame.resize`). `engine` implements it from the kept check and the drawing of the function,
@@ -1686,8 +1688,8 @@ fuzzing looks for (12.10).
   `window` (a command of the window, `project.*` and `view.*`), and the function that runs it (commands.md 1). The MCP
   server reads them; it keeps no list of its own.
 - **The history** (commands.md 9.1) is one per project, held by its session, in memory: a list of steps, each with
-  its author, its label, its time and, for each file it touched, the text before and after (`None` for a file made or
-  removed), shared with `Arc<str>` from one step to the next. At most 1,000 steps and 64 MiB of texts *(proposed)*: the
+  its author, its label, its time and, for each file it touched, the bytes before and after (`None` for a file made or
+  removed), shared with `Arc<[u8]>` from one step to the next: bytes, since an external write need not be text. At most 1,000 steps and 64 MiB of texts *(proposed)*: the
   oldest steps go. It is not kept on disk: closing the project ends it, and git keeps the rest. Undo writes back the
   text before of each file, when the file still has the text after; a file that changed since is `file.stale`, and the
   external write that changed it is a step of its own first (below). A new step drops what redo would replay.

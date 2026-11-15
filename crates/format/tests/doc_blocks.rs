@@ -35,13 +35,13 @@ fn markdown_files() -> Vec<PathBuf> {
 /// Blocks whose grammar the spec gives before the parser reads it: each is a text the block holds. The test checks
 /// that each still fails, so that the entry goes when the parser catches up (`AGENTS.md`).
 const AHEAD_OF_THE_PARSER: &[&str] = &[
-    // Spec 11, M1 step 1: the size of the frame of a function.
+    // Spec 11, M1 step 6 (#165): the size of the frame of a function.
     "frame size (",
-    // Spec 5.3, M1 step 2: a match whose arms give nothing (an arm with no `yield`).
+    // Spec 5.3, M1 step 5 (#164): a match whose arms give nothing (an arm with no `yield`).
     "_ = match beep_on {",
-    // Spec 11.2, M1 step 5: the terminals of the compact block.
+    // Spec 11.2, M1 step 6 (#165): the terminals of the compact block.
     "terminals {",
-    // Spec 11.4, M1 step 5b: the outline of the compact block.
+    // Spec 11.4, M1 step 6 (#165): the outline of the compact block.
     "outline {",
 ];
 

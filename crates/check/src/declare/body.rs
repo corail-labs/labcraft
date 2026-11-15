@@ -650,6 +650,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
             }
         }
         self.panel_defaults(signature);
+        self.holes_outside_a_body();
         let Some(function) = function else { return };
         self.declare_signature(signature);
         let mark = self.enter();
@@ -693,6 +694,33 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 }
                 given = true;
             }
+        }
+    }
+
+    /// A hole belongs in a body (spec 5.1): in an argument of `extern` or of an element of the panel, it is `LC2101` too.
+    /// A `default:` has its own, with `LC3017`.
+    fn holes_outside_a_body(&mut self) {
+        let mut holes = Vec::new();
+        if let Decl::Extern(external) = &self.scope.model.file.decl {
+            for arg in &external.args {
+                if let Arg::Value { value, .. } = arg {
+                    holes_in(value, &mut holes);
+                }
+            }
+        }
+        if let Some(panel) = &self.scope.model.file.panel {
+            for item in &panel.items {
+                for arg in item.args.iter().flatten() {
+                    if let Arg::Value { value, name, .. } = arg
+                        && !name.is_some_and(|name| self.text(name) == "default")
+                    {
+                        holes_in(value, &mut holes);
+                    }
+                }
+            }
+        }
+        for id in holes {
+            self.hole(id);
         }
     }
 
@@ -1140,6 +1168,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 }
             }
             Operand::Bracket(id, unit) => self.bracket_as_value(*id, unit),
+            Operand::Hole(id) => self.hole(*id),
             Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
         }
     }
@@ -1243,8 +1272,17 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                 }
             }
             Operand::Bracket(id, unit) => self.constant_bracket(*id, unit),
+            Operand::Hole(id) => {
+                self.hole(*id);
+                self.not_a_constant(*id, "`?`, a hole");
+            }
             Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
         }
+    }
+
+    /// `?`: a place that nothing feeds yet (spec 5.1), an error as an input not wired is.
+    fn hole(&mut self, id: Id) {
+        self.say(Code::Lc2101, "`?` is a hole: nothing feeds this place yet".to_owned(), id);
     }
 
     /// `[1]` and `[f]` are arrays of one, for a value of a variant (R-5). Nothing else in brackets is a constant.
@@ -1703,9 +1741,21 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
                     }
                 },
                 OrderRef::Value(other) => {
+                    if let Operand::Hole(id) = other {
+                        self.hole(*id);
+                    }
                     self.say(Code::Lc2105, "`after:` waits for a value or a label, not a literal (R-15)".to_owned(), other.id());
                 }
             }
         }
+    }
+}
+
+/// The holes of an operand, those of its elements included.
+fn holes_in(operand: &Operand, found: &mut Vec<Id>) {
+    match operand {
+        Operand::Hole(id) => found.push(*id),
+        Operand::Array(_, values) => values.iter().for_each(|value| holes_in(value, found)),
+        Operand::Path(_) | Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Bracket(..) => {}
     }
 }

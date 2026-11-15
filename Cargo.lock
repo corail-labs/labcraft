@@ -2012,6 +2012,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "labcraft-edit"
+version = "0.3.0-m0"
+dependencies = [
+ "labcraft-check",
+ "labcraft-format",
+ "labcraft-graph",
+ "labcraft-types",
+]
+
+[[package]]
 name = "labcraft-editor"
 version = "0.3.0-m0"
 dependencies = [
@@ -2029,6 +2039,7 @@ version = "0.3.0-m0"
 dependencies = [
  "labcraft-check",
  "labcraft-diagram",
+ "labcraft-edit",
  "labcraft-format",
  "labcraft-graph",
  "labcraft-ir",

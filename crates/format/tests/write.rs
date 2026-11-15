@@ -1076,3 +1076,23 @@ fn canonical_orders_gives_each_body_what_canonical_order_gives_it() {
         assert_eq!(orders.of(owner), Some(alone.as_deref().map_err(|fault| *fault)), "{owner:?}");
     }
 }
+
+/// Spec 5.1: `fmt` keeps a hole as it is, wherever an operand goes (grammar 14.4).
+#[test]
+fn a_hole_is_kept_as_it_is() {
+    assert_body(&["x = g(?,   b: ?)"], &["x = g(?, b: ?)"]);
+    assert_body(&["x = [ ?, 1 V ]"], &["x = [?, 1 V]"]);
+    assert_body(&["x = ?"], &["x = ?"]);
+    assert_body(&["x = match ? {", "    _ => yield ?", "}"], &["x = match ? {", "    _ => yield ?", "}"]);
+    assert_body(&["r = Reading.Range(?, high)"], &["r = Reading.Range(?, high)"]);
+    assert_body(&["n = loop {", "    until ?", "}"], &["n = loop {", "    until ?", "}"]);
+}
+
+/// The grammar has no hole in a pattern or a type: `?` there does not read.
+#[test]
+fn a_hole_is_no_pattern() {
+    let mut names = Interner::new();
+    let result = format(function(&["x = match a {", "    ? => yield 1", "}"]).as_bytes(), &mut names, &Limits::default());
+    assert!(result.text.is_none());
+    assert_eq!(result.report.diagnostics().first().map(|diagnostic| diagnostic.code()), Some(Code::Lc1001));
+}

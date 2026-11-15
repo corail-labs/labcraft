@@ -313,6 +313,8 @@ fn wasm() -> Result<(), String> {
         "--package",
         "labcraft-diagram",
         "--package",
+        "labcraft-edit",
+        "--package",
         "labcraft-engine",
         "--package",
         "labcraft-editor",

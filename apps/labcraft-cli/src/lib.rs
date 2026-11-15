@@ -17,6 +17,7 @@ pub mod check;
 pub mod clock;
 pub mod diagram;
 pub mod disk;
+pub mod exec;
 pub mod fmt;
 pub mod mcp;
 pub mod output;

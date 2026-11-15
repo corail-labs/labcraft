@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use crate::error::{CommandError, did_you_mean};
 use crate::folders::{Folders, check_folders_keeping};
+use crate::history::Author;
 use crate::kept::Kept;
 use crate::panics::guarded;
 use crate::params::{self, Params};
@@ -56,6 +57,10 @@ pub struct Session {
     /// The first check of the root, made in the background when the session starts.
     #[cfg(not(target_arch = "wasm32"))]
     first: Option<std::thread::JoinHandle<Option<Kept>>>,
+    /// The history of the project (commands.md 9.1).
+    pub(crate) history: crate::history::History,
+    /// Whether it keeps one: `labcraft-cli` runs one command per process, with none (9.5).
+    pub(crate) keeps_history: bool,
 }
 
 impl Session {
@@ -77,6 +82,8 @@ impl Session {
             view: crate::view::View::default(),
             #[cfg(not(target_arch = "wasm32"))]
             first: None,
+            history: crate::history::History::default(),
+            keeps_history: true,
         };
         if background {
             session.start_first_check();
@@ -200,14 +207,30 @@ impl Session {
         crate::view::open_trace_at(self, path)
     }
 
-    /// Runs a command: the only way in.
+    /// Keeps no history: `history.*` is not enabled, and a command makes no step (commands.md 9.5). `labcraft-cli` runs one
+    /// command per process.
+    pub fn without_history(&mut self) {
+        self.keeps_history = false;
+    }
+
+    /// Runs a command for the user: the only way in.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value, CommandError> {
         self.execute_waiting(id, params, &Patient)
+    }
+
+    /// Runs a command for an author (commands.md 9.5): the history signs its step with it.
+    pub fn execute_as(&mut self, author: &Author, id: &str, params: &Value) -> Result<Value, CommandError> {
+        self.execute_waiting_as(author, id, params, &Patient)
     }
 
     /// As [`Session::execute`], with whoever waits for the run in `run.start` and `run.wait`: told where it is each
     /// second, and able to stop waiting (`docs/mcp.md`, 4).
     pub fn execute_waiting(&mut self, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
+        self.execute_waiting_as(&Author::User, id, params, waiter)
+    }
+
+    /// As [`Session::execute_waiting`], for an author.
+    pub fn execute_waiting_as(&mut self, author: &Author, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         let Some(command) = registry::command(id) else {
             let ids: Vec<&str> = registry::commands().iter().map(|command| command.id).collect();
             let near: Vec<&str> = labcraft_runtime::simulation::nearest(id, &ids).into_iter().collect();
@@ -217,7 +240,7 @@ impl Session {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
         }
         let params = params::judge(command, params)?;
-        guarded(id, || self.dispatch(command, &params, waiter)).unwrap_or_else(|internal| {
+        guarded(id, || self.dispatch(author, command, &params, waiter)).unwrap_or_else(|internal| {
             // What the command was changing may be half done: nothing kept is trusted after it.
             self.kept.clear();
             Err(internal)
@@ -244,11 +267,20 @@ impl Session {
         if command.id.starts_with("run.") {
             return crate::runs::not_enabled_here().map(str::to_owned);
         }
+        if command.id.starts_with("history.") && !self.keeps_history {
+            return Some("the command line runs one command per process, with no history to undo".to_owned());
+        }
         None
     }
 
-    fn dispatch(&mut self, command: &Command, params: &Params, waiter: &dyn Waiter) -> Result<Value, CommandError> {
+    fn dispatch(&mut self, author: &Author, command: &Command, params: &Params, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         match command.id {
+            id if crate::edits::EDITING.contains(&id) => crate::edits::edit(self, author, command, params),
+            "commands.batch" => crate::edits::batch(self, author, params),
+            "commands.execute" => crate::edits::execute(self, author, params),
+            "history.undo" => crate::edits::undo(self, author),
+            "history.redo" => crate::edits::redo(self, author),
+            "history.list" => Ok(crate::edits::list(self, params)),
             "guide.read" => crate::guide::read(params),
             "commands.list" => Ok(catalog::list(self, params)),
             "commands.describe" => catalog::describe(self, params),
@@ -292,6 +324,11 @@ impl Session {
         self.kept.push((folder, kept));
     }
 
+    /// The check of the root as last kept, without looking whether it still holds: right after [`Session::checked`].
+    pub(crate) fn kept_root(&self) -> Option<&Kept> {
+        self.kept.iter().rev().find(|(folder, _)| *folder == self.root).map(|(_, kept)| kept)
+    }
+
     /// The check of a folder without links, kept if it still holds, made again otherwise.
     pub(crate) fn checked(&mut self, folder: &Path) -> Result<&Kept, CommandError> {
         if folder == self.root {
@@ -331,7 +368,7 @@ impl Drop for Session {
 }
 
 /// A check of one folder of the project, its paths shown from the root, what `check` found kept for the root.
-fn check_of(
+pub(crate) fn check_of(
     ws: &dyn Workspace,
     shipped: &Shipped,
     root: &Path,

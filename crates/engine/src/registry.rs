@@ -3,6 +3,8 @@
 
 use std::sync::OnceLock;
 
+mod editing;
+
 use serde_json::{Map, Value, json};
 
 /// What a command can change (`docs/commands.md`, section 1). A command with none only reads.
@@ -37,6 +39,14 @@ pub struct Command {
     pub long: bool,
     /// The milestone or step that brings it, when it is registered but not built yet.
     pub planned: Option<&'static str>,
+    /// It makes a step of history (commands.md 9.1).
+    pub undoable: bool,
+    /// The MCP server answers it outside its queue, so that an agent can always stop what it started (mcp.md 5).
+    pub at_once: bool,
+    /// It is a tool of its own; the others are reached through `commands_execute` (architecture 12.8).
+    pub direct: bool,
+    /// A command of the window (`project.*`, `view.*`), which a headless server does not give (ide.md 8).
+    pub window: bool,
 }
 
 impl Command {
@@ -96,7 +106,11 @@ impl Params {
 /// Every command, in the order of `docs/commands.md`, section 6.
 pub fn commands() -> &'static [Command] {
     static COMMANDS: OnceLock<Vec<Command>> = OnceLock::new();
-    COMMANDS.get_or_init(catalog)
+    COMMANDS.get_or_init(|| {
+        let mut all = catalog();
+        all.extend(editing::catalog());
+        all
+    })
 }
 
 /// The command of this id.
@@ -186,6 +200,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "functions.list",
@@ -205,6 +223,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         // 6.2 Files and libraries
         Command {
@@ -218,6 +240,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "file.read",
@@ -237,6 +263,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "file.write",
@@ -256,6 +286,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Files],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "file.rename",
@@ -268,6 +302,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Files],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "file.delete",
@@ -280,6 +318,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Files],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "library.check",
@@ -298,6 +340,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "file.format",
@@ -313,6 +359,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Files],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         // 6.3 Instruments
         Command {
@@ -326,6 +376,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         // 6.4 Runs
         Command {
@@ -401,6 +455,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Instruments, Effect::Run],
             long: true,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "run.wait",
@@ -419,6 +477,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "run.status",
@@ -431,6 +493,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: true,
+            direct: true,
+            window: false,
         },
         Command {
             id: "run.set_element",
@@ -450,6 +516,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Run],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: true,
+            direct: true,
+            window: false,
         },
         Command {
             id: "run.abort",
@@ -462,6 +532,10 @@ fn catalog() -> Vec<Command> {
             effects: &[Effect::Run],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: true,
+            direct: true,
+            window: false,
         },
         Command {
             id: "run.trace",
@@ -489,6 +563,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         // 6.5 Diagrams and the viewer
         Command {
@@ -528,6 +606,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "view.open",
@@ -540,6 +622,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: false,
+            window: true,
         },
         Command {
             id: "view.show_function",
@@ -552,6 +638,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: false,
+            window: true,
         },
         Command {
             id: "view.set_standard_view",
@@ -564,6 +654,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: false,
+            window: true,
         },
         Command {
             id: "view.set_state",
@@ -582,6 +676,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: false,
+            window: true,
         },
         Command {
             id: "view.open_trace",
@@ -594,6 +692,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: false,
+            window: true,
         },
         // 6.6 The registry itself
         Command {
@@ -607,6 +709,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
         Command {
             id: "commands.describe",
@@ -619,6 +725,10 @@ fn catalog() -> Vec<Command> {
             effects: &[],
             long: false,
             planned: None,
+            undoable: false,
+            at_once: false,
+            direct: true,
+            window: false,
         },
     ]
 }

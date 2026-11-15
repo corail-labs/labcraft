@@ -221,6 +221,7 @@ impl<'a> Parser<'a, '_> {
             T::Slash => "`/`".to_owned(),
             T::Caret => "`^`".to_owned(),
             T::Minus => "`-`".to_owned(),
+            T::Question => "`?`".to_owned(),
         }
     }
 
@@ -1006,6 +1007,10 @@ impl<'a> Parser<'a, '_> {
             }
             Some(T::Minus | T::Int(_) | T::Float(_) | T::String(_) | T::LeftBracket | T::Keyword(K::Inf | K::Nan | K::True | K::False | K::None)) => {
                 self.literal("a value")
+            }
+            Some(T::Question) => {
+                let start = self.start()?;
+                self.word_literal(start, Operand::Hole)
             }
             _ => Err(self.unexpected_name("a value")),
         }

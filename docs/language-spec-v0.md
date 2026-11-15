@@ -438,8 +438,12 @@ dmm, e1 = visa.open(resource)
   - **Errors:** each hole is an error (`LC2101`, as an input not wired), so a function that holds one does not
     check and does not run.
   - **Where it means nothing:** a hole belongs in a body. Elsewhere it is `LC2101` too, and the rule of the place
-    may add its own error: a default value (`= ?`, `= [?]`) is also `LC3017`, `after: ?` is `LC2105`, and so is
-    a hole in a pattern, an element of the panel or an argument of `extern`, each with the code of its place.
+    may add its own error: a default value (`= ?`, `= [?]`) is also `LC3017`, and `after: ?` is also `LC2105`; in an
+    argument of an element of the panel or of `extern`, it is `LC2101`.
+  - **Not in a pattern:** a pattern is the condition of an arm, which the user writes, not a place that a wire
+    fills, and no command writes a pattern without its text (`structure.surround` and `structure.add_arm`,
+    [commands.md](commands.md), 6.7 and 9.6). So the grammar has no hole there (14.4): `?` in a pattern does not read
+    (`LC1001`) (decision of the owner, 2026-11-15).
   - **Canonical form:** `fmt` keeps a hole as it is.
   - **Drawing:** a pill with `?` in it, outlined dashed in the colour of an error, where a constant would sit
     (`visual-notation.md`, 2.5).

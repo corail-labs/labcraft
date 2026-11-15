@@ -35,7 +35,7 @@ use labcraft_engine::{JsonProblem, Runs, Session, Waiter};
 use serde_json::{Map, Value as Json, json};
 
 use lines::{Line, read_line};
-use tools::{AT_ONCE, Tool};
+use tools::Tool;
 
 /// The revisions of MCP the server speaks, the latest first (`docs/mcp.md`, 1): not 2025-03-26, which requires batches.
 pub const PROTOCOLS: [&str; 2] = ["2025-11-25", "2025-06-18"];
@@ -383,11 +383,14 @@ impl Reader<'_, '_> {
             let message = format!("no tool is named `{}`{}", labcraft_types::cut_text(name), labcraft_engine::error::did_you_mean(name, &names));
             return self.shared.fail(id, INVALID_PARAMS, message);
         };
+        let at_once = tool.command.at_once;
         let command = tool.command.id;
         let progress = params.get("_meta").and_then(|meta| meta.get("progressToken")).filter(|token| token.is_string() || token.is_number()).cloned();
         // Wrong arguments are the command's to judge, and come back as a failed call that the model reads (SEP-1303).
         let arguments = params.as_object_mut().and_then(|params| params.remove("arguments"));
-        if AT_ONCE.contains(&command) {
+        // Answered on the thread that reads requests, never queued, so that an agent can always stop what it started
+        // (`docs/mcp.md`, 5): the registry says which (architecture 12.5). They wait on the run, never on the session.
+        if at_once {
             let arguments = arguments.unwrap_or_else(|| Json::Object(Map::new()));
             let outcome = self.shared.runs.execute(self.ws, self.root, command, &arguments);
             return self.shared.answer(id, tools::result_of(outcome));

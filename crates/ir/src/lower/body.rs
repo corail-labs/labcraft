@@ -322,6 +322,8 @@ impl<'f> Walk<'_, '_, 'f> {
         while let Some(operand) = pending.pop() {
             let constant = match operand {
                 Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => true,
+                // Never lowered: a function that holds one does not check (spec 5.1).
+                Operand::Hole(_) => false,
                 Operand::Array(_, values) => {
                     pending.extend(values);
                     true

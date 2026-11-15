@@ -881,3 +881,23 @@ fn what_a_diagnostic_repeats_is_cut_before_it_is_copied() {
     assert_eq!(found.len(), 1000);
     assert!(found.first().unwrap().message.chars().count() <= labcraft_types::MAX_TEXT);
 }
+
+/// Spec 5.1: each hole is `LC2101`, wherever it is, and a place that refuses it says so too.
+#[test]
+fn a_hole_is_an_input_not_wired() {
+    assert_eq!(in_body("x, _ = g(?)"), ["LC2101"]);
+    assert_eq!(in_body("x, _ = g(?, b: ?)"), ["LC2101", "LC2101"]);
+    assert_eq!(in_body("x = [?, 1]"), ["LC2101"]);
+    assert_eq!(in_body("x = ?"), ["LC2101"]);
+    assert_eq!(in_body("x = match ? {\n_ => yield 1\n}"), ["LC2101"]);
+    assert_eq!(in_body("x, _ = g(1, after: ?)"), ["LC2101", "LC2105"]);
+    assert_eq!(in_file("fn f(a: i32 = ?) -> (r: i32) {\n    r = a\n}"), ["LC2101", "LC3017"]);
+}
+
+/// Spec 5.1: a hole belongs in a body; in an argument of `extern` or of an element of the panel it is `LC2101` too.
+#[test]
+fn a_hole_outside_a_body_is_an_error() {
+    // `LC4005`: a project does not run its own `extern rust` yet; what matters here is the hole.
+    assert!(in_file("extern rust(crate: ?, function: \"f\")\nfn f() -> ()").contains(&"LC2101"));
+    assert_eq!(in_file("fn f(x: f64) -> () {}\n\npanel {\n    control x: numeric(label: ?)\n}"), ["LC2101"]);
+}

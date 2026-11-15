@@ -247,7 +247,7 @@ impl<'a> Plan<'a> {
                     self.reads.push((value, step));
                 }
             }
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
 
@@ -710,7 +710,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             Operand::Path(path) => self.named(operand).is_none() && matches!(self.resolved.of(path.id), Meaning::Value(_)),
             Operand::Bracket(id, _) => self.bracket_holds_wire(*id),
             Operand::Array(id, values) => self.array_holds_wire(*id, values),
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => false,
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => false,
         }
     }
 
@@ -1037,6 +1037,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                 Operand::None(_) => self.plain(Ty::ErrorValue),
                 Operand::Array(id, values) => self.array_type(*id, values, hint),
                 Operand::Bracket(id, _) => self.bracket_type(*id, hint),
+                // The type that its place asks for, and none where nothing asks (spec 5.1): it gives a type to nothing.
+                Operand::Hole(_) => hint.unwrap_or(TyId::ERROR),
             }
         };
         if self.trying.is_none() {
@@ -1135,7 +1137,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let is_constant = match operand {
             Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => true,
             Operand::Array(array, values) => !self.array_holds_wire(*array, values),
-            Operand::Path(_) | Operand::Bracket(..) => false,
+            Operand::Path(_) | Operand::Bracket(..) | Operand::Hole(_) => false,
         };
         if !is_constant {
             return;

@@ -11,7 +11,7 @@
 )]
 #![forbid(unsafe_code)]
 
-use labcraft_cli::{args, check, diagram, fmt, mcp, run, walk};
+use labcraft_cli::{args, check, diagram, exec, fmt, mcp, run, walk};
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -33,6 +33,8 @@ commands:
                                               report what it did
   mcp [options]                               serve the commands of LabCraft to an agent over MCP,
                                               on stdio, until stdin closes
+  exec [options] ID [PARAMS]                  run one command of LabCraft, its parameters as one JSON
+                                              object, and print what it returns as JSON
   version                                     print the version
   --help                                      print this text
 
@@ -80,6 +82,10 @@ options of mcp:
   --lib-path DIR         as for check
   --json is not taken: stdout is MCP's
 
+options of exec:
+  --project DIR, --lib-path DIR               as for mcp
+  exit codes: 0 ok, 1 the command returned an error, 2 wrong usage
+
 options of all:
   --json                 one JSON document on stdout, nothing else
   --max-report N         diagnostics listed, default 1000; the counts stay complete
@@ -121,6 +127,10 @@ fn main() -> ExitCode {
             Ok(session) => on_the_stack_of_the_work(|| mcp::serve(session), mcp::internal_failure),
             Err(message) => usage_error(&message),
         },
+        (Some("exec"), _) => match args::parse_exec(rest) {
+            Ok(options) => run_exec(&options),
+            Err(message) => usage_error(&message),
+        },
         _ => usage_error("unknown command"),
     }
 }
@@ -144,6 +154,24 @@ fn run_run(options: &args::RunOptions) -> ExitCode {
             }
         },
         |what| run::internal_failure(options, what),
+    );
+    match wrong.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner) {
+        Some(message) => usage_error(&message),
+        None => code,
+    }
+}
+
+fn run_exec(options: &args::ExecOptions) -> ExitCode {
+    let wrong = std::sync::Mutex::new(None);
+    let code = on_the_stack_of_the_work(
+        || match exec::run(options) {
+            Ok(code) => code,
+            Err(message) => {
+                *wrong.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(message);
+                ExitCode::from(WRONG_USAGE)
+            }
+        },
+        exec::internal_failure,
     );
     match wrong.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner) {
         Some(message) => usage_error(&message),

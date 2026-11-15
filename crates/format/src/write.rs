@@ -640,6 +640,7 @@ impl<'a> Writer<'a> {
             Operand::Bool(_, true) => self.push("true"),
             Operand::Bool(_, false) => self.push("false"),
             Operand::None(_) => self.push("none"),
+            Operand::Hole(_) => self.push("?"),
             Operand::Array(_, values) => {
                 self.push("[");
                 self.list(values, ", ", Self::operand);

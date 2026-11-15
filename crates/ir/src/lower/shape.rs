@@ -234,7 +234,7 @@ impl<'f> Shape<'f> {
                         self.aliases.insert(*target, path);
                     }
                 }
-                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Array(..) => {
+                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) | Operand::Array(..) => {
                     if let Operand::Array(_, values) = operand
                         && holds_wire(values, lines, file, &mut constant)
                     {
@@ -376,7 +376,7 @@ impl<'f> Shape<'f> {
                     }
                 }
                 Operand::Array(_, values) => pending.extend(values.iter().rev()),
-                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
             }
         }
         Ok(())
@@ -586,7 +586,7 @@ fn holds_wire(values: &[Operand], lines: &HashMap<Id, &Operand>, file: &CheckedF
             _ => false,
         },
         Operand::Array(_, values) => holds_wire(values, lines, file, known),
-        Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => false,
+        Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => false,
     })
 }
 

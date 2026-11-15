@@ -108,6 +108,8 @@ pub enum TokenKind<'a> {
     Slash,
     Caret,
     Minus,
+    /// `?`, a hole (spec 5.1).
+    Question,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -411,6 +413,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             '*' => single(TokenKind::Star, self),
             '\u{00B7}' => single(TokenKind::MiddleDot, self),
             '^' => single(TokenKind::Caret, self),
+            '?' => single(TokenKind::Question, self),
             '0'..='9' => Ok(self.number()),
             c if is_letter(c) => Ok(self.name_or_keyword()),
             c => {
@@ -701,7 +704,7 @@ mod tests {
     #[test]
     fn every_symbol_of_the_grammar() {
         assert_eq!(
-            tokens("( ) [ ] { } , : ; . .. ... = -> => # _ < > * \u{00B7} / ^ -"),
+            tokens("( ) [ ] { } , : ; . .. ... = -> => # _ < > * \u{00B7} / ^ - ?"),
             [
                 "LeftParen",
                 "RightParen",
@@ -727,6 +730,7 @@ mod tests {
                 "Slash",
                 "Caret",
                 "Minus",
+                "Question",
             ]
         );
     }

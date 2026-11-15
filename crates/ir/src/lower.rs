@@ -605,6 +605,7 @@ impl<'c> Lowering<'c> {
             Operand::Text(_, text) => ConstValue::Text(read_escapes(text).into()),
             Operand::Bool(_, value) => ConstValue::Bool(*value),
             Operand::None(_) => ConstValue::NoError,
+            Operand::Hole(_) => return Err(self.bug(file, "a hole, which check refuses")),
             Operand::Array(_, values) => {
                 let element = self.element_of(ty, file)?;
                 let mut items = Vec::with_capacity(values.len());

@@ -153,7 +153,7 @@ impl Ids {
                     self.unit(unit);
                 }
             }
-            Operand::Text(id, _) | Operand::Bool(id, _) | Operand::None(id) => self.next(id),
+            Operand::Text(id, _) | Operand::Bool(id, _) | Operand::None(id) | Operand::Hole(id) => self.next(id),
             Operand::Array(id, values) => {
                 self.next(id);
                 self.operands(values);

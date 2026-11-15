@@ -129,7 +129,8 @@ pub(in crate::declare) fn refused_constant(value: &Operand, resolved: &Resolved)
         // `[1]` is an array of one number, and what is neither has its diagnostic.
         Operand::Bracket(id, _) => matches!(resolved.of(*id), Meaning::ArrayOfFunction { .. }),
         Operand::Path(path) => matches!(resolved.of(path.id), Meaning::Function { .. } | Meaning::Primitive { .. }),
-        Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) => false,
+        // A hole has its own `LC2101` and `LC3017`.
+        Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::Hole(_) => false,
     }
 }
 

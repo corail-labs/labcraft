@@ -21,12 +21,14 @@
 mod bound;
 mod catalog;
 pub mod drawings;
+mod edits;
 pub mod error;
 mod files;
 pub mod fmt;
 pub mod folders;
 mod functions;
 pub mod guide;
+pub mod history;
 mod kept;
 pub mod panics;
 mod params;
@@ -41,7 +43,9 @@ pub mod view;
 pub mod walk;
 pub mod workspace;
 
+pub use edits::revision;
 pub use error::CommandError;
+pub use history::Author;
 pub use runs::{Clock, JsonProblem, Patient, Runs, Still, Waiter, read_json, run_to_end};
 pub use session::{Config, Session};
 pub use shipped::{Shipped, ShippedFile, ShippedLibrary};

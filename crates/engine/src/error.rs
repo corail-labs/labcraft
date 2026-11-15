@@ -15,12 +15,14 @@ pub struct CommandError {
     pub expected: Vec<String>,
     /// For `run.busy`: the id of the run going (`docs/commands.md`, section 3).
     pub run: Option<String>,
+    /// For a command of `commands.batch` that fails: its index in the batch (commands.md 9.4).
+    pub index: Option<u32>,
 }
 
 impl CommandError {
     /// The message is cut past 200 code points (`types::MAX_TEXT`), with `…`: it can repeat what the caller sent, a path or an id.
     pub fn new(code: &'static str, message: impl Into<String>) -> CommandError {
-        CommandError { code, message: cut_text(&message.into()).into_owned(), parameter: None, expected: Vec::new(), run: None }
+        CommandError { code, message: cut_text(&message.into()).into_owned(), parameter: None, expected: Vec::new(), run: None, index: None }
     }
 
     /// An error about one parameter.
@@ -52,6 +54,9 @@ impl CommandError {
             }
             if let Some(run) = &self.run {
                 object.insert("run".to_owned(), json!(run));
+            }
+            if let Some(index) = self.index {
+                object.insert("index".to_owned(), json!(index));
             }
         }
         json!({ "error": error })

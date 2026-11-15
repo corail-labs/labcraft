@@ -219,7 +219,8 @@ impl<'f> Count<'f, '_> {
                 Operand::Array(_, values) if holds_wire(values, &self.lines, self.resolved, &mut constant) => {
                     self.built_arrays.insert(target);
                 }
-                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Array(..) => {
+                // A hole is never lowered: a function that holds one does not check (spec 5.1).
+                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) | Operand::Array(..) => {
                     self.literals.insert(target);
                 }
                 Operand::Bracket(..) => {}
@@ -297,7 +298,7 @@ impl<'f> Count<'f, '_> {
                     }
                 }
                 Operand::Array(_, values) => pending.extend(values.iter().rev()),
-                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+                Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
             }
         }
     }
@@ -402,7 +403,7 @@ fn needs(operand: &Operand, resolved: &Resolved, deps: &mut Vec<Id>) -> bool {
                 }
             }
             Operand::Array(_, values) => pending.extend(values),
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
     true
@@ -449,7 +450,7 @@ fn is_constant(value: Id, lines: &HashMap<Id, &Operand>, resolved: &Resolved, kn
             Operand::Path(path) if path.rest.is_empty() => needs(operand, resolved, &mut deps) && !deps.is_empty(),
             Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => true,
             Operand::Array(..) => needs(operand, resolved, &mut deps),
-            Operand::Path(_) | Operand::Bracket(..) => false,
+            Operand::Path(_) | Operand::Bracket(..) | Operand::Hole(_) => false,
         };
         if !constant {
             known.insert(current, false);

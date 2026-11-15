@@ -414,6 +414,8 @@ pub enum Operand {
     None(Id),
     Array(Id, Vec<Operand>),
     Bracket(Id, Box<UnitExpr>),
+    /// `?`: a value that is missing, a place that nothing feeds yet (spec 5.1). It is `LC2101`.
+    Hole(Id),
 }
 
 impl Operand {
@@ -425,7 +427,8 @@ impl Operand {
             | Operand::Bool(id, _)
             | Operand::None(id)
             | Operand::Array(id, _)
-            | Operand::Bracket(id, _) => *id,
+            | Operand::Bracket(id, _)
+            | Operand::Hole(id) => *id,
         }
     }
 }

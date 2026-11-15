@@ -326,7 +326,7 @@ impl<'a, 'r> Graph<'a, 'r> {
                     self.wired.push(value);
                 }
             }
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
 
@@ -926,7 +926,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                     }
                 }
             }
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
 

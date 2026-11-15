@@ -341,7 +341,7 @@ impl Analysis<'_> {
                     self.read((name, false));
                 }
             }
-            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) => {}
+            Operand::Number(..) | Operand::Text(..) | Operand::Bool(..) | Operand::None(_) | Operand::Hole(_) => {}
         }
     }
 

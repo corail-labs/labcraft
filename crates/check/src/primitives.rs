@@ -15,7 +15,7 @@ pub enum PrimitiveLibrary {
 }
 
 impl PrimitiveLibrary {
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "core" => Some(PrimitiveLibrary::Core),
             "string" => Some(PrimitiveLibrary::String),

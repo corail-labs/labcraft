@@ -8,9 +8,20 @@ use serde_json::{Value as Json, json};
 /// The commands that can replace or remove a file (`docs/mcp.md`, 2).
 const DESTRUCTIVE: &[&str] = &["file.write", "file.rename", "file.delete", "file.format"];
 
-/// The commands answered on the thread that reads requests, never queued, so that an agent can always stop what it
-/// started (`docs/mcp.md`, 5). They wait on the run, never on the session.
-pub(crate) const AT_ONCE: &[&str] = &["run.status", "run.set_element", "run.abort"];
+/// The commands of editing built by M1 step 0a: the server gives them from step 0b, which signs each call with the name of
+/// its client (commands.md 9.5), so that an agent never undoes the user's steps as if they were its own.
+const FROM_STEP_0B: &[&str] = &[
+    "node.add",
+    "constant.add",
+    "node.delete",
+    "wire.connect",
+    "wire.disconnect",
+    "history.undo",
+    "history.redo",
+    "history.list",
+    "commands.execute",
+    "commands.batch",
+];
 
 /// A tool: the command behind it, and its name.
 pub(crate) struct Tool {
@@ -24,7 +35,8 @@ pub(crate) fn tools_of(session: &Session, viewer: bool) -> Vec<Tool> {
     registry::commands()
         .iter()
         .filter(|command| session.not_enabled(command).is_none())
-        .filter(|command| viewer || !command.id.starts_with("view."))
+        .filter(|command| viewer || !command.window)
+        .filter(|command| !FROM_STEP_0B.contains(&command.id))
         .map(|command| Tool { name: command.id.replace('.', "_"), command })
         .collect()
 }

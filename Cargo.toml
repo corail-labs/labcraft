@@ -15,6 +15,7 @@ labcraft-types = { path = "crates/types" }
 labcraft-graph = { path = "crates/graph" }
 labcraft-format = { path = "crates/format" }
 labcraft-check = { path = "crates/check" }
+labcraft-edit = { path = "crates/edit" }
 labcraft-trace = { path = "crates/trace" }
 labcraft-ir = { path = "crates/ir" }
 labcraft-runtime = { path = "crates/runtime" }

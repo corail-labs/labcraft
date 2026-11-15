@@ -110,6 +110,52 @@ pub fn parse_mcp(args: &[OsString]) -> Result<McpOptions, String> {
     Ok(options)
 }
 
+/// `labcraft-cli exec ID [PARAMS]` (cli.md 9): one command of the registry, its parameters as one JSON object.
+#[derive(Debug)]
+pub struct ExecOptions {
+    pub id: String,
+    pub params: serde_json::Value,
+    /// `--project`, `--lib-path` and the limits, as `mcp` takes them.
+    pub session: McpOptions,
+}
+
+pub fn parse_exec(args: &[OsString]) -> Result<ExecOptions, String> {
+    let mut session = McpOptions { project: None, lib_paths: Vec::new(), limits: Limits::default() };
+    let mut given: Vec<String> = Vec::new();
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let text = arg.to_string_lossy();
+        match text.as_ref() {
+            "--project" => {
+                if session.project.is_some() {
+                    return Err("--project is given once".to_owned());
+                }
+                session.project = Some(PathBuf::from(args.next().ok_or("--project needs a folder")?));
+            }
+            "--lib-path" => session.lib_paths.push(PathBuf::from(args.next().ok_or("--lib-path needs a folder")?)),
+            // The output is always one JSON document.
+            "--json" => {}
+            "--" => given.extend(args.by_ref().map(|arg| arg.to_string_lossy().into_owned())),
+            _ if limit(&text, &mut args, &mut session.limits)? => {}
+            _ if text.starts_with('-') => return Err(format!("unknown option `{text}`")),
+            _ => given.push(text.into_owned()),
+        }
+    }
+    let mut given = given.into_iter();
+    let id = given.next().ok_or("`exec` needs the id of a command: `labcraft-cli exec node.add '{\"file\": …}'`")?;
+    let params = match given.next() {
+        Some(text) => serde_json::from_str(&text).map_err(|error| format!("the parameters are one JSON object: {error}"))?,
+        None => serde_json::Value::Object(serde_json::Map::new()),
+    };
+    if !params.is_object() {
+        return Err("the parameters are one JSON object".to_owned());
+    }
+    if let Some(extra) = given.next() {
+        return Err(format!("`exec` takes an id and its parameters, not `{extra}`"));
+    }
+    Ok(ExecOptions { id, params, session })
+}
+
 pub fn parse_fmt(args: &[OsString]) -> Result<FmtOptions, String> {
     let mut check = false;
     let common = parse_common(args, |option, _| {

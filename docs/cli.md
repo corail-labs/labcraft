@@ -2,7 +2,7 @@
 
 *Last updated: 2026-11-15. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
 ([mcp.md](mcp.md)) implemented for M0b (tag `v0.2.0-m0b`); `diagram` (section 7) and the desktop viewer `labcraft`
-(section 8) implemented for M0v (tag `v0.3.0-m0`).*
+(section 8) implemented for M0v (tag `v0.3.0-m0`); `exec` (section 9) from step 0 of M1.*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
 `labcraft-cli diagram` and of the command line of the desktop viewer `labcraft` (section 8): their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
@@ -23,6 +23,7 @@ labcraft-cli check [--json] [--deny-warnings] [--lib-path DIR]... [options] FOLD
 labcraft-cli run   [--json] [run options] [options] FOLDER FUNCTION
 labcraft-cli diagram --svg --out DIR [--json] [diagram options] [options] FOLDER [FUNCTION]...
 labcraft-cli mcp  [--project DIR] [--lib-path DIR]... [options]
+labcraft-cli exec [--project DIR] [--lib-path DIR]... [options] ID [PARAMS]
 labcraft-cli version
 labcraft-cli --help
 ```
@@ -1093,7 +1094,28 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
 - What the window does goes through the commands of [commands.md](commands.md), section 6.5, which a session of
   `engine` answers, one for each folder opened, its root that folder (`docs/architecture.md`, 11.5).
 
-## 9. Left for later
+## 9. `exec`, one command
+
+```text
+labcraft-cli exec [--project DIR] [--lib-path DIR]... [options] ID [PARAMS]
+```
+
+Runs one command of the registry ([commands.md](commands.md), section 1), as its MCP tool would run it, on a
+session of its own whose root is `--project`, or the current folder, under the rules of `mcp` ([mcp.md](mcp.md),
+section 1: not the home folder, a folder above it or the root of a drive). `PARAMS` is its parameters as one JSON
+object, `{}` when it is left out: `labcraft-cli exec node.add '{"file": "check_voltage.lcf", "call": "core.abs"}'`.
+It is how a script, or an agent without MCP, edits a project from the command line.
+
+- **Output:** what the command returns, as one JSON document on stdout, or `{ "error": { … } }` (commands.md,
+  section 3). `--json` is taken and changes nothing: the output is always JSON.
+- **No history:** each process runs one command, so there is nothing to undo; `history.*` is
+  `command.not_enabled` (commands.md 9.5), and an editing command returns `"step": null`. Its writes reach an open
+  IDE as external writes (commands.md 9.1).
+- **Exit codes:** 0 when the command succeeds, whatever the diagnostics it returns; 1 when it returns an error; 2 for
+  wrong usage (no id, parameters that are not one JSON object, an unknown option), with the reason and the usage on
+  stderr, nothing written.
+
+## 10. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,
@@ -1106,8 +1128,8 @@ For `run`, besides what [commands.md](commands.md), section 10 lists: setting a 
 the command line (the first Ctrl-C as a press of a Stop switch, the second as an abort), arguments from a
 JSON file read from stdin (`--args -`).
 
-From M1: `labcraft-cli settings get` and `settings set`, the settings of a project (`.labcraft/config.toml`) and of
-the user, through the commands of the same name ([commands.md](commands.md), section 9).
+From M1: the settings of a project (`.labcraft/config.toml`) and of the user are read and written by `labcraft-cli exec
+settings.get` and `exec settings.set` (section 9), once those commands are built ([commands.md](commands.md), 6.7).
 
 For `diagram`: other formats (`--png`), an SVG on stdout, the view state from the command line (every
 node in standard view, as the preference of the IDE, folded constructions, the branch of a `match` in
