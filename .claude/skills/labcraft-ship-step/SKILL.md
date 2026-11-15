@@ -39,7 +39,9 @@ Sort the findings of both into:
 
 If the rewrite was large, one targeted check of it is enough. Then stop reviewing: the pull request takes over.
 
-Say in the pull request which reviews ran, with the model and effort of the agent, and why one did not run.
+These levels are defaults. A session may go above or below them, for either review, when the change calls for it: a small change in a risky place, a large one that decides nothing.
+
+Say in the pull request which reviews ran, with the model and effort of the agent and the level of `code-review`; the reason for any level that differs from the default; and why a review did not run.
 
 ## 3. Propose, then commit
 
