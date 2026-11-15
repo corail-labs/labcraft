@@ -2,14 +2,16 @@
 # Says whether a pull request changes more than prose, for the jobs that build or run code (workflows `checks`
 # and `fuzz`). Writes `code=true` or `code=false` to $GITHUB_OUTPUT.
 #
-# A changed file is prose when it is a Markdown file at the root, directly in docs/, in .claude/agents/ or in
-# .claude/skills/*/ (instructions for agents, which no code reads), or a file of docs/images/ or design/ (FigCraft
-# files, which no code reads), and, for `checks`, no Rust string names it: the tests read docs/language-spec-v0.md,
-# docs/cli.md and docs/visual-notation.md, so those count as code. An instruction file of .claude/ is named by its
-# whole path, not its bare name: `skills/` gives its own SKILL.md, which the engine names. `fuzz` skips that
-# test, since the fuzz targets read no document of docs/ outside docs/rfc/ (a seed, so code): a Markdown file
-# there is prose for it, whatever a test reads. Every other file is code: docs/rfc/ and docs/releases/, skills/,
-# examples/, the workflows.
+# A changed file is prose when it is a Markdown file at the root, directly in docs/, in .claude/agents/ or
+# anywhere under .claude/skills/ (instructions for agents, which no code reads; the `*` of the pattern crosses `/`,
+# so any depth counts), or a file of docs/images/ or design/ (FigCraft files, which no code reads), and, for
+# `checks`, no Rust string names it: the tests read docs/language-spec-v0.md, docs/cli.md and
+# docs/visual-notation.md, so those count as code. An instruction file of .claude/ is named by its whole path, or
+# by a string literal that starts with `.claude` (a path built piece by piece), not by its bare name: `skills/`
+# gives its own SKILL.md, which the engine names. `.claude/README.md` and `.claude/skills/README.md` stay code,
+# since neither sits in a subfolder. `fuzz` skips that test, since the fuzz targets read no document of docs/
+# outside docs/rfc/ (a seed, so code): a Markdown file there is prose for it, whatever a test reads. Every other
+# file is code: docs/rfc/ and docs/releases/, skills/, examples/, the workflows.
 # Anything but a pull request runs everything.
 #
 # The files are those of the merge commit that the job checked out, against its first parent (checkout with
@@ -47,15 +49,15 @@ code=false
 while IFS= read -r file; do
   case "$file" in
     design/*) echo "prose: $file"; continue ;;
-    # Instructions for agents: prose, unless a Rust string names the file by its path (a bare `SKILL.md`
-    # belongs to `skills/`, which is code).
+    # Instructions for agents: prose, unless a Rust string names the file by its path, or starts a path under
+    # `.claude/` (a bare `SKILL.md` belongs to `skills/`, which is code).
     .claude/agents/*.md | .claude/skills/*/*.md)
       if [ "$workflow" = fuzz ]; then
         echo "prose: $file"
         continue
       fi
       status=0
-      grep -rqF --include='*.rs' -e "\"$file\"" -e "/$file\"" crates apps fuzz tests || status=$?
+      grep -rqF --include='*.rs' -e "\"$file\"" -e "/$file\"" -e '".claude' crates apps fuzz tests || status=$?
       if [ "$status" -eq 1 ]; then
         echo "prose: $file"
       else
