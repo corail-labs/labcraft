@@ -483,7 +483,7 @@ fn functions_list_gives_primitives_then_the_project_as_signatures() {
 }
 
 /// Every declaration of appendix A, sections A.1 and A.2, is the signature that `functions.list` gives of its primitive,
-/// once its lines are joined and its comments taken off.
+/// once its lines are joined and its comments taken off. A block that does not start with `fn` holds no signature.
 #[test]
 fn the_signature_of_each_primitive_is_that_of_appendix_a() {
     let spec = include_str!("../../../docs/language-spec-v0.md");
@@ -493,6 +493,10 @@ fn the_signature_of_each_primitive_is_that_of_appendix_a() {
     let mut found = 0;
     for block in section.split("```text").skip(1) {
         let (block, _) = block.split_once("```").unwrap();
+        // The blocks of the primitives (A.1, M1) hold `terminals` and `outline` sections, not signatures.
+        if !block.trim_start().starts_with("fn ") {
+            continue;
+        }
         let joined: String = block.lines().map(|line| line.split("//").next().unwrap().trim()).collect::<Vec<_>>().join(" ");
         for declaration in joined.split("fn ").filter(|text| !text.trim().is_empty()) {
             let declaration = format!("fn {}", declaration.split_whitespace().collect::<Vec<_>>().join(" ")).replace("( ", "(");

@@ -35,7 +35,7 @@ follows (events, panel widgets, timed loops, PLC mode).
 | Name | The file bears the name of what it declares, exactly: `fn scale` in `scale.lcf`, `type Verdict` in `Verdict.lct` (R-22) |
 | Encoding | UTF-8, LF line endings; the file ends with a single line feed. On reading, CR LF and a byte order mark at the start are accepted, and `fmt` removes them. A CR not followed by a line feed and the other control characters (Unicode category Cc), tab and line feed apart, are refused. A bidirectional control character in a string or a comment gives a warning: the text does not read as it runs |
 | Header | `labcraft 1`: format version, on the first line (14.2); older versions are migrated, a newer version is refused with a clear message |
-| Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `terminals` (optional, M1), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
+| Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `terminals` (optional, M1), `outline` (optional, M1), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
 
 Skeleton of a function file:
 
@@ -55,6 +55,8 @@ panel { … } // optional: attached panel (section 10)
 layout { … } // optional: layout on screen (section 11)
 
 terminals { … } // optional: terminals of the compact block (section 11.2)
+
+outline { … } // optional: outline of the compact block (section 11.4)
 
 icon 32 { … } // optional: icon of the compact view (section 11.1)
 ```
@@ -485,7 +487,7 @@ The order applies to each body on its own: the function body, each arm, each loo
   `handle`, a loop) stays attached to that line, except in the next case. A comment in an arm whose
   body is only a `yield`, even one after its `{`, goes on the line before the arm. A comment inside a
   statement written over several lines goes on the line before the statement, in its written order. Inside a split signature, struct, enum or list of loop clauses
-  (below), and inside a `panel`, `layout`, `terminals` or `icon` section, a comment is attached to the item that
+  (below), and inside a `panel`, `layout`, `terminals`, `outline` or `icon` section, a comment is attached to the item that
   follows it, or to the one that ends on its line; with no item after it, it stays last, at the
   level of the items. A comment inside an item, between its first and its last token, goes on the line
   before that item.
@@ -496,7 +498,7 @@ The order applies to each body on its own: the function body, each arm, each loo
 has one text:
 
 - **Sections**: header, `use` lines, documentation comment and declaration, `panel`, `layout`,
-  `terminals`, `icon`, separated by exactly one blank line. An `extern` line and its `fn` line form one
+  `terminals`, `outline`, `icon`, separated by exactly one blank line. An `extern` line and its `fn` line form one
   declaration, with no blank line between them (4.1). The `use` lines are sorted in code point
   order, one per line, each library once. No blank line inside a body or a section.
 - **Indentation**: 4 spaces per level, no tab, no space at the end of a line.
@@ -511,8 +513,9 @@ has one text:
     wildcard `_` or the `fn` of a function type and the `(`, `[` or `<` that follows it
     (`core.add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
     `numeric(format: "0.000")`, `fn(visa.session)`); one after any other keyword, a number, or a
-    word of the `layout`, `terminals` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
-    `at (40, 80)`, `rect (2, 4)`);
+    word of the `layout`, `terminals`, `outline` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
+    `at (40, 80)`, `rect (2, 4)`, `path (0, 0)`); one on each side of the `+` and `-` of an `outline` coordinate
+    (`w - 8`, `x + 2`), none after the minus of a negative number (`(0, -2)`);
   - none around `..`, `..=`, `.`, after `#`, before `...` (`0..5`, `visa.*`, `#close`,
     `parts: string...`), after a unary minus (`-1`), nor inside a unit (`m/s^2`, `kg/(m*s)`);
   - one between a number and its unit (`2 s`, `9.81 m/s^2`).
@@ -564,8 +567,10 @@ has one text:
   Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
 - **Items of `terminals`** (M1): `top`, then `left`, then the lines of the terminals in signature order, the inputs
   then the outputs (a line that names no terminal after them, in written order), then `band`.
+- **Items of `outline`** (M1): `template` or `path`, then the pieces of the `top`, `left` and `right` sides, in that
+  order, as in `terminals`; each item on one line, a piece with one space inside its braces (`right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }`).
 - **Items of `icon`** keep their written order: a shape is drawn over the ones before it.
-- **An empty `panel`, `layout` or `terminals` section**, with neither an item nor a comment, is removed.
+- **An empty `panel`, `layout`, `terminals` or `outline` section**, with neither an item nor a comment, is removed.
 - **Comments**: `//` and `///` are followed by at least one space, or by nothing when the comment
   is empty: `fmt` adds a missing space and never removes one, so that indented text in a comment
   is kept. An end-of-line comment is preceded by one space. Comments are never rewrapped. No line
@@ -1477,7 +1482,8 @@ terminals {
   place, skipping the places that lines took, and the terminals placed by default after it move down along. `middle`
   and `last` are counted on the grown side, so they follow it: the single input of a funnel stays in the middle. A
   line that gives a number keeps its place. A side with `middle` keeps an odd number of places. The block has the
-  size of the section at every call, with that one exception (N-6). A variadic parameter on the top side is a
+  size of the section at every call, with that exception (N-6) and the width of `core.with_unit` and `core.unitless`,
+  which their unit gives (visual notation 3.2). A variadic parameter on the top side is a
   warning, and goes back to the left.
 - **`band hidden`, `band inside` or `band above`** sets the band of this function, when it differs from the mask of
   its library (11.3); `inside` is the default (visual notation 3.2). A block with a top side, one whose section puts a
@@ -1508,6 +1514,10 @@ in a row look alike. The table is read for every library from M1, before the res
 band = "DMM"
 band_place = "inside"
 color = "#2F6F9F"
+outline = '''
+path (0, 0) (w, 0) round 4 (w, h) round 4 (0, h)
+right terminal { path (0, -4) (-4, 0) (0, 4) }
+'''
 ```
 
 - **`band`**: the text of its band, in place of its name (`DMM` for `dmm_driver`), cut as visual notation 3.2 cuts a
@@ -1519,7 +1529,11 @@ color = "#2F6F9F"
   rule of visual notation 8, written with the program of M1, that gives the same colours on every platform. The
   developer can change it in the settings of the IDE: the library proposes, the developer decides. Without it, the
   band has the neutral `band.fill`.
-- The mask will also give the outline of the blocks of its functions (N-11).
+- **`outline`**: the outline of the blocks of its functions, the items of an `outline` section (11.4), one per line,
+  in a literal TOML string (`'''`, which reads no escape); here a block with its right corners rounded and a notch at
+  each terminal of its right side. A function that has an `outline` section keeps its own; `template block` brings
+  back the ordinary block. The items are judged as those of a section, and a diagnostic gives its line in the
+  manifest.
 - **Each library has its own mask**: a sub-library does not take the mask of the library that holds it, since its
   band names it and not its parent.
 - `check` of the library judges the table: a field that the mask does not know, or a value that it refuses (a colour
@@ -1527,6 +1541,87 @@ color = "#2F6F9F"
   TOML, or larger than `--max-file-size`, gives a warning and no mask. A library without a manifest gets one, holding
   the table alone, from `library.set_mask` ([commands.md](commands.md), 9.4); what else the manifest of a user library
   holds comes with M2. Like a `terminals` section, the mask says nothing about running.
+
+### 11.4 Outline of the block (`outline` section, M1)
+
+The author of a function can give its compact block an outline of its own: the D of the primitives, a comb with a pin
+at each terminal, a funnel whose tip follows its single input. The outline lives in the file of the function, after
+`terminals` and before `icon`, for the reasons of 11.2. File `split.lcf`, for
+`fn split(x: f64[V]) -> (a: f64[V], b: f64[V], c: f64[V])`, at the end:
+
+```text
+terminals {
+    top 5
+    left middle x
+}
+
+outline {
+    path (16, 0) (w - 8, 0) (w - 8, h) (16, h) (4, x + 2) (4, x - 2)
+    right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }
+}
+```
+
+- **The body.** `path` and its corners, at least three, joined in their order and closed from the last to the first.
+  Each coordinate is an integer, `w` or `h` (the width and the height of the block, 11.2), or the name of a terminal
+  (its place: its height on the left or right side, its distance from the left on the top side), each with an optional
+  `+ N` or `- N`. There is no other arithmetic: the outline follows the block as it grows, and a middle is a place
+  (`middle`, 11.2) that a terminal anchors, never `h/2`. Every integer is between 0 and 1,024 *(proposed)*, written
+  in plain decimal, as in `layout` (5.2): `1_6` becomes `16`, `x + 0` becomes `x`. `round N` after a corner rounds
+  that corner with an arc of radius `N`, 1 to 16, reduced to half of the shorter of its two edges, as the radius of a
+  `rect` (11.1).
+- **Anchors.** `w` and `h` always mean the size: a terminal named `w` or `h` is not an anchor. A terminal is named as
+  in a line of `terminals` (11.2), but by its name alone, which means the input when the name is both an input and an
+  output. A terminal of the left or right side anchors a second coordinate (a height), one of the top side a first
+  one. A variadic parameter is not an anchor: its places change from call to call, and a piece follows them. The
+  output of a pair split across two sides is not an anchor either: the input stands for the pair.
+- **Pieces.** `left terminal { path … }`, and the same for `right` and `top`, at most one for each side: a piece drawn
+  once and repeated at each terminal of that side, wherever 11.2 places it, so that a variadic parameter gets one per
+  value with nothing more written. It sits on the straight edge of the body that its place crosses outermost on that
+  side: a vertical edge for the left and right sides, a horizontal one for the top. Its points are counted from the
+  point where the place meets that edge: the first coordinate outward (inward below 0), from -8 to 8; the second along
+  the edge, from -4 to 4, from the top on the left and right sides, from the left on the top side. Its first and last
+  points are on the edge (0 outward), at least three in all, and its second coordinate never decreases, so that it
+  stays in the row of its place. The piece is spliced into the body: its points replace that stretch of the edge, so
+  the outline is the body with its pieces. A place without a terminal keeps the straight edge. The `after:` terminal
+  (11.2) never gets a piece.
+- **Templates.** `template d` or `template block`, alone in the section, names an outline that LabCraft gives: `d` is
+  the D of the primitives (visual notation 3.2),
+  `path (0, 0) (w - 8, 0) (w, 8) (w, h - 8) (w - 8, h) (0, h)`, its 8 being `node.chamfer` of the style; `block` is
+  the ordinary block of visual notation 3.2, which brings it back under the outline of a mask. A template names no
+  terminal, and does not place one: `terminals` does.
+- **Where a terminal starts.** On its place, at the outermost point of the outline, pieces included, on its side,
+  which lies at most 4 inside the box of the block (from its left edge for a terminal on the left): a terminal never
+  floats off the block. What visual notation 3.2 places from a terminal (the pill of a constant, the mark of
+  direction, the end of a wire) is measured from that point. The `after:` terminal starts where the outline crosses
+  its place, wherever that is, and is not judged by the guards: the outline belongs to the function, `after:` to every
+  call.
+- **What the outline changes**: the fill and the stroke of the block, the band inside it, cut to the outline, and the
+  marks around a block (visual notation 3.2), drawn around the box of the outline with its pieces. Never the size of
+  the block, its places, its position (the top-left corner of the box `w` × `h`, 11) or its label; a wire goes
+  around the pieces as around the block.
+- **Which outline.** The section of the function, else the `outline` of the mask of its library (11.3), else the
+  ordinary block. The primitives of `core` have the D because their files say so (appendix A.1).
+- **Guards.** `check` judges the geometry, not the taste: whether a shape still reads as a block is the choice of its
+  author (visual notation 3.2 gives the guidance). A warning, and the block drawn ordinary, for: an outline that
+  crosses itself, the body or a piece; a corner outside the box `w` × `h`; a piece outside its bounds; a side that has
+  a piece and a terminal with no straight edge of that side 4 on each side of it; a terminal that the outline does not
+  meet within 4 of the box; an anchor that names no terminal it can. A piece stays in the row of its place, so it is
+  judged against the body and the pieces of the neighbouring places only, and the cost of the test grows with the
+  number of terminals, never with its square. The guards hold at every size that the block takes: `check` judges the
+  size of the section and each call of the project, the drawing each block it draws. A warning goes on the item that
+  breaks the guard, in the file of the function or in the manifest of the mask, once for that item whatever the
+  number of calls. Two `path` items, two pieces for
+  one side, a `template` with another item, an unknown template, or a `round` outside 1 to 16 are an error. At most
+  64 corners in the body and 16 points in a piece *(proposed)*; past them, the outline is not drawn, as an icon past
+  its bounds (11.1). The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section
+  5, lists only those).
+- **Later**: templates exported by a library, a template followed by pieces, curves, a piece for one family of wire
+  or for a place without a terminal.
+- **The standard view does not follow the section** (visual notation 3.1). **Reading by an agent**: as for
+  `terminals` (11.2), the CLI and the MCP server leave the section out by default, and an agent writes it only on
+  request.
+- `outline` starts the section, and `path`, `round`, `template` and `terminal` mean something only in it, with the
+  `top`, `left` and `right` of 11.2 (14.1).
 
 ## 12. Complete example: PASS/FAIL multimeter
 
@@ -1816,7 +1911,11 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item;
 - `terminals`: the start of a section, after the declaration (M1, 11.2). It came after the first release, so it is
   contextual, unlike `panel`, `layout` and `icon` (above);
-- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`: a `terminals` item.
+- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`: a `terminals` item;
+- `outline`: the start of a section, after the declaration and the sections before it (M1, 11.4), contextual for the
+  same reason;
+- `path`, `round`, `template`, `terminal`, `top`, `left`, `right`: an `outline` item. `w` and `h` are names, which an
+  `outline` coordinate reads as the size of the block (11.4).
 
 **New words.** From the first release of LabCraft, a version published with its program, a structure or
 a declaration that comes later takes a contextual word wherever its place allows one, so that a program
@@ -1833,7 +1932,7 @@ change that breaks one is allowed, says so in its pull request, and migrates the
 in the same pull request. The words reserved and the names refused before it are chosen so that later
 milestones break as little as they can.
 
-**Line endings** end a statement, an arm, a `use`, and a `panel`, `layout`, `terminals` or `icon` item. They are
+**Line endings** end a statement, an arm, a `use`, and a `panel`, `layout`, `terminals`, `outline` or `icon` item. They are
 ignored inside `( )` and `[ ]`, inside the braces of a `struct` or `enum` type or of a struct
 literal, in a structure header up to its `{`, in a declaration up to the `{` of its body or up to its
 end, and in the header of a section up to its `{`: `panel` and its `{` can be on two lines, and
@@ -1852,7 +1951,8 @@ add nothing (`f64[V]`, `core.with_unit(x, [V])`), and neither do the arms of a `
 
 ```ebnf
 file          = header { use_decl } { DOC } ( fn_decl | extern_decl | type_decl )
-                [ panel_section ] [ layout_section ] [ terminals_section ] [ icon_section ] ;
+                [ panel_section ] [ layout_section ] [ terminals_section ] [ outline_section ]
+                [ icon_section ] ;
 header        = "labcraft" INT ;
 use_decl      = "use" path ;
 path          = IDENT { "." IDENT } ;
@@ -1958,7 +2058,7 @@ arm_body      = yield_stmt | "{" { statement } [ yield_stmt ] "}" ;  (* one yiel
 yield_stmt    = "yield" ( operand | "(" operand { "," operand } ")" ) ;
 ```
 
-### 14.6 `panel`, `layout`, `terminals` and `icon` sections
+### 14.6 `panel`, `layout`, `terminals`, `outline` and `icon` sections
 
 ```ebnf
 panel_section  = "panel" "{" { panel_item } "}" ;
@@ -1982,6 +2082,15 @@ terminals_item = ( "top" | "left" ) INT                  (* the number of places
                                                          (* a terminal on a place *)
                | "band" ( "hidden" | "inside" | "above" ) ;
 place          = INT | "last" | "middle" ;
+
+outline_section = "outline" "{" { outline_item } "}" ;           (* M1, 11.4 *)
+outline_item   = "path" corner corner corner { corner }  (* the body, closed *)
+               | ( "top" | "left" | "right" ) "terminal" "{" "path" offset offset offset { offset } "}"
+                                                         (* a piece at each terminal of a side *)
+               | "template" IDENT ;                      (* d or block *)
+corner         = "(" coordinate "," coordinate ")" [ "round" INT ] ;
+coordinate     = INT | IDENT [ ( "+" | "-" ) INT ] ;     (* w, h or a terminal, 11.4 *)
+offset         = "(" [ "-" ] INT "," [ "-" ] INT ")" ;
 
 icon_section   = "icon" INT "{" { icon_item } "}" ;
 icon_item      = ( "rect" point point [ "radius" number ]
@@ -2016,7 +2125,7 @@ What the grammar alone does not say:
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. A variant construction can stand alone in the same way. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. An `after:` sees a label of its own body or of a body around it, not one inside a sub-body or a neighboring arm, whose node may not run. |
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error, in one branch or in two (6.1). Numbers compare by value (`1_000` and `1000`, `-0` and `0`), and strings by their text once escapes are read, with no normalization (R-20). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
-| R-19 | **A type file has no `panel`, `layout`, `terminals` or `icon` section**: they belong to functions (section 2). |
+| R-19 | **A type file has no `panel`, `layout`, `terminals`, `outline` or `icon` section**: they belong to functions (section 2). |
 | R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
 | R-21 | **The default value of a parameter is a constant** (section 4): a literal; a variant, with its values if it holds some (`Reading.Value(0 V)`); a struct construction with every field given (`Limits { low: 220 V, high: 240 V }`); or the name of a function, of a library or of the primitives (`core.lt`), which matches the type of the parameter as any reference does (section 4). A value inside a variant, a field or an array is an operand (R-9), so it is a literal, a variant without values or the name of a function: a default that would put a struct or a variant with values inside another cannot be written. A default reads nothing of the diagram: a value, a call of a function, `after:` or a type argument is rejected. It has the type of its parameter, with the conversions of a wire (3.3, 3.4): `v: f64[V] = 200 mV`, `t: duration = 5 s`. No constant is a `timestamp`, so a `waveform` cannot be a default. |
 | R-22 | **A file bears the name of what it declares, and that name can name a file on every system.** `N.lcf` declares `fn N`, `N.lct` declares `type N`: the two names are compared after normalization (R-20), and case counts. A file of another name is an error (`LC2023`), on that file alone: a call still finds the function by the name it declares, and a copy of a function or a type in a file of another name is no second definition (`LC2013`) of the one of the same kind in its own file. Its fixes rename the declaration as the file, or the file as the declaration, each only when that name is free: a fix never leads to another error on the name (`LC2013`, `LC2014`, `LC2022` or the two below). Two functions, or two types, of one library whose names differ only by their case or their spelling cannot be two files side by side on Windows or macOS (`LC2024`); a function and a type can, since their extensions differ (`fn step`, `type Step`). A name that Windows keeps for a device (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, whatever their case) is refused (`LC2025`): Git for Windows refuses a file or a folder of that name, extension or not, so a project that has one cannot be cloned there. The folders given to `check` and their sub-folders follow the last two rules. In the editor, renaming a function or a type renames its file: these errors come from a file copied or renamed outside it (Q-26). |
@@ -2115,6 +2224,58 @@ of the referenced function. A reference that designates no function, the default
 ```text
 fn core.call(function: fn(…) -> (…), …) -> (…)
 ```
+
+**Blocks of the primitives (M1).** The D of visual notation 3.2 is written in the grammar that every library uses
+(11.2, 11.4), so that a primitive is drawn by the same rules as any block. With the program of M1, each primitive has
+its file in `core`, holding its signature above and these sections; its glyph stays in the closed list of visual
+notation 3.2 (N-4); the other functions of `core` have the ordinary block. Two values in, on the first and the last
+place, for `add`, `sub`, `mul`, `div`, the comparisons, `and` and `or`:
+
+```text
+terminals {
+    top 3
+    left 3
+    left 1 a
+    left last b
+    right middle result
+}
+
+outline {
+    template d
+}
+```
+
+One value in, in the middle, for `abs`, `neg` and `sqrt` (`not` names its input `a`):
+
+```text
+terminals {
+    top 3
+    left 3
+    left middle x
+    right middle result
+}
+
+outline {
+    template d
+}
+```
+
+`select` keeps its inputs on the three places from the top, its condition first, as the defaults put them:
+
+```text
+terminals {
+    top 3
+    left 3
+    right middle result
+}
+
+outline {
+    template d
+}
+```
+
+`with_unit` and `unitless` are a D as wide as their unit (visual notation 3.2), the only blocks whose width a
+`terminals` section does not give.
 
 ### A.2 `array`, `string`, `time`, `errors`, `ui`
 

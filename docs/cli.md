@@ -369,7 +369,7 @@ section 3), not a diagnostic.
 | `LC0101` | error | First line is not a `labcraft N` header: a blank line or a comment before it, other text on its line, a version that is not an integer | 2, 14.2 |
 | `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
-| `LC0104` | error | `panel`, `layout` or `icon` section in a type file, and `terminals` from M1 | R-19 |
+| `LC0104` | error | `panel`, `layout` or `icon` section in a type file, and `terminals` and `outline` from M1 | R-19 |
 | `LC0105` | error | Manifest of a shipped library that cannot be read or names another library, or an `always` on something other than a native function | 1, 7.2 |
 
 ### Syntax: `LC10`

@@ -37,7 +37,7 @@ Without MCP, the command line does the same: `labcraft-cli check --json FOLDER`,
   that says what the function does, then the declaration.
 - **Everything from another library is qualified**: `core.mul`, `visa.open`, `visa.session`, after its `use`.
   The functions and types of your own library are named alone (`Reading`).
-- **Never write a `layout`, `terminals` or `icon` section**: the editor places the nodes and the terminals, and draws
+- **Never write a `layout`, `terminals`, `outline` or `icon` section**: the editor places the nodes and the terminals, and draws
   an icon only when the user asks for one.
 
 ## A complete program
