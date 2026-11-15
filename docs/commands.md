@@ -270,8 +270,9 @@ were merged, at most 32 *(proposed)*, then `others_more` gives how many are left
 
 ## 6. The catalog of M0b
 
-What an agent needs to write, check, run and fix a program, and nothing it does not. Each command is an
-MCP tool ([mcp.md](mcp.md), section 2). Parameters in *italics* are optional.
+What an agent needs to write, check, run and fix a program, and nothing it does not. In M0b each command was an
+MCP tool; from M1 a command marked `direct` is a tool of its own, and the MCP server reaches the others through
+`commands_execute` ([mcp.md](mcp.md), section 2). Parameters in *italics* are optional.
 
 ### 6.1 Learning the language
 
@@ -300,11 +301,11 @@ categories of a function of a library are those its manifest declares for the li
 |---|---|---|
 | `project.describe` | | The root, its libraries (folders, sub-libraries), their `.lcf` and `.lct` files with what each declares, the simulation files with the resources they define (those of the project, and those shipped with `visa`, as `<labcraft>/visa/sim/…`), and the summary of a `check` of the root (cli.md, section 4.2), without its diagnostics: `{ "root", "libraries": [{ "library", "folder", "files": [{ "file", "declares" }] }], "simulations": [{ "file", "resources", "valid" }], "summary", "truncated" }`, the root being the library `""` in the folder `.`. At most 1,000 files listed *(proposed)*, and at most 8 MiB of `.toml` files read to find the simulation files *(proposed)*, those over `--max-file-size` not counted, then `truncated` |
 | `file.read` | `path`, *`from`* (1), *`lines`* (all) | The text of a `.lcf`, `.lct` or simulation file of the project or of a shipped library, from line `from`: `{ "file": …, "text": …, "from": 1, "lines": 120, "lines_total": 120, "truncated": false }`. At most 1 MiB of text per call *(proposed)*, counted as JSON writes it, cut at the end of a line, then `truncated`: the next call starts at `from + lines`. A line longer than that is cut at the end of a character, and counts as read |
-| `file.write` | `path`, `text`, *`check`* (`true`) | Writes the file, atomically, creating its folder if needed. With `check`, then checks the root and returns its report (`labcraft-check/1`), as `library.check` would: one call writes and checks. `text` holds at most 4 MiB *(proposed)*, whatever `--max-file-size`, so that a request stays within the bound of [mcp.md](mcp.md), section 5; a larger file is `file.too_large` |
-| `file.rename` | `from`, `to` | Renames a file in the project, a change of case alone included (R-22: the fix of `LC2023` can be a new name), then checks as `file.write` does. A final `/` or `.` of `to` names no file: `b.lcf/` is `b.lcf` |
-| `file.delete` | `path` | Deletes a `.lcf`, `.lct` or simulation file of the project, then checks |
+| `file.write` | `path`, `text`, *`check`* (`true`) | Writes the file, atomically, creating its folder if needed. With `check`, then checks the root and returns its report (`labcraft-check/1`), as `library.check` would: one call writes and checks. `text` holds at most 4 MiB *(proposed)*, whatever `--max-file-size`, so that a request stays within the bound of [mcp.md](mcp.md), section 5; a larger file is `file.too_large`. A step of history (9.1), signed by its caller, which undo reverses; none when the bytes are those of the file, or when the file it replaces is over `--max-file-size`, since the history cannot keep it |
+| `file.rename` | `from`, `to` | Renames a file in the project, a change of case alone included (R-22: the fix of `LC2023` can be a new name), then checks as `file.write` does. A final `/` or `.` of `to` names no file: `b.lcf/` is `b.lcf`. A step of history (9.1): the file is removed under its old name and made under the new one |
+| `file.delete` | `path` | Deletes a `.lcf`, `.lct` or simulation file of the project, then checks. A step of history (9.1), which undo reverses; none for a file over `--max-file-size`, which the history cannot keep |
 | `library.check` | *`folder`* (the root), *`deny_warnings`* (`false`) | `labcraft-check/1`, exactly what `labcraft-cli check --json` gives (cli.md, section 4.2) |
-| `file.format` | `path` (a file or a folder), *`check_only`* (`false`) | `labcraft-fmt/1`, exactly what `labcraft-cli fmt --json` gives |
+| `file.format` | `path` (a file or a folder), *`check_only`* (`false`) | `labcraft-fmt/1`, exactly what `labcraft-cli fmt --json` gives. The files it rewrites are one step of history (9.1) |
 
 `file.write` writes the text as given, but for one change: CR LF becomes LF, as the repository keeps
 its programs (cli.md, section 1 reads both). It does not reformat, so that the next edit of an agent finds
@@ -669,9 +670,13 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   even a text that was not canonical (written by an agent), from a snapshot of each file before the step. Redo
   replays it. A gesture is one step: a drag, a wire drawn, a rename with what follows it, a run of presses of
   Ctrl and an arrow on the same nodes (spec 11, notation 2.4 and 2.6).
-- **External writes.** A file that changes on disk, and whose hash is not that of the last write of LabCraft, is
-  read again, and the change becomes a step signed "external": undo goes back over it as over any other. Writes
-  of one file in a burst merge into one step.
+- **External writes.** A file of the project that changes on disk, and whose hash is not that of the bytes LabCraft
+  last saw, is read again, and the change becomes a step signed "external": undo goes back over it as over any other.
+  Every program and simulation file of the project is followed from the first command, and those that appear: a
+  `git checkout` is a step that undo takes back, a file it made included. Writes in a burst, of one file or of several,
+  are one step: those whose files were modified less than 1 s apart, by the time the system gives them. The session
+  looks before each command, and when the app says that files changed (decisions of the owner, 2026-11-15): a write
+  made while no window watches the files, under `labcraft-cli mcp`, is a step before the next command reads the file.
 - **Revisions.** The revision of a file is the hash of its bytes. Every editing command can carry
   `expected_revision`, per file: when it is stale, the command is refused, changes nothing and returns the
   current revision (`file.stale`, section 3), so that an agent that read a file before the user changed it
@@ -785,7 +790,9 @@ The agent and the user share the history, but the agent never undoes or replaces
 saying so (decision of the owner, 2026-11-15).
 
 - **The author of a call** is its client. A command from the window of the IDE is the user's. A command from an MCP
-  client, attached to the IDE or not, is the agent's; two MCP clients are two authors, each its own.
+  client, attached to the IDE or not, is the agent's; two MCP clients are two authors, each its own. A client is
+  named by the `clientInfo.name` it gives at `initialize`; one with no name, or named `user` or `external`, is
+  `agent`, so that a step of an agent is never shown as the user's.
 - **Undo.** Called by an agent, `history.undo` undoes the last step only when that step is its own. Otherwise it is
   `history.not_yours`, and the message names the author and the label of that step. Called by an agent,
   `history.redo` redoes only a step that this agent undid, so that it never brings back what the user chose to

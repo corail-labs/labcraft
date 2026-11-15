@@ -16,23 +16,34 @@ pub struct Formatted {
     pub report: Report,
     pub files: Vec<FileEntry>,
     pub changed: u64,
+    /// Each file rewritten: its path, its name as shown, its bytes before and its canonical form, for the step of history
+    /// of `file.format` (commands.md 9.1).
+    pub rewritten: Vec<(PathBuf, String, Vec<u8>, String)>,
 }
 
 /// Puts each file found under the paths in canonical form, or, with `check_only`, writes nothing and finds those that
-/// are not. Paths are shown from `current`.
-pub fn format_paths(ws: &dyn Workspace, paths: &[PathBuf], current: Option<&Path>, limits: &Limits, check_only: bool) -> Formatted {
+/// are not. Paths are shown from `current`. With `keep`, the texts before and after of each file rewritten are kept, for a
+/// step of history; the command line keeps none.
+pub fn format_paths(ws: &dyn Workspace, paths: &[PathBuf], current: Option<&Path>, limits: &Limits, check_only: bool, keep: bool) -> Formatted {
     let walked = walk::walk(ws, paths, current, limits);
     let mut report = walked.report;
     let mut files: Vec<FileEntry> = walked.refused.into_iter().map(|refused| FileEntry { file: refused.shown, result: FileResult::Error }).collect();
     let mut changed = 0;
+    let mut rewritten = Vec::new();
     for found in &walked.files {
-        let (result, file_report) = last_resort(found, limits, || format_file(ws, &found.path, limits, check_only));
+        let (result, file_report) = last_resort(found, limits, || {
+            let (result, report, texts) = format_file(ws, &found.path, limits, check_only);
+            if let Some((before, after)) = texts.filter(|_| keep) {
+                rewritten.push((found.path.clone(), found.shown.clone(), before, after));
+            }
+            (result, report)
+        });
         changed += u64::from(result == FileResult::Formatted);
         report.merge(named(file_report, &found.shown));
         files.push(FileEntry { file: found.shown.clone(), result });
     }
     files.sort_by(|a, b| a.file.cmp(&b.file));
-    Formatted { report, files, changed }
+    Formatted { report, files, changed, rewritten }
 }
 
 fn named(mut report: Report, file: &str) -> Report {
@@ -49,42 +60,45 @@ fn last_resort(found: &Found, limits: &Limits, work: impl FnOnce() -> (FileResul
     })
 }
 
-fn format_file(ws: &dyn Workspace, path: &Path, limits: &Limits, check_only: bool) -> (FileResult, Report) {
+/// The result of one file, its report, and, when it was rewritten, its bytes before and after.
+type FileFormatted = (FileResult, Report, Option<(Vec<u8>, String)>);
+
+fn format_file(ws: &dyn Workspace, path: &Path, limits: &Limits, check_only: bool) -> FileFormatted {
     let bytes = match read_program(ws, path, limits) {
         Ok(bytes) => bytes,
         Err((code, message)) => {
             let mut report = Report::new(limits.max_report);
             report.push(Diagnostic::new(code, message, ""));
-            return (FileResult::Error, report);
+            return (FileResult::Error, report, None);
         }
     };
     let mut names = Interner::new();
     let formatted = format(&bytes, &mut names, limits);
     let mut report = formatted.report;
     let Some(text) = formatted.text else {
-        return (FileResult::Error, report);
+        return (FileResult::Error, report, None);
     };
     if text.as_bytes() == bytes {
-        return (FileResult::Unchanged, report);
+        return (FileResult::Unchanged, report, None);
     }
     if check_only {
         let message = "not in canonical form: this is the first line that differs, and `labcraft-cli fmt` rewrites the file";
         let mut diagnostic = Diagnostic::new(Code::Lc6001, message, "");
         diagnostic.span = first_difference(&bytes, &text);
         report.push(diagnostic);
-        return (FileResult::NotCanonical, report);
+        return (FileResult::NotCanonical, report, None);
     }
     // On Windows, the rename would refuse it too, but only after retrying for most of a second, once per file.
     if ws.metadata(path).is_ok_and(|metadata| metadata.read_only) {
         report.push(Diagnostic::new(Code::Lc6003, "the file is read-only, so it stays as it is", ""));
-        return (FileResult::Error, report);
+        return (FileResult::Error, report, None);
     }
     match ws.write(path, text.as_bytes()) {
-        Ok(()) => (FileResult::Formatted, report),
+        Ok(()) => (FileResult::Formatted, report, Some((bytes.to_vec(), text))),
         Err(error) => {
             let message = format!("the file system refused the canonical form, so the file stays as it is: {}", io_text(&error));
             report.push(Diagnostic::new(Code::Lc6003, message, ""));
-            (FileResult::Error, report)
+            (FileResult::Error, report, None)
         }
     }
 }

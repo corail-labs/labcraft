@@ -59,13 +59,20 @@ fn read_text(session: &Session, target: &Target) -> Result<String, CommandError>
 }
 
 /// The bytes of a file now, `None` when it is missing.
-fn bytes_now(session: &Session, path: &Path) -> Result<Option<Vec<u8>>, CommandError> {
+pub(crate) fn bytes_now(session: &Session, path: &Path) -> Result<Option<Vec<u8>>, CommandError> {
     match session.ws.read(path, session.config.limits.max_file_size) {
         Ok(Read::Bytes(bytes)) => Ok(Some(bytes)),
         Ok(Read::TooLarge(_)) => Err(CommandError::new("file.too_large", "a file of the step is over the limit of `--max-file-size`")),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(CommandError::new("file.unreadable", format!("a file of the step cannot be read: {}", crate::walk::io_text(&error)))),
     }
+}
+
+/// What a file of a step holds now. A file that the step expects missing, and that the system reaches only under another
+/// spelling of its name (its case, on Windows and macOS), is missing: `file.rename` of `Gain.lcf` to `gain.lcf`.
+fn held_now(session: &Session, path: &Path, missing: bool) -> Result<Option<Vec<u8>>, CommandError> {
+    let now = bytes_now(session, path)?;
+    Ok(now.filter(|_| !missing || crate::external::same_name(session, path)))
 }
 
 /// `expected_revision`: each file it names must have that revision, or the command changes nothing (`file.stale`).
@@ -478,21 +485,35 @@ fn finish(
         if old == now.as_bytes() {
             continue;
         }
-        // The bytes before are those after the last step, when it left them: shared, not copied (architecture 12.5).
-        let shared = session.history.to_undo().and_then(|last| {
-            last.changes.iter().find(|change| change.path == path).and_then(|change| change.after.clone()).filter(|after| **after == *old)
-        });
-        let before = shared.unwrap_or_else(|| Arc::from(old));
+        let before = shared_bytes(session, &path, old);
         changes.push(Change { path, shown, before: Some(before), after: Some(Arc::from(now.into_bytes())) });
     }
     write_changes(session, &changes, false)?;
-    let step = if changes.is_empty() || !session.keeps_history {
-        None
-    } else {
-        let time = session.config.clock.utc_ns();
-        Some(session.history.record(author.clone(), label, time, changes.clone()))
-    };
+    let step = record(session, author, label, changes.clone());
     result(session, step, &changes, false, before, extra)
+}
+
+/// The bytes of a file before a step: those of the last write of the session when they are the same, shared with the
+/// history rather than copied (architecture 12.5).
+pub(crate) fn shared_bytes(session: &Session, path: &Path, bytes: Vec<u8>) -> Arc<[u8]> {
+    session.known.shared(path, &bytes).unwrap_or_else(|| Arc::from(bytes))
+}
+
+/// A step of history for what a command wrote, unless it wrote nothing or the session keeps no history. Its number.
+pub(crate) fn record(session: &mut Session, author: &Author, label: String, changes: Vec<Change>) -> Option<u64> {
+    if changes.is_empty() || !session.keeps_history {
+        return None;
+    }
+    let time = session.config.clock.utc_ns();
+    Some(session.history.record(author.clone(), label, time, changes))
+}
+
+/// The session wrote a change, or undid it: the bytes of its last write to the file, which tell an external write
+/// (`external`), and the revision that its line of the journal gives.
+pub(crate) fn note(session: &mut Session, change: &Change, backwards: bool) {
+    let bytes = if backwards { &change.before } else { &change.after };
+    session.known.wrote(&change.path, &change.shown, bytes.clone());
+    session.wrote_now.push((change.shown.clone(), bytes.as_ref().map(|bytes| revision(bytes))));
 }
 
 /// Writes the bytes after each change, or before for undo; `None` removes the file.
@@ -501,7 +522,11 @@ fn write_changes(session: &mut Session, changes: &[Change], backwards: bool) -> 
         return Ok(());
     }
     session.forget();
-    for change in changes {
+    // Removals first: undoing `file.rename` of `Gain.lcf` to `gain.lcf` removes `gain.lcf`, then writes `Gain.lcf`, which is
+    // one file where names are compared without their case.
+    let bytes_of = |change: &Change| if backwards { change.before.is_some() } else { change.after.is_some() };
+    let ordered = changes.iter().filter(|change| !bytes_of(change)).chain(changes.iter().filter(|change| bytes_of(change)));
+    for change in ordered {
         let bytes = if backwards { &change.before } else { &change.after };
         let unwritable = |error: io::Error| {
             CommandError::of("file.unwritable", "file", format!("`{}` cannot be written: {}", change.shown, crate::walk::io_text(&error)))
@@ -515,6 +540,7 @@ fn write_changes(session: &mut Session, changes: &[Change], backwards: bool) -> 
             }
             None => session.ws.remove_file(&change.path).map_err(unwritable)?,
         }
+        note(session, change, backwards);
     }
     Ok(())
 }
@@ -589,8 +615,9 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
             .ok_or_else(|| at(CommandError::of("params.invalid", "commands", "each command is `{ \"id\", \"params\" }`")))?;
         let command =
             registry::command(id).ok_or_else(|| at(CommandError::of("command.unknown", "commands", format!("no command has the id `{id}`"))))?;
-        // The commands that edit, built or planned; a planned one is not enabled yet.
-        if !command.undoable || id == "commands.batch" {
+        // The commands that edit, built or planned; a planned one is not enabled yet. The commands of files make steps too,
+        // but write the disk at once: they are not commands of 6.7.
+        if !command.undoable || id == "commands.batch" || id.starts_with("file.") {
             return Err(at(CommandError::of(
                 "params.invalid",
                 "commands",
@@ -643,7 +670,7 @@ pub(crate) fn undo(session: &mut Session, author: &Author) -> Result<Value, Comm
         return Err(CommandError::new("history.not_yours", format!("the last step is not yours: {}", step_text(&step))));
     }
     for change in &step.changes {
-        let now = bytes_now(session, &change.path)?;
+        let now = held_now(session, &change.path, change.after.is_none())?;
         if now.as_deref() != change.after.as_deref() {
             return Err(CommandError::new("file.stale", format!("`{}` changed since {}", change.shown, step_text(&step))));
         }
@@ -666,7 +693,7 @@ pub(crate) fn redo(session: &mut Session, author: &Author) -> Result<Value, Comm
         return Err(CommandError::new("history.not_yours", format!("{} was undone by {}, not by you", step_text(&step), by.name())));
     }
     for change in &step.changes {
-        let now = bytes_now(session, &change.path)?;
+        let now = held_now(session, &change.path, change.before.is_none())?;
         if now.as_deref() != change.before.as_deref() {
             return Err(CommandError::new("file.stale", format!("`{}` changed since {} was undone", change.shown, step_text(&step))));
         }

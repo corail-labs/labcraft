@@ -30,8 +30,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
+use labcraft_engine::registry;
 use labcraft_engine::workspace::Workspace;
-use labcraft_engine::{JsonProblem, Runs, Session, Waiter};
+use labcraft_engine::{Author, JsonProblem, Runs, Session, Waiter};
 use serde_json::{Map, Value as Json, json};
 
 use lines::{Line, read_line};
@@ -102,6 +103,8 @@ struct Shared<'a> {
     queue: Mutex<Queue>,
     ready: Condvar,
     runs: Runs,
+    /// The author of every call, from the name the client gives at `initialize` (commands.md 9.5).
+    author: Mutex<Author>,
 }
 
 impl Shared<'_> {
@@ -173,12 +176,13 @@ pub fn serve(mut session: Session, input: &mut dyn BufRead, output: Box<dyn Writ
         queue: Mutex::new(Queue::default()),
         ready: Condvar::new(),
         runs: session.runs(),
+        author: Mutex::new(author_of(None)),
     };
     std::thread::scope(|scope| {
         let worker = std::thread::Builder::new()
             .name("mcp session".to_owned())
             .stack_size(labcraft_format::STACK_SIZE)
-            .spawn_scoped(scope, || work(&mut session, &shared, max_nesting));
+            .spawn_scoped(scope, || work(&mut session, &shared, max_nesting, options.viewer));
         let reader = Reader { shared: &shared, tools: &tools, instructions: &instructions, max_nesting, ws: &*ws, root: &root, options };
         // Closed even if reading panics, so that the worker ends and the scope can join it.
         let closer = Closer(&shared);
@@ -218,7 +222,7 @@ fn close(shared: &Shared<'_>) {
 }
 
 /// The worker: the calls of the queue, in order, on the session.
-fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32) {
+fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32, viewer: bool) {
     loop {
         let job = {
             let mut queue = shared.queue();
@@ -235,8 +239,12 @@ fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32) {
             }
         };
         let client = Client { shared, cancelled: &job.cancelled, token: job.progress.as_ref(), sent: AtomicU64::new(0) };
+        let author = shared.author.lock().unwrap_or_else(PoisonError::into_inner).clone();
         let outcome = match arguments_of(&job.line, max_nesting) {
-            Some(arguments) => session.execute_waiting(job.command, &arguments, &client),
+            Some(arguments) => match not_a_tool(&arguments, job.command, viewer) {
+                Some(refused) => Err(refused),
+                None => session.execute_waiting_as(&author, job.command, &arguments, &client),
+            },
             None => Err(labcraft_engine::CommandError::internal("a request read once did not read again")),
         };
         shared.queue().current = None;
@@ -245,6 +253,30 @@ fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32) {
             shared.answer(&job.id, tools::result_of(outcome));
         }
     }
+}
+
+/// The author of the calls of a client, from its `clientInfo.name`: an agent, by that name, cut as a message is. A client
+/// with no name, or one that takes the name of the user or of an external write, is `agent`, so that a step is never shown
+/// as the user's when an agent made it.
+fn author_of(name: Option<&str>) -> Author {
+    let name = name.map(str::trim).filter(|name| !name.is_empty() && !["user", "external"].iter().any(|taken| name.eq_ignore_ascii_case(taken)));
+    Author::Agent(name.map_or_else(|| "agent".to_owned(), |name| labcraft_types::cut_text(name).into_owned()))
+}
+
+/// What `commands_execute` reaches is what a tool would: not a command of the window when no viewer serves the session
+/// (section 2).
+fn not_a_tool(arguments: &Json, command: &str, viewer: bool) -> Option<labcraft_engine::CommandError> {
+    if command != "commands.execute" || viewer {
+        return None;
+    }
+    let id = arguments.get("id").and_then(Json::as_str)?;
+    let window = registry::command(id).is_some_and(|command| command.window);
+    window.then(|| {
+        labcraft_engine::CommandError::new(
+            "command.not_enabled",
+            format!("`{id}` is a command of the window, which a server with no window does not give"),
+        )
+    })
 }
 
 /// The `arguments` of a call, read again from its request; `{}` when it has none.
@@ -354,6 +386,8 @@ impl Reader<'_, '_> {
     fn requested(&self, id: &Json, method: &str, params: Json, line: &[u8]) {
         match method {
             "initialize" => {
+                let name = params.get("clientInfo").and_then(|info| info.get("name")).and_then(Json::as_str);
+                *self.shared.author.lock().unwrap_or_else(PoisonError::into_inner) = author_of(name);
                 let asked = params.get("protocolVersion").and_then(Json::as_str);
                 let [latest, _] = PROTOCOLS;
                 let version = PROTOCOLS.into_iter().find(|version| Some(*version) == asked).unwrap_or(latest);

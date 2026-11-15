@@ -17,7 +17,7 @@ mod prepare;
 mod read;
 mod task;
 
-pub(crate) use task::trace_path;
+pub(crate) use task::{LABCRAFT_GITIGNORE, hold, in_place, lock_of, trace_path};
 #[cfg(test)]
 mod tests;
 
@@ -671,6 +671,11 @@ impl Runs {
 
     fn tag(&self, process: u32) -> Tag {
         Tag { process, session: self.shared.session }
+    }
+
+    /// The number of the session in its process, which names its `.partial` files and its journal.
+    pub(crate) fn session_number(&self) -> u64 {
+        self.shared.session
     }
 }
 

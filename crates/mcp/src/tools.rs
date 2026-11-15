@@ -1,27 +1,10 @@
-//! The tools, made from the registry (`docs/mcp.md`, 2): one per command enabled in the session, named from its id with
-//! `_` for `.`, its description, schema and annotations from the command. And what a call returns (section 3).
+//! The tools, made from the registry (`docs/mcp.md`, 2): one per direct command enabled in the session, named from its id
+//! with `_` for `.`, its description, schema and annotations from the command; the others through `commands_execute`. And
+//! what a call returns (section 3).
 
 use labcraft_engine::registry::{self, Command, Effect};
 use labcraft_engine::{CommandError, Session};
 use serde_json::{Value as Json, json};
-
-/// The commands that can replace or remove a file (`docs/mcp.md`, 2).
-const DESTRUCTIVE: &[&str] = &["file.write", "file.rename", "file.delete", "file.format"];
-
-/// The commands of editing built by M1 step 0a: the server gives them from step 0b, which signs each call with the name of
-/// its client (commands.md 9.5), so that an agent never undoes the user's steps as if they were its own.
-const FROM_STEP_0B: &[&str] = &[
-    "node.add",
-    "constant.add",
-    "node.delete",
-    "wire.connect",
-    "wire.disconnect",
-    "history.undo",
-    "history.redo",
-    "history.list",
-    "commands.execute",
-    "commands.batch",
-];
 
 /// A tool: the command behind it, and its name.
 pub(crate) struct Tool {
@@ -29,14 +12,13 @@ pub(crate) struct Tool {
     pub command: &'static Command,
 }
 
-/// The tools of the session: its enabled commands, but `view.*` when no viewer serves it (decision of the owner,
-/// 2026-11-11: headless in M0b, they reach an agent when the server is attached to the open IDE).
+/// The tools of the session: its enabled commands marked `direct` (architecture 12.8), but `view.*` when no viewer serves it
+/// (decision of the owner, 2026-11-11: headless in M0b, they reach an agent when the server is attached to the open IDE).
 pub(crate) fn tools_of(session: &Session, viewer: bool) -> Vec<Tool> {
     registry::commands()
         .iter()
-        .filter(|command| session.not_enabled(command).is_none())
+        .filter(|command| command.direct && session.not_enabled(command).is_none())
         .filter(|command| viewer || !command.window)
-        .filter(|command| !FROM_STEP_0B.contains(&command.id))
         .map(|command| Tool { name: command.id.replace('.', "_"), command })
         .collect()
 }
@@ -55,11 +37,18 @@ pub(crate) fn listed(tool: &Tool) -> Json {
         "annotations": {
             "title": command.label,
             "readOnlyHint": command.effects.is_empty(),
-            "destructiveHint": DESTRUCTIVE.contains(&command.id),
+            "destructiveHint": destructive(command),
             "idempotentHint": false,
             "openWorldHint": command.effects.contains(&Effect::Instruments),
         },
     })
+}
+
+/// A command whose effect the history cannot undo (architecture 12.8): one that writes files without making a step. From M1
+/// every command that writes a file makes one, so none is destructive; `settings.set` writes outside the history, and is
+/// not destructive either.
+fn destructive(command: &Command) -> bool {
+    command.effects.contains(&Effect::Files) && !command.undoable && command.id != "settings.set"
 }
 
 /// The result of `tools/call`: the object of the command in `structuredContent`, and the same JSON as text in

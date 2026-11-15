@@ -82,6 +82,11 @@ pub trait Workspace: Send + Sync {
     fn try_lock(&self, _path: &Path) -> io::Result<Option<Held>> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
+    /// Adds bytes at the end of a file, made if it is missing: a line of the journal (architecture 12.5). One call is one
+    /// write, so that the lines of two processes never mix. Not atomic. Its folder exists.
+    fn append(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
 }
 
 /// A lock that [`Workspace::try_lock`] took: dropping it lets it go.
@@ -136,6 +141,9 @@ impl Workspace for ReadOnly {
         self.0.open(path, offset)
     }
     fn try_lock(&self, _path: &Path) -> io::Result<Option<Held>> {
+        Err(refused())
+    }
+    fn append(&self, _path: &Path, _bytes: &[u8]) -> io::Result<()> {
         Err(refused())
     }
 }
@@ -254,6 +262,14 @@ impl Memory {
             Some(Node::File { modified, .. }) => *modified,
             _ => 0,
         };
+        nodes.make_folders(path.parent());
+        nodes.by_path.insert(path, Node::File { bytes: bytes.into(), modified, read_only: false });
+    }
+
+    /// Puts a file whose time of change is `modified`, in nanoseconds since 1970: a write made at that time.
+    pub fn put_modified(&self, path: impl AsRef<Path>, bytes: impl Into<Vec<u8>>, modified: u128) {
+        let path = lexical(path.as_ref());
+        let mut nodes = self.lock();
         nodes.make_folders(path.parent());
         nodes.by_path.insert(path, Node::File { bytes: bytes.into(), modified, read_only: false });
     }
@@ -524,6 +540,25 @@ impl Workspace for Memory {
             return Ok(None);
         }
         Ok(Some(Box::new(MemoryLock { nodes: Arc::clone(&self.nodes), path: real })))
+    }
+
+    fn append(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
+        if self.link_metadata(path).is_err() {
+            self.write(path, b"")?;
+        }
+        let mut nodes = self.lock();
+        let real = nodes.resolve(path)?;
+        nodes.clock += 1;
+        let clock = nodes.clock;
+        match nodes.by_path.get_mut(&real) {
+            Some(Node::File { read_only: true, .. }) => Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            Some(Node::File { bytes: held, modified, .. }) => {
+                held.extend_from_slice(bytes);
+                *modified = clock;
+                Ok(())
+            }
+            _ => Err(io::Error::other("not a file")),
+        }
     }
 }
 

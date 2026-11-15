@@ -61,6 +61,12 @@ pub struct Session {
     pub(crate) history: crate::history::History,
     /// Whether it keeps one: `labcraft-cli` runs one command per process, with none (9.5).
     pub(crate) keeps_history: bool,
+    /// The bytes of its last write to each file, which tell an external write (architecture 12.5).
+    pub(crate) known: crate::external::Known,
+    /// The journal of its commands (architecture 12.5).
+    journal: crate::journal::Journal,
+    /// The files that the command going wrote, with their revisions, for its line of the journal.
+    pub(crate) wrote_now: Vec<(String, Option<String>)>,
 }
 
 impl Session {
@@ -73,17 +79,22 @@ impl Session {
         if ws.metadata(&root).map(|metadata| metadata.kind).ok() != Some(crate::workspace::Kind::Folder) {
             return Err(CommandError::new("path.invalid", "the root of the project is not a folder"));
         }
+        let runs = Runs::default();
+        let journal = crate::journal::Journal::new(config.process, runs.session_number());
         let mut session = Session {
             ws,
             root,
             config,
             kept: Vec::new(),
-            runs: Runs::default(),
+            runs,
             view: crate::view::View::default(),
             #[cfg(not(target_arch = "wasm32"))]
             first: None,
             history: crate::history::History::default(),
             keeps_history: true,
+            known: crate::external::Known::default(),
+            journal,
+            wrote_now: Vec::new(),
         };
         if background {
             session.start_first_check();
@@ -162,8 +173,34 @@ impl Session {
     /// The files of the folder open in the viewer, or of its libraries, changed: the app that watches them says so,
     /// and the folder is read, checked and drawn again (decisions of the owner, 2026-11-11). Not a command: the change
     /// comes from the system, not from a caller.
+    /// The files that the session wrote are looked at too: one that another program changed becomes a step signed
+    /// `external` (commands.md 9.1). The session looks before each command as well, so that a write made with no app to
+    /// watch the files, under `labcraft-cli mcp`, is a step before the next command reads it.
     pub fn files_changed(&mut self) {
+        self.notice_external();
         crate::view::files_changed(self);
+    }
+
+    /// The external writes since the last look, as a step and a line of the journal (architecture 12.5).
+    fn notice_external(&mut self) {
+        // A bug there never stops the command: what was seen is kept only once the look is done.
+        let looked = panic::catch_unwind(AssertUnwindSafe(|| crate::external::notice(self)));
+        if let Ok(Some((_, files))) = looked {
+            let entry = crate::journal::Entry {
+                time_ns: self.config.clock.utc_ns(),
+                author: &Author::External,
+                id: None,
+                params: &Value::Null,
+                outcome: Ok(()),
+                files: &files,
+            };
+            self.journal.write(&self.ws, &self.root, &entry);
+        }
+    }
+
+    /// The lines of the journal kept in memory, oldest first: in WASM, where the journal has no file (architecture 12.5).
+    pub fn journal_in_memory(&self) -> Vec<String> {
+        self.journal.in_memory()
     }
 
     /// The viewer never draws these functions: their drawing trapped a worker of the web viewer before, which a new
@@ -207,10 +244,11 @@ impl Session {
         crate::view::open_trace_at(self, path)
     }
 
-    /// Keeps no history: `history.*` is not enabled, and a command makes no step (commands.md 9.5). `labcraft-cli` runs one
-    /// command per process.
-    pub fn without_history(&mut self) {
+    /// A session of the command line, which runs one command per process: it keeps no history, so `history.*` is not
+    /// enabled and a command makes no step (commands.md 9.5), and its journal is `cli.jsonl` (architecture 12.5).
+    pub fn for_command_line(&mut self) {
         self.keeps_history = false;
+        self.journal.for_command_line();
     }
 
     /// Runs a command for the user: the only way in.
@@ -229,8 +267,28 @@ impl Session {
         self.execute_waiting_as(&Author::User, id, params, waiter)
     }
 
-    /// As [`Session::execute_waiting`], for an author.
+    /// As [`Session::execute_waiting`], for an author. The files that the session wrote are looked at first, and an
+    /// external write is a step before the command (architecture 12.5); the command is a line of the journal.
     pub fn execute_waiting_as(&mut self, author: &Author, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
+        self.notice_external();
+        let lines = self.journal.lines;
+        self.wrote_now.clear();
+        let outcome = self.run_as(author, id, params, waiter);
+        // The command that `commands.execute` runs writes its own line; `commands.execute` writes one only when it failed
+        // before running it.
+        if id != "commands.execute" || self.journal.lines == lines {
+            self.journal_line(author, id, params, outcome.as_ref().map(|_| ()));
+        }
+        outcome
+    }
+
+    fn journal_line(&mut self, author: &Author, id: &str, params: &Value, outcome: Result<(), &CommandError>) {
+        let files = std::mem::take(&mut self.wrote_now);
+        let entry = crate::journal::Entry { time_ns: self.config.clock.utc_ns(), author, id: Some(id), params, outcome, files: &files };
+        self.journal.write(&self.ws, &self.root, &entry);
+    }
+
+    fn run_as(&mut self, author: &Author, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         let Some(command) = registry::command(id) else {
             let ids: Vec<&str> = registry::commands().iter().map(|command| command.id).collect();
             let near: Vec<&str> = labcraft_runtime::simulation::nearest(id, &ids).into_iter().collect();
@@ -253,6 +311,7 @@ impl Session {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn start_run(&mut self, params: &Value, line: crate::runs::CommandLine) -> Result<Value, CommandError> {
         let Some(command) = registry::command("run.start") else { return Err(CommandError::internal("`run.start` is not registered")) };
+        // Not a line of the journal: a run whose trace goes to `--trace FILE` writes nothing under the root (commands.md 8).
         let params = params::judge(command, params)?;
         let runs = self.runs.clone();
         let session = &*self;
@@ -285,11 +344,11 @@ impl Session {
             "commands.list" => Ok(catalog::list(self, params)),
             "commands.describe" => catalog::describe(self, params),
             "library.check" => files::library_check(self, params),
-            "file.format" => files::format(self, params),
+            "file.format" => files::format(self, author, command, params),
             "file.read" => files::read(self, params),
-            "file.write" => files::write(self, params),
-            "file.rename" => files::rename(self, params),
-            "file.delete" => files::delete(self, params),
+            "file.write" => files::write(self, author, command, params),
+            "file.rename" => files::rename(self, author, command, params),
+            "file.delete" => files::delete(self, author, command, params),
             "project.describe" => project::describe(self),
             "functions.list" => functions::list(self, params),
             "simulation.describe" => simulations::describe(self, params),

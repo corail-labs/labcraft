@@ -82,6 +82,8 @@ jobs:
         run: bash fuzz/side_by_side.sh 60 read round_trip check diagram
       - name: Fuzz the simulation files, runs, the MCP server and the reader of a trace
         run: bash fuzz/side_by_side.sh 60 simulation run mcp trace
+      - name: Fuzz the editing commands, undo and external writes
+        run: bash fuzz/side_by_side.sh 60 edit
       - name: Keep what crashed
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

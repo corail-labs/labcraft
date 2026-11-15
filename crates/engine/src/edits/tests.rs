@@ -105,12 +105,186 @@ fn a_stale_revision_changes_nothing() {
     assert_eq!(text(&memory, "/p/f.lcf"), ADDED);
 }
 
+/// Scenario 7: a write from outside is a step like any other.
 #[test]
-fn a_file_changed_since_its_step_is_not_undone() {
+fn an_external_write_is_a_step_that_undo_goes_back_over() {
     let (mut session, memory) = session();
     ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.add" }));
-    memory.put("/p/f.lcf", "labcraft 1\n\nfn f() -> () {}\n");
-    assert_eq!(session.execute("history.undo", &json!({})).map_err(|error| error.code), Err("file.stale"));
+    let outside = "labcraft 1\n\nfn f() -> () {}\n";
+    memory.put("/p/f.lcf", outside);
+    // An agent that read `f.lcf` before the write is refused, and told the revision now.
+    let agent = Author::Agent("claude".to_owned());
+    let stale = json!({ "file": "f.lcf", "value": "1", "expected_revision": { "f.lcf": sha(ADDED) } });
+    let error = refused(&mut session, &agent, "constant.add", stale);
+    assert_eq!(error.code, "file.stale");
+    assert!(error.message.contains(&sha(outside)), "{}", error.message);
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!((listed["steps"][0]["step"].clone(), listed["steps"][0]["author"].clone()), (json!(2), json!("external")), "{listed}");
+    assert_eq!(listed["steps"][0]["files"], json!(["f.lcf"]));
+    // An agent never undoes it: it is not its own.
+    assert_eq!(refused(&mut session, &agent, "history.undo", json!({})).code, "history.not_yours");
+    let undone = ok(&mut session, "history.undo", json!({}));
+    assert_eq!((undone["step"].clone(), undone["author"].clone()), (json!(2), json!("external")));
+    assert_eq!(text(&memory, "/p/f.lcf"), ADDED, "undo gives back the bytes before the external write");
+    ok(&mut session, "history.redo", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), outside, "redo gives back those after it");
+    ok(&mut session, "history.undo", json!({}));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/f.lcf"), START);
+}
+
+#[test]
+fn external_writes_of_a_burst_are_one_step_and_a_removal_is_one() {
+    let (mut session, memory) = session();
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.add" }));
+    ok(&mut session, "node.add", json!({ "file": "g.lcf", "call": "core.add" }));
+    let g = text(&memory, "/p/g.lcf");
+    // The clock of the tests never moves: every write is less than 1 s after the one before.
+    memory.put("/p/f.lcf", "one");
+    session.files_changed();
+    memory.put("/p/f.lcf", "two");
+    memory.remove_file(std::path::Path::new("/p/g.lcf")).unwrap_or_else(|error| panic!("{error}"));
+    session.files_changed();
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!(listed["steps"].as_array().map(Vec::len), Some(3), "{listed}");
+    assert_eq!((listed["steps"][0]["author"].clone(), listed["steps"][0]["files"].clone()), (json!("external"), json!(["f.lcf", "g.lcf"])));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/g.lcf")), (ADDED.to_owned(), g));
+    // Written back to the bytes of the session: no step.
+    memory.put("/p/f.lcf", "three");
+    memory.put("/p/f.lcf", ADDED);
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!((listed["undo"].clone(), listed["redo"].clone()), (json!(2), json!(3)), "{listed}");
+}
+
+#[test]
+fn an_external_write_to_a_file_the_session_never_wrote_is_a_step() {
+    let (mut session, memory) = session();
+    // The first command reads the files of the project, to follow them.
+    ok(&mut session, "history.list", json!({}));
+    memory.put("/p/g.lcf", "outside");
+    memory.put("/p/h.lcf", "labcraft 1\n");
+    // Not a file of the project that is followed: a folder whose name starts with `.`, and a file that is no program.
+    memory.put("/p/.labcraft/x.lcf", "labcraft 1\n");
+    memory.put("/p/notes.txt", "x");
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!(listed["steps"].as_array().map(Vec::len), Some(1), "{listed}");
+    assert_eq!((listed["steps"][0]["author"].clone(), listed["steps"][0]["files"].clone()), (json!("external"), json!(["g.lcf", "h.lcf"])));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!((text(&memory, "/p/g.lcf"), memory.get("/p/h.lcf")), (LOOSE.to_owned(), None), "a file that appeared goes with undo");
+}
+
+#[test]
+fn external_writes_more_than_1_s_apart_by_the_time_of_their_files_are_two_steps() {
+    let (mut session, memory) = session();
+    ok(&mut session, "history.list", json!({}));
+    let second: u128 = 1_000_000_000;
+    memory.put_modified("/p/f.lcf", "a", 5 * second);
+    session.files_changed();
+    // Seen together with the next one, 5 s later by the time of its file: a step of its own.
+    memory.put_modified("/p/g.lcf", "b", 10 * second);
+    memory.put_modified("/p/f.lcf", "c", 10 * second + second / 2);
+    let listed = ok(&mut session, "history.list", json!({}));
+    let files: Vec<Value> = listed["steps"].as_array().into_iter().flatten().map(|step| step["files"].clone()).collect();
+    assert_eq!(files, [json!(["f.lcf", "g.lcf"]), json!(["f.lcf"])], "{listed}");
+    // The time of a step is that of the session, whatever the times of its files.
+    assert_eq!(listed["steps"][0]["time"], "1970-01-01T00:00:00.000000000Z");
+}
+
+#[test]
+fn past_64_mib_kept_a_file_is_followed_with_no_step() {
+    let memory = Arc::new(Memory::new());
+    // 33 MiB each: the first fits in the 64 MiB, the second does not.
+    let big = 33 << 20;
+    memory.put("/p/a.lcf", vec![b'a'; big]);
+    memory.put("/p/b.lcf", vec![b'b'; big]);
+    let mut limits = Limits::default();
+    limits.max_file_size = 100 << 20;
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits,
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 0,
+    };
+    let ws: Arc<dyn Workspace> = memory.clone();
+    let mut session = Session::new(ws, config, false).unwrap_or_else(|error| panic!("{error:?}"));
+    ok(&mut session, "history.list", json!({}));
+    memory.put("/p/b.lcf", "outside");
+    assert_eq!(ok(&mut session, "history.list", json!({}))["steps"], json!([]), "`b.lcf` is not kept: no step");
+    memory.put("/p/a.lcf", "outside");
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!(listed["steps"][0]["files"], json!(["a.lcf"]), "{listed}");
+}
+
+#[test]
+fn a_write_of_the_same_bytes_makes_no_step_and_keeps_redo() {
+    let (mut session, _) = session();
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.add" }));
+    ok(&mut session, "history.undo", json!({}));
+    ok(&mut session, "file.write", json!({ "path": "f.lcf", "text": START }));
+    let listed = ok(&mut session, "history.list", json!({}));
+    assert_eq!((listed["undo"].clone(), listed["redo"].clone()), (Value::Null, json!(1)), "{listed}");
+}
+
+#[test]
+fn a_file_over_the_limit_is_still_replaced_or_deleted_with_no_step() {
+    let memory = Arc::new(Memory::new());
+    memory.put("/p/big.lcf", "x".repeat(200));
+    memory.put("/p/other.lcf", "y".repeat(200));
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: {
+            let mut limits = Limits::default();
+            limits.max_file_size = 100;
+            limits
+        },
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 0,
+    };
+    let ws: Arc<dyn Workspace> = memory.clone();
+    let mut session = Session::new(ws, config, false).unwrap_or_else(|error| panic!("{error:?}"));
+    ok(&mut session, "file.write", json!({ "path": "big.lcf", "text": "labcraft 1\n", "check": false }));
+    ok(&mut session, "file.delete", json!({ "path": "other.lcf" }));
+    assert_eq!((text(&memory, "/p/big.lcf"), memory.get("/p/other.lcf")), ("labcraft 1\n".to_owned(), None));
+    assert_eq!(ok(&mut session, "history.list", json!({}))["steps"], json!([]), "the history cannot keep what was there");
+}
+
+#[test]
+fn the_commands_that_write_files_are_steps_of_their_author() {
+    let (mut session, memory) = session();
+    let agent = Author::Agent("claude".to_owned());
+    let mut run = |id: &str, params: Value| session.execute_as(&agent, id, &params).unwrap_or_else(|error| panic!("{id}: {}", error.to_json()));
+    run("file.write", json!({ "path": "f.lcf", "text": LOOSE.replace('g', "f") }));
+    run("file.format", json!({ "path": "f.lcf" }));
+    run("file.rename", json!({ "from": "f.lcf", "to": "lib/f.lcf" }));
+    run("file.delete", json!({ "path": "g.lcf" }));
+    run("file.write", json!({ "path": "new.lcf", "text": "labcraft 1\n" }));
+    let listed = run("history.list", json!({}));
+    let steps: Vec<(Value, Value)> =
+        listed["steps"].as_array().into_iter().flatten().map(|step| (step["author"].clone(), step["files"].clone())).collect();
+    let claude = json!("claude");
+    assert_eq!(
+        steps,
+        [
+            (claude.clone(), json!(["new.lcf"])),
+            (claude.clone(), json!(["g.lcf"])),
+            (claude.clone(), json!(["f.lcf", "lib/f.lcf"])),
+            (claude.clone(), json!(["f.lcf"])),
+            (claude, json!(["f.lcf"])),
+        ],
+        "no step signed `external`: the session wrote each file"
+    );
+    for _ in 0..5 {
+        run("history.undo", json!({}));
+    }
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/g.lcf")), (START.to_owned(), LOOSE.to_owned()));
+    assert_eq!((memory.get("/p/lib/f.lcf"), memory.get("/p/new.lcf")), (None, None));
 }
 
 #[test]
@@ -181,9 +355,9 @@ fn commands_execute_runs_a_command_as_its_own_tool() {
 }
 
 #[test]
-fn without_history_there_is_no_step_and_no_undo() {
+fn on_the_command_line_there_is_no_step_and_no_undo() {
     let (mut session, _) = session();
-    session.without_history();
+    session.for_command_line();
     let result = ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.add" }));
     assert_eq!(result["step"], Value::Null);
     assert_eq!(session.execute("history.undo", &json!({})).map_err(|error| error.code), Err("command.not_enabled"));

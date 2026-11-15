@@ -83,3 +83,10 @@ path = "fuzz_targets/trace.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "edit"
+path = "fuzz_targets/edit.rs"
+test = false
+doc = false
+bench = false

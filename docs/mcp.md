@@ -70,7 +70,11 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   (commands.md 9.4), as SolidCraft and VectorCraft do. The direct tools are the nineteen of M0b, which the skills name,
   and `commands_execute`, `commands_batch`, `node_add`, `node_delete`, `constant_add`, `wire_connect`,
   `wire_disconnect`, `input_set_constant`, `value_rename`, `history_undo`, and `view_get_state` when attached
-  *(proposed)*: about thirty ([architecture.md](architecture.md), 12.8).
+  *(proposed)*: about thirty ([architecture.md](architecture.md), 12.8). Twenty-seven in M1 step 0: `input_set_constant`
+  and `value_rename` come with step 4, `view_get_state` with the server attached to the IDE. Headless,
+  `commands_execute` does not reach a command of the window either (`command.not_enabled`).
+- **The author of every call** is the client, by the `clientInfo.name` it gives at `initialize`: the history signs
+  its steps with that name, and an agent undoes only its own ([commands.md](commands.md) 9.5).
 
 ## 3. Results and errors
 

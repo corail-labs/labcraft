@@ -14,7 +14,8 @@ use crate::disk::Disk;
 use crate::output;
 
 pub fn run(options: &FmtOptions) -> ExitCode {
-    let Formatted { report, files, changed } = format_paths(&Disk, &options.paths, Disk.current().as_deref(), &options.limits, options.check);
+    let Formatted { report, files, changed, .. } =
+        format_paths(&Disk, &options.paths, Disk.current().as_deref(), &options.limits, options.check, false);
     answer(options, report, &files, changed)
 }
 

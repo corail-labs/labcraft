@@ -7,10 +7,15 @@ use std::path::{Path, PathBuf};
 use labcraft_check::case_key;
 use serde_json::{Value, json};
 
+use std::sync::Arc;
+
+use crate::edits::{bytes_now, note, record, shared_bytes};
 use crate::error::CommandError;
 use crate::fmt::{Formatted, format_paths};
+use crate::history::{Author, Change};
 use crate::params::Params;
 use crate::paths::{self, Place, Wanted};
+use crate::registry::Command;
 use crate::session::{Session, written};
 use crate::walk::io_text;
 use crate::workspace::{Kind, Read};
@@ -186,8 +191,25 @@ fn then_check(session: &mut Session, check: bool, shown: &str) -> Result<Value, 
     if check { session.root_check_document() } else { Ok(written(shown)) }
 }
 
-/// `file.write`.
-pub fn write(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+/// What a file holds before a command changes it, for the step of history (commands.md 9.1): `Some(None)` when it is
+/// missing. `None` when the history cannot keep it: the session keeps none (the command line), or the file is over
+/// `--max-file-size`, which a command may still replace or delete, with no step then (an `LC0006` file is fixed so).
+fn before_of(session: &Session, path: &Path) -> Option<Option<Arc<[u8]>>> {
+    if !session.keeps_history {
+        return None;
+    }
+    bytes_now(session, path).ok().map(|bytes| bytes.map(|bytes| shared_bytes(session, path, bytes)))
+}
+
+/// The step of a command of files, when the history can keep what it changed and it changed something.
+fn record_files(session: &mut Session, author: &Author, command: &Command, changes: Option<Vec<Change>>) {
+    let Some(changes) = changes else { return };
+    let changes: Vec<Change> = changes.into_iter().filter(|change| change.before != change.after).collect();
+    record(session, author, command.label.to_owned(), changes);
+}
+
+/// `file.write`: a step of history (commands.md 9.1).
+pub fn write(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
     let (path, shown, exists) = project_file(session, params, "path", Wanted::File)?;
     let text = params.text("text")?;
     let max = session.config.limits.max_file_size;
@@ -216,8 +238,13 @@ pub fn write(session: &mut Session, params: &Params) -> Result<Value, CommandErr
     if let Some(folder) = path.parent() {
         session.ws.create_folders(folder).map_err(|error| unwritable("path", &shown, &error))?;
     }
+    let before = before_of(session, &path);
     session.forget();
     session.ws.write(&path, text.as_bytes()).map_err(|error| unwritable("path", &shown, &error))?;
+    let after: Arc<[u8]> = Arc::from(text.into_bytes());
+    note(session, &Change { path: path.clone(), shown: shown.clone(), before: None, after: Some(Arc::clone(&after)) }, false);
+    let changes = before.map(|before| vec![Change { path, shown: shown.clone(), before, after: Some(after) }]);
+    record_files(session, author, command, changes);
     then_check(session, params.bool("check"), &shown)
 }
 
@@ -236,8 +263,8 @@ fn existing_file(session: &Session, params: &Params, parameter: &str) -> Result<
     Ok((path, shown))
 }
 
-/// `file.rename`.
-pub fn rename(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+/// `file.rename`: a step of history, the file removed under its old name and made under the new one.
+pub fn rename(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
     let (from, from_shown) = existing_file(session, params, "from")?;
     let (to, to_shown, to_exists) = project_file(session, params, "to", Wanted::File)?;
     if is_simulation(&from) != is_simulation(&to) {
@@ -263,25 +290,56 @@ pub fn rename(session: &mut Session, params: &Params) -> Result<Value, CommandEr
     if let Some(folder) = target.parent() {
         session.ws.create_folders(folder).map_err(|error| unwritable("to", &to_shown, &error))?;
     }
+    let bytes = before_of(session, &from);
     session.forget();
     session.ws.rename(&from, &target).map_err(|error| unwritable("from", &from_shown, &error))?;
+    // The new name as given, which a change of case alone keeps.
+    let last = target.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    let target_shown = match to_shown.rsplit_once('/') {
+        Some((folder, _)) => format!("{folder}/{last}"),
+        None => last,
+    };
+    let moved = bytes.clone().flatten();
+    note(session, &Change { path: from.clone(), shown: from_shown.clone(), before: None, after: None }, false);
+    note(session, &Change { path: target.clone(), shown: target_shown.clone(), before: None, after: moved }, false);
+    let changes = bytes.map(|bytes| {
+        vec![
+            Change { path: from, shown: from_shown, before: bytes.clone(), after: None },
+            Change { path: target, shown: target_shown, before: None, after: bytes },
+        ]
+    });
+    record_files(session, author, command, changes);
     session.root_check_document()
 }
 
-/// `file.delete`.
-pub fn delete(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+/// `file.delete`: a step of history, which undo reverses (architecture 12.8).
+pub fn delete(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
     let (path, shown) = existing_file(session, params, "path")?;
+    let before = before_of(session, &path);
     session.forget();
     session.ws.remove_file(&path).map_err(|error| unwritable("path", &shown, &error))?;
+    note(session, &Change { path: path.clone(), shown: shown.clone(), before: None, after: None }, false);
+    record_files(session, author, command, before.map(|before| vec![Change { path, shown, before, after: None }]));
     session.root_check_document()
 }
 
-/// `file.format`.
-pub fn format(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+/// `file.format`: one step of history for the files it rewrote.
+pub fn format(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
     let (path, _) = paths::existing_in_project(&*session.ws, &session.root, params.text("path")?, "path", Wanted::FileOrFolder)?;
-    let Formatted { mut report, files, changed } =
-        format_paths(&*session.ws, &[path], Some(&session.root), &session.config.limits, params.bool("check_only"));
+    let Formatted { mut report, files, changed, rewritten } =
+        format_paths(&*session.ws, &[path], Some(&session.root), &session.config.limits, params.bool("check_only"), session.keeps_history);
     session.forget();
+    let changes: Vec<Change> = rewritten
+        .into_iter()
+        .map(|(path, shown, before, after)| {
+            let before = shared_bytes(session, &path, before);
+            Change { path, shown, before: Some(before), after: Some(Arc::from(after.into_bytes())) }
+        })
+        .collect();
+    for change in &changes {
+        note(session, change, false);
+    }
+    record(session, author, command.label.to_owned(), changes);
     report.finish();
     serde_json::to_value(report.fmt_document(&files, changed))
         .map_err(|error| CommandError::internal(format!("the report does not write as JSON: {error}")))
