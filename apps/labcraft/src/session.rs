@@ -216,7 +216,7 @@ impl Session {
     /// Takes what the session of `engine` publishes; the text of `Problems` is written again when its report is new.
     fn sync(&mut self) {
         let Some(engine) = &self.engine else { return };
-        self.published.view = engine.view().clone();
+        self.published.view = (**engine.view()).clone();
         let view = &mut self.published.view;
         view.generation = view.generation.wrapping_add(self.base.0);
         view.drawing_generation = view.drawing_generation.wrapping_add(self.base.1);

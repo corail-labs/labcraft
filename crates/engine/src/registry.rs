@@ -632,7 +632,16 @@ fn catalog() -> Vec<Command> {
             label: "Show Function",
             summary: "Draw a function of the open folder in the viewer",
             description: "Draws it in the viewer, as its file gives it, and returns its entry of `diagrams` in `labcraft-diagram/1`.",
-            params: object(&[("function", string("A function of the open folder."))], &["function"]),
+            params: object(
+                &[
+                    ("function", string("A function of the open folder.")),
+                    (
+                        "preview",
+                        json!({ "type": "boolean", "description": "Open its tab as a preview, which the next preview replaces.", "default": false }),
+                    ),
+                ],
+                &["function"],
+            ),
             result: "an entry of labcraft-diagram/1",
             errors: CHECK_ERRORS,
             effects: &[],
