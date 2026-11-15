@@ -2,9 +2,11 @@
 # Says whether a pull request changes more than prose, for the jobs that build or run code (workflows `checks`
 # and `fuzz`). Writes `code=true` or `code=false` to $GITHUB_OUTPUT.
 #
-# A changed file is prose when it is a Markdown file at the root or directly in docs/, or a file of docs/images/ or
-# design/ (FigCraft files, which no code reads), and, for `checks`, no Rust string names it: the tests read
-# docs/language-spec-v0.md, docs/cli.md and docs/visual-notation.md, so those count as code. `fuzz` skips that
+# A changed file is prose when it is a Markdown file at the root, directly in docs/, in .claude/agents/ or in
+# .claude/skills/*/ (instructions for agents, which no code reads), or a file of docs/images/ or design/ (FigCraft
+# files, which no code reads), and, for `checks`, no Rust string names it: the tests read docs/language-spec-v0.md,
+# docs/cli.md and docs/visual-notation.md, so those count as code. An instruction file of .claude/ is named by its
+# whole path, not its bare name: `skills/` gives its own SKILL.md, which the engine names. `fuzz` skips that
 # test, since the fuzz targets read no document of docs/ outside docs/rfc/ (a seed, so code): a Markdown file
 # there is prose for it, whatever a test reads. Every other file is code: docs/rfc/ and docs/releases/, skills/,
 # examples/, the workflows.
@@ -45,6 +47,22 @@ code=false
 while IFS= read -r file; do
   case "$file" in
     design/*) echo "prose: $file"; continue ;;
+    # Instructions for agents: prose, unless a Rust string names the file by its path (a bare `SKILL.md`
+    # belongs to `skills/`, which is code).
+    .claude/agents/*.md | .claude/skills/*/*.md)
+      if [ "$workflow" = fuzz ]; then
+        echo "prose: $file"
+        continue
+      fi
+      status=0
+      grep -rqF --include='*.rs' -e "\"$file\"" -e "/$file\"" crates apps fuzz tests || status=$?
+      if [ "$status" -eq 1 ]; then
+        echo "prose: $file"
+      else
+        echo "code (a Rust string names it, or grep failed): $file"
+        code=true
+      fi
+      continue ;;
     */*.md) [[ "$file" == docs/*.md && "$file" != docs/*/* ]] || { echo "code: $file"; code=true; continue; } ;;
     *.md) ;;
     docs/images/*) ;;
