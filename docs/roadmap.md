@@ -25,10 +25,12 @@ are, and how the Rust code is organized.
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
 
-- **before M1**: the model of editing (when the file is written, what the editor keeps in `layout`), the
-  commands of editing, the notation of what editing shows (selection, a wire being drawn), the gestures and the
-  keyboard, then the architecture of an editable `editor` and the acceptance scenarios of M1. The threshold of
-  the figure of stability (visual notation, 2.1) is set there too: M0 reports the figure only.
+- **before M1**: written. The model of editing and its commands ([commands.md](commands.md), 9), the notation of
+  what editing shows and the gestures ([visual-notation.md](visual-notation.md), 2.4 and 2.6), the window
+  ([ide.md](ide.md)), the architecture of editing ([architecture.md](architecture.md), 12) and the acceptance
+  scenarios of M1 ([acceptance-m1.md](acceptance-m1.md)), which set the threshold of the figure of stability
+  (visual notation, 2.1). The size of a structure is written with the gesture of surrounding, step 5 of the Rust of
+  M1 ([architecture.md](architecture.md), 12.11).
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -109,12 +111,14 @@ As in the Craft apps: a crate depends only on strictly lower layers, checked by
 | L2 | `format` | Reading and writing the format, migrations |
 | L3 | `check` | Name resolution, signatures (those of the primitives too), type and connection checking |
 | L4 | `ir` | Dataflow IR, analyses, linear IR |
+| L4 | `edit` | The editing operations on the text of a file, from M1: text in, text out ([architecture](architecture.md), 12.3) |
 | L5 | `runtime` | Scheduler, interpreter, values, probes and breakpoints; the native primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) |
 | L5 | `diagram` | Automatic placement, wire routing and the visual notation as shapes, headless, with SVG export; run values come in as plain data |
 | L5 | `interop` | C ABI, .NET, Python |
 | L6 | `engine` | Session, command registry, undo, journal, crash reports |
 | L6 | native crates of libraries | The bodies of `extern rust` functions, beside their library: `libs/visa`, `examples/results_log` ([architecture](architecture.md), section 10) |
-| L7 | `editor`, `ui-egui`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; IDE (window, panel, debugger); MCP server; Cranelift and building executables and DLLs |
+| L7 | `editor`, `ide`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; the window of the IDE, once for the desktop and the web (panels, inspector, later the debugger); MCP server; Cranelift and building executables and DLLs |
+| kit | `kit-text`, `kit-text-egui`, `kit-shell` | The pieces of the window that are not about LabCraft, for other IDEs: they depend on no crate of LabCraft ([ide.md](ide.md), 11) |
 | apps | `labcraft`, `labcraft-cli`, `labcraft-web` | Desktop, CLI, browser |
 
 ### Libraries shipped with LabCraft (`libs/`)
@@ -152,6 +156,7 @@ LabCraft/
 ├── Cargo.toml           workspace, edition 2024, resolver 3, shared lints
 ├── crates/              the layers above
 ├── apps/                labcraft, labcraft-cli, labcraft-web
+├── kit/                 pieces of the window for any IDE: kit-text, kit-text-egui, kit-shell (M1)
 ├── libs/                libraries shipped with LabCraft: visa, scpi; embedded, the crate that embeds them
 ├── docs/                language, notation, architecture, MCP, commands
 ├── examples/            example programs, in the text format

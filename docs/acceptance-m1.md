@@ -1,0 +1,180 @@
+# M1 acceptance scenarios
+
+*Last updated: 2026-11-15. Status: written with step 8 of the specifications of M1; none passes yet.*
+
+M1 is the diagram editor ([roadmap](roadmap.md)): the user draws a program with the mouse and the keys, an agent
+edits the same files through the MCP server attached to the IDE, and both share one history. M1 is done when these
+scenarios pass. Each gives its setup, what is expected, and how it is verified. The contract is in
+[commands.md](commands.md) (section 9), [visual-notation.md](visual-notation.md) (2.4 and 2.6), [ide.md](ide.md) and
+the spec (section 11); the arrangement of the code is [architecture.md](architecture.md), section 12.
+
+Values marked *proposed* are starting points, to adjust when the scenarios are automated.
+
+## Common conditions
+
+- **The conditions of M0 hold** ([acceptance-m0.md](acceptance-m0.md)): never a crash, deterministic runs by
+  default, the expected values of a test worked out by hand or by another tool, never by the program under test.
+- **Through the tool, as a user would.** The IDE on the desktop and on the web, `labcraft-cli`, and the MCP server,
+  headless or attached to the IDE. Every edit is a command of `engine`, whoever makes it.
+- **The file is the truth** (commands.md 9.1): what the diagram shows, the file keeps; closing and opening the
+  project gives the same drawing.
+- **Automated** in the tests of the workspace and the `fuzz` workflow, except what a person or an agent plays and what
+  only a reference machine measures: scenario 1, what the window shows in scenario 2, and scenario 6, done by hand
+  before the tag of M1. The
+  agent is Claude Code with the most capable model of the time; its transcripts go with the pull request of the run.
+- **WASM** (D-22): `edit` and `engine` pass the tests of scenarios 3 and 5 in a `wasm32-unknown-unknown` build.
+
+## Scenario 1: a program drawn by hand
+
+**Setup.** A new project (`New project`), the function `main` empty, and, copied from `examples/`, the files that no
+gesture of M1 makes: the type `Verdict` (`Verdict.lct`) and a simulation file of a multimeter
+([libs/visa/simulation.md](../libs/visa/simulation.md)). The owner builds
+`check_voltage` of `examples/`, from the documents of the example alone, with the mouse and the keys, in the `Diagram` view, without
+opening the `Text` view.
+
+**Expected.**
+
+1. Every step goes through a gesture of notation 2.4 or a key of 2.6: quick insertion by name, wiring, constants,
+   the signature, renaming.
+2. The file passes `labcraft-cli check` with no error, and `labcraft-cli run` with that simulation file gives PASS.
+3. At no moment does the file fail to parse (commands.md 9.1); while it is incomplete, the diagram shows `LC2101` where
+   it is.
+
+**Verified** by hand, by the owner, before the tag; the time it took and what got in the way are written in the pull
+request of the tag.
+
+## Scenario 2: the agent edits, the user watches and undoes
+
+**Setup.** The IDE open on a project with `check_voltage`; an agent attached (`labcraft-cli mcp`, ide.md 8) with the
+policy `Edits`.
+
+**Expected.**
+
+1. The agent adds a node, wires it and sets a constant, through the direct tools, and through `commands_execute` for a
+   command that is not one (mcp.md 2). The history signs each step with the name of the agent, and the window shows
+   the edit, the nodes it touched highlighted (ide.md 8).
+2. The user presses Ctrl+Z: the last step of the agent is undone, the status bar says whose it was, and the file is
+   the one before that step, byte for byte.
+3. While the user draws a wire, an editing command of the agent waits, then runs when the gesture ends (commands.md
+   9.1); a command whose `expected_revision` is stale by then is `file.stale` and changes nothing. A gesture that
+   lasts more than 30 s *(proposed)* gives the agent `gesture.busy`.
+4. The agent calls `history_undo` after a step of the user: `history.not_yours` (commands.md 9.5).
+5. Under the policy `Ask`, an editing command waits for the user's answer; refused, it is `agent.not_allowed`.
+
+**Verified.** Points 1, 3, 4 and 5, as commands and their results: a test of `mcp` over the control channel on the
+loopback, with a session of `engine` whose gestures and answers the test gives. Point 2, and what the window shows
+of the agent: by hand, with an agent, before the tag.
+
+## Scenario 3: undo gives back every byte
+
+**Setup.** Every function of `examples/`, `docs/rfc/` and `libs/`, copied into memory (`engine::Memory`).
+
+**Expected.**
+
+1. For each command of commands.md 9.4 that applies to the function (each node, each wire, each input that the command
+   can take), the command then `history.undo` gives back the bytes of every file it touched, even a file that was not
+   canonical before.
+2. A sequence of n editing commands then n undo gives back the bytes of the start; then n redo gives the bytes after
+   the sequence.
+3. A `commands.batch` is one step: one undo takes all of it back; a batch whose command fails writes nothing.
+
+**Verified** in CI, on the native and WASM builds. The expected texts after each command come from the unit tests of
+`edit`, written by hand; undo is checked against the bytes read before.
+
+## Scenario 4: editing at random never breaks
+
+**Setup.** A target of `fuzz/`: a project in memory from the examples, then a sequence of at most 500 steps *(proposed)*,
+below the bound of the history: editing commands with parameters drawn at random (names that exist and names that do
+not, positions, paths, revisions), undo and redo, and external writes of random bytes, on a clock that the target
+gives (`engine::Still`), so that the merging of external writes is the same at each run.
+
+**Expected.** Never a panic, and never `internal`: every error is another code of commands.md 3. After each editing
+command, every file that it wrote parses (commands.md 9.1); undo and redo write back what was there, which may be the
+random bytes of an external write. After the whole sequence, as many undo give back the bytes of the start, external
+writes included.
+
+**Verified** by the `fuzz` workflow, a short run of each target on each pull request that changes code; 8 hours
+before the tag.
+
+## Scenario 5: moving a node changes one line
+
+**Setup.** Every function of `examples/` with at least one node.
+
+**Expected.**
+
+1. Moving one node that `layout` does not hold adds one entry to `layout`, and moving a node that it holds changes
+   that entry alone; no other line of the file changes (commands.md 9.1, spec 11). The diff of git is that one line,
+   or, when the file had no `layout` section, the section with that one entry (spec 5.2).
+2. The other nodes stay automatic, and move as little as the placement allows: the figure of stability (notation 2.1:
+   how many nodes a neutral node added on a wire moves) is, on each example, no worse than at the tag `v0.3.0-m0`.
+   That is the threshold the roadmap left to M1. It is a guard against a regression, not an expected value: the
+   figures of the tag are written once, by the code of the tag, into a file of `tests/`.
+3. Resizing the frame, moving a terminal and routing a wire by hand each change one entry of `layout` (spec 11), as
+   in point 1.
+
+**Verified** in CI: points 1 and 3 by a test that moves each node, terminal and frame and counts the entries that
+change; point 2 by `cargo xtask figures --against` that file, which fails when a figure is worse.
+
+## Scenario 6: 60 frames per second while editing 1,000 nodes
+
+**Setup.** The function of 1,000 nodes and 2,000 wires of `cargo xtask frames` (architecture 11.6), open in the
+desktop app, in release, on the reference machine of M0.
+
+**Expected.**
+
+1. Dragging 100 nodes at once keeps 60 frames/s: the preview of the drag (architecture 12.4) takes at most 4 ms a frame
+   *(proposed)*.
+2. At the drop, the file is written and the new drawing comes within 300 ms *(proposed)*; no frame waits for it.
+3. Wiring, selecting with a rectangle and quick insertion keep 60 frames/s.
+
+**Verified** by hand before the tag, on the reference machine, as for M0: `cargo xtask frames` gains a scripted drag and
+reports the time of the preview and of the new drawing, then the gestures by hand. Times on the shared runners of CI
+vary too much to be a check.
+
+## Scenario 7: a write from outside is a step like any other
+
+**Setup.** The IDE open on a project; a file of it rewritten by another program (an editor, git, `labcraft-cli`).
+
+**Expected.**
+
+1. The diagram shows the new file, and the history gains a step signed `external` (commands.md 9.1); several writes
+   of the file within 1 s *(proposed)* are one step.
+2. Ctrl+Z gives back the bytes of the file before the external write; redo gives back those after it.
+3. An agent whose `expected_revision` names the old revision gets `file.stale`, with the current revision.
+
+**Verified** in CI, with a session of `engine` and writes made by the test to the disk; the watch of the desktop app
+by a test of the app, as in M0v.
+
+## Scenario 8: the web page edits and saves
+
+**Setup.** `labcraft-web`, built by `cargo xtask web`, in headless Chrome.
+
+**Expected.**
+
+1. The page opens an example as a project in memory, and the same window as the desktop edits it: a node added and
+   wired through the commands of the page.
+2. Ctrl+Z gives back the file byte for byte.
+3. `Download` gives a zip whose files, unpacked, pass `labcraft-cli check` and hold the edit.
+4. The settings of the user stay after the page is loaded again (`localStorage`), and those of the project are in
+   the zip, in `.labcraft/config.toml`.
+
+**Verified** by `cargo xtask web-smoke`, which the job `web` runs.
+
+## Not covered by these scenarios
+
+The commands that each scenario does not name (structures, the block of a function, the mask of a library, the
+`Text` panel) have their own tests, as ordinary tests of `edit`, `engine` and `ide`; scenario 3 covers their undo.
+Detached windows, the start page and `Connect an AI agent` are tried by hand before the tag.
+
+## Summary
+
+| Scenario | In CI | By hand, before the tag |
+|---|---|---|
+| 1. Drawn by hand | | The owner builds `check_voltage` |
+| 2. Agent and user | Points 1, 3, 4, 5, as commands | An agent attached, point 2, what the window shows |
+| 3. Undo byte for byte | All, native and WASM | |
+| 4. Editing at random | Short fuzzing, each pull request | 8 hours of fuzzing |
+| 5. One line per move | All, the figure of stability against `v0.3.0-m0` | |
+| 6. 60 frames/s | | Frame rate, time of the preview and of the drawing |
+| 7. External writes | All | |
+| 8. Web | `web-smoke` | |

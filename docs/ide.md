@@ -151,9 +151,11 @@ same work again in each IDE; tree-sitter, which would need a second grammar of t
 ## 8. The agent attached to the IDE
 
 The channel is that of [mcp.md](mcp.md) 9: on `127.0.0.1` only, a token for each launch in a file only the user can
-read, a file that gives the port, so that `labcraft-cli mcp` with no option finds the open window. It is open while
-the window is, unless the user turns it off. With several projects open, each has its channel; `labcraft-cli mcp`
-with no option attaches to the project opened last, and `--project DIR` chooses *(proposed)*.
+read, a file that gives the port, so that `labcraft-cli mcp` finds the open window. It is open while the window is,
+unless the user turns it off. With several projects open, each has its channel. `labcraft-cli mcp` attaches to the
+window whose project is its project, `--project DIR` or the current folder (mcp.md 1); when no window shows that
+project, it starts headless, as in M0b, so that an agent never writes into a project other than the one it was started
+on (decision of the owner, 2026-11-15).
 
 - **The first connection of a client asks** (the one exception to D-18, decided by the owner on 2026-11-15). The
   window names the client and the project, and offers three policies, by the `effects` of each command
@@ -210,9 +212,9 @@ their own in this repository, which depend on no crate of LabCraft (a rule that 
 them), with their own
 documentation, MIT OR Apache-2.0; when they are stable, they are offered to `craft-libs`:
 
-- the text component (section 7);
-- the shell of the window: the top bar, the workspace selector with its planned entries, the start page, the command
-  palette and its JSON form, the inspector as a list of fields;
+- the text component (section 7): `kit-text`, with no UI toolkit, and `kit-text-egui`, which paints it;
+- the shell of the window, `kit-shell`: the top bar, the workspace selector with its planned entries, the start page,
+  the command palette and its JSON form, the inspector as a list of fields;
 - the docking and the detached windows come from `craft-ui` and `craft-window`; the keys from `craft-keymap`, the
   menus from `craft-menu`, the settings from `craft-settings`.
 
@@ -223,8 +225,10 @@ their own is decided when a second IDE starts.
 
 The same window, written once for the desktop and the browser, replaces the two panels of the viewer of M0v. In M1 the
 web page edits a project held in memory (the examples, or a folder dropped on it), which `Download` saves as a zip;
-it has no agent attached, and a detached tab floats in the page (9). The settings of the page, and opening a folder of the computer,
-are left to step 8 of the specifications.
+it has no agent attached, and a detached tab floats in the page (9). The settings of the user are kept in the
+`localStorage` of the page, those of the project in its `.labcraft/config.toml`, in memory and in the zip. Opening a
+folder of the computer to write it in place (the File System Access API, which only Chromium has) is not in M1
+([architecture.md](architecture.md), 12.9).
 
 ## 13. Left for later
 

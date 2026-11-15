@@ -30,6 +30,10 @@ A command lives in the registry of `engine` as data, the same data that `command
 | `long` | `true` when it can outlast a call: it returns a task to follow (section 4) |
 | `planned` | Present when the command is registered but not built yet: the milestone or the issue that brings it. Such a command is never enabled, and says why |
 
+From M1 the registry also holds, beside this data, what a caller does with a command: `undoable` (it makes a step of
+history, 9.1), `direct` (it is a tool of its own, [mcp.md](mcp.md) 2), `at_once` (the MCP server answers it outside its
+queue) and `window` (a command of the window, 9.4) ([architecture.md](architecture.md), 12.5).
+
 `enabled`, as in the Craft apps, is a state, not a field of the description: `commands.list` gives it
 with each command, and a call to a command that is not enabled gets `command.not_enabled` and the
 reason (`run.set_element` in deterministic mode, `view.zoom` before M0v). A planned command lets a milestone
@@ -141,6 +145,7 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `wire.type_mismatch` | *(M1)* A value or a constant of a type that the input does not take, without `accept_mismatch`; `message` gives both types |
 | `wire.cycle`, `wire.out_of_scope` | *(M1)* A wire that would close a cycle; a wire from a value that the input cannot see (9.4) |
 | `history.empty`, `history.not_yours` | *(M1)* Nothing to undo or redo; a step that an agent may not undo, since it is not its own (9.5) |
+| `gesture.busy` | *(M1)* An editing command of an agent waited 30 s *(proposed)* for the end of a gesture of the user, and changed nothing (9.1) |
 | `agent.not_allowed` | *(M1)* A command of an agent attached to the IDE that its policy does not allow, that the user refused or did not answer in time, or that only the window calls ([ide.md](ide.md), 8) |
 | `internal` | A bug of LabCraft, caught: `message` says where. The session goes on |
 
@@ -543,7 +548,7 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
 - **External writes.** A file that changes on disk, and whose hash is not that of the last write of LabCraft, is
   read again, and the change becomes a step signed "external": undo goes back over it as over any other. Writes
   of one file in a burst merge into one step.
-- **Revisions.** The revision of a file is the hash of its text. Every editing command can carry
+- **Revisions.** The revision of a file is the hash of its bytes. Every editing command can carry
   `expected_revision`, per file: when it is stale, the command is refused, changes nothing and returns the
   current revision (`file.stale`, section 3), so that an agent that read a file before the user changed it
   cannot overwrite that change.
@@ -551,7 +556,7 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   command that fails rolls the whole batch back, and nothing is written.
 - **The agent and a gesture.** While the user is in a gesture (a wire being drawn, a field being typed in), an
   editing command of the agent waits for the end of the gesture, then applies to the result; a stale
-  `expected_revision` then refuses it as above.
+  `expected_revision` then refuses it as above. It waits at most 30 s *(proposed)*, then is `gesture.busy`.
 - **The `Text` panel.** The text of a function, edited by hand in the IDE, is written when it parses (grammar
   correct, with or without errors of types or of `check`, which the diagram shows), after about 0.5 s without a
   key or when the panel loses the focus; each such pause is one step. A text that does not parse stays in the
@@ -634,7 +639,8 @@ file and calls a command uses one vocabulary.
 - **`step`** is the number of the step of history that the command made (9.1); `history.list` shows it. A command
   that changes nothing, such as a node moved to where it is, writes nothing and gives `"step": null`.
 - **`files`** gives each file written and its new revision, which the next command can send as
-  `expected_revision`. The revision is opaque text; its hash comes with step 8 of the specifications of M1.
+  `expected_revision`. The revision is opaque text: the SHA-256 of the bytes of the file, `sha256:` and 64 lowercase hexadecimal
+  digits ([architecture.md](architecture.md), 12.5).
 - **`names`** gives what the command named: the node it added, the output that got a name. The next command can
   name it without reading the file.
 - **`renamed`** gives each value that the rules of the gestures renamed as well (notation 2.4: a value unwired from
@@ -647,7 +653,8 @@ file and calls a command uses one vocabulary.
 ### 9.4 The catalog
 
 Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*`, the commands of
-the window (`project.*`, `view.*`) and `fragment.copy`, which writes nothing. It is an object that maps a path to a revision, for the files that the command may write
+the window (`project.*`, `view.*`), `fragment.copy`, which writes nothing, and `commands.execute`, whose `params` carry
+the `expected_revision` of the command it runs. It is an object that maps a path to a revision, for the files that the command may write
 (9.1). A file it does not name is not judged. The rows below leave it out; once the catalog moves to section 6, each
 row will list it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
 `edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
@@ -740,6 +747,7 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 | `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
 | `history.redo` | | Redoes the last step undone, under the same rules |
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
+| `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
 | `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window and `commands.batch` itself are
 `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
 | `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
@@ -760,6 +768,7 @@ what the window shows are `agent.not_allowed` too (ide.md 8).
 | `project.new` | `folder` | Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown (ide.md 10). A folder that exists and is not empty is `path.exists` |
 | `project.open` | `folder` | Opens the folder as a project: in this window when it shows the start page, in a new window otherwise |
 | `view.get_state` | | `{ "workspace": "edit", "windows": [{ "tabs": [{ "function", "file", "view", "split" }], "shown", "selection", "zoom" }], "truncated": false }`: for each window of the project, its tabs (the function named as in 6.5, its file, its view among `diagram`, `text` and `block`, the second view of a split or `null`), the index of the tab shown or `null` on the start page, the selection of the tab shown as the editing commands name it (9.2), at most 1,000 items *(proposed)*, and the zoom. Not `view.set_state` (6.5), which sets the view state of a drawing |
+| `view.select` | `function`, *`nodes`*, *`wires`*, *`terminals`* (each `[]`) | Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The window calls it on each click and rectangle of selection ([architecture.md](architecture.md), 12.5) |
 | `view.set_view` | `function`, `view`, *`split`* (`null`) | Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid` |
 | `view.detach` | `function` | Moves the tab of the function into a window of its own (ide.md 9); on the web, a floating panel |
 | `view.dock` | `function` | Moves it back among the tabs of the window of the project |

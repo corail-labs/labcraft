@@ -147,6 +147,7 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
 | [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
+| [docs/acceptance-m1.md](docs/acceptance-m1.md) | The scenarios that say when M1, the diagram editor, is done |
 | [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a, M0b and M0v (implemented) |
 | [docs/ir.md](docs/ir.md) | The dataflow IR that a checked program is lowered to and the runtime runs: regions, one node per line, origins, invariants (implemented for M0b) |
 | [docs/decisions.md](docs/decisions.md) | The project decisions: options, recommendation, status |

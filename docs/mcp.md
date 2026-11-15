@@ -38,31 +38,39 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   session. Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
 - **Headless in M0b.** The session lives in the process. It checks the root as it starts and keeps the
   result, so that a tool that checks answers in the time of the libraries it touched
-  ([commands.md](commands.md), section 6.2). When the IDE exists, the same server will
-  attach to it through a local control channel protected by a token, so that the human watches the agent
-  work (D-18); the tools stay the same.
+  ([commands.md](commands.md), section 6.2). From M1, when a window of the IDE shows the
+  project, the same server attaches to it through a local control channel protected by a token, so that the human
+  watches the agent work (D-18; [ide.md](ide.md) 8); otherwise it stays headless. The tools stay the same.
 - **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released.
 
 ## 2. Tools
 
-- **One tool per command** of [commands.md](commands.md), section 6, once it is no longer `planned`. The name of the tool is the id of
+- **One tool per command** of [commands.md](commands.md), section 6, once it is no longer `planned`, in M0b; from M1, one
+  tool per direct command, the others through `commands_execute` (below). The name of the tool is the id of
   the command with `_` for `.`: `run_start`, `file_write`. Dots would be clearer, but the names of tools
   given to a model through the Claude API, among others, allow only letters, digits, `_` and `-`.
 - **Description and schema** come from the registry: the `summary` and `description` of the command are
   the description of the tool, its `params` the `inputSchema`. Nothing is written twice.
 - **Annotations** follow `effects`, and all four are given, since MCP takes a missing `destructiveHint`
-  or `openWorldHint` as true: a command with no effect is `readOnlyHint`; `file.write`, `file.rename`,
-  `file.delete` and `file.format` are `destructiveHint`, since they can replace or remove a file; `run.start` is
-  `openWorldHint`, since it reaches instruments; every other hint is false.
+  or `openWorldHint` as true: a command with no effect is `readOnlyHint`; `run.start` is `openWorldHint`, since it
+  reaches instruments; every other hint is false. In M0b, `file.write`, `file.rename`, `file.delete` and `file.format`
+  were `destructiveHint`, since they could replace or remove a file; from M1 every command that writes a file makes a
+  step of the history, which undo reverses, and `destructiveHint` is kept for a command whose effect the history cannot
+  undo (decision of the owner, 2026-11-15; [architecture.md](architecture.md), 12.8).
 - **Two ids, one name:** `a.b_c` and `a_b.c` would give one tool name, so the registry refuses such a
   pair ([commands.md](commands.md), section 1).
 - **Nineteen tools in M0b**, `guide_read` and `diagram_svg` among them, few enough for each to be read. The `view.*` commands serve a session that has a viewer: a headless server does not give them
   (decision of the owner, 2026-11-11), and an agent sees a diagram through `diagram_svg`. Attached to the open IDE,
   an agent reads the state of the window (`view.get_state`) but never changes what the user sees: the other
   `view.*` commands are refused to it (decision of the owner, 2026-11-15, which replaces that of 2026-11-11 on
-  this point; [ide.md](ide.md), 8). When the catalog grows (the commands of the
-  viewer, then editing in M1), the server keeps the tools an agent uses most and reaches the others through
-  `commands_list`, `commands_describe` and a `commands_execute`, as SolidCraft does *(proposed)*.
+  this point; [ide.md](ide.md), 8).
+- **Direct tools and the others** (decision of the owner, 2026-11-15). From M1 the catalog is too large for a tool per
+  command: each tool costs every agent its description in its context. A command marked `direct` in the registry is a
+  tool of its own; the others are reached through `commands_list`, `commands_describe` and `commands_execute`
+  (commands.md 9.4), as SolidCraft and VectorCraft do. The direct tools are the nineteen of M0b, which the skills name,
+  and `commands_execute`, `commands_batch`, `node_add`, `node_delete`, `constant_add`, `wire_connect`,
+  `wire_disconnect`, `input_set_constant`, `value_rename`, `history_undo`, and `view_get_state` when attached
+  *(proposed)*: about thirty ([architecture.md](architecture.md), 12.8).
 
 ## 3. Results and errors
 
@@ -138,7 +146,10 @@ The server reads hostile requests as `check` reads hostile files (scenario 4, fa
 ## 6. What an agent may touch
 
 - **Files:** the server writes only `.lcf`, `.lct` and simulation files under the root of the project, and
-  its traces under `.labcraft/` ([commands.md](commands.md), section 2). It never writes a shipped library.
+  its traces under `.labcraft/` ([commands.md](commands.md), section 2). It never writes a shipped library. From M1
+  it also writes, through the commands of commands.md 9, the manifest `labcraft.toml` of a library of the project
+  (`library.set_mask`), the settings of the project (`.labcraft/config.toml`) and of the user (`settings.set`, which
+  ide.md 8 bounds), and the journal of its commands (`.labcraft/journal/`, [architecture.md](architecture.md) 12.5).
 - **Instruments:** in M0b only the `SIM::` resources of a simulation file exist, since `visa` has no real
   transport before M4. A real instrument can switch on a supply, so from M4 an agent reaches one only if
   the human allowed it when starting the server (an option of `mcp` such as `--allow-hardware RESOURCE`,

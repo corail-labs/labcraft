@@ -13,7 +13,7 @@ are in the [roadmap](roadmap.md). The code sketches below show shapes, not final
 
 The layout is the one shared by the Craft apps (SolidCraft, GridCraft, VectorCraft, FigCraft, DeckCraft,
 WordCraft): `crates/`, `apps/<app>`, `apps/<app>-cli`, `apps/<app>-web`, `xtask/`, with a crate
-`format`, then `engine`, `mcp` and `ui-egui` above it. GridCraft's `formula` crate (lexer, parser,
+`format`, then `engine`, `mcp` and the window above it (`ide` in M1, section 12). GridCraft's `formula` crate (lexer, parser,
 printer, by hand) is the nearest thing to our `format`. What the suite already provides is used, not
 rewritten (section 7).
 
@@ -1108,7 +1108,7 @@ apps/labcraft-cli ──> engine ──> diagram (diagram --svg), and mcp ──
 | L7 | `editor` | The egui canvas that paints the shapes of `diagram`, read-only in M0v |
 
 The window around the canvas is the app itself in M0v: a list of functions, the canvas, the diagnostics. It is
-throwaway, and `ui-egui` starts with the IDE. What lasts is `diagram`, `editor` and the commands.
+throwaway, and the window of the IDE (`ide`, section 12) takes its place in M1. What lasts is `diagram`, `editor` and the commands.
 
 ### 11.1 `text` in `types` (L0)
 
@@ -1587,50 +1587,252 @@ Each step ends with something testable.
 9. **Before the tag**: 60 frames/s by hand, 8 hours of fuzzing for each new target ([acceptance-m0.md](acceptance-m0.md),
    scenarios 4 and 6), the workflow `release` (section 8).
 
-## 12. M1: editing (outline)
+## 12. M1: editing
 
-*An outline, written with step 1 of the specifications of M1 (the editing model). Step 8 of those specifications
-turns it into the arrangement of the code, with `docs/acceptance-m1.md` and the order of work; until then, nothing
-here is a signature.*
+*Written with step 8 of the specifications of M1 (2026-11-15), from the outline of step 1. The contract is in the
+[spec](language-spec-v0.md) (section 11: what `layout` holds, a node known by its name), [commands.md](commands.md)
+(9.1 the editing model, 9.4 the catalog, 9.5 the agent), [visual-notation.md](visual-notation.md) (2.4 editing by
+hand, 2.6 the keys) and [ide.md](ide.md) (the window); the scenarios are [acceptance-m1.md](acceptance-m1.md). What
+follows is the arrangement of the code; a signature is a sketch until its step is written.*
 
-The contract is in the [spec](language-spec-v0.md) (section 11: what the `layout` section holds, `frame size`,
-`input` and `output`, a node known by its name), [commands.md](commands.md) (section 9.1: the editing model; 9.4: the catalog) and
-[visual-notation.md](visual-notation.md) (section 2.4: editing by hand). Each crate keeps its layer
-([roadmap](roadmap.md)); the editor never writes a file itself.
+The rule of M0 holds: the file is the truth, and the editor never writes a file itself. A gesture becomes a command of
+`engine`, which edits the text, writes it in canonical form and keeps the step; the drawing is made again from the
+file, as when an agent writes it.
 
-- **`graph` and `format` (L1, L2)** read and write the new entries of `layout` (`frame size`, `input x at y`,
-  `output x at y`) and keep them in canonical order (spec 5.2). Writing is `format` alone: every command that
-  succeeds writes the canonical form of what it touched. `check` judges the new entries as the others (`LC5004`,
-  `LC5007`).
-- **`diagram` (L5)** places around what is fixed: the fixed nodes, the terminals at their height, the size of the
-  frame, coordinates that can be negative (spec 11). The placement still depends on the file alone (notation 2.1),
-  and a small change of the file moves few nodes: that is a property to measure, as the figures of stability of
-  M0v (11.7, step 3), not a memory of the previous drawing.
-- **`engine` (L6)** holds the editing commands and what they share:
-  - one **history per project**, a list of steps, each with its author (user, agent, external) and, for each file
-    it touched, the text before and after, so that undo restores the text byte for byte; a `batch` is one step;
-  - the **revision** of each file, a hash of its text, against which `expected_revision` is judged (`file.stale`);
-  - the **watch** of the files of the project: a write that is not ours becomes a step signed "external", a burst of
-    them one step;
-  - the **gesture lock**: while the editor reports a gesture in progress, the editing commands of the agent wait
-    in order, then apply;
-  - the **settings**: two stores of `craft-settings`, the user's and the project's, opened by
-    `SettingsStore::open_at` on `.labcraft/` (its file is `config.toml`); `craft-settings` has no layers, so
-    `engine` merges them key by key, the project first, and `settings.set` says which one it writes. In WASM,
-    `craft-settings` has no store: where the web page keeps its settings is left to step 8.
-- **`editor` (L7)** turns gestures into commands of `engine`, and nothing else: a drag is a move, a wire drawn is
-  a `wire` command, a resize writes `frame size` through a command. A gesture in progress is a state of the
-  editor alone, which the file does not hold, as the view state (spec 11).
-- **`mcp`** exposes the same commands, with `expected_revision` and `batch`; an agent and the user edit one
-  history.
+### 12.1 Crates and layers
 
-- **The window** ([ide.md](ide.md)) is written once for the desktop and the web, and replaces the two panels of the
-  viewer (11.5). Its pieces that are not about LabCraft (the text component, the shell: top bar, workspace selector,
-  start page, command palette) are crates that depend on no crate of LabCraft, a rule that `cargo xtask layers` gains with them,
-  so that another IDE can take them; docking, detached windows, menus, keys and settings come from `craft-libs`. The
-  windows of a project share one session; a detached function is a window of the system, a floating panel on the
-  web. The control channel of mcp.md 9 is opened by the app, and the policy of each agent is judged in `engine`,
-  before a command runs (`agent.not_allowed`).
+| Layer | Crate | In M1 |
+|---|---|---|
+| L1, L2 | `graph`, `format` | The entries of `layout` of spec 11 (`frame size`, `input x at y`, `output x at y`), `terminals` and `outline` (spec 11.2 to 11.4), holes `?` (spec 5.1) |
+| L3 | `check` | Judges them (`LC5004`, `LC5007`, the codes of 11.2 to 11.4); unchanged otherwise |
+| L4 | **`edit`** (new) | The editing operations on the text of a file: text in, text out, and what changed (12.3). No history, no file, no thread; what it needs of the check and of the drawing comes through a trait |
+| L5 | `diagram` | Stable placement around what is fixed; the preview of a drag (12.4) |
+| L6 | `engine` | The editing commands, the history, the revisions, the journal, the settings, the gesture lock (12.5) |
+| L7 | `editor` | The canvas turns gestures into intents (12.6) |
+| L7 | **`ide`** (new) | The window of LabCraft, once for the desktop and the web (12.7). It takes the place of `ui-egui` in the roadmap |
+| L7 | `mcp` | The direct tools, `commands_execute`, attached to the window (12.8) |
+| kit | **`kit-text`**, **`kit-text-egui`**, **`kit-shell`** (new, in `kit/`) | The pieces of the window that are not about LabCraft (ide.md 11; 12.7) |
+| apps | `labcraft`, `labcraft-web` | The window instead of the viewer's panels; the control channel on the desktop (12.9) |
 
-Left to step 8: where the history lives in memory and its bound, the hash, the recovery folder of the `Text`
-panel, the names and layers of the crates of the window, the journal of commands (`engine`), the fuzzing of the editing commands (8 hours before the tag of M1).
+`cargo xtask layers` gains a rule for `kit/`: a crate of `kit/` depends on no crate of LabCraft (`labcraft-*`), and
+`kit-text` depends on no UI toolkit. They sit outside the table of layers, as the crates of `craft-libs` do, and are
+offered to `craft-libs` once stable (ide.md 11). `edit`, `ide` and the crates of `kit/` join the list of `cargo xtask
+wasm` (section 7), with `engine`, `editor` and `labcraft-web`.
+
+### 12.2 `graph`, `format` and `check`
+
+`graph` and `format` read and write the new entries and keep them in canonical order (spec 5.2): writing is
+`format` alone, so every command that succeeds writes the canonical form of each file it touches, comments in place
+(spec 5.2). `format` keeps the spans of what it reads, so that `edit` can name what it changes by line, as
+`node.set_label` does (commands.md 9.4). `check` judges the new entries as it judges the others; a hole is
+`LC2101`. These crates gain no notion of an edit.
+
+### 12.3 `edit` (L4)
+
+The operations of the catalog of commands.md 9.4, as pure functions over the model: each reads the files it needs
+(their text), applies one operation, and returns the new texts with what it named and renamed (commands.md 9.3), or
+an error of section 3 of commands.md (`edit.unknown`, `edit.ambiguous`, `wire.type_mismatch`, `wire.occupied`,
+`name.taken`, `file.unparsed`…). The rules of the gestures that change the text are here, once, for the IDE and the agent:
+the name that an insertion gives (N-14), a value bound to an output that takes the name of the output and gives it
+back when unwired, the hole written where the text cannot leave a place out, the `layout` line that follows a rename,
+what a delete removes with a node (commands.md 9.1, notation 2.4).
+
+```rust
+pub struct Files<'a> { /* the texts the operation may read, by path */ }
+pub struct Edited { pub texts: BTreeMap<String, String>, pub names: Names, pub renamed: Vec<Renamed> }
+pub fn apply(files: &Files, op: &Op, check: &dyn Judge) -> Result<Edited, EditError>;
+```
+
+`Op` is one variant per command of 9.4, read from its parameters by `engine`. `Judge` gives what an operation must know
+of the checked program (the type of an output, the signature of a call, whether a wire would close a cycle), from the
+kept check of the session, so that `edit` reads no library itself, and what it must know of the drawing, which
+`diagram` (L5) computes above it: the place and the box of a node placed automatically (a move by `[dx, dy]` of a free
+node, the top-left corner of what `fragment.copy` copies, where `structure.surround` puts the structure), and the
+smallest size of a frame (`frame.resize`). `engine` implements it from the kept check and the drawing of the function,
+so that `edit` stays below `diagram`. An operation never writes a file that does not
+parse: `apply` reads back each text it gives, and a text that does not read is `internal`, a bug of `edit`, which the
+fuzzing looks for (12.10).
+
+### 12.4 `diagram` (L5)
+
+- **Placement around what is fixed.** The fixed nodes, the terminals at their height, the size of the frame,
+  negative coordinates (spec 11). The placement still depends on the file alone (notation 2.1); that a small change
+  moves few nodes is a figure, measured as the figures of stability of M0v (`cargo xtask figures`), not a memory of
+  the previous drawing.
+- **The preview of a drag.** While nodes are dragged, nothing is written: the canvas moves their shapes and asks
+  `diagram` for the wires that touch them, `diagram::preview(&Drawing, &[Node], by) -> Preview`, which routes those
+  wires alone, around the drawing as it is, within a budget of 4 ms *(proposed)*; the others do not move. At the drop
+  the command writes the file, and the new drawing replaces the preview without a glide of the moved nodes. The new
+  drawing of a function of 1,000 nodes comes within 300 ms *(proposed)*, off the thread of the window; the canvas keeps
+  the preview until it comes, so no frame waits for it.
+- **What a drag recomputes decides the cuts** of the three long functions of `diagram`: `drawing` becomes "the graph and the
+  sizes", "the placement" and "the routes and the shapes", each a function of its own that `preview` calls in part;
+  `layout_body` and `plan` are cut along the same lines.
+- **One box per shape**, where M0v has two that drifted apart: the box of a shape is that of `diagram::extent`, which the canvas uses to hit,
+  to cull and to fit; `editor::extent` goes. A hit on a node is a hit on its box; a hit on a wire is within 4 units of
+  its route *(proposed)*.
+
+### 12.5 `engine` (L6)
+
+- **Editing commands.** Each command of 9.4 is a function of `engine::edits` that judges the parameters and the paths (as
+  in M0), judges `expected_revision`, reads the files through the `Workspace`, calls `edit::apply`, writes each text
+  that changed (atomic writes, 10.8), records a step, checks the root again and returns the result of 9.3. A file is
+  checked again by the kept check of the session (10.8), which reads what changed; `drawings::load` goes through the same
+  kept check: the drawings of the viewer no longer check the folder apart from the check that the session keeps.
+- **The registry** holds one table, where M0 had the registry and a dispatch apart, and the MCP server its own lists:
+  for each command its data of commands.md 1 and
+  what the servers needed apart until now, as fields: `undoable` (it makes a step), `at_once` (it answers outside the
+  queue of the MCP server: `run.status`, `run.set_element`, `run.abort`), `direct` (it is a tool of its own, 12.8),
+  `window` (a command of the window, `project.*` and `view.*`), and the function that runs it (commands.md 1). The MCP
+  server reads them; it keeps no list of its own.
+- **The history** (commands.md 9.1) is one per project, held by its session, in memory: a list of steps, each with
+  its author, its label, its time and, for each file it touched, the text before and after (`None` for a file made or
+  removed), shared with `Arc<str>` from one step to the next. At most 1,000 steps and 64 MiB of texts *(proposed)*: the
+  oldest steps go. It is not kept on disk: closing the project ends it, and git keeps the rest. Undo writes back the
+  text before of each file, when the file still has the text after; a file that changed since is `file.stale`, and the
+  external write that changed it is a step of its own first (below). A new step drops what redo would replay.
+- **The revision** of a file is the SHA-256 of its bytes, as lowercase hexadecimal, with `sha256:` before it; it is
+  opaque to a caller (commands.md 9.3).
+- **External writes.** The app tells the session of the files that changed (`Session::files_changed`, 11.5). A file
+  whose hash is not that of the last write of the session becomes a step signed `external`; writes of one file less
+  than 1 s *(proposed)* apart merge into one step. In `labcraft-cli`, which runs one command per process, there is no
+  history (commands.md 9.5).
+- **`commands.batch`** applies its commands to the texts in memory, one after the other, writes once at the end and
+  records one step; a failure writes nothing.
+- **The gesture lock.** The window says when a gesture starts and ends (`Session::set_gesture`). Meanwhile an
+  editing command of an agent waits, with the progress `waiting for the user` that its MCP call sees, and runs when
+  the gesture ends; its `expected_revision` is judged then. Its client can cancel it while it waits. It waits at most
+  30 s *(proposed)*, then is `gesture.busy` and changes nothing (commands.md 3), so that a field left in the middle of
+  a word never holds the queue of the server (mcp.md 5) for long. A command with no effect does not wait.
+- **The journal.** Every command that a session runs, from any author, is a line of JSON in
+  `.labcraft/journal/<process>-<session>.jsonl`, or, for `labcraft-cli`, whose processes run one command each, in
+  `.labcraft/journal/cli.jsonl`, under the lock of that folder (10.8): the time, the author, the id, the parameters (cut beyond 64 KiB
+  *(proposed)*, the cut said), the result as a code (`ok` or the error) and the revisions of the files written. It is
+  appended through `Workspace::append`, which the apps implement, at most 16 MiB per file, and the 20 newest files are
+  kept *(proposed)*, `cli.jsonl` apart, cut to its newest half when it passes 16 MiB. It is for replaying a bug: the crash reports of mcp.md 9 will be built on it. Git does not see it
+  (commands.md 9.1). In WASM the journal is kept in memory, the last 1,000 lines.
+- **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under
+  the path of its file, and removed when the text parses again. When the project opens and a recovery file is newer
+  than its file, the window says so and offers to take it back.
+- **The settings** are two stores of `craft-settings`, the user's and the project's (`SettingsStore::open_at` on
+  `.labcraft/`), merged key by key by `engine`, the project first; `settings.set` says which one it writes. On the web
+  the store of the user is held by the page (12.9).
+- **The state of the view**, which M0v holds twice (the state, and what is published of it). `engine::view::View`
+  is the only state; what the window
+  reads is a snapshot, `Arc<Published>`, made from it after each command that changed it, and kept nowhere else. It
+  gains the selection of each window and the gesture in progress, which `view.get_state` returns (ide.md 8). The
+  selection is set by the window (`view.select`, refused to an agent), so that an agent reads it.
+- **Authors and policies.** A call carries its author (the window, or an MCP client by its name); `engine` judges the
+  policy of an agent (ide.md 8) before the command runs (`agent.not_allowed`), and `history.undo` by an agent under the
+  rules of commands.md 9.5.
+
+### 12.6 `editor` (L7)
+
+The canvas stays the canvas of D-27: it depends on `diagram`, egui and `craft-keymap`, never on `engine`. It turns gestures into
+**intents**, which the host makes commands, as it did with the tabs of M0v:
+
+```rust
+pub enum Intent { Select(Selection), Move { nodes: Vec<Key>, by: Vec2 }, Wire { from: Port, to: Port, replace: bool },
+                  Route { wire: Key, via: Vec<Pos2> }, Resize(Vec2), MoveTerminal { name: String, y: f32 }, Insert { at: Pos2 },
+                  Delete(Selection), Arrange(Selection), /* … one per gesture of notation 2.4 */ }
+pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gesture>, /* hover, tabs, iterations as in M0v */ }
+```
+
+- **A gesture in progress is the canvas's own state**: a wire being drawn, a drag, a rectangle of selection. The
+  canvas shows it (the preview of 12.4, the wire under the pointer, the reason of a refusal at the point of the drop)
+  and reports that one is going (`gesture`), so that the host holds the lock of 12.5. A refusal at the drop (a wire
+  of the wrong type, notation 2.4) is judged by the canvas from what the `Drawing` says of the ports; the command judges
+  it again.
+- **`show_in_style`, 455 lines in M0v, is cut in two**: the input (pointer and keys to intents and the state of the
+  gesture), then the painting, which reads the drawing, the state of the gesture and the selection, and decides nothing.
+- **The selection** comes from the host, as the session holds it (12.5); a click gives `Intent::Select`.
+- **The keys** of notation 2.6 come through `craft-keymap`, from the keys the host gives, so that the user changes
+  them.
+
+### 12.7 The window: `kit-*` and `ide` (L7)
+
+- **`kit-text`**: the text, the selection, the undo of the field, and two traits, one that colours a line and the
+  language service (diagnostics, completions, hover, definitions, in the types of `lsp-types`), with no UI toolkit
+  (ide.md 7). **`kit-text-egui`** paints it and takes its keys. **`kit-shell`**: the top bar, the workspace selector
+  with its planned entries, the start page, the command palette and its JSON form, the inspector as a list of fields
+  (ide.md 11), on egui and `craft-ui`. Docking and detached windows come from `craft-ui` and `craft-window`, menus
+  from `craft-menu`.
+- **`ide`** is the window of LabCraft on these pieces: the views of a tab (`Diagram`, `Text`, `Block`, `Split`), the
+  panels (`Project`, `Palette`, `Inspector`, `Problems`, `Run`), the language service of `kit-text` made of the lexer
+  of `format` and the check of the session, the canvas of `editor`, and what turns intents and keys into commands of
+  `engine`. It talks to a session through a trait, `Host`, that sends a command and gives the last `Published`: a
+  thread and a channel on the desktop, a worker on the web (10.8). So the window is written once, and the two panels
+  of the viewer, written twice in M0v, go.
+
+### 12.8 `mcp` (L7)
+
+- **Tools.** A command with `direct` is a tool of its own; the others are reached through `commands_list`,
+  `commands_describe` and `commands_execute` (mcp.md 2). The direct tools are the 19 of M0b, which the skills use, and
+  `commands_execute`, `commands_batch`, `node_add`, `node_delete`, `constant_add`, `wire_connect`, `wire_disconnect`,
+  `input_set_constant`, `value_rename`, `history_undo`, and, attached, `view_get_state` *(proposed)*.
+- **`destructiveHint`** is given only to a command whose effect the history cannot undo. Every command that makes a
+  step of history is undoable, `file.delete` and `node.delete` included, and so is not destructive; a command that
+  writes outside the history (none in M1, `settings.set` apart, which is not destructive) would be.
+- **The session is not the server's**, as it is in M0b. `serve` takes a `dyn Executor` that runs a command for an
+  author: headless (`labcraft-cli mcp --project DIR` with no window), it is a session of its own on a worker thread,
+  as in M0b; attached, it is the session of the window, reached through the control channel. `labcraft-cli mcp`
+  looks for the file of the port of the window whose project is its own, `--project DIR` or the current folder (ide.md
+  8); when there is one, it connects to `127.0.0.1`, gives the token, and relays stdio both ways; otherwise it starts
+  headless, as in M0b (mcp.md 1). A test sets the folder of that file, so that it never finds a window of the user.
+
+### 12.9 The apps
+
+- **`labcraft`** (desktop): eframe, the disk with atomic writes and `append`, the watch of the files (11.5), a thread of
+  `format::STACK_SIZE` per project for its session, the window of `ide`, a window of the system for each detached tab
+  (`craft-window`), and the control channel of mcp.md 9: a listener on `127.0.0.1`, the token and the port in a file of
+  the folder of the user that only the user can read, one channel per project. The files are no longer read-only.
+- **`labcraft-web`**: the same window, its session in a worker (10.8). The project is in memory (`engine::Memory`): an
+  example, or a folder dropped on the page; `Download` gives it as a zip, written in the worker. The page keeps a copy of
+  the texts of the project, which the worker sends with each write, so that a worker that traps (10.8) starts again from
+  them: the history goes with the worker, the files stay. The settings of the user are in the `localStorage` of the
+  page, which a worker cannot reach: the page sends them to the worker when it starts it, and the worker sends back each
+  `settings.set` of the user's store, which the page writes. Those of the project are its `.labcraft/config.toml`, in
+  memory and in the zip. Opening a folder of the computer to write it in place (the File
+  System Access API, in Chromium only) is not in M1. No agent is attached on the web in M1 (ide.md 12).
+- **`labcraft-cli`** gains the editing commands through `engine`, one per process, with no history (commands.md 9.5).
+
+### 12.10 Tests
+
+| What | How |
+|---|---|
+| The operations of `edit` | Unit tests per command of 9.4, the expected texts written by hand |
+| Undo byte for byte (scenario 3) | A test runs every command of 9.4 on every function of `examples/`, `docs/rfc/` and `libs/`, then undo, and compares the bytes; then redo |
+| One entry of `layout` per move (scenario 5) | A test moves each node of each example and counts the entries that change; `cargo xtask figures --against` compares the figure of stability with a file of figures |
+| Commands at random (scenario 4) | A target of `fuzz/`: a sequence of editing commands, undo and redo, on `engine::Memory`; never a panic, every text written reads again, n undo give the start back. 8 hours before the tag |
+| The window | Tests without a window, as in M0v: intents from scripted pointer events on the canvas; the `ide` driven through its `Host` by a fake session |
+| The agent attached (scenario 2) | A test of `mcp` over the control channel, on the loopback, against a session of `engine`; the rest by hand |
+| 60 frames/s while editing (scenario 6) | `cargo xtask frames` gains a scripted drag of 100 nodes of the function of 1,000, and reports the time of the preview and of the new drawing; by hand before the tag |
+
+### 12.11 Order of work
+
+Each step ends with something the owner tries; the window comes early, so that each gesture is tried where it will
+stay.
+
+0. **The editing core, headless.** `edit` with `node.add`, `node.delete`, `wire.connect`, `wire.disconnect`,
+   `constant.add`; in `engine`: the registry in one table, the history, the revisions, `expected_revision`, the
+   external writes, `commands.batch`, the journal, `history.*`; the direct tools and `commands_execute` in `mcp`;
+   `labcraft-cli`. An agent edits through MCP before any gesture exists.
+1. **The window, read-only.** `kit-shell`, `ide` with the panels and the views `Diagram` and `Text` (read-only), the
+   command palette, detached windows; the two apps on it; the viewer's panels go. The state of the view in one place
+   (12.5).
+2. **Selection and move.** The intents of the canvas, the cut of `show_in_style`, one box per shape, the preview of a
+   drag and the cuts of `diagram`, `node.move`, `node.place`, `layout.arrange`, the pin of a fixed node, the
+   inspector.
+3. **Wiring.** Drawing a wire, a refusal at the drop, replacing, `wire.route` and branches (notation 2.4), the names of
+   outputs.
+4. **Insertion and the rest of the nodes.** Quick insertion, delete, copy and paste (`fragment.*`), constants, rename,
+   labels, templates of `string.format`.
+5. **Structures.** Surrounding with a structure (commands.md 9.6), the arms of `match` and `handle`, their parts.
+6. **The function.** Signature, a new function, `frame.resize`, `terminal.move`, the view `Block` and its commands,
+   the mask of a library, `settings.*`.
+7. **The `Text` panel.** `kit-text` and `kit-text-egui`, the language service, writing when the text parses, the
+   recovery folder.
+8. **The agent attached.** The control channel, the policies of ide.md 8, the gesture lock, what the window shows of
+   the agent, `Connect an AI agent`.
+9. **Before the tag.** The scenarios of [acceptance-m1.md](acceptance-m1.md) by hand, 60 frames/s while editing, 8
+   hours of fuzzing of the editing commands, the web page (`Download`), the release.
