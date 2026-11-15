@@ -21,13 +21,25 @@ If the spec, `examples/`, `libs/` or `docs/rfc/` changed, also run the checks li
 
 First, when the change has real code (not a change of documents alone, nor of one line), run the `simplify` skill, so that the review spends itself on defects rather than on cleanups; then run the local gate again. Say in the pull request whether it ran, or why not.
 
-Then, unless this change has had one, launch the `labcraft-reviewer` agent with the scope, the documents and the owner's decisions on this change, even those not written anywhere yet: they are part of the contract. Never give it your own conclusions. Sort its findings into:
+Then, unless this change has had one, launch the `labcraft-reviewer` agent with the scope, the documents and the owner's decisions on this change, even those not written anywhere yet: they are part of the contract. Never give it your own conclusions.
+
+- **Name sections, not documents**: "spec, sections 7.3 and 14", "architecture, section 9.4", not the whole spec. The large documents cost more to read than the review itself; the agent opens another part only to check a precise point.
+- **Choose its model and effort** with the `model` and `effort` of the Agent tool:
+  - Opus, `high`: the change decides or changes a rule of the language, or touches reading, checking or running hostile input (bounds, recursion, sizes);
+  - Opus, `medium` (its default): other code;
+  - Sonnet, `medium`: tests, configuration, CI, or documents that decide nothing.
+
+When the change is mostly code, also run the `code-review` skill at `medium` (the owner's decision, 2026-11-04, level `medium` since 2026-11-15): it finds line-level bugs that the agent misses, while the agent covers the contract, the bounds and the later steps. On a change that is mostly tests, configuration or documents, the agent alone is enough.
+
+Sort the findings of both into:
 
 - simple fixes, which you make;
 - decisions, which go to the owner with a recommendation;
 - what you leave as it is, and why.
 
 If the rewrite was large, one targeted check of it is enough. Then stop reviewing: the pull request takes over.
+
+Say in the pull request which reviews ran, with the model and effort of the agent, and why one did not run.
 
 ## 3. Propose, then commit
 
