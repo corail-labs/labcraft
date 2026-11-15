@@ -1,7 +1,7 @@
 //! The code blocks of the spec and of the skills (AGENTS.md): each block that is not an illustration (it holds `…`)
 //! reads with no error and is in canonical form (spec 5.2). A block that is not a whole file is completed into one: a
-//! header before a `fn`, `extern` or `type` block (one file per `type`), an empty function before a `panel`, `layout` or
-//! `icon` block, a body around statements. A block that is none of these is prose (a tree, a command) and is left out.
+//! header before a `fn`, `extern` or `type` block (one file per `type`), an empty function before a `panel`, `layout`,
+//! `terminals` or `icon` block, a body around statements. A block that is none of these is prose (a tree, a command) and is left out.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::fs;
@@ -39,6 +39,8 @@ const AHEAD_OF_THE_PARSER: &[&str] = &[
     "frame size (",
     // Spec 5.3, M1 step 2: a match whose arms give nothing (an arm with no `yield`).
     "_ = match beep_on {",
+    // Spec 11.2, M1 step 5: the terminals of the compact block.
+    "terminals {",
 ];
 
 /// The blocks fenced as `text` or with no word, each with the line of the spec where it starts. A block indented in a
@@ -104,7 +106,7 @@ fn files_of(lines: &[&str]) -> Vec<String> {
         files
     } else if matches!(word, "fn" | "extern") && text.contains('{') {
         vec![format!("labcraft 1\n\n{text}")]
-    } else if matches!(word, "panel" | "layout" | "icon") {
+    } else if matches!(word, "panel" | "layout" | "terminals" | "icon") {
         vec![format!("labcraft 1\n\nfn spec_check() -> () {{}}\n\n{text}")]
     } else if !matches!(word, "fn" | "extern") && is_statement(first) {
         let body: String = lines.iter().map(|line| if line.trim().is_empty() { format!("{line}\n") } else { format!("    {line}\n") }).collect();

@@ -16,7 +16,7 @@ follows (events, panel widgets, timed loops, PLC mode).
   version, dependencies: the basis of the package, D-25). In M0 only the libraries shipped with
   LabCraft have one (section 9), with the fields `name`, `version`, `description`, `dependencies`,
   `always` (native functions, 7.2), `resources` (opaque types, 8.1) and `categories` (of errors,
-  7.1); see `libs/visa`.
+  7.1); see `libs/visa`. From M1, `mask` gives the band and the colour of the blocks of its functions (11.3).
 - A library contains **functions** and **types**, **one per file** (D-07).
 - A **function** = a signature (inputs, outputs) + a **diagram**. A **panel** can be attached to it
   (D-06).
@@ -35,7 +35,7 @@ follows (events, panel widgets, timed loops, PLC mode).
 | Name | The file bears the name of what it declares, exactly: `fn scale` in `scale.lcf`, `type Verdict` in `Verdict.lct` (R-22) |
 | Encoding | UTF-8, LF line endings; the file ends with a single line feed. On reading, CR LF and a byte order mark at the start are accepted, and `fmt` removes them. A CR not followed by a line feed and the other control characters (Unicode category Cc), tab and line feed apart, are refused. A bidirectional control character in a string or a comment gives a warning: the text does not read as it runs |
 | Header | `labcraft 1`: format version, on the first line (14.2); older versions are migrated, a newer version is refused with a clear message |
-| Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
+| Section order | header, `use`, documentation comment, `fn` (or `extern` then `fn`, 4.1), `panel` (optional), `layout` (optional), `terminals` (optional, M1), `icon` (optional); a `.lct` file has the header, `use`, documentation comment and `type`, nothing else (R-19) |
 
 Skeleton of a function file:
 
@@ -53,6 +53,8 @@ fn name(inputs) -> (outputs) {
 panel { … } // optional: attached panel (section 10)
 
 layout { … } // optional: layout on screen (section 11)
+
+terminals { … } // optional: terminals of the compact block (section 11.2)
 
 icon 32 { … } // optional: icon of the compact view (section 11.1)
 ```
@@ -483,7 +485,7 @@ The order applies to each body on its own: the function body, each arm, each loo
   `handle`, a loop) stays attached to that line, except in the next case. A comment in an arm whose
   body is only a `yield`, even one after its `{`, goes on the line before the arm. A comment inside a
   statement written over several lines goes on the line before the statement, in its written order. Inside a split signature, struct, enum or list of loop clauses
-  (below), and inside a `panel`, `layout` or `icon` section, a comment is attached to the item that
+  (below), and inside a `panel`, `layout`, `terminals` or `icon` section, a comment is attached to the item that
   follows it, or to the one that ends on its line; with no item after it, it stays last, at the
   level of the items. A comment inside an item, between its first and its last token, goes on the line
   before that item.
@@ -494,7 +496,7 @@ The order applies to each body on its own: the function body, each arm, each loo
 has one text:
 
 - **Sections**: header, `use` lines, documentation comment and declaration, `panel`, `layout`,
-  `icon`, separated by exactly one blank line. An `extern` line and its `fn` line form one
+  `terminals`, `icon`, separated by exactly one blank line. An `extern` line and its `fn` line form one
   declaration, with no blank line between them (4.1). The `use` lines are sorted in code point
   order, one per line, each library once. No blank line inside a body or a section.
 - **Indentation**: 4 spaces per level, no tab, no space at the end of a line.
@@ -509,7 +511,7 @@ has one text:
     wildcard `_` or the `fn` of a function type and the `(`, `[` or `<` that follows it
     (`core.add(a, b)`, `f64[V]`, `mean<T: Number>(values: [T])`, `io.timeout(err)`, `_(err)`,
     `numeric(format: "0.000")`, `fn(visa.session)`); one after any other keyword, a number, or a
-    word of the `layout` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
+    word of the `layout`, `terminals` and `icon` sections (`yield (a, b)`, `code -1073807339 (err)`,
     `at (40, 80)`, `rect (2, 4)`);
   - none around `..`, `..=`, `.`, after `#`, before `...` (`0..5`, `visa.*`, `#close`,
     `parts: string...`), after a unary minus (`-1`), nor inside a unit (`m/s^2`, `kg/(m*s)`);
@@ -560,8 +562,10 @@ has one text:
   the written order, and so do the points after `via`. A coordinate that is an integer literal in
   the range (section 11) is written in plain decimal: `1_000` becomes `1000`, `-0` becomes `0`.
   Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
+- **Items of `terminals`** (M1): `top`, then `left`, then the lines of the terminals in signature order, the inputs
+  then the outputs (a line that names no terminal after them, in written order), then `band`.
 - **Items of `icon`** keep their written order: a shape is drawn over the ones before it.
-- **An empty `panel` or `layout` section**, with neither an item nor a comment, is removed.
+- **An empty `panel`, `layout` or `terminals` section**, with neither an item nor a comment, is removed.
 - **Comments**: `//` and `///` are followed by at least one space, or by nothing when the comment
   is empty: `fmt` adds a missing space and never removes one, so that indented text in a comment
   is kept. An end-of-line comment is preceded by one space. Comments are never rewrapped. No line
@@ -1320,7 +1324,14 @@ layout {
   carry or a clause with the name of an outer value hides it (R-3). Some inputs have no name: the
   selector of a `match` or a `handle`, a value of a variant, an element of an array, and inside,
   `until`, `collect` and `yield`. With several wires, an entry without a terminal designates the one
-  that reaches an input without a name. `wire stop -> n` is the
+  that reaches an input without a name.
+- **An input without a name is numbered** (M1), from 0, as the editing commands name it
+  ([commands.md](commands.md), 9.2): after the node, by its place among the inputs without a name of that node, for
+  an element of an array or a value of a variant (`wire x -> k.1` for `k = [y, x]`); after its parameter, by its
+  place in it, for a value of a variadic parameter (`wire e -> e3.errs.1` for `e3 = errors.merge(e1, e)`). So each
+  of two wires of one value to one node has its own route: `wire x -> k.0` and `wire x -> k.1` for `k = [x, x]`. A
+  number past the inputs of the node designates nothing (`LC5004`), and an entry without the number for a wire that
+  an entry with it also designates makes two entries for one wire (`LC5007`). `wire stop -> n` is the
   part inside, from the notch to `until`, and `wire stop -> n.stop` the part outside, for
   `n = loop … { … until stop }`. The outputs of a structure need no name: each is a value of its own
   (`total`, `count`).
@@ -1344,7 +1355,7 @@ layout {
   automatic route in v0: a value that is the selector and is also yielded as it is by an arm, one
   value yielded by two arms, and `next s = s0` when `s0` also gives `s` its first value. One value
   that reaches a node twice through inputs without a name (`[x, x]`, a variadic parameter) counts as
-  one wire. Two entries for one wire, one terminal or the frame are an error (`LC5007`).
+  one wire for an entry that does not number its place (above). Two entries for one wire, one terminal or the frame are an error (`LC5007`).
 - Wires without a route are routed automatically.
 - **View of a node**: compact by default, standard on request (visual notation, section 3).
   `view standard` or `view compact` sets the view of a node, alone or after its position. The IDE
@@ -1417,6 +1428,105 @@ icon 32 {
 - **Reading by an agent**: by default the CLI and the MCP server render a function without its
   `layout` and `icon` sections, which say nothing about execution; an agent asks for them if it
   needs them. An agent writes an icon only on request.
+
+### 11.2 Terminals of the block (`terminals` section, M1)
+
+The author of a function chooses where the terminals of its compact block go (visual notation 3.2, N-15): a
+configuration that enters from the top, an input alone in the middle, a pair kept apart. The choice lives in the file
+of the function, after `layout` and before `icon`, so that every call to it looks the same on every screen and in
+every export; never on one node, nor in a preference of the IDE. File `smooth.lcf`, for
+`fn smooth(config: Filter, x: f64[V], err: error = none) -> (y: f64[V], err: error)`, at the end:
+
+```text
+terminals {
+    top 5
+    left 3
+    top 3 config
+    left middle x
+}
+```
+
+- **Places.** The block has a grid of places, 8 apart, on every block of every library, so that two blocks in a row
+  join by a straight wire. The pitch is a constant of the notation, never a value of the style, since the section
+  counts in places. `top N` gives the top side `N` places and the block a width of (N + 1) × 8; `left N` gives the
+  left side `N` places and the block a height of (N + 1) × 8 (`top 5`, `left 3`: 48 × 32). The right side has as
+  many places as the left; the bottom side has none. A place is counted from 1, from the top on the left and right
+  sides, from the left on the top side. A size is between 3 and 64 *(proposed)*, so that a block is never smaller
+  than a primitive, 32 × 32; the center of a small block fits as visual notation 3.2 says. Without `top`, the top
+  side has the places of the width that visual notation 3.2 gives, rounded down (4 in a block of 40); without `left`, the left and right sides have the places that their terminals need (3.2).
+- **The first place of the top side is kept for `after:`** (R-15), which any call can wire and which visual notation
+  3.2 draws there.
+- **A line per terminal that leaves its default place**: a side, a place and the terminal (`left middle x`). The
+  place is a number, `last` (the last place of the side) or `middle` (the place in the middle of the side). Any
+  terminal can go on any of the three sides: an input on the right, or an output on the left or the top, carries a
+  mark of direction (visual notation 3.2). The terminal is named as in `layout` (11): by its name, or by `input x` or
+  `output x` when `x` is both an input and an output (`err`, a pass-through pair, R-2). The name alone then means the
+  input on `left` or `top` and the output on `right`, and the pair moves together, its other terminal to the same
+  place of the facing side (`right 2 err` puts both on place 2), unless a line names each of its two terminals or the
+  side is the top one. `input` or `output` may name any terminal; `fmt` keeps it only where the name alone would
+  mean the other one.
+- **The author writes only what differs.** The lines are placed first. Then each terminal that no line names takes
+  its default side, inputs on the left and outputs on the right, in signature order, on the first place that no line
+  took, from the top: a pass-through pair on one place, the `err` pair on the last place of the left and right sides,
+  an optional input on the top side when the left side is full. Without a section, the block is drawn as visual
+  notation 3.2 says.
+- **The middle is always a place.** A side that holds a terminal on `middle` has an odd number of places: `left 4`
+  then gives 5. So the middle never falls between two places, off the grid.
+- **A block grows only down.** When its places do not hold its terminals, the left and right sides grow by two
+  places; the top side never changes. A variadic parameter takes a place per value that a call gives, from its own
+  place, skipping the places that lines took, and the terminals placed by default after it move down along. `middle`
+  and `last` are counted on the grown side, so they follow it: the single input of a funnel stays in the middle. A
+  line that gives a number keeps its place. A side with `middle` keeps an odd number of places. The block has the
+  size of the section at every call, with that one exception (N-6). A variadic parameter on the top side is a
+  warning, and goes back to the left.
+- **`band hidden`, `band inside` or `band above`** sets the band of this function, when it differs from the mask of
+  its library (11.3); `inside` is the default (visual notation 3.2). A block with a top side, one whose section puts a
+  terminal there (an `after:` does not count), draws a band `above` inside, so that the terminals of that side stay on
+  the grid. The functions of `core` and of the other primitive
+  libraries have no band, whatever the line says.
+- **Lines that cannot apply.** A line that names no terminal of the signature, a place outside its side (past the
+  last), a place that another line took, or the place of `after:` (`top 1`) is a warning, and its terminal keeps
+  its default place. Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside 3 to 64
+  are an error. The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section 5,
+  lists only those).
+- **The standard view does not follow the section** (visual notation 3.1): it lists the terminals by name, in
+  signature order.
+- **Reading by an agent**: like `layout` and `icon`, the section says nothing about running; the CLI and the MCP
+  server leave it out by default, and an agent writes it only on request. In the editor, a terminal of a call moved
+  to a place writes the line in the file of the function called (visual notation 2.4).
+- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside` and `above` mean
+  something only in the section, and stay names everywhere else (14.1).
+
+### 11.3 Library mask (`[mask]` of the manifest, M1)
+
+A library says once how the blocks of its functions look, in its manifest (section 1), so that two of its functions
+in a row look alike. The table is read for every library from M1, before the rest of the manifest of a user library
+(M2):
+
+```toml
+[mask]
+band = "DMM"
+band_place = "inside"
+color = "#2F6F9F"
+```
+
+- **`band`**: the text of its band, in place of its name (`DMM` for `dmm_driver`), cut as visual notation 3.2 cuts a
+  name; the full name stays in the tooltip.
+- **`band_place`**: `inside` (the default), `above`, or `hidden`; a function sets its own with a `band` line (11.2).
+  A helper hides its band; a function that talks to an instrument shows it by its session wire.
+- **`color`**: a colour that the library proposes for its band, `#RRGGBB` in either case, from which the theme
+  derives the fill and the text of the band in the light and the dark theme, with a contrast of 4.5:1 at least: a
+  rule of visual notation 8, written with the program of M1, that gives the same colours on every platform. The
+  developer can change it in the settings of the IDE: the library proposes, the developer decides. Without it, the
+  band has the neutral `band.fill`.
+- The mask will also give the outline of the blocks of its functions (N-11).
+- **Each library has its own mask**: a sub-library does not take the mask of the library that holds it, since its
+  band names it and not its parent.
+- `check` of the library judges the table: a field that the mask does not know, or a value that it refuses (a colour
+  that is not `#RRGGBB`, an unknown place), is a warning, and the field keeps its default. A manifest that is not
+  TOML, or larger than `--max-file-size`, gives a warning and no mask. A library without a manifest gets one, holding
+  the table alone, from `library.set_mask` ([commands.md](commands.md), 9.4); what else the manifest of a user library
+  holds comes with M2. Like a `terminals` section, the mask says nothing about running.
 
 ## 12. Complete example: PASS/FAIL multimeter
 
@@ -1703,7 +1813,10 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `opaque`: the whole type of a `type` declaration (3.2);
 - `control`, `indicator`: a `panel` item;
 - `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`, `frame`, `size`, `input`, `output`: a `layout` item;
-- `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item.
+- `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item;
+- `terminals`: the start of a section, after the declaration (M1, 11.2). It came after the first release, so it is
+  contextual, unlike `panel`, `layout` and `icon` (above);
+- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`: a `terminals` item.
 
 **New words.** From the first release of LabCraft, a version published with its program, a structure or
 a declaration that comes later takes a contextual word wherever its place allows one, so that a program
@@ -1720,7 +1833,7 @@ change that breaks one is allowed, says so in its pull request, and migrates the
 in the same pull request. The words reserved and the names refused before it are chosen so that later
 milestones break as little as they can.
 
-**Line endings** end a statement, an arm, a `use`, and a `panel`, `layout` or `icon` item. They are
+**Line endings** end a statement, an arm, a `use`, and a `panel`, `layout`, `terminals` or `icon` item. They are
 ignored inside `( )` and `[ ]`, inside the braces of a `struct` or `enum` type or of a struct
 literal, in a structure header up to its `{`, in a declaration up to the `{` of its body or up to its
 end, and in the header of a section up to its `{`: `panel` and its `{` can be on two lines, and
@@ -1739,7 +1852,7 @@ add nothing (`f64[V]`, `core.with_unit(x, [V])`), and neither do the arms of a `
 
 ```ebnf
 file          = header { use_decl } { DOC } ( fn_decl | extern_decl | type_decl )
-                [ panel_section ] [ layout_section ] [ icon_section ] ;
+                [ panel_section ] [ layout_section ] [ terminals_section ] [ icon_section ] ;
 header        = "labcraft" INT ;
 use_decl      = "use" path ;
 path          = IDENT { "." IDENT } ;
@@ -1845,7 +1958,7 @@ arm_body      = yield_stmt | "{" { statement } [ yield_stmt ] "}" ;  (* one yiel
 yield_stmt    = "yield" ( operand | "(" operand { "," operand } ")" ) ;
 ```
 
-### 14.6 `panel`, `layout` and `icon` sections
+### 14.6 `panel`, `layout`, `terminals` and `icon` sections
 
 ```ebnf
 panel_section  = "panel" "{" { panel_item } "}" ;
@@ -1857,9 +1970,18 @@ layout_item    = "frame" "size" point                    (* the frame of the fun
                | "node" node_ref ( "at" point [ view ] | view )
                | "wire" terminal_ref "->" terminal_ref [ "via" point { point } ] ;
 view           = "view" ( "standard" | "compact" ) ;
-terminal_ref   = node_ref [ "." IDENT ] ;                (* wire x -> sq.b; a start has no "." (11) *)
+terminal_ref   = node_ref [ "." ( IDENT [ "." INT ] | INT ) ] ;
+                                           (* wire x -> sq.b, e -> e3.errs.1, x -> k.1 (M1);
+                                              a start has no "." (11) *)
 node_ref       = IDENT | "#" IDENT ;
 point          = "(" number "," number ")" ;
+
+terminals_section = "terminals" "{" { terminals_item } "}" ;        (* M1, 11.2 *)
+terminals_item = ( "top" | "left" ) INT                  (* the number of places of a side *)
+               | ( "top" | "left" | "right" ) place [ "input" | "output" ] IDENT
+                                                         (* a terminal on a place *)
+               | "band" ( "hidden" | "inside" | "above" ) ;
+place          = INT | "last" | "middle" ;
 
 icon_section   = "icon" INT "{" { icon_item } "}" ;
 icon_item      = ( "rect" point point [ "radius" number ]
@@ -1894,7 +2016,7 @@ What the grammar alone does not say:
 | R-16 | **A call alone is a statement** (`#beep: sound.beep()`, label optional): it binds none of the outputs of the node, and is meant for a function without outputs. If the function has an `err` output, the warning of 7.5 applies. A variant construction can stand alone in the same way. |
 | R-17 | **A label is unique in its function** (`#close`): it designates the node in `after:` and in the `layout` section. An `after:` sees a label of its own body or of a body around it, not one inside a sub-body or a neighboring arm, whose node may not run. |
 | R-18 | **Overlapping patterns**: in a `match`, overlapping literal or range patterns are an error, in one branch or in two (6.1). Numbers compare by value (`1_000` and `1000`, `-0` and `0`), and strings by their text once escapes are read, with no normalization (R-20). In a `handle`, arms may overlap and the most specific one wins: `code` > exact category > `a.b.*` > `a.*` > `_` (7.3). |
-| R-19 | **A type file has no `panel`, `layout` or `icon` section**: they belong to functions (section 2). |
+| R-19 | **A type file has no `panel`, `layout`, `terminals` or `icon` section**: they belong to functions (section 2). |
 | R-20 | **A name or a unit has one spelling.** Names of every kind and unit names are normalized when read: Unicode NFC, then U+03BC (Greek mu) becomes U+00B5 (micro sign). So `Ω` is one unit whether written U+03A9 or U+2126, `µV` one unit whether written with the micro sign or the mu, `é` one name composed or not, and a value `μ` and a value `µ` are one name. Compatibility forms (NFKC) do not apply. `fmt` writes the normalized form. The text of strings and comments is never changed; the fields and units of a `string.format` template, and the names of files and folders compared with names of the program, are read normalized. |
 | R-21 | **The default value of a parameter is a constant** (section 4): a literal; a variant, with its values if it holds some (`Reading.Value(0 V)`); a struct construction with every field given (`Limits { low: 220 V, high: 240 V }`); or the name of a function, of a library or of the primitives (`core.lt`), which matches the type of the parameter as any reference does (section 4). A value inside a variant, a field or an array is an operand (R-9), so it is a literal, a variant without values or the name of a function: a default that would put a struct or a variant with values inside another cannot be written. A default reads nothing of the diagram: a value, a call of a function, `after:` or a type argument is rejected. It has the type of its parameter, with the conversions of a wire (3.3, 3.4): `v: f64[V] = 200 mV`, `t: duration = 5 s`. No constant is a `timestamp`, so a `waveform` cannot be a default. |
 | R-22 | **A file bears the name of what it declares, and that name can name a file on every system.** `N.lcf` declares `fn N`, `N.lct` declares `type N`: the two names are compared after normalization (R-20), and case counts. A file of another name is an error (`LC2023`), on that file alone: a call still finds the function by the name it declares, and a copy of a function or a type in a file of another name is no second definition (`LC2013`) of the one of the same kind in its own file. Its fixes rename the declaration as the file, or the file as the declaration, each only when that name is free: a fix never leads to another error on the name (`LC2013`, `LC2014`, `LC2022` or the two below). Two functions, or two types, of one library whose names differ only by their case or their spelling cannot be two files side by side on Windows or macOS (`LC2024`); a function and a type can, since their extensions differ (`fn step`, `type Step`). A name that Windows keeps for a device (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, whatever their case) is refused (`LC2025`): Git for Windows refuses a file or a folder of that name, extension or not, so a project that has one cannot be cloned there. The folders given to `check` and their sub-folders follow the last two rules. In the editor, renaming a function or a type renames its file: these errors come from a file copied or renamed outside it (Q-26). |
@@ -1933,6 +2055,7 @@ What the grammar alone does not say:
 | Q-28 | Dictionary and set | Names settled (2026-11-08): `map<K, V>` and `set<T>`, refused to types until M2 (3.2), the names of LabVIEW, Rust, Java, Go and C++ rather than `dict`. To write for M2, with the generics: the types a key can have (an `f64`? a unit?); an order of iteration that is deterministic (order of insertion, or sorted keys); `get` of a missing key, with an error category as for `array.get`; the cost of a copy on a wire (D-11); how a map is drawn and how a literal is written |
 | Q-29 | Constants shared outside a function | Nothing declares a constant outside a function today: `limit = 240 V` lives in one body (5.1), so neither `math.pi` nor a limit common to several functions of a project can be written. **Option A (preferred):** a declaration of its own, one per file as for a type (R-22), named by a path (`math.pi`) and drawn as a constant, with no node; its values are those of R-21, with their units; it needs a file kind or a contextual word at the head of its file (14.1, new words). **Option B:** a function with no input (`math.pi()`), with no change to the grammar, but a node on the diagram for a fixed value. To settle with how the viewer of M0v draws a named constant that feeds several nodes |
 | Q-30 | Modes of a `button` | In M0 a `button` is latching: a press stays true until its first read (10). Other modes are likely (true while held, a press seen on release…), and with them what setting a button to `false` from a command does; until then a command can only press it ([cli.md](cli.md), section 6.4) |
+| Q-31 | A third kind of input: recommended | Two kinds today: an input without a default is required (`LC2101` when it is not wired), one with a default is optional (visual notation 2.5). A recommended input would have a default and give a warning when it is not wired, with a mark of its own on its terminal. **Not in M1 (2026-11-15):** no case needs it yet beyond `err`, and each kind doubles the cases to test. To reopen on a real case |
 
 ## Appendix A. Library signatures (v0)
 

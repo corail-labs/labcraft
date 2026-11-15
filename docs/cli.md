@@ -128,7 +128,8 @@ dataflow rules, panel, layout, icon. It writes nothing and does not care whether
 
 **A library is a folder.** Its files are the `.lcf` and `.lct` files directly in it; each sub-folder
 that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read only for
-the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored. In M0a
+the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored, except, from M1, its
+`[mask]` table, which `check` judges and `diagram` reads to draw the blocks of its functions (spec 11.3). In M0a
 a file bears the name of what it declares, and the names of files and folders are names that every system can hold (spec, R-22:
 `LC2023`, `LC2024`, `LC2025`). A folder given inside another one given
 is one of its sub-libraries, even one that a walk of the outer folder would not reach, such as `.hidden`: each
@@ -368,7 +369,7 @@ section 3), not a diagnostic.
 | `LC0101` | error | First line is not a `labcraft N` header: a blank line or a comment before it, other text on its line, a version that is not an integer | 2, 14.2 |
 | `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
-| `LC0104` | error | `panel`, `layout` or `icon` section in a type file | R-19 |
+| `LC0104` | error | `panel`, `layout` or `icon` section in a type file, and `terminals` from M1 | R-19 |
 | `LC0105` | error | Manifest of a shipped library that cannot be read or names another library, or an `always` on something other than a native function | 1, 7.2 |
 
 ### Syntax: `LC10`

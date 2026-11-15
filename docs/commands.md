@@ -65,7 +65,8 @@ name, `a.b_c` and `a_b.c` ([mcp.md](mcp.md), section 2).
   [libs/visa/simulation.md](../libs/visa/simulation.md)), so an empty file,
   as `no-instrument.toml` may be, is one. The name `labcraft.toml` is refused whatever it holds, since it
   names the manifest of a library. So `Cargo.toml`, `pyproject.toml` and the manifests of the shipped
-  libraries are out of reach, and so is a user library's manifest when M2 brings it.
+  libraries are out of reach, and so is a user library's manifest when M2 brings it. One command writes a part of
+  it, the `[mask]` table: `library.set_mask` (9.4, M1).
 - **On every system**, these are refused before any call to the file system, as SolidCraft does on Windows, then
   checked again once the path is resolved, so that a link or a junction cannot lead to them, and a project behaves the
   same wherever it is opened: UNC and device paths
@@ -591,8 +592,8 @@ file and calls a command uses one vocabulary.
     reach both;
   - an input without a name, by its position among those of its node, from 0: `r.0` for the value of
     `r = Reading.Value(v)`;
-  - a value of a variadic parameter, by its position in it (`msg.parts.2`); the position just after the last one
-    adds a value;
+  - a value of a variadic parameter, by its position in it, from 0 (`msg.parts.2`, its third value); the position
+    just after the last one adds a value;
   - a `yield` or a `collect`, by the output of the structure that it gives: `verdict`, for `verdict = match …`.
     For a `yield`, the command also takes `arm`, the patterns of its arm as the text writes them.
 
@@ -679,6 +680,20 @@ parse: `file.unparsed`, which names it.
 | `layout.arrange` | `file`, *`nodes`*, *`wires`*, *`terminals`*, *`inside`*, *`arm`* | Arrange (9.1). It removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals` (`input x`, `output x`). With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too. "Remove the fixed position" of a node or a terminal calls it with that node or terminal. An agent calls it only when asked to (9.1) |
 | `frame.resize` | `file`, `size` | Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size. The size of a structure comes with step 5 of the specifications |
 | `terminal.move` | `file`, `terminal`, `y` | Writes `input x at y` or `output x at y` (spec 11), with `y` as given: the grid of 8 and the 24 units between two terminals are rules of the gesture (notation 2.4), and a file that places them closer draws them as written |
+
+**The block of a function and the mask of a library**
+
+These write the file of the function whose block they change, or the manifest of its library, never the file of a
+caller (spec 11.2, 11.3). A function or a library that the project does not hold (shipped with LabCraft, or found with
+`--lib-path`) is `path.outside_project`.
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `block.set_terminal` | `file`, `terminal`, `side`, `place` | Writes the line `side place name` of the `terminals` section (spec 11.2), with `input` or `output` before the name when the name alone would mean the other terminal. `terminal` is `input x` or `output x`, as `layout.arrange` names it; `side` is `top`, `left` or `right`; `place` is a number, `last` or `middle`. A terminal has one line: a new place replaces the old one. `null` removes the line, and the section when nothing is left in it. A place outside its side, a place that another line holds, or the place of `after:` is `params.invalid`; a place that a terminal holds by default is free, and that terminal takes the first free place from the top, as the defaults do. The IDE calls it on the file of the function called when a terminal of a block is dropped on a place (notation 2.4) |
+| `block.set_size` | `file`, *`top`*, *`left`* | Writes `top N` and `left N`; `null` removes one. A size whose places cannot hold the terminals that the section names is `params.invalid`, and the message gives the smallest |
+| `block.set_band` | `file`, `band` | Writes `band hidden`, `band inside` or `band above`; `null` removes it, and the function follows the mask of its library |
+| `block.reset` | `file` | Removes the `terminals` section: the block goes back to the defaults of notation 3.2 |
+| `library.set_mask` | `folder`, *`band`*, *`band_place`*, *`color`* | Writes these fields of the table `[mask]` of the manifest of the library in `folder` (spec 11.3), and makes the manifest, holding the table alone, when the library has none; `null` removes one, and the table when nothing is left in it. The rest of the manifest, its comments and its order are kept as written. A value that the mask refuses (a colour that is not `#RRGGBB`) is `params.invalid`. The manifest is otherwise out of reach of the commands (section 1) |
 
 **Structures**
 
