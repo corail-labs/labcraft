@@ -533,8 +533,20 @@ fn a_type_in_a_function_file_and_the_reverse_are_refused() {
 #[test]
 fn the_programs_of_the_repository_are_clean() {
     let root = repository();
-    for folder in ["examples", "libs", "libs/visa", "libs/scpi", "docs/rfc"] {
-        let (exit, document) = json_in(&root, &[folder]);
+    // Each library of `libs/` too: `check libs` does not read a sub-folder that nothing uses, so a new one is found here.
+    let mut folders: Vec<String> = ["examples", "libs", "docs/rfc"].map(str::to_owned).to_vec();
+    let mut libraries: Vec<String> = std::fs::read_dir(root.join("libs"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        // `libs/embedded` is the crate that embeds the others, with no program of its own.
+        .filter(|path| path.is_dir() && std::fs::read_dir(path).unwrap().any(|entry| entry.unwrap().path().extension().is_some_and(|e| e == "lcf")))
+        .map(|path| format!("libs/{}", path.file_name().unwrap().to_string_lossy()))
+        .collect();
+    libraries.sort();
+    assert!(libraries.len() >= 2, "{libraries:?}");
+    folders.extend(libraries);
+    for folder in &folders {
+        let (exit, document) = json_in(&root, &[folder.as_str()]);
         assert_eq!((exit, codes_of(&document)), (0, vec![]), "{folder}");
         assert_eq!(document["summary"]["errors"], 0, "{folder}");
     }

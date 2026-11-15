@@ -515,7 +515,7 @@ mod tests {
         assert!(SPEC.contains(&format!("Names are read with Unicode {major}.{minor}:")), "Unicode {major}.{minor}");
     }
 
-    /// The list of spec 14.1, which `tools/lcf-view/lcf_view.py` copies too.
+    /// The list of spec 14.1.
     #[test]
     fn the_reserved_words_are_those_of_the_spec() {
         const SPEC: &str = include_str!("../../../docs/language-spec-v0.md");
@@ -526,11 +526,6 @@ mod tests {
         spec.sort_unstable();
         ours.sort_unstable();
         assert_eq!(spec, ours);
-        const VIEW: &str = include_str!("../../../tools/lcf-view/lcf_view.py");
-        for keyword in ours {
-            let written = [format!(" {keyword} "), format!("\"{keyword} "), format!(" {keyword}\"")];
-            assert!(written.iter().any(|text| VIEW.contains(text.as_str())), "{keyword} in lcf_view.py");
-        }
     }
 
     #[test]

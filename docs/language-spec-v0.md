@@ -550,9 +550,9 @@ has one text:
 - Line endings and the end of the file: section 2.
 
 **The examples are canonical**: the complete code blocks of this document and the files of
-`examples/` and `docs/rfc/`. `python tools/lcf-poc/lcf.py fmt --check --spec
-docs/language-spec-v0.md examples docs/rfc` checks the layout of all of them, and the order of
-lines in the files.
+`examples/` and `docs/rfc/`. A Rust test (`crates/format/tests/doc_blocks.rs`) checks the
+layout of the blocks, and `labcraft-cli fmt --check examples docs/rfc` that of the files, and the order of
+lines in them.
 Reference listings, such as the types of 3.2 and the signatures of appendix A, are not files and
 keep their alignment.
 
@@ -1437,12 +1437,10 @@ LabVIEW driver, and the same connection is closed. `visa.close` is marked `alway
 the session is closed even if the measurement failed. The verdict goes through `handle e2`: without
 it, a missing resource would give `voltage = 0 V` and a verdict computed on a measurement that did
 not take place (7.2). Simulation plugs in at the VISA level (resource `SIM::…`): the program is the
-same with a real instrument. Running against a simulated instrument, with the proof of concept (the
-future `labcraft run` will be equivalent):
+same with a real instrument. Running against a simulated instrument, with `labcraft-cli`:
 
 ```sh
-python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml \
-    --arg resource=SIM::DMM0
+labcraft-cli run --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0 examples check_voltage
 ```
 
 ## 13. Example: state machine of a test station
@@ -1909,8 +1907,8 @@ declarations without a body. Conventions:
 - A parameter of kind *unit*, *category* or *element* (R-1, R-5) shows its kind in place of a type:
   `unit: kind unit`.
 - `after:` (R-15) exists on every call and is not repeated.
-- The proof of concept (`tools/lcf-poc/lcfpoc/stdlib.py`) implements these functions, except those
-  marked "not in the PoC".
+- The Python proof of concept, retired after M0 (2026-11-15), implemented these functions, except those
+  marked "not in the PoC", which records what it left out.
 
 ### A.1 `core`
 
@@ -2038,7 +2036,7 @@ fn scpi.check_errors(session: visa.session,
 The `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
 `visa.close` as `always`. `scpi` is written in LabCraft over `visa`, in `libs/scpi`:
 `query_f64` is a `visa.query` followed by `string.to_f64`. A `scpi` call is therefore atomic only
-per `visa` call (8.1). The proof of concept reads these files; its native bodies stand in for the
+per `visa` call (8.1). The proof of concept, retired after M0, read these files; its native bodies stood in for the
 crate of `visa`.
 
 ### A.4 Libraries of the examples
@@ -2046,8 +2044,8 @@ crate of `visa`.
 `dmm_driver`, `relays`, `psu` and `results_log` belong to the examples (section 13), not to the
 libraries shipped with LabCraft. They are sub-folders of `examples/`: `dmm_driver`, `relays` and
 `psu` written in LabCraft over `visa` and `scpi`, like real drivers; `results_log`, which writes a
-file, as an `extern rust` function, whose native body, in the proof of concept as in its crate
-`labcraft-results-log`, keeps the results in memory, and the report of the run shows them (`logs`,
+file, as an `extern rust` function, whose native body, in its crate
+`labcraft-results-log` (as it did in the proof of concept), keeps the results in memory, and the report of the run shows them (`logs`,
 commands.md 7).
 
 ```text

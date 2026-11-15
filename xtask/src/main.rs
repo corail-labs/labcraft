@@ -4,11 +4,11 @@
 mod assets;
 mod codes;
 mod commands;
+mod hooks;
 mod layers;
 mod libs;
 mod licences;
 mod notices;
-mod spec;
 mod unicode;
 mod web;
 
@@ -36,7 +36,7 @@ commands:
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
-  spec      the Python checks of the spec, examples, docs/rfc and libs, and the proof of concept's tests; ok or FAIL for each, the output of failures only; not part of ci
+  hooks     the Python tests of the hook of the agents (.claude/hooks); not part of ci
   web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
   web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
   web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again; not part of ci
@@ -80,7 +80,7 @@ fn main() -> ExitCode {
         Some("web") => web::build(&root()),
         Some("web-serve") => web::serve(&root()),
         Some("web-smoke") => web::smoke(&root()),
-        Some("spec") => spec::run(&root()),
+        Some("hooks") => hooks::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())

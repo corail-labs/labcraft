@@ -1,4 +1,4 @@
-"""Tests of guard.py, run by `cargo xtask spec`. Each expected verdict comes from the rule of AGENTS.md (D-23,
+"""Tests of guard.py, run by `cargo xtask hooks`. Each expected verdict comes from the rule of AGENTS.md (D-23,
 Commits) and the decisions of the owner on the hook, not from the output of the hook. No file of the tests exists:
 the hook judges names, and never opens them."""
 
@@ -167,7 +167,7 @@ class LabviewFilesThroughCommands(unittest.TestCase):
             "vi notes.txt",
             "ls docs/vi/",
             "cat notes.vi.md",
-            "cargo xtask spec",
+            "cargo xtask hooks",
             "git commit -m \"Hooks that refuse .vi, .ctl and .lvproj files\"",
             "git commit -am 'Refuse *.vi'",
             "git commit --message='Refuse *.vi'",

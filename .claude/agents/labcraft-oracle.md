@@ -19,10 +19,10 @@ Read `AGENTS.md` first. Its non-negotiables bind you too: never read GPL, LGPL o
 
 ## What you never read or run
 
-- The code: `crates/`, `apps/`, `xtask/`, `fuzz/`, `tests/harness/`, `tools/lcf-poc/` (the proof of concept is an implementation too), and `target/`.
+- The code: `crates/`, `apps/`, `xtask/`, `fuzz/`, `tests/harness/`, and `target/`.
 - What the program wrote: any `.labcraft/` folder (traces, reports), logs, the output of a test.
 - The `expected.json` of a case you are working out, and its history (`git log -p`, `git show`, `git diff`, the pull requests).
-- No `labcraft-cli`, `cargo`, proof of concept or MCP server. Python is for arithmetic and for checking your own counting, in a new folder of your own under the temporary folder, never in the repository.
+- No `labcraft-cli`, `cargo` or MCP server. Python is for arithmetic and for checking your own counting, in a new folder of your own under the temporary folder, never in the repository.
 
 ## How
 

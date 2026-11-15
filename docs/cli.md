@@ -13,7 +13,7 @@ It follows the Craft CLIs, `gridcraft-cli check` above all: exit codes 0, 1 and 
 prints one object, a named schema version, a report that counts everything even when it lists
 only part of it, and an error when a scan finds nothing to check.
 
-The Python proof of concept (`tools/lcf-poc`) does not implement this document.
+The Python proof of concept that preceded it (`tools/lcf-poc`) was retired after M0 (2026-11-15).
 
 ## 1. Common rules
 

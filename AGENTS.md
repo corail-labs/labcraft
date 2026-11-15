@@ -5,7 +5,7 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
 (storytold, SolidCraft); see `docs/craft-ecosystem.md`.
 
 **Current phase: before M1.** M0 is done: M0a, M0b and M0v (tags `v0.1.0-m0a`, `v0.2.0-m0b` and
-`v0.3.0-m0`, `docs/architecture.md`, sections 9 to 11). `tools/` remains throwaway, until Rust replaces it.
+`v0.3.0-m0`, `docs/architecture.md`, sections 9 to 11). The throwaway Python tools were retired after M0 (2026-11-15); `tools/` keeps only independent oracles.
 
 ## Start every session here
 
@@ -43,35 +43,33 @@ does, in pure Rust, open and cross-platform. It follows the conventions of the C
   `.ctt`, `.llb`, `.lvclass`; `.ignore` keeps them out of broad searches), and, for this repository only
   (a fork is free), a `git push` that writes `main` and a merge without `--match-head-commit`, with
   `--admin` or through `gh api`. A guard rail, not a sandbox: never look for a way around it. Other agents
-  have only these rules, `.ignore` and the protection of `main`. Its tests run in `cargo xtask spec`.
+  have only these rules, `.ignore` and the protection of `main`. Its tests run in `cargo xtask hooks`.
 
 ## When you change the spec or the examples
 
-- Run `cargo xtask spec` (needs `pip install -r tools/lcf-poc/requirements.txt`). It runs every
-  Python check of the workflow `checks`, prints `ok` or `FAIL` for each, and the output of those that
-  fail: every complete code block of the spec and of `skills/`, and every file of `examples/`, `libs/` and `docs/rfc/`
-  must parse and be in canonical form (spec 5.2: order of lines and layout of the text), `examples/`,
-  `docs/rfc/`, `libs/visa` and `libs/scpi` must check, and the tests of the proof of concept and of
-  the hooks (`.claude/hooks/`) must pass. A new library of `libs/` is added to the list in `xtask/src/spec.rs`. It is not part of
-  `cargo xtask ci`, which needs no Python. Code blocks containing `…` are illustrative fragments and
-  are skipped.
-- The grammar exists twice: spec section 14 (EBNF) and `tools/lcf-view/lcf_view.py` (Lark). Keep
-  them in sync.
+- `cargo xtask ci` (or `cargo xtask test`) checks them, in Rust: every complete code block of the spec and of
+  the `.md` files of `skills/` must read and be in canonical form (spec 5.2: order of lines and layout of the
+  text), `crates/format/tests/doc_blocks.rs`; `examples/`, `docs/rfc/` and each library of `libs/` must check
+  (`apps/labcraft-cli/tests/check.rs` finds a new library by itself) and be in canonical form
+  (`apps/labcraft-cli/tests/fmt.rs`, `crates/format/tests/round_trip.rs`); the
+  corpora must be sound (`apps/labcraft-cli/tests/corpora.rs`). Code blocks containing `…` are illustrative
+  fragments and are skipped. A grammar the spec gives before the parser reads it goes in
+  `AHEAD_OF_THE_PARSER` of `doc_blocks.rs`; the test fails when such a block starts to read: remove the entry.
+- `cargo xtask hooks` runs the Python tests of the hooks (`.claude/hooks/`, standard library only). The grammar
+  exists once: spec section 14 (EBNF).
 - An expected value in a test or a corpus never comes from the output of the program under test: work
   it out by hand or with another tool, and say how. For a case of `tests/acceptance/`, the agent
   `labcraft-oracle` works it out from the documents alone and writes its `expected.json`: give it the
   case folders, never the code, the output or your values. When the program disagrees with it, don't
   edit its `expected.json`: the program or the documents are wrong, and a question of the documents
   goes to the owner.
-- The proof of concept was the executable reference for running a program until M0b; the corpus of
-  runs of `tests/acceptance/runs/` and the Rust `labcraft-cli run` are the reference since then. The
-  proof of concept no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
-  `labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept
-  check that fails only because it lags behind a rule is dropped, in the pull request that brings the
-  rule.
-- The diagrams of `docs/rfc/` in `docs/images/rfc/` are rendered by `tools/lcf-figcraft`; rerender
-  them when a file changes.
-- `lcf_view.py` also writes `lcf-view.html` (diagrams of `examples/`), which is ignored by git.
+- The corpus of runs of `tests/acceptance/runs/` and the Rust `labcraft-cli run` are the reference for running a
+  program; the corpora of `tests/acceptance/` and the Rust `labcraft-cli check` are the reference for `check`, and
+  the spec decides where they differ. The Python proof of concept that was the reference until M0b was retired
+  after M0 (2026-11-15).
+- The figures of `docs/images/` are drawn by `labcraft-cli diagram --svg --theme light --out DIR FOLDER FUNCTION`
+  (and `--theme dark`), which writes `DIR/FUNCTION.svg`, saved as `FUNCTION-light.svg` and `FUNCTION-dark.svg`;
+  rerender them when a file changes.
 - `.lcf` and `.lct` files use LF line endings (`.gitattributes`).
 
 ## Commits

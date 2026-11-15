@@ -345,7 +345,7 @@ character boundary, and these crates hold little numerical code.
 | `web-serve` | Not a check: serves `target/web` on the loopback, to try the viewer in a browser |
 | `frames` | Not a check: writes the function of 1,000 nodes and 2,000 wires of `bounds` into `target/frames/`, builds `labcraft` in release, and opens it there with `LABCRAFT_FRAMES` (cli.md 8), to see 60 frames/s by hand before a tag (section 11.6) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
-| `spec` | The Python checks of the spec, `examples/`, `docs/rfc/` and `libs/`: `lcf_view.py`, `check` and `fmt --check` of the proof of concept, and its tests. Runs them all, prints `ok` or `FAIL` for each and the output of those that fail; the interpreter is `python`, then `python3`, and a missing interpreter or requirement is an error that says what to install. Not part of `ci`, which needs no Python: the workflow `checks` runs it |
+| `hooks` | The Python tests of the hooks of the agents (`.claude/hooks/`), with the standard library only: the interpreter is `python`, then `python3`, and a missing interpreter is an error that says so. Prints `ok` or `FAIL` and the output of a failure. Not part of `ci`, which needs no Python: the job `lint` of the workflow `checks` runs it. The code blocks of the spec and of `skills/`, and the programs of `examples/`, `libs/` and `docs/rfc/`, are checked by tests of `ci` (`doc_blocks.rs` of `format`, `check.rs`, `fmt.rs` and `corpora.rs` of `labcraft-cli`) |
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
@@ -397,8 +397,8 @@ the targets once, then runs them side by side, one per CPU of the runner. Like t
 cache of its own, which only `main` saves.
 `fuzz/README.md` says how to run a target and what becomes of a crash.
 
-The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (the Python checks of
-`cargo xtask spec`, then `cargo xtask lint`), `test` (`cargo xtask test`, with `cargo-nextest`) and `release`
+The workflow `checks` runs the parts of `cargo xtask ci` side by side, one job each: `lint` (`cargo xtask hooks`,
+then `cargo xtask lint`), `test` (`cargo xtask test`, with `cargo-nextest`) and `release`
 (`bounds`, `wasm` and the figures of the viewer) and `web` (`cargo xtask web` and `web-smoke`, which keeps the site
 built to download, section 11.5). A last job, `checks`, passes only when the four passed, or were skipped for prose (below). It runs
 even when one of them failed or was cancelled, since GitHub counts a skipped required check as passed, and it is
@@ -439,8 +439,8 @@ To release: the version in `Cargo.toml` (and both `Cargo.lock`), the note `docs/
 through a pull request; then, on the owner's word, the annotated tag on the merge commit, pushed; then the owner
 publishes the draft.
 
-The proof of concept was the reference for what the examples do until the Rust `run` passed the corpus of runs
-(section 10.11); it does not judge types, where the corpus decides.
+The Python proof of concept was the reference for what the examples do until the Rust `run` passed the corpus of runs
+(section 10.11); it did not judge types, where the corpus decides. It was retired after M0 (2026-11-15).
 
 ## 9. Order of work
 
@@ -470,7 +470,7 @@ of M0v since their sections were written ([CONTRIBUTING.md](../CONTRIBUTING.md))
 contract is elsewhere: [spec](language-spec-v0.md) 8 and 10, [`run`](cli.md) (section 6), the
 [command catalog](commands.md), the [MCP server](mcp.md), [`visa`](../libs/visa/README.md) and its
 [simulation](../libs/visa/simulation.md), [acceptance scenarios 1, 3, 4](acceptance-m0.md). The scheduler was tried
-first in the proof of concept (scenario 3): what it taught is written here.
+first in the proof of concept (scenario 3), since retired: what it taught is written here.
 
 ```text
 apps/labcraft-cli ──> mcp ──> engine ──> runtime ──> ir ──> check ──> format ──> graph ──> types
@@ -803,7 +803,7 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
 `labcraft-visa` holds the sessions, the `SIM::` backend of [simulation.md](../libs/visa/simulation.md) (the clock in
 whole nanoseconds, the noise generator, the error queue, the faults). The fuzz target `simulation` reads and judges simulation
 files, and runs every instrument of a file it accepts (`fuzz/README.md`). Real instruments come with M4.
-`labcraft-results-log` keeps the results it is given, as the proof of concept does, and the report shows them (`logs`,
+`labcraft-results-log` keeps the results it is given, as the proof of concept did, and the report shows them (`logs`,
 commands.md 7, decision of the owner, 2026-11-09): one entry per call, with its time and the input it holds, whose type in the
 signature the host writes it against; the first 1,000 entries *(proposed)*, each costing the logical size of its value from
 the budget of the run, then a count of the others, so that the log is the start of what the run wrote. A call stepped once it has ended, which only a defect of the
@@ -944,7 +944,7 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   skill, and each Markdown file of it is served by its path in the folder, so a new file needs nothing declared.
   `engine::guide` holds them and `guide.read` serves them, by exact names, never as paths: they are the documentation
   of the tool, of its version, and not programs that a library ships, so they need no app to hand them over.
-  `tests/harness` checks their code blocks (`skills/README.md`), and `cargo xtask spec` parses them as the spec's.
+  `tests/harness` checks their code blocks (`skills/README.md`), and `crates/format/tests/doc_blocks.rs` reads them as the spec's.
 - **What a library that simulates says of its part** of a simulation file, for `simulation.describe` and the resources
   of `project.describe`, comes through two methods of `runtime::native::NativeLibrary`, `describe` and `resources`: a
   tree of plain values (`Described`), which `engine` writes as JSON as it is. `visa` describes each instrument as
@@ -1021,9 +1021,9 @@ checks, for the web simulation of M10.
 
 **The corpus of runs is the reference of `run`**, as the corpus of `type-errors` is for `check`. A case holds what a run
 needs and the parts of `labcraft-run/1` it asserts: status, outputs, clock, resources, abort, panel, the commands each
-instrument saw. Its expected values are worked out by hand, as the tests of the proof of concept are, and each says how.
-The proof of concept runs the corpus too, through a small runner, until the Rust `run` passes all of it: then
-`tools/lcf-poc` is retired, and the corpus stays.
+instrument saw. Its expected values are worked out by hand, as the tests of the proof of concept were, and each says how.
+The proof of concept ran the corpus too, through a small runner, until the Rust `run` passed all of it: then
+`tools/lcf-poc` was retired (2026-11-15), and the corpus stayed.
 
 The corpus starts with step 5b (decisions of the owner, 2026-11-10): scenario 1 on `check_voltage`, the six points of
 scenario 3 on `two_benches`, one case for each fault of `LC80` that a deterministic run reaches, and runs refused by
@@ -1032,8 +1032,7 @@ runs it as it is, and `expected.json`, the parts of the report it asserts. The v
 by `tests/acceptance/runs/noise.py`, written from libs/visa/simulation.md alone. Its paths are those of `run.start`, from the
 root of the project, which is the repository (decision of the owner, 2026-11-10). `tests/harness` gives each `run.json`
 to `run.start` unchanged, on a session of `engine` on the repository in memory, natively through the command and in WASM
-through `engine::run_to_end`; `tools/lcf-poc/tests/test_runs.py` runs it through the proof of concept, which skips the
-cases of `poc-later.txt`, rules it does not follow, and must still give them a report.
+through `engine::run_to_end`. The proof of concept ran it too until its retirement.
 
 **A case in real time** (step 8; decision of the owner, 2026-11-11), `s3-2-real-time`, runs natively on the real clock,
 and WASM skips it. It asserts what does not depend on the speed of the machine: the status, the outputs, exact since the
@@ -1052,7 +1051,7 @@ Each step of work ends with something testable:
 4. **The interface of native libraries and `labcraft-visa`**, in deterministic mode: sessions, the `SIM::` backend, its
    codes, `release`, its keys; the fuzz target of simulation files. `labcraft-results-log`. *Done* (section 10.6).
 5. **The scheduler and the interpreter, in deterministic mode:** limits, faults, Stop, Abort by timeout, the trace, the
-   report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner. In two halves
+   report. The corpus of runs starts here, with the cases of scenario 3, and the proof of concept's runner (retired after M0). In two halves
    (decision of the owner, 2026-11-10): **5a**, `runtime::run`, with scenario 3 run on `two_benches` by `tests/harness`,
    *done* (sections 10.4, 10.5); **5b**, the trace and the report written, the corpus and its runner, *done* (sections
    10.7, 10.11).
@@ -1073,7 +1072,7 @@ Each step of work ends with something testable:
    (section 10.9); **9b**, the skills of `skills/`, `guide.read` and their code blocks checked as the spec's, *done*
    (section 10.8; decisions of the owner, 2026-11-11: three skills, `labcraft-writing` with its `reference.md`,
    `labcraft-debugging` and `labcraft-testing`; no example that measures, compares to limits and gives a verdict; the
-   whole files of a skill checked by `check` with no warning, besides the Python checks of the spec; installed by
+   whole files of a skill checked by `check` with no warning, and its code blocks parsed with the spec's; installed by
    copying, as `skills/README.md` says).
 10. **Bounds of M0b and scenario 1 by hand** (five agent sessions), then the tag. In parts (decisions of the owner,
    2026-11-11): **10a**, the bounds: the families Instruments and Arguments of scenario 4 in the corpus of runs, runs

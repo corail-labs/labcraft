@@ -7,7 +7,9 @@ M0, the first milestone in Rust, comes in three parts ([roadmap](roadmap.md)): M
 and writes programs; M0b runs them and opens the agent loop; M0a and M0b are a thin vertical
 slice. M0v, a read-only viewer of the diagram, comes after M0a, in parallel with M0b. Each part
 is done when its scenarios pass. Each scenario gives its setup, what is expected, how it is
-verified, what the Python proof of concept already does, and what must be written first.
+verified, what the Python proof of concept already does, and what must be written first. The proof of concept
+(`tools/lcf-poc`, `tools/lcf-figcraft`, `tools/lcf-view`) was retired after M0 (2026-11-15): its paragraphs say what it did
+when they were written.
 
 | Milestone | Scenarios |
 |---|---|
@@ -38,9 +40,9 @@ Values marked *proposed* are starting points, to adjust when the scenarios are a
   simulated clock, one random sequence per simulated quantity. Scenario 3 also runs in real time.
 - **Never crash.** In no scenario does the tool panic, abort or get killed: every failure is a
   report with a code and a location. A viewer shows the report and stays responsive.
-- **Executable reference.** `examples/` and the proof of concept (`tools/lcf-poc`) give the
+- **Executable reference.** `examples/` and the proof of concept (`tools/lcf-poc`) gave the
   expected results of running a program. For `check`, the expected results are those of the corpora of
-  `tests/acceptance/`, which the proof of concept no longer follows in every rule. Where they differ,
+  `tests/acceptance/`, which the proof of concept did not follow in every rule. Where they differ,
   the spec decides, and the difference is recorded.
 - **Automated** in `tests/acceptance/` and run by the `checks` workflow, except fuzzing (scenario 4),
   run by the `fuzz` workflow, and the parts played by an agent (scenario 1, second half of scenario 2),
@@ -60,7 +62,7 @@ simulated multimeters `dmm-230V.toml` and `dmm-250V.toml`, shipped with `visa`
 (`<labcraft>/visa/sim/`, which `project_describe` lists), and an MCP agent started in that folder
 and connected to `labcraft-cli mcp`. The agent has the MCP tools and the skills shipped with
 LabCraft (`skills/`), not the repository: `examples/` already contains the answer. The
-instructions of the M0b MCP server must not point to it (those of the proof of concept do).
+instructions of the M0b MCP server must not point to it (those of the proof of concept did).
 
 **Prompt**, given once and verbatim:
 
@@ -85,7 +87,7 @@ noise-free simulated multimeters that the check writes, not shipped with `visa`)
 number of `check` failures before the first clean `check` (a `check` of the folder still empty, `LC0002`, is not one).
 
 **Verification.** By hand for the agent part. In CI, a scripted client, `apps/labcraft-cli/tests/mcp.rs` (step 9a
-of M0b, after `tools/lcf-poc/tests/mcp_smoke.py`), plays a fixed loop over real stdio MCP: write a draft with one
+of M0b, after the smoke test of the proof of concept), plays a fixed loop over real stdio MCP: write a draft with one
 error, read the diagnostic, fix it, run against both multimeters and against `no-instrument.toml`.
 
 **Agent sessions, run (2026-11-11)** with [`tests/acceptance/agent/scenario-1.sh`](../tests/acceptance/agent/scenario-1.sh)
@@ -340,7 +342,7 @@ writing it back: `labcraft-cli fmt` and every command that writes a file.
 
 **Proof of concept today.** `fmt --check` checks the order of lines and the layout of the text
 (5.2), lexically, on `examples/`, `docs/rfc/` and the complete blocks of the spec (the order of
-lines only in the files), but the proof of concept does not rewrite files: points 1 to 4 need the
+lines only in the files), but the proof of concept did not rewrite files: points 1 to 4 need the
 model and the writer of M0a.
 
 **Written:** the layout of the text and the order of the lines (2026-11-03); the canonical writing
@@ -398,10 +400,10 @@ agree.
    same values, at the last iteration of each loop, and CI checks it as a snapshot. In the browser,
    runs come with M10.
 
-**Proof of concept today.** `tools/lcf-figcraft` draws a few functions of `examples/` and of
+**Proof of concept then.** `tools/lcf-figcraft` drew a few functions of `examples/` and of
 `docs/rfc/` in standard view, through FigCraft, guessing the types of wires from a table;
-`tools/lcf-view` writes a plain graph view of `examples/` as HTML. Neither draws the compact view
-(N-12) nor redraws live.
+`tools/lcf-view` wrote a plain graph view of `examples/` as HTML. Neither drew the compact view
+(N-12) nor redrew live.
 
 **Write first:**
 

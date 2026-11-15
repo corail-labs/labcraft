@@ -6,9 +6,8 @@ natively and in WASM: the families Truncation and Nesting, through `read`, the s
 and `check`, and the corpus of scenario 2. `apps/labcraft-cli/tests/fmt.rs` and `check.rs` run what needs
 files through the program: the stored cases, the families Size and Library, and Truncation and Nesting again.
 [`hostile-later.txt`](hostile-later.txt) lists the stored cases whose codes come with a later step of
-[the architecture](../../docs/architecture.md); none is left for M0a. The proof of concept has no static
-type checking and no stable codes: `tools/lcf-poc/tests/test_corpus.py` checks that the corpora themselves are sound, and
-that the proof of concept does not crash on them.
+[the architecture](../../docs/architecture.md); none is left for M0a. `apps/labcraft-cli/tests/corpora.rs` checks that the corpora themselves are sound: one case for each
+code of `S2`, the spans, the codes defined in `docs/cli.md`, the bytes of the hostile files.
 
 An `expected.json` is worked out from the documents, never taken from the output of the program: the agent
 [`labcraft-oracle`](../../.claude/agents/labcraft-oracle.md) does it from the case folder alone ([AGENTS.md](../../AGENTS.md)).
@@ -57,9 +56,7 @@ that `two_benches` makes (`python tests/acceptance/runs/noise.py 1 230 0.05 10`)
 `tests/harness` gives every `run.json` to `run.start` unchanged, on a session of `engine` whose root is the repository
 held in memory: natively through the command, with the real clock for a case in real time, in WASM, which has no
 threads, through `engine::run_to_end`, the same judging, run and report. It reads back the trace that the run wrote to `.labcraft/runs/`, and checks that each line reads
-and that its last says the status of the report. [`tools/lcf-poc/tests/test_runs.py`](../../tools/lcf-poc/tests/test_runs.py) runs them
-through the proof of concept, which has a report of its own: it compares what that report gives, and runs the cases of
-[`poc-later.txt`](runs/poc-later.txt), rules the proof of concept does not follow, only to see that each gives a report.
+and that its last says the status of the report. Only Rust runs the corpus: the Python proof of concept, which also ran it, was retired after M0 (2026-11-15).
 
 [`agent/scenario-1.sh`](agent/scenario-1.sh) plays scenario 1 itself, by hand: five Claude Code sessions, each in an
 empty folder with the MCP server and the skills, then [`agent/scenario-1.py`](agent/scenario-1.py) checks what each left

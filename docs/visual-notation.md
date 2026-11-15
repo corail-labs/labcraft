@@ -12,22 +12,21 @@ end of the document.
 *The board, drawn by hand on 2026-10-31 (click to enlarge). It does not show the compact view of
 nodes yet (3.2, N-10 to N-12).*
 
-A function rendered from its file by `tools/lcf-figcraft`, not drawn by hand
+A function rendered from its file by `labcraft-cli diagram`, not drawn by hand
 ([examples/check_voltage.lcf](../examples/check_voltage.lcf)):
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="images/rfc/check_voltage-dark.png">
-  <img alt="Diagram of check_voltage rendered from its file: error chain in red along the bottom, VISA session in blue, match and handle unfolded on the right" src="images/rfc/check_voltage-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="images/check_voltage-dark.svg">
+  <img alt="Diagram of check_voltage rendered from its file: error chain in red along the bottom, VISA session in blue, match and handle unfolded on the right" src="images/check_voltage-light.svg">
 </picture>
 
 **Files.** Both open with [FigCraft](https://github.com/storytold/figcraft), a design app of the
 Craft family:
 
 - [design/visual-notation-v0.figcraft](../design/visual-notation-v0.figcraft): the board above.
-- [design/notation.figcraft](../design/notation.figcraft): the component library that
-  `tools/lcf-figcraft` reads to draw diagrams (terminals, primitives, pills, node and structure
-  samples, one sample per wire family, theme tokens in light and dark modes). Edit it, rerun the
-  tool, and every rendered diagram follows.
+- [design/notation.figcraft](../design/notation.figcraft): the component library that the throwaway renderer
+  `tools/lcf-figcraft` (retired after M0, 2026-11-15) read to draw diagrams (terminals, primitives, pills, node and structure
+  samples, one sample per wire family, theme tokens in light and dark modes).
 
 ## 1. Principles
 
@@ -733,7 +732,7 @@ chain crosses the frame in a straight line (2.1).
 
 For the values of a run on the wires (M0v, once M0b runs programs), the debugger (M5) and images
 rendered from a run trace
-(`tools/lcf-poc/lcf.py run … --trace`):
+(`labcraft-cli diagram --svg --out DIR --trace FILE FOLDER FUNCTION`, cli.md 7):
 
 | State | Rendering |
 |---|---|
@@ -907,7 +906,7 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 `canvas.fill`, `canvas.grid`, `node.fill`, `node.stroke`, `node.title`, `node.active`,
 `frame.fill.1..4`, `frame.stroke`, `wire.data`, `wire.resource`, `wire.error`, `wire.order`,
 `mark.coercion`, `mark.invalid`, `probe.fill`, `probe.stroke`. Supporting tokens, which appeared while drawing
-real diagrams (`tools/lcf-figcraft`): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
+real diagrams (with the throwaway `tools/lcf-figcraft`, retired after M0): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
 `coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
 compact view, 3.2), `select.stroke` (the node or wire selected in the viewer, 6.1). Their values are LabCraft's own, in a light theme and a dark theme (the table
@@ -945,7 +944,7 @@ IDE, the diagram takes its colors from this table.
   when a choice falls below 4.5:1, without refusing it (M1). Snapshots and exports keep this table.
 - **Where the values come from.** The light values of the first list of tokens come from the board
   `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
-  from `tools/lcf-figcraft/build_notation.py`; `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new, and `select.stroke` (2026-11-13), a cyan told apart from the blue of `wire.resource` and the green of `node.active`. Changed on
+  from `build_notation.py` of `tools/lcf-figcraft` (retired after M0); `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new, and `select.stroke` (2026-11-13), a cyan told apart from the blue of `wire.resource` and the green of `node.active`. Changed on
   2026-11-08 for the two rules above: in the light theme, `frame.fill.1..4`, `wire.resource`,
   `wire.error`, `wire.order`, `mark.coercion`, `mark.invalid`, `ink.muted`, `ink.faint` (now that of
   `ink.muted`), `node.stroke`, `frame.stroke` and `pill.stroke`; in the dark theme, `frame.fill.1..4`,
@@ -998,12 +997,12 @@ IDE, the diagram takes its colors from this table.
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
 | N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. **Retained (2026-11-10):** in compact view the size of a node comes from the definition of what it calls, never from what a call wires: every terminal of the signature is drawn, an optional input unwired too, the lines take their places (3.2) whatever they carry, and the label, the band and the pills never make a block larger (3.2). A block grows only when the signature changes, or with what a call gives beyond its parameters (the values of a variadic parameter, the fields of `string.format`, what `core.call` passes): down by two places (16) when its lines no longer hold (3.2), never across, so that its top-left corner and its width stay; the lines are counted from the top, so they keep their height, and the `err` pair, on the last place, moves down with the block. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
-| N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, which does not yet keep the line straight through a `match`) |
+| N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, retired after M0, which did not keep the line straight through a `match`) |
 | N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | **Settled (2026-11-08):** the output of each branch joins a vertical bus along the inner right edge of the frame, which leads to the output terminal, so that the drawing says that every branch gives the value; an outer value read by several branches enters by its notch, then a vertical bus along the inner left edge; one bus per value, in the order of the outputs, the error output on the bottom line like the frame's (5.2) |
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
 | N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon. Retained as a lead (2026-11-09): the mask of a library sets whether its band is shown, and a function can hide it in its own file, next to its `icon` (a helper; a function that talks to an instrument shows it by its session wire); to settle with N-15, before M1 |
-| N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | **Settled (2026-11-09):** the compact view was judged on mock-ups of `check_voltage`, `settle` and `station` before the code of M0v; the public tool stays as it is until `diagram` replaces it |
+| N-12 | The `tools/lcf-figcraft` rendering (retired after M0) drew only the standard view | **Settled (2026-11-09):** the compact view was judged on mock-ups of `check_voltage`, `settle` and `station` before the code of M0v; `diagram` replaced the public tool, retired after M0 |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
 | N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires. **Settled in part (2026-11-14):** a node is known by its name, which the editor gives to every node it places (spec 11, Q-10); the name of a value bound to an output follows the wire (2.4) |
 | N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines from the top, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1). **Retained for M1 (2026-11-10):** a section `terminals`, in the file of the function after `layout` and before `icon`, gives its compact block a grid of places, 8 apart on the grid of the canvas: `top N` sets the width and `left N` the height, each (N + 1) × 8 (`top 4`, `left 5`: 40 × 48), and the right side has as many places as the left. `left 2 parts` puts a terminal on a place, counted from the top or from the left; `last` names the last place of a side (no `first`: it is `1`). A terminal that the section does not name keeps its default side, on the first free place, with no warning: the author writes only what differs. By default `err` is on the last place of the left and right sides, so the author writes it only to move it; the error chain stays straight through a node whose `err` is elsewhere, which then hangs from it (N-7). The bottom side has no place. The defaults (retained 2026-11-10, applied in v0 without a section on 2026-11-13, 3.2): inputs on the left and outputs on the right, in signature order, filled from the top, one per place (not one place apart, decided 2026-11-13: a line then has the same height on every block, and two functions in a row join by a straight wire; the author spaces them with the section), a pass-through pair on one place; a terminal that the section does not name takes the first free place from the top, in signature order, else the block grows by two places; an optional input goes to the top side only when the left side is full: left, then top, then the block grows (not in v0, where the block grows: the pills of constants on the top side and the wires that come down between them need a drawing of their own, decided 2026-11-13). The block has the size that the section gives at every call, with one exception: a variadic parameter takes a place per value that the call gives, the block grows from its place and what follows it moves along; the variadic primitives (`errors.merge`, `core.add`) follow the same rule. Two inputs on neighbouring places may both receive a constant: their pills step outward. The standard view does not follow the section. Like `icon`, the section says nothing about running: the CLI and the MCP server leave it out by default, and an agent writes it only when asked; in M1 the user drags a terminal onto a place and the IDE writes the line. `top`, `left`, `right` and `last` mean something only in the section and stay names everywhere (spec 14.1). Without a section, the layout computed by 3.2, as in v0 |

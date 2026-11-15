@@ -1,7 +1,7 @@
 # `visa`: sessions on instruments
 
 *Status: implemented for milestone M0b (tag `v0.2.0-m0b`) by the crate `labcraft-visa`, in `src/`, in deterministic
-mode and in real time. The proof of concept follows it too (`tools/lcf-poc/lcfpoc/stdlib.py`).*
+mode and in real time. The Python proof of concept followed it too, until its retirement after M0 (2026-11-15).*
 
 `visa` is the transport library shipped with LabCraft: it opens sessions on instruments, writes commands
 and reads answers. Its functions are declared in this folder (`extern rust`, spec 4.1), and their native

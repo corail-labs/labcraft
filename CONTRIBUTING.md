@@ -10,8 +10,8 @@ cross-platform.
 
 LabCraft has **done M0a and M0b, the first two parts of its first milestone in Rust**: `labcraft-cli`
 reads, checks, writes and runs programs against simulated instruments, and serves them to an agent over MCP. The repository holds the language and file format specification, the decisions behind it, example
-programs, the Rust workspace, and throwaway Python tools (a syntax checker and viewer, and a proof of
-concept that runs the examples against simulated instruments and exposes them to an agent over MCP).
+programs and the Rust workspace. The throwaway Python tools of the specification phase (a proof of concept and a
+viewer) were retired after M0 (2026-11-15).
 
 Code contributions in Rust open in stages. Since the tag of M0 (`v0.3.0-m0`, after `v0.1.0-m0a` and
 `v0.2.0-m0b`), they have been open on all that exists: bugs and improvements of `fmt`, `check`, `run` and the MCP
@@ -41,32 +41,19 @@ The open questions are listed in the spec, section 15; the decisions and their r
 
 ## Checks
 
-Every complete code block of the spec and every file in `examples/` and `libs/` must parse, the
-examples, the RFC programs (`docs/rfc/`) and the shipped libraries (`libs/`) must check and be in
-canonical form (spec 5.2), and the proof of concept and the hooks of the agents (`.claude/hooks/`) must
-stay green:
-
-```sh
-pip install -r tools/lcf-poc/requirements.txt
-cargo xtask spec
-```
-
-`cargo xtask spec` runs each check, prints `ok` or `FAIL` for it, and the output of those that fail; the
-list is in `xtask/src/spec.rs`. The `checks` workflow runs it on every pull request, with the parts of
-`cargo xtask ci` (below), which needs no Python; a pull request that changes only prose skips the parts that build
-and run code (`docs/architecture.md`, section 8).
+Every complete code block of the spec and of `skills/`, and every file in `examples/` and `libs/`, must read, the
+examples, the RFC programs (`docs/rfc/`) and the shipped libraries (`libs/`) must check, and all of them must be in
+canonical form (spec 5.2). Rust tests check this, as part of `cargo xtask ci`, which the `checks` workflow runs on
+every pull request; a pull request that changes only prose skips the parts that build and run code
+(`docs/architecture.md`, section 8). The hooks of the agents (`.claude/hooks/`) have Python tests, with the
+standard library only: `cargo xtask hooks` runs them.
 The tests include the corpora of `tests/acceptance/`, which say what `check` and `fmt` must report.
 An expected value in a test or a corpus never comes from the output of the program under test: work it
 out by hand or with another tool, and say how.
 
-The proof of concept was the executable reference for running a program until the interpreter of M0b passed the
-corpus of runs (`docs/architecture.md`, section 10.11); that corpus and the Rust `labcraft-cli run` are the
-reference since then. The proof of concept no longer follows every rule of `check`: there the corpora of `tests/acceptance/` and the Rust
-`labcraft-cli check` are the reference, and the spec decides where they differ. A proof-of-concept check
-above that fails only because it lags behind a rule is dropped, in the pull request that brings the rule.
-
-The grammar exists twice, in the spec (section 14, EBNF) and in `tools/lcf-view/lcf_view.py`
-(Lark): a change to one goes in the other. `.lcf` and `.lct` files use LF line endings.
+The corpus of runs and the Rust `labcraft-cli run` are the reference for running a program, and the corpora of
+`tests/acceptance/` and the Rust `labcraft-cli check` are the reference for `check`; the spec decides where they
+differ. The grammar exists once, in the spec (section 14, EBNF). `.lcf` and `.lct` files use LF line endings.
 
 ## Rules that aren't negotiable
 

@@ -1,7 +1,7 @@
 # Simulated instruments of `visa`
 
-*Last updated: 2026-11-13. Status: implemented for milestone M0b (tag `v0.2.0-m0b`). The proof of concept (`tools/lcf-poc`) and the crate
-`labcraft-visa` (`src/`) implement it, the refusals of section 7 included. Values marked *proposed* are starting points.*
+*Last updated: 2026-11-13. Status: implemented for milestone M0b (tag `v0.2.0-m0b`). The crate
+`labcraft-visa` (`src/`) implements it (the proof of concept did too, until its retirement after M0), the refusals of section 7 included. Values marked *proposed* are starting points.*
 
 `visa` answers for the resources `SIM::…` as the instruments of a simulation file describe them, so a
 program, and the drivers it uses (`scpi`, a driver written over `visa`), runs and is tested without

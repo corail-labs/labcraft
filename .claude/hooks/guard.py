@@ -12,7 +12,7 @@ or an alias gets past it.
 Claude Code sends the call as JSON on standard input (`.claude/settings.json` runs `guard.sh`, which finds a Python 3).
 Exit 2 refuses it and tells the agent why, on standard error; exit 0 lets it through. When the hook itself fails, it
 exits 1, which Claude Code shows and lets through: fail open, the owner's choice. Tests: `test_guard.py`, run by
-`cargo xtask spec`.
+`cargo xtask hooks`.
 """
 
 import fnmatch

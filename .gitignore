@@ -11,15 +11,11 @@
 /.claude/settings.local.json
 
 # Generated previews (throwaway)
-/lcf-view.html
 /docs/graphes-v0.html
 
 # Python
 __pycache__/
 *.pyc
-
-# lcf-figcraft renders (throwaway)
-/build/
 
 # Crashpad logs left by Chromium-based tools
 debug.log

@@ -10,8 +10,8 @@ parameters, its result and its errors. Its acceptance criterion is scenario 1 of
 multimeter, runs it against two simulated instruments and an absent one, and fixes it, with no human
 message and at most 20 tool calls. Values marked *proposed* are starting points.
 
-The server of the proof of concept (`tools/lcf-poc/mcp_server.py`: `check`, `list_functions`, `run`) was
-the starting point; section 7 says what changes.
+The server of the proof of concept (`mcp_server.py`: `check`, `list_functions`, `run`; retired after M0, 2026-11-15) was
+the starting point; section 7 says what changed.
 
 ## 1. Starting it
 

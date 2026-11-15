@@ -1,7 +1,7 @@
 //! The code blocks of the skills of `skills/`, as `guide.read` serves them (`skills/README.md`): the whole files of a
 //! skill form one library, which `check` passes with no error and no warning, each `toml` block is a simulation file that
-//! `visa` accepts, and no skill gives the programs of the acceptance scenarios. The Python checks of `cargo xtask spec`
-//! parse every block and judge its canonical form, as for the spec.
+//! `visa` accepts, and no skill gives the programs of the acceptance scenarios. `crates/format/tests/doc_blocks.rs`
+//! reads every block and judges its canonical form, as for the spec.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::sync::Arc;

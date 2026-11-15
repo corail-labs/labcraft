@@ -39,7 +39,7 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **unit**, **dimension** | `f64[V]`: a number with a physical unit; its dimension is the vector of SI exponents. |
 | **coercion** | An implicit conversion the editor shows (`mV` to `V`, `i16` to `i32`): it never changes the dimension or loses range. |
 | **implicit widening**, **explicit narrowing** | Conversions that cannot lose information are implicit; those that can are written. |
-| **error**, **fault** | An `error` is a value that flows in the program. A fault (proof of concept: `lcf.*`) is a failure of the run itself, such as an iteration limit: no wire carries it, and it stops the run (spec 8.2). The proof of concept reports some checks, such as unit mismatches, only at run time; the language checks units at compile time. |
+| **error**, **fault** | An `error` is a value that flows in the program. A fault (in the proof of concept: `lcf.*`) is a failure of the run itself, such as an iteration limit: no wire carries it, and it stops the run (spec 8.2). The proof of concept reported some checks, such as unit mismatches, only at run time; the language checks units at compile time. |
 | **warning** | An editor message that does not prevent running. |
 | **probe** | A value shown on a wire while the program runs. |
 | **label** | A name given to a node (`#close:`), unique in its function; `after:` and the layout designate the node by it, and traces show it. |
@@ -49,6 +49,6 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **milestone** | A step of the roadmap (M0, M1…). |
 | **Accepted**, **Proposed**, **Open** | Status of a decision in [decisions.md](decisions.md). |
 | **project lead** | The person who accepts decisions. |
-| **proof of concept (PoC)**, **throwaway tool** | Python tools in `tools/` used during the specification; they will not become the product. |
+| **proof of concept (PoC)**, **throwaway tool** | Python tools used during the specification, retired after M0 (2026-11-15); they did not become the product. |
 | **clean room** | The rule that LabCraft is designed from public documentation and user feedback only, never from NI software or files (D-23). |
 | **call for feedback** | The current phase: the specification is public and open to comments before the language is frozen. |

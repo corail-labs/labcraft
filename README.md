@@ -27,8 +27,8 @@ runs programs against simulated instruments (`fmt`, `check`, `run`), an AI agent
 (`labcraft-cli mcp`), and a read-only viewer draws each function as its file changes, with the values of a
 run on the wires (`labcraft`, `labcraft-web`, `labcraft-cli diagram`).**
 The language and its text format are described (spec v0), with example programs. Editing the diagram comes
-next (M1). The throwaway Python proof of concept that ran the examples before Rust remains in `tools/`. The
-milestones are described in [docs/roadmap.md](docs/roadmap.md).
+next (M1). The throwaway Python proof of concept that ran the examples before Rust was retired after M0
+(2026-11-15). The milestones are described in [docs/roadmap.md](docs/roadmap.md).
 
 ## One program, two views
 
@@ -122,15 +122,6 @@ Open the viewer on the same folder to watch the agent's functions drawn as they 
 The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent can install with it in
 [skills/README.md](skills/README.md).
 
-The throwaway proof of concept, which ran programs before Rust did, is in Python (3.11 or later), with its own
-MCP server ([tools/lcf-poc/README.md](tools/lcf-poc/README.md)):
-
-```sh
-pip install -r tools/lcf-poc/requirements.txt
-python tools/lcf-poc/lcf.py check examples
-python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-230V.toml --arg resource=SIM::DMM0
-```
-
 ## Documents
 
 **The language**
@@ -162,14 +153,12 @@ python tools/lcf-poc/lcf.py run examples check_voltage --sim libs/visa/sim/dmm-2
 | [docs/inspirations.md](docs/inspirations.md) | Ideas to borrow (languages, compilers, tools, UX) |
 | [docs/craft-ecosystem.md](docs/craft-ecosystem.md) | The Craft apps (storytold, SolidCraft) and what LabCraft takes from them |
 
-**Throwaway tools and material**
+**Tools and material**
 
 | Folder | Content |
 |---|---|
-| [tools/lcf-poc](tools/lcf-poc/README.md) | Python proof of concept: check, run against simulated instruments, MCP server |
-| [tools/lcf-figcraft](tools/lcf-figcraft/README.md) | Renders a function as a diagram, following the visual notation |
-| [tools/lcf-view](tools/lcf-view/lcf_view.py) | Syntax check of the examples and of the code blocks of the spec and the skills |
-| [design/](design/) | The board of the visual notation, drawn by hand, and the component library the renderer reads ([FigCraft](https://github.com/storytold/figcraft) files) |
+| [tools/visa-expected](tools/visa-expected/) | The expected values of the tests of `labcraft-visa`, worked out from `libs/visa/simulation.md` alone; run by hand (Python, standard library only) |
+| [design/](design/) | The board of the visual notation, drawn by hand, and the component library of the notation ([FigCraft](https://github.com/storytold/figcraft) files) |
 | [docs/rfc/](docs/rfc/) | Small programs discussed in the RFCs |
 
 ## Contributing

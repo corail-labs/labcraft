@@ -48,7 +48,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
-      - run: pip install -r tools/lcf-poc/requirements.txt
       # rust-toolchain.toml pins the version, so that a new stable neither empties the caches nor brings new lints.
       - name: Install Rust
         run: rustup toolchain install --no-self-update
@@ -56,9 +55,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      # The list of the Python checks is in xtask/src/spec.rs.
-      - name: Python checks
-        run: cargo xtask spec
+      # The hook of the agents is Python, standard library only (xtask/src/hooks.rs).
+      - name: Tests of the hooks
+        run: cargo xtask hooks
       - name: Formatting, repository checks and clippy
         run: cargo xtask lint
 

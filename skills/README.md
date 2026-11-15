@@ -45,9 +45,8 @@ Skills format take the folders in the directory their documentation names.
   compares it to limits and returns a verdict ([docs/acceptance-m0.md](../docs/acceptance-m0.md), scenario 1).
   Instruments are shown on a supply or by `*OPC?`. A test of `tests/harness` refuses a whole file that declares a
   function or a type of `examples/`, where those programs are, and a skill that names them.
-- **Every program and simulation file is checked.** In `cargo xtask spec`, each `text` block parses and is in
-  canonical form, as those of the spec are (a block that contains `…` is a fragment and is skipped). In
-  `cargo xtask ci`, the blocks of a skill that are whole files (they start with `labcraft 1`) form one library, which
+- **Every program and simulation file is checked.** In `cargo xtask ci`, each `text` block reads and is in
+  canonical form, as those of the spec are (a block that contains `…` is a fragment and is skipped), and the blocks of a skill that are whole files (they start with `labcraft 1`) form one library, which
   `check` passes with no error and no warning, and each `toml` block is a simulation file that `visa` accepts. A
   block that shows a mistake on purpose is a fragment, not a whole file. A `json` block shows a report: copy it from
   a real report of a program of the skill, not from memory.

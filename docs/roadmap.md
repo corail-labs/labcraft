@@ -2,7 +2,7 @@
 
 *Last updated: 2026-11-14*
 
-The language is described and tried out by a throwaway Python proof of concept. M0, the first
+The language was described and tried out by a throwaway Python proof of concept, retired after M0 (2026-11-15). M0, the first
 milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
 with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. This page says where the project stands, what the milestones
 are, and how the Rust code is organized.
@@ -20,8 +20,7 @@ are, and how the Rust code is organized.
 | Visual notation ([visual-notation.md](visual-notation.md)) | First draft; open questions N-1 to N-14 |
 | Glossary ([glossary.md](glossary.md)) | Kept with the spec |
 | Alternatives, inspirations, Craft ecosystem | First drafts |
-| Python proof of concept ([tools/lcf-poc](../tools/lcf-poc/README.md)) | Checks and runs the examples against simulated instruments; MCP server driven by an AI agent |
-| Diagram rendering ([tools/lcf-figcraft](../tools/lcf-figcraft/README.md)) | Throwaway: renders a function following the visual notation |
+| Python proof of concept and diagram rendering (`tools/lcf-poc`, `tools/lcf-figcraft`) | Throwaway, retired after M0 (2026-11-15): Rust replaces them |
 
 Still to write, besides what the acceptance scenarios list under "write first"
 ([acceptance-m0.md](acceptance-m0.md)):
@@ -45,7 +44,7 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | # | Milestone | Content |
 |---|---|---|
 | **M0a** | Read, check, write (done, tag `v0.1.0-m0a`) | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
-| **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept runs (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
+| **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept ran (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer (done, tag `v0.3.0-m0`, which closes M0) | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; tidying a wire, a selection or a whole function again, and a wire routed by hand (`via`); the agent and the human edit the same program, through the MCP server attached to the IDE, which takes the folders an agent may read and write as the other Craft apps do (RFC-0015, [craft-ecosystem.md](craft-ecosystem.md)). Target: 60 frames/s while editing 1,000 nodes |
 | M1r | Installable release | The editor as the first version for people outside the project: installers signed for Windows and macOS, and a package or archive for Linux. Until then the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums |
@@ -160,7 +159,7 @@ LabCraft/
 ├── tests/               acceptance corpora and their harness, backend equivalence tests
 ├── fuzz/                cargo fuzz targets, on a pinned nightly, outside the workspace
 ├── xtask/               ci, layers, libs boundary, assets, wasm, command catalog
-└── tools/               the throwaway Python tools, until Rust replaces them
+└── tools/               independent Python calculations of expected values (oracles)
 ```
 
 ## Next
