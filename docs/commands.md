@@ -535,7 +535,8 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   Undo (Ctrl+Z) undoes the last step, whoever made it, and the status bar says what it undid and whose it was;
   in a text field, Ctrl+Z stays in the field. A step restores the text of each file it touched byte for byte,
   even a text that was not canonical (written by an agent), from a snapshot of each file before the step. Redo
-  replays it. A gesture is one step: a drag, a wire drawn, a rename with what follows it (spec 11, notation 2.4).
+  replays it. A gesture is one step: a drag, a wire drawn, a rename with what follows it, a run of presses of
+  Ctrl and an arrow on the same nodes (spec 11, notation 2.4 and 2.6).
 - **External writes.** A file that changes on disk, and whose hash is not that of the last write of LabCraft, is
   read again, and the change becomes a step signed "external": undo goes back over it as over any other. Writes
   of one file in a burst merge into one step.
@@ -642,7 +643,8 @@ file and calls a command uses one vocabulary.
 
 ### 9.4 The catalog
 
-Every command of this section also takes *`expected_revision`*, except `history.*` and `settings.*`. It is an object that maps a path to a revision, for the files that the command may write
+Every command of this section also takes *`expected_revision`*, except `history.*`, `settings.*` and
+`fragment.copy`, which writes nothing. It is an object that maps a path to a revision, for the files that the command may write
 (9.1). A file it does not name is not judged. The rows below leave it out; once the catalog moves to section 6, each
 row will list it. An editing command can return `params.*`, `path.*`, `file.*` (section 3), `edit.unknown`,
 `edit.ambiguous` and `internal`; a command that takes a new name, `name.taken` and `name.invalid`; a command that
@@ -654,7 +656,8 @@ parse: `file.unparsed`, which names it.
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `node.add` | `file`, `call`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (from its output, N-14), *`into`* | Adds a node. `call` is what quick insertion lists (step 4 of the specifications): a function as a call names it (`visa.open`, `settle`), a struct type or a variant that holds values (a construction, spec 5.1). The command adds the `use` that the file then needs. `inside` names a structure, and `arm` an arm of it, for a node inside it. `at` fixes the node (a `node … at` entry). Without it, the node is free and is placed near its neighbours (spec 11). `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output of the same type goes where the wire went. The required inputs stay unwired (`LC2101`, 9.1). `names.node` gives its name |
+| `node.add` | `file`, `call`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (from its output, N-14), *`into`* | Adds a node. `call` is what quick insertion lists (notation 2.6): a function as a call names it (`visa.open`, `settle`), a struct type or a variant that holds values (a construction, spec 5.1). The command adds the `use` that the file then needs. `inside` names a structure, and `arm` an arm of it, for a node inside it. `at` fixes the node (a `node … at` entry). Without it, the node is free and is placed near its neighbours (spec 11). `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output of the same type goes where the wire went; a parameter that takes only a literal (the template of `string.format`) never takes it. The required inputs stay unwired (`LC2101`, 9.1). `string.format` is written with the empty template, `string.format("")`. `names.node` gives its name |
+| `node.set_template` | `file`, `node`, `template` | Writes the template of a `string.format` (spec 5.4), a string literal as the text writes it. Each new field gets its named input, unwired; the named argument of each field that is gone goes, with its wire; the others keep their wires, by name. A node that is not a `string.format`, or a template that is not a literal or whose fields do not read (R-12), is `params.invalid`, with the message of `check` |
 | `constant.add` | `file`, `value`, *`inside`* (the body of the function), *`arm`* (the first arm), *`at`* (placed automatically), *`name`* (`constant`, numbered when taken) | Adds a named constant (spec 5.1): `limit = 240 V` |
 | `node.delete` | `file`, `nodes` | Deletes the nodes, their wires and their entries in `layout`. A structure goes with all it holds. No other node is deleted (decision of the owner, 2026-11-15): an input that a deleted node fed becomes unwired (`LC2101` when it is required), or gets a hole where the text cannot leave it out (9.1), and an output of the function that it gave loses its value |
 | `node.move` | `file`, `nodes`, `by` | Moves nodes of one frame by `[dx, dy]` and fixes each one (notation 2.4). Nodes of several frames are `params.invalid` |
@@ -705,6 +708,13 @@ parse: `file.unparsed`, which names it.
 | `type.create` | `path`, `definition`, *`doc`* | Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2). An existing file is `path.exists` |
 | `type.rename` | `file`, `name` | Renames the type and its file, and every use of it in the project, in the same step |
 
+**Copy and paste**
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `fragment.copy` | `file`, `nodes` | Returns `{ "text": … }`, the nodes as the text of a function `clipboard`, in canonical form, with the `use` they need, the wires between them and their `layout` entries counted from the top-left corner of the selection (notation 2.6). An input wired from outside is left out, or gets a hole (9.1). A node without a name has no entry. Writes nothing, and is not a step of history. Nodes of several frames are `params.invalid`. A text above 4 MiB *(proposed)* is `file.too_large`, never cut |
+| `fragment.paste` | `file`, `text`, `at`, *`inside`* (the body of the function), *`arm`* (the first arm) | Puts the body of the function that `text` holds into the frame, its top-left corner at `at`, each node that has a `node … at` entry fixed. Of its `layout` section, only the `node` and `wire` entries are taken (notation 2.6). It adds the `use` that the file then needs. A name already taken in the function, labels and the outputs of the function included, gets a suffix (N-14), and its readers in the fragment follow; `renamed` lists them. A name that the fragment reads without binding it is left out, or gets a hole (9.1). A `text` that does not parse, or holds no function, is `params.invalid`, with the message of the parser; above 4 MiB *(proposed)*, `file.too_large`, as for `file.write`. `names.nodes` gives the names of the nodes pasted |
+
 **History, batches and settings**
 
 | Command | Parameters | What it does |
@@ -712,7 +722,7 @@ parse: `file.unparsed`, which names it.
 | `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
 | `history.redo` | | Redoes the last step undone, under the same rules |
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
-| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*` and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
+| `commands.batch` | `commands`, *`label`* (the labels of its commands) | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 9.4 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy` and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`) |
 | `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
 | `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
 
@@ -769,7 +779,7 @@ saying so (decision of the owner, 2026-11-15).
 
 Each can be added without breaking anything above: the other commands of the viewer (M0v: zoom, pan), probes and breakpoints (M5),
 scripts of commands in a file, run by `labcraft-cli script` (D-18; `run` runs
-a program), the journal of commands (M1, step 8 of its specifications), copy and paste (step 4), taking nodes out
+a program), the journal of commands (M1, step 8 of its specifications), pasting with the wires from outside kept (notation 2.6), taking nodes out
 of a structure, reordering a signature, moving a function to another library, editing the fields of a type (the text
 does it in M1), crash reports that replay the commands
 that led to a bug (a Craft rule), real instruments and the consent they need (M4, [mcp.md](mcp.md),

@@ -284,7 +284,7 @@ What the editor of M1 does with the placement, decided with the owner on 2026-11
 One rule governs it: **what the diagram shows, the file keeps** (spec 11). Closing and reopening a function draws the
 same diagram, so the editor never shows a state that the `layout` section cannot write; only a gesture in progress
 (a wire being drawn, a field being typed in) escapes it. How each state is drawn (marks, handles, the wire being
-drawn) is in 2.5; the keys and the gestures in detail come with step 4 of the specifications of M1. Where two
+drawn) is in 2.5, and the keys and the gestures in detail in 2.6. Where two
 behaviours are defensible, the other one is a setting of the user or of the project, and the default is the one
 below.
 
@@ -296,7 +296,7 @@ below.
 - **A fixed node shows it.** A pin icon (`pin` of Tabler Icons, MIT, attributed with the other assets) in `ink.muted` (2.5), and on hover: "Position fixed
   (`node x at (…)` in `layout`). Right-click › Remove the fixed position". Setting: "mark the fixed nodes", on by
   default. Removing the fixed position deletes the entry; the node goes back to the automatic placement.
-- **Arrange** (Ctrl+Alt+R, to confirm with step 4): on the selection, a branch or the whole function, it removes
+- **Arrange** (Shift+Alt+F, 2.6): on the selection, a branch or the whole function, it removes
   the entries of what it arranges, `via` points, terminals and `frame size` included for the whole function, and the
   automatic placement places it again around the fixed nodes outside the selection. One step of undo.
 - **The frame of the function** is resized by its right edge, its bottom edge or its corner, never by its top or left
@@ -406,6 +406,160 @@ which (principle 7). A dot is not a pill: it never takes the place of a constant
 wired, given a constant (a pill with its value), left to its default (a dot) or a hole (a dashed `?`). The inputs of the
 function keep their value beside them (2): there the default is part of the signature being drawn. An empty pill was
 set aside: too close to a constant at a glance, and heavy on a wide node.
+
+### 2.6 Gestures and keys (M1)
+
+What the hand and the keyboard do in the editor of M1, decided with the owner on 2026-11-15, after the prototype of
+2.4. Every gesture ends in a command of [commands.md](commands.md), section 9, the same that an agent calls; a gesture
+in progress writes nothing (2.4).
+
+- **The keys are the user's.** Each binding below is a default. The user changes it in their settings, never in
+  those of the project: keys belong to the hands, not to the program (`craft-keymap`, `craft-settings`). On macOS,
+  Cmd stands for Ctrl and Option for Alt. A binding that clashes with another, or with a key that the system keeps,
+  is named in the settings and in the command palette, never dropped in silence.
+- **Nothing is hidden.** Every gesture has an entry in a menu (the context menu, or the menu of the window), and the
+  entry shows its key. The **command palette** (Ctrl+Shift+P, or F1) lists every command of the IDE, with its key,
+  searched as quick insertion searches.
+- **A gesture that does more than asked can be turned off**, each one apart: autopatch, inserting into a wire,
+  replacing on a drop (2.4). A gesture keeps its meaning from one version to the next; a change of meaning is a new
+  binding, never the old one reused.
+- **The focus decides.** A text field (a name, a constant, a template, the `Text` panel) keeps its keys: Ctrl+Z,
+  Ctrl+C, Delete and the arrows act in the field ([commands.md](commands.md), 9.1). The keys below act when the
+  canvas has the focus.
+
+**With the pointer.**
+
+| Gesture | On | Does |
+|---|---|---|
+| Click | a node, a wire, a terminal | Selects it, as 2.5 draws it; a wire selects its whole value |
+| Shift+click, Ctrl+click | a node, a wire | Adds it to the selection, or removes it |
+| Drag | the empty canvas | Selects the nodes that the rectangle touches. Setting: "drag on the empty canvas pans", Shift+drag then selects |
+| Middle drag, wheel, two fingers | anywhere | Pans; Shift+wheel pans sideways; Ctrl+wheel or a pinch zooms around the pointer, as the viewer does |
+| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4) |
+| Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
+| Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
+| Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
+| Drag | a wire | Starts a branch at a junction (2.5) |
+| Alt+drag | a segment of a wire | `wire.route` (2.4). The modifier is a setting, for a desktop that keeps Alt+drag to move windows |
+| Drag | the right edge, the bottom edge or the corner of the frame | `frame.resize` |
+| Drag | a terminal of the frame | `terminal.move` |
+| Double-click, or F2 | the name of a node | A field in place: `value.rename` on Enter, nothing on Escape |
+| Double-click | a pill of a constant, a dot of a default, a hole | A field in place: `input.set_constant` on Enter. An empty field on Enter clears a constant (`input.clear_constant`), and does nothing on a dot or a hole |
+| Double-click | the body of a call to a function of the project | Opens that function in a tab |
+| Right-click | a node, a wire, a terminal | The context menu of what it is on, each entry with its key |
+| Right-click | the empty canvas | The palette of functions (2.4); setting: "menu first" |
+| Drop | from the panel `Objects` | `node.add` with `at`, where it is dropped; over a wire, into it (2.5) |
+
+**With the keyboard**, on the canvas.
+
+| Key | Does |
+|---|---|
+| Space | Quick insertion (below) |
+| Ctrl+Shift+P, F1 | The command palette |
+| Delete, Backspace | Deletes the selection: `node.delete` for nodes, `wire.disconnect` for wires, one step. On a terminal, it removes what the terminal holds (its wires, its constant); an input or an output of the function itself is removed only from its context menu (`signature.remove`) |
+| Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D | Copy, cut, paste, duplicate (below) |
+| Ctrl+Z; Ctrl+Y, Ctrl+Shift+Z | Undo; redo ([commands.md](commands.md), 9.1) |
+| Ctrl+A | Selects every node of the frame that holds the focus |
+| Shift+Alt+F | Arrange (2.4): the selection, or the whole function when nothing is selected, as Format Document in VS Code |
+| Alt+Left, Alt+Right | Adds to the selection what feeds it (upstream) or what it feeds (downstream), one level per press; Shift with it, every level |
+| F8, Shift+F8 | Moves the focus to the next or the previous diagnostic, on what it names (2.5) |
+| Escape | Cancels the gesture in progress; otherwise goes up one level (a terminal to its node, a node inside a structure to that structure); otherwise clears the selection |
+| Tab, the arrows, Enter, W, Ctrl+arrows | Moving around and wiring without a pointer (below) |
+
+Shift+[ and Shift+] were set aside for upstream and downstream: on an AZERTY keyboard, `[` and `]` need AltGr.
+The editor of M1 is the desktop application; in a browser, some of these keys (Ctrl+Shift+P in Firefox, Alt+Left for
+Back, Ctrl+D for a bookmark, Alt and a letter) belong to the browser, and F1 is there for the palette.
+
+**Quick insertion.** One catalog, the one of the panel `Objects`, opened where the work is:
+
+- **a wire dropped on the empty canvas**: the list holds what takes the type of the wire; the node chosen falls where
+  the wire was dropped, already wired, in one step (`node.add` and `wire.connect`, one `commands.batch`);
+- **Space on the empty canvas**: the whole list; the node falls under the pointer, or at the focus when the pointer is
+  not on the canvas;
+- **Space with a node selected (autopatch)**: the node falls to the right of the one selected, without moving the
+  others, and its first input that takes the first output of the selected node is wired to it. Setting: "autopatch
+  from the keyboard", on by default; off, Space works as on the empty canvas;
+- **Space with a wire selected**: the node goes into the wire (`node.add` with `into`), its ghost shown where it will
+  fall (2.5);
+- **Space with a terminal in focus**: as a wire drawn from it and dropped on the empty canvas. With several nodes
+  selected, Space works as on the empty canvas.
+
+The list holds the functions that the project can call (its own, its libraries', those of `core`), the struct types
+and the variants that hold values (a construction), and a constant: text that reads as a constant (`240 V`,
+`"MEAS?"`) puts "constant `240 V`" first (`constant.add`). The search is fuzzy, on the name and the name of the
+library. The order is deterministic and works offline: first what takes the type (when a wire filters), among those
+first the ones whose first required input takes it, then what this user inserted most recently, then the alphabet.
+The recent insertions are kept on the machine of the user; no model ranks the list and nothing asks the network. The filter is the predicate of `wire.connect`, so the list never offers what the drop would refuse.
+Each row shows the signature and the library. The arrows move in the list, Enter inserts, Escape closes. The node gets
+its name at once (N-14), and the `use` it needs is added (`node.add`).
+
+**`string.format`** arrives with an empty template, `string.format("")`, and its template field already open. The
+template has no terminal (spec 5.4): Enter writes it with `node.set_template` ([commands.md](commands.md), 9.4), which
+gives each `{field}` typed its input and keeps the wires of the fields that stay, by name; until then nothing is
+written. Escape leaves the empty template. Inserting the node is one step, writing the template another. A parameter
+that takes only a literal, as the template does, never takes a wire: neither a drop, nor autopatch, nor `into`.
+
+**Copy and paste.** The clipboard holds text: the selection as a function of the language, in canonical form (spec
+5.2), which an agent, a text editor or a message can read.
+
+```text
+labcraft 1
+use visa
+fn clipboard() -> () {
+    …
+}
+layout {
+    …
+}
+```
+
+- **Copy** (`fragment.copy`) writes the `use` that the selection needs, the lines of the selected nodes in the order of
+  the text, what each of them holds (constants, the nodes inside a selected structure), and the wires between them. The
+  `layout` section holds a `node … at` entry for each node that has a name (spec 11), and the `via` points of the wires
+  between them, as drawn. The nodes of the selection and their wires are counted from the top-left corner of the
+  selection; the nodes inside a selected structure keep the coordinates of its frame. An input wired from outside the
+  selection is left out, or gets a hole where the text cannot leave it out ([commands.md](commands.md), 9.1). A value
+  that a node outside reads is not an output of `clipboard`. The text is a file of the language, header included (spec
+  14), and the editor puts it on the clipboard of the system as plain text.
+- **Paste** (`fragment.paste`) puts the body of the text in the frame under the pointer, or in the frame of the focus.
+  The nodes keep their places relative to one another, from the top-left corner of the selection at the pointer, and
+  each one that has an entry is fixed: what the diagram showed, the file keeps (2.4); a node without a name has none,
+  and is placed automatically. Of the `layout` section, only the `node` and `wire` entries come; the signature, the
+  `frame size`, the terminals, `panel` and `icon` do not. A name already taken in the function, a label or the name
+  of an output of the function included, gets a suffix (N-14), and its readers in the fragment follow. The result
+  lists the names in `renamed`, and a name that the fragment reads without binding it is left out. A call to a
+  library that the project lacks is pasted as written, and `check` says so. One step. Any text that holds a function
+  can be pasted, and its body is what comes.
+- **Cut** (Ctrl+X) is copy, then `node.delete`, one step. **Duplicate** (Ctrl+D) is copy, then paste 16 to the right
+  and 16 below, one step, without touching the clipboard.
+- Pasting with the wires from outside kept is left for later (a "paste with its sources").
+
+**Without a pointer** (N-8, D-03). Everything above can be done from the keyboard, and a screen reader can read what
+the canvas shows.
+
+- **The focus is the selection.** Moving the focus selects what it reaches, as in a list. Tab and Shift+Tab go through
+  a frame in the order of the text (spec 5.2): its input terminals, its nodes, then its output terminals. Tab after
+  the last one leaves the canvas for the next panel, and Shift+Tab before the first one for the previous panel, so the
+  canvas never traps the focus. The arrows go to the nearest node in their direction, or in the order of the text
+  when two are as near. The canvas scrolls to keep the focus in view.
+- **Levels.** Enter on a node that is not a structure goes to its terminals: Up and Down along a side, Left and Right
+  from one side to the other. Enter on a structure goes into its frame, in the arm shown; its own terminals (its
+  notches, its carries) are the terminals of that frame. Ctrl+Page Down and Ctrl+Page Up show the next or the previous
+  arm of the structure that holds the focus, as a click on its tabs does. Escape goes back up one level.
+- **What Enter does on a terminal** depends on what the terminal holds: a wire, Enter selects that wire (its whole
+  value); a constant, a default or a hole, Enter opens its field, as a double-click does.
+- **Wiring.** W on a terminal starts a wire. Tab and Shift+Tab go through the terminals that would take it, in the order
+  of the text, each drawn with its ring and the wire snapped to it (2.5). The filter is the predicate of
+  `wire.connect`. Enter wires it, replacing as a drop does (2.4), and Escape cancels. Space opens quick insertion,
+  filtered, as a wire dropped on the empty canvas does; the node falls to the right of the start of the wire.
+- **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid; with Shift, by 64. Each press is a
+  `node.move`. The presses that follow one another on the same nodes are one step of undo, as a drag is
+  ([commands.md](commands.md), 9.1); another key, a click or a second without a press ends the run.
+- **AccessKit.** Each node, terminal of a node, terminal of the frame and structure is an element of the tree of
+  AccessKit, with a role and a name made of what 2.5 draws and its tooltips say. A node reads as
+  "verdict, `core.lt`, error LC3001", and a terminal as "input high of verdict, `f64[V]`, constant 240 V", "wired from
+  limit", "default 1.0" or "required input, not wired". A wire is reached from its terminals. What the status bar says
+  (an undo and its author, a refusal) is announced.
 
 ## 3. Nodes
 
@@ -1131,7 +1285,7 @@ IDE, the diagram takes its colors from this table.
 | N-5 | Units and origin of the canvas in the `layout` section | **Settled (2026-11-02):** those of section 2, written in spec 11 |
 | N-6 | Layout stability when a signature changes (terminals added) | The top-left corner is fixed, the node grows downward. **Retained (2026-11-10):** in compact view the size of a node comes from the definition of what it calls, never from what a call wires: every terminal of the signature is drawn, an optional input unwired too, the lines take their places (3.2) whatever they carry, and the label, the band and the pills never make a block larger (3.2). A block grows only when the signature changes, or with what a call gives beyond its parameters (the values of a variadic parameter, the fields of `string.format`, what `core.call` passes): down by two places (16) when its lines no longer hold (3.2), never across, so that its top-left corner and its width stay; the lines are counted from the top, so they keep their height, and the `err` pair, on the last place, moves down with the block. This holds for a node that the `layout` section places; a node placed automatically follows 2.1 |
 | N-7 | Does automatic layout keep the error chain straight? | **Settled (2026-11-08): yes, at every level** (2.1). The main error chain occupies one horizontal line, at the bottom of the nodes it crosses, through every structure on it; every other node goes above it, and only error wires leave it downward. Columns follow the order of dependencies. Tried on `check_voltage` and `settle` (`tools/lcf-figcraft`, retired after M0, which did not keep the line straight through a `match`) |
-| N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2) |
+| N-8 | Accessibility: keyboard traversal of the diagram and through AccessKit (D-03) | Traversal order = canonical form of the text (spec 5.2). **Settled (2026-11-15):** for M1 (2.6): the focus is the selection, Tab in the order of the text, the arrows to the nearest node, Enter down to the terminals and into a structure, W to wire, Ctrl+arrows to move, an AccessKit element for each node and terminal, named from what 2.5 draws |
 | N-9 | Unfolded view of a `match` or `handle`: where does the output wire start when each branch produces the value? How to draw an outer value used in several branches? | **Settled (2026-11-08):** the output of each branch joins a vertical bus along the inner right edge of the frame, which leads to the output terminal, so that the drawing says that every branch gives the value; an outer value read by several branches enters by its notch, then a vertical bus along the inner left edge; one bus per value, in the order of the outputs, the error output on the bottom line like the frame's (5.2) |
 | N-10 | Short label of the compact view: always derived from the name, or declarable by the author? | **Settled (2026-11-08):** derived from the name, on two lines when it holds an underscore (3.2); the icon is there for anyone who wants better. A cut at 8 characters gave `bench_s…` and `query_f…` on the examples |
 | N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon. Retained as a lead (2026-11-09): the mask of a library sets whether its band is shown, and a function can hide it in its own file, next to its `icon` (a helper; a function that talks to an instrument shows it by its session wire); to settle with N-15, before M1 |
