@@ -1,6 +1,6 @@
 # Commands: the catalog v0
 
-*Last updated: 2026-11-14. Status: implemented for milestone M0b (tag `v0.2.0-m0b`), in `engine`. The commands
+*Last updated: 2026-11-15. Status: implemented for milestone M0b (tag `v0.2.0-m0b`), in `engine`. The commands
 of section 6.5, implemented for M0v (tag `v0.3.0-m0`), are in `engine::view` and `engine::drawings` (`docs/architecture.md`, 10.8 and 11.5).*
 
 Everything LabCraft does is a command (D-18, [Craft conventions](craft-ecosystem.md)): the MCP server,
@@ -129,6 +129,7 @@ the text of `message`. These codes are strings, not `LC` codes: they describe a 
 | `file.not_simulation` | A `.toml` file that does not read as a simulation file, to write, rename or delete (section 2) |
 | `run.unknown` | A run id that this session does not know, or no longer keeps, or no run at all |
 | `run.busy` | `run.start` while another run of this session is going (section 4); `run` gives its id |
+| `file.stale` | *(M1)* An editing command whose `expected_revision` is not the revision of the file (section 9); `message` gives the current one |
 | `internal` | A bug of LabCraft, caught: `message` says where. The session goes on |
 
 A request too large to read is not a command error: no command was reached ([mcp.md](mcp.md), section 5).
@@ -490,7 +491,9 @@ The example leaves lines out, and files from the first line.
   (`dmm_driver.measure`), and `.labcraft/runs/<folder>/<function>.trace.jsonl` for a function run from a `folder` that is
   not the root (decision of the owner, 2026-11-10), so two functions never share a file. The folder starts with `.`, so no walk reads
   it as a library, and LabCraft writes a `.gitignore` holding `*` in `.labcraft/` when it creates that folder, so that runs
-  leave nothing for git to see. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
+  leave nothing for git to see. From M1, that `.gitignore` holds `*`, `!.gitignore` and `!config.toml`, so that it and the settings of
+  the project are versioned (section 9), and LabCraft writes it whenever it is missing or lacks those lines,
+  not only when it creates the folder: a clone has `.labcraft/` already. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
   `<id>` is unique to the run (the process, the session and the run), which can be followed, and renames it over the
   last trace when it ends, so the trace of the last finished run is always whole, and two runs of one
   function at once never write the same file: the one that ends last stays. A run first removes the
@@ -505,11 +508,51 @@ The example leaves lines out, and files from the first line.
   `run.trace` (section 6.4); `labcraft-cli run --trace FILE` writes elsewhere, its `.partial` beside `FILE`, and
   leaves the last trace of the function as it was.
 
-## 9. Left for later
+## 9. The editing model (M1)
 
-Each can be added without breaking anything above: commands that edit the graph rather than the text
-(M1: add a node, wire, move), the other commands of the viewer (M0v: zoom, pan), probes and breakpoints (M5), batches of commands in one call with a rollback
-(SolidCraft's `batch`), scripts of commands in a file, run by `labcraft-cli script` (D-18; `run` runs
-a program), undo and the journal of commands (M1), crash reports that replay the commands
+M1 adds the commands that edit a function as a graph: add a node, wire, move, rename, arrange. Their catalog
+comes with step 2 of the specifications of M1, in section 6. This section sets what they all share, decided with
+the owner on 2026-11-14 (spec, section 11; [visual-notation.md](visual-notation.md), section 2.4).
+
+- **The file is the truth.** A command that succeeds writes the canonical form of each file it touches (spec 5.2)
+  at once: there is no unsaved state of a function and no "save". The IDE, the agent and the command line edit
+  the same files through the same commands.
+- **One history per project.** Every step is signed by its author: the user, the agent, or an external write.
+  Undo (Ctrl+Z) undoes the last step, whoever made it, and the status bar says what it undid and whose it was;
+  in a text field, Ctrl+Z stays in the field. A step restores the text of each file it touched byte for byte,
+  even a text that was not canonical (written by an agent), from a snapshot of each file before the step. Redo
+  replays it. A gesture is one step: a drag, a wire drawn, a rename with what follows it (spec 11, notation 2.4).
+- **External writes.** A file that changes on disk, and whose hash is not that of the last write of LabCraft, is
+  read again, and the change becomes a step signed "external": undo goes back over it as over any other. Writes
+  of one file in a burst merge into one step.
+- **Revisions.** The revision of a file is the hash of its text. Every editing command can carry
+  `expected_revision`, per file: when it is stale, the command is refused, changes nothing and returns the
+  current revision (`file.stale`, section 3), so that an agent that read a file before the user changed it
+  cannot overwrite that change.
+- **`batch`.** Several commands in one call, applied in order, written once at the end, one step of undo. A
+  command that fails rolls the whole batch back, and nothing is written.
+- **The agent and a gesture.** While the user is in a gesture (a wire being drawn, a field being typed in), an
+  editing command of the agent waits for the end of the gesture, then applies to the result; a stale
+  `expected_revision` then refuses it as above.
+- **The `Text` panel.** The text of a function, edited by hand in the IDE, is written when it parses (grammar
+  correct, with or without errors of types or of `check`, which the diagram shows), after about 0.5 s without a
+  key or when the panel loses the focus; each such pause is one step. A text that does not parse stays in the
+  IDE, with a banner, and in the recovery folder; the file keeps the last text that parsed.
+- **Incomplete is normal.** A node added without its required inputs writes a file that has `LC2101`: the
+  diagram shows it, and wiring it removes the error.
+- **Arrange.** One command, on the selection, a branch or the whole function: it removes the `layout` entries
+  of what it arranges (spec 11), and the automatic placement places it again, around the fixed nodes outside
+  the selection; one step. An agent calls it only when asked to: arranging is the user's choice.
+- **Settings.** The settings of a project are in `.labcraft/config.toml`, versioned with the project, and those
+  of the user in the folder of the user (`craft-settings`); a key of the project wins over the same key of the
+  user. The commands `settings.get` and `settings.set` read and write them, for the IDE, the agent and the
+  command line; `labcraft.toml` stays the manifest of the libraries (D-25). In `.labcraft/`, git sees `config.toml`
+  and the `.gitignore` only; the runs and the traces stay out of it (section 8).
+
+## 10. Left for later
+
+Each can be added without breaking anything above: the other commands of the viewer (M0v: zoom, pan), probes and breakpoints (M5),
+scripts of commands in a file, run by `labcraft-cli script` (D-18; `run` runs
+a program), the journal of commands (M1), crash reports that replay the commands
 that led to a bug (a Craft rule), real instruments and the consent they need (M4, [mcp.md](mcp.md),
 section 6).

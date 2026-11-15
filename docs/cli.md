@@ -1,6 +1,6 @@
 # Command line: `fmt`, `check`, `run`, `diagram` and the viewer
 
-*Last updated: 2026-11-14. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
+*Last updated: 2026-11-15. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
 ([mcp.md](mcp.md)) implemented for M0b (tag `v0.2.0-m0b`); `diagram` (section 7) and the desktop viewer `labcraft`
 (section 8) implemented for M0v (tag `v0.3.0-m0`).*
 
@@ -97,7 +97,7 @@ the same error.
 spec); names and units in their one spelling (R-20); `use` lines; the order of lines; the layout of
 the text; the items of `panel` and `layout`; layout entries that name nothing (`LC5004`): a `node` entry
 on no node, a `wire` entry that starts at no name that the function binds or label, or at a terminal
-(`raw.session`), or ends at no node.
+(`raw.session`), or ends at no node, an `input` or an `output` entry on no input or output of that kind.
 An entry that names an input or an output of the function, or a line such as `k = step.low`, which a single
 file cannot tell from a constant, stays for `check` (spec 11).
 
@@ -477,10 +477,10 @@ section 3), not a diagnostic.
 | `LC5001` | error | Panel element declared twice | 10 |
 | `LC5002` | error | `control` with the name of an output only, or `indicator` with the name of an input only | 10 |
 | `LC5003` | warning | Panel kind that M0 does not know (section 10); the element works without a widget | 10 |
-| `LC5004` | warning | Layout entry that names nothing: a `node` entry on no node (an input, an output, a line such as `k = step.low`), a `wire` entry that starts at no value or label, ends at no node or output, names an input that the node does not have, or starts with a terminal (`raw.session`). Every entry of an `extern`. `fmt` removes those that a single file can tell (spec 11) | 11 |
+| `LC5004` | warning | Layout entry that names nothing: a `node` entry on no node (an input, an output, a line such as `k = step.low`), a `wire` entry that starts at no value or label, ends at no node or output, names an input that the node does not have, or starts with a terminal (`raw.session`). An `input` or `output` entry on no input or output of that kind. Every entry of an `extern`. `fmt` removes those that a single file can tell (spec 11) | 11 |
 | `LC5005` | error | Coordinate that is not an integer literal in the range (`5.0`, `1e3`, `2000000`) | 11 |
 | `LC5006` | warning | Layout entry that is ambiguous (a `node` entry on a name defined in several bodies, a `wire` entry that matches several wires: naming the input settles it), or a `wire` entry whose value and node exist with no wire between them | 11 |
-| `LC5007` | error | Two layout entries for the same node or wire, `node x at (…)` and `node x view standard` included | 11 |
+| `LC5007` | error | Two layout entries for the same node, wire, terminal or frame, `node x at (…)` and `node x view standard` included | 11 |
 | `LC5008` | error | Invalid icon: a grid not written `32`, `path` syntax, a radius or a size not above zero, `inf` or `nan`, an `accent` token that is not in the visual notation, section 8, or is `select.stroke` or `node.active`, more than 256 shapes, or more than 4,096 segments or 64 KiB of path in all *(proposed)*. Its calls show the label instead (spec 11.1) | R-14 |
 | `LC5009` | warning | Icon shape that leaves the grid: what it draws goes below 0 or above 32, a text by its box in the font of the notation (11.1) | R-14 |
 | `LC5010` | error | Panel element that does not say its type (not an input or an output, a kind that holds several types, no `default:`) and that a `ui.get` reads, or that no `ui.set` writes, when the function has no other mistake, which may be a `ui.set` that nothing could bind. Not for a kind that M0 does not know, which has only `LC5003`, nor on an `extern`, which has no diagram | 10 |
@@ -1101,9 +1101,12 @@ shell's `>` can re-encode the output), a `--target web` for the error on externa
 (spec 4.1), and an `--exclude` for folders such as `target/` and `node_modules`, which are walked like any
 other: a folder over the bounds of section 1 gives `LC0010` even if it holds no program.
 
-For `run`, besides what [commands.md](commands.md), section 9 lists: setting a panel element live from
+For `run`, besides what [commands.md](commands.md), section 10 lists: setting a panel element live from
 the command line (the first Ctrl-C as a press of a Stop switch, the second as an abort), arguments from a
 JSON file read from stdin (`--args -`).
+
+From M1: `labcraft-cli settings get` and `settings set`, the settings of a project (`.labcraft/config.toml`) and of
+the user, through the commands of the same name ([commands.md](commands.md), section 9).
 
 For `diagram`: other formats (`--png`), an SVG on stdout, the view state from the command line (every
 node in standard view, as the preference of the IDE, folded constructions, the branch of a `match` in

@@ -1,11 +1,11 @@
 # Architecture
 
-*Last updated: 2026-11-14. Status: implemented for M0a (sections 1 to 9), M0b (section 10) and M0v
-(section 11); M0 is tagged `v0.3.0-m0`.*
+*Last updated: 2026-11-15. Status: implemented for M0a (sections 1 to 9), M0b (section 10) and M0v
+(section 11); M0 is tagged `v0.3.0-m0`. Section 12, M1, is an outline.*
 
 How the Rust code is arranged. Sections 1 to 9: M0a, the crates `types`, `graph`, `format` and `check`, the app
 `labcraft-cli`, and `xtask`. Section 10: M0b, the crates `ir`, `runtime`, `engine` and `mcp`, and the native crate of
-`visa`. Section 11: M0v, the crates `trace`, `diagram` and `editor`, and the viewers. It is written for whoever
+`visa`. Section 11: M0v, the crates `trace`, `diagram` and `editor`, and the viewers. Section 12: M1, an outline. It is written for whoever
 implements them, person or agent. The contract
 to meet is elsewhere: [spec](language-spec-v0.md), [command line](cli.md),
 [acceptance scenarios 2, 4, 5](acceptance-m0.md), [corpora](../tests/acceptance/README.md). The layers
@@ -1585,3 +1585,43 @@ Each step ends with something testable.
    curves and the button that hides the values (8b).
 9. **Before the tag**: 60 frames/s by hand, 8 hours of fuzzing for each new target ([acceptance-m0.md](acceptance-m0.md),
    scenarios 4 and 6), the workflow `release` (section 8).
+
+## 12. M1: editing (outline)
+
+*An outline, written with step 1 of the specifications of M1 (the editing model). Step 8 of those specifications
+turns it into the arrangement of the code, with `docs/acceptance-m1.md` and the order of work; until then, nothing
+here is a signature.*
+
+The contract is in the [spec](language-spec-v0.md) (section 11: what the `layout` section holds, `frame size`,
+`input` and `output`, a node known by its name), [commands.md](commands.md) (section 9: the editing model) and
+[visual-notation.md](visual-notation.md) (section 2.4: editing by hand). Each crate keeps its layer
+([roadmap](roadmap.md)); the editor never writes a file itself.
+
+- **`graph` and `format` (L1, L2)** read and write the new entries of `layout` (`frame size`, `input x at y`,
+  `output x at y`) and keep them in canonical order (spec 5.2). Writing is `format` alone: every command that
+  succeeds writes the canonical form of what it touched. `check` judges the new entries as the others (`LC5004`,
+  `LC5007`).
+- **`diagram` (L5)** places around what is fixed: the fixed nodes, the terminals at their height, the size of the
+  frame, coordinates that can be negative (spec 11). The placement still depends on the file alone (notation 2.1),
+  and a small change of the file moves few nodes: that is a property to measure, as the figures of stability of
+  M0v (11.7, step 3), not a memory of the previous drawing.
+- **`engine` (L6)** holds the editing commands and what they share:
+  - one **history per project**, a list of steps, each with its author (user, agent, external) and, for each file
+    it touched, the text before and after, so that undo restores the text byte for byte; a `batch` is one step;
+  - the **revision** of each file, a hash of its text, against which `expected_revision` is judged (`file.stale`);
+  - the **watch** of the files of the project: a write that is not ours becomes a step signed "external", a burst of
+    them one step;
+  - the **gesture lock**: while the editor reports a gesture in progress, the editing commands of the agent wait
+    in order, then apply;
+  - the **settings**: two stores of `craft-settings`, the user's and the project's, opened by
+    `SettingsStore::open_at` on `.labcraft/` (its file is `config.toml`); `craft-settings` has no layers, so
+    `engine` merges them key by key, the project first, and `settings.set` says which one it writes. In WASM,
+    `craft-settings` has no store: where the web page keeps its settings is left to step 8.
+- **`editor` (L7)** turns gestures into commands of `engine`, and nothing else: a drag is a move, a wire drawn is
+  a `wire` command, a resize writes `frame size` through a command. A gesture in progress is a state of the
+  editor alone, which the file does not hold, as the view state (spec 11).
+- **`mcp`** exposes the same commands, with `expected_revision` and `batch`; an agent and the user edit one
+  history.
+
+Left to step 8: where the history lives in memory and its bound, the hash, the recovery folder of the `Text`
+panel, the journal of commands (`engine`), the fuzzing of the editing commands (8 hours before the tag of M1).

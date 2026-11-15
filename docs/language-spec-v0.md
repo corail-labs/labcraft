@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-10. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-15. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -535,8 +535,9 @@ has one text:
 - **Items of `panel`**: the `control` items, then the `indicator` items. In each group, the
   elements that have the name of an input (for `control`) or of an output (for `indicator`), in
   signature order, then the others by name in code point order. Arguments keep their written order.
-- **Items of `layout`**: the `node` items by name, then the `wire` items by source and destination,
-  all in code point order on the text of the reference (so `#close` comes before `dmm`). Ties keep
+- **Items of `layout`**: the `frame size` item, the `input` items, then the `output` items, each in
+  signature order (an entry that names no terminal after those of its kind), then the `node` items by name, then the `wire` items by source and destination,
+  the last two in code point order on the text of the reference (so `#close` comes before `dmm`). Ties keep
   the written order, and so do the points after `via`. A coordinate that is an integer literal in
   the range (section 11) is written in plain decimal: `1_000` becomes `1000`, `-0` becomes `0`.
   Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
@@ -1058,6 +1059,7 @@ to it.
 | `ref<T>` and its access structure (8.1, Q-19) | M2 |
 | Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
 | Structures planned outside v0: events, queues, notifiers, maps and sets, timed loops, cyclic tasks (6.4) | M2 and later |
+| The `frame size`, `input` and `output` entries of `layout` (11), which the editor writes | M1 |
 
 **Libraries.**
 
@@ -1219,6 +1221,8 @@ polling in a loop.
 
 ```text
 layout {
+    frame size (720, 240)
+    output err at 120
     node #close at (580, 80)
     node dmm at (40, 80) view standard
     node reading at (220, 80)
@@ -1227,11 +1231,38 @@ layout {
 }
 ```
 
+- **What the diagram shows, the file keeps.** Closing and reopening a function draws the same diagram:
+  what the user arranges by hand (a node moved, a route, a frame resized, a terminal moved) is an entry of
+  this section, and what has no entry is placed automatically, in the same way each time, with the same view state (tabs,
+  folds, the views that a preference sets: visual notation 2.1). Apart from that view state, only a gesture in
+  progress (a wire being drawn, a field being typed in) is not in the file: the editor never shows a placement
+  or a wiring that the file cannot write.
 - **Coordinates** are in canvas units: 1 unit = 1 logical pixel at 100% zoom, y pointing down (visual
-  notation, section 2), from the top-left corner of the frame that holds what they place: the frame of the
-  function, of a loop, or the box of an arm. `node x at (40, 80)` places the top-left corner of the node
+  notation, section 2), from the origin of the frame that holds what they place: the frame of the
+  function, of a loop, or the box of an arm. The origin is the top-left corner of the frame that the
+  automatic placement draws when the section has no entry for that frame. A frame that grows up or to the
+  left to hold what it holds keeps its origin, so a coordinate can be negative: moving a node above the
+  frame rewrites the line of that node alone. `node x at (40, 80)` places the top-left corner of the node
   in its frame, so that a structure that moves moves what it holds, and its entries do not change; the
   points after `via` are waypoints of the route, in the frame of the wire.
+- **A node with a `node … at` entry is fixed**; the others are placed automatically, around the fixed ones,
+  from the file alone, and a small change of the file moves few of them (visual notation 2.1). Moving a node by hand
+  writes the entry of that node alone. A node that an agent adds without a position is placed near its
+  neighbours, without moving the others, and gets no entry until someone moves it.
+- **`frame size (w, h)`** is the size of the frame of the function, set by hand (its right edge, its bottom
+  edge or its corner, never its top or left edge, which would move the origin). `w` and `h` are measured from the
+  origin: the frame spans from the origin to `(w, h)`, and further wherever its content needs, negative
+  coordinates included, so a node moved above it leaves `frame size` as it is. The frame always holds what
+  it holds: a size too small for its content is drawn as large as the content needs, and the editor never
+  writes one. Without this entry, the size is automatic. The size of a structure comes later (M1, with the
+  gesture that surrounds nodes).
+- **`input x at y`** and **`output x at y`** set the height of a terminal of the frame of the function, moved
+  by hand along its edge: an input on the left edge, an output on the right one. `y` is where its wire
+  meets the edge, in the coordinates of the frame. `input err` and `output err` name the two terminals of a
+  name that is both an input and an output (R-2). The terminals without an entry keep their automatic
+  place, in signature order, around those that have one; a fixed terminal can change that order. On one
+  edge, the editor keeps 24 units between two terminals (visual notation 2.1); a file that places them
+  closer draws them as written. A frame that grows keeps its terminals at their height.
 - Nodes are designated by their label (`#close`) if they have one, or by the name of their line
   (5.2): their first output that is neither `_` nor `next x`. A node that has no such output (all
   its outputs are `_` or `next x`, or a call statement) needs a label to be designated here. A named
@@ -1260,7 +1291,7 @@ layout {
 - **A value that is also the selector** enters the structure by the selector, which serves as its
   notch: `match c { … }` with `c` read in an arm draws one wire of `c` outside. `wire c -> y.c` gives
   it a notch of its own, as the developer draws it; without that entry, it goes by the selector. An
-  agent, which never writes this section, gets the path by the selector.
+  agent, which never writes this section in its text, gets the path by the selector.
 - **A wire that enters a structure has one entry per frame**, each with its own route: outside, from
   the value to the structure that holds its reader (`wire k -> flight_time` in `projectile`), and
   inside, from the notch on the edge to the node that reads it (`wire k -> ks`). Inside, the value
@@ -1269,21 +1300,29 @@ layout {
 - An input or an output of the function is a terminal of its frame, not a node (visual notation,
   section 2). An input is a value, so a `wire` entry can start there, and it can end at an output:
   `wire e3 -> err`. A name that is both a node and an output designates the one that the value goes
-  to. A `node` entry cannot name an input or an output, and gets the warning below.
+  to. A `node` entry cannot name an input or an output, and gets the warning below: `input` and
+  `output` place them. An `input` entry names an input of the function, an `output` entry an output.
 - An entry designates the wires that match it. None is a warning: `LC5004` when a name designates
   nothing (no such value, node or input), `LC5006` when both exist and no wire joins them. Several
   are a warning too (`LC5006`), and naming the input settles it, except in three cases that keep an
   automatic route in v0: a value that is the selector and is also yielded as it is by an arm, one
   value yielded by two arms, and `next s = s0` when `s0` also gives `s` its first value. One value
   that reaches a node twice through inputs without a name (`[x, x]`, a variadic parameter) counts as
-  one wire. Two entries for one wire are an error (`LC5007`).
+  one wire. Two entries for one wire, one terminal or the frame are an error (`LC5007`).
 - Wires without a route are routed automatically.
 - **View of a node**: compact by default, standard on request (visual notation, section 3).
   `view standard` or `view compact` sets the view of a node, alone or after its position. The IDE
   preference "everything in standard" is not in the file.
 - Section missing or incomplete: the IDE places the missing nodes. An agent never writes this
-  section.
-- Renaming a value updates the section (IDE and CLI command). An entry that names a node that
+  section in a text it writes; the editing commands write it, whoever calls them (rename, arrange:
+  [commands.md](commands.md), section 9).
+- **A node is known by its name**, never by an identifier hidden in the file (Q-10): the editor names
+  every node it places (visual notation, N-14). Renaming a value updates the section (IDE and CLI
+  command), its `node` line and its `wire` lines included. Its breakpoints and probes (M5) follow it too. A
+  rename made in the text, by an agent or by hand, while the project is open in the IDE, is recognized when
+  the function and its wires are the same: the IDE moves the entries to the new name, and that rewrite is part
+  of the step of the external write (commands.md 9), undone with it. A rename made while the IDE is closed
+  is not recognized, and its entries follow the rule below. An entry that names a node that
   does not exist, for example after an agent renamed a value in the text, gives a warning at edit
   time; `fmt` removes it, unless a body of the function cannot be ordered (5.2) or a comment is
   attached to the entry. `fmt` reads one file, so it keeps the name of any line whose value is more than
@@ -1629,7 +1668,7 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `after`: an argument list (`after:` is the order input, R-15);
 - `opaque`: the whole type of a `type` declaration (3.2);
 - `control`, `indicator`: a `panel` item;
-- `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`: a `layout` item;
+- `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`, `frame`, `size`, `input`, `output`: a `layout` item;
 - `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item.
 
 **New words.** From the first release of LabCraft, a version published with its program, a structure or
@@ -1777,7 +1816,9 @@ panel_section  = "panel" "{" { panel_item } "}" ;
 panel_item     = ( "control" | "indicator" ) IDENT ":" IDENT [ "(" [ arg { "," arg } ] ")" ] ;
 
 layout_section = "layout" "{" { layout_item } "}" ;
-layout_item    = "node" node_ref ( "at" point [ view ] | view )
+layout_item    = "frame" "size" point                    (* the frame of the function (11) *)
+               | ( "input" | "output" ) IDENT "at" number  (* a terminal, its height on its edge *)
+               | "node" node_ref ( "at" point [ view ] | view )
                | "wire" terminal_ref "->" terminal_ref [ "via" point { point } ] ;
 view           = "view" ( "standard" | "compact" ) ;
 terminal_ref   = node_ref [ "." IDENT ] ;                (* wire x -> sq.b; a start has no "." (11) *)
@@ -1835,7 +1876,7 @@ What the grammar alone does not say:
 | Q-7 | Stopping a loop on error | **Settled (2026-10-31): stop by default** when an `error` carry holds an error, `continue_on_error` to avoid it (6.3) |
 | Q-8 | Retry | Generic `retry` function or documented loop pattern |
 | Q-9 | Error wire on each call: too verbose? | **Settled (2026-10-30): explicit everywhere.** It carries the order of actions; the text matches the diagram exactly |
-| Q-10 | Node identity for git merging | Is the name of the first output enough, or is a hidden identifier needed? |
+| Q-10 | Node identity for git merging | **Settled (2026-11-14): by its name**, the first output or the label, with no hidden identifier (11); the editor names every node it places (visual notation, N-14), and recognizes a rename made in the text. To revisit if M1 shows that a name is not enough |
 | Q-11 | Syntax of queues and events | To be written for M2 |
 | Q-12 | Unit variables in user functions | A type variable already binds a whole type with its unit (3.5); this question covers a variable for a unit alone. F# model: `fn scale<U>(x: f64[U], k: f64) -> (y: f64[U])`, inference. Also to decide: how `U` is told apart from a type variable (a bound, or its position in `[ ]`) |
 | Q-13 | State machine | Reference example written (section 13): readable without dedicated syntax. To be confirmed on a larger machine |

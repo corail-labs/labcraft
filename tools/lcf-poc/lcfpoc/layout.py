@@ -584,7 +584,19 @@ def _item_rules(L, out):
         elif ln.sname == "layout":
             m = re.match(r"node (\S+)", ln.body)
             w = re.match(r"wire (\S+) -> (\S+)", ln.body)
-            if m:
+            t = re.match(r"(input|output) (\S+) at (\S+)", ln.body)
+            if ln.body.startswith("frame size"):
+                layout.append(((-3, 0, ""), ln.no, ln.text))
+            elif t:
+                side, name, height = t.groups()
+                terminals = inputs if side == "input" else outputs
+                rank = terminals.index(name) if name in terminals else len(terminals)
+                layout.append(((-2 if side == "input" else -1, rank, name), ln.no, ln.text))
+                if re.fullmatch(r"-?[0-9][0-9_]*", height):
+                    value = int(height.replace("_", ""))
+                    if abs(value) <= 1_000_000 and height != str(value):
+                        out(ln.no, f"a coordinate is written in plain decimal: `{value}`, not `{height}` (5.2)")
+            elif m:
                 layout.append(((0, m.group(1), ""), ln.no, ln.text))
             elif w:
                 layout.append(((1, w.group(1), w.group(2)), ln.no, ln.text))

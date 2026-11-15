@@ -586,9 +586,21 @@ layout {
                       "    wire a -> c\n    wire a -> b\n"):
             self.assertTrue(any("items of `layout`" in m for _, m in self.layout(head + "layout {\n" + items + "}\n")),
                             items)
+        # frame, then inputs and outputs in signature order (spec 5.2, 11)
+        self.assertEqual(self.layout(head + "layout {\n    frame size (640, 320)\n    input a at 40\n"
+                                            "    input b at -8\n    output x at 40\n    output y at 64\n"
+                                            "    node dmm at (3, 4)\n}\n"), [])
+        for items in ("    input a at 40\n    frame size (640, 320)\n",
+                      "    input b at 40\n    input a at 64\n",
+                      "    output x at 40\n    input a at 64\n",
+                      "    node dmm at (3, 4)\n    output y at 64\n"):
+            self.assertTrue(any("items of `layout`" in m for _, m in self.layout(head + "layout {\n" + items + "}\n")),
+                            items)
         for value in ("1_000", "-0", "007", "1_", "1__0"):
             self.assertTrue(any("plain decimal" in m for _, m in
                                 self.layout(head + f"layout {{\n    node a at ({value}, 2)\n}}\n")), value)
+            self.assertTrue(any("plain decimal" in m for _, m in
+                                self.layout(head + f"layout {{\n    input a at {value}\n}}\n")), value)
         for sect in ("panel {}\n", "layout {}\n", "panel {\n}\n"):
             self.assertTrue(any("empty" in m for _, m in self.layout(head + sect)), sect)
         # a comment is not an item: the section stays

@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-14. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v.*
+*Last updated: 2026-11-15. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v; editing by hand (2.4) is for M1.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -57,12 +57,12 @@ Craft family:
 
 - The flow goes **left to right**: inputs on the left of a node, outputs on the right.
 - **The function is drawn as a frame without a box**: its title, its inputs as terminals on the left
-  edge, its outputs on the right edge, as a structure has, but no outline and no fill (5), in signature order, except `err`, which is always at the bottom of each
-  edge (2.1). An optional input shows its default value next to
+  edge, its outputs on the right edge, as a structure has, but no outline and no fill (5), in signature order, except `err`, which is at the bottom of each
+  edge (2.1); terminals moved by hand keep the height they were given (2.4). An optional input shows its default value next to
   its terminal (`low ◂ 220 V`). The `///` documentation is the tooltip of the title.
 - Orthogonal wires, rounded corners (radius 6). Grid of 8 units.
 - Canvas units: 1 unit = 1 logical pixel at 100% zoom; `node x at (40, 80)` places the top-left corner
-  of the node, from the top-left corner of the frame that holds it (spec 11).
+  of the node, from the origin of the frame that holds it (spec 11).
 
 ### 2.1 Automatic placement
 
@@ -274,6 +274,58 @@ developer chooses the zoom, and the font of the other panels of the IDE.
   wider, and so can a fallback glyph, which the SVG cannot scale: a text can then run a little past
   its box in that SVG; the positions do not change. The
   SVG does not embed the font.
+
+### 2.4 Editing by hand (M1)
+
+What the editor of M1 does with the placement, decided with the owner on 2026-11-14 on an interactive prototype.
+One rule governs it: **what the diagram shows, the file keeps** (spec 11). Closing and reopening a function draws the
+same diagram, so the editor never shows a state that the `layout` section cannot write; only a gesture in progress
+(a wire being drawn, a field being typed in) escapes it. How each state is drawn (marks, handles, the wire being
+drawn) comes with step 3 of the specifications of M1; the keys and the gestures in detail, with step 4. Where two
+behaviours are defensible, the other one is a setting of the user or of the project, and the default is the one
+below.
+
+- **Fixed and free nodes.** Moving a node fixes it: its `node … at` entry is written, and that node alone. The
+  others stay automatic and move as little as they can around it; their place still depends on the file alone (2.1),
+  so the fixed nodes are what keeps the drawing stable. Setting: "fix every node at the first move". A node that an
+  agent adds without a position is placed near its neighbours, without moving the others, and stays free until
+  someone moves it.
+- **A fixed node shows it.** A pin icon (`pin` of Tabler Icons, MIT, attributed with the other assets) in `ink.muted` (step 3 places it), and on hover: "Position fixed
+  (`node x at (…)` in `layout`). Right-click › Remove the fixed position". Setting: "mark the fixed nodes", on by
+  default. Removing the fixed position deletes the entry; the node goes back to the automatic placement.
+- **Arrange** (Ctrl+Alt+R, to confirm with step 4): on the selection, a branch or the whole function, it removes
+  the entries of what it arranges, `via` points, terminals and `frame size` included for the whole function, and the
+  automatic placement places it again around the fixed nodes outside the selection. One step of undo.
+- **The frame of the function** is resized by its right edge, its bottom edge or its corner, never by its top or left
+  edge, which would move the origin and rewrite every `node` line (spec 11): `frame size (w, h)`. It never hides a
+  node: below the size of its content, it stops. A node moved within 24 of an edge grows the frame on that side,
+  up and to the left as well, with negative coordinates; it grows only then, so a node can come that close to the edge, nearer than the
+  margins that the automatic placement keeps (2.1). The terminals keep their height when the frame grows: nothing else moves.
+- **The terminals of the frame** are moved by hand along their edge, an input on the left, an output on the right:
+  they stay on the edge, on the grid of 8, at least 24 apart, and their order can change. Only the terminals moved
+  are written, one `input x at y` or `output x at y` each (spec 11). A terminal moved up or down past the frame grows
+  it without pushing anything. It has the pin of a fixed node; removing its fixed position, or Arrange, puts it back.
+- **A wire to an input already wired** replaces the old one, visibly: the old wire retracts. Setting: "replace only with
+  Alt".
+- **A wire of the wrong type** is refused by default, and the reason is shown where it is dropped. Setting: "accept
+  it": the file then holds it, `check` gives `LC3001` and the wire is drawn broken (step 3).
+- **Moving a wire.** Alt and a drag on a segment moves it and writes `wire a -> b via (…)`; a plain drag from a wire
+  starts a branch instead. "Arrange this wire" removes its entry. The `via` points stay where they are when a node
+  moves (to confirm with use).
+- **A branch from a wire** is a wire from the same value: it starts at a junction where the wire was grabbed, and
+  that junction follows the trunk. No syntax is added: the first `via` point of a branch that lies on a wire of the
+  same value is its junction, a rule of the editor. Its tolerance, and what a junction does when an automatic trunk
+  moves, come with steps 3 and 5.
+- **A right-click on the empty canvas** opens the palette of functions. Setting: "menu first".
+- **The name of a value bound to an output.** A value bound to an output of the function carries the name of that
+  output (`voltage = core.with_unit(…)`, R-2); otherwise, the name that inserting its node would have given it (the
+  name of the output of its function, numbered when taken, N-14). Unwiring it from the output renames it, and its
+  readers follow; wiring it back folds it again, and the text comes back byte for byte; each is one gesture, one
+  step of undo. Exceptions: a value already bound to another output (the second is written `b = a`), and an output
+  that is also an input (`err`, R-2) when the value has other readers, which would then read the input. Wiring
+  another node to an output bound by name renames the old one and folds the new one. So renaming a node to the name
+  of an output is refused: the wire gives that name, otherwise the text would bind the output with no wire drawn. A
+  file written by hand (`err = e3`) stays as it is: these are rules of the gestures, not of the language.
 
 ## 3. Nodes
 
@@ -953,7 +1005,7 @@ IDE, the diagram takes its colors from this table.
 | N-11 | An icon shared by several functions of a library, and the band of a library | Copied into each file in v0, and the band is the plain name of the library (3.2). To judge on the viewer of M0v and settle before the editor (M1): a **library mask**, which a library declares once to change its band (a shorter text, `DMM` for `dmm_driver`; a proposed color, from which the theme derives the light and dark fills and which the developer can change) and to give the icons of its functions a common vector background, in the shapes of spec 11.1. Where it is declared, the manifest or a text file of the library, is open too. Lead: the band stays text and color, readable at 12 units high; drawing belongs to the icon. Retained as a lead (2026-11-09): the mask of a library sets whether its band is shown, and a function can hide it in its own file, next to its `icon` (a helper; a function that talks to an instrument shows it by its session wire); to settle with N-15, before M1 |
 | N-12 | The `tools/lcf-figcraft` rendering draws only the standard view | **Settled (2026-11-09):** the compact view was judged on mock-ups of `check_voltage`, `settle` and `station` before the code of M0v; the public tool stays as it is until `diagram` replaces it |
 | N-13 | Error and order wires fall below 4.5:1 from `frame.fill.2` on (section 8) | **Settled (2026-11-08):** lighter nesting backgrounds and slightly darker wires in the light theme, closer backgrounds in the dark theme; every wire, mark and text token keeps 4.5:1 down to `frame.fill.4`, checked in CI (8) |
-| N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires |
+| N-14 | How does the editor name the values of what the user draws? The text needs a name for each wire, and the `layout` section designates a node by the name of its line (spec 11) | The user never names a line, only a wire, if they want to. A new node gets a name at once, from the output of its signature (`timestamp`), or from the function when that output says nothing (`result` of `core` gives `sum`, `product`), with a suffix when the name is taken. Renaming the wire on the canvas renames the value in the text and in `layout`. A node with no useful output gets a label when it needs one. To judge on a mock-up in M1: `timestamp2`, `timestamp3` are what the user reads on the wires. **Settled in part (2026-11-14):** a node is known by its name, which the editor gives to every node it places (spec 11, Q-10); the name of a value bound to an output follows the wire (2.4) |
 | N-15 | Sides of the terminals, and their place along a side, chosen by the author of the function: a configuration entering from the top, a vertical error chain, a wire that goes back to the left, a single line in the middle of a block | Left and right, with the error chain along the bottom and the lines from the top, are the defaults (3.1, 3.2); nothing in v0 chooses otherwise, so adding the choice later breaks no file. To settle before the editor (M1). Retained (2026-11-08): the choice belongs to the author of the function and is stored in its file, next to its `icon`, so that every call to it looks the same on every screen and in every export; never to each node, nor to a preference of the IDE. Lead: any of the four sides; a mark of direction on a terminal that leaves its default side, since the shape of a terminal tells its family, not its direction. The routing of the wires leaves by any side from M0v on (2.2). With a band (3.2), the terminals of the top side sit on its top edge and its text goes between them, so that the corner of the block does not move (to confirm in M1). **Retained for M1 (2026-11-10):** a section `terminals`, in the file of the function after `layout` and before `icon`, gives its compact block a grid of places, 8 apart on the grid of the canvas: `top N` sets the width and `left N` the height, each (N + 1) × 8 (`top 4`, `left 5`: 40 × 48), and the right side has as many places as the left. `left 2 parts` puts a terminal on a place, counted from the top or from the left; `last` names the last place of a side (no `first`: it is `1`). A terminal that the section does not name keeps its default side, on the first free place, with no warning: the author writes only what differs. By default `err` is on the last place of the left and right sides, so the author writes it only to move it; the error chain stays straight through a node whose `err` is elsewhere, which then hangs from it (N-7). The bottom side has no place. The defaults (retained 2026-11-10, applied in v0 without a section on 2026-11-13, 3.2): inputs on the left and outputs on the right, in signature order, filled from the top, one per place (not one place apart, decided 2026-11-13: a line then has the same height on every block, and two functions in a row join by a straight wire; the author spaces them with the section), a pass-through pair on one place; a terminal that the section does not name takes the first free place from the top, in signature order, else the block grows by two places; an optional input goes to the top side only when the left side is full: left, then top, then the block grows (not in v0, where the block grows: the pills of constants on the top side and the wires that come down between them need a drawing of their own, decided 2026-11-13). The block has the size that the section gives at every call, with one exception: a variadic parameter takes a place per value that the call gives, the block grows from its place and what follows it moves along; the variadic primitives (`errors.merge`, `core.add`) follow the same rule. Two inputs on neighbouring places may both receive a constant: their pills step outward. The standard view does not follow the section. Like `icon`, the section says nothing about running: the CLI and the MCP server leave it out by default, and an agent writes it only when asked; in M1 the user drags a terminal onto a place and the IDE writes the line. `top`, `left`, `right` and `last` mean something only in the section and stay names everywhere (spec 14.1). Without a section, the layout computed by 3.2, as in v0 |
 
 ## 10. The values in one place

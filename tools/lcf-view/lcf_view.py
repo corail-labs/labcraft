@@ -151,10 +151,13 @@ panel_item: (CONTROL | INDICATOR) NAME ":" NAME ("(" [arg ("," arg)*] ")")?
 CONTROL: "control"
 INDICATOR: "indicator"
 layout_section: "layout" "{" layout_item* "}"
-layout_item: "node" node_ref ("at" point view? | view) -> layout_node
+layout_item: "frame" "size" point -> layout_frame
+           | TERMINAL_SIDE NAME "at" NUMBER -> layout_terminal
+           | "node" node_ref ("at" point view? | view) -> layout_node
            | "wire" terminal_ref "->" terminal_ref ("via" point+)? -> layout_wire
 view: "view" VIEW_KIND
 VIEW_KIND: "standard" | "compact"
+TERMINAL_SIDE: "input" | "output"
 terminal_ref: node_ref ("." NAME)?
 node_ref: "#"? NAME
 point: "(" NUMBER "," NUMBER ")"
@@ -202,7 +205,7 @@ def _span(t):
 
 
 LEAVES = {"header", "use_decl", "call_stmt", "until_stmt", "collect_stmt", "yield_stmt", "panel_item",
-          "layout_node", "layout_wire", "icon_rect", "icon_circle", "icon_line", "icon_path", "icon_text"}
+          "layout_frame", "layout_terminal", "layout_node", "layout_wire", "icon_rect", "icon_circle", "icon_line", "icon_path", "icon_text"}
 STRUCTURES = {"match_expr", "handle_expr", "loop_expr", "for_expr"}
 SEQUENCES = {"start", "block", "loop_body", "for_body", "arm_body", "match_expr", "handle_expr",
              "panel_section", "layout_section", "icon_section"}
