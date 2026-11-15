@@ -30,7 +30,7 @@ jobs:
         id: changes
         env:
           EVENT: ${{ github.event_name }}
-        run: bash .github/scripts/code-changed.sh
+        run: bash .github/scripts/code-changed.sh fuzz
 
   # A workflow of its own on a pinned nightly, so that `checks` stays on stable (docs/architecture.md, section 8).
   # Scenario 4: each target runs 60 s in each CI run.

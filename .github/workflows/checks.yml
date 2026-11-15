@@ -33,7 +33,7 @@ jobs:
         id: changes
         env:
           EVENT: ${{ github.event_name }}
-        run: bash .github/scripts/code-changed.sh
+        run: bash .github/scripts/code-changed.sh checks
 
   lint:
     runs-on: ubuntu-latest

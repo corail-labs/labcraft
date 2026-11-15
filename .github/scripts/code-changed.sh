@@ -2,17 +2,22 @@
 # Says whether a pull request changes more than prose, for the jobs that build or run code (workflows `checks`
 # and `fuzz`). Writes `code=true` or `code=false` to $GITHUB_OUTPUT.
 #
-# A changed file is prose when it is a Markdown file at the root or directly in docs/, or a file of docs/images/,
-# and no Rust string names it: the tests read docs/language-spec-v0.md, docs/cli.md and docs/visual-notation.md, so
-# those count as code. Every other file is code: docs/rfc/ and docs/releases/, skills/, examples/, the workflows.
+# A changed file is prose when it is a Markdown file at the root or directly in docs/, or a file of docs/images/ or
+# design/ (FigCraft files, which no code reads), and, for `checks`, no Rust string names it: the tests read
+# docs/language-spec-v0.md, docs/cli.md and docs/visual-notation.md, so those count as code. `fuzz` skips that
+# test, since the fuzz targets read no document of docs/ outside docs/rfc/ (a seed, so code): a Markdown file
+# there is prose for it, whatever a test reads. Every other file is code: docs/rfc/ and docs/releases/, skills/,
+# examples/, the workflows.
 # Anything but a pull request runs everything.
 #
 # The files are those of the merge commit that the job checked out, against its first parent (checkout with
 # fetch-depth 2): the commit under test, whatever its size. A file renamed counts under both names. CHANGED_FILES,
 # one path per line, replaces that list, to try the script by hand.
 #
-# Usage: code-changed.sh, with EVENT set by the workflow.
+# Usage: code-changed.sh checks|fuzz, with EVENT set by the workflow.
 set -euo pipefail
+workflow=${1:?usage: code-changed.sh checks|fuzz}
+case "$workflow" in checks | fuzz) ;; *) echo "unknown workflow: $workflow" >&2; exit 2 ;; esac
 
 say() {
   echo "code=$1"
@@ -39,6 +44,7 @@ fi
 code=false
 while IFS= read -r file; do
   case "$file" in
+    design/*) echo "prose: $file"; continue ;;
     */*.md) [[ "$file" == docs/*.md && "$file" != docs/*/* ]] || { echo "code: $file"; code=true; continue; } ;;
     *.md) ;;
     docs/images/*) ;;
@@ -49,6 +55,11 @@ while IFS= read -r file; do
   # comment, in backquotes, does not. A root file must be reached from above ("../README.md") or joined to the root:
   # a bare "README.md" is a name, not the file. Fixed strings, never a pattern. xtask is left out: what it reads
   # (docs/cli.md, docs/commands.md), the job lint checks, and lint always runs.
+  # The fuzz targets read none of these documents: prose, whatever a test of `checks` reads.
+  if [ "$workflow" = fuzz ]; then
+    echo "prose: $file"
+    continue
+  fi
   name=${file##*/}
   if [[ "$file" == */* ]]; then
     strings=(-e "\"$name\"" -e "/$name\"")

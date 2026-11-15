@@ -418,7 +418,9 @@ workflows, decides with `.github/scripts/code-changed.sh`, from the files of the
 changed file is prose when it is a Markdown file at the root or directly in `docs/`, or an image of `docs/images/`,
 and no string of the Rust code of `crates/`, `apps/`, `fuzz/` or `tests/` ends with its name (the tests read the
 spec, `docs/cli.md` and `docs/visual-notation.md`); a mention in a comment does not count. Every other file is
-code. The job `checks` then accepts a skipped part only when `changes` passed and said prose.
+code. A file of `design/` is prose too. For `fuzz` the test of the strings is left out, since the fuzz targets read no
+document of `docs/` apart from `docs/rfc/`: a document that a test reads is prose for it (the script takes the name of
+its workflow, `checks` or `fuzz`). The job `checks` then accepts a skipped part only when `changes` passed and said prose.
 
 The workflow `release` runs on a tag `v<version>`, which must name the version of `Cargo.toml` and have its note in
 `docs/releases/`. It builds `labcraft-cli` and `labcraft` in release for Linux x64 (on Ubuntu 22.04, for an older
