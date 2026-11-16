@@ -180,7 +180,9 @@ fn apply(style: &mut egui::Style, t: &Tokens) {
     widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
     widgets.inactive.bg_fill = t.raised;
     widgets.inactive.weak_bg_fill = t.raised;
-    widgets.inactive.bg_stroke = Stroke::NONE;
+    // A line around a field, a check box or a button at rest: in the light theme, `raised` is near the panel behind it, and
+    // a check box without it is not seen.
+    widgets.inactive.bg_stroke = Stroke::new(1.0, t.border);
     widgets.inactive.fg_stroke = Stroke::new(1.0, t.text);
     widgets.hovered.bg_fill = t.hover;
     widgets.hovered.weak_bg_fill = t.hover;

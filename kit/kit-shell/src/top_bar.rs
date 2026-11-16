@@ -1,6 +1,7 @@
 //! The top bar (ide.md 2): the name of the IDE, a house that opens the start page, the menus, undo and redo, the
-//! workspace selector; in the middle, the name of the project and the field that opens the command palette; on the
-//! right, segments (the agent, the settings, the help, the version) and, where the desktop draws no frame, the buttons
+//! workspaces; in the middle, the name of the project and the field that opens the command palette; on the
+//! right, segments (the agent, the settings, the help, the version), buttons of the window's interface (the theme) and,
+//! where the desktop draws no frame, the buttons
 //! of the window. An empty part of the bar moves the window, a double click maximizes it (`craft-window`).
 //!
 //! The menus are data (`craft-menu`), laid out by the host for its platform and drawn here.
@@ -29,8 +30,20 @@ pub struct Bar<'a> {
     /// The key of the command palette, shown in its field.
     pub palette_key: Option<&'a str>,
     pub right: &'a [Segment],
+    /// The buttons at the right end, before the buttons of the window, the first one rightmost.
+    pub tools: &'a [Tool],
     /// Who draws the frame of the window.
     pub frame: &'a Frame,
+}
+
+/// A button of the right of the bar: an icon that runs a command, or opens the card of an entry to come.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Tool {
+    pub icon: Icon,
+    pub hover: String,
+    pub command: String,
+    /// An entry to come (ide.md 6): drawn greyed, a click still runs its command, which opens its card.
+    pub planned: bool,
 }
 
 /// What the bar asks for this frame.
@@ -43,7 +56,7 @@ pub enum Answer {
     Redo,
     Workspace(Asked),
     OpenPalette,
-    /// The command of a segment of the right.
+    /// The command of a segment or a tool of the right.
     Segment(String),
 }
 
@@ -76,7 +89,13 @@ pub fn show(ui: &mut egui::Ui, bar: &Bar) -> Vec<Answer> {
             answers.push(Answer::Redo);
         }
         ui.separator();
-        if let Some(asked) = workspaces::selector(ui, bar.workspaces, bar.workspace) {
+        // The buttons of the workspaces when they leave the right of the bar its room, the selector otherwise.
+        let asked = if ui.available_width() - workspaces::buttons_width(ui, bar.workspaces) >= RIGHT_ROOM {
+            workspaces::buttons(ui, bar.workspaces, bar.workspace)
+        } else {
+            workspaces::selector(ui, bar.workspaces, bar.workspace)
+        };
+        if let Some(asked) = asked {
             answers.push(Answer::Workspace(asked));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -84,6 +103,18 @@ pub fn show(ui: &mut egui::Ui, bar: &Bar) -> Vec<Answer> {
                 && !layout.right.is_empty()
             {
                 window_buttons(ui, &layout.right.iter().rev().copied().collect::<Vec<_>>(), height);
+                ui.separator();
+            } else {
+                // No buttons of the window at the right end (the web, macOS): the segments keep off the edge.
+                ui.add_space(8.0);
+            }
+            for tool in bar.tools {
+                let response = if tool.planned { icon::planned(ui, tool.icon, &tool.hover) } else { icon::button(ui, tool.icon, true, &tool.hover) };
+                if response.clicked() {
+                    answers.push(Answer::Segment(tool.command.clone()));
+                }
+            }
+            if !bar.tools.is_empty() && !bar.right.is_empty() {
                 ui.separator();
             }
             for segment in bar.right.iter().rev() {
@@ -145,6 +176,9 @@ const FIELD_MIN_WIDTH: f32 = 140.0;
 const FIELD_HEIGHT: f32 = 22.0;
 /// The empty bar kept on each side of the field, to move the window.
 const DRAG_ROOM: f32 = 48.0;
+/// What the right of the bar needs before the workspaces show as buttons: the field at its narrowest with its room on
+/// both sides, the segments, the tools and the buttons of the window.
+const RIGHT_ROOM: f32 = FIELD_MIN_WIDTH + 2.0 * DRAG_ROOM + 340.0;
 
 /// The buttons of the window, when the app draws its frame: cells of the full height of the bar, the one of closing
 /// red under the pointer.
@@ -169,7 +203,7 @@ fn window_buttons(ui: &mut egui::Ui, buttons: &[Button], height: f32) {
                     colour = egui::Color32::WHITE;
                 }
             }
-            icon::paint(ui.painter(), egui::Rect::from_center_size(rect.center(), Vec2::splat(10.0)), shown, egui::Stroke::new(1.0, colour));
+            icon::paint(ui, egui::Rect::from_center_size(rect.center(), Vec2::splat(14.0)), shown, colour);
         }
         if response.on_hover_text(hover).clicked() {
             let command = match button {

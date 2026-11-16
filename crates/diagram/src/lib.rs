@@ -324,7 +324,13 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     drawing.trace = plan;
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
-        drawing.loose = frame_shapes(frame, &Text::new(&body.caption, crate::size::any_text(), crate::size::large()), None, None, "frame.stroke");
+        drawing.loose = frame_shapes(
+            frame,
+            &Text::new(&function_title(&body.caption), crate::size::any_text(), crate::size::large()),
+            None,
+            None,
+            "frame.stroke",
+        );
     }
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
@@ -525,6 +531,12 @@ fn sized_label(node: &graph::Node<'_>, at: &place::NodeAt) -> Option<Shape> {
     Some(text.at(at.x, at.y - style::label_above() - size::line_height(crate::size::medium()) / 2, "ink.muted"))
 }
 
+/// The title of the frame of the function: its keyword, then its name, as the text writes it and as a structure shows its
+/// keyword in its header (notation 2; decision of the owner, 2026-11-16).
+fn function_title(name: &str) -> String {
+    format!("fn {name}")
+}
+
 /// The widths that titles need: the name of the function, a header and its badge, the patterns of an arm, the tabs of a
 /// structure in tabs; and which structures are in tabs.
 fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
@@ -550,7 +562,7 @@ fn titles(graph: &Graph<'_>, view: &ViewState) -> place::Titles {
         let width = match body.owner.and_then(|owner| graph.nodes.get(owner)).map(|owner| &owner.kind) {
             // In tabs, an arm has no title: its tab names it.
             _ if body.owner.is_some_and(|owner| titles.tabs.contains(&owner)) => 0,
-            None => 2 * style::label_start() + Text::new(&body.caption, crate::size::any_text(), crate::size::large()).width,
+            None => 2 * style::label_start() + Text::new(&function_title(&body.caption), crate::size::any_text(), crate::size::large()).width,
             Some(Kind::Structure(structure)) if matches!(structure.kind, StructureKind::Loop | StructureKind::For) => header_width(structure),
             Some(_) => 2 * style::label_start() + Text::new(&body.caption, crate::size::any_text(), crate::size::medium()).width,
         };

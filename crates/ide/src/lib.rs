@@ -35,7 +35,7 @@ use kit_shell::icon::{self, Icon};
 use kit_shell::palette::{self, Chosen, Palette};
 use kit_shell::start::{self, Example, Recent};
 use kit_shell::status::Segment;
-use kit_shell::top_bar::{self, Answer, Bar};
+use kit_shell::top_bar::{self, Answer, Bar, Tool};
 use kit_shell::workspaces::Asked as WorkspaceAsked;
 use kit_shell::{Card, Planned};
 use labcraft_editor::{Canvas, Shown, Theme};
@@ -51,6 +51,7 @@ pub mod host;
 pub mod keys;
 pub mod pane;
 pub mod panels;
+mod running;
 pub mod text;
 
 pub use host::{Host, Reply, Snapshot};
@@ -79,6 +80,8 @@ pub struct Prefs {
     /// of the owner, 2026-11-16: the inspector shown, the palette hidden, until the user changes them).
     pub detached_inspector: bool,
     pub detached_palette: bool,
+    /// A run records its values, its trace, for the wires (decision of the owner, 2026-11-16: off by default).
+    pub record_values: bool,
 }
 
 impl Default for Prefs {
@@ -94,6 +97,7 @@ impl Default for Prefs {
             detached: None,
             detached_inspector: true,
             detached_palette: false,
+            record_values: false,
         }
     }
 }
@@ -182,6 +186,9 @@ struct Drawn {
     overlay_generation: Option<u64>,
     /// The zoom last given to the session for its window.
     zoom_given: Option<f32>,
+    /// Whether its tab showed two views side by side, and in a detached window, at the frame before: the canvas is fitted
+    /// again when either changes, since another width or another window is another view of the diagram.
+    split_seen: Option<(bool, bool)>,
 }
 
 /// The window.
@@ -238,6 +245,14 @@ pub struct Ide {
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
+    /// The run the window started, followed to its end (decisions of the owner, 2026-11-16).
+    running: Option<running::Running>,
+    /// The time of the frame, on the clock of egui.
+    now: f64,
+    /// The loader of the SVG files of the icons is installed on the context that draws the window.
+    loaders: bool,
+    /// How the last run the window started of each function ended, for the `Run` panel.
+    outcomes: HashMap<String, running::Outcome>,
 }
 
 /// The id of the dock area, which names its windows of the system.
@@ -286,6 +301,10 @@ impl Ide {
             pending: Vec::new(),
             failures: Vec::new(),
             canvas_rect: None,
+            running: None,
+            now: 0.0,
+            loaders: false,
+            outcomes: HashMap::new(),
         }
     }
 
@@ -371,12 +390,17 @@ impl Ide {
             self.platform = platform;
             self.keymap = keys::keymap(platform);
         }
+        self.now = ui.input(|input| input.time);
+        if !std::mem::replace(&mut self.loaders, true) {
+            kit_shell::icon::install(ui.ctx());
+        }
         let snapshot = host.map(Host::snapshot).unwrap_or_default();
         self.new_project(&snapshot);
         let view = snapshot.view.clone();
         self.follow_focus(ui.ctx());
         if let Some(host) = host {
             self.take_replies(host, &view);
+            self.follow_run(host, ui.ctx());
             self.sync_tabs(ui.ctx(), &view);
             self.take_drawing(&view);
             self.callables.refresh(host, view.checks);
@@ -390,6 +414,20 @@ impl Ide {
         let workspaces = catalog::workspaces();
         let palette_key = keys::key_of(&self.keymap, &CommandRef::new(keys::PALETTE));
         let right: Vec<Segment> = host.iter().map(|_| Segment::new("No agent").hover("Connecting an AI agent comes with step 8 of M1")).collect();
+        // The interface of the window (decisions of the owner, 2026-11-16): the theme, then the detached mode to come.
+        let tools = [
+            if self.prefs.dark {
+                Tool { icon: Icon::Sun, hover: "Light theme".to_owned(), command: keys::DARK.to_owned(), planned: false }
+            } else {
+                Tool { icon: Icon::Moon, hover: "Dark theme".to_owned(), command: keys::DARK.to_owned(), planned: false }
+            },
+            Tool {
+                icon: Icon::DetachedMode,
+                hover: "Every function in its window: planned, after craft-libs#1903".to_owned(),
+                command: keys::PLANNED_DETACHED_MODE.to_owned(),
+                planned: true,
+            },
+        ];
         // When the app draws the frame (Windows): the edges resize the window, the top bar is its title bar.
         kit_shell::frame::edges(ui.ctx(), &self.frame);
         let tokens = kit_shell::theme::Tokens::of(ui.ctx());
@@ -400,7 +438,7 @@ impl Ide {
                 top_bar::show(
                     ui,
                     &Bar {
-                        name: "LabCraft",
+                        name: "/labcraft",
                         menus: &menus,
                         undo: (self.history.undo.is_some(), self.history.undo.clone()),
                         redo: (self.history.redo.is_some(), self.history.redo.clone()),
@@ -409,6 +447,7 @@ impl Ide {
                         project: snapshot.project.as_deref(),
                         palette_key: palette_key.as_deref(),
                         right: &right,
+                        tools: &tools,
                         frame: &self.frame,
                     },
                 )
@@ -533,6 +572,9 @@ impl Ide {
         self.placing.clear();
         self.palette_in = None;
         self.history = History::default();
+        // A run of the project before is not followed into this session, whose runs count from the start again.
+        self.running = None;
+        self.outcomes.clear();
     }
 
     /// The results that came: the failures to say, the function shown, the history.
@@ -589,6 +631,38 @@ impl Ide {
         if self.history.asked.is_none() && self.history.generation != Some(view.generation) {
             self.history.generation = Some(view.generation);
             self.history.asked = Some(host.send("history.list", json!({ "limit": 1 })));
+        }
+    }
+
+    /// Follows the run the window started: what the session answered, then how the run goes, to its end.
+    fn follow_run(&mut self, host: &dyn Host, ctx: &egui::Context) {
+        let Some(running) = &mut self.running else { return };
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(running::EVERY));
+        let function = running.function.clone();
+        match running.follow(host, ctx.input(|input| input.time)) {
+            running::Heard::Going => {}
+            running::Heard::Ended(outcome) => {
+                self.running = None;
+                self.outcomes.insert(function, outcome);
+            }
+            running::Heard::Failed(message) => {
+                self.running = None;
+                self.outcomes.insert(function.clone(), running::Outcome { said: format!("Failed: {message}"), unrecorded: false });
+                self.say(format!("Run {function}: {message}"));
+            }
+        }
+    }
+
+    /// What the `Run` panel says of the run of `function` that the window started: going, or how it ended.
+    fn run_said(&self, function: Option<&str>, now: f64) -> Option<panels::RunSaid> {
+        let function = function?;
+        match &self.running {
+            Some(running) if running.function == function => {
+                let stopping = if running.stopping() { ", stopping" } else { "" };
+                let said = format!("Running{stopping}… {:.0} s", (now - running.started).max(0.0));
+                Some(panels::RunSaid { said, unrecorded: false })
+            }
+            _ => self.outcomes.get(function).map(|outcome| panels::RunSaid { said: outcome.said.clone(), unrecorded: outcome.unrecorded }),
         }
     }
 
@@ -755,7 +829,8 @@ impl Ide {
                 let mut canvas = Canvas::new();
                 canvas.set_reduced_motion(reduced);
                 canvas.set_values_shown(values_shown);
-                let drawn = Drawn { canvas, fit_values: false, drawing_generation: None, overlay_generation: None, zoom_given: None };
+                let drawn =
+                    Drawn { canvas, fit_values: false, drawing_generation: None, overlay_generation: None, zoom_given: None, split_seen: None };
                 self.drawn.insert(function.clone(), drawn);
             }
             let Some(drawn) = self.drawn.get_mut(function) else { continue };
@@ -803,7 +878,16 @@ impl Ide {
                     };
                     ItemState { enabled: true, checked }
                 }
-                keys::PLANNED_AGENT | keys::PLANNED_INSTRUMENTS => ItemState { enabled: true, checked: None },
+                keys::PLANNED_AGENT
+                | keys::PLANNED_INSTRUMENTS
+                | keys::PLANNED_PAUSE
+                | keys::PLANNED_BREAKPOINT
+                | keys::PLANNED_WATCH
+                | keys::PLANNED_BUILD
+                | keys::PLANNED_DETACHED_MODE => ItemState { enabled: true, checked: None },
+                keys::RECORD => ItemState { enabled: true, checked: Some(self.prefs.record_values) },
+                keys::RUN => ItemState { enabled: self.can_run(view, shown).is_ok(), checked: None },
+                keys::STOP => ItemState { enabled: self.running.as_ref().is_some_and(|running| !running.stopping()), checked: None },
                 "view.toggle_panel" => {
                     let visible = param("panel").and_then(|name| Pane::panel(&name)).is_some_and(|pane| self.workspace.layout.contains(&pane));
                     ItemState { enabled: project, checked: Some(visible) }
@@ -822,6 +906,30 @@ impl Ide {
             }
         });
         bar
+    }
+
+    /// Whether the window can run `function` now, or why not.
+    fn can_run(&self, view: &Published, function: Option<&str>) -> Result<(), String> {
+        if let Some(why) = labcraft_engine::runs::not_enabled_here() {
+            return Err(format!("Run: here, {why}"));
+        }
+        let Some(function) = function else { return Err("Run: no function shown".to_owned()) };
+        // Arguments cannot be given from the window yet: a function that needs one would be refused (`LC8103`).
+        if let Some(listed) = view.functions.iter().find(|listed| listed.function == function)
+            && !listed.needs.is_empty()
+        {
+            let inputs = listed.needs.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ");
+            let have = if listed.needs.len() == 1 { "has" } else { "have" };
+            return Err(format!("Run: {inputs} {have} no default value; running with arguments comes later"));
+        }
+        if let Some(running) = &self.running {
+            return Err(if running.function == function {
+                format!("{function} is running")
+            } else {
+                format!("Run: {} is running; one run at a time", running.function)
+            });
+        }
+        Ok(())
     }
 
     /// The status bar: the file shown, the last step; the agent, the zoom. Of the window that has focus.
@@ -896,7 +1004,8 @@ impl Ide {
         style.inactive_text = tokens.text_weak;
         style.border = egui::Stroke::new(1.0, tokens.border);
         style.accent = tokens.accent;
-        style.gap = 1.0;
+        // Room between the panels, so that each reads as a surface of its own (owner, 2026-11-16).
+        style.gap = 4.0;
         self.native.clear();
         let mut content = Content {
             ide: self,
@@ -1064,11 +1173,35 @@ impl Ide {
                 }
             }
             keys::OPEN_TRACE => outward.push(Outward::OpenTrace(self.focused(view))),
+            keys::RUN => {
+                let Some(host) = host else {
+                    self.say("Run: open a project first");
+                    return;
+                };
+                let function = params.get("function").and_then(Value::as_str).map(str::to_owned).or(shown);
+                match self.can_run(view, function.as_deref()) {
+                    Err(why) => self.say(why),
+                    Ok(()) => {
+                        if let Some(function) = function {
+                            self.outcomes.remove(&function);
+                            self.running = Some(running::Running::start(host, &function, self.now, self.prefs.record_values));
+                        }
+                    }
+                }
+            }
+            keys::RECORD => {
+                self.prefs.record_values = !self.prefs.record_values;
+                self.prefs_changed = true;
+            }
+            keys::STOP => match &mut self.running {
+                Some(running) => running.stop(),
+                None => self.say("Stop: no run going"),
+            },
             keys::ABOUT => self.card.open(Planned {
                 label: format!("LabCraft {}", env!("CARGO_PKG_VERSION")),
                 line: "A graphical dataflow language and IDE, in Rust. MIT OR Apache-2.0.".to_owned(),
-                milestone: "M1".to_owned(),
-                link: Some(catalog::ROADMAP.to_owned()),
+                milestone: String::new(),
+                link: Some(catalog::REPOSITORY.to_owned()),
             }),
             keys::DARK => {
                 self.prefs.dark = !self.prefs.dark;
@@ -1284,7 +1417,10 @@ impl Content<'_> {
                 None
             }
             Pane::Problems => panels::problems(ui, view, focused, &mut self.ide.problems),
-            Pane::Run => panels::run(ui, focused, self.ide.prefs.values_shown),
+            Pane::Run => {
+                let said = self.ide.run_said(focused.function.as_deref(), ui.input(|input| input.time));
+                panels::run(ui, focused, self.ide.prefs.values_shown, said.as_ref())
+            }
             Pane::Start => {
                 if let Some(chosen) = self.ide.start_page(ui, self.start) {
                     self.chosen = Some(chosen);
@@ -1335,6 +1471,40 @@ impl Content<'_> {
                     }
                 });
             ui.separator();
+            // The run of the function (decisions of the owner, 2026-11-16): Run and Stop; pause, breakpoint and watch to
+            // come, each opening its card.
+            let key = |id: &str| keys::key_of(&self.ide.keymap, &CommandRef::new(id)).map(|key| format!(" ({key})")).unwrap_or_default();
+            let can_run = self.ide.can_run(view, Some(function));
+            let run_hover = match &can_run {
+                Ok(()) => format!("Run {function}{}", key(keys::RUN)),
+                Err(why) => why.clone(),
+            };
+            if icon::button(ui, Icon::Run, live && can_run.is_ok(), &run_hover).clicked() {
+                asked = Some(panels::Asked::Command(keys::RUN.to_owned(), json!({ "function": function })));
+            }
+            let stoppable = self.ide.running.as_ref().is_some_and(|running| running.function == function && !running.stopping());
+            if icon::button(ui, Icon::Stop, stoppable, &format!("Stop the run{}", key(keys::STOP))).clicked() {
+                asked = Some(panels::Asked::Window(keys::STOP));
+            }
+            let record = self.ide.prefs.record_values;
+            let record_hover = if record {
+                "Record values: on. The next run writes its trace, and its values show on the wires"
+            } else {
+                "Record values: off. The next run writes no trace; the Run panel still gives its outputs"
+            };
+            if icon::toggle(ui, Icon::Record, record, true, record_hover).clicked() {
+                asked = Some(panels::Asked::Window(keys::RECORD));
+            }
+            for (icon, id, hover) in [
+                (Icon::Pause, keys::PLANNED_PAUSE, "Pause: planned, M5"),
+                (Icon::Breakpoint, keys::PLANNED_BREAKPOINT, "Breakpoint: planned, M5"),
+                (Icon::Watch, keys::PLANNED_WATCH, "Watch: planned, M5"),
+            ] {
+                if icon::planned(ui, icon, hover).clicked() {
+                    asked = Some(panels::Asked::Window(id));
+                }
+            }
+            ui.separator();
             // The actions on the diagram (the zoom is in the status bar): Fit, then the window; arrange and the tools
             // of editing come with their steps.
             if icon::button(ui, Icon::Fit, live && zoom.is_some(), "Fit the diagram to the view").clicked() {
@@ -1352,8 +1522,16 @@ impl Content<'_> {
                 if icon::toggle(ui, Icon::Palette, self.ide.prefs.detached_palette, true, "Palette of functions").clicked() {
                     asked = Some(panels::Asked::Window(keys::DETACHED_PALETTE));
                 }
-            } else if icon::button(ui, Icon::Detach, true, "Detach: into a window of its own").clicked() {
-                asked = Some(panels::Asked::Command("view.detach".to_owned(), json!({ "function": function })));
+            } else {
+                if icon::button(ui, Icon::Detach, true, "Detach: into a window of its own").clicked() {
+                    asked = Some(panels::Asked::Command("view.detach".to_owned(), json!({ "function": function })));
+                }
+                ui.separator();
+                // The same button as in a detached window: here it shows or hides the panel of the window of the project.
+                let visible = self.ide.workspace.layout.contains(&Pane::Inspector);
+                if icon::toggle(ui, Icon::Inspector, visible, true, "Inspector").clicked() {
+                    asked = Some(panels::Asked::Command("view.toggle_panel".to_owned(), json!({ "panel": "inspector" })));
+                }
             }
         });
         ui.separator();
@@ -1364,7 +1542,7 @@ impl Content<'_> {
     fn function(&mut self, ui: &mut egui::Ui, function: &str) -> Option<panels::Asked> {
         let shown = self.view.main.function.as_deref() == Some(function);
         let asked = self.toolbar(ui, function, false);
-        self.views(ui, function);
+        self.views(ui, function, false);
         if !shown && ui.ui_contains_pointer() && ui.input(|input| input.pointer.primary_pressed()) {
             return asked.or(Some(panels::Asked::Show { function: function.to_owned(), preview: false }));
         }
@@ -1396,15 +1574,23 @@ impl Content<'_> {
                 egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| panels::palette(ui, &mut self.ide.callables));
             });
         }
-        egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| self.views(ui, function));
+        egui::CentralPanel::default().frame(egui::Frame::new()).show(ui, |ui| self.views(ui, function, true));
     }
 
     /// The view of a tab, or the two of a split.
-    fn views(&mut self, ui: &mut egui::Ui, function: &str) {
+    fn views(&mut self, ui: &mut egui::Ui, function: &str, detached: bool) {
         let view = self.view;
         let file = file_of_tab(view, function).map(str::to_owned);
         let theme = self.ide.theme();
-        match tab_of(view, function) {
+        let tab = tab_of(view, function);
+        if let Some(drawn) = self.ide.drawn.get_mut(function) {
+            let placed = (tab.split.is_some(), detached);
+            if drawn.split_seen.is_some_and(|seen| seen != placed) {
+                drawn.canvas.fit();
+            }
+            drawn.split_seen = Some(placed);
+        }
+        match tab {
             Tab { view: first, split: Some(second) } => {
                 ui.columns(2, |columns| {
                     if let [left, right] = columns {

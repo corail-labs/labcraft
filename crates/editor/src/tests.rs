@@ -143,7 +143,7 @@ fn the_canvas_installs_its_font_and_paints_without_text_until_then() {
     let (second, _) = frame(&ctx, &mut canvas, &Shown::default(), input(0.1));
     assert!(has_family(&ctx));
     let shown = texts(&second);
-    assert!(shown.contains(&"main".to_owned()), "{shown:?}");
+    assert!(shown.contains(&"fn main".to_owned()), "{shown:?}");
 }
 
 /// Unfolded, the three arms each have their title; in tabs, the first is shown, the tab of another chooses it.
@@ -292,13 +292,13 @@ fn the_zoom_decides_what_shows() {
         shapes
     };
     let near = texts(&at(1.0, 0.0));
-    assert!(near.contains(&"x".to_owned()) && near.contains(&"main".to_owned()), "{near:?}");
+    assert!(near.contains(&"x".to_owned()) && near.contains(&"fn main".to_owned()), "{near:?}");
     let middle = texts(&at(0.5, 10.0));
     // `n` names only a terminal of the function; `x` and `y` also name wires, which show.
-    assert!(near.contains(&"n".to_owned()) && !middle.contains(&"n".to_owned()) && middle.contains(&"main".to_owned()), "{middle:?}");
+    assert!(near.contains(&"n".to_owned()) && !middle.contains(&"n".to_owned()) && middle.contains(&"fn main".to_owned()), "{middle:?}");
     let far = at(0.3, 20.0);
     let far_texts = texts(&far);
-    assert!(far_texts.contains(&"main".to_owned()) && far_texts.contains(&"match n".to_owned()), "{far_texts:?}");
+    assert!(far_texts.contains(&"fn main".to_owned()) && far_texts.contains(&"match n".to_owned()), "{far_texts:?}");
     assert!(!far_texts.iter().any(|text| text == "add" || text == "+"), "{far_texts:?}");
     // The background, and each node that is not a structure as a plain rectangle.
     let drawn = drawing(ARMS, &ViewState::default());

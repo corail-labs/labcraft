@@ -1411,7 +1411,7 @@ fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
     assert_eq!(
         details,
         [
-            ("main".to_owned(), crate::Detail::Title),
+            ("fn main".to_owned(), crate::Detail::Title),
             ("x".to_owned(), crate::Detail::Name),
             ("n".to_owned(), crate::Detail::Name),
             ("y".to_owned(), crate::Detail::Name)

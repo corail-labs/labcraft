@@ -1,6 +1,6 @@
 # Visual notation — v0
 
-*Last updated: 2026-11-15. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v; editing by hand (2.4), the editing states (2.5) and color by type (4.3) are for M1.*
+*Last updated: 2026-11-16. Status: draft, nothing is frozen; the compact view (3.2), automatic placement (2.1), wire routing (2.2), the font (2.3), the values of a run (6.1) and the theme (8) are implemented for M0v; editing by hand (2.4), the editing states (2.5) and color by type (4.3) are for M1.*
 
 How a LabCraft diagram is drawn. The language spec (`language-spec-v0.md`) defines the text; this
 document defines its graphical view. It serves the M0v viewer and the M1 editor and, before them,
@@ -59,7 +59,9 @@ Craft family:
 ## 2. The canvas
 
 - The flow goes **left to right**: inputs on the left of a node, outputs on the right.
-- **The function is drawn as a frame without a box**: its title, its inputs as terminals on the left
+- **The function is drawn as a frame without a box**: its title, the keyword `fn` then its name as the text writes
+  them (`fn check_voltage`), as a structure shows its keyword in its header (decided with the owner on 2026-11-16),
+  its inputs as terminals on the left
   edge, its outputs on the right edge, as a structure has, but no outline and no fill (5), in signature order, except `err`, which is at the bottom of each
   edge (2.1); terminals moved by hand keep the height they were given (2.4). An optional input shows its default value next to
   its terminal (`low ◂ 220 V`). The `///` documentation is the tooltip of the title.

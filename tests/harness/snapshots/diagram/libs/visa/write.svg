@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="214" height="160" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="176" height="128" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">visa.write</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn visa.write</text>
 <g>
 <rect x="16" y="65" width="6" height="6" style="fill: var(--wire-resource)"/>
 <rect x="23" y="62.18" width="54.14" height="11.64" style="fill: var(--canvas-fill)"/>

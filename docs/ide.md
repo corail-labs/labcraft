@@ -29,7 +29,7 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│ logo  File Edit View Run Help  ↶ ↷ │ Edit ▾ │   project — search or run a command   │ agent ⚙ ? │
+│ logo  File Edit View Run Help  ↶ ↷ │ Edit Panel Debug Build │ project — search      │ agent ⚙ ? │
 ├───────────┬───────────────────────────────────────────────────────────────┬─────────────┤
 │ Project   │ check_voltage × │ read_voltage ×        Diagram Text Block Panel │ Inspector   │
 │ Palette   │                                                                 │             │
@@ -42,9 +42,10 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
 ```
 
 - **The top bar is the title bar**: the logo; a house that opens the start page; the menus `File`, `Edit`, `View`, `Run`, `Help`; undo and redo; the
-  workspace selector (section 6); in the middle, the name of the project and the field that opens the command palette
-  (section 5); on the right, the state of the agent (section 8), the settings, the help, the version and, where the
-  desktop draws none, the buttons of the window. An empty part of the bar moves the window, a double click
+  workspaces (section 6); in the middle, the name of the project and the field that opens the command palette
+  (section 5); on the right, the state of the agent (section 8), the settings, the help, the version, the buttons of the
+  interface (a sun or a moon that switches to the light or the dark theme, as in the other Craft apps, then the mode
+  “Every function in its window” of section 9) and, where the desktop draws none, the buttons of the window. An empty part of the bar moves the window, a double click
   maximizes it. On macOS the menus are those of the system bar, and the bar leaves room for the buttons of the
   system; elsewhere they open from the bar. One description of the menus, as data, gives both (`craft-menu`). Who
   draws the frame: on Windows the IDE, as the other Craft apps and VS Code do (its buttons at the right end of the
@@ -91,13 +92,24 @@ warnings of `check` under the text.
 The view of each tab, and its split, are view state (spec 11): kept for the user, never in the file.
 
 **The toolbar of a tab**, one thin line above its views: the views first, as a group of icons of which one is on (a
-mode, the name of each on hover); then, apart, the actions on the function shown: `Fit` in M1 step 1, then arranging,
-detaching (section 9) and the tools of editing as their steps bring them. The zoom stays in the status bar.
+mode, the name of each on hover); then, apart, the run of the function: `Run` (F5), which runs it with `run.start` and
+follows the run to its end, and `Stop` (Shift+F5), `run.abort`; one run at a time, as the session has (commands.md 4).
+`Run` gives no arguments yet: it is greyed for a function with an input that has no default, its hover naming the
+input (`LC8103`, cli.md 6.6). The `Run` panel says the run going, how it ended and its outputs. `Record values`, a toggle kept in the settings of the
+user and off by default, makes a run write its trace (`trace: file`, commands.md 6.4), whose values show on the wires
+(notation 6.1); off, a run writes none. `Pause`, `Breakpoint` and `Watch` follow, planned (M5, section 6).
+Then the actions on the function shown: `Fit` in M1 step 1, then arranging, detaching (section 9) and the tools of
+editing as their steps bring them. Then the `Inspector` toggle, the same in a tab and in a detached window: in a tab it
+shows or hides the `Inspector` panel of the window of the project (`view.toggle_panel`), in a detached window its own
+inspector (section 9). After a run that wrote no trace, the `Run` panel says so, and says that a trace still shown, with
+the values on the wires, is of an earlier run. The zoom stays in the status bar. On the web, where runs cannot go (D-22), `Run` is
+greyed and says why.
 
 ## 4. The panels
 
-- **`Project`**: the tree of the folder, the files of each library under it; a function that does not draw shows
-  the number of its errors; the shipped libraries (`core`, `visa`, `scpi`…), read only, at the end. A file opened
+- **`Project`**: the tree of the folder, the files of each library under it, each line with its icon (a folder, a
+  file of code, a function with the icon of the view `Diagram`); a function that does not draw shows the number of
+  its errors, its icon in the colour of its text; the shipped libraries (`core`, `visa`, `scpi`…), read only, at the end. A file opened
   in a detached window says so. Right click: new function, new type, rename, delete, open in a window, each a
   command.
 - **`Palette`**: the functions the project can call, grouped by library, with a search field on top that searches as
@@ -126,8 +138,10 @@ run now are listed, greyed, with the reason; the planned entries (section 6) are
 
 ## 6. Workspaces and what is planned
 
-The **workspace selector** of the top bar holds the ways of working on the same project, history and selection;
-changing it changes the panels and the views offered, nothing else. Each entry has a name, a state, one line on what
+The **workspaces** of the top bar are the ways of working on the same project, history and selection; changing the
+workspace changes the panels and the views offered, nothing else. They show as a group of buttons, as the views of a
+tab: the current one on, the planned ones greyed, the hover of each says what it is; in a bar too narrow for them, a
+selector with the list on a click. Each entry has a name, a state, one line on what
 it does and, when it is planned, a link:
 
 | Workspace | State in M1 | What it is |
@@ -137,8 +151,9 @@ it does and, when it is planned, a link:
 | `Debug` | Planned (M5) | Probes, breakpoints, step by step on the diagram |
 | `Build` | Planned (M6) | A standalone executable, a library with a C ABI, a .NET facade |
 
-Planned entries are also where they will be: `Run > Real instruments` (M4), the `Panel` view of a tab (M3), the
-icon drawn by hand in `Block`. A planned entry can never be chosen: a click opens a short card that says what it will
+Planned entries are also where they will be: `Run > Target: real instruments` (M4), `Run > Build` (M6), `Pause`,
+`Breakpoint` and `Watch` in the toolbar of a tab and the `Run` menu (M5), the `Panel` view of a tab (M3), the icon drawn
+by hand in `Block`. A planned entry can never be chosen: a click opens a short card that says what it will
 be and links to its milestone or its issue, in the browser. The entries are **data**, a list shipped with the IDE
 (id, label, line, state, milestone, link), not code per entry; an entry becomes Available in the release that tags
 its milestone.
@@ -213,6 +228,9 @@ A chat panel inside the window, and a visible pointer of the agent, are left for
   and the commands that take the function shown act on (`Fit`, a view, Ctrl+W, a trace opened by hand); Ctrl+Z still
   undoes the last step of the project. `Problems` and `Run` follow that window; the inspector of the window of the
   project stays on its function. Each window shows the values of the last run of its function.
+- **Every function in its window**, a mode that detaches every tab, the new ones too, is planned: shown in the top bar,
+  beside the button of the theme, since it changes the interface and not one function, and in `View`, with its card, until the windows of the system that `craft-ui` opens have their place in the
+  taskbar, minimize and maximize (craft-libs#1903).
 - On the web there is one window of the browser: a detached tab becomes a panel floating in it.
 
 ## 10. Start, new and open
@@ -234,7 +252,7 @@ them), with their own
 documentation, MIT OR Apache-2.0; when they are stable, they are offered to `craft-libs`:
 
 - the text component (section 7): `kit-text`, with no UI toolkit, and `kit-text-egui`, which paints it;
-- the shell of the window, `kit-shell`: the top bar, the workspace selector with its planned entries, the start page,
+- the shell of the window, `kit-shell`: the top bar, the workspaces with their planned entries, the start page,
   the command palette and its JSON form, the inspector as a list of fields;
 - the docking and the detached windows come from `craft-ui` and `craft-window`; the keys from `craft-keymap`, the
   menus from `craft-menu`, the settings from `craft-settings`.

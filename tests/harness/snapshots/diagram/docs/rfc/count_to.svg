@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="374" height="268" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="336" height="236" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">count_to</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn count_to</text>
 <g data-wire="n" data-from="n.n" data-to="fn.n">
 <path d="M310.12 160 L355 160" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>

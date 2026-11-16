@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1094" height="268" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="1056" height="236" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">run_step</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn run_step</text>
 <g data-wire="bench" data-from="fn.bench" data-to="e1.bank e2.source v.dmm">
 <path d="M19 176 L119.18 176 Q125.18 176 125.18 182 L125.18 194 Q125.18 200 131.18 200 L246.44 200" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M19 176 L119.18 176 Q125.18 176 125.18 182 L125.18 194 Q125.18 200 131.18 200 L246.44 200" style="fill: none; stroke: var(--canvas-fill); stroke-width: 1.6"/>

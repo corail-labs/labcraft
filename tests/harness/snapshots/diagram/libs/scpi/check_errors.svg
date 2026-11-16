@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1326" height="576" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="1288" height="544" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">scpi.check_errors</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn scpi.check_errors</text>
 <g data-wire="session" data-from="fn.session" data-to="s.current">
 <path d="M19 376 L168.26 376" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>

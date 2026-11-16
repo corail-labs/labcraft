@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1622" height="424" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="1584" height="392" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">wait_dut</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn wait_dut</text>
 <g data-wire="err" data-from="fn.err" data-to="t0.after present.e">
 <path d="M19 360 L111.18 360 Q117.18 360 117.18 354 L117.18 282 Q117.18 276 123.18 276 L136.18 276" style="fill: none; stroke: var(--wire-order); stroke-width: 1; stroke-dasharray: 1.5 3"/>
 <path d="M117.18 360 L316.28 360" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>

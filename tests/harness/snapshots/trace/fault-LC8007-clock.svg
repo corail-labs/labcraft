@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect y="-40" width="219" height="172" style="fill: var(--canvas-fill)"/>
 <rect x="16" y="16" width="184" height="100" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">forever</text>
+<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">fn forever</text>
 <g data-wire="err" data-from="err.err" data-to="fn.err">
 <path d="M139.16 88 L200 88" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
 <path d="M150.26 89.4 L152.06 88 L150.26 86.6 M158.26 89.4 L160.06 88 L158.26 86.6 M166.26 89.4 L168.06 88 L166.26 86.6 M174.26 89.4 L176.06 88 L174.26 86.6 M182.26 89.4 L184.06 88 L182.26 86.6 M190.26 89.4 L192.06 88 L190.26 86.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>

@@ -1783,7 +1783,7 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 
 - **`kit-text`**: the text, the selection, the undo of the field, and two traits, one that colours a line and the
   language service (diagnostics, completions, hover, definitions, in the types of `lsp-types`), with no UI toolkit
-  (ide.md 7). **`kit-text-egui`** paints it and takes its keys. **`kit-shell`**: the top bar, the workspace selector
+  (ide.md 7). **`kit-text-egui`** paints it and takes its keys. **`kit-shell`**: the top bar, the workspaces
   with its planned entries, the start page, the command palette and its JSON form, the inspector as a list of fields
   (ide.md 11), on egui and `craft-ui`. Docking and detached windows come from `craft-ui` (a detached window is a
   floating window of its dock, a window of the system with its feature `native-windows`, which the desktop app turns

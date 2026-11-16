@@ -50,13 +50,15 @@ struct Prefs {
     window: labcraft_ide::Prefs,
     /// The folders of the projects opened last, the newest first.
     recent: Vec<String>,
-    /// The preferences of the viewer of M0v, read once into `window`.
+    /// The preferences of the viewer of M0v, read once into `window`. craft-settings keeps in the file the keys that the
+    /// app no longer writes, so they stay there: `viewer_taken` says they were read, and they are never read again.
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     standard_everywhere: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reduced_motion: Option<bool>,
+    viewer_taken: bool,
 }
 
 impl Settings for Prefs {
@@ -65,22 +67,50 @@ impl Settings for Prefs {
 }
 
 impl Prefs {
-    /// The preferences of the viewer of M0v go into those of the window.
+    /// The preferences of the viewer of M0v go into those of the window, once; whether there is anything to write. When
+    /// the window has kept settings of its own already, they are the newer ones, and win.
     fn take_those_of_the_viewer(&mut self) -> bool {
-        let mut taken = false;
+        if self.viewer_taken {
+            return false;
+        }
+        self.viewer_taken = true;
+        if self.window != labcraft_ide::Prefs::default() {
+            return true;
+        }
         if let Some(theme) = self.theme.take() {
             self.window.dark = theme == "dark";
-            taken = true;
         }
         if let Some(on) = self.standard_everywhere.take() {
             self.window.standard_everywhere = on;
-            taken = true;
         }
         if let Some(on) = self.reduced_motion.take() {
             self.window.reduced_motion = on;
-            taken = true;
         }
-        taken
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Prefs;
+
+    /// craft-settings keeps the keys of the viewer of M0v in the file: read once, then never again, and never over the
+    /// settings that the window kept.
+    #[test]
+    fn the_settings_of_the_viewer_are_read_once_and_never_over_those_of_the_window() {
+        let mut first = Prefs { theme: Some("dark".to_owned()), ..Prefs::default() };
+        assert!(first.take_those_of_the_viewer());
+        assert!(first.window.dark && first.viewer_taken);
+        // The user turns the dark theme off; the file still has `theme = "dark"`.
+        first.window.dark = false;
+        first.theme = Some("dark".to_owned());
+        assert!(!first.take_those_of_the_viewer());
+        assert!(!first.window.dark);
+        // A file of an earlier LabCraft: the window kept its settings, and the key of the viewer stayed.
+        let mut kept = Prefs { theme: Some("dark".to_owned()), ..Prefs::default() };
+        kept.window.preview_tabs = false;
+        assert!(kept.take_those_of_the_viewer());
+        assert!(!kept.window.dark && kept.viewer_taken);
     }
 }
 
