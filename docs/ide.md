@@ -60,7 +60,12 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
   (notation 4.3); the zoom.
 
 Every panel can be moved, docked elsewhere, folded or closed (`craft-ui`, docking); `View > Reset layout` brings back
-the layout above. The window opens at 1,280 × 800 at least *(proposed)*; under 1,000 pixels of width, the side
+the layout above.
+
+**The look of the window** (its bars, panels, tabs and widgets; not the canvas, whose colours are the notation's, 8):
+colour tokens, radii, spacing and type that every widget reads, in a light and a dark theme. Two looks: **Studio**,
+neutral graphite with an indigo accent, the default; **Lab**, blue slate with a teal accent, a setting of the user
+(`View > Lab look`) *(proposed)*. They are only defaults: the user changes them. The window opens at 1,280 × 800 at least *(proposed)*; under 1,000 pixels of width, the side
 panels fold first.
 
 ## 3. The tabs of a function
@@ -84,6 +89,10 @@ developer writes an icon or an outline in M1: the block redraws at real size and
 warnings of `check` under the text.
 
 The view of each tab, and its split, are view state (spec 11): kept for the user, never in the file.
+
+**The toolbar of a tab**, one thin line above its views: the views first, as a group of icons of which one is on (a
+mode, the name of each on hover); then, apart, the actions on the function shown: `Fit` in M1 step 1, then arranging,
+detaching (section 9) and the tools of editing as their steps bring them. The zoom stays in the status bar.
 
 ## 4. The panels
 

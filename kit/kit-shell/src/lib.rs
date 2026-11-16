@@ -25,6 +25,7 @@ pub mod palette;
 mod planned;
 pub mod start;
 pub mod status;
+pub mod theme;
 pub mod top_bar;
 pub mod workspaces;
 

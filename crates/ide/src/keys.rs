@@ -14,6 +14,8 @@ pub const PALETTE: &str = "ide.palette";
 pub const HOME: &str = "ide.home";
 pub const FIT: &str = "ide.fit";
 pub const DARK: &str = "ide.dark";
+/// The look Lab (slate, teal) instead of Studio (graphite, indigo), the default.
+pub const LAB: &str = "ide.look_lab";
 pub const REDUCED_MOTION: &str = "ide.reduced_motion";
 pub const VALUES: &str = "ide.values";
 pub const OPEN_TRACE: &str = "ide.open_trace";
@@ -28,6 +30,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (HOME, "Start page"),
     (FIT, "Fit the diagram to the view"),
     (DARK, "Dark theme"),
+    (LAB, "Lab look (slate, teal)"),
     (REDUCED_MOTION, "Reduced motion"),
     (VALUES, "Values of the run on the wires"),
     (OPEN_TRACE, "Open a trace…"),
@@ -103,6 +106,7 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new("view.set_standard_view"), "Standard view everywhere").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(VALUES), "Values on the wires").check(true)));
     view.push(Node::Item(Item::new(CommandRef::new(DARK), "Dark theme").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(LAB), "Lab look (slate, teal)").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(REDUCED_MOTION), "Reduced motion").check(false)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
