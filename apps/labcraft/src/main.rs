@@ -1,6 +1,6 @@
-//! `labcraft`, the desktop viewer of M0v (`docs/architecture.md`, 11.5; `docs/cli.md`, section 8): a list of the
-//! functions of the folder, a tab per function opened, the canvas, `Problems`. Read-only. The window is throwaway:
-//! `ui-egui` starts with the IDE (M1); what lasts is `diagram`, `editor` and the commands.
+//! `labcraft`, the desktop IDE (`docs/architecture.md`, 12.9; `docs/ide.md`; `docs/cli.md`, section 8): the window of
+//! `ide` on eframe, the session of the project on a thread of its own, the disk, the dialogs, the projects opened
+//! last. One project per window: a project opened from a window that shows one opens in a window of its own.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -14,45 +14,74 @@
 #![forbid(unsafe_code)]
 
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
 use craft_dialogs::{Answer, Dialogs, FileDialog};
 use craft_settings::{Location, Settings, SettingsStore};
 use craft_ui::fonts::{Family, I18nScripts, SystemFonts, UiFonts};
 use egui::{FontData, FontFamily};
+use kit_shell::start::{Example, Recent};
 use labcraft::args::{self, Asked, Options};
+use labcraft::examples;
 use labcraft::frames::{self, Frames};
-use std::sync::mpsc::Receiver;
-
-use labcraft::session::{CommandError, Handle, Published};
+use labcraft::session::{self, Handle, Opening};
 use labcraft_diagram::style;
-use labcraft_editor::{Canvas, Shown, Theme};
+use labcraft_editor::Canvas;
+use labcraft_ide::{Host, Ide, Outward, Reply, StartList};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 /// Exit code of wrong usage, as for `labcraft-cli` (`docs/cli.md`, section 1).
 const WRONG_USAGE: u8 = 2;
 
+/// At most this many recent projects on the start page *(proposed)* (ide.md 10).
+const MAX_RECENT: usize = 12;
+
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 
-/// The preferences of the viewer, on disk (decided at the start of step 6: the view state is not).
+/// The settings of the user, on disk: those the window keeps, and the projects opened last.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Prefs {
-    /// `light`, `dark`, or nothing for light.
-    theme: String,
-    /// Every node in standard view (notation 3).
-    standard_everywhere: bool,
-    /// No glide (notation 2.1): egui does not say what the system asks for on the desktop.
-    reduced_motion: bool,
+    window: labcraft_ide::Prefs,
+    /// The folders of the projects opened last, the newest first.
+    recent: Vec<String>,
+    /// The preferences of the viewer of M0v, read once into `window`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    standard_everywhere: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reduced_motion: Option<bool>,
 }
 
 impl Settings for Prefs {
     const APP_ID: &'static str = "labcraft";
     const SCHEMA_VERSION: u32 = 1;
+}
+
+impl Prefs {
+    /// The preferences of the viewer of M0v go into those of the window.
+    fn take_those_of_the_viewer(&mut self) -> bool {
+        let mut taken = false;
+        if let Some(theme) = self.theme.take() {
+            self.window.dark = theme == "dark";
+            taken = true;
+        }
+        if let Some(on) = self.standard_everywhere.take() {
+            self.window.standard_everywhere = on;
+            taken = true;
+        }
+        if let Some(on) = self.reduced_motion.take() {
+            self.window.reduced_motion = on;
+            taken = true;
+        }
+        taken
+    }
 }
 
 fn main() -> ExitCode {
@@ -76,11 +105,10 @@ fn main() -> ExitCode {
         }
         Asked::Open(options) => options,
     };
-    let native = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_title("LabCraft").with_inner_size([1400.0, 860.0]),
-        ..eframe::NativeOptions::default()
-    };
-    let started = eframe::run_native("labcraft", native, Box::new(move |creation| Ok(Box::new(Viewer::new(&creation.egui_ctx, options)?))));
+    let frame = craft_window::Choice::probe(craft_window::Prefix::new("LABCRAFT")).into_frame();
+    let viewport = egui::ViewportBuilder::default().with_title("LabCraft").with_inner_size([1400.0, 860.0]).with_min_inner_size([640.0, 400.0]);
+    let native = eframe::NativeOptions { viewport: craft_window::decorate(viewport, &frame), ..eframe::NativeOptions::default() };
+    let started = eframe::run_native("labcraft", native, Box::new(move |creation| Ok(Box::new(App::new(&creation.egui_ctx, options, frame)))));
     match started {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -92,29 +120,294 @@ fn main() -> ExitCode {
 
 /// What a dialog was asked for.
 enum Ask {
-    Folder,
+    Open,
+    New,
+    Example(usize),
     Trace,
 }
 
-struct Viewer {
-    session: Handle,
-    published: Published,
-    canvas: Canvas,
-    shown_generation: u64,
-    values_generation: u64,
+/// A project being opened: its session started, `view.open` not answered yet.
+struct Pending {
+    folder: PathBuf,
+    handle: Handle,
+    reply: Reply,
+}
+
+struct App {
+    ide: Ide,
+    options: Options,
+    /// The session of the project the window shows.
+    project: Option<Handle>,
+    opening: Option<Pending>,
     prefs: SettingsStore<Prefs>,
-    theme: Theme,
     dialogs: Dialogs<Ask>,
-    /// A command that failed, said in the window.
-    failure: Option<String>,
-    /// The answer of `view.open`, which the window does not wait for: checking a folder takes time.
-    opening: Option<Receiver<Result<serde_json::Value, CommandError>>>,
-    /// A folder was just opened: fit its first drawing, that of this generation or a later one.
-    fit_at: Option<u64>,
-    /// The first drawing of a folder was fitted before its values came: fit it again with the room of their banner.
-    fit_values: bool,
+    start: StartList,
+    /// Whether each recent project is still there, looked at off the thread of the window.
+    found: Option<Receiver<Vec<bool>>>,
     /// `LABCRAFT_FRAMES`: the time of each frame, and the motion it is measured over.
     timing: Option<Timing>,
+}
+
+impl App {
+    fn new(ctx: &egui::Context, options: Options, frame: craft_window::Frame) -> App {
+        install_fonts(ctx);
+        let (mut prefs, _) = SettingsStore::<Prefs>::open(Location::Auto);
+        if prefs.get().clone().take_those_of_the_viewer() {
+            prefs.update(|prefs| {
+                prefs.take_those_of_the_viewer();
+            });
+        }
+        let mut window = prefs.get().window.clone();
+        // `--theme` is for this window: not kept.
+        if let Some(theme) = options.theme {
+            window.dark = theme == labcraft_diagram::Theme::Dark;
+        }
+        let wake = ctx.clone();
+        let dialogs = Dialogs::new(Arc::new(move || wake.request_repaint()));
+        let examples = examples::BUNDLED
+            .iter()
+            .map(|bundled| Example { name: examples::title(bundled.name).to_owned(), line: examples::line(bundled.name).to_owned() })
+            .collect();
+        let mut app = App {
+            ide: Ide::new(ctx, window, frame),
+            options,
+            project: None,
+            opening: None,
+            prefs,
+            dialogs,
+            start: StartList { recent: Vec::new(), examples, problem: None },
+            found: None,
+            timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
+        };
+        app.recent_changed(ctx);
+        if let Some(folder) = app.options.folder.clone() {
+            app.open(ctx, &folder, false);
+        }
+        app
+    }
+
+    /// Opens a project: in this window when it shows the start page, in a window of its own otherwise (ide.md 9).
+    fn open(&mut self, ctx: &egui::Context, folder: &Path, new: bool) {
+        if self.project.is_some() || self.opening.is_some() {
+            if new && let Err(error) = session::write_first_function(folder, self.options.lib_paths.clone()) {
+                self.ide.say(error.message);
+                return;
+            }
+            self.another_window(folder);
+            return;
+        }
+        let opening = Opening {
+            folder: folder.to_path_buf(),
+            lib_paths: self.options.lib_paths.clone(),
+            standard_everywhere: self.prefs.get().window.standard_everywhere,
+            style: self.options.style.clone(),
+            new,
+        };
+        let wake = ctx.clone();
+        match Handle::spawn(opening, Box::new(move || wake.request_repaint())) {
+            Ok((handle, reply)) => {
+                self.start.problem = None;
+                self.opening = Some(Pending { folder: folder.to_path_buf(), handle, reply });
+            }
+            Err(error) => self.start.problem = Some(format!("{}: {error}", folder.display())),
+        }
+    }
+
+    /// The same program, on another folder: one project per window.
+    fn another_window(&mut self, folder: &Path) {
+        let mut command = match std::env::current_exe() {
+            Ok(exe) => std::process::Command::new(exe),
+            Err(error) => {
+                self.ide.say(format!("a window of its own for {}: {error}", folder.display()));
+                return;
+            }
+        };
+        for lib_path in &self.options.lib_paths {
+            command.arg("--lib-path").arg(lib_path);
+        }
+        if let Some(style) = &self.options.style {
+            command.arg("--style").arg(style);
+        }
+        command.arg("--").arg(folder);
+        if let Err(error) = command.spawn() {
+            self.ide.say(format!("a window of its own for {}: {error}", folder.display()));
+        }
+    }
+
+    /// The project being opened has answered.
+    fn opened(&mut self, ctx: &egui::Context) {
+        let Some(result) = self.opening.as_ref().and_then(|pending| pending.reply.take()) else { return };
+        let Some(pending) = self.opening.take() else { return };
+        match result {
+            Ok(_) => {
+                let folder = pending.folder.display().to_string();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+                    "{} — LabCraft",
+                    pending.folder.file_name().map_or(folder.clone(), |name| name.to_string_lossy().into_owned())
+                )));
+                self.project = Some(pending.handle);
+                self.prefs.update(|prefs| {
+                    prefs.recent.retain(|recent| *recent != folder);
+                    prefs.recent.insert(0, folder);
+                    prefs.recent.truncate(MAX_RECENT);
+                });
+                self.recent_changed(ctx);
+            }
+            Err(error) => self.start.problem = Some(format!("{}: {}", pending.folder.display(), error.message)),
+        }
+    }
+
+    /// The recent projects again, and a look, off the thread of the window, at which are still there.
+    fn recent_changed(&mut self, ctx: &egui::Context) {
+        let recent = self.prefs.get().recent.clone();
+        self.start.recent = recent
+            .iter()
+            .map(|path| Recent {
+                name: Path::new(path).file_name().map_or_else(|| path.clone(), |name| name.to_string_lossy().into_owned()),
+                path: path.clone(),
+                found: None,
+            })
+            .collect();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let wake = ctx.clone();
+        let spawned = std::thread::Builder::new().name("labcraft-recent".to_owned()).spawn(move || {
+            let _ = sender.send(recent.iter().map(|path| Path::new(path).is_dir()).collect());
+            wake.request_repaint();
+        });
+        self.found = spawned.ok().map(|_| receiver);
+    }
+
+    fn outward(&mut self, ctx: &egui::Context, asked: Outward) {
+        match asked {
+            // A folder given (the form of the palette) is taken as the dialog would give it.
+            Outward::NewProject(Some(folder)) => self.answered(ctx, Ask::New, Answer::Paths(vec![PathBuf::from(folder)])),
+            Outward::OpenFolder(Some(folder)) => self.answered(ctx, Ask::Open, Answer::Paths(vec![PathBuf::from(folder)])),
+            Outward::NewProject(None) => self.dialogs.ask(FileDialog::folder().title("Choose an empty folder for the new project"), Ask::New),
+            Outward::OpenFolder(None) => self.dialogs.ask(FileDialog::folder().title("Open a folder of LabCraft files"), Ask::Open),
+            Outward::OpenRecent(at) => {
+                if let Some(recent) = self.start.recent.get(at).map(|recent| PathBuf::from(&recent.path)) {
+                    self.open(ctx, &recent, false);
+                }
+            }
+            Outward::OpenExample(at) => {
+                self.dialogs.ask(FileDialog::folder().title("Choose an empty folder for the copy of the example"), Ask::Example(at))
+            }
+            Outward::OpenLink(link) => ctx.open_url(egui::OpenUrl::new_tab(link)),
+            Outward::OpenTrace => self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace),
+        }
+    }
+
+    fn answered(&mut self, ctx: &egui::Context, ask: Ask, answer: Answer) {
+        let path = match answer {
+            Answer::Paths(paths) => match paths.into_iter().next() {
+                Some(path) => path,
+                None => return,
+            },
+            Answer::Unavailable(why) => {
+                self.ide.say(why);
+                return;
+            }
+            _ => return,
+        };
+        match ask {
+            Ask::Open => self.open(ctx, &path, false),
+            Ask::New => match session::make_new_folder(&path) {
+                Ok(()) => self.open(ctx, &path, true),
+                Err(error) => self.say_on_start(error.message),
+            },
+            Ask::Example(at) => match examples::copy(at, &path) {
+                Ok(()) => self.open(ctx, &path, false),
+                Err(error) => self.say_on_start(error.message),
+            },
+            Ask::Trace => {
+                if let Some(project) = &self.project {
+                    project.open_trace(&path);
+                }
+            }
+        }
+    }
+
+    /// The settings of the window, kept; the theme of `--theme` is for this window only (cli.md 8): the one saved stays,
+    /// unless the user changed the theme here.
+    fn save_window(&mut self) {
+        let mut window = self.ide.prefs();
+        let saved = self.prefs.get().window.dark;
+        if let Some(theme) = self.options.theme
+            && window.dark == (theme == labcraft_diagram::Theme::Dark)
+        {
+            window.dark = saved;
+        }
+        self.prefs.update(|prefs| prefs.window = window);
+    }
+
+    fn say_on_start(&mut self, problem: String) {
+        if self.project.is_some() {
+            self.ide.say(problem);
+        } else {
+            self.start.problem = Some(problem);
+        }
+    }
+}
+
+impl eframe::App for App {
+    #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let now = ctx.input(|input| input.time);
+        if let Some(timing) = &mut self.timing {
+            timing.frames.tick(now, frame.info().cpu_usage);
+            ctx.request_repaint();
+            // What the time is measured on.
+            if !std::mem::replace(&mut timing.adapter_said, true) {
+                let adapter = frame.wgpu_render_state().map(|state| state.adapter.get_info());
+                let said = adapter.map_or("no wgpu adapter".to_owned(), |info| format!("{} ({:?})", info.name, info.backend));
+                let _ = writeln!(std::io::stderr(), "labcraft: drawn by {said}");
+            }
+        }
+        self.opened(&ctx);
+        if let Some(found) = self.found.as_ref().and_then(|found| found.try_recv().ok()) {
+            self.found = None;
+            for (recent, found) in self.start.recent.iter_mut().zip(found) {
+                recent.found = Some(found);
+            }
+        }
+        for (ask, answer) in self.dialogs.take_answers() {
+            self.answered(&ctx, ask, answer);
+        }
+        let shown = self.project.as_ref().and_then(|project| project.snapshot().view.function.clone());
+        if let (Some(timing), Some(function)) = (&mut self.timing, &shown)
+            && let Some((canvas, rect)) = self.ide.shown_canvas(function)
+        {
+            timing.canvas = rect;
+            timing.drive(canvas, now);
+        }
+        let host = self.project.as_ref().map(|project| project as &dyn Host);
+        let outward = self.ide.show(ui, host, &self.start);
+        if let (Some(timing), Some(rect)) = (&self.timing, self.timing.as_ref().and_then(|timing| timing.canvas)) {
+            timing.corner(&ctx, rect, now);
+        }
+        for asked in outward {
+            self.outward(&ctx, asked);
+        }
+        if self.ide.take_prefs_changed() {
+            self.save_window();
+        }
+        self.prefs.tick(Instant::now());
+        self.dialogs.show_pending(Some(&*frame));
+    }
+
+    fn on_exit(&mut self) {
+        if let Some(timing) = &self.timing {
+            let phase = match timing.motion {
+                Motion::Waiting(_) => "before the motion, the first drawing counted",
+                Motion::Running(_) => "the motion, cut by the window closed",
+                Motion::Done => "by hand",
+            };
+            let _ = writeln!(std::io::stderr(), "labcraft: {phase}: {}", timing.frames.phase().line());
+        }
+        self.save_window();
+        let _ = self.prefs.flush();
+    }
 }
 
 /// Where the motion of `LABCRAFT_FRAMES` is.
@@ -199,7 +492,7 @@ impl Timing {
     }
 
     /// The last 2 seconds, in the top-right corner of the canvas.
-    fn corner(&self, ui: &egui::Ui, rect: egui::Rect, now: f64) {
+    fn corner(&self, ctx: &egui::Context, rect: egui::Rect, now: f64) {
         let stats = self.frames.recent();
         let phase = match self.motion {
             Motion::Waiting(_) => "before the motion".to_owned(),
@@ -216,8 +509,8 @@ impl Timing {
             stats.late,
             stats.frames
         );
-        let painter = ui.painter_at(rect);
-        let visuals = ui.visuals();
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("labcraft-frames")));
+        let visuals = ctx.global_style().visuals.clone();
         let galley = painter.layout_no_wrap(text, egui::FontId::monospace(12.0), visuals.strong_text_color());
         let at = rect.right_top() + egui::Vec2::new(-galley.size().x - 14.0, 10.0);
         painter.rect_filled(egui::Rect::from_min_size(at, galley.size()).expand(6.0), 4.0, visuals.extreme_bg_color);
@@ -225,277 +518,8 @@ impl Timing {
     }
 }
 
-impl Viewer {
-    fn new(ctx: &egui::Context, options: Options) -> Result<Viewer, Box<dyn std::error::Error + Send + Sync>> {
-        install_fonts(ctx);
-        let (prefs, _) = SettingsStore::<Prefs>::open(Location::Auto);
-        let theme = match (options.theme, prefs.get().theme.as_str()) {
-            (Some(labcraft_diagram::Theme::Dark), _) | (None, "dark") => Theme::Dark,
-            _ => Theme::Light,
-        };
-        ctx.set_theme(if theme == Theme::Dark { egui::Theme::Dark } else { egui::Theme::Light });
-        let wake_ctx = ctx.clone();
-        let session = Handle::spawn(
-            prefs.get().standard_everywhere,
-            options.lib_paths.clone(),
-            options.style.clone(),
-            Box::new(move || wake_ctx.request_repaint()),
-        )?;
-        let mut canvas = Canvas::new();
-        canvas.set_reduced_motion(prefs.get().reduced_motion);
-        let wake_ctx = ctx.clone();
-        let dialogs = Dialogs::new(Arc::new(move || wake_ctx.request_repaint()));
-        let mut viewer = Viewer {
-            session,
-            published: Published::default(),
-            canvas,
-            shown_generation: 0,
-            values_generation: 0,
-            prefs,
-            theme,
-            dialogs,
-            failure: None,
-            opening: None,
-            fit_at: None,
-            fit_values: false,
-            timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
-        };
-        if let Some(folder) = options.folder {
-            viewer.open(&folder);
-        }
-        Ok(viewer)
-    }
-
-    fn open(&mut self, folder: &std::path::Path) {
-        self.opening = Some(self.session.open(folder));
-        self.failure = None;
-    }
-
-    fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Open a folder…").clicked() {
-                self.dialogs.ask(FileDialog::folder().title("Open a library folder"), Ask::Folder);
-            }
-            ui.label(self.published.folder.as_deref().unwrap_or("no folder open"));
-            ui.separator();
-            let mut dark = self.theme == Theme::Dark;
-            if ui.checkbox(&mut dark, "Dark").changed() {
-                self.theme = if dark { Theme::Dark } else { Theme::Light };
-                ui.ctx().set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
-                self.prefs.update(|prefs| prefs.theme = if dark { "dark" } else { "light" }.to_owned());
-            }
-            let mut standard = self.published.view.standard_everywhere;
-            if ui.checkbox(&mut standard, "Standard view everywhere").changed() {
-                self.session.post("view.set_standard_view", json!({ "on": standard }));
-                self.prefs.update(|prefs| prefs.standard_everywhere = standard);
-            }
-            let mut reduced = self.prefs.get().reduced_motion;
-            if ui.checkbox(&mut reduced, "Reduced motion").changed() {
-                self.canvas.set_reduced_motion(reduced);
-                self.prefs.update(|prefs| prefs.reduced_motion = reduced);
-            }
-            if ui.button("Fit").clicked() {
-                self.canvas.fit();
-            }
-        });
-        self.trace_bar(ui);
-        // A tab per function opened.
-        ui.horizontal_wrapped(|ui| {
-            for name in self.published.view.opened.clone() {
-                let shown = self.published.view.function.as_deref() == Some(name.as_str());
-                if ui.selectable_label(shown, &name).clicked() && !shown {
-                    self.session.post("view.show_function", json!({ "function": name }));
-                }
-            }
-        });
-        for notice in [&self.published.notice, &self.failure, &self.published.style_notice].into_iter().flatten() {
-            ui.colored_label(ui.visuals().warn_fg_color, notice);
-        }
-    }
-
-    /// The trace of the function shown and how its run ended; the button that hides the values, the one that opens
-    /// another trace, and the chip of a trace opened by hand, whose cross goes back to the last run (notation 6.1;
-    /// decisions of the owner, 2026-11-13).
-    fn trace_bar(&mut self, ui: &mut egui::Ui) {
-        if self.published.view.function.is_none() {
-            return;
-        }
-        ui.horizontal_wrapped(|ui| {
-            let mut shown = self.canvas.values_shown();
-            if ui.checkbox(&mut shown, "Values").on_hover_text("Show the values of the run on the wires").changed() {
-                self.canvas.set_values_shown(shown);
-            }
-            let opened = self.published.view.trace_opened;
-            match &self.published.view.trace {
-                Some(trace) => {
-                    ui.label(format!("{}: {}", if opened { "Trace" } else { "Last run" }, trace.file));
-                    if opened && ui.small_button("✕").on_hover_text("Back to the last run").clicked() {
-                        self.session.post("view.open_trace", json!({}));
-                    }
-                    ui.label(trace_status(trace));
-                }
-                None => {
-                    ui.label("No run of this function yet");
-                }
-            }
-            if ui.button("Open a trace…").clicked() {
-                self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace);
-            }
-        });
-    }
-
-    fn functions(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Functions");
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            for listed in self.published.view.functions.clone() {
-                let shown = self.published.view.function.as_deref() == Some(listed.function.as_str());
-                // A function that is not drawn gives the number of errors of its file (architecture 11.5).
-                let text = if listed.drawable || listed.errors == 0 {
-                    listed.function.clone()
-                } else {
-                    format!("{}  ({} error{})", listed.function, listed.errors, if listed.errors == 1 { "" } else { "s" })
-                };
-                if ui.selectable_label(shown, text).on_hover_text(&listed.file).clicked() && !shown {
-                    self.session.post("view.show_function", json!({ "function": listed.function }));
-                }
-            }
-        });
-    }
-
-    fn problems(&self, ui: &mut egui::Ui) {
-        let title = format!("Problems: {} errors, {} warnings", self.published.view.errors, self.published.view.warnings);
-        ui.label(egui::RichText::new(title).strong());
-        if self.published.view.kept {
-            ui.label("This function is not drawable now: its last drawing stays, with the diagnostics of its file.");
-        }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.label(egui::RichText::new(&self.published.problems).monospace());
-        });
-    }
-}
-
-impl eframe::App for Viewer {
-    #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        let now = ui.ctx().input(|input| input.time);
-        if let Some(timing) = &mut self.timing {
-            timing.frames.tick(now, frame.info().cpu_usage);
-            ui.ctx().request_repaint();
-            // What the time is measured on.
-            if !std::mem::replace(&mut timing.adapter_said, true) {
-                let adapter = frame.wgpu_render_state().map(|state| state.adapter.get_info());
-                let said = adapter.map_or("no wgpu adapter".to_owned(), |info| format!("{} ({:?})", info.name, info.backend));
-                let _ = writeln!(std::io::stderr(), "labcraft: drawn by {said}");
-            }
-        }
-        let published = self.session.published();
-        if let Some(answer) = self.opening.as_ref().and_then(|opening| opening.try_recv().ok()) {
-            self.opening = None;
-            match answer {
-                // The session publishes before it answers: its drawing is this one or a later one.
-                Ok(_) => self.fit_at = Some(self.session.published().view.drawing_generation),
-                Err(error) => self.failure = Some(error.message),
-            }
-        }
-        if published.view.drawing_generation != self.shown_generation {
-            self.shown_generation = published.view.drawing_generation;
-            if let Some(drawing) = &published.view.drawing {
-                // The glide when the file of the function shown changed; the viewport stays (scenario 6, point 3), but
-                // for a folder just opened.
-                self.canvas.set_drawing(drawing.clone(), published.view.glide);
-                if self.fit_at.is_some_and(|at| published.view.drawing_generation >= at) {
-                    self.canvas.fit();
-                    self.fit_at = None;
-                    self.fit_values = true;
-                }
-            }
-        }
-        if published.view.overlay_generation != self.values_generation {
-            self.values_generation = published.view.overlay_generation;
-            // Published with the drawing they were made for, which the canvas has just taken.
-            self.canvas.set_values(published.view.overlay.clone(), published.view.run.clone());
-            if std::mem::take(&mut self.fit_values) && published.view.overlay.as_ref().is_some_and(|overlay| overlay.top > 0) {
-                self.canvas.fit();
-            }
-        }
-        self.published = published;
-        for (ask, answer) in self.dialogs.take_answers() {
-            match (ask, answer) {
-                (Ask::Folder, Answer::Paths(paths)) => {
-                    if let Some(folder) = paths.first() {
-                        self.open(folder);
-                    }
-                }
-                (Ask::Trace, Answer::Paths(paths)) => {
-                    if let Some(trace) = paths.first() {
-                        self.session.open_trace(trace);
-                    }
-                }
-                (Ask::Folder | Ask::Trace, Answer::Unavailable(why)) => self.failure = Some(why),
-                _ => {}
-            }
-        }
-        egui::Panel::top("labcraft-top").show(ui, |ui| self.top_bar(ui));
-        egui::Panel::bottom("labcraft-problems").resizable(true).default_size(160.0).show(ui, |ui| self.problems(ui));
-        egui::Panel::left("labcraft-functions").resizable(true).default_size(240.0).show(ui, |ui| self.functions(ui));
-        egui::CentralPanel::default().show(ui, |ui| {
-            if self.published.view.drawing.is_none() {
-                ui.centered_and_justified(|ui| ui.label("Open a folder to see its functions."));
-                return;
-            }
-            let shown = Shown { arms: self.published.view.arms.clone() };
-            if let Some(timing) = &mut self.timing {
-                timing.drive(&mut self.canvas, now);
-            }
-            let response = self.canvas.show(ui, self.theme, &shown);
-            if let Some(timing) = &mut self.timing {
-                timing.canvas = Some(response.response.rect);
-                timing.corner(ui, response.response.rect, now);
-            }
-            if let (Some((structure, arm)), Some(function)) = (response.tab, self.published.view.function.clone()) {
-                self.session.post("view.set_state", json!({ "function": function, "state": { "arms": { structure: arm } } }));
-            }
-            // An iteration chosen by a selector or on the values pinned of a wire (notation 6.1).
-            if let (Some((looped, iteration)), Some(function)) = (response.iteration, self.published.view.function.clone()) {
-                self.session.post("view.set_state", json!({ "function": function, "state": { "iterations": { looped: iteration } } }));
-            }
-        });
-        self.prefs.tick(Instant::now());
-        self.dialogs.show_pending(Some(&*frame));
-    }
-
-    fn on_exit(&mut self) {
-        if let Some(timing) = &self.timing {
-            let phase = match timing.motion {
-                Motion::Waiting(_) => "before the motion, the first drawing counted",
-                Motion::Running(_) => "the motion, cut by the window closed",
-                Motion::Done => "by hand",
-            };
-            let _ = writeln!(std::io::stderr(), "labcraft: {phase}: {}", timing.frames.phase().line());
-        }
-        let _ = self.prefs.flush();
-    }
-}
-
-/// How the run of a trace ended, in a few words: its events, its status, and what the banner says at length.
-fn trace_status(trace: &labcraft_engine::drawings::TracePart) -> String {
-    let mut said = vec![format!("{} event{}", trace.events, if trace.events == 1 { "" } else { "s" })];
-    if let Some(status) = &trace.status {
-        said.push(status.clone());
-    } else if !trace.cut {
-        said.push("no end".to_owned());
-    }
-    if trace.cut {
-        said.push("cut".to_owned());
-    }
-    if !trace.stale.is_empty() {
-        said.push("the files have changed since".to_owned());
-    }
-    said.join(", ")
-}
-
-/// The fonts of the window (architecture 11.5): Inter for the panels, Hack for the notation and `Problems`, then the
-/// fonts of the system for what they lack. egui is built without its default fonts.
+/// The fonts of the window (architecture 11.5): Inter for the panels, Hack for the notation and the text, then the fonts
+/// of the system for what they lack. egui is built without its default fonts.
 fn install_fonts(ctx: &egui::Context) {
     let notation = FontFamily::Name(labcraft_editor::FAMILY.into());
     UiFonts::new(&I18nScripts)

@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use labcraft_check::{Content, Found, Libraries, LibrarySource, Origin, SourceFile, check};
 use labcraft_types::{Diagnostic, Interner, Limits, Severity};
 
-use crate::{Callable, EditError, Edited, Files, Input, Judge, Kind, Lookup, Op, Point, apply};
+use crate::{Callable, EditError, Edited, Files, Input, Judge, Kind, Lookup, Op, Point, apply, selectable};
 
 struct Nothing;
 
@@ -495,4 +495,80 @@ fn an_edit_stays_within_the_size_of_a_file() {
     files.insert(FILE, &before);
     let error = apply(&files, &add("core.add"), &Table, &limits).err().map(|error| error.code);
     assert_eq!(error, Some("file.too_large"));
+}
+
+// view.select: what the selection names (commands.md 9.2)
+
+const SELECTED: &str = "use core\nuse sound\n\nfn f(x: f64, z: f64) -> (y: f64, w: f64) {\n    #beep: sound.beep()\n    s = core.add(x, z, after: #beep)\n    total = core.abs(s)\n    y = total\n    w = core.abs(x)\n}\n";
+
+fn names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
+}
+
+fn select(before: &str, nodes: &[&str], wires: &[&str], terminals: &[&str]) -> Result<(), EditError> {
+    let before = text(before);
+    let mut files = Files::new();
+    files.insert(FILE, &before);
+    selectable(&files, FILE, &names(nodes), &names(wires), &names(terminals), &Table, &Limits::default())
+}
+
+#[track_caller]
+fn not_selectable(before: &str, nodes: &[&str], wires: &[&str], terminals: &[&str], code: &str, parameter: &str) -> EditError {
+    match select(before, nodes, wires, terminals) {
+        Ok(()) => panic!("{code} expected"),
+        Err(error) => {
+            assert_eq!((error.code, error.parameter), (code, Some(parameter)), "{error:?}");
+            error
+        }
+    }
+}
+
+#[test]
+fn a_node_is_selected_by_the_name_of_its_line_or_its_label() {
+    assert_eq!(select(SELECTED, &["s", "#beep", "total", "w"], &[], &[]), Ok(()));
+    let error = not_selectable(SELECTED, &["s", "totl"], &[], &[], "edit.unknown", "nodes");
+    assert_eq!(error.expected, names(&["total", "s", "w"]));
+    not_selectable(SELECTED, &["#s"], &[], &[], "edit.unknown", "nodes");
+    not_selectable(SELECTED, &["#"], &[], &[], "params.invalid", "nodes");
+    let twice = "use core\n\nfn f(x: f64, c: bool) -> (y: f64) {\n    m = match c {\n        true => {\n            d = core.add(x, 1)\n            yield d\n        }\n        false => {\n            d = core.add(x, 2)\n            yield d\n        }\n    }\n    y = m\n}\n";
+    not_selectable(twice, &["d"], &[], &[], "edit.ambiguous", "nodes");
+}
+
+#[test]
+fn a_terminal_is_an_input_or_an_output_of_the_function() {
+    assert_eq!(select(SELECTED, &[], &[], &["input x", "input z", "output y", "output w"]), Ok(()));
+    let error = not_selectable(SELECTED, &[], &[], &["input q"], "edit.unknown", "terminals");
+    assert_eq!(error.expected, names(&["input x", "input z", "output w"]));
+    not_selectable(SELECTED, &[], &[], &["output x"], "edit.unknown", "terminals");
+    not_selectable(SELECTED, &[], &[], &["x"], "params.invalid", "terminals");
+    not_selectable(SELECTED, &[], &[], &["input "], "params.invalid", "terminals");
+    not_selectable(SELECTED, &[], &[], &["in x"], "params.invalid", "terminals");
+}
+
+#[test]
+fn a_wire_is_selected_only_when_it_exists() {
+    let wires = ["x -> s", "z -> s.b", "total -> output y", "total -> y", "w -> output w", "#beep -> s.after", "s -> total", "x -> w"];
+    assert_eq!(select(SELECTED, &[], &wires, &[]), Ok(()));
+    // Both ends exist, but no wire joins them.
+    not_selectable(SELECTED, &[], &["z -> total"], &[], "edit.unknown", "wires");
+    not_selectable(SELECTED, &[], &["x -> s.b"], &[], "edit.unknown", "wires");
+    not_selectable(SELECTED, &[], &["x -> output y"], &[], "edit.unknown", "wires");
+    not_selectable(SELECTED, &[], &["#beep -> total.after"], &[], "edit.unknown", "wires");
+    not_selectable(SELECTED, &[], &["x s"], &[], "params.invalid", "wires");
+    not_selectable(SELECTED, &[], &["x -> "], &[], "params.invalid", "wires");
+    // The first name that fails is the one given.
+    not_selectable(SELECTED, &["s"], &["x -> s", "q -> s"], &["input x"], "edit.unknown", "wires");
+}
+
+#[test]
+fn selecting_changes_nothing_and_needs_the_file() {
+    let mut files = Files::new();
+    let before = text(SELECTED);
+    files.insert(FILE, &before);
+    let error = selectable(&files, "g.lcf", &[], &[], &[], &Table, &Limits::default()).err().map(|error| error.code);
+    assert_eq!(error, Some("path.not_found"));
+    assert_eq!(selectable(&files, FILE, &[], &names(&["x -> s"]), &[], &Table, &Limits::default()), Ok(()));
+    assert_eq!(files.get(FILE), Some(before.as_str()));
+    // The same wire is still there to unwire.
+    assert!(apply(&files, &disconnect("x -> s"), &Table, &Limits::default()).is_ok());
 }

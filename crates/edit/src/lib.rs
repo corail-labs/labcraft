@@ -32,7 +32,10 @@ mod names;
 mod places;
 mod refs;
 mod scope;
+mod select;
 mod wire;
+
+pub use select::selectable;
 
 #[cfg(test)]
 mod tests;

@@ -26,7 +26,7 @@ use crate::workspace::Workspace;
 
 pub mod window;
 
-pub use window::{Selection, Tab, ViewKind};
+pub use window::{Selection, Tab, ViewKind, WorkspaceId};
 
 /// The view state of a function that its file does not hold (notation 2.1), kept for the session only, by its file,
 /// across changes of the file, by the keys of its nodes (decided at the start of step 6).
@@ -66,6 +66,8 @@ pub struct Published {
     /// The report of the check of the folder, with the diagnostics of the drawing shown (`LC7005`); a new one with each
     /// check and each drawing.
     pub report: Option<Arc<Report>>,
+    /// Changes with each check of the folder, and only then: what the window read of the files is read again.
+    pub checks: u64,
     pub errors: u64,
     pub warnings: u64,
     /// The function shown, and the tabs of the functions opened.
@@ -98,6 +100,8 @@ pub struct Published {
     pub preview: Option<String>,
     /// The selection of the window (`view.select`), in the function it names.
     pub selection: Selection,
+    /// The workspace of the window (`view.set_workspace`).
+    pub workspace: window::WorkspaceId,
 }
 
 /// The trace of the function shown (notation 6.1; decisions of the owner, 2026-11-13).
@@ -161,6 +165,11 @@ pub struct View {
 impl View {
     pub fn published(&self) -> &Arc<Published> {
         &self.snapshot
+    }
+
+    /// The file of the function shown: two files can give one name.
+    pub(crate) fn shown_file(&self) -> Option<&str> {
+        self.file.as_deref()
     }
 
     fn publish(&mut self) {
@@ -572,6 +581,7 @@ fn load(session: &mut Session) {
     view.now.folder = loaded.root.as_ref().map(|_| shown);
     view.now.functions = listed(&loaded);
     view.now.report = Some(Arc::new(loaded.report.clone()));
+    view.now.checks = view.now.checks.wrapping_add(1);
     view.now.errors = loaded.report.errors();
     view.now.warnings = loaded.report.warnings();
     view.loaded = Some(loaded);

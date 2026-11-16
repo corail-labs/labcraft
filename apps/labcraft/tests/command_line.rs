@@ -1,4 +1,4 @@
-//! The command line of the viewer (`docs/cli.md`, section 8), without opening a window.
+//! The command line of the IDE (`docs/cli.md`, section 8), without opening a window.
 
 use std::process::Command;
 

@@ -24,6 +24,14 @@ fn too_wide(root: &Path, home: Option<&Path>) -> Option<&'static str> {
     }
 }
 
+/// Why `folder` is refused as the root of a project (`docs/mcp.md`, 1), as it is on the disk: for the server and for
+/// the window of the IDE (commands.md 6.7, "The window").
+pub fn too_wide_folder(folder: &Path) -> Option<&'static str> {
+    let root = std::fs::canonicalize(folder).ok()?;
+    let home: Option<PathBuf> = std::env::home_dir().and_then(|home| std::fs::canonicalize(home).ok());
+    too_wide(&root, home.as_deref())
+}
+
 /// The session on the root, checked as it starts; the message of a wrong usage otherwise (exit 2).
 pub fn session(options: &McpOptions) -> Result<Session, String> {
     session_on(options, true)

@@ -1,10 +1,6 @@
-//! The desktop viewer of M0v (`docs/architecture.md`, 11.5), read-only: its command line, its session, which holds the
-//! state of the viewer and answers the `view.*` commands (`docs/commands.md`, 6.5), the watching of the folder, the file
-//! of values of `--style`, and the time of its frames (`LABCRAFT_FRAMES`).
-//! The window around the canvas is the binary.
-//!
-//! The session is provisional (decided at the start of step 6): it goes into `engine::view` once M0b merges `engine`,
-//! with the same commands and results.
+//! The desktop IDE (`docs/architecture.md`, 12.9): its command line, the session of a project on its thread, the
+//! watching of the folder, the file of values of `--style`, the examples it copies, and the time of its frames
+//! (`LABCRAFT_FRAMES`). The window is `ide`; the binary puts it on eframe.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod args;
+pub mod examples;
 pub mod frames;
 pub mod session;
 pub mod style_file;

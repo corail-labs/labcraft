@@ -121,10 +121,31 @@ pub(super) fn place_tab(view: &mut View, name: &str, preview: bool) {
         && let Some(slot) = now.opened.get_mut(at)
     {
         *slot = name.to_owned();
-        now.tabs.remove(&before);
+        // The tab replaced is closed: its view and its selection go with it.
+        forget_closed(view);
     }
-    now.preview = Some(name.to_owned());
+    view.now.preview = Some(name.to_owned());
 }
+
+/// The file of a function that a tab shows: when two files give its name (`a.b.lcf` and `a/b.lcf`), the first that is
+/// drawable, as `view.show_function` chooses it.
+pub fn file_of_tab<'a>(published: &'a Published, function: &str) -> Option<&'a str> {
+    let matching = || published.functions.iter().filter(|listed| listed.function == function);
+    matching().find(|listed| listed.drawable).or_else(|| matching().next()).map(|listed| listed.file.as_str())
+}
+
+/// The workspace of the window (ide.md 6), one of [`WORKSPACES`]: `edit` until one is chosen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorkspaceId(pub &'static str);
+
+impl Default for WorkspaceId {
+    fn default() -> WorkspaceId {
+        WorkspaceId("edit")
+    }
+}
+
+/// The workspaces of ide.md 6: `edit` is the one of M1, the others are planned.
+pub const WORKSPACES: &[(&str, Option<&str>)] = &[("edit", None), ("panel", Some("M3")), ("debug", Some("M5")), ("build", Some("M6"))];
 
 /// `view.close_function`: closes the tab of a function; when it was shown, the next tab is, else the one before it.
 pub fn close_function(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
@@ -144,6 +165,9 @@ pub fn close_function(session: &mut Session, params: &Params) -> Result<Value, C
             None => {
                 view.now.function = None;
                 view.file = None;
+                // A trace opened by hand is that of the function shown: none is now.
+                view.traced.opened = None;
+                view.now.trace_opened = false;
             }
         }
         draw(view, false);
@@ -191,22 +215,32 @@ pub fn set_view(session: &mut Session, params: &Params) -> Result<Value, Command
         return Err(CommandError::of("params.invalid", "function", format!("`{name}` has no tab open: `view.show_function` opens it")));
     }
     let tab = Tab { view: first, split: second };
-    let before = view.now.tabs.insert(name.to_owned(), tab).unwrap_or_default();
-    view.publish();
+    // `tabs` holds only the tabs whose view is not the diagram alone.
+    let before = if tab == Tab::default() { view.now.tabs.remove(name) } else { view.now.tabs.insert(name.to_owned(), tab) }.unwrap_or_default();
+    if before != tab {
+        view.publish();
+    }
     Ok(json!({ "before": { "view": before.view.as_str(), "split": before.split.map(ViewKind::as_str) } }))
 }
 
 /// `view.set_workspace`: `edit` is the one workspace of M1 (ide.md 6).
-pub fn set_workspace(params: &Params) -> Result<Value, CommandError> {
+pub fn set_workspace(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let asked = params.text("workspace")?;
-    match asked {
-        "edit" => Ok(json!({ "before": "edit" })),
-        "panel" => Err(CommandError::new("command.not_enabled", "the workspace `panel` is planned, and comes with M3")),
-        "debug" => Err(CommandError::new("command.not_enabled", "the workspace `debug` is planned, and comes with M5")),
-        "build" => Err(CommandError::new("command.not_enabled", "the workspace `build` is planned, and comes with M6")),
-        other => {
-            Err(CommandError::of("params.invalid", "workspace", format!("unknown workspace `{other}`"))
-                .expecting(&["edit", "panel", "debug", "build"]))
+    match WORKSPACES.iter().find(|(id, _)| *id == asked) {
+        Some((id, None)) => {
+            let view = &mut session.view;
+            let before = std::mem::replace(&mut view.now.workspace, WorkspaceId(id));
+            if before.0 != *id {
+                view.publish();
+            }
+            Ok(json!({ "before": before.0 }))
+        }
+        Some((id, Some(milestone))) => {
+            Err(CommandError::new("command.not_enabled", format!("the workspace `{id}` is planned, and comes with {milestone}")))
+        }
+        None => {
+            let ids: Vec<&str> = WORKSPACES.iter().map(|(id, _)| *id).collect();
+            Err(CommandError::of("params.invalid", "workspace", format!("unknown workspace `{asked}`")).expecting(&ids))
         }
     }
 }
@@ -215,9 +249,14 @@ pub fn set_workspace(params: &Params) -> Result<Value, CommandError> {
 pub fn select(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let name = params.text("function")?;
     let mut lists = Vec::new();
+    let mut count = 0usize;
     for part in ["nodes", "wires", "terminals"] {
         let given = params.get(part).and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
-        let mut names = Vec::with_capacity(given.len().min(MAX_SELECTED));
+        count = count.saturating_add(given.len());
+        if count > MAX_SELECTED {
+            return Err(CommandError::of("params.invalid", part, format!("at most {MAX_SELECTED} items are selected at once")));
+        }
+        let mut names = Vec::with_capacity(given.len());
         for value in given {
             let Some(text) = value.as_str() else {
                 return Err(CommandError::of("params.invalid", part, format!("`{part}` is a list of names")));
@@ -226,15 +265,21 @@ pub fn select(session: &mut Session, params: &Params) -> Result<Value, CommandEr
         }
         lists.push(names);
     }
-    if lists.iter().map(Vec::len).sum::<usize>() > MAX_SELECTED {
-        return Err(CommandError::of("params.invalid", "nodes", format!("at most {MAX_SELECTED} items are selected at once")));
-    }
     read_again_if_stale(session);
-    let view = &mut session.view;
-    known(view, name)?;
-    if !view.now.opened.iter().any(|opened| opened == name) {
-        return Err(CommandError::of("params.invalid", "function", format!("`{name}` has no tab open: `view.show_function` opens it")));
+    known(&session.view, name)?;
+    // The selection is that of the tab shown (decision of the owner, 2026-11-16).
+    if session.view.now.function.as_deref() != Some(name) {
+        let shown = session.view.now.function.as_deref().unwrap_or("none");
+        return Err(CommandError::of(
+            "params.invalid",
+            "function",
+            format!("`{name}` is not the function shown (`{shown}`): `view.show_function` shows it"),
+        ));
     }
+    if let [nodes, wires, terminals] = lists.as_slice() {
+        crate::edits::selectable(session, nodes, wires, terminals)?;
+    }
+    let view = &mut session.view;
     let mut lists = lists.into_iter();
     let selection = Selection {
         function: name.to_owned(),
@@ -256,7 +301,7 @@ pub fn get_state(session: &Session) -> Value {
         .iter()
         .map(|function| {
             let tab = tab_of(now, function);
-            let file = now.functions.iter().find(|listed| listed.function == *function).map(|listed| listed.file.clone());
+            let file = file_of_tab(now, function);
             json!({ "function": function, "file": file, "view": tab.view.as_str(), "split": tab.split.map(ViewKind::as_str) })
         })
         .collect();
@@ -266,7 +311,7 @@ pub fn get_state(session: &Session) -> Value {
     let (nodes, wires, terminals) =
         selection.map(|selection| (selected(&selection.nodes), selected(&selection.wires), selected(&selection.terminals))).unwrap_or_default();
     json!({
-        "workspace": "edit",
+        "workspace": now.workspace.0,
         "windows": [{
             "tabs": tabs,
             "shown": shown,

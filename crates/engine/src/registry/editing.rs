@@ -111,6 +111,20 @@ const SETTINGS_ERRORS: &[&str] = &["command.not_enabled", "params.unknown", "par
 const WINDOW_ERRORS: &[&str] =
     &["command.not_enabled", "agent.not_allowed", "params.unknown", "params.missing", "params.invalid", "edit.unknown", "internal"];
 
+/// `view.select` names what it selects as an editing command does (commands.md 9.2).
+const SELECT_ERRORS: &[&str] = &[
+    "command.not_enabled",
+    "agent.not_allowed",
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "edit.unknown",
+    "edit.ambiguous",
+    "path.not_found",
+    "file.unparsed",
+    "internal",
+];
+
 const PROJECT_ERRORS: &[&str] = &[
     "command.not_enabled",
     "agent.not_allowed",
@@ -1235,7 +1249,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "view.select",
             "Select",
             "Set the selection of the window that shows a function",
-            "Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The window calls it on each click and rectangle of selection.",
+            "Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The function is the one shown, else `params.invalid`; each name names what it has, as an editing command names it (`#close`, `x -> s.b`, `input x`), else `edit.unknown`. The window calls it on each click and rectangle of selection.",
             object(
                 &[
                     ("function", string("The function shown.")),
@@ -1245,7 +1259,7 @@ pub(super) fn catalog() -> Vec<Command> {
                 ],
                 &["function"],
             ),
-            WINDOW_ERRORS,
+            SELECT_ERRORS,
         ),
         window(
             "view.set_view",

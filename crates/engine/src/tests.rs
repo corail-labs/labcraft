@@ -1228,3 +1228,55 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     assert!(planned.code == "command.not_enabled" && planned.message.contains("M5"), "{}", planned.message);
     assert_eq!(error(&mut session, "view.set_workspace", json!({ "workspace": "draw" })).code, "params.invalid");
 }
+
+/// After the review of 1a (decisions of the owner, 2026-11-16): an agent only reads the window, the selection names what
+/// the function shown has, a preview replaced takes its selection with it, the default view is no entry of `tabs`.
+#[test]
+fn the_window_refuses_an_agent_and_a_selection_of_nothing() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/b.lcf", MAIN.replace("double", "b"));
+    counting.memory.put("/p/c.lcf", MAIN.replace("double", "c"));
+    session.with_window();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    // An agent attached to the IDE reads the window, and changes nothing of what it shows (ide.md 8).
+    let agent = crate::Author::Agent("claude-code".to_owned());
+    assert!(session.execute_as(&agent, "view.get_state", &json!({})).is_ok());
+    for (id, params) in [
+        ("view.select", json!({ "function": "double", "nodes": ["y"] })),
+        ("view.set_view", json!({ "function": "double", "view": "text" })),
+        ("view.close_function", json!({ "function": "double" })),
+        ("view.set_workspace", json!({ "workspace": "edit" })),
+    ] {
+        let refused = session.execute_as(&agent, id, &params).unwrap_err();
+        assert_eq!(refused.code, "agent.not_allowed", "{id}");
+    }
+    assert_eq!(session.view().opened, ["b", "double"], "nothing changed");
+    // `y` is the line of `double`, `x` its input, `x -> y` the wire into it (MAIN).
+    let selected = json!({ "function": "double", "nodes": ["y"], "wires": ["x -> y"], "terminals": ["input x", "output y"] });
+    assert_eq!(ok(&mut session, "view.select", selected), json!({ "selected": 4 }));
+    for (params, code, parameter) in [
+        (json!({ "function": "b", "nodes": ["y"] }), "params.invalid", "function"),
+        (json!({ "function": "double", "nodes": ["z"] }), "edit.unknown", "nodes"),
+        (json!({ "function": "double", "wires": ["y -> x"] }), "edit.unknown", "wires"),
+        (json!({ "function": "double", "terminals": ["input y"] }), "edit.unknown", "terminals"),
+    ] {
+        let refused = error(&mut session, "view.select", params.clone());
+        assert_eq!((refused.code, refused.parameter.as_deref()), (code, Some(parameter)), "{params}");
+    }
+    // Over 1,000 items, the list that passes the bound is named.
+    let many: Vec<String> = (0..1_001).map(|at| format!("v{at} -> y")).collect();
+    let refused = error(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"], "wires": many }));
+    assert_eq!(refused.parameter.as_deref(), Some("wires"));
+    // The default view is no entry of `tabs`.
+    ok(&mut session, "view.set_view", json!({ "function": "double", "view": "text" }));
+    ok(&mut session, "view.set_view", json!({ "function": "double", "view": "diagram" }));
+    assert!(session.view().tabs.is_empty());
+    // A preview replaced takes its selection with it.
+    ok(&mut session, "view.close_function", json!({ "function": "double" }));
+    ok(&mut session, "view.show_function", json!({ "function": "double", "preview": true }));
+    ok(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"] }));
+    ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));
+    assert!(session.view().selection.is_empty());
+    assert_eq!(session.view().opened, ["b", "c"]);
+}

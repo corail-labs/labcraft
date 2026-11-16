@@ -297,7 +297,11 @@ impl Session {
         self.view.settle();
         // The command that `commands.execute` runs writes its own line; `commands.execute` writes one only when it failed
         // before running it.
-        if id != "commands.execute" || self.journal.lines == lines {
+        // Only what changes something is a line: what a window reads to draw itself would fill the journal (decision of
+        // the owner, 2026-11-16).
+        let named = if id == "commands.execute" { params.get("id").and_then(Value::as_str).unwrap_or_default() } else { id };
+        let changes = registry::command(named).is_some_and(|command| command.undoable || !command.effects.is_empty());
+        if changes && (id != "commands.execute" || self.journal.lines == lines) {
             self.journal_line(author, id, params, outcome.as_ref().map(|_| ()));
         }
         outcome
@@ -317,6 +321,10 @@ impl Session {
         };
         if let Some(reason) = self.not_enabled(command) {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
+        }
+        // An agent attached to the IDE reads the window and does not change what it shows (ide.md 8, commands.md 6.7).
+        if author.is_agent() && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
+            return Err(CommandError::new("agent.not_allowed", format!("`{id}` changes what the window shows: only the user calls it")));
         }
         let params = params::judge(command, params)?;
         guarded(id, || self.dispatch(author, command, &params, waiter)).unwrap_or_else(|internal| {
@@ -387,7 +395,7 @@ impl Session {
             "view.open_trace" => crate::view::open_trace(self, params),
             "view.close_function" => crate::view::window::close_function(self, params),
             "view.set_view" => crate::view::window::set_view(self, params),
-            "view.set_workspace" => crate::view::window::set_workspace(params),
+            "view.set_workspace" => crate::view::window::set_workspace(self, params),
             "view.select" => crate::view::window::select(self, params),
             "view.get_state" => Ok(crate::view::window::get_state(self)),
             #[cfg(not(target_arch = "wasm32"))]

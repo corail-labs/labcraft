@@ -1,11 +1,12 @@
-# Command line: `fmt`, `check`, `run`, `diagram` and the viewer
+# Command line: `fmt`, `check`, `run`, `diagram` and the IDE
 
-*Last updated: 2026-11-15. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
+*Last updated: 2026-11-16. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
 ([mcp.md](mcp.md)) implemented for M0b (tag `v0.2.0-m0b`); `diagram` (section 7) and the desktop viewer `labcraft`
-(section 8) implemented for M0v (tag `v0.3.0-m0`); `exec` (section 9) from step 0 of M1.*
+(section 8) implemented for M0v (tag `v0.3.0-m0`), the window of the IDE from step 1 of M1; `exec` (section 9) from
+step 0 of M1.*
 
 This document is the contract of `labcraft-cli fmt`, `labcraft-cli check`, `labcraft-cli run`,
-`labcraft-cli diagram` and of the command line of the desktop viewer `labcraft` (section 8): their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
+`labcraft-cli diagram` and of the command line of the desktop IDE `labcraft` (section 8): their arguments, exit codes, reports and diagnostic codes. An agent reads the reports below to fix a program without help,
 so they are part of the interface and are tested (acceptance scenarios
 [2, 4 and 5](acceptance-m0.md)). Values marked *proposed* are starting points.
 
@@ -1042,24 +1043,29 @@ family `LC70` is for drawing, `LC71` for reading a trace.
 | `LC7103` | warning | Reading the trace stopped at a line that does not read or at a limit (7.4): the values up to there, as in a cut trace. Gives the line and the limit |
 | `LC7104` | warning | Events of the trace fit nothing in the drawing and are ignored (7.4). Gives how many, and the line of the first |
 
-## 8. `labcraft`, the desktop viewer
+## 8. `labcraft`, the desktop IDE
 
 ```text
 labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
 ```
 
-- It opens `FOLDER`, read-only, as `diagram` reads it (section 7.1): the functions named from it, `--lib-path` as
-  for `check`, the limits of section 1 at their defaults. It draws the function chosen in its window, and checks and
-  draws again when a program file (`.lcf`, `.lct`) or a folder of the folder or of a `--lib-path` changes
-  (scenario 6, point 3); a `--lib-path` that cannot be watched is looked at every second, and the window says so. Without `FOLDER`, the
-  window opens empty, with a button that chooses a folder.
+- It opens `FOLDER` as a project in the window of [ide.md](ide.md), as `diagram` reads it (section 7.1): the
+  functions named from it, `--lib-path` as for `check`, the limits of section 1 at their defaults. It draws the
+  function shown, and checks and draws again when a program file (`.lcf`, `.lct`) or a folder of the folder or of a
+  `--lib-path` changes (scenario 6, point 3); a `--lib-path` that cannot be watched is looked at every second, and the
+  window says so. Without `FOLDER`, the window opens on the start page (ide.md 10). One project per window: a project
+  opened from a window that shows one opens in a window of its own, a process of its own in M1 (`docs/architecture.md`,
+  12.9). In step 1 of M1 no gesture of the canvas edits; the command palette runs any command, an editing one too, a
+  step of the history that undo takes back. `New project` writes `main.lcf`, which is no step; a step undone or redone
+  writes back; and the session keeps its journal under `.labcraft/journal/` (`docs/architecture.md`, 12.5). The home
+  folder and the root of a disk are no project (`docs/mcp.md`, 1).
 - **The values of the last run** of the function shown are drawn on its wires (visual-notation 6.1), read once it is
   drawn: from `FOLDER/.labcraft/runs/<function>.trace.jsonl`, as `labcraft-cli run FOLDER` writes it, or from
   `.labcraft/runs/<path>/<function>.trace.jsonl` or `.labcraft/runs/<library>.<function>.trace.jsonl` in a folder above
   `FOLDER`, up to 64 folders above *(proposed)*, `<path>` being that of `FOLDER` from there and `<library>` the same path
   with `.` for `/`, as a session whose root that folder is writes it for an agent, for a run given that `folder` or for
   the function named from the root (`power.check_power`, commands.md 8), and as `labcraft-cli run` from that folder
-  writes the second; of those that exist, the most recent, and at the same time the nearest. The viewer looks at it every second, and a new run shows within that second; the traces that a run writes
+  writes the second; of those that exist, the most recent, and at the same time the nearest. The window looks at it every second, and a new run shows within that second; the traces that a run writes
   check nothing again, nor does anything under a hidden name. A bar above the canvas names the trace and says how its run
   ended; a button hides the values and shows them again, for the window only. In the canvas, the selector of a loop
   chooses its iteration (a click on `‹` or `›`, the wheel over it, or its number typed), a click selects a node, whose
@@ -1068,13 +1074,14 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   another trace, anywhere on the disk, looked at in the same way, until another function is shown, and its name has a
   cross that goes back to the last run (decisions of the owner, 2026-11-13). The diagnostics of reading a trace
   (`LC71`, section 7.6) are in `Problems`.
-- `--theme light` or `--theme dark`: the theme of this window, instead of the one of the preferences. The viewer
-  keeps its preferences (the theme, every node in standard view, no glide) in the folder of settings of the
-  system. It writes no file of a program, and keeps no view state on the disk: the arm shown in tabs, a structure
-  unfolded, a node in standard view, the iteration chosen of a loop, the selection last as long as the window.
+- `--theme light` or `--theme dark`: the theme of this window, instead of the one of the settings, and not kept. The
+  window keeps the settings of the user (the layout of the panels, the theme, every node in standard view, no glide,
+  preview tabs, the values on the wires, the projects opened last) in the folder of settings of the system, those of
+  the viewer of M0v taken into them once. It keeps no view state on the disk: the tabs, the view of each tab, the arm
+  shown in tabs, a structure unfolded, a node in standard view, the iteration chosen of a loop, the selection last as
+  long as the session.
 - `--style FILE`: draw with the values of the notation in `FILE` (visual-notation, 10), a file of TOML, read again
-  each time it is saved; when it does not exist, the viewer writes the defaults into it, the one file it writes
-  besides its preferences. A value unknown or out of its range leaves the values before, and the window says why; colours below the
+  each time it is saved; when it does not exist, the window writes the defaults into it. A value unknown or out of its range leaves the values before, and the window says why; colours below the
   contrasts of visual-notation 8 are taken, and said. It is a tool to tune the notation, not a preference: nothing
   else reads the file, and every export draws with the defaults.
 - `--help` and `--version` print and exit with 0.
@@ -1087,12 +1094,14 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   stderr gets the figures of that when it closes. It holds 60 frames/s when there are at least 59 frames a second
   and at most 1 % of them late, on a display at 60 Hz: on a faster one, a frame between 1/60 s and 1.5/60 s misses
   60 frames/s without counting as late.
-- Exit codes: 0 when the window closes, 1 when it cannot open (no graphics device), 101 for a bug of the viewer, with
+- Exit codes: 0 when the window closes, 1 when it cannot open (no graphics device), 101 for a bug of the window, with
   its message on stderr, 2 for wrong usage, with the
   reason and the usage on stderr: an unknown option, a second folder, `--theme` given twice or with another value,
   `--lib-path` without a folder, `--style` given twice or without a file.
-- What the window does goes through the commands of [commands.md](commands.md), section 6.5, which a session of
-  `engine` answers, one for each folder opened, its root that folder (`docs/architecture.md`, 11.5).
+- What the window does goes through the commands of [commands.md](commands.md), sections 6.5 and 6.7, which a session
+  of `engine` answers, one for each project opened, its root that folder (`docs/architecture.md`, 12.5); the layout of
+  the panels and the actions that only the window has (`ide.*`: the command palette, the start page, fit, the theme)
+  never reach the session (`docs/architecture.md`, 12.7).
 
 ## 9. `exec`, one command
 

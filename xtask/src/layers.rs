@@ -8,6 +8,9 @@ enum Class {
     Layer(u8),
     /// Apps and tooling sit above the layers and may depend on anything; no layer depends on them.
     Above,
+    /// The pieces of the window for any IDE (`kit/`, ide.md 11): outside the layers, as the crates of `craft-libs`
+    /// are, they depend on no crate of LabCraft; a layer may depend on them.
+    Kit,
 }
 
 /// The table of `docs/roadmap.md`. A package that is not here is an error, so that a new crate must
@@ -27,7 +30,7 @@ const TABLE: &[(&str, Class)] = &[
     ("labcraft-visa", Class::Layer(6)),
     ("labcraft-results-log", Class::Layer(6)),
     ("labcraft-editor", Class::Layer(7)),
-    ("labcraft-ui-egui", Class::Layer(7)),
+    ("labcraft-ide", Class::Layer(8)),
     ("labcraft-mcp", Class::Layer(7)),
     ("labcraft-codegen", Class::Layer(7)),
     ("labcraft", Class::Above),
@@ -36,7 +39,13 @@ const TABLE: &[(&str, Class)] = &[
     ("labcraft-libs", Class::Above),
     ("labcraft-harness", Class::Above),
     ("xtask", Class::Above),
+    ("kit-shell", Class::Kit),
+    ("kit-text", Class::Kit),
+    ("kit-text-egui", Class::Kit),
 ];
+
+/// The crates of `kit/` that depend on no UI toolkit either (architecture 12.1).
+const KIT_WITHOUT_UI: &[&str] = &["kit-text"];
 
 /// Nothing below the interface depends on a UI toolkit (`docs/craft-ecosystem.md`). A name ending in
 /// `*` is a prefix.
@@ -88,11 +97,21 @@ pub fn check(crates: &[Crate]) -> Vec<String> {
             violations.push(format!("{}: unknown crate, give it a place in the table of xtask/src/layers.rs", krate.name));
             continue;
         };
+        if let Class::Kit = class {
+            violations.extend(kit(krate));
+            continue;
+        }
         let Class::Layer(layer) = class else { continue };
         for dependency in krate.dependencies.iter().filter(|dependency| dependency.name != krate.name) {
             if dependency.local {
                 match self::class(&dependency.name) {
                     Some(Class::Layer(target)) if target < layer => {}
+                    // A kit with a UI toolkit only from the first layer with one.
+                    Some(Class::Kit) if layer >= FIRST_UI_LAYER || KIT_WITHOUT_UI.contains(&dependency.name.as_str()) => {}
+                    Some(Class::Kit) => {
+                        violations
+                            .push(format!("{} (L{layer}) -> {}: a piece of the window, only from L{FIRST_UI_LAYER}", krate.name, dependency.name));
+                    }
                     // A local dependency that the table does not know is reported on its own entry.
                     None => {}
                     Some(Class::Layer(target)) => {
@@ -105,6 +124,21 @@ pub fn check(crates: &[Crate]) -> Vec<String> {
             } else if layer < FIRST_UI_LAYER && is_ui_crate(&dependency.name) {
                 violations.push(format!("{} (L{layer}) -> {}: a UI toolkit, only from L{FIRST_UI_LAYER}", krate.name, dependency.name));
             }
+        }
+    }
+    violations
+}
+
+/// A crate of `kit/` names no crate of LabCraft, and `kit-text` no UI toolkit.
+fn kit(krate: &Crate) -> Vec<String> {
+    let mut violations = Vec::new();
+    for dependency in krate.dependencies.iter().filter(|dependency| dependency.name != krate.name) {
+        if dependency.name.starts_with("labcraft") {
+            violations.push(format!("{} (kit) -> {}: a piece for any IDE depends on no crate of LabCraft", krate.name, dependency.name));
+        } else if KIT_WITHOUT_UI.contains(&krate.name.as_str())
+            && (is_ui_crate(&dependency.name) || (dependency.local && !KIT_WITHOUT_UI.contains(&dependency.name.as_str())))
+        {
+            violations.push(format!("{} (kit) -> {}: it depends on no UI toolkit", krate.name, dependency.name));
         }
     }
     violations
@@ -196,6 +230,31 @@ mod tests {
         }
         assert!(violations("labcraft-editor", &[("egui", false)]).is_empty());
         assert!(violations("labcraft-diagram", &[("serde", false)]).is_empty());
+    }
+
+    #[test]
+    fn a_kit_crate_depends_on_no_crate_of_labcraft() {
+        let found = violations("kit-shell", &[("labcraft-types", true)]);
+        assert!(found[0].contains("kit-shell (kit) -> labcraft-types"), "{found:?}");
+        assert!(violations("kit-shell", &[("egui", false), ("craft-ui", false), ("kit-text", true)]).is_empty());
+        assert_eq!(violations("kit-text", &[("egui", false)]).len(), 1);
+        // Nor through a kit that has one.
+        assert_eq!(violations("kit-text", &[("kit-shell", true)]).len(), 1);
+        assert_eq!(violations("kit-text", &[("kit-text-egui", true)]).len(), 1);
+    }
+
+    #[test]
+    fn a_kit_with_a_ui_toolkit_waits_for_the_ui_layer() {
+        let found = violations("labcraft-types", &[("kit-shell", true)]);
+        assert!(found[0].contains("labcraft-types (L0) -> kit-shell"), "{found:?}");
+        assert!(violations("labcraft-format", &[("kit-text", true)]).is_empty());
+    }
+
+    #[test]
+    fn a_layer_may_depend_on_the_kit() {
+        assert!(violations("labcraft-ide", &[("kit-shell", true), ("labcraft-engine", true)]).is_empty());
+        // The window is above the canvas it shows (decision of the owner, 2026-11-16).
+        assert!(violations("labcraft-ide", &[("labcraft-editor", true), ("labcraft-mcp", true)]).is_empty());
     }
 
     #[test]
