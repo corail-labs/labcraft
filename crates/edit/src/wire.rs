@@ -155,24 +155,57 @@ pub(crate) fn connect(
 }
 
 pub(crate) fn disconnect(edit: &mut Edit, judge: &dyn Judge, wire: &str, edited: &mut Edited) -> Result<(), EditError> {
-    let (from, to) = split_wire(wire)?;
     let function = edit.body_function()?.clone();
+    match find(edit, judge, &function, wire)? {
+        Found::Alias(index) => {
+            edit.body_function_mut()?.body.statements.remove(index);
+            Ok(())
+        }
+        Found::Bound { output, value } => {
+            let back = node_name_of(edit, judge, &function, &value);
+            let back_name = edit.intern(&back);
+            rename(edit, &value, back_name)?;
+            edited.renamed.push(Renamed { file: edit.path.clone(), from: output, to: back });
+            Ok(())
+        }
+        Found::Reader { name, label, reader, input, node } => {
+            take_out(edit, judge, name, label, std::slice::from_ref(&reader))?;
+            let input = (!input.is_empty()).then_some(input.as_str());
+            forget_wire(edit, name, node, input);
+            Ok(())
+        }
+    }
+}
+
+/// A wire that exists in the function, as `wire.disconnect` finds it.
+pub(crate) enum Found {
+    /// `o = v`, the line at this index of the body.
+    Alias(usize),
+    /// A value bound by the name of the output `output`.
+    Bound { output: String, value: Value },
+    /// The place of a node that reads the value (or the label) `name`, by its input `input` (empty when it has no name).
+    Reader { name: Name, label: bool, reader: Reader, input: String, node: Option<(Name, bool)> },
+}
+
+/// Finds the wire that a name names, changing nothing: what `wire.disconnect` takes out, or why it would refuse it.
+pub(crate) fn find(edit: &Edit, judge: &dyn Judge, function: &Function, wire: &str) -> Result<Found, EditError> {
+    let (from, to) = split_wire(wire)?;
     let end_name = InputName::parse(&to, "wire")?;
     // An output: the wire of `o = v`, or of a value that bears the name of the output.
     let output = match &end_name {
         InputName::Output(text) => Some(text.clone()),
-        InputName::Node(name, Part::Alone) if !name.is_label && is_output(edit, &function, &name.text) => {
-            let alias = alias_of(edit, &function, &name.text).is_some_and(|(_, value)| edit.text(value) == from);
-            (alias || from == name.text || refs_find_none(edit, &function, name)).then(|| name.text.clone())
+        InputName::Node(name, Part::Alone) if !name.is_label && is_output(edit, function, &name.text) => {
+            let alias = alias_of(edit, function, &name.text).is_some_and(|(_, value)| edit.text(value) == from);
+            (alias || from == name.text || refs_find_none(edit, function, name)).then(|| name.text.clone())
         }
         InputName::Node(..) => None,
     };
     if let Some(output) = output {
-        return from_output(edit, judge, &function, &from, &output, edited);
+        return from_output(edit, function, &from, &output);
     }
     let InputName::Node(node_name, part) = end_name else { return Err(EditError::internal("an output")) };
-    let loc = node(edit, &function, &node_name, "wire")?;
-    let statement = scope::statement(&function, &loc).cloned().ok_or_else(|| EditError::internal("a node that went"))?;
+    let loc = node(edit, function, &node_name, "wire")?;
+    let statement = scope::statement(function, &loc).cloned().ok_or_else(|| EditError::internal("a node that went"))?;
     let (name, label) = match from.strip_prefix('#') {
         Some(label) => (edit.names.find(label), true),
         None => (edit.names.find(&from), false),
@@ -203,12 +236,7 @@ pub(crate) fn disconnect(edit: &mut Edit, judge: &dyn Judge, wire: &str, edited:
     };
     match chosen.as_slice() {
         [] => Err(no_wire()),
-        [(reader, input)] => {
-            take_out(edit, judge, name, label, std::slice::from_ref(reader))?;
-            let input = (!input.is_empty()).then_some(input.as_str());
-            forget_wire(edit, name, statement_node(&statement), input);
-            Ok(())
-        }
+        [(reader, input)] => Ok(Found::Reader { name, label, reader: reader.clone(), input: input.clone(), node: statement_node(&statement) }),
         several => Err(EditError::new("edit.ambiguous", format!("`{from}` reaches `{}` by several inputs: name the input", node_name.shown()))
             .of("wire")
             .expecting(several.iter().map(|(_, input)| format!("{from} -> {}.{input}", node_name.shown())).collect())),
@@ -407,9 +435,9 @@ fn to_output(edit: &mut Edit, judge: &dyn Judge, value: &Value, output: Name, re
     Ok(())
 }
 
-/// Unwires a value from an output of the function: `o = v` goes, and a node bound by the name of the output takes back
-/// the name that inserting it would have given (2.4).
-fn from_output(edit: &mut Edit, judge: &dyn Judge, function: &Function, from: &str, output: &str, edited: &mut Edited) -> Result<(), EditError> {
+/// The wire of a value to an output of the function: `o = v`, which unwiring takes out, or a node bound by the name of
+/// the output, which unwiring gives back the name that inserting it would have given (2.4).
+fn from_output(edit: &Edit, function: &Function, from: &str, output: &str) -> Result<Found, EditError> {
     let no_wire = || EditError::new("edit.unknown", format!("no wire `{from} -> {output}` in this function")).of("wire");
     if !is_output(edit, function, output) {
         return Err(EditError::new("edit.unknown", format!("`{output}` is no output of this function")).of("wire"));
@@ -418,18 +446,13 @@ fn from_output(edit: &mut Edit, judge: &dyn Judge, function: &Function, from: &s
         if edit.text(held) != from {
             return Err(no_wire());
         }
-        edit.body_function_mut()?.body.statements.remove(index);
-        return Ok(());
+        return Ok(Found::Alias(index));
     }
     if from != output {
         return Err(no_wire());
     }
-    let Some(bound) = bound_by_name(edit, function, output) else { return Err(no_wire()) };
-    let back = node_name_of(edit, judge, function, &bound);
-    let back_name = edit.intern(&back);
-    rename(edit, &bound, back_name)?;
-    edited.renamed.push(Renamed { file: edit.path.clone(), from: output.to_owned(), to: back });
-    Ok(())
+    let Some(value) = bound_by_name(edit, function, output) else { return Err(no_wire()) };
+    Ok(Found::Bound { output: output.to_owned(), value })
 }
 
 /// Removes the entries of `layout` for the wire of `value` to a node: the one that names the input, and the one that

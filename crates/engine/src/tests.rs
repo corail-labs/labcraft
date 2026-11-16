@@ -1158,3 +1158,125 @@ fn a_tab_picked_gives_way_to_the_arm_the_run_took_when_another_trace_arrives() {
     session.look_at_trace();
     assert_eq!(session.view().arms.get(&structure), Some(&0), "a new trace: the arm the run took");
 }
+
+/// The commands of the window (commands.md 6.7, "The window"): enabled only in a session that a window shows; the view
+/// of a tab, the preview, closing a tab, the selection and the workspace, in what `view.get_state` returns.
+#[test]
+fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/b.lcf", MAIN.replace("double", "b"));
+    counting.memory.put("/p/c.lcf", MAIN.replace("double", "c"));
+    // Without a window, as in `labcraft-cli` and the MCP server alone.
+    let headless = error(&mut session, "view.get_state", json!({}));
+    assert_eq!(headless.code, "command.not_enabled");
+    assert!(headless.message.contains("no window") || headless.message.contains("have none"), "{}", headless.message);
+    session.with_window();
+    // A project is opened by the app, and the layout of the panels is the window's.
+    for (id, params) in
+        [("project.open", json!({ "folder": "/q" })), ("view.toggle_panel", json!({ "panel": "run" })), ("view.reset_layout", json!({}))]
+    {
+        assert_eq!(error(&mut session, id, params).code, "command.not_enabled", "{id}");
+    }
+    assert_eq!(error(&mut session, "view.detach", json!({ "function": "b" })).code, "command.not_enabled");
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    let state = ok(&mut session, "view.get_state", json!({}));
+    assert_eq!(
+        state,
+        json!({ "workspace": "edit", "windows": [{ "tabs": [{ "function": "b", "file": "b.lcf", "view": "diagram", "split": null }],
+                "shown": 0, "selection": { "nodes": [], "wires": [], "terminals": [] }, "zoom": null }], "truncated": false })
+    );
+    // A preview takes the place of the preview before it; shown without `preview`, it stays.
+    ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));
+    ok(&mut session, "view.show_function", json!({ "function": "double", "preview": true }));
+    assert_eq!(
+        (session.view().opened.clone(), session.view().preview.clone()),
+        (vec!["b".to_owned(), "double".to_owned()], Some("double".to_owned()))
+    );
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(session.view().preview, None);
+    ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));
+    assert_eq!(session.view().opened, ["b", "double", "c"]);
+    // The view of a tab, and its split: `text` beside `diagram` or `block`.
+    assert_eq!(
+        ok(&mut session, "view.set_view", json!({ "function": "c", "view": "text", "split": "diagram" })),
+        json!({ "before": { "view": "diagram", "split": null } })
+    );
+    for (view, split, code) in [("diagram", "block", "params.invalid"), ("text", "text", "params.invalid"), ("panel", "text", "command.not_enabled")]
+    {
+        let refused = error(&mut session, "view.set_view", json!({ "function": "c", "view": view, "split": split }));
+        assert_eq!(refused.code, code, "{view} {split}");
+    }
+    assert_eq!(error(&mut session, "view.set_view", json!({ "function": "nowhere", "view": "text" })).code, "params.invalid");
+    // The selection of the function shown.
+    assert_eq!(ok(&mut session, "view.select", json!({ "function": "c", "nodes": ["y"] })), json!({ "selected": 1 }));
+    session.set_zoom(1.5);
+    let state = ok(&mut session, "view.get_state", json!({}));
+    let window = &state["windows"][0];
+    assert_eq!((&window["shown"], &window["tabs"][2]["view"], &window["tabs"][2]["split"]), (&json!(2), &json!("text"), &json!("diagram")));
+    assert_eq!((&window["selection"]["nodes"], &window["zoom"]), (&json!(["y"]), &json!(1.5)));
+    assert_eq!(error(&mut session, "view.select", json!({ "function": "c", "wires": [1] })).code, "params.invalid");
+    // Closing the tab shown shows the next one, else the one before; its view and its selection go with it.
+    assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "c" })), json!({ "shown": "double" }));
+    assert!(session.view().tabs.is_empty() && session.view().selection.is_empty());
+    assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "b" })), json!({ "shown": "double" }));
+    assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "double" })), json!({ "shown": null }));
+    assert!(session.view().drawing.is_none());
+    assert_eq!(error(&mut session, "view.close_function", json!({ "function": "double" })).code, "params.invalid");
+    // `edit` is the workspace of M1; the others are planned.
+    assert_eq!(ok(&mut session, "view.set_workspace", json!({ "workspace": "edit" })), json!({ "before": "edit" }));
+    let planned = error(&mut session, "view.set_workspace", json!({ "workspace": "debug" }));
+    assert!(planned.code == "command.not_enabled" && planned.message.contains("M5"), "{}", planned.message);
+    assert_eq!(error(&mut session, "view.set_workspace", json!({ "workspace": "draw" })).code, "params.invalid");
+}
+
+/// After the review of 1a (decisions of the owner, 2026-11-16): an agent only reads the window, the selection names what
+/// the function shown has, a preview replaced takes its selection with it, the default view is no entry of `tabs`.
+#[test]
+fn the_window_refuses_an_agent_and_a_selection_of_nothing() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/b.lcf", MAIN.replace("double", "b"));
+    counting.memory.put("/p/c.lcf", MAIN.replace("double", "c"));
+    session.with_window();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    // An agent attached to the IDE reads the window, and changes nothing of what it shows (ide.md 8).
+    let agent = crate::Author::Agent("claude-code".to_owned());
+    assert!(session.execute_as(&agent, "view.get_state", &json!({})).is_ok());
+    for (id, params) in [
+        ("view.select", json!({ "function": "double", "nodes": ["y"] })),
+        ("view.set_view", json!({ "function": "double", "view": "text" })),
+        ("view.close_function", json!({ "function": "double" })),
+        ("view.set_workspace", json!({ "workspace": "edit" })),
+    ] {
+        let refused = session.execute_as(&agent, id, &params).unwrap_err();
+        assert_eq!(refused.code, "agent.not_allowed", "{id}");
+    }
+    assert_eq!(session.view().opened, ["b", "double"], "nothing changed");
+    // `y` is the line of `double`, `x` its input, `x -> y` the wire into it (MAIN).
+    let selected = json!({ "function": "double", "nodes": ["y"], "wires": ["x -> y"], "terminals": ["input x", "output y"] });
+    assert_eq!(ok(&mut session, "view.select", selected), json!({ "selected": 4 }));
+    for (params, code, parameter) in [
+        (json!({ "function": "b", "nodes": ["y"] }), "params.invalid", "function"),
+        (json!({ "function": "double", "nodes": ["z"] }), "edit.unknown", "nodes"),
+        (json!({ "function": "double", "wires": ["y -> x"] }), "edit.unknown", "wires"),
+        (json!({ "function": "double", "terminals": ["input y"] }), "edit.unknown", "terminals"),
+    ] {
+        let refused = error(&mut session, "view.select", params.clone());
+        assert_eq!((refused.code, refused.parameter.as_deref()), (code, Some(parameter)), "{params}");
+    }
+    // Over 1,000 items, the list that passes the bound is named.
+    let many: Vec<String> = (0..1_001).map(|at| format!("v{at} -> y")).collect();
+    let refused = error(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"], "wires": many }));
+    assert_eq!(refused.parameter.as_deref(), Some("wires"));
+    // The default view is no entry of `tabs`.
+    ok(&mut session, "view.set_view", json!({ "function": "double", "view": "text" }));
+    ok(&mut session, "view.set_view", json!({ "function": "double", "view": "diagram" }));
+    assert!(session.view().tabs.is_empty());
+    // A preview replaced takes its selection with it.
+    ok(&mut session, "view.close_function", json!({ "function": "double" }));
+    ok(&mut session, "view.show_function", json!({ "function": "double", "preview": true }));
+    ok(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"] }));
+    ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));
+    assert!(session.view().selection.is_empty());
+    assert_eq!(session.view().opened, ["b", "c"]);
+}

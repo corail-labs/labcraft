@@ -427,6 +427,27 @@ impl Texts {
     }
 }
 
+/// `view.select`: each name of the selection names what the function shown has, as an editing command names it
+/// (commands.md 9.2; decision of the owner, 2026-11-16).
+pub(crate) fn selectable(session: &mut Session, nodes: &[String], wires: &[String], terminals: &[String]) -> Result<(), CommandError> {
+    if nodes.is_empty() && wires.is_empty() && terminals.is_empty() {
+        return Ok(());
+    }
+    let Some(file) = session.view.shown_file().map(str::to_owned) else {
+        return Err(CommandError::of("params.invalid", "function", "the function shown has no file, so nothing of it can be selected"));
+    };
+    let target = target(session, &file)?;
+    let text = read_text(session, &target)?;
+    let root = session.root.clone();
+    session.checked(&root)?;
+    let kept = session.kept_root().ok_or_else(|| CommandError::internal("the check of the root is not kept"))?;
+    let memory = BTreeMap::new();
+    let judge = SessionJudge { session, kept: &kept.checked, memory: &memory };
+    let mut files = Files::new();
+    files.insert(&target.shown, &text);
+    labcraft_edit::selectable(&files, &target.shown, nodes, wires, terminals, &judge, &session.config.limits).map_err(command_error)
+}
+
 /// One editing command on the texts in memory: what it named and renamed.
 fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts) -> Result<labcraft_edit::Edited, CommandError> {
     let (op, target) = op_of(session, id, params)?;

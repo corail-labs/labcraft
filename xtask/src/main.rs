@@ -327,6 +327,10 @@ fn wasm() -> Result<(), String> {
         "--package",
         "labcraft-editor",
         "--package",
+        "labcraft-ide",
+        "--package",
+        "kit-shell",
+        "--package",
         "labcraft-web",
     ])?;
     wasm_tests()

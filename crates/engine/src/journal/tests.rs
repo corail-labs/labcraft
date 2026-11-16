@@ -69,6 +69,7 @@ fn every_command_is_a_line_with_its_author_its_result_and_its_files() {
     let agent = Author::Agent("claude".to_owned());
     session.execute_as(&agent, "node.add", &json!({ "file": "f.lcf", "call": "core.add" })).unwrap_or_else(|error| panic!("{error:?}"));
     let _ = session.execute("node.add", &json!({ "file": "none.lcf", "call": "core.add" }));
+    // A read is no line (decision of the owner, 2026-11-16).
     let _ = session.execute("functions.list", &json!({}));
     let lines = lines(&memory);
     assert_eq!(
@@ -86,8 +87,7 @@ fn every_command_is_a_line_with_its_author_its_result_and_its_files() {
         (lines[1]["author"].clone(), lines[1]["result"].clone(), lines[1]["files"].clone()),
         (json!("user"), json!("path.not_found"), json!([]))
     );
-    assert_eq!((lines[2]["id"].clone(), lines[2]["result"].clone()), (json!("functions.list"), json!("ok")));
-    assert_eq!(lines.len(), 3);
+    assert_eq!(lines.len(), 2, "{lines:?}");
     assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(&b"*\n"[..]), "made with `.labcraft`: git does not see the journal");
     assert!(names(&memory).contains(&".7.lock".to_owned()), "the lock of the process, which tells another that it runs: {:?}", names(&memory));
 }
@@ -96,9 +96,9 @@ fn every_command_is_a_line_with_its_author_its_result_and_its_files() {
 fn an_external_write_is_a_line_of_its_own() {
     let memory = project();
     let mut session = session(&memory, 7);
-    let _ = session.execute("functions.list", &json!({}));
+    let _ = session.execute("file.write", &json!({ "path": "g.lcf", "text": "g", "check": false }));
     memory.put("/p/f.lcf", "outside");
-    let _ = session.execute("functions.list", &json!({}));
+    let _ = session.execute("file.write", &json!({ "path": "g.lcf", "text": "g", "check": false }));
     let lines = lines(&memory);
     assert_eq!(lines.len(), 3, "{lines:?}");
     assert_eq!(
@@ -122,7 +122,7 @@ fn a_link_in_place_of_the_journal_is_never_written_through() {
     memory.put_link("/p/.labcraft/journal/cli.jsonl", "/outside/secret.txt");
     let mut session = session(&memory, 7);
     session.for_command_line();
-    assert!(session.execute("functions.list", &json!({})).is_ok());
+    assert!(session.execute("file.write", &json!({ "path": "g.lcf", "text": "g", "check": false })).is_ok());
     assert_eq!(memory.get("/outside/secret.txt").as_deref(), Some(&b"s"[..]));
 }
 
@@ -139,11 +139,13 @@ fn a_line_names_at_most_1000_files_and_counts_them_all() {
 fn commands_execute_writes_the_line_of_the_command_it_runs() {
     let memory = project();
     let mut session = session(&memory, 7);
+    let _ = session.execute("commands.execute", &json!({ "id": "file.write", "params": { "path": "g.lcf", "text": "g", "check": false } }));
+    // What it runs that reads is no line.
     let _ = session.execute("commands.execute", &json!({ "id": "functions.list", "params": {} }));
     let _ = session.execute("commands.execute", &json!({ "id": "commands.batch" }));
     let lines = lines(&memory);
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert_eq!((lines[0]["id"].clone(), lines[0]["params"].clone()), (json!("functions.list"), json!({})));
+    assert_eq!((lines[0]["id"].clone(), lines[0]["params"].clone()), (json!("file.write"), json!({ "path": "g.lcf", "text": "g", "check": false })));
     assert_eq!(
         (lines[1]["id"].clone(), lines[1]["result"].clone()),
         (json!("commands.execute"), json!("params.invalid")),
@@ -156,7 +158,7 @@ fn parameters_past_64_kib_are_cut_and_the_cut_is_said() {
     let memory = project();
     let mut session = session(&memory, 7);
     let long = "é".repeat(MAX_PARAMS);
-    let _ = session.execute("file.read", &json!({ "path": long }));
+    let _ = session.execute("file.write", &json!({ "path": long }));
     let line = &lines(&memory)[0];
     let text = line["params"].as_str().unwrap_or_default();
     // `{"path":"` is 9 bytes, then two bytes for each `é`: the cut falls between the two bytes of one, and goes back a byte.
@@ -173,14 +175,14 @@ fn the_command_line_writes_cli_jsonl_and_cuts_it_to_its_newest_half() {
     memory.put("/p/.labcraft/journal/cli.jsonl", line.repeat(17));
     let mut session = session(&memory, 7);
     session.for_command_line();
-    let _ = session.execute("functions.list", &json!({}));
+    let _ = session.execute("file.write", &json!({ "path": "g.lcf", "text": "g", "check": false }));
     let bytes = memory.get(format!("/p/.labcraft/journal/{CLI_FILE}")).unwrap_or_default();
     let text = String::from_utf8_lossy(&bytes);
     let kept: Vec<&str> = text.lines().collect();
     // Half of 17 MiB falls inside the ninth line, which goes: the eight after it stay, then the new line.
     assert_eq!(kept.len(), 9);
     assert!(kept[..8].iter().all(|kept| kept.len() == (1 << 20) - 1));
-    assert!(kept[8].contains("\"functions.list\""), "{}", kept[8]);
+    assert!(kept[8].contains("\"file.write\""), "{}", kept[8]);
     assert!(bytes.len() as u64 <= MAX_FILE);
 }
 
@@ -196,7 +198,7 @@ fn the_newest_files_are_kept_and_those_of_a_process_that_runs() {
     let running = memory.try_lock(Path::new("/p/.labcraft/journal/.100.lock")).ok().flatten();
     memory.put("/p/.labcraft/journal/.101.lock", "");
     let mut session = session(&memory, 7);
-    let _ = session.execute("functions.list", &json!({}));
+    let _ = session.execute("file.write", &json!({ "path": "g.lcf", "text": "g", "check": false }));
     let names = names(&memory);
     let own = names.iter().filter(|name| name.starts_with("7-")).count();
     // The newest 19 and that of this session: 20; the oldest, of process 100, runs still, and its lock stays.
@@ -219,4 +221,24 @@ fn a_journal_that_cannot_be_written_never_fails_a_command() {
     assert!(session.execute("functions.list", &json!({})).is_ok());
     assert!(session.execute("functions.list", &json!({})).is_ok());
     assert_eq!(memory.get("/p/.labcraft/.gitignore"), None);
+}
+
+/// What a window reads to draw itself is no line; what changes something is (decision of the owner, 2026-11-16).
+#[test]
+fn a_read_is_no_line_and_what_changes_is() {
+    let memory = project();
+    let mut session = session(&memory, 7);
+    session.with_window();
+    let _ = session.execute("view.open", &json!({ "folder": "." }));
+    for _ in 0..3 {
+        let _ = session.execute("history.list", &json!({ "limit": 1 }));
+        let _ = session.execute("functions.list", &json!({}));
+        let _ = session.execute("file.read", &json!({ "path": "f.lcf" }));
+        let _ = session.execute("view.get_state", &json!({}));
+        let _ = session.execute("commands.execute", &json!({ "id": "file.read", "params": { "path": "f.lcf" } }));
+    }
+    let _ = session.execute("node.add", &json!({ "file": "f.lcf", "call": "core.add" }));
+    let _ = session.execute("history.undo", &json!({}));
+    let ids: Vec<Value> = lines(&memory).iter().map(|line| line["id"].clone()).collect();
+    assert_eq!(ids, [json!("node.add"), json!("history.undo")]);
 }

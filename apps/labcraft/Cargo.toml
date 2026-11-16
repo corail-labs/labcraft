@@ -1,6 +1,6 @@
 [package]
 name = "labcraft"
-description = "The LabCraft desktop viewer, read-only in M0v"
+description = "The LabCraft desktop IDE"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,14 +11,16 @@ publish.workspace = true
 craft-dialogs = { workspace = true }
 craft-settings = { workspace = true }
 craft-ui = { workspace = true }
+craft-window = { workspace = true }
 eframe = { workspace = true }
 egui = { workspace = true }
-labcraft-check = { workspace = true }
 labcraft-cli = { workspace = true }
 labcraft-diagram = { workspace = true }
+kit-shell = { workspace = true }
 labcraft-editor = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }
+labcraft-ide = { workspace = true }
 labcraft-types = { workspace = true }
 notify = { workspace = true }
 serde = { workspace = true }

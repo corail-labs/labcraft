@@ -61,6 +61,8 @@ pub struct Session {
     pub(crate) history: crate::history::History,
     /// Whether it keeps one: `labcraft-cli` runs one command per process, with none (9.5).
     pub(crate) keeps_history: bool,
+    /// Whether a window of the IDE shows it (`with_window`).
+    pub(crate) has_window: bool,
     /// The bytes of its last write to each file, which tell an external write (architecture 12.5).
     pub(crate) known: crate::external::Known,
     /// The journal of its commands (architecture 12.5).
@@ -92,6 +94,7 @@ impl Session {
             first: None,
             history: crate::history::History::default(),
             keeps_history: true,
+            has_window: false,
             known: crate::external::Known::default(),
             journal,
             wrote_now: Vec::new(),
@@ -166,7 +169,7 @@ impl Session {
     }
 
     /// What the viewer shows, as the `view.*` commands last left it (`docs/architecture.md`, 11.5).
-    pub fn view(&self) -> &crate::view::Published {
+    pub fn view(&self) -> &std::sync::Arc<crate::view::Published> {
         self.view.published()
     }
 
@@ -179,6 +182,7 @@ impl Session {
     pub fn files_changed(&mut self) {
         self.notice_external();
         crate::view::files_changed(self);
+        self.view.settle();
     }
 
     /// The external writes since the last look, as a step and a line of the journal (architecture 12.5).
@@ -229,19 +233,35 @@ impl Session {
     /// notation, not a preference, so not a command.
     pub fn set_style(&mut self, style: std::sync::Arc<labcraft_diagram::style::Style>) {
         crate::view::set_style(self, style);
+        self.view.settle();
     }
 
     /// Reads the trace of the function shown in the viewer when its drawing is new or the trace changed: the app calls it
     /// after each command and each second, so that a new run shows (decisions of the owner, 2026-11-13). Whether the
     /// viewer published anything. Not a command: the change comes from the system, as for [`Session::files_changed`].
     pub fn look_at_trace(&mut self) -> bool {
-        crate::view::look_at_trace(self)
+        let published = crate::view::look_at_trace(self);
+        self.view.settle();
+        published
     }
 
     /// Shows the values of the trace at `path` over the function shown, as `view.open_trace` does, for a trace that the
     /// window chose anywhere on the disk, which a command cannot name (`docs/commands.md`, 2).
     pub fn open_trace_at(&mut self, path: std::path::PathBuf) -> Result<(), CommandError> {
-        crate::view::open_trace_at(self, path)
+        let opened = crate::view::open_trace_at(self, path);
+        self.view.settle();
+        opened
+    }
+
+    /// A session that a window of the IDE shows: the commands of the window are enabled (commands.md 6.7, "The window").
+    pub fn with_window(&mut self) {
+        self.has_window = true;
+    }
+
+    /// The zoom of the canvas of the window, which `view.get_state` returns. Not a command: the window says what it
+    /// shows, as the app says what changed on the disk.
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.view.zoom = Some(zoom);
     }
 
     /// A session of the command line, which runs one command per process: it keeps no history, so `history.*` is not
@@ -274,9 +294,14 @@ impl Session {
         let lines = self.journal.lines;
         self.wrote_now.clear();
         let outcome = self.run_as(author, id, params, waiter);
+        self.view.settle();
         // The command that `commands.execute` runs writes its own line; `commands.execute` writes one only when it failed
         // before running it.
-        if id != "commands.execute" || self.journal.lines == lines {
+        // Only what changes something is a line: what a window reads to draw itself would fill the journal (decision of
+        // the owner, 2026-11-16).
+        let named = if id == "commands.execute" { params.get("id").and_then(Value::as_str).unwrap_or_default() } else { id };
+        let changes = registry::command(named).is_some_and(|command| command.undoable || !command.effects.is_empty());
+        if changes && (id != "commands.execute" || self.journal.lines == lines) {
             self.journal_line(author, id, params, outcome.as_ref().map(|_| ()));
         }
         outcome
@@ -296,6 +321,10 @@ impl Session {
         };
         if let Some(reason) = self.not_enabled(command) {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
+        }
+        // An agent attached to the IDE reads the window and does not change what it shows (ide.md 8, commands.md 6.7).
+        if author.is_agent() && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
+            return Err(CommandError::new("agent.not_allowed", format!("`{id}` changes what the window shows: only the user calls it")));
         }
         let params = params::judge(command, params)?;
         guarded(id, || self.dispatch(author, command, &params, waiter)).unwrap_or_else(|internal| {
@@ -325,6 +354,12 @@ impl Session {
         }
         if command.id.starts_with("run.") {
             return crate::runs::not_enabled_here().map(str::to_owned);
+        }
+        if crate::view::window::WINDOW_ONLY.contains(&command.id) && !self.has_window {
+            return Some("it is a command of the window of the IDE, and the command line and the MCP server alone have none".to_owned());
+        }
+        if crate::view::window::RUN_BY_THE_WINDOW.contains(&command.id) {
+            return Some("the window of the IDE runs it itself".to_owned());
         }
         if command.id.starts_with("history.") && !self.keeps_history {
             return Some("the command line runs one command per process, with no history to undo".to_owned());
@@ -358,6 +393,11 @@ impl Session {
             "view.set_standard_view" => crate::view::set_standard_view(self, params),
             "view.set_state" => crate::view::set_state(self, params),
             "view.open_trace" => crate::view::open_trace(self, params),
+            "view.close_function" => crate::view::window::close_function(self, params),
+            "view.set_view" => crate::view::window::set_view(self, params),
+            "view.set_workspace" => crate::view::window::set_workspace(self, params),
+            "view.select" => crate::view::window::select(self, params),
+            "view.get_state" => Ok(crate::view::window::get_state(self)),
             #[cfg(not(target_arch = "wasm32"))]
             "run.start" => self.runs.start(self, params, waiter),
             "run.wait" | "run.status" | "run.abort" | "run.set_element" | "run.trace" => {

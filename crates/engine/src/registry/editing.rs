@@ -111,6 +111,20 @@ const SETTINGS_ERRORS: &[&str] = &["command.not_enabled", "params.unknown", "par
 const WINDOW_ERRORS: &[&str] =
     &["command.not_enabled", "agent.not_allowed", "params.unknown", "params.missing", "params.invalid", "edit.unknown", "internal"];
 
+/// `view.select` names what it selects as an editing command does (commands.md 9.2).
+const SELECT_ERRORS: &[&str] = &[
+    "command.not_enabled",
+    "agent.not_allowed",
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "edit.unknown",
+    "edit.ambiguous",
+    "path.not_found",
+    "file.unparsed",
+    "internal",
+];
+
 const PROJECT_ERRORS: &[&str] = &[
     "command.not_enabled",
     "agent.not_allowed",
@@ -1200,85 +1214,78 @@ pub(super) fn catalog() -> Vec<Command> {
                 )
             },
         ),
-        planned(
-            STEP_1,
-            Command {
-                effects: &[Effect::Files],
-                ..window(
-                    "project.new",
-                    "New Project",
-                    "Make a folder with `main.lcf`, and open it",
-                    "Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown. A folder that exists and is not empty is `path.exists`.",
-                    object(&[("folder", string("The folder to make, anywhere on the computer."))], &["folder"]),
-                    PROJECT_ERRORS,
-                )
-            },
-        ),
-        planned(
-            STEP_1,
-            window(
-                "project.open",
-                "Open Project",
-                "Open a folder as a project",
-                "Opens the folder as a project: in this window when it shows the start page, in a new window otherwise.",
-                object(&[("folder", string("The folder to open, anywhere on the computer."))], &["folder"]),
+        Command {
+            effects: &[Effect::Files],
+            ..window(
+                "project.new",
+                "New Project",
+                "Make a folder with `main.lcf`, and open it",
+                "Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown. A folder that exists and is not empty is `path.exists`.",
+                object(&[("folder", string("The folder to make, anywhere on the computer."))], &["folder"]),
                 PROJECT_ERRORS,
-            ),
+            )
+        },
+        window(
+            "project.open",
+            "Open Project",
+            "Open a folder as a project",
+            "Opens the folder as a project: in this window when it shows the start page, in a new window otherwise.",
+            object(&[("folder", string("The folder to open, anywhere on the computer."))], &["folder"]),
+            PROJECT_ERRORS,
         ),
-        planned(
-            STEP_1,
-            Command {
-                direct: true,
-                result: "`{ \"workspace\", \"windows\", \"truncated\" }`: the tabs, the selection and the zoom of each window",
-                ..window(
-                    "view.get_state",
-                    "Get View State",
-                    "Return the tabs, the selection and the zoom of the windows",
-                    "Returns `{ \"workspace\": \"edit\", \"windows\": [{ \"tabs\", \"shown\", \"selection\", \"zoom\" }], \"truncated\": false }`: for each window of the project, its tabs (the function, its file, its view and the second view of a split), the index of the tab shown, the selection of the tab shown as the editing commands name it, and the zoom. It is the one command of the window that an attached agent may call.",
-                    object(&[], &[]),
-                    WINDOW_ERRORS,
-                )
-            },
-        ),
-        planned(
-            STEP_1,
-            window(
-                "view.select",
-                "Select",
-                "Set the selection of the window that shows a function",
-                "Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The window calls it on each click and rectangle of selection.",
-                object(
-                    &[
-                        ("function", string("The function shown.")),
-                        ("nodes", json!({ "type": "array", "description": "The nodes selected.", "items": { "type": "string" } })),
-                        ("wires", json!({ "type": "array", "description": "The wires selected.", "items": { "type": "string" } })),
-                        ("terminals", json!({ "type": "array", "description": "The terminals selected.", "items": { "type": "string" } })),
-                    ],
-                    &["function"],
-                ),
+        Command {
+            direct: true,
+            result: "`{ \"workspace\", \"windows\", \"truncated\" }`: the tabs, the selection and the zoom of each window",
+            ..window(
+                "view.get_state",
+                "Get View State",
+                "Return the tabs, the selection and the zoom of the windows",
+                "Returns `{ \"workspace\": \"edit\", \"windows\": [{ \"tabs\", \"shown\", \"selection\", \"zoom\" }], \"truncated\": false }`: for each window of the project, its tabs (the function, its file, its view and the second view of a split), the index of the tab shown, the selection of the tab shown as the editing commands name it, and the zoom. It is the one command of the window that an attached agent may call.",
+                object(&[], &[]),
                 WINDOW_ERRORS,
+            )
+        },
+        window(
+            "view.select",
+            "Select",
+            "Set the selection of the window that shows a function",
+            "Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The function is the one shown, else `params.invalid`; each name names what it has, as an editing command names it (`#close`, `x -> s.b`, `input x`), else `edit.unknown`. The window calls it on each click and rectangle of selection.",
+            object(
+                &[
+                    ("function", string("The function shown.")),
+                    ("nodes", json!({ "type": "array", "description": "The nodes selected.", "items": { "type": "string" } })),
+                    ("wires", json!({ "type": "array", "description": "The wires selected.", "items": { "type": "string" } })),
+                    ("terminals", json!({ "type": "array", "description": "The terminals selected.", "items": { "type": "string" } })),
+                ],
+                &["function"],
             ),
+            SELECT_ERRORS,
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.set_view",
-                "Set View",
-                "Show a function with a view, and a second one beside it",
-                "Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid`.",
-                object(
-                    &[
-                        ("function", string("The function.")),
-                        ("view", json!({ "type": "string", "description": "The view.", "enum": ["diagram", "text", "block", "panel"] })),
-                        (
-                            "split",
-                            json!({ "type": ["string", "null"], "description": "The second view, beside the first; `null` for none.", "enum": ["diagram", "text", "block", null], "default": null }),
-                        ),
-                    ],
-                    &["function", "view"],
-                ),
-                WINDOW_ERRORS,
+        window(
+            "view.set_view",
+            "Set View",
+            "Show a function with a view, and a second one beside it",
+            "Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid`.",
+            object(
+                &[
+                    ("function", string("The function.")),
+                    ("view", json!({ "type": "string", "description": "The view.", "enum": ["diagram", "text", "block", "panel"] })),
+                    (
+                        "split",
+                        json!({ "type": ["string", "null"], "description": "The second view, beside the first; `null` for none.", "enum": ["diagram", "text", "block", null], "default": null }),
+                    ),
+                ],
+                &["function", "view"],
             ),
+            WINDOW_ERRORS,
+        ),
+        window(
+            "view.close_function",
+            "Close Tab",
+            "Close the tab of a function",
+            "Closes the tab of the function; when it was shown, the next tab is shown, else the one before it. Returns `{ \"shown\" }`, the function shown after.",
+            object(&[("function", string("The function whose tab is open."))], &["function"]),
+            WINDOW_ERRORS,
         ),
         planned(
             STEP_1,
@@ -1302,47 +1309,38 @@ pub(super) fn catalog() -> Vec<Command> {
                 WINDOW_ERRORS,
             ),
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.toggle_panel",
-                "Toggle Panel",
-                "Show or hide a panel of the window",
-                "Shows or hides `project`, `palette`, `inspector`, `problems` or `run`. Without `on`, it puts the panel in the other state.",
-                object(
-                    &[
-                        (
-                            "panel",
-                            json!({ "type": "string", "description": "The panel.", "enum": ["project", "palette", "inspector", "problems", "run"] }),
-                        ),
-                        ("on", json!({ "type": "boolean", "description": "Whether to show it; by default, the other state." })),
-                    ],
-                    &["panel"],
-                ),
-                WINDOW_ERRORS,
+        window(
+            "view.toggle_panel",
+            "Toggle Panel",
+            "Show or hide a panel of the window",
+            "Shows or hides `project`, `palette`, `inspector`, `problems` or `run`. Without `on`, it puts the panel in the other state.",
+            object(
+                &[
+                    (
+                        "panel",
+                        json!({ "type": "string", "description": "The panel.", "enum": ["project", "palette", "inspector", "problems", "run"] }),
+                    ),
+                    ("on", json!({ "type": "boolean", "description": "Whether to show it; by default, the other state." })),
+                ],
+                &["panel"],
             ),
+            WINDOW_ERRORS,
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.reset_layout",
-                "Reset Layout",
-                "Put the panels back and dock every detached tab",
-                "Puts the panels back where the IDE puts them by default, and docks every detached tab.",
-                object(&[], &[]),
-                WINDOW_ERRORS,
-            ),
+        window(
+            "view.reset_layout",
+            "Reset Layout",
+            "Put the panels back and dock every detached tab",
+            "Puts the panels back where the IDE puts them by default, and docks every detached tab.",
+            object(&[], &[]),
+            WINDOW_ERRORS,
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.set_workspace",
-                "Set Workspace",
-                "Change the workspace of the window",
-                "Changes the workspace of the window. A planned workspace is `command.not_enabled`, and the message gives its milestone.",
-                object(&[("workspace", string("The workspace: `edit`."))], &["workspace"]),
-                WINDOW_ERRORS,
-            ),
+        window(
+            "view.set_workspace",
+            "Set Workspace",
+            "Change the workspace of the window",
+            "Changes the workspace of the window. A planned workspace is `command.not_enabled`, and the message gives its milestone.",
+            object(&[("workspace", string("The workspace: `edit`."))], &["workspace"]),
+            WINDOW_ERRORS,
         ),
     ]
 }

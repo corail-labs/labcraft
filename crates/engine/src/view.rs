@@ -24,6 +24,10 @@ use crate::session::Session;
 use crate::walk::slashed;
 use crate::workspace::Workspace;
 
+pub mod window;
+
+pub use window::{Selection, Tab, ViewKind, WorkspaceId};
+
 /// The view state of a function that its file does not hold (notation 2.1), kept for the session only, by its file,
 /// across changes of the file, by the keys of its nodes (decided at the start of step 6).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -62,6 +66,8 @@ pub struct Published {
     /// The report of the check of the folder, with the diagnostics of the drawing shown (`LC7005`); a new one with each
     /// check and each drawing.
     pub report: Option<Arc<Report>>,
+    /// Changes with each check of the folder, and only then: what the window read of the files is read again.
+    pub checks: u64,
     pub errors: u64,
     pub warnings: u64,
     /// The function shown, and the tabs of the functions opened.
@@ -88,6 +94,14 @@ pub struct Published {
     pub trace: Option<TracePart>,
     /// The trace was opened by hand (`view.open_trace` with a `file`): it stays until another function is shown.
     pub trace_opened: bool,
+    /// The view of each tab open whose view is not the diagram alone (ide.md 3).
+    pub tabs: HashMap<String, Tab>,
+    /// The function whose tab is a preview, replaced by the next one (ide.md 3).
+    pub preview: Option<String>,
+    /// The selection of the window (`view.select`), in the function it names.
+    pub selection: Selection,
+    /// The workspace of the window (`view.set_workspace`).
+    pub workspace: window::WorkspaceId,
 }
 
 /// The trace of the function shown (notation 6.1; decisions of the owner, 2026-11-13).
@@ -116,16 +130,21 @@ pub struct View {
     folder: Option<(PathBuf, String)>,
     loaded: Option<Loaded>,
     views: HashMap<String, ViewOf>,
-    standard_everywhere: bool,
-    function: Option<String>,
     /// The file of the function shown: two files can give one name.
     file: Option<String>,
-    opened: Vec<String>,
     /// The last drawing of each file whose function was drawable: it holds the values it was drawn with.
     last: HashMap<String, Arc<Drawing>>,
     /// The entry of the function shown in `labcraft-diagram/1`.
     entry: Value,
-    published: Published,
+    /// What is shown now, the one state of the view (architecture 12.5): the function shown, the tabs, the drawing.
+    now: Published,
+    /// What the window reads: a snapshot of `now`, made by each publication and kept nowhere else.
+    snapshot: Arc<Published>,
+    /// `now` was published since the snapshot was made.
+    due: bool,
+    /// The zoom of the canvas, as the window last gave it (`Session::set_zoom`), which `view.get_state` returns: `null`
+    /// until it does.
+    pub(crate) zoom: Option<f32>,
     /// The values of the notation in force (notation 10): those of `--style`, given by the app.
     style: Arc<Style>,
     /// A command wrote files since the folder was read.
@@ -144,12 +163,26 @@ pub struct View {
 }
 
 impl View {
-    pub fn published(&self) -> &Published {
-        &self.published
+    pub fn published(&self) -> &Arc<Published> {
+        &self.snapshot
+    }
+
+    /// The file of the function shown: two files can give one name.
+    pub(crate) fn shown_file(&self) -> Option<&str> {
+        self.file.as_deref()
     }
 
     fn publish(&mut self) {
-        self.published.generation = self.published.generation.wrapping_add(1);
+        self.now.generation = self.now.generation.wrapping_add(1);
+        self.due = true;
+    }
+
+    /// Makes the snapshot that the window reads, once what a command or a change from the system published is all
+    /// done: the session calls it at the end of each.
+    pub(crate) fn settle(&mut self) {
+        if std::mem::take(&mut self.due) {
+            self.snapshot = Arc::new(self.now.clone());
+        }
     }
 }
 
@@ -161,24 +194,21 @@ pub fn open(session: &mut Session, params: &Params) -> Result<Value, CommandErro
     view.folder = Some((path, shown));
     view.views.clear();
     view.last.clear();
-    view.function = None;
+    view.now.function = None;
     view.file = None;
-    view.opened.clear();
+    view.now.opened.clear();
+    window::forget_closed(view);
     load(session);
     let view = &mut session.view;
     // The function the app asked for, else the first one, so that the window shows something.
-    let functions = &view.published.functions;
+    let functions = &view.now.functions;
     let asked = view.open_on.take().filter(|asked| functions.iter().any(|listed| listed.function == *asked));
     if let Some(first) = asked.or_else(|| functions.first().map(|listed| listed.function.clone())) {
         choose(view, &first);
     }
     draw(view, false);
-    let functions: Vec<Value> = view
-        .published
-        .functions
-        .iter()
-        .map(|listed| json!({ "function": listed.function, "file": listed.file, "drawable": listed.drawable }))
-        .collect();
+    let functions: Vec<Value> =
+        view.now.functions.iter().map(|listed| json!({ "function": listed.function, "file": listed.file, "drawable": listed.drawable })).collect();
     let check = view.loaded.as_ref().and_then(|loaded| serde_json::to_value(loaded.report.check_document(loaded.counts, false)).ok());
     Ok(json!({ "functions": functions, "check": check }))
 }
@@ -189,6 +219,7 @@ pub fn show_function(session: &mut Session, params: &Params) -> Result<Value, Co
     read_again_if_stale(session);
     let view = &mut session.view;
     known(view, name)?;
+    window::place_tab(view, name, params.bool("preview"));
     choose(view, name);
     Ok(draw(view, false))
 }
@@ -198,8 +229,7 @@ pub fn set_standard_view(session: &mut Session, params: &Params) -> Result<Value
     let on = params.bool("on");
     read_again_if_stale(session);
     let view = &mut session.view;
-    let before = std::mem::replace(&mut view.standard_everywhere, on);
-    view.published.standard_everywhere = on;
+    let before = std::mem::replace(&mut view.now.standard_everywhere, on);
     if before == on {
         view.publish();
     } else {
@@ -221,10 +251,10 @@ pub fn set_state(session: &mut Session, params: &Params) -> Result<Value, Comman
     // Read into a copy first.
     let mut of = view.views.get(&file).cloned().unwrap_or_default();
     let (placed, moved) = read_state(state, &mut of)?;
-    let shown = view.function.as_deref() == Some(name);
+    let shown = view.now.function.as_deref() == Some(name);
     if !moved.is_empty() {
         let drawing = view.last.get(&file).cloned();
-        let overlay = view.published.overlay.clone().filter(|_| shown);
+        let overlay = view.now.overlay.clone().filter(|_| shown);
         moved_iterations(&mut of, &moved, drawing.as_deref(), overlay.as_deref());
         // An iteration moved: the tabs picked before give way to the arms that the run took, those of this call stay.
         let given: BTreeSet<&str> =
@@ -276,19 +306,19 @@ fn moved_iterations(of: &mut ViewOf, moved: &[String], drawing: Option<&Drawing>
 /// The arm shown of each structure: the one the developer picked, else the one the run took (notation 6.1).
 fn publish_arms(view: &mut View) {
     let mut arms = view.file.as_ref().and_then(|file| view.views.get(file)).map(|of| of.arms.clone()).unwrap_or_default();
-    if let Some(overlay) = &view.published.overlay {
+    if let Some(overlay) = &view.now.overlay {
         for (structure, &arm) in &overlay.taken {
             arms.entry(structure.clone()).or_insert(arm);
         }
     }
-    view.published.arms = arms;
+    view.now.arms = arms;
 }
 
 /// Works out the values of the trace kept over the drawing shown, at the iterations chosen, and publishes them. With
 /// `forget_picks`, an iteration selector moved or another trace arrived: the tabs the developer picked give way to the
 /// arms the run took (notation 6.1).
 fn revalue(view: &mut View, forget_picks: bool) {
-    let drawing = view.published.drawing.clone().filter(|_| view.drawn);
+    let drawing = view.now.drawing.clone().filter(|_| view.drawn);
     let file = view.file.clone().unwrap_or_default();
     let choice = Choice { iterations: view.views.get(&file).map(|of| of.iterations.clone()).unwrap_or_default() };
     let overlay = match (drawing, &view.traced.kept) {
@@ -298,9 +328,9 @@ fn revalue(view: &mut View, forget_picks: bool) {
     if forget_picks && let (Some(overlay), Some(of)) = (&overlay, view.views.get_mut(&file)) {
         of.arms.retain(|structure, _| !overlay.taken.contains_key(structure));
     }
-    view.published.run = view.traced.kept.as_ref().filter(|_| overlay.is_some()).map(|(trace, _)| (trace.clone(), choice));
-    view.published.overlay = overlay.map(Arc::new);
-    view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    view.now.run = view.traced.kept.as_ref().filter(|_| overlay.is_some()).map(|(trace, _)| (trace.clone(), choice));
+    view.now.overlay = overlay.map(Arc::new);
+    view.now.overlay_generation = view.now.overlay_generation.wrapping_add(1);
     publish_arms(view);
     view.publish();
 }
@@ -317,7 +347,7 @@ pub fn open_trace(session: &mut Session, params: &Params) -> Result<Value, Comma
         None => None,
     };
     show_trace(session, opened)?;
-    Ok(session.view.published.trace.as_ref().and_then(|part| serde_json::to_value(part).ok()).unwrap_or(Value::Null))
+    Ok(session.view.now.trace.as_ref().and_then(|part| serde_json::to_value(part).ok()).unwrap_or(Value::Null))
 }
 
 /// The values of the run of the trace at `path` over the function shown, as `view.open_trace` shows them: a trace that
@@ -333,7 +363,7 @@ pub fn open_trace_at(session: &mut Session, path: PathBuf) -> Result<(), Command
 /// Shows the values of the trace `opened` by hand, or of the last run, over the function shown.
 fn show_trace(session: &mut Session, opened: Option<(PathBuf, String)>) -> Result<(), CommandError> {
     read_again_if_stale(session);
-    if session.view.function.is_none() {
+    if session.view.now.function.is_none() {
         return Err(CommandError::of("params.invalid", "file", "no function is shown: `view.show_function` shows one"));
     }
     session.view.traced.opened = opened;
@@ -387,7 +417,7 @@ fn time_of_day(nanoseconds: u128) -> String {
 pub fn look_at_trace(session: &mut Session) -> bool {
     let ws = &*session.ws;
     let view = &mut session.view;
-    let (Some(name), Some(file)) = (view.function.clone(), view.file.clone()) else { return false };
+    let (Some(name), Some(file)) = (view.now.function.clone(), view.file.clone()) else { return false };
     let target = match (&view.traced.opened, &view.folder) {
         (Some(opened), _) => Some(opened.clone()),
         (None, Some((folder, _))) => last_run(ws, folder, &name),
@@ -404,7 +434,7 @@ pub fn look_at_trace(session: &mut Session) -> bool {
     if let (Some((path, shown)), Some(loaded)) = (&target, &view.loaded)
         && let Some(function) = loaded.functions.iter().find(|function| function.shown == file)
     {
-        let drawing = view.published.drawing.clone().filter(|_| view.drawn);
+        let drawing = view.now.drawing.clone().filter(|_| view.drawn);
         // A trace that a run replaces while it is read is read again from its start (`docs/cli.md`, 7.4), a few times.
         let mut before = stamp.clone();
         let mut settled = false;
@@ -438,11 +468,11 @@ pub fn look_at_trace(session: &mut Session) -> bool {
     let arrived = view.traced.read.is_some() && of.trace_seen != view.traced.read;
     of.trace_seen.clone_from(&view.traced.read);
     view.traced.kept = kept;
-    view.published.trace = part;
-    view.published.trace_opened = view.traced.opened.is_some();
-    view.published.errors = report.errors();
-    view.published.warnings = report.warnings();
-    view.published.report = Some(Arc::new(report));
+    view.now.trace = part;
+    view.now.trace_opened = view.traced.opened.is_some();
+    view.now.errors = report.errors();
+    view.now.warnings = report.warnings();
+    view.now.report = Some(Arc::new(report));
     revalue(view, arrived);
     true
 }
@@ -503,20 +533,21 @@ pub fn files_changed(session: &mut Session) {
     let view = &mut session.view;
     // A function whose file went away is no longer shown; what was kept of a file gone goes too.
     let exists = |name: &String, functions: &[Listed]| functions.iter().any(|listed| listed.function == *name);
-    let functions = view.published.functions.clone();
-    view.opened.retain(|name| exists(name, &functions));
+    let functions = view.now.functions.clone();
+    view.now.opened.retain(|name| exists(name, &functions));
+    window::forget_closed(view);
     let files: BTreeSet<&str> = functions.iter().map(|listed| listed.file.as_str()).collect();
     view.views.retain(|file, _| files.contains(file.as_str()));
     view.last.retain(|file, _| files.contains(file.as_str()));
-    match view.function.clone() {
+    match view.now.function.clone() {
         // The same file while it is there: a file that breaks keeps its last drawing, even when another file gives the
         // same name.
         Some(name) if before.as_ref().is_some_and(|file| functions.iter().any(|listed| listed.function == name && listed.file == *file)) => {}
         Some(name) if exists(&name, &functions) => choose(view, &name),
-        _ => match view.opened.first().cloned() {
+        _ => match view.now.opened.first().cloned() {
             Some(name) => choose(view, &name),
             None => {
-                view.function = None;
+                view.now.function = None;
                 view.file = None;
             }
         },
@@ -547,49 +578,50 @@ fn load(session: &mut Session) {
     let config = &session.config;
     let loaded = drawings::load(&*session.ws, &config.shipped, &path, &config.lib_paths, &config.limits, Some(&session.root));
     let view = &mut session.view;
-    view.published.folder = loaded.root.as_ref().map(|_| shown);
-    view.published.functions = listed(&loaded);
-    view.published.report = Some(Arc::new(loaded.report.clone()));
-    view.published.errors = loaded.report.errors();
-    view.published.warnings = loaded.report.warnings();
+    view.now.folder = loaded.root.as_ref().map(|_| shown);
+    view.now.functions = listed(&loaded);
+    view.now.report = Some(Arc::new(loaded.report.clone()));
+    view.now.checks = view.now.checks.wrapping_add(1);
+    view.now.errors = loaded.report.errors();
+    view.now.warnings = loaded.report.warnings();
     view.loaded = Some(loaded);
     view.publish();
 }
 
 /// Shows the function of this name: when two files give it (`a.b.lcf` and `a/b.lcf`), the first that is drawable.
 fn choose(view: &mut View, name: &str) {
-    let matching = || view.published.functions.iter().filter(|listed| listed.function == name);
+    let matching = || view.now.functions.iter().filter(|listed| listed.function == name);
     let file = matching().find(|listed| listed.drawable).or_else(|| matching().next()).map(|listed| listed.file.clone());
     // A trace opened by hand is that of one function.
-    if view.function.as_deref() != Some(name) {
+    if view.now.function.as_deref() != Some(name) {
         view.traced.opened = None;
     }
-    view.function = Some(name.to_owned());
+    view.now.function = Some(name.to_owned());
     view.file = file;
-    if !view.opened.iter().any(|opened| opened == name) {
-        view.opened.push(name.to_owned());
+    if !view.now.opened.iter().any(|opened| opened == name) {
+        view.now.opened.push(name.to_owned());
     }
 }
 
 fn known(view: &View, name: &str) -> Result<(), CommandError> {
-    if view.published.functions.iter().any(|listed| listed.function == name) {
+    if view.now.functions.iter().any(|listed| listed.function == name) {
         return Ok(());
     }
     if view.folder.is_none() {
         return Err(CommandError::of("params.invalid", "function", format!("unknown function `{name}`: no folder is open, `view.open` opens one")));
     }
-    let names: Vec<&str> = view.published.functions.iter().map(|listed| listed.function.as_str()).take(10).collect();
+    let names: Vec<&str> = view.now.functions.iter().map(|listed| listed.function.as_str()).take(10).collect();
     Err(CommandError::of("params.invalid", "function", format!("unknown function `{name}`: not a function of the folder open")).expecting(&names))
 }
 
 /// The file of the function of this name that the viewer shows for it.
 fn file_of(view: &View, name: &str) -> String {
-    if view.function.as_deref() == Some(name)
+    if view.now.function.as_deref() == Some(name)
         && let Some(file) = &view.file
     {
         return file.clone();
     }
-    let matching = || view.published.functions.iter().filter(|listed| listed.function == name);
+    let matching = || view.now.functions.iter().filter(|listed| listed.function == name);
     matching().find(|listed| listed.drawable).or_else(|| matching().next()).map(|listed| listed.file.clone()).unwrap_or_default()
 }
 
@@ -600,7 +632,7 @@ fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Va
     let function = loaded.functions.iter().find(|function| function.shown == file)?;
     let of = view.views.get(file).cloned().unwrap_or_default();
     let state = ViewState {
-        standard_everywhere: view.standard_everywhere,
+        standard_everywhere: view.now.standard_everywhere,
         fold_constructions: true,
         tabs: true,
         unfolded: of.unfolded,
@@ -621,19 +653,17 @@ fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Va
 /// Draws the function shown; returns its entry of `diagrams` in `labcraft-diagram/1`.
 fn draw(view: &mut View, glide: bool) -> Value {
     view.publish();
-    view.published.function.clone_from(&view.function);
-    view.published.opened.clone_from(&view.opened);
-    view.published.drawing_generation = view.published.drawing_generation.wrapping_add(1);
-    view.published.glide = glide;
+    view.now.drawing_generation = view.now.drawing_generation.wrapping_add(1);
+    view.now.glide = glide;
     // The values of the drawing before are not those of this one: they come once its trace is read.
     view.traced.due = true;
     view.drawn = false;
     view.traced.kept = None;
-    view.published.run = None;
-    if view.published.overlay.take().is_some() {
-        view.published.overlay_generation = view.published.overlay_generation.wrapping_add(1);
+    view.now.run = None;
+    if view.now.overlay.take().is_some() {
+        view.now.overlay_generation = view.now.overlay_generation.wrapping_add(1);
     }
-    let rendered = match (view.function.clone(), view.file.clone()) {
+    let rendered = match (view.now.function.clone(), view.file.clone()) {
         (Some(name), Some(file)) if !view.skipped.contains(&name) => {
             if let Some(before) = view.before_drawing {
                 before(&name);
@@ -643,44 +673,44 @@ fn draw(view: &mut View, glide: bool) -> Value {
         _ => None,
     };
     let Some((file, (picture, drawn, entry, report))) = rendered else {
-        view.published.drawing = None;
-        view.published.kept = false;
-        view.published.trace = None;
-        view.traced.report.clone_from(&view.published.report);
+        view.now.drawing = None;
+        view.now.kept = false;
+        view.now.trace = None;
+        view.traced.report.clone_from(&view.now.report);
         view.entry = Value::Null;
         return Value::Null;
     };
     view.drawn = drawn;
     let shown = if drawn {
         view.last.insert(file.clone(), picture.clone());
-        view.published.kept = false;
+        view.now.kept = false;
         picture
     } else if let Some(last) = view.last.get(&file) {
-        view.published.kept = true;
+        view.now.kept = true;
         last.clone()
     } else {
-        view.published.kept = false;
+        view.now.kept = false;
         picture
     };
-    view.published.drawing = Some(shown);
+    view.now.drawing = Some(shown);
     // The warnings of the drawing (`LC7005`) have no mark: the problems of the viewer list them.
     let counts = |report: &Report| (report.diagnostics().len(), report.errors(), report.warnings());
     if let Some(loaded) = &view.loaded
         && counts(&report) != counts(&loaded.report)
     {
-        view.published.errors = report.errors();
-        view.published.warnings = report.warnings();
-        view.published.report = Some(Arc::new(report));
+        view.now.errors = report.errors();
+        view.now.warnings = report.warnings();
+        view.now.report = Some(Arc::new(report));
     } else if let Some(loaded) = &view.loaded
-        && view.published.report.as_ref().is_some_and(|published| counts(published) != counts(&loaded.report))
+        && view.now.report.as_ref().is_some_and(|published| counts(published) != counts(&loaded.report))
     {
         // Back to the report of the check when the drawing shown adds nothing.
-        view.published.errors = loaded.report.errors();
-        view.published.warnings = loaded.report.warnings();
-        view.published.report = Some(Arc::new(loaded.report.clone()));
+        view.now.errors = loaded.report.errors();
+        view.now.warnings = loaded.report.warnings();
+        view.now.report = Some(Arc::new(loaded.report.clone()));
     }
-    view.published.arms = view.views.get(&file).map(|of| of.arms.clone()).unwrap_or_default();
-    view.traced.report.clone_from(&view.published.report);
+    view.now.arms = view.views.get(&file).map(|of| of.arms.clone()).unwrap_or_default();
+    view.traced.report.clone_from(&view.now.report);
     view.entry = entry.clone();
     entry
 }

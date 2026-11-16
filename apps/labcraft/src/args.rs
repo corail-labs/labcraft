@@ -18,8 +18,8 @@ pub struct Options {
 pub const USAGE: &str = "\
 usage: labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
 
-Opens FOLDER, a library folder, in the viewer, read-only, and draws its functions again when its files change.
-Without FOLDER, the window opens empty: choose a folder there.
+Opens FOLDER, a folder of LabCraft files, as a project in the window of the IDE, and draws its functions again
+when its files change. Without FOLDER, the window opens on the start page.
 
 options:
   --lib-path DIR       also look for libraries in this folder; can be given several times

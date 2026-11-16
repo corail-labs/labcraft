@@ -8,7 +8,8 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use labcraft::session::Handle;
+use labcraft::session::{Handle, Opening};
+use labcraft_ide::Host;
 
 mod common;
 use common::{Folder, ONE, TWO};
@@ -33,28 +34,26 @@ fn the_runner_still_runs_these_tests_alone() {
 fn a_change_of_the_file_is_drawn_within_200_ms() {
     let _alone = ALONE.lock().unwrap_or_else(PoisonError::into_inner);
     let folder = Folder::new(&[("main.lcf", ONE)]);
-    let session = Handle::spawn(false, Vec::new(), None, Box::new(|| {})).unwrap();
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
-    assert!(session.published().notice.is_none(), "{:?}", session.published().notice);
+    let session = spawn(&folder.0, Vec::new(), None);
+    assert!(session.snapshot().notices.is_empty(), "{:?}", session.snapshot().notices);
     // The watcher starts with the folder: let it settle.
     std::thread::sleep(Duration::from_millis(300));
     let mut slowest = Duration::ZERO;
     for text in [TWO, ONE, TWO] {
-        let before = session.published().view.drawing_generation;
+        let before = session.snapshot().view.drawing_generation;
         let start = Instant::now();
         std::fs::write(folder.0.join("main.lcf"), text).unwrap();
         loop {
-            if session.published().view.drawing_generation != before {
+            if session.snapshot().view.drawing_generation != before {
                 break;
             }
             assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
             std::thread::sleep(Duration::from_millis(2));
         }
         slowest = slowest.max(start.elapsed());
-        let nodes = session.published().view.drawing.as_ref().unwrap().placed.len();
+        let nodes = session.snapshot().view.drawing.as_ref().unwrap().placed.len();
         assert_eq!(nodes, if text == TWO { 2 } else { 1 });
-        assert!(session.published().view.glide);
+        assert!(session.snapshot().view.glide);
         // The next change starts once this one is settled.
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -70,10 +69,8 @@ fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
     let _alone = ALONE.lock().unwrap_or_else(PoisonError::into_inner);
     let folder = Folder::new(&[("main.lcf", ONE)]);
     let missing = folder.0.join("no-such-library");
-    let session = Handle::spawn(false, vec![missing.clone()], None, Box::new(|| {})).unwrap();
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
-    let notice = session.published().notice.unwrap_or_default();
+    let session = spawn(&folder.0, vec![missing.clone()], None);
+    let notice = session.snapshot().notices.join("; ");
     // Only the missing path is looked at every second: one path in the notice.
     assert!(notice.contains("no-such-library") && notice.matches('`').count() == 2, "{notice}");
     std::thread::sleep(Duration::from_millis(300));
@@ -94,7 +91,7 @@ fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
     std::fs::write(folder.0.join("main.lcf"), TWO).unwrap();
     // Each write of `other.lcf` draws again too, sometimes before `main.lcf` is read: what counts is the first drawing
     // that shows the change of `main.lcf`, its two nodes, not the first new drawing.
-    while session.published().view.drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
+    while session.snapshot().view.drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
         assert!(start.elapsed() < Duration::from_secs(5), "`main.lcf` not drawn again while the log is written");
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -113,28 +110,35 @@ fn a_file_of_values_saved_is_drawn_within_200_ms() {
     let folder = Folder::new(&[("main.lcf", TWO)]);
     let values = Folder::new(&[]);
     let path = values.0.join("notation.toml");
-    let session = Handle::spawn(false, Vec::new(), Some(path.clone()), Box::new(|| {})).unwrap();
+    let session = spawn(&folder.0, Vec::new(), Some(path.clone()));
     assert!(path.exists());
-    assert_eq!(session.published().style_notice, None);
-    let opened = session.open(&folder.0).recv_timeout(Duration::from_secs(30)).unwrap();
-    assert!(opened.is_ok(), "{opened:?}");
+    assert!(session.snapshot().notices.is_empty());
     std::thread::sleep(Duration::from_millis(300));
     let mut slowest = Duration::ZERO;
     for margin in [24, 40, 16] {
-        let before = session.published().view.drawing_generation;
+        let before = session.snapshot().view.drawing_generation;
         let start = Instant::now();
         std::fs::write(&path, format!("[canvas]\nmargin = {margin}\n")).unwrap();
         loop {
-            if session.published().view.drawing_generation != before {
+            if session.snapshot().view.drawing_generation != before {
                 break;
             }
             assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
             std::thread::sleep(Duration::from_millis(2));
         }
         slowest = slowest.max(start.elapsed());
-        assert_eq!(session.published().view.drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
+        assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
         std::thread::sleep(Duration::from_millis(200));
     }
     println!("file of values saved to new drawing: {} ms at most", slowest.as_millis());
     assert!(slowest < Duration::from_millis(200), "{slowest:?}");
+}
+
+/// The session of a project on its thread, opened.
+fn spawn(folder: &std::path::Path, lib_paths: Vec<std::path::PathBuf>, style: Option<std::path::PathBuf>) -> Handle {
+    let opening = Opening { folder: folder.to_path_buf(), lib_paths, standard_everywhere: false, style, new: false };
+    let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
+    let opened = reply.wait(Duration::from_secs(30)).unwrap();
+    assert!(opened.is_ok(), "{opened:?}");
+    handle
 }

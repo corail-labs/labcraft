@@ -117,7 +117,8 @@ As in the Craft apps: a crate depends only on strictly lower layers, checked by
 | L5 | `interop` | C ABI, .NET, Python |
 | L6 | `engine` | Session, command registry, undo, journal, crash reports |
 | L6 | native crates of libraries | The bodies of `extern rust` functions, beside their library: `libs/visa`, `examples/results_log` ([architecture](architecture.md), section 10) |
-| L7 | `editor`, `ide`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; the window of the IDE, once for the desktop and the web (panels, inspector, later the debugger); MCP server; Cranelift and building executables and DLLs |
+| L7 | `editor`, `mcp`, `codegen` | Reusable egui diagram canvas that a Craft app can embed (D-27), read-only in M0v and editable from M1; MCP server; Cranelift and building executables and DLLs |
+| L8 | `ide` | The window of the IDE, once for the desktop and the web (panels, inspector, later the debugger), on the canvas of `editor` |
 | kit | `kit-text`, `kit-text-egui`, `kit-shell` | The pieces of the window that are not about LabCraft, for other IDEs: they depend on no crate of LabCraft ([ide.md](ide.md), 11) |
 | apps | `labcraft`, `labcraft-cli`, `labcraft-web` | Desktop, CLI, browser |
 

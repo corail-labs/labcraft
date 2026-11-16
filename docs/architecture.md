@@ -1615,7 +1615,7 @@ file, as when an agent writes it.
 | L5 | `diagram` | Stable placement around what is fixed; the preview of a drag (12.4) |
 | L6 | `engine` | The editing commands, the history, the revisions, the journal, the settings, the gesture lock (12.5) |
 | L7 | `editor` | The canvas turns gestures into intents (12.6) |
-| L7 | **`ide`** (new) | The window of LabCraft, once for the desktop and the web (12.7). It takes the place of `ui-egui` in the roadmap |
+| L8 | **`ide`** (new) | The window of LabCraft, once for the desktop and the web (12.7), on the canvas of `editor` (L7), hence a layer of its own (decision of the owner, 2026-11-16). It takes the place of `ui-egui` in the roadmap |
 | L7 | `mcp` | The direct tools, `commands_execute`, attached to the window (12.8) |
 | kit | **`kit-text`**, **`kit-text-egui`**, **`kit-shell`** (new, in `kit/`) | The pieces of the window that are not about LabCraft (ide.md 11; 12.7) |
 | apps | `labcraft`, `labcraft-web` | The window instead of the viewer's panels; the control channel on the desktop (12.9) |
@@ -1725,7 +1725,7 @@ fuzzing looks for (12.10).
   the gesture ends; its `expected_revision` is judged then. Its client can cancel it while it waits. It waits at most
   30 s *(proposed)*, then is `gesture.busy` and changes nothing (commands.md 3), so that a field left in the middle of
   a word never holds the queue of the server (mcp.md 5) for long. A command with no effect does not wait.
-- **The journal.** Every command that a session runs, from any author, is a line of JSON in
+- **The journal.** Every command that a session runs that can change something, from any author, is a line of JSON in
   `.labcraft/journal/<process>-<session>.jsonl`, or, for `labcraft-cli`, whose processes run one command each, in
   `.labcraft/journal/cli.jsonl`, the process holding the lock of that folder (10.8), and `cli.lock` while it appends to
   `cli.jsonl` or cuts it: the time, the author, the id, the parameters (cut beyond 64 KiB
@@ -1737,7 +1737,10 @@ fuzzing looks for (12.10).
   goes out of the project. A line names at most 1,000 files *(proposed)*, and `files_cut` counts them all. `labcraft-cli exec` writes `cli.jsonl`;
   `labcraft-cli run` writes no line, since a run whose trace goes to `--trace FILE` writes nothing under the root
   (commands.md 8), and nor do the commands that the MCP server answers outside its queue (`run.status`,
-  `run.set_element`, `run.abort`), which never reach the session.
+  `run.set_element`, `run.abort`), which never reach the session. A command that can change something is one that
+  makes a step or has an effect (commands.md 1: files, instruments, a run), and `commands.execute` is judged by the
+  command it runs; a read (`file.read`, `functions.list`, `history.list`, `view.*`) is no line, so that what a window reads
+  to draw itself never fills the journal (decision of the owner, 2026-11-16).
 - **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under
   the path of its file, and removed when the text parses again. When the project opens and a recovery file is newer
   than its file, the window says so and offers to take it back.
@@ -1776,7 +1779,7 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 - **The keys** of notation 2.6 come through `craft-keymap`, from the keys the host gives, so that the user changes
   them.
 
-### 12.7 The window: `kit-*` and `ide` (L7)
+### 12.7 The window: `kit-*` and `ide` (L8)
 
 - **`kit-text`**: the text, the selection, the undo of the field, and two traits, one that colours a line and the
   language service (diagnostics, completions, hover, definitions, in the types of `lsp-types`), with no UI toolkit
@@ -1790,6 +1793,17 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `engine`. It talks to a session through a trait, `Host`, that sends a command and gives the last `Published`: a
   thread and a channel on the desktop, a worker on the web (10.8). So the window is written once, and the two panels
   of the viewer, written twice in M0v, go.
+- **As step 1a writes them.** `Host` has three methods: `send(id, params) -> Reply`, a reply that the window takes
+  when it comes, never waiting for it; `snapshot() -> Snapshot`, the `Arc<Published>` of the session with the folder
+  of the project and the notices of the app; `set_zoom`, the zoom of the canvas shown, which is no command. What only
+  an app does, the window asks for as `Outward`: a new project, a folder to open, a recent project, an example, a
+  link, a trace anywhere on the disk. The layout is a `Workspace<Pane>` of `craft-ui`, kept in the settings of the
+  user without the tabs of functions, which are the session's (`opened`): the window follows them each frame. The
+  start page is a tab of its own, the house of the top bar brings it back, and it gives way to the first function
+  opened in its place. The actions that only the window has are named `ide.*` (the command palette, the start page,
+  fit, the theme, reduced motion, the values on the wires, a trace to open, the cards of what is planned): the menus,
+  the keys and the palette run them as they run commands, and the session never sees them. The icons of `kit-shell`
+  are drawn as lines: a glyph that no installed face has stops egui, and the web has no fonts of the system.
 
 ### 12.8 `mcp` (L7)
 
@@ -1813,6 +1827,12 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `format::STACK_SIZE` per project for its session, the window of `ide`, a window of the system for each detached tab
   (`craft-window`), and the control channel of mcp.md 9: a listener on `127.0.0.1`, the token and the port in a file of
   the folder of the user that only the user can read, one channel per project. The files are no longer read-only.
+  In step 1a, one project per window is one process per project: a project opened from a window that shows one starts
+  the program again on that folder, with the same `--lib-path` and `--style`. `New project` makes the folder, refuses
+  one that is not empty (`path.exists`) and writes `main.lcf` (`labcraft 1`, then `fn main() -> () {}`) by
+  `file.write`; the examples of the start page are the program files of `examples/` and `docs/rfc/`, built into the
+  app as the web viewer builds them in, and copied into a folder the user chooses. The settings of the user hold the
+  projects opened last (12 *(proposed)*), looked at off the thread of the window.
 - **`labcraft-web`**: the same window, its session in a worker (10.8). The project is in memory (`engine::Memory`): an
   example, or a folder dropped on the page; `Download` gives it as a zip, written in the worker. The page keeps a copy of
   the texts of the project, which the worker sends with each write, so that a worker that traps (10.8) starts again from
@@ -1831,7 +1851,7 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 | Undo byte for byte (scenario 3) | A test runs every command of 9.4 on every function of `examples/`, `docs/rfc/` and `libs/`, then undo, and compares the bytes; then redo |
 | One entry of `layout` per move (scenario 5) | A test moves each node of each example and counts the entries that change; `cargo xtask figures --against` compares the figure of stability with a file of figures |
 | Commands at random (scenario 4) | A target of `fuzz/`: a sequence of editing commands, undo and redo, on `engine::Memory`; never a panic, every text written reads again, n undo give the start back. 8 hours before the tag |
-| The window | Tests without a window, as in M0v: intents from scripted pointer events on the canvas; the `ide` driven through its `Host` by a fake session |
+| The window | Tests without a window, as in M0v: intents from scripted pointer events on the canvas; the `ide` driven through its `Host` by a session of `engine` on `Memory`, its frames run by `egui_kittest`, what it shows read from its AccessKit tree (`crates/ide/tests/window.rs`; with `LABCRAFT_IDE_SHOT`, each test renders its last frame, for a person to look at) |
 | The agent attached (scenario 2) | A test of `mcp` over the control channel, on the loopback, against a session of `engine`; the rest by hand |
 | 60 frames/s while editing (scenario 6) | `cargo xtask frames` gains a scripted drag of 100 nodes of the function of 1,000, and reports the time of the preview and of the new drawing; by hand before the tag |
 
@@ -1846,7 +1866,8 @@ stay.
    `labcraft-cli`. An agent edits through MCP before any gesture exists.
 1. **The window, read-only.** `kit-shell`, `ide` with the panels and the views `Diagram` and `Text` (read-only), the
    command palette, detached windows; the two apps on it; the viewer's panels go. The state of the view in one place
-   (12.5).
+   (12.5). In two parts: 1a, the desktop (`kit-shell`, `ide`, the app `labcraft` on it, the start page); 1b, the web
+   on `ide` (its `Host` in the worker) and the detached windows (a floating panel on the web).
 2. **Selection and move.** The intents of the canvas, the cut of `show_in_style`, one box per shape, the preview of a
    drag and the cuts of `diagram`, `node.move`, `node.place`, `layout.arrange`, the pin of a fixed node, the
    inspector.
