@@ -105,8 +105,15 @@ fn main() -> ExitCode {
         }
         Asked::Open(options) => options,
     };
-    let frame = craft_window::Choice::probe(craft_window::Prefix::new("LABCRAFT")).into_frame();
+    let frame = frame(craft_window::Choice::probe(craft_window::Prefix::new("LABCRAFT")));
     let viewport = egui::ViewportBuilder::default().with_title("LabCraft").with_inner_size([1400.0, 860.0]).with_min_inner_size([640.0, 400.0]);
+    // On macOS the system keeps its buttons and frame, and the content reaches under a see-through title bar, so the
+    // top bar is the title bar there too (as craft-anything does).
+    let viewport = if cfg!(target_os = "macos") && frame.decorations() {
+        viewport.with_fullsize_content_view(true).with_titlebar_shown(false).with_title_shown(false)
+    } else {
+        viewport
+    };
     let native = eframe::NativeOptions { viewport: craft_window::decorate(viewport, &frame), ..eframe::NativeOptions::default() };
     let started = eframe::run_native("labcraft", native, Box::new(move |creation| Ok(Box::new(App::new(&creation.egui_ctx, options, frame)))));
     match started {
@@ -116,6 +123,15 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Who draws the frame (ide.md 2, "the top bar is the title bar"). On Windows the app draws it, as VS Code does, so
+/// the top bar is the only bar; elsewhere `craft-window` decides. `LABCRAFT_TITLEBAR=system` (or `app`) overrides both.
+fn frame(choice: craft_window::Choice) -> craft_window::Frame {
+    if cfg!(windows) && choice.overridden().is_none() {
+        return craft_window::Frame::App(craft_window::Layout::default());
+    }
+    choice.into_frame()
 }
 
 /// What a dialog was asked for.

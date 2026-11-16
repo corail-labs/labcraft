@@ -124,6 +124,9 @@ pub struct Ide {
     palette: Palette,
     card: Card,
     frame: craft_window::Frame,
+    /// The `movable` flag last given to AppKit (`craft_window::title_bar::sync_movable`).
+    #[cfg(target_os = "macos")]
+    movable: Option<bool>,
     /// The project the per-project state below belongs to.
     project: Option<String>,
     drawn: HashMap<String, Drawn>,
@@ -145,6 +148,9 @@ pub struct Ide {
     canvas_rect: Option<egui::Rect>,
 }
 
+/// The height of the top bar, the title bar of the window (ide.md 2), in points.
+const TOP_BAR: f32 = 34.0;
+
 impl Ide {
     /// The window, with the settings of the user. `frame`: who draws the frame of the window (`craft-window`).
     pub fn new(ctx: &egui::Context, prefs: Prefs, frame: craft_window::Frame) -> Ide {
@@ -161,6 +167,8 @@ impl Ide {
             palette: Palette::default(),
             card: Card::default(),
             frame,
+            #[cfg(target_os = "macos")]
+            movable: None,
             project: None,
             drawn: HashMap::new(),
             texts: HashMap::new(),
@@ -238,7 +246,10 @@ impl Ide {
         let workspaces = catalog::workspaces();
         let palette_key = keys::key_of(&self.keymap, &CommandRef::new(keys::PALETTE));
         let right: Vec<Segment> = host.iter().map(|_| Segment::new("No agent").hover("Connecting an AI agent comes with step 8 of M1")).collect();
+        // When the app draws the frame (Windows): the edges resize the window, the top bar is its title bar.
+        kit_shell::frame::edges(ui.ctx(), &self.frame);
         let answers = egui::Panel::top("ide-top")
+            .exact_size(TOP_BAR)
             .show(ui, |ui| {
                 top_bar::show(
                     ui,
@@ -313,6 +324,10 @@ impl Ide {
         if let Some(link) = self.card.show(ui.ctx()) {
             outward.push(Outward::OpenLink(link));
         }
+        // The content reaches under the title bar of macOS: a drag that starts on a control of the top bar must not
+        // move the window.
+        #[cfg(target_os = "macos")]
+        craft_window::title_bar::sync_movable(ui.ctx(), &mut self.movable);
         outward
     }
 

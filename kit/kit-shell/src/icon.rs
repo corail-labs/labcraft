@@ -12,6 +12,8 @@ pub enum Icon {
     Close,
     Minimize,
     Maximize,
+    /// Two squares, one behind the other: the window is maximized, a click restores it.
+    Restore,
 }
 
 /// A button showing an icon, with its hover text; greyed when not enabled.
@@ -61,6 +63,10 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, stroke: Stroke) {
         }
         Icon::Maximize => {
             painter.rect_stroke(rect, 1.0, stroke, egui::StrokeKind::Inside);
+        }
+        Icon::Restore => {
+            painter.rect_stroke(Rect::from_min_max(at(0.0, 0.25), at(0.75, 1.0)), 1.0, stroke, egui::StrokeKind::Inside);
+            line(&[at(0.25, 0.25), at(0.25, 0.0), at(1.0, 0.0), at(1.0, 0.75), at(0.75, 0.75)]);
         }
     }
 }
