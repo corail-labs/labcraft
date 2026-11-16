@@ -26,6 +26,18 @@ pub const DETACHED_PALETTE: &str = "ide.detached_palette";
 /// The entries to come, each with its card (ide.md 6).
 pub const PLANNED_INSTRUMENTS: &str = "ide.planned.instruments";
 pub const PLANNED_AGENT: &str = "ide.planned.agent";
+pub const PLANNED_PAUSE: &str = "ide.planned.pause";
+pub const PLANNED_BREAKPOINT: &str = "ide.planned.breakpoint";
+pub const PLANNED_WATCH: &str = "ide.planned.watch";
+pub const PLANNED_BUILD: &str = "ide.planned.build";
+/// Run the function shown, and stop its run (decisions of the owner, 2026-11-16): `run.start` and `run.abort`, which
+/// the window follows to the end of the run.
+pub const RUN: &str = "ide.run";
+pub const STOP: &str = "ide.stop";
+/// Whether a run records its values (its trace, `trace: file`), off by default (decision of the owner, 2026-11-16).
+pub const RECORD: &str = "ide.record_values";
+/// Every function in a window of its own, planned until the windows of the system are real ones (craft-libs#1903).
+pub const PLANNED_DETACHED_MODE: &str = "ide.planned.detached_mode";
 
 /// The actions of the window, with their labels, for the command palette: each `ide.*` once.
 pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
@@ -37,6 +49,9 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (REDUCED_MOTION, "Reduced motion"),
     (VALUES, "Values of the run on the wires"),
     (OPEN_TRACE, "Open a trace…"),
+    (RUN, "Run the function shown"),
+    (STOP, "Stop the run"),
+    (RECORD, "Record the values of a run"),
     (DETACHED_INSPECTOR, "Inspector in detached windows"),
     (DETACHED_PALETTE, "Palette of functions in detached windows"),
     (ABOUT, "About LabCraft"),
@@ -60,6 +75,9 @@ pub fn keymap(platform: Platform) -> Keymap {
         bindable(CommandRef::new("history.undo"), "Undo", &["Cmd+Z"]),
         bindable(CommandRef::new("history.redo"), "Redo", &["Cmd+Y", "Cmd+Shift+Z"]),
         bindable(CommandRef::new(FIT), "Fit", &["Cmd+0"]),
+        // Not on the web, where runs cannot go (D-22) and F5 reloads the page.
+        bindable(CommandRef::new(RUN), "Run", &(if cfg!(target_arch = "wasm32") { vec![] } else { vec!["F5"] })),
+        bindable(CommandRef::new(STOP), "Stop", &(if cfg!(target_arch = "wasm32") { vec![] } else { vec!["Shift+F5"] })),
     ];
     Keymap::new(catalog, Scopes::new(), platform)
 }
@@ -108,6 +126,7 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(set_view("block", None), "Block")));
     view.push(Node::Separator);
     view.push(item(FIT, "Fit"));
+    view.push(item(PLANNED_DETACHED_MODE, "Every function in its window  ·  Planned"));
     view.push(Node::Item(Item::new(CommandRef::new("view.set_standard_view"), "Standard view everywhere").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(VALUES), "Values on the wires").check(true)));
     view.push(Node::Item(Item::new(CommandRef::new(DARK), "Dark theme").check(false)));
@@ -117,10 +136,19 @@ pub fn menus() -> MenuBar {
     let run = Menu::new(
         "Run",
         vec![
+            item(RUN, "Run"),
+            item(STOP, "Stop"),
+            item(PLANNED_PAUSE, "Pause  ·  Planned, M5"),
+            Node::Item(Item::new(CommandRef::new(RECORD), "Record values").check(false)),
+            Node::Separator,
             Node::Item(Item::new(CommandRef::with_params("view.open_trace", json!({})), "Values of the last run")),
             item(OPEN_TRACE, "Open a trace…"),
             Node::Separator,
-            item(PLANNED_INSTRUMENTS, "Real instruments  ·  Planned, M4"),
+            item(PLANNED_BREAKPOINT, "Toggle a breakpoint  ·  Planned, M5"),
+            item(PLANNED_WATCH, "Watch a value  ·  Planned, M5"),
+            Node::Separator,
+            item(PLANNED_INSTRUMENTS, "Target: real instruments  ·  Planned, M4"),
+            item(PLANNED_BUILD, "Build  ·  Planned, M6"),
         ],
     );
     let help = Menu::new("Help", vec![item(PLANNED_AGENT, "Connect an AI agent  ·  Planned"), Node::Separator, item(ABOUT, "About LabCraft")])

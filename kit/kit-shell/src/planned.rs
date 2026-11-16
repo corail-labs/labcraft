@@ -10,7 +10,7 @@ pub struct Planned {
     pub label: String,
     /// One line on what it will be.
     pub line: String,
-    /// The milestone that brings it: `M3`.
+    /// The milestone that brings it: `M3`; empty for a card of what is there already (About), which says no "Planned".
     pub milestone: String,
     /// Its milestone or its issue on the web.
     pub link: Option<String>,
@@ -40,13 +40,22 @@ impl Card {
             ui.set_max_width(420.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(&planned.label).strong());
-                ui.label(RichText::new(format!("Planned, {}", planned.milestone)).weak().italics());
+                if !planned.milestone.is_empty() {
+                    ui.label(RichText::new(format!("Planned, {}", planned.milestone)).weak().italics());
+                }
             });
             ui.label(&planned.line);
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if let Some(link) = &planned.link
-                    && ui.button(format!("See {} on the web", planned.milestone)).on_hover_text(link.as_str()).clicked()
+                    && ui
+                        .button(if planned.milestone.is_empty() {
+                            "See it on the web".to_owned()
+                        } else {
+                            format!("See {} on the web", planned.milestone)
+                        })
+                        .on_hover_text(link.as_str())
+                        .clicked()
                 {
                     follow = Some(link.clone());
                 }

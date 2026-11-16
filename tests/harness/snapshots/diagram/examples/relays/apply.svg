@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="398" height="180" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="360" height="148" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">relays.apply</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn relays.apply</text>
 <g data-wire="route" data-from="fn.route" data-to="command.route">
 <path d="M19 112 L111.18 112 Q117.18 112 117.18 106 L117.18 78 Q117.18 72 123.18 72 L200.34 72" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>

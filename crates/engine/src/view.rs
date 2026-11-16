@@ -56,6 +56,8 @@ pub struct Listed {
     pub drawable: bool,
     pub errors: u64,
     pub warnings: u64,
+    /// Its inputs with no default, in their order: a run started with no argument cannot give them (`LC8103`).
+    pub needs: Vec<String>,
 }
 
 /// What one window shows (ide.md 9): the window of the project, the function of its tab shown; a detached window, its
@@ -978,6 +980,17 @@ fn entry_of(name: &str, file: &str, drawn: bool, nodes: Option<u64>, codes: &[Co
     entry
 }
 
+/// The inputs of `function` with no default, as `check` declared them; none when it did not declare it.
+fn needs(loaded: &Loaded, files: &HashMap<&str, usize>, function: &Function) -> Vec<String> {
+    let Some(checked) = loaded.checked.as_ref() else { return Vec::new() };
+    let library =
+        files.get(function.shown.as_str()).and_then(|index| checked.files.get(*index)).and_then(|file| checked.libraries.get(file.library as usize));
+    let declared = function.name.rsplit('.').next().and_then(|name| loaded.names.find(name)).and_then(|name| library?.functions.get(&name));
+    declared
+        .map(|declared| declared.params.iter().filter(|param| !param.has_default).map(|param| loaded.names.resolve(param.name).to_owned()).collect())
+        .unwrap_or_default()
+}
+
 /// The functions of a folder, with whether each is drawable and the counts of its file.
 fn listed(loaded: &Loaded) -> Vec<Listed> {
     let files = drawings::files_of(loaded.checked.as_ref());
@@ -987,7 +1000,14 @@ fn listed(loaded: &Loaded) -> Vec<Listed> {
         .map(|function: &Function| {
             let counts = loaded.report.counts_of(&function.shown);
             let drawable = files.contains_key(function.shown.as_str()) && loaded.report.keeping_from_drawing(&function.shown).is_empty();
-            Listed { function: function.name.clone(), file: function.shown.clone(), drawable, errors: counts.errors, warnings: counts.warnings }
+            Listed {
+                function: function.name.clone(),
+                file: function.shown.clone(),
+                drawable,
+                errors: counts.errors,
+                warnings: counts.warnings,
+                needs: needs(loaded, &files, function),
+            }
         })
         .collect()
 }

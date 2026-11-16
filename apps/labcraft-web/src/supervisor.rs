@@ -421,6 +421,8 @@ impl Supervisor {
                 drawable: listed.drawable,
                 errors: listed.errors,
                 warnings: listed.warnings,
+                // The page runs nothing (D-22): what a run needs is never asked there.
+                needs: Vec::new(),
             })
             .collect();
         self.published = Arc::new(Published {

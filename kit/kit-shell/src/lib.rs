@@ -1,5 +1,5 @@
 //! `kit-shell`: the shell of the window of an IDE, for any IDE (`docs/ide.md`, section 11): the top bar, the
-//! workspace selector with its planned entries, the start page, the command palette and its JSON form, the inspector as
+//! workspaces with their planned entries, the start page, the command palette and its JSON form, the inspector as
 //! a list of fields, the status bar. On egui; the docking and the detached windows come from `craft-ui` and
 //! `craft-window`, the menus from `craft-menu`.
 //!

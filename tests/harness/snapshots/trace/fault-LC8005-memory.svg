@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect y="-40" width="245.5" height="176" style="fill: var(--canvas-fill)"/>
 <rect x="16" y="16" width="208" height="104" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">fill</text>
+<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">fn fill</text>
 <g data-wire="a" data-from="a.array" data-to="fn.a">
 <path d="M161.18 68 L224 68" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M161.18 68 L224 68" style="fill: none; stroke: var(--canvas-fill); stroke-width: 4; stroke-dasharray: 1 7"/>

@@ -710,7 +710,7 @@ pub fn refused_report(function: &str, real_time: bool, diagnostics: Vec<Json>) -
 }
 
 /// Why the commands of runs cannot run here, if they cannot.
-pub(crate) fn not_enabled_here() -> Option<&'static str> {
+pub fn not_enabled_here() -> Option<&'static str> {
     if cfg!(target_arch = "wasm32") { Some("runs need threads, which the WASM build of M0 does not have (D-22)") } else { None }
 }
 

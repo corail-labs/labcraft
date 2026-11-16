@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="518" height="216" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="480" height="184" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">scpi.query_f64</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn scpi.query_f64</text>
 <g data-wire="session" data-from="fn.session" data-to="text.session">
 <path d="M19 120 L128.18 120" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
 </g>

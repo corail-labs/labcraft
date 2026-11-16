@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect y="-40" width="509.5" height="292" style="fill: var(--canvas-fill)"/>
 <rect x="16" y="16" width="472" height="220" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">copies</text>
+<text x="28" y="31.65" font-size="10" style="fill: var(--node-title)">fn copies</text>
 <g data-wire="big" data-from="big.array" data-to="a.xs">
 <path d="M149.14 168 L154.64 168 Q160.14 168 160.14 162.5 L160.14 126 Q160.14 120 166.14 120 L193.16 120" style="fill: none; stroke: var(--wire-data); stroke-width: 4"/>
 <path d="M149.14 168 L154.64 168 Q160.14 168 160.14 162.5 L160.14 126 Q160.14 120 166.14 120 L193.16 120" style="fill: none; stroke: var(--canvas-fill); stroke-width: 4; stroke-dasharray: 1 7"/>

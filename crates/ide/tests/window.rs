@@ -20,14 +20,18 @@ const MAIN: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n   
 const HELPER: &str = "labcraft 1\n\nuse core\n\n/// Adds one.\nfn helper(x: f64) -> (y: f64) {\n    y = core.add(x, 1.0)\n}\n";
 const BROKEN: &str = "labcraft 1\n\nuse core\n\nfn broken(x: f64) -> (y: f64) {\n    y = core.add(nowhere, 1.0)\n}\n";
 
-/// A session of `engine`, answered at once on the thread of the test.
+/// A session of `engine`, answered at once on the thread of the test; after each command it reads the trace of each
+/// window, as the desktop app does (`apps/labcraft/src/session.rs`).
 struct Fake {
     session: RefCell<Session>,
 }
 
 impl Host for Fake {
     fn send(&self, id: &str, params: Value) -> Reply {
-        Reply::ready(self.session.borrow_mut().execute(id, &params))
+        let mut session = self.session.borrow_mut();
+        let result = session.execute(id, &params);
+        session.look_at_trace();
+        Reply::ready(result)
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -86,7 +90,11 @@ struct State {
 }
 
 fn harness(host: Fake) -> Harness<'static, State> {
-    let ide = Ide::new(&egui::Context::default(), Prefs::default(), craft_window::Frame::Desktop);
+    harness_with(host, Prefs::default())
+}
+
+fn harness_with(host: Fake, prefs: Prefs) -> Harness<'static, State> {
+    let ide = Ide::new(&egui::Context::default(), prefs, craft_window::Frame::Desktop);
     let mut builder = Harness::builder().with_size(egui::vec2(1280.0, 800.0));
     if std::env::var_os("LABCRAFT_IDE_SHOT").is_some() {
         builder = builder.wgpu();
@@ -302,4 +310,136 @@ fn reset_layout_docks_the_detached_tabs() {
     assert!(view.detached.is_empty() && view.opened == ["main", "helper"], "{:?}", view.opened);
     let state = harness.state_mut();
     assert!(state.ide.prefs().layout.unwrap().layout.floating.is_empty(), "no floating window is left");
+}
+
+/// F5 runs the function shown (decisions of the owner, 2026-11-16): `run.start`, followed to its end; with "Record
+/// values" on, the values of the run reach the function by its trace; off, the default, no trace is written.
+#[test]
+fn f5_runs_the_function_shown_and_its_values_come_when_recorded() {
+    for record in [true, false] {
+        let mut harness = harness_with(fake(), Prefs { record_values: record, ..Prefs::default() });
+        let answer = "labcraft 1
+
+use core
+
+fn answer() -> (y: f64) {
+    y = core.add(1.0, 2.0)
+}
+";
+        harness.state().host.session.borrow_mut().execute("file.write", &json!({ "path": "answer.lcf", "text": answer })).unwrap();
+        run_in_palette(&mut harness, "view.show_function {\"function\": \"answer\"}");
+        harness.run_steps(4);
+        assert!(harness.state().host.snapshot().view.main.trace.is_none(), "no run yet");
+        harness.key_press(Key::F5);
+        let mut ended = None;
+        for _ in 0..200 {
+            harness.run_steps(2);
+            let status = harness.state().host.session.borrow_mut().execute("run.status", &json!({})).unwrap();
+            if status["status"] != "running" {
+                ended = Some(status);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        harness.run_steps(4);
+        assert_eq!(ended.expect("the run ended")["status"], "ok");
+        let view = harness.state().host.snapshot().view;
+        match (record, view.main.trace.as_ref()) {
+            (true, Some(trace)) => assert_eq!(trace.status.as_deref(), Some("ok"), "{trace:?}"),
+            (false, None) => {}
+            (record, trace) => panic!("record {record}: {trace:?}"),
+        }
+    }
+}
+
+/// The node of `label` with `role`: the panels and the buttons share some names (`Inspector`, `Run`).
+fn click_role(harness: &mut Harness<'_, State>, label: &str, role: egui::accesskit::Role) {
+    use egui_kittest::kittest::NodeT as _;
+    harness
+        .query_all_by_label(label)
+        .find(|node| node.accesskit_node().role() == role)
+        .unwrap_or_else(|| panic!("no {role:?} named {label}"))
+        .click();
+    harness.run_steps(3);
+}
+
+#[test]
+fn the_inspector_button_of_a_tab_hides_and_shows_the_inspector_panel() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    assert!(harness.state().ide.prefs().layout.unwrap().layout.contains(&labcraft_ide::Pane::Inspector));
+    click_role(&mut harness, "Inspector", egui::accesskit::Role::Button);
+    assert!(!harness.state().ide.prefs().layout.unwrap().layout.contains(&labcraft_ide::Pane::Inspector));
+    click_role(&mut harness, "Inspector", egui::accesskit::Role::Button);
+    assert!(harness.state().ide.prefs().layout.unwrap().layout.contains(&labcraft_ide::Pane::Inspector));
+}
+
+#[test]
+fn a_planned_workspace_opens_its_card() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    // The line of the workspace is on its button (its hover) and, once clicked, in its card.
+    let line = "controls and indicators of a function";
+    assert_eq!(harness.query_all_by_label_contains(line).count(), 1);
+    harness.query_by_label_contains("Workspace Panel: planned, M3").expect("the button of the workspace Panel").click();
+    harness.run_steps(3);
+    assert_eq!(harness.query_all_by_label_contains(line).count(), 2);
+}
+
+#[test]
+fn a_run_without_record_says_that_the_trace_shown_is_of_an_earlier_run() {
+    let mut harness = harness_with(fake(), Prefs { record_values: true, ..Prefs::default() });
+    let answer = "labcraft 1
+
+use core
+
+fn answer() -> (y: f64) {
+    y = core.add(1.0, 2.0)
+}
+";
+    harness.state().host.session.borrow_mut().execute("file.write", &json!({ "path": "answer.lcf", "text": answer })).unwrap();
+    run_in_palette(&mut harness, "view.show_function {\"function\": \"answer\"}");
+    harness.run_steps(4);
+    click_role(&mut harness, "Run", egui::accesskit::Role::Tab);
+    let stale = "of an earlier run";
+    for record in [true, false] {
+        if !record {
+            run_in_palette(&mut harness, "ide.record_values");
+        }
+        harness.key_press(Key::F5);
+        for _ in 0..200 {
+            harness.run_steps(2);
+            if harness.query_by_label_contains("Ended").is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        harness.run_steps(4);
+        assert!(harness.query_by_label_contains("Ended").is_some(), "record {record}: the run ended");
+        assert_eq!(harness.query_by_label_contains(stale).is_some(), !record, "record {record}");
+    }
+}
+
+#[test]
+fn run_is_greyed_for_a_function_whose_input_has_no_default() {
+    let mut harness = harness(fake());
+    let twice = "labcraft 1
+
+use core
+
+fn twice(x: f64, k: f64 = 2.0) -> (y: f64) {
+    y = core.mul(x, k)
+}
+";
+    harness.state().host.session.borrow_mut().execute("file.write", &json!({ "path": "twice.lcf", "text": twice })).unwrap();
+    run_in_palette(&mut harness, "view.show_function {\"function\": \"twice\"}");
+    harness.run_steps(4);
+    let listed = harness.state().host.snapshot().view.functions.iter().find(|listed| listed.function == "twice").cloned();
+    assert_eq!(listed.map(|listed| listed.needs), Some(vec!["x".to_owned()]), "only the input with no default");
+    // F5 starts no run, and says why (the hover of the greyed Run says the same).
+    harness.key_press(Key::F5);
+    harness.run_steps(4);
+    let status = harness.state().host.session.borrow_mut().execute("run.status", &json!({}));
+    assert!(matches!(&status, Err(error) if error.code == "run.unknown"), "no run started: {status:?}");
+    assert!(harness.query_by_label_contains("`x` has no default value").is_some(), "said in the window");
 }

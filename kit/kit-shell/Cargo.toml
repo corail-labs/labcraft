@@ -1,6 +1,6 @@
 [package]
 name = "kit-shell"
-description = "The shell of the window of an IDE, for any IDE: top bar, workspace selector, start page, command palette, inspector, status bar"
+description = "The shell of the window of an IDE, for any IDE: top bar, workspaces, start page, command palette, inspector, status bar"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,8 +9,10 @@ publish.workspace = true
 
 [dependencies]
 craft-menu = { workspace = true }
+craft-ui = { workspace = true }
 craft-window = { workspace = true }
 egui = { workspace = true }
+egui_extras = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

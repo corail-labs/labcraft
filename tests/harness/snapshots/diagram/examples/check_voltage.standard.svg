@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1494" height="400" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="1456" height="368" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">check_voltage</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn check_voltage</text>
 <g data-wire="resource" data-from="fn.resource" data-to="dmm.resource">
 <path d="M19 256 L159.48 256 Q165.48 256 165.48 262 L165.48 274.5 Q165.48 280 170.98 280 L176.48 280" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>

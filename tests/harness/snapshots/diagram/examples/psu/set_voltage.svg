@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="462" height="180" style="fill: var(--canvas-fill)"/>
 <rect x="19" y="16" width="424" height="148" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
-<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">psu.set_voltage</text>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn psu.set_voltage</text>
 <g data-wire="voltage" data-from="fn.voltage" data-to="volts.x">
 <path d="M19 112 L111.18 112 Q117.18 112 117.18 106 L117.18 86 Q117.18 80 123.18 80 L136.18 80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>

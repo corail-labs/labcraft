@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use egui::RichText;
 use kit_shell::fuzzy;
+use kit_shell::icon::{self, Icon};
 use kit_shell::inspector::{self, Field, Section};
 use labcraft_engine::drawings::TracePart;
 use labcraft_engine::view::{Listed, Published, Shown};
@@ -58,21 +59,30 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                     // file, then its functions under it.
                     let alone = alone(file, functions);
                     if !alone {
-                        ui.label(RichText::new(*file).small().weak());
+                        ui.horizontal(|ui| {
+                            icon::leading(ui, Icon::File, ui.visuals().weak_text_color());
+                            ui.label(RichText::new(*file).small().weak());
+                        });
                     }
                     for listed in functions {
                         let shown = focused == Some(listed.function.as_str());
-                        let text = if listed.drawable || listed.errors == 0 {
-                            RichText::new(&listed.function)
-                        } else {
+                        let warned = !listed.drawable && listed.errors > 0;
+                        let text = if warned {
                             RichText::new(format!("{}  ({} error{})", listed.function, listed.errors, if listed.errors == 1 { "" } else { "s" }))
                                 .color(ui.visuals().warn_fg_color)
-                        };
-                        let response = if alone {
-                            ui.selectable_label(shown, text)
                         } else {
-                            ui.indent(("project", &listed.file, &listed.function), |ui| ui.selectable_label(shown, text)).inner
+                            RichText::new(&listed.function)
                         };
+                        // A function opens on its diagram: the icon of the view `Diagram`, in the colour of its text.
+                        let line = |ui: &mut egui::Ui| {
+                            ui.horizontal(|ui| {
+                                let colour = if warned { ui.visuals().warn_fg_color } else { ui.visuals().text_color() };
+                                icon::leading(ui, Icon::Diagram, colour);
+                                ui.selectable_label(shown, text)
+                            })
+                            .inner
+                        };
+                        let response = if alone { line(ui) } else { ui.indent(("project", &listed.file, &listed.function), line).inner };
                         let response = response.on_hover_text(&listed.file);
                         if response.double_clicked() {
                             asked = Some(Asked::Show { function: listed.function.clone(), preview: false });
@@ -85,7 +95,13 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
             if folders.is_empty() {
                 body(ui);
             } else {
-                egui::CollapsingHeader::new(folders.join("/")).default_open(true).show(ui, body);
+                let id = ui.make_persistent_id(("project-folder", folders));
+                egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+                    .show_header(ui, |ui| {
+                        icon::leading(ui, Icon::Folder, ui.visuals().weak_text_color());
+                        ui.label(folders.join("/"));
+                    })
+                    .body(body);
             }
         }
         if published.functions.is_empty() {
@@ -293,13 +309,26 @@ pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter:
     asked
 }
 
-/// `Run`: the trace of the function shown and how its run ended (the bar of the viewer of M0v, as a panel).
-pub fn run(ui: &mut egui::Ui, shown: &Shown, values_shown: bool) -> Option<Asked> {
+/// What the `Run` panel says of the run of a function that the window started.
+pub struct RunSaid {
+    /// Going, or how it ended and its outputs.
+    pub said: String,
+    /// It ran and wrote no trace (`Record values` off): a trace shown is of an earlier run.
+    pub unrecorded: bool,
+}
+
+/// `Run`: the trace of the function shown and how its run ended (the bar of the viewer of M0v, as a panel); `said`,
+/// the run of that function that the window started, going or ended.
+pub fn run(ui: &mut egui::Ui, shown: &Shown, values_shown: bool, said: Option<&RunSaid>) -> Option<Asked> {
     let mut asked = None;
     let Some(function) = &shown.function else {
         ui.label(RichText::new("No function shown").weak());
         return None;
     };
+    if let Some(said) = said {
+        ui.label(RichText::new(&said.said).strong());
+    }
+    let unrecorded = said.is_some_and(|said| said.unrecorded);
     match &shown.trace {
         Some(trace) => {
             ui.horizontal(|ui| {
@@ -309,7 +338,17 @@ pub fn run(ui: &mut egui::Ui, shown: &Shown, values_shown: bool) -> Option<Asked
                 }
             });
             ui.label(trace_status(trace));
+            if unrecorded {
+                let stale = "This run wrote no trace (Record values off): this trace, and the values on the wires, are of an earlier run";
+                ui.label(RichText::new(stale).color(ui.visuals().warn_fg_color));
+            }
         }
+        // A run without `Record values` wrote no trace: its outputs are above.
+        None if unrecorded => {
+            ui.label(RichText::new("No trace: Record values was off for this run").weak());
+        }
+        // Going, refused or failed: what is above says it.
+        None if said.is_some() => {}
         None => {
             ui.label(RichText::new("No run of this function yet").weak());
         }
@@ -353,7 +392,7 @@ mod tests {
     use super::*;
 
     fn listed(function: &str, file: &str) -> Listed {
-        Listed { function: function.to_owned(), file: file.to_owned(), drawable: true, errors: 0, warnings: 0 }
+        Listed { function: function.to_owned(), file: file.to_owned(), drawable: true, errors: 0, warnings: 0, needs: Vec::new() }
     }
 
     #[test]

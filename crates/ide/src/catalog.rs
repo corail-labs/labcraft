@@ -11,6 +11,9 @@ use serde_json::Value;
 
 use crate::keys;
 
+/// The repository of LabCraft, which the About card links to.
+pub const REPOSITORY: &str = "https://github.com/corail-labs/labcraft";
+
 /// The roadmap, where the milestones to come are said, with no date.
 pub const ROADMAP: &str = "https://github.com/corail-labs/labcraft/blob/main/docs/roadmap.md";
 
@@ -68,8 +71,25 @@ pub fn planned(id: &str) -> Option<Planned> {
         link: Some(link),
     };
     match id {
-        keys::PLANNED_INSTRUMENTS => {
-            Some(card("Real instruments", "Running a function on the instruments of the bench, not on the simulator", "M4", ROADMAP.to_owned()))
+        keys::PLANNED_INSTRUMENTS => Some(card(
+            "Target: real instruments",
+            "Running a function on the instruments of the bench, not on the simulator",
+            "M4",
+            ROADMAP.to_owned(),
+        )),
+        keys::PLANNED_DETACHED_MODE => Some(card(
+            "Every function in its window",
+            "A mode where each function opens in a window of its own, the new ones too, once those windows have their place in the taskbar, minimize and maximize",
+            "After craft-libs#1903",
+            "https://github.com/storytold/craft-libs/issues/1903".to_owned(),
+        )),
+        keys::PLANNED_PAUSE => Some(card("Pause", "Pausing a run between two nodes, and going on", "M5", ROADMAP.to_owned())),
+        keys::PLANNED_BREAKPOINT => {
+            Some(card("Breakpoint", "A breakpoint on a node: the run pauses before it, step by step from there", "M5", ROADMAP.to_owned()))
+        }
+        keys::PLANNED_WATCH => Some(card("Watch", "Watching a value on a wire while the function runs", "M5", ROADMAP.to_owned())),
+        keys::PLANNED_BUILD => {
+            Some(card("Build", "A standalone executable, a library with a C ABI or a .NET facade, from the project", "M6", ROADMAP.to_owned()))
         }
         keys::PLANNED_AGENT => Some(card(
             "Connect an AI agent",
@@ -113,14 +133,24 @@ pub fn palette_entries(keymap: &Keymap, project: bool) -> Vec<Entry> {
         entries.push(Entry { id: command.id.to_owned(), label: command.label.to_owned(), key: key(command.id), state, params });
     }
     for (id, label) in keys::WINDOW_ACTIONS {
-        let state = if !project && matches!(*id, keys::FIT | keys::VALUES | keys::OPEN_TRACE) {
+        let state = if !project && matches!(*id, keys::FIT | keys::VALUES | keys::OPEN_TRACE | keys::RUN | keys::STOP) {
             State::Disabled("Open a project first".to_owned())
+        } else if let Some(why) = labcraft_engine::runs::not_enabled_here().filter(|_| matches!(*id, keys::RUN | keys::STOP)) {
+            State::Disabled(why.to_owned())
         } else {
             State::Enabled
         };
         entries.push(Entry { id: (*id).to_owned(), label: (*label).to_owned(), key: key(id), state, params: Vec::new() });
     }
-    for id in [keys::PLANNED_INSTRUMENTS, keys::PLANNED_AGENT] {
+    for id in [
+        keys::PLANNED_PAUSE,
+        keys::PLANNED_BREAKPOINT,
+        keys::PLANNED_WATCH,
+        keys::PLANNED_INSTRUMENTS,
+        keys::PLANNED_BUILD,
+        keys::PLANNED_DETACHED_MODE,
+        keys::PLANNED_AGENT,
+    ] {
         if let Some(planned) = planned(id) {
             entries.push(Entry { id: id.to_owned(), label: planned.label.clone(), key: None, state: State::Planned(planned), params: Vec::new() });
         }

@@ -233,7 +233,11 @@ impl Palette {
             self.selected = self.selected.saturating_sub(1);
         }
         let mut clicked = None;
-        egui::ScrollArea::vertical().max_height(360.0).auto_shrink([false, true]).show(ui, |ui| {
+        // As tall as its rows, up to 360: shrunk to its content, the list would keep the height of the frame it opened in,
+        // inside the modal, and show two rows of a long list.
+        let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y + 6.0;
+        let wanted = (row_height * f32::from(u16::try_from(rows.len().clamp(1, 100)).unwrap_or(100))).min(360.0);
+        egui::ScrollArea::vertical().max_height(360.0).min_scrolled_height(wanted).auto_shrink([false, true]).show(ui, |ui| {
             for (at, &index) in rows.iter().enumerate() {
                 let Some(entry) = entries.get(index) else { continue };
                 let response = row(ui, entry, at == self.selected);
