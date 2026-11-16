@@ -1,4 +1,4 @@
-//! `cargo xtask web` builds the web viewer (`docs/architecture.md`, 11.5) with Trunk into `target/web`, after clippy for
+//! `cargo xtask web` builds the web page (`docs/architecture.md`, 12.9) with Trunk into `target/web`, after clippy for
 //! WASM; `cargo xtask web-smoke` serves that folder on the loopback and opens it in headless Chrome, whose page says how
 //! it went (`?smoke`): it drew a function, trapped its worker, started a new one and drew again; `cargo xtask web-serve`
 //! serves it, to try it in a browser. None is part of `ci`, which needs neither Trunk nor a browser: the job `web` of the

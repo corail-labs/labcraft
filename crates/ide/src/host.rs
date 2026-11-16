@@ -17,6 +17,9 @@ pub struct Snapshot {
     pub project: Option<String>,
     /// What the app must say: a folder that cannot be watched, a file of `--style` that does not read.
     pub notices: Vec<String>,
+    /// Which session of the app this is: another one, even of a project of the same name, is a new project for the
+    /// window. The desktop opens one project per window, and gives 0.
+    pub session: u64,
 }
 
 /// The result of a command, when it comes.

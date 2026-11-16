@@ -127,6 +127,7 @@ impl Session {
         Snapshot {
             view: self.engine.view().clone(),
             project: Some(self.folder.display().to_string()),
+            session: 0,
             notices: self.notices.iter().chain(self.style_notice.iter()).cloned().collect(),
         }
     }

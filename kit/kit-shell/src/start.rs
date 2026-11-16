@@ -29,8 +29,11 @@ pub struct Page<'a> {
     pub title: &'a str,
     pub line: &'a str,
     pub actions: &'a [Entry],
-    pub recent: &'a [Recent],
+    /// The recent projects; none where projects are not kept, as on the web.
+    pub recent: Option<&'a [Recent]>,
     pub examples: &'a [Example],
+    /// How an example opens, said under them.
+    pub examples_note: &'a str,
     /// A problem to say, such as a project that did not open.
     pub problem: Option<&'a str>,
 }
@@ -81,17 +84,18 @@ pub fn show(ui: &mut egui::Ui, page: &Page) -> Option<Chosen> {
             }
             left.add_space(16.0);
             left.label(RichText::new("Examples").strong());
-            left.label(RichText::new("Each opens as a copy, in a folder you choose").small().weak());
+            left.label(RichText::new(page.examples_note).small().weak());
             for (index, example) in page.examples.iter().enumerate() {
                 if left.link(&example.name).on_hover_text(&example.line).clicked() {
                     chosen = Some(Chosen::Example(index));
                 }
             }
+            let Some(recent) = page.recent else { return };
             right.label(RichText::new("Recent").strong());
-            if page.recent.is_empty() {
+            if recent.is_empty() {
                 right.label(RichText::new("No project opened yet").weak());
             }
-            for (index, recent) in page.recent.iter().enumerate() {
+            for (index, recent) in recent.iter().enumerate() {
                 right.horizontal(|ui| {
                     let gone = recent.found == Some(false);
                     let name = if gone { RichText::new(&recent.name).weak().strikethrough() } else { RichText::new(&recent.name) };

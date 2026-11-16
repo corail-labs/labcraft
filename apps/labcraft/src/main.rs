@@ -24,7 +24,7 @@ use craft_dialogs::{Answer, Dialogs, FileDialog};
 use craft_settings::{Location, Settings, SettingsStore};
 use craft_ui::fonts::{Family, I18nScripts, SystemFonts, UiFonts};
 use egui::{FontData, FontFamily};
-use kit_shell::start::{Example, Recent};
+use kit_shell::start::Recent;
 use labcraft::args::{self, Asked, Options};
 use labcraft::examples;
 use labcraft::frames::{self, Frames};
@@ -180,10 +180,7 @@ impl App {
         }
         let wake = ctx.clone();
         let dialogs = Dialogs::new(Arc::new(move || wake.request_repaint()));
-        let examples = examples::BUNDLED
-            .iter()
-            .map(|bundled| Example { name: examples::title(bundled.name).to_owned(), line: examples::line(bundled.name).to_owned() })
-            .collect();
+        let examples = examples::BUNDLED.iter().map(|bundled| labcraft_ide::catalog::example(bundled.name)).collect();
         let mut app = App {
             ide: Ide::new(ctx, window, frame),
             options,
@@ -191,7 +188,7 @@ impl App {
             opening: None,
             prefs,
             dialogs,
-            start: StartList { recent: Vec::new(), examples, problem: None },
+            start: StartList { recent: Vec::new(), examples, problem: None, in_memory: false },
             found: None,
             timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
         };

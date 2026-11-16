@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="LabCraft, a graphical dataflow language in pure Rust: its viewer, in the browser.">
-  <title>LabCraft viewer</title>
+  <meta name="description" content="LabCraft, a graphical dataflow language in pure Rust: its IDE, in the browser.">
+  <title>LabCraft</title>
   <!-- The page and the worker of its session (docs/architecture.md, 11.5), built by `cargo xtask web`. -->
   <link data-trunk rel="rust" href="Cargo.toml" data-bin="labcraft-web" data-type="main" data-wasm-opt="z" data-weak-refs />
   <link data-trunk rel="rust" href="Cargo.toml" data-bin="labcraft-worker" data-type="worker" data-wasm-opt="z" data-weak-refs data-loader-shim />
@@ -26,12 +26,12 @@
   <canvas id="labcraft"></canvas>
   <div id="loading">
     <div class="spin" aria-hidden="true"></div>
-    <div><strong>LabCraft</strong>, a graphical dataflow language: loading its viewer…</div>
+    <div><strong>LabCraft</strong>, a graphical dataflow language: loading its IDE…</div>
     <div class="what">It runs in your browser, and the files you open stay there.</div>
-    <noscript>The viewer needs JavaScript and WebAssembly.</noscript>
+    <noscript>LabCraft needs JavaScript and WebAssembly.</noscript>
   </div>
   <script>
-    // What stops the viewer before it starts is said where it loads (the page itself says why eframe failed).
+    // What stops the page before it starts is said where it loads (the page itself says why eframe failed).
     (function () {
       var loading = document.getElementById('loading');
       function fail(why) {

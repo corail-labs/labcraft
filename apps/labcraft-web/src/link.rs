@@ -1,7 +1,7 @@
-//! The address of the page (`docs/architecture.md`, 11.5): which bundled folder it opens and which function it shows,
+//! The address of the page (`docs/architecture.md`, 12.9): which bundled folder it opens and which function it shows,
 //! `?folder=docs/rfc&fn=checked_sweep`, and the address that the page writes back as the developer moves, so that the
-//! one in the bar is always a link to what is on screen. Without them, the page opens [`DEFAULT_FOLDER`] on
-//! [`DEFAULT_FUNCTION`]. What the address says reaches the window only as a bundled folder or a function name of
+//! one in the bar is always a link to what is on screen. Without either, the page opens on its start page (ide.md 10);
+//! with a function alone, [`DEFAULT_FOLDER`]; with a folder alone, [`DEFAULT_FUNCTION`] in [`DEFAULT_FOLDER`]. What the address says reaches the window only as a bundled folder or a function name of
 //! [`MAX_FUNCTION`] bytes at most: an address is anyone's to write.
 
 /// The folder that the page opens without `?folder=`.
@@ -62,6 +62,11 @@ impl Link {
         link
     }
 
+    /// Whether the address asks for a project, which the page then opens, rather than its start page.
+    pub fn names_a_project(&self) -> bool {
+        self.folder.is_some() || self.function.is_some() || self.smoke
+    }
+
     /// The folder of `bundled` that the address names, else [`DEFAULT_FOLDER`] (else the first), with a notice when it
     /// named another, which does not repeat it; the function it names, else [`default_function`]. `None` without
     /// folders.
@@ -69,19 +74,18 @@ impl Link {
         let named = self.folder.as_deref();
         let found = bundled.iter().find(|name| **name == named.unwrap_or(DEFAULT_FOLDER));
         let folder = found.or_else(|| bundled.iter().find(|name| **name == DEFAULT_FOLDER)).or(bundled.first())?;
-        let notice = (named.is_some() && found.is_none()).then(|| format!("the viewer bundles no folder of that name: here is `{folder}`"));
+        let notice = (named.is_some() && found.is_none()).then(|| format!("the page bundles no folder of that name: here is `{folder}`"));
         let function = self.function.clone().or_else(|| default_function(folder));
         Some(Opening { folder, function, notice })
     }
 
-    /// The part of the address from `?` that shows `function` of the bundled folder `folder`; `None` for a folder of
-    /// the developer's, which no address can open: the page then writes the address without any part.
+    /// The part of the address from `?` that shows `function` of the bundled folder `folder`, which it always names: an
+    /// address without one opens the start page. `None` for a folder of the developer's, which no address can open: the
+    /// page then writes the address without any part.
     pub fn search(folder: Option<&str>, function: Option<&str>, webgl: bool) -> String {
         let mut parts = Vec::new();
         if let Some(folder) = folder {
-            if folder != DEFAULT_FOLDER {
-                parts.push(format!("folder={}", encode(folder)));
-            }
+            parts.push(format!("folder={}", encode(folder)));
             if let Some(function) = function {
                 parts.push(format!("fn={}", encode(function)));
             }
@@ -161,16 +165,17 @@ mod tests {
 
     #[test]
     fn the_address_written_is_read_back_as_what_is_shown() {
-        assert_eq!(Link::search(Some("examples"), Some("check_voltage"), false), "?fn=check_voltage");
+        assert_eq!(Link::search(Some("examples"), Some("check_voltage"), false), "?folder=examples&fn=check_voltage");
         assert_eq!(Link::search(Some("docs/rfc"), Some("dmm.read"), true), "?folder=docs/rfc&fn=dmm.read&webgl");
-        assert_eq!(Link::search(Some("examples"), None, false), "");
+        assert_eq!(Link::search(Some("examples"), None, false), "?folder=examples");
+        assert!(!Link::parse("").names_a_project() && !Link::parse("?webgl").names_a_project());
+        assert!(Link::parse("?fn=a").names_a_project() && Link::parse("?folder=x").names_a_project() && Link::parse("?smoke").names_a_project());
         // A folder of the developer's has no address.
         assert_eq!(Link::search(None, Some("mine"), false), "");
         assert_eq!(Link::search(None, None, true), "?webgl");
         for (folder, function) in [("docs/rfc", "dmm_driver.read_dc_volts"), ("examples", "été.x"), ("odd?folder&x=y", "f")] {
             let link = Link::parse(&Link::search(Some(folder), Some(function), false));
-            let folder = (folder != DEFAULT_FOLDER).then(|| folder.to_owned());
-            assert_eq!(link, Link { folder, function: Some(function.to_owned()), webgl: false, smoke: false });
+            assert_eq!(link, Link { folder: Some(folder.to_owned()), function: Some(function.to_owned()), webgl: false, smoke: false });
         }
     }
 
@@ -187,10 +192,10 @@ mod tests {
         assert_eq!(opening("?folder=docs/rfc"), Some(Opening { folder: "docs/rfc", function: None, notice: None }));
         assert_eq!(opening("?folder=docs/rfc&fn=count_to"), Some(Opening { folder: "docs/rfc", function: some("count_to"), notice: None }));
         // A folder that is not bundled: the examples, said without repeating what the address wrote.
-        let notice = some("the viewer bundles no folder of that name: here is `examples`");
+        let notice = some("the page bundles no folder of that name: here is `examples`");
         assert_eq!(opening("?folder=nowhere&fn=x"), Some(Opening { folder: "examples", function: some("x"), notice: notice.clone() }));
         assert_eq!(opening("?folder=nowhere"), Some(Opening { folder: "examples", function: some(DEFAULT_FUNCTION), notice }));
-        let notice = some("the viewer bundles no folder of that name: here is `docs/rfc`");
+        let notice = some("the page bundles no folder of that name: here is `docs/rfc`");
         assert_eq!(Link::parse("?folder=nowhere").resolve(&["docs/rfc"]), Some(Opening { folder: "docs/rfc", function: None, notice }));
         assert_eq!(Link::parse("").resolve(&[]), None);
     }

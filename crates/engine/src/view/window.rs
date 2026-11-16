@@ -51,7 +51,7 @@ impl ViewKind {
         }
     }
 
-    fn parse(name: &str) -> Option<ViewKind> {
+    pub fn parse(name: &str) -> Option<ViewKind> {
         match name {
             "diagram" => Some(ViewKind::Diagram),
             "text" => Some(ViewKind::Text),

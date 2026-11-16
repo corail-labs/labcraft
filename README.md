@@ -92,7 +92,7 @@ in `sim/`. In a terminal, in the folder of the archive (on Windows, in PowerShel
 
 The run writes its trace in `examples/.labcraft/runs/`, and the viewer shows its values on the wires of
 `check_voltage`. The binaries are not signed yet: the note of each release says how to open them on Windows and
-macOS. The release also has the web viewer, `labcraft-web-<version>.zip`, a folder to serve with any static
+macOS. The release also has the web page, the same window in the browser, `labcraft-web-<version>.zip`, a folder to serve with any static
 server.
 
 **From the sources.** The Rust command line checks the examples, that they are in canonical form, and runs one

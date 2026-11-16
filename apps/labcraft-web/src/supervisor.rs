@@ -1,19 +1,28 @@
-//! What the page knows of its worker (`docs/architecture.md`, 11.5): the files it gave it, kept so that a trap of WASM
-//! restarts it with a new session and the same files, the one message in flight, the function the worker said it was
-//! drawing, and what a trap leaves out. Plain Rust, tested natively: the page only starts workers and carries the bytes.
+//! What the page knows of its worker (`docs/architecture.md`, 12.9): the files it gave it, kept with the changes that
+//! the worker says, so that a trap of WASM restarts it with a new session and the same files; the commands waiting,
+//! one in flight, and where each answer goes; the function the worker said it was drawing; and what the session
+//! published, made again as the `Published` that the window reads. [`Shared`] is the window's [`Host`] on it. Plain
+//! Rust, tested natively: the page only starts workers and carries the bytes.
 //!
 //! - A trap after the worker named a function it was drawing: that function is not drawn again, and shows `LC0099` with
 //!   its last drawing, whichever command drew it (`view.open` draws the function asked for, else the first one).
 //! - Any other trap (reading or checking the folder): the worker restarts once for that set of files; a second trap
-//!   shows `LC0099` for the folder until the files change. A file that traps cannot restart the worker forever.
+//!   shows `LC0099` for the folder until another folder is opened. A file that traps cannot restart the worker forever.
+//! - The history goes with the worker that trapped; the files stay (12.9).
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 
 use labcraft_diagram::Drawing;
+use labcraft_engine::CommandError;
+use labcraft_engine::view::{self, Published, Selection, Tab, ViewKind, WorkspaceId};
+use labcraft_ide::{Host, Reply, Snapshot};
+use labcraft_types::{Code, Diagnostic, Position, Report, Span};
 use serde_json::Value;
 
-use crate::protocol::{Folder, FromWorker, Listing, State, ToWorker, decode, encode};
+use crate::protocol::{Folder, FromWorker, Listing, Seen, ToWorker, decode, encode};
 
 /// What the page must do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +38,8 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq)]
 enum Request {
     Open,
-    Command { id: String, params: Value },
+    Command { request: u64, id: String, params: Value },
+    Zoom(f32),
     Trap,
 }
 
@@ -40,8 +50,8 @@ enum Waiting {
     Nothing,
     /// A worker started: that it listens.
     Ready,
-    /// The answer to the message in flight.
-    Answer,
+    /// The answer to the message in flight, and the command it is, if it is one.
+    Answer(Option<u64>),
 }
 
 /// The traps of the folder open that no drawing explains.
@@ -51,70 +61,97 @@ enum Traps {
     None,
     /// The worker restarted once for these files.
     Once,
-    /// Twice: `LC0099` for the folder, until the files change.
+    /// Twice: `LC0099` for the folder, until another one is opened.
     Twice,
     /// A worker that never said it listens: its WASM could not be loaded or started. The same files are not tried again.
     NoWorker,
 }
 
+/// What counts up across the folders opened, so that the window always sees a change as a change.
+#[derive(Clone, Copy, Debug, Default)]
+struct Counts {
+    generation: u64,
+    checks: u64,
+    drawing_generation: u64,
+    request: u64,
+    /// The folders opened: each one is a new session for the window, even under the same name.
+    opened: u64,
+}
+
 #[derive(Default)]
 pub struct Supervisor {
     folder: Option<Arc<Folder>>,
+    standard_everywhere: bool,
     pending: VecDeque<Request>,
     waiting: Waiting,
+    /// Where the answer of each command goes.
+    replies: HashMap<u64, Sender<Result<Value, CommandError>>>,
     /// The function the worker said it was drawing, since the message in flight was sent.
     drawing: Option<String>,
     traps: Traps,
     /// The functions whose drawing trapped a worker.
     trapped: BTreeSet<String>,
-    state: Arc<State>,
-    listing: Arc<Listing>,
+    seen: Seen,
+    listing: Listing,
+    report: Option<Arc<Report>>,
     /// The last drawing of each function, which a function whose drawing trapped keeps.
     drawings: BTreeMap<String, Arc<Drawing>>,
+    /// The drawing published last.
+    published_drawing: Option<Arc<Drawing>>,
+    /// What went wrong between the page and its worker.
     failure: Option<String>,
     /// The function that [`Supervisor::open`] was asked to show, until the worker answers.
     asked: Option<String>,
     /// The function asked that the folder lacks, and the one shown instead.
     missing: Option<(String, Option<String>)>,
-}
-
-/// What the window shows.
-#[derive(Clone, Debug, Default)]
-pub struct Shown {
-    pub state: Arc<State>,
-    pub listing: Arc<Listing>,
-    pub drawing: Option<Arc<Drawing>>,
-    /// The function shown is not drawable now, or its drawing trapped: its last drawing stays.
-    pub kept: bool,
-    /// What the window must say: the traps (`LC0099`), a command that failed.
-    pub notices: Vec<String>,
-    /// A worker starts, or a message is in flight: the window says it works.
-    pub busy: bool,
+    counts: Counts,
+    published: Arc<Published>,
+    /// The session wrote, renamed or removed a file since the folder was opened.
+    edited: bool,
 }
 
 impl Supervisor {
     pub fn new(standard_everywhere: bool) -> Supervisor {
-        Supervisor { state: Arc::new(State { standard_everywhere, ..State::default() }), ..Supervisor::default() }
+        Supervisor { standard_everywhere, ..Supervisor::default() }
     }
 
     /// A folder read by the page: in a new worker, in place of the folder open; the traps of the files before are
-    /// forgotten.
+    /// forgotten, and what waited for the folder before fails.
     /// It shows `function` when the folder has it (what the address of the page asks for), else its first function, and
     /// then says that the folder has none of that name, until another function is shown.
     pub fn open(&mut self, folder: Folder, function: Option<String>) -> Vec<Action> {
-        let standard_everywhere = self.state.standard_everywhere;
-        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function.clone(), ..Supervisor::new(standard_everywhere) };
-        Arc::make_mut(&mut self.state).function = function;
+        self.fail_all("another folder was opened");
+        let mut counts = self.counts;
+        counts.generation += 1;
+        counts.opened += 1;
+        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function, counts, ..Supervisor::new(self.standard_everywhere) };
+        self.publish();
         self.pending.push_back(Request::Open);
         self.start()
     }
 
-    /// A command of the viewer (`docs/commands.md`, 6.5), sent when the one in flight has its answer.
-    pub fn command(&mut self, id: &str, params: Value) -> Vec<Action> {
-        if self.stopped() || self.folder.is_none() {
+    /// A command of the session, sent when the one in flight has its answer; its result goes to `reply`.
+    pub fn command(&mut self, id: &str, params: Value, reply: Sender<Result<Value, CommandError>>) -> Vec<Action> {
+        if let Some(why) = self.refused() {
+            let _ = reply.send(Err(CommandError::new("command.not_enabled", why)));
             return Vec::new();
         }
-        self.pending.push_back(Request::Command { id: id.to_owned(), params });
+        self.counts.request += 1;
+        let request = self.counts.request;
+        self.replies.insert(request, reply);
+        self.pending.push_back(Request::Command { request, id: id.to_owned(), params });
+        self.next()
+    }
+
+    /// The zoom of the canvas shown: only the last one waits.
+    pub fn zoom(&mut self, zoom: f32) -> Vec<Action> {
+        if self.refused().is_some() {
+            return Vec::new();
+        }
+        match self.pending.iter_mut().find(|request| matches!(request, Request::Zoom(_))) {
+            Some(waiting) => *waiting = Request::Zoom(zoom),
+            None => self.pending.push_back(Request::Zoom(zoom)),
+        }
         self.next()
     }
 
@@ -127,6 +164,16 @@ impl Supervisor {
         self.next()
     }
 
+    /// Why a command cannot go to a worker now.
+    fn refused(&self) -> Option<String> {
+        match self.traps {
+            _ if self.folder.is_none() => Some("open a project first".to_owned()),
+            Traps::Twice => Some("the session of this project stopped twice, which is a bug of LabCraft (LC0099)".to_owned()),
+            Traps::NoWorker => Some("the worker of the session could not start".to_owned()),
+            Traps::None | Traps::Once => None,
+        }
+    }
+
     /// A message of the worker.
     pub fn received(&mut self, bytes: &[u8]) -> Vec<Action> {
         match decode::<FromWorker>(bytes) {
@@ -135,30 +182,80 @@ impl Supervisor {
                 self.drawing = Some(function);
                 return Vec::new();
             }
+            Ok(FromWorker::Files(changed)) => {
+                self.take_files(changed);
+                return Vec::new();
+            }
             Ok(FromWorker::Answer(answer)) => {
+                let answer = *answer;
+                // The command in flight has its answer; one that comes without it (a message the worker could not read)
+                // still ends it.
+                if let Waiting::Answer(Some(request)) = self.waiting
+                    && answer.request != Some(request)
+                    && let Some(reply) = self.replies.remove(&request)
+                {
+                    let _ = reply.send(Err(CommandError::internal("the worker of the session did not take this command")));
+                }
                 self.waiting = Waiting::Nothing;
                 self.drawing = None;
-                // A failure is said until the next command that succeeds.
-                self.failure = answer.result.as_ref().err().map(|failure| format!("{}: {}", failure.code, failure.message));
-                if let Some(listing) = answer.listing {
-                    self.listing = Arc::new(listing);
+                // A message that is no command and failed (a folder that does not open): the page says it, and what the
+                // session showed stays.
+                if answer.request.is_none()
+                    && let Err(failure) = &answer.result
+                {
+                    self.failure = Some(format!("{}: {}", failure.code, failure.message));
+                    if answer.seen.folder.is_none() {
+                        return self.next();
+                    }
                 }
-                if let (Some(drawing), Some(function)) = (answer.drawing, &answer.state.function) {
+                // A failure of the page is said until a message succeeds.
+                if answer.result.is_ok() {
+                    self.failure = None;
+                }
+                if let Some(reply) = answer.request.and_then(|request| self.replies.remove(&request)) {
+                    let result = match answer.result {
+                        Ok(json) => serde_json::from_str(&json).map_err(|error| CommandError::internal(format!("an answer of the worker: {error}"))),
+                        Err(failure) => Err(CommandError::new(code_of(&failure.code), failure.message)),
+                    };
+                    let _ = reply.send(result);
+                }
+                if let Some(changed) = answer.files {
+                    self.take_files(changed);
+                }
+
+                // A change of what the session published, not each answer: the window reads the history again at each
+                // one, which a read does not change.
+                let changed = answer.seen != self.seen || answer.listing.is_some() || answer.drawing.is_some();
+                // A check of the session, as `engine` counts them: a drawing gives a new report too (`LC7005`), not a check.
+                if answer.seen.checks != self.seen.checks {
+                    self.counts.checks += 1;
+                }
+                if let Some(listing) = answer.listing {
+                    self.report = Some(Arc::new(report_of(&listing)));
+                    self.listing = listing;
+                }
+                if let (Some(drawing), Some(function)) = (answer.drawing, &answer.seen.function) {
                     self.drawings.insert(function.clone(), drawing);
                 }
-                // The first answer, to the folder opened: when it opened it, the function asked is shown, or the folder
-                // lacks it.
+                // The first answer, to the folder opened: the function asked is shown, or the folder lacks it.
                 if let Some(asked) = self.asked.take()
-                    && answer.result.is_ok()
-                    && answer.state.function.as_ref() != Some(&asked)
+                    && self.folder.is_some()
+                    && answer.seen.function.as_ref() != Some(&asked)
+                    && answer.seen.folder.is_some()
                 {
-                    self.missing = Some((asked, answer.state.function.clone()));
+                    self.missing = Some((asked, answer.seen.function.clone()));
                 }
                 // Said until another function is shown.
-                if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.state.function) {
+                if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.seen.function) {
                     self.missing = None;
                 }
-                self.state = Arc::new(answer.state);
+                // The preference is the session's: a worker that starts again takes the one it had.
+                self.standard_everywhere = answer.seen.standard_everywhere;
+                self.seen = answer.seen;
+                if changed {
+                    self.counts.generation += 1;
+                    self.publish();
+                }
             }
             Err(error) => {
                 self.waiting = Waiting::Nothing;
@@ -168,39 +265,63 @@ impl Supervisor {
         self.next()
     }
 
+    /// Files the session changed, in the copy that a new worker opens.
+    fn take_files(&mut self, changed: crate::protocol::Changed) {
+        let Some(folder) = &mut self.folder else { return };
+        Arc::make_mut(folder).changed(changed);
+        self.edited = true;
+        // Other files: a trap before them is not counted against them.
+        if self.traps == Traps::Once {
+            self.traps = Traps::None;
+        }
+    }
+
     /// The worker trapped: a function it said it was drawing is not drawn again; otherwise the folder is to blame.
     pub fn trapped(&mut self) -> Vec<Action> {
         if self.waiting == Waiting::Ready {
             return self.not_started("it stopped before it listened");
         }
+        if let Waiting::Answer(Some(request)) = self.waiting
+            && let Some(reply) = self.replies.remove(&request)
+        {
+            let _ =
+                reply.send(Err(CommandError::internal("the session stopped on this command, which is a bug of LabCraft (LC0099): it starts again")));
+        }
         if let Some(function) = self.drawing.take() {
             self.trapped.insert(function.clone());
-            Arc::make_mut(&mut self.state).function = Some(function);
+            self.seen.function = Some(function);
         } else if self.traps == Traps::None {
             self.traps = Traps::Once;
         } else {
             self.traps = Traps::Twice;
-            self.pending.clear();
+            self.fail_all("the session of this project stopped twice, which is a bug of LabCraft (LC0099)");
             self.waiting = Waiting::Nothing;
+            self.publish();
             return Vec::new();
         }
-        // What was in flight went with the worker; the new one opens the same files first.
+        // What was in flight went with the worker; the new one opens the same files first, as they are now.
         self.pending.retain(|request| *request != Request::Open);
         self.pending.push_front(Request::Open);
+        self.counts.generation += 1;
+        self.publish();
         self.start()
     }
 
     /// The worker could not be started, or stopped before it listened: said, and not tried again for these files.
     pub fn not_started(&mut self, why: &str) -> Vec<Action> {
         self.traps = Traps::NoWorker;
-        self.failure = Some(format!("the worker of the viewer could not start: {why}"));
-        self.pending.clear();
+        self.failure = Some(format!("the worker of the session could not start: {why}"));
+        self.fail_all("the worker of the session could not start");
         self.waiting = Waiting::Nothing;
         Vec::new()
     }
 
-    fn stopped(&self) -> bool {
-        matches!(self.traps, Traps::Twice | Traps::NoWorker)
+    /// Every command waiting fails, with `why`.
+    fn fail_all(&mut self, why: &str) {
+        self.pending.clear();
+        for (_, reply) in self.replies.drain() {
+            let _ = reply.send(Err(CommandError::new("command.not_enabled", why)));
+        }
     }
 
     fn start(&mut self) -> Vec<Action> {
@@ -211,30 +332,38 @@ impl Supervisor {
 
     /// Sends what waits, if nothing is in flight.
     fn next(&mut self) -> Vec<Action> {
-        if self.waiting != Waiting::Nothing || self.stopped() {
+        if self.waiting != Waiting::Nothing || matches!(self.traps, Traps::Twice | Traps::NoWorker) {
             return Vec::new();
         }
         let Some(request) = self.pending.pop_front() else { return Vec::new() };
-        let message = match request {
+        let (message, command) = match request {
             Request::Open => match &self.folder {
-                Some(folder) => ToWorker::Open {
-                    folder: Arc::clone(folder),
-                    standard_everywhere: self.state.standard_everywhere,
-                    skipped: self.trapped.iter().cloned().collect(),
-                    show: self.state.function.clone(),
-                },
+                Some(folder) => (
+                    ToWorker::Open {
+                        folder: Arc::clone(folder),
+                        standard_everywhere: self.standard_everywhere,
+                        skipped: self.trapped.iter().cloned().collect(),
+                        show: self.seen.function.clone().or_else(|| self.asked.clone()),
+                    },
+                    None,
+                ),
                 None => return Vec::new(),
             },
-            Request::Command { id, params } => ToWorker::Command { id, params: params.to_string() },
-            Request::Trap => ToWorker::Trap,
+            Request::Command { request, id, params } => (ToWorker::Command { request, id, params: params.to_string() }, Some(request)),
+            Request::Zoom(zoom) => (ToWorker::Zoom(zoom), None),
+            Request::Trap => (ToWorker::Trap, None),
         };
         match encode(&message) {
             Ok(bytes) => {
-                self.waiting = Waiting::Answer;
+                self.waiting = Waiting::Answer(command);
                 vec![Action::Send(bytes)]
             }
             Err(error) => {
-                self.failure = Some(error);
+                if let Some(reply) = command.and_then(|request| self.replies.remove(&request)) {
+                    let _ = reply.send(Err(CommandError::internal(error)));
+                } else {
+                    self.failure = Some(error);
+                }
                 self.next()
             }
         }
@@ -245,340 +374,175 @@ impl Supervisor {
         self.folder.as_deref().map(|folder| folder.name.as_str())
     }
 
-    /// What the window shows now.
-    pub fn shown(&self) -> Shown {
+    /// The files of the folder open, as they are now.
+    pub fn folder(&self) -> Option<&Folder> {
+        self.folder.as_deref()
+    }
+
+    /// Whether the files differ from those opened: the session wrote, renamed or removed one. A trap loses the history,
+    /// not this.
+    pub fn edited(&self) -> bool {
+        self.edited
+    }
+
+    /// A worker starts, or a message is in flight.
+    pub fn busy(&self) -> bool {
+        self.waiting != Waiting::Nothing
+    }
+
+    /// What the session published, made again as the window reads it.
+    fn publish(&mut self) {
+        let function = self.seen.function.clone();
+        let drawing = function.as_ref().and_then(|function| self.drawings.get(function)).cloned();
+        let trapped = function.as_ref().is_some_and(|function| self.trapped.contains(function));
+        if drawing.as_ref().map(Arc::as_ptr) != self.published_drawing.as_ref().map(Arc::as_ptr) {
+            self.counts.drawing_generation += 1;
+            self.published_drawing.clone_from(&drawing);
+        }
+        let seen = &self.seen;
+        let tabs = seen
+            .tabs
+            .iter()
+            .filter_map(|(function, first, split)| {
+                let tab = Tab { view: ViewKind::parse(first)?, split: split.as_deref().and_then(ViewKind::parse) };
+                Some((function.clone(), tab))
+            })
+            .collect();
+        let (selected, nodes, wires, terminals) = seen.selection.clone();
+        let workspace = view::window::WORKSPACES.iter().find(|(id, _)| *id == seen.workspace).map(|(id, _)| WorkspaceId(id)).unwrap_or_default();
+        let functions = self
+            .listing
+            .functions
+            .iter()
+            .map(|listed| view::Listed {
+                function: listed.function.clone(),
+                file: listed.file.clone(),
+                drawable: listed.drawable,
+                errors: listed.errors,
+                warnings: listed.warnings,
+            })
+            .collect();
+        self.published = Arc::new(Published {
+            generation: self.counts.generation,
+            folder: seen.folder.clone(),
+            functions,
+            report: self.report.clone(),
+            checks: self.counts.checks,
+            errors: self.listing.errors,
+            warnings: self.listing.warnings,
+            function,
+            opened: seen.opened.clone(),
+            kept: seen.kept || (trapped && drawing.is_some()),
+            drawing,
+            drawing_generation: self.counts.drawing_generation,
+            glide: seen.glide,
+            arms: seen.arms.iter().cloned().collect(),
+            standard_everywhere: seen.standard_everywhere,
+            tabs,
+            preview: seen.preview.clone(),
+            selection: Selection { function: selected, nodes, wires, terminals },
+            workspace,
+            ..Published::default()
+        });
+    }
+
+    /// What the window must say: the traps (`LC0099`), a function asked for that the folder lacks, a failure of the page.
+    pub fn notices(&self) -> Vec<String> {
         let mut notices = Vec::new();
         if self.traps == Traps::Twice {
-            notices.push(
-                "LC0099: reading this folder stopped the viewer twice, which is a bug of LabCraft: open the folder again once its files changed"
-                    .to_owned(),
-            );
+            notices.push("LC0099: this project stopped its session twice, which is a bug of LabCraft: open it again".to_owned());
         }
-        let function = self.state.function.as_ref();
-        let drawing = function.and_then(|function| self.drawings.get(function)).cloned();
-        let trapped = function.filter(|function| self.trapped.contains(*function));
-        if let Some(function) = trapped {
-            let kept = if drawing.is_some() { "; its last drawing stays" } else { "" };
-            notices.push(format!(
-                "LC0099: drawing `{function}` stopped the viewer, which is a bug of LabCraft: it is not drawn again until the files change{kept}"
-            ));
+        let function = self.seen.function.as_ref();
+        if let Some(function) = function.filter(|function| self.trapped.contains(*function)) {
+            let kept = if self.drawings.contains_key(function) { "; its last drawing stays" } else { "" };
+            notices.push(format!("LC0099: drawing `{function}` stopped the session, which is a bug of LabCraft: it is not drawn again{kept}"));
         }
         if let Some((asked, instead)) = &self.missing {
             let folder = self.folder_name().unwrap_or_default();
             let instead = instead.as_ref().map(|function| format!(": here is `{function}`")).unwrap_or_default();
             notices.push(format!("`{folder}` has no function `{asked}`{instead}"));
         }
-        if let Some(failure) = &self.failure {
-            notices.push(failure.clone());
+        notices.extend(self.failure.clone());
+        notices
+    }
+
+    /// What the window reads.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            view: self.published.clone(),
+            project: self.folder_name().map(str::to_owned),
+            notices: self.notices(),
+            session: self.counts.opened,
         }
-        Shown {
-            state: self.state.clone(),
-            listing: self.listing.clone(),
-            kept: self.state.kept || (trapped.is_some() && drawing.is_some()),
-            drawing,
-            notices,
-            busy: self.waiting != Waiting::Nothing,
+    }
+}
+
+/// The code of an error of a command, as `engine` names it: one of those its commands say, else `internal`.
+fn code_of(code: &str) -> &'static str {
+    labcraft_engine::registry::commands()
+        .iter()
+        .flat_map(|command| command.errors.iter())
+        .chain(["internal", "command.unknown", "command.not_enabled", "agent.not_allowed"].iter())
+        .find(|known| **known == code)
+        .copied()
+        .unwrap_or("internal")
+}
+
+/// The report of a listing, as `Problems` reads it.
+fn report_of(listing: &Listing) -> Report {
+    let mut report = Report::new(listing.problems.len().max(1));
+    for problem in &listing.problems {
+        let Some(code) = Code::ALL.iter().find(|code| code.as_str() == problem.code) else { continue };
+        let mut diagnostic = Diagnostic::new(*code, problem.message.clone(), problem.file.clone());
+        if let Some([line, column, end_line, end_column]) = problem.span {
+            diagnostic = diagnostic.with_span(Span { start: Position { line, column }, end: Position { line: end_line, column: end_column } });
         }
+        diagnostic.function.clone_from(&problem.function);
+        report.push(diagnostic);
+    }
+    report
+}
+
+/// The window's hold on the supervisor: a [`Host`] whose messages wait in [`Shared::take_actions`] for the page to
+/// carry them.
+#[derive(Default)]
+pub struct Shared {
+    pub supervisor: RefCell<Supervisor>,
+    actions: RefCell<Vec<Action>>,
+}
+
+impl Shared {
+    pub fn new(supervisor: Supervisor) -> Shared {
+        Shared { supervisor: RefCell::new(supervisor), actions: RefCell::default() }
+    }
+
+    /// Does `work` on the supervisor; what it asks of the page waits in [`Shared::take_actions`].
+    pub fn with(&self, work: impl FnOnce(&mut Supervisor) -> Vec<Action>) {
+        let actions = work(&mut self.supervisor.borrow_mut());
+        self.actions.borrow_mut().extend(actions);
+    }
+
+    /// What the page must do now.
+    pub fn take_actions(&self) -> Vec<Action> {
+        std::mem::take(&mut *self.actions.borrow_mut())
+    }
+}
+
+impl Host for Shared {
+    fn send(&self, id: &str, params: Value) -> Reply {
+        let (sender, reply) = Reply::channel();
+        self.with(|supervisor| supervisor.command(id, params, sender));
+        reply
+    }
+
+    fn snapshot(&self) -> Snapshot {
+        self.supervisor.borrow().snapshot()
+    }
+
+    fn set_zoom(&self, zoom: f32) {
+        self.with(|supervisor| supervisor.zoom(zoom));
     }
 }
 
 #[cfg(test)]
-mod tests {
-    #[cfg(target_arch = "wasm32")]
-    use wasm_bindgen_test::wasm_bindgen_test as test;
-
-    use std::cell::RefCell;
-
-    use super::*;
-    use crate::host::Host;
-    use crate::protocol::File;
-    use serde_json::json;
-
-    thread_local! {
-        /// The functions whose drawing traps the simulated worker, and the one it was drawing when it did.
-        static POISON: RefCell<(BTreeSet<String>, Option<String>)> = RefCell::default();
-    }
-
-    /// Says what it draws, as the worker does, and remembers a drawing that traps.
-    fn announce(function: &str) {
-        POISON.with_borrow_mut(|(poison, trapped)| {
-            if trapped.is_none() && poison.contains(function) {
-                *trapped = Some(function.to_owned());
-            }
-        });
-    }
-
-    fn poison(functions: &[&str]) {
-        POISON.with_borrow_mut(|(poison, _)| *poison = functions.iter().map(|function| (*function).to_owned()).collect());
-    }
-
-    /// A worker that traps on `Trap`, and on drawing a poisoned function, once it said that it draws it.
-    #[derive(Default)]
-    struct Worker {
-        host: Option<Host>,
-        started: usize,
-    }
-
-    enum Outcome {
-        Message(Box<FromWorker>),
-        Trap,
-    }
-
-    impl Worker {
-        fn run(&mut self, actions: Vec<Action>) -> Vec<Outcome> {
-            let mut outcomes = Vec::new();
-            for action in actions {
-                match action {
-                    Action::Start => {
-                        self.host = Some(Host::new(Some(announce)));
-                        self.started += 1;
-                        outcomes.push(Outcome::Message(Box::new(FromWorker::Ready)));
-                    }
-                    Action::Send(bytes) => {
-                        let message: ToWorker = decode(&bytes).unwrap();
-                        if message == ToWorker::Trap {
-                            self.host = None;
-                            outcomes.push(Outcome::Trap);
-                            continue;
-                        }
-                        let answer = self.host.as_mut().unwrap().handle(message);
-                        if let Some(function) = POISON.with_borrow_mut(|(_, trapped)| trapped.take()) {
-                            self.host = None;
-                            outcomes.push(Outcome::Message(Box::new(FromWorker::Drawing(function))));
-                            outcomes.push(Outcome::Trap);
-                        } else {
-                            outcomes.push(Outcome::Message(Box::new(FromWorker::Answer(answer))));
-                        }
-                    }
-                }
-            }
-            outcomes
-        }
-    }
-
-    fn drive(supervisor: &mut Supervisor, worker: &mut Worker, actions: Vec<Action>) {
-        let mut outcomes: VecDeque<Outcome> = worker.run(actions).into();
-        while let Some(outcome) = outcomes.pop_front() {
-            let actions = match outcome {
-                Outcome::Message(message) => supervisor.received(&encode(&*message).unwrap()),
-                Outcome::Trap => supervisor.trapped(),
-            };
-            outcomes.extend(worker.run(actions));
-        }
-    }
-
-    fn function(name: &str) -> File {
-        let text = format!("labcraft 1\n\nuse core\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = core.add(x, x)\n}}\n");
-        File { path: format!("{name}.lcf"), bytes: text.into_bytes() }
-    }
-
-    fn folder() -> Folder {
-        Folder { name: "bench".to_owned(), files: vec![function("alpha"), function("beta")], folders: Vec::new() }
-    }
-
-    fn shown_function(supervisor: &Supervisor) -> Option<String> {
-        supervisor.shown().state.function.clone()
-    }
-
-    fn drawn_function(supervisor: &Supervisor) -> Option<String> {
-        supervisor.shown().drawing.map(|drawing| drawing.function.clone())
-    }
-
-    #[test]
-    fn a_folder_opens_and_draws_its_first_function() {
-        poison(&[]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        let shown = supervisor.shown();
-        assert_eq!(shown.state.function.as_deref(), Some("alpha"));
-        assert!(shown.drawing.is_some() && shown.notices.is_empty() && !shown.busy);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"));
-    }
-
-    /// The address of the page names a function: the folder opens on it, or on its first function when it has none
-    /// of that name, which the window says until another function is shown.
-    #[test]
-    fn a_folder_opens_on_the_function_asked_for_when_it_has_it() {
-        poison(&[]);
-        for (asked, shown) in [(Some("beta"), "beta"), (Some("gamma"), "alpha"), (None, "alpha")] {
-            let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-            let actions = supervisor.open(folder(), asked.map(str::to_owned));
-            // Nothing is drawn before the worker answers, whatever was asked, and nothing is said yet.
-            assert!(supervisor.shown().drawing.is_none() && supervisor.shown().busy && supervisor.shown().notices.is_empty());
-            drive(&mut supervisor, &mut worker, actions);
-            assert_eq!((shown_function(&supervisor).as_deref(), drawn_function(&supervisor).as_deref()), (Some(shown), Some(shown)), "{asked:?}");
-            let said: &[&str] = if asked == Some("gamma") { &["`bench` has no function `gamma`: here is `alpha`"] } else { &[] };
-            assert_eq!(supervisor.shown().notices, said, "{asked:?}");
-            let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-            drive(&mut supervisor, &mut worker, actions);
-            assert!(supervisor.shown().notices.is_empty(), "{asked:?}: said until another function is shown");
-            let actions = supervisor.command("view.show_function", json!({ "function": "alpha" }));
-            drive(&mut supervisor, &mut worker, actions);
-            assert!(supervisor.shown().notices.is_empty(), "{asked:?}: and not again");
-        }
-    }
-
-    /// The function asked for traps as it is first drawn: it is shown with `LC0099` and no drawing, the folder is not
-    /// blamed, and nothing says that the folder lacks it.
-    #[test]
-    fn a_function_asked_for_that_traps_is_its_own_fault() {
-        poison(&["beta"]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), Some("beta".to_owned()));
-        drive(&mut supervisor, &mut worker, actions);
-        let shown = supervisor.shown();
-        assert_eq!((shown.state.function.as_deref(), shown.drawing.is_none(), worker.started), (Some("beta"), true, 2));
-        assert_eq!(shown.notices.len(), 1, "{:?}", shown.notices);
-        assert!(shown.notices.iter().all(|notice| notice.starts_with("LC0099: drawing `beta`")), "{:?}", shown.notices);
-    }
-
-    /// The function asked for is missing, and the first function, shown instead, traps: both are said.
-    #[test]
-    fn a_function_missing_and_the_first_that_traps_are_both_said() {
-        poison(&["alpha"]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), Some("gamma".to_owned()));
-        drive(&mut supervisor, &mut worker, actions);
-        let shown = supervisor.shown();
-        assert_eq!(shown.state.function.as_deref(), Some("alpha"));
-        assert_eq!(shown.notices.len(), 2, "{:?}", shown.notices);
-        assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: drawing `alpha`")), "{:?}", shown.notices);
-        assert!(shown.notices.iter().any(|notice| notice == "`bench` has no function `gamma`: here is `alpha`"), "{:?}", shown.notices);
-    }
-
-    #[test]
-    fn a_drawing_that_traps_keeps_its_last_drawing_and_is_not_drawn_again() {
-        poison(&[]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        // Its file changed, say, and its next drawing traps.
-        poison(&["beta"]);
-        let actions = supervisor.command("view.set_standard_view", json!({ "on": true }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 2, "restarted once");
-        let shown = supervisor.shown();
-        assert_eq!(shown.state.function.as_deref(), Some("beta"));
-        assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"), "its last drawing");
-        assert!(shown.kept);
-        assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: drawing `beta`")), "{:?}", shown.notices);
-        // The new worker never draws it: shown again, it does not trap.
-        let actions = supervisor.command("view.show_function", json!({ "function": "alpha" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(shown_function(&supervisor).as_deref(), Some("alpha"));
-        assert!(supervisor.shown().notices.is_empty());
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!((worker.started, drawn_function(&supervisor).as_deref()), (2, Some("beta")));
-        // New files: forgotten.
-        poison(&[]);
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert!(supervisor.shown().notices.is_empty());
-    }
-
-    #[test]
-    fn a_first_function_that_traps_is_its_own_fault_not_the_folders() {
-        poison(&["alpha"]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        // `view.open` draws `alpha`, the first function, and traps: the new worker shows it without drawing it.
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 2);
-        let shown = supervisor.shown();
-        assert_eq!(shown.state.function.as_deref(), Some("alpha"));
-        assert!(shown.drawing.is_none() && !shown.busy);
-        assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: drawing `alpha`")), "{:?}", shown.notices);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"));
-    }
-
-    #[test]
-    fn a_folder_that_traps_twice_shows_lc0099_until_its_files_change() {
-        poison(&[]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        // Two traps that no drawing explains.
-        let actions = supervisor.trap();
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 2);
-        assert!(supervisor.shown().notices.is_empty());
-        let actions = supervisor.trap();
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 2, "no third worker");
-        let shown = supervisor.shown();
-        assert!(shown.notices.iter().any(|notice| notice.starts_with("LC0099: reading this folder")), "{:?}", shown.notices);
-        assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
-        assert!(!shown.busy);
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 3);
-        assert!(supervisor.shown().notices.is_empty() && supervisor.shown().drawing.is_some());
-    }
-
-    #[test]
-    fn a_trap_restarts_the_worker_on_the_same_files_and_the_function_shown() {
-        poison(&[]);
-        let (mut supervisor, mut worker) = (Supervisor::new(true), Worker::default());
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        let actions = supervisor.trap();
-        drive(&mut supervisor, &mut worker, actions);
-        assert_eq!(worker.started, 2);
-        let shown = supervisor.shown();
-        assert_eq!(shown.state.function.as_deref(), Some("beta"), "the function shown before");
-        assert!(shown.state.standard_everywhere, "the preference");
-        assert!(shown.notices.is_empty() && shown.drawing.is_some());
-    }
-
-    #[test]
-    fn a_worker_that_does_not_load_is_said_and_not_blamed_on_the_folder() {
-        let mut supervisor = Supervisor::new(false);
-        assert_eq!(supervisor.open(folder(), None), [Action::Start]);
-        assert!(supervisor.trapped().is_empty(), "not started again");
-        let shown = supervisor.shown();
-        assert!(!shown.busy);
-        assert_eq!(shown.notices, ["the worker of the viewer could not start: it stopped before it listened"]);
-        assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
-        assert_eq!(supervisor.open(folder(), None), [Action::Start], "another folder tries again");
-        assert!(supervisor.shown().notices.is_empty());
-    }
-
-    #[test]
-    fn a_failure_is_said_until_a_command_succeeds() {
-        poison(&[]);
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
-        let actions = supervisor.open(folder(), None);
-        drive(&mut supervisor, &mut worker, actions);
-        let actions = supervisor.command("view.show_function", json!({ "function": "nowhere" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert!(supervisor.shown().notices.iter().any(|notice| notice.starts_with("params.invalid")), "{:?}", supervisor.shown().notices);
-        let actions = supervisor.command("view.show_function", json!({ "function": "beta" }));
-        drive(&mut supervisor, &mut worker, actions);
-        assert!(supervisor.shown().notices.is_empty());
-        assert_eq!(supervisor.shown().listing.functions.len(), 2, "the listing stays when an answer has none");
-    }
-
-    #[test]
-    fn nothing_goes_to_a_worker_before_it_listens_and_one_message_at_a_time() {
-        let mut supervisor = Supervisor::new(false);
-        assert_eq!(supervisor.open(folder(), None), [Action::Start]);
-        assert!(supervisor.shown().busy);
-        assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
-        let actions = supervisor.received(&encode(&FromWorker::Ready).unwrap());
-        assert!(matches!(actions.as_slice(), [Action::Send(_)]));
-        assert!(supervisor.command("view.show_function", json!({ "function": "beta" })).is_empty());
-        assert!(supervisor.shown().busy);
-    }
-}
+mod tests;

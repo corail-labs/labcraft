@@ -214,7 +214,8 @@ A chat panel inside the window, and a visible pointer of the agent, are left for
 - **`New project`** asks for a folder, makes it with a function `main` (`main.lcf`, `fn main() -> () {}`), and opens
   it with `main` shown. The root of a project needs no manifest (spec 1).
 - **`Open folder`** opens any folder of `.lcf` files: the project is the folder (mcp.md 1).
-- **An example** opens as a copy, in a folder the user chooses, never the files shipped with LabCraft.
+- **An example** opens as a copy, in a folder the user chooses, never the files shipped with LabCraft; on the web, in
+  memory (section 12).
 
 ## 11. Pieces for other IDEs
 
@@ -240,6 +241,12 @@ it has no agent attached, and a detached tab floats in the page (9). The setting
 `localStorage` of the page, those of the project in its `.labcraft/config.toml`, in memory and in the zip. Opening a
 folder of the computer to write it in place (the File System Access API, which only Chromium has) is not in M1
 ([architecture.md](architecture.md), 12.9).
+
+Its start page holds the project in memory (decision of the owner, 2026-11-16): an example opens as it is, with no
+copy and nothing written on a disk; `New project` makes `main` in memory; `Open folder` chooses a folder, or one is
+dropped on the page; no project is recent. The page holds one project: another replaces it, and when the project
+changed (a file written, or a step in its history) the page asks first, as it does before it is left or reloaded. The
+address names the folder and the function shown.
 
 ## 13. Left for later
 

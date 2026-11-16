@@ -31,7 +31,7 @@ impl Host for Fake {
     }
 
     fn snapshot(&self) -> Snapshot {
-        Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new() }
+        Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0 }
     }
 
     fn set_zoom(&self, zoom: f32) {

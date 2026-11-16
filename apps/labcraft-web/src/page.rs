@@ -1,11 +1,12 @@
-//! The page (`docs/architecture.md`, 11.5): the window of the desktop viewer in a canvas of the browser, eframe on
-//! WebGPU, or WebGL2 where the browser lacks it (`?webgl` asks for it); the session in a worker, which the
-//! [`Supervisor`] starts, feeds and restarts; the folders it bundles, or one dropped on the page or chosen, read once.
-//! There is no trace in the browser in M0 (scenario 6, point 7).
+//! The page (`docs/architecture.md`, 12.9): the window of `ide`, the same as the desktop's, in a canvas of the browser,
+//! eframe on WebGPU, or WebGL2 where the browser lacks it (`?webgl` asks for it); the session in a worker, which the
+//! [`Supervisor`] starts, feeds and restarts, behind the [`Shared`] host the window talks to. The project is in memory
+//! (ide.md 12): a bundled folder, a new project, or a folder dropped on the page or chosen, read once; a second one
+//! replaces it, after asking when it changed. No trace in the browser: a run needs threads (D-22).
 //!
 //! The address names the bundled folder and the function shown ([`link`](crate::link)), and the page writes it back as
-//! the developer moves. `?smoke`: the page opens the examples, traps its worker once it drew, and says to the server
-//! that served it whether the worker came back and drew again (`cargo xtask web-smoke`).
+//! the developer moves; without one, the start page. `?smoke`: the page opens the examples, traps its worker once it
+//! drew, and says to the server that served it whether the worker came back and drew again (`cargo xtask web-smoke`).
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -16,8 +17,7 @@ use craft_ui::fonts::{Family, I18nScripts, UiFonts};
 use egui::{FontData, FontFamily};
 use js_sys::Uint8Array;
 use labcraft_diagram::Drawing;
-use labcraft_editor::{Canvas, Shown as Tabs, Theme};
-use serde_json::json;
+use labcraft_ide::{Host, Ide, Outward, Prefs, StartList};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -29,8 +29,8 @@ use web_sys::{
 use crate::BUNDLED;
 use crate::folder::{self, Budget};
 use crate::link::{self, Link};
-use crate::protocol::{File, Folder, Listing};
-use crate::supervisor::{Action, Shown, Supervisor};
+use crate::protocol::{File, Folder};
+use crate::supervisor::{Action, Shared, Supervisor};
 
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
@@ -38,11 +38,16 @@ static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 /// The worker, as Trunk writes it next to the page: a script that loads its WASM.
 const WORKER: &str = "./labcraft-worker_loader.js";
 
-/// Where the page keeps the preferences of the viewer, in the storage of the browser.
-const THEME_KEY: &str = "labcraft.viewer.theme";
-const STANDARD_KEY: &str = "labcraft.viewer.standard";
+/// Where the page keeps the settings of the user (ide.md 12), as the window keeps them, in JSON.
+const PREFS_KEY: &str = "labcraft.ide.prefs";
+/// The preferences of the viewer of M0v, read once into them.
+const VIEWER_THEME_KEY: &str = "labcraft.viewer.theme";
+const VIEWER_STANDARD_KEY: &str = "labcraft.viewer.standard";
 
-/// Where the welcome line of the page leads.
+/// The first function of a new project (ide.md 10), as the desktop writes it.
+const NEW_MAIN: (&str, &str) = ("main.lcf", "labcraft 1\n\nfn main() -> () {}\n");
+
+/// Where the page leads when it cannot start.
 const REPOSITORY: &str = "https://github.com/corail-labs/labcraft";
 
 /// How long the smoke test waits for each step, in seconds.
@@ -60,7 +65,7 @@ pub fn start() {
             options.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::CreateNew(setup);
         }
         let runner = eframe::WebRunner::new();
-        let started = runner.start(canvas, options, Box::new(|creation| Ok(Box::new(Viewer::new(creation))))).await;
+        let started = runner.start(canvas, options, Box::new(|creation| Ok(Box::new(Page::new(creation))))).await;
         let loading = document.get_element_by_id("loading");
         match (started, loading) {
             (Ok(()), Some(loading)) => loading.remove(),
@@ -149,162 +154,139 @@ enum Smoke {
     Done,
 }
 
-struct Viewer {
-    supervisor: Supervisor,
+struct Page {
+    ide: Ide,
+    shared: Shared,
     inbox: Inbox,
     running: Option<Running>,
     /// The workers started, the first counting 1: what a worker ended says is not for the one that runs.
     started: u64,
-    canvas: Canvas,
-    /// The drawing the canvas paints.
-    painted: Option<Arc<Drawing>>,
-    theme: Theme,
-    shown: Shown,
-    /// The lines of `Problems`, from the listing they were written from.
-    problems: (Arc<Listing>, Vec<String>),
-    /// The preference last kept in the storage of the browser: the one that the session has.
-    standard_stored: Option<bool>,
-    /// A folder was opened: fit its first drawing.
-    fit: bool,
-    /// The dialog that chooses a folder is open, or the folder is being read.
-    reading: bool,
-    /// Why the walk of the last folder read stopped, or why it could not be read.
-    folder_notice: Option<String>,
-    /// The bundled folder open, which has an address; `None` for a folder of the developer's.
+    start: StartList,
+    /// The bundled folder open, which has an address; `None` for a project of the developer's.
     bundled: Option<&'static str>,
+    /// The address and the title last written: the bundled folder, the project, the function.
+    written: Option<(Option<&'static str>, Option<String>, Option<String>)>,
     backend: String,
     smoke: Option<Smoke>,
+    /// Whether the browser asks before the page is left.
+    guarded: bool,
 }
 
-impl Viewer {
-    fn new(creation: &eframe::CreationContext<'_>) -> Viewer {
+thread_local! {
+    /// Whether leaving the page loses changes, which the listener of `beforeunload` reads.
+    static LEAVING_LOSES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Asks the browser to confirm leaving the page while a project changed.
+fn guard_leaving() {
+    let Some(window) = web_sys::window() else { return };
+    let listener = Closure::<dyn FnMut(web_sys::BeforeUnloadEvent)>::new(|event: web_sys::BeforeUnloadEvent| {
+        if LEAVING_LOSES.with(std::cell::Cell::get) {
+            event.prevent_default();
+            event.set_return_value("The changes to this project are lost: the page holds it in memory.");
+        }
+    });
+    let _ = window.add_event_listener_with_callback("beforeunload", listener.as_ref().unchecked_ref());
+    // Listens for as long as the page lives.
+    listener.forget();
+}
+
+impl Page {
+    fn new(creation: &eframe::CreationContext<'_>) -> Page {
         let ctx = creation.egui_ctx.clone();
         install_fonts(&ctx);
-        let theme = match stored(THEME_KEY).as_deref() {
-            Some("dark") => Theme::Dark,
-            Some("light") => Theme::Light,
-            _ if prefers("(prefers-color-scheme: dark)") => Theme::Dark,
-            _ => Theme::Light,
-        };
-        ctx.set_theme(if theme == Theme::Dark { egui::Theme::Dark } else { egui::Theme::Light });
-        let mut canvas = Canvas::new();
-        // The glide follows what the system asks for (architecture 11.4).
-        canvas.set_reduced_motion(prefers("(prefers-reduced-motion: reduce)"));
+        let prefs = read_prefs();
+        let standard_everywhere = prefs.standard_everywhere;
         let backend = creation.wgpu_render_state.as_ref().map(|state| format!("{:?}", state.adapter.get_info().backend)).unwrap_or_default();
         let inbox = Inbox { queue: Rc::default(), ctx: ctx.clone() };
         listen_to_drops(&inbox);
-        let mut viewer = Viewer {
-            supervisor: Supervisor::new(stored(STANDARD_KEY).as_deref() == Some("true")),
+        guard_leaving();
+        let examples = BUNDLED.iter().map(|bundled| labcraft_ide::catalog::example(bundled.name)).collect();
+        let mut page = Page {
+            // The browser draws the frame of its window.
+            ide: Ide::new(&ctx, prefs, craft_window::Frame::Desktop),
+            shared: Shared::new(Supervisor::new(standard_everywhere)),
             inbox,
             running: None,
             started: 0,
-            canvas,
-            painted: None,
-            theme,
-            shown: Shown::default(),
-            problems: Default::default(),
-            standard_stored: None,
-            fit: false,
-            reading: false,
-            folder_notice: None,
+            start: StartList { recent: Vec::new(), examples, problem: None, in_memory: true },
             bundled: None,
+            written: None,
             backend,
             smoke: None,
+            guarded: false,
         };
-        // The folder and the function of the address, else the examples on `check_voltage`.
+        // The folder and the function of the address; without one, the start page.
         let link = address();
-        viewer.smoke = link.smoke.then_some(Smoke::Drawing { since: 0.0 });
+        page.smoke = link.smoke.then_some(Smoke::Drawing { since: 0.0 });
         let names: Vec<&'static str> = BUNDLED.iter().map(|bundled| bundled.name).collect();
-        if let Some(opening) = link.resolve(&names)
+        if link.names_a_project()
+            && let Some(opening) = link.resolve(&names)
             && let Some(bundled) = BUNDLED.iter().find(|bundled| bundled.name == opening.folder)
         {
-            viewer.open(bundled.folder(), Some(bundled.name), opening.notice, opening.function);
+            page.open(bundled.folder(), Some(bundled.name), opening.notice, opening.function);
         }
-        viewer
+        page
     }
 
-    /// A folder of the developer's (`bundled`: `None`) or a bundled one, on `function` when it has it.
+    fn has_project(&self) -> bool {
+        self.shared.supervisor.borrow().folder().is_some()
+    }
+
+    /// Whether the project open changed: its files, or its history (a trap of the worker loses the history, not the files).
+    fn changed(&self) -> bool {
+        self.has_project() && (self.shared.supervisor.borrow().edited() || !self.ide.history_is_empty())
+    }
+
+    /// Whether another project may replace the one open: always, unless it changed and the user says no (ide.md 12).
+    fn may_replace(&self) -> bool {
+        if !self.changed() {
+            return true;
+        }
+        let name = self.shared.supervisor.borrow().folder_name().unwrap_or_default().to_owned();
+        let question = format!("Open another project? The changes to `{name}` are lost: the page holds one project, in memory.");
+        web_sys::window().and_then(|window| window.confirm_with_message(&question).ok()).unwrap_or(false)
+    }
+
+    /// A project of the developer's (`bundled`: `None`) or a bundled folder, on `function` when it has it.
     fn open(&mut self, folder: Folder, bundled: Option<&'static str>, notice: Option<String>, function: Option<String>) {
         self.bundled = bundled;
-        self.folder_notice = notice;
-        self.reading = false;
-        self.fit = true;
-        let actions = self.supervisor.open(folder, function);
-        self.perform(actions);
+        self.start.problem = None;
+        if let Some(notice) = notice {
+            self.ide.say(notice);
+        }
+        self.shared.with(|supervisor| supervisor.open(folder, function));
+        self.perform();
     }
 
-    fn command(&mut self, id: &str, params: serde_json::Value) {
-        let actions = self.supervisor.command(id, params);
-        self.perform(actions);
-    }
-
-    /// Does what the supervisor asks, then shows what it now shows.
-    fn perform(&mut self, actions: Vec<Action>) {
-        for action in actions {
-            match action {
-                Action::Start => {
-                    self.running = None;
-                    self.started += 1;
-                    match spawn(self.started, &self.inbox) {
-                        Ok(running) => self.running = Some(running),
-                        Err(error) => {
-                            let _ = self.supervisor.not_started(&error);
+    /// Does what the supervisor asks.
+    fn perform(&mut self) {
+        loop {
+            let actions = self.shared.take_actions();
+            if actions.is_empty() {
+                return;
+            }
+            for action in actions {
+                match action {
+                    Action::Start => {
+                        self.running = None;
+                        self.started += 1;
+                        match spawn(self.started, &self.inbox) {
+                            Ok(running) => self.running = Some(running),
+                            Err(error) => self.shared.with(|supervisor| supervisor.not_started(&error)),
+                        }
+                    }
+                    Action::Send(bytes) => {
+                        if let Some(running) = &self.running {
+                            let array = Uint8Array::from(bytes.as_slice());
+                            if let Err(error) = running.worker.post_message_with_transfer(&array, &js_sys::Array::of1(&array.buffer())) {
+                                let why = format!("it could not be reached: {}", js(error));
+                                self.shared.with(|supervisor| supervisor.not_started(&why));
+                            }
                         }
                     }
                 }
-                Action::Send(bytes) => {
-                    if let Some(running) = &self.running {
-                        let array = Uint8Array::from(bytes.as_slice());
-                        if let Err(error) = running.worker.post_message_with_transfer(&array, &js_sys::Array::of1(&array.buffer())) {
-                            self.folder_notice = Some(format!("the worker of the viewer could not be reached: {}", js(error)));
-                        }
-                    }
-                }
             }
-        }
-        self.show();
-    }
-
-    /// What the supervisor shows, taken once after each change, not at each frame.
-    fn show(&mut self) {
-        self.shown = self.supervisor.shown();
-        if let Some(drawing) = &self.shown.drawing
-            && !self.painted.as_ref().is_some_and(|painted| Arc::ptr_eq(painted, drawing))
-        {
-            self.canvas.set_drawing(drawing.clone(), self.shown.state.glide);
-            self.painted = Some(drawing.clone());
-            if self.fit {
-                self.canvas.fit();
-                self.fit = false;
-            }
-        }
-        if !Arc::ptr_eq(&self.problems.0, &self.shown.listing) {
-            self.problems = (self.shown.listing.clone(), self.shown.listing.problems.lines().map(str::to_owned).collect());
-        }
-        // The preference is the session's: a command that trapped did not change it.
-        let standard = self.shown.state.standard_everywhere;
-        if self.standard_stored != Some(standard) {
-            store(STANDARD_KEY, if standard { "true" } else { "false" });
-            self.standard_stored = Some(standard);
-        }
-        if !self.shown.busy {
-            self.write_address();
-        }
-    }
-
-    /// The address and the title of the page, as what is on screen: a link to it, for a bundled folder.
-    fn write_address(&self) {
-        let Some(window) = web_sys::window() else { return };
-        let function = self.shown.state.function.as_deref();
-        let search = Link::search(self.bundled, function, address().webgl);
-        if let (Ok(history), Ok(path)) = (window.history(), window.location().pathname()) {
-            // `?smoke` keeps its address: its server reads nothing else, but the address is not the page's to change.
-            if self.smoke.is_none() {
-                let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&format!("{path}{search}")));
-            }
-        }
-        if let Some(document) = window.document() {
-            document.set_title(&function.map_or_else(|| "LabCraft viewer".to_owned(), |function| format!("{function} · LabCraft viewer")));
         }
     }
 
@@ -313,149 +295,117 @@ impl Viewer {
         for incoming in self.inbox.take() {
             match incoming {
                 Incoming::Worker(worker, _) if worker != self.started => {}
-                Incoming::Worker(_, FromWorker::Message(bytes)) => {
-                    let actions = self.supervisor.received(&bytes);
-                    self.perform(actions);
-                }
+                Incoming::Worker(_, FromWorker::Message(bytes)) => self.shared.with(|supervisor| supervisor.received(&bytes)),
                 Incoming::Worker(_, FromWorker::Trapped) => {
                     self.running = None;
-                    let actions = self.supervisor.trapped();
-                    self.perform(actions);
+                    self.shared.with(Supervisor::trapped);
                 }
-                Incoming::Folder(folder, notice) => self.open(folder, None, notice, None),
-                Incoming::Failed(why) => {
-                    self.reading = false;
-                    self.folder_notice = Some(why);
+                Incoming::Folder(folder, notice) => {
+                    if self.may_replace() {
+                        self.open(folder, None, notice, None);
+                    }
                 }
+                Incoming::Failed(why) => self.say(why),
             }
+            self.perform();
         }
     }
 
-    fn top_bar(&mut self, ui: &mut egui::Ui) {
-        // What the page is, for whoever comes to it from a link.
-        ui.horizontal_wrapped(|ui| {
-            ui.label(egui::RichText::new("LabCraft").strong());
-            ui.label("A graphical dataflow language, in pure Rust. This viewer draws programs; the files you open stay in your browser.");
-            ui.add(egui::Hyperlink::from_label_and_url("Source on GitHub", REPOSITORY).open_in_new_tab(true));
-        });
-        ui.separator();
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Open a folder…").on_hover_text("Or drop a folder on the page").clicked() {
-                self.reading = true;
-                pick_folder(&self.inbox);
+    /// A problem, on the start page when no project is open.
+    fn say(&mut self, problem: String) {
+        if self.has_project() {
+            self.ide.say(problem);
+        } else {
+            self.start.problem = Some(problem);
+        }
+    }
+
+    /// What the window asks of the page.
+    fn outward(&mut self, ctx: &egui::Context, asked: Outward) {
+        match asked {
+            Outward::NewProject(name) => {
+                if self.may_replace() {
+                    // A name given (the form of the palette) is the name of the project; its last part, for a path.
+                    let name = name.as_deref().and_then(|name| name.rsplit(['/', '\\']).find(|part| !part.is_empty())).unwrap_or("new project");
+                    let (path, text) = NEW_MAIN;
+                    let folder = Folder {
+                        name: name.to_owned(),
+                        files: vec![File { path: path.to_owned(), bytes: text.as_bytes().to_vec() }],
+                        folders: Vec::new(),
+                    };
+                    self.open(folder, None, None, Some("main".to_owned()));
+                }
             }
-            for bundled in BUNDLED {
-                let open = self.bundled == Some(bundled.name);
-                if ui.selectable_label(open, bundled.name).on_hover_text("A folder bundled with the viewer").clicked() && !open {
+            // Asked once the folder is read, as for a folder dropped.
+            Outward::OpenFolder(_) => pick_folder(&self.inbox),
+            Outward::OpenExample(at) => {
+                if let Some(bundled) = BUNDLED.get(at)
+                    && self.may_replace()
+                {
                     self.open(bundled.folder(), Some(bundled.name), None, link::default_function(bundled.name));
                 }
             }
-            if let (None, Some(name)) = (self.bundled, self.supervisor.folder_name()) {
-                ui.selectable_label(true, name).on_hover_text("The folder you opened");
-            }
-            ui.separator();
-            let mut dark = self.theme == Theme::Dark;
-            if ui.checkbox(&mut dark, "Dark").changed() {
-                self.theme = if dark { Theme::Dark } else { Theme::Light };
-                ui.ctx().set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
-                store(THEME_KEY, if dark { "dark" } else { "light" });
-            }
-            let mut standard = self.shown.state.standard_everywhere;
-            if ui.checkbox(&mut standard, "Standard view everywhere").changed() {
-                self.command("view.set_standard_view", json!({ "on": standard }));
-            }
-            if ui.button("Fit").clicked() {
-                self.canvas.fit();
-            }
-            if self.shown.busy || self.reading {
-                ui.spinner();
-            }
-        });
-        // A tab per function opened.
-        let state = self.shown.state.clone();
-        let mut clicked = None;
-        ui.horizontal_wrapped(|ui| {
-            for name in &state.opened {
-                let shown = state.function.as_ref() == Some(name);
-                if ui.selectable_label(shown, name).clicked() && !shown {
-                    clicked = Some(name.clone());
-                }
-            }
-        });
-        if let Some(function) = clicked {
-            self.command("view.show_function", json!({ "function": function }));
-        }
-        for notice in self.folder_notice.iter().chain(&self.shown.notices) {
-            ui.colored_label(ui.visuals().warn_fg_color, notice);
+            // The page keeps no project of its own: what was opened is gone with it.
+            Outward::OpenRecent(_) => {}
+            Outward::OpenLink(link) => ctx.open_url(egui::OpenUrl::new_tab(link)),
+            Outward::OpenTrace => self.say("A trace comes from a run, which the web page cannot make: runs need the desktop app (D-22)".to_owned()),
         }
     }
 
-    /// The functions of the folder: only the rows in sight are laid out, however many there are.
-    fn functions(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Functions");
-        let (state, listing) = (self.shown.state.clone(), self.shown.listing.clone());
-        let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
-        let mut clicked = None;
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row, listing.functions.len(), |ui, rows| {
-            for listed in listing.functions.get(rows).unwrap_or_default() {
-                let shown = state.function.as_ref() == Some(&listed.function);
-                // A function that is not drawn gives the number of errors of its file (architecture 11.5).
-                let text = if listed.drawable || listed.errors == 0 {
-                    listed.function.clone()
-                } else {
-                    format!("{}  ({} error{})", listed.function, listed.errors, if listed.errors == 1 { "" } else { "s" })
-                };
-                if ui.selectable_label(shown, text).on_hover_text(&listed.file).clicked() && !shown {
-                    clicked = Some(listed.function.clone());
-                }
-            }
-        });
-        if let Some(function) = clicked {
-            self.command("view.show_function", json!({ "function": function }));
+    /// The address and the title of the page, as what is on screen: a link to it, for a bundled folder.
+    fn write_address(&mut self) {
+        let snapshot = self.shared.snapshot();
+        if self.shared.supervisor.borrow().busy() {
+            return;
         }
-    }
-
-    /// The diagnostics: only the lines in sight are laid out.
-    fn problems(&self, ui: &mut egui::Ui) {
-        let listing = &self.shown.listing;
-        ui.label(egui::RichText::new(format!("Problems: {} errors, {} warnings", listing.errors, listing.warnings)).strong());
-        if self.shown.kept {
-            ui.label("This function is not drawn now: its last drawing stays, with the diagnostics of its file.");
+        let function = snapshot.view.function.clone();
+        let now = (self.bundled, snapshot.project.clone(), function.clone());
+        if self.written.as_ref() == Some(&now) {
+            return;
         }
-        let lines = &self.problems.1;
-        let row = ui.text_style_height(&egui::TextStyle::Monospace);
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row, lines.len(), |ui, rows| {
-            for line in lines.get(rows).unwrap_or_default() {
-                ui.label(egui::RichText::new(line).monospace());
+        self.written = Some(now);
+        let Some(window) = web_sys::window() else { return };
+        let search = Link::search(self.bundled, function.as_deref(), address().webgl);
+        if let (Ok(history), Ok(path)) = (window.history(), window.location().pathname()) {
+            // `?smoke` keeps its address: its server reads nothing else, but the address is not the page's to change.
+            if self.smoke.is_none() {
+                let _ = history.replace_state_with_url(&JsValue::NULL, "", Some(&format!("{path}{search}")));
             }
-        });
+        }
+        if let Some(document) = window.document() {
+            let title = match (&function, &snapshot.project) {
+                (Some(function), Some(project)) => format!("{function} · {project} — LabCraft"),
+                (None, Some(project)) => format!("{project} — LabCraft"),
+                _ => "LabCraft".to_owned(),
+            };
+            document.set_title(&title);
+        }
     }
 
     /// `?smoke`: one step each frame, until it reports.
     fn smoke(&mut self, now: f64, ctx: &egui::Context) {
         let Some(step) = self.smoke.take() else { return };
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
-        let drawn = !self.shown.busy && self.shown.drawing.is_some() && self.shown.notices.is_empty();
-        let function = self.shown.state.function.clone().unwrap_or_default();
+        let snapshot = self.shared.snapshot();
+        let drawing = snapshot.view.drawing.clone();
+        let drawn = !self.shared.supervisor.borrow().busy() && drawing.is_some() && snapshot.notices.is_empty();
+        let function = snapshot.view.function.clone().unwrap_or_default();
         self.smoke = Some(match step {
             Smoke::Drawing { .. } if drawn && self.started == 1 => {
-                let groups = self.shown.drawing.as_ref().map_or(0, |drawing| drawing.groups.len());
-                let before = self.shown.drawing.clone();
-                let actions = self.supervisor.trap();
-                self.perform(actions);
-                Smoke::Trapped { since: now, first: format!("drew `{function}` ({groups} groups)"), before }
+                let groups = drawing.as_ref().map_or(0, |drawing| drawing.groups.len());
+                self.shared.with(Supervisor::trap);
+                self.perform();
+                Smoke::Trapped { since: now, first: format!("drew `{function}` ({groups} groups)"), before: drawing }
             }
             // The new worker drew anew: not the drawing that the page kept.
             Smoke::Trapped { first, before, .. }
-                if drawn
-                    && self.started == 2
-                    && !before.as_ref().zip(self.shown.drawing.as_ref()).is_some_and(|(before, now)| Arc::ptr_eq(before, now)) =>
+                if drawn && self.started == 2 && !before.as_ref().zip(drawing.as_ref()).is_some_and(|(before, now)| Arc::ptr_eq(before, now)) =>
             {
                 report(&format!("ok: {}; {first}; the worker trapped and restarted; drew `{function}` again", self.backend));
                 Smoke::Done
             }
             Smoke::Drawing { since } | Smoke::Trapped { since, .. } if now - since > SMOKE_PATIENCE => {
-                report(&format!("fail: {} workers started, function {function:?}, notices {:?}", self.started, self.shown.notices));
+                report(&format!("fail: {} workers started, function {function:?}, notices {:?}", self.started, snapshot.notices));
                 Smoke::Done
             }
             other => other,
@@ -463,44 +413,57 @@ impl Viewer {
     }
 }
 
-impl eframe::App for Viewer {
+impl eframe::App for Page {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_incoming();
-        egui::Panel::top("labcraft-top").show(ui, |ui| self.top_bar(ui));
-        egui::Panel::bottom("labcraft-problems").resizable(true).default_size(120.0).show(ui, |ui| self.problems(ui));
-        egui::Panel::left("labcraft-functions").resizable(true).default_size(240.0).show(ui, |ui| self.functions(ui));
-        egui::CentralPanel::default().show(ui, |ui| {
-            if self.shown.drawing.is_none() {
-                let text = match (self.supervisor.folder_name(), &self.shown.state.function) {
-                    _ if self.reading => "Reading the folder…".to_owned(),
-                    (Some(name), _) if self.shown.busy => format!("Opening `{name}`…"),
-                    // Not drawn: the diagnostics of its file, or the notice of a trap, say why.
-                    (Some(_), Some(function)) => format!("`{function}` is not drawn: the notices and Problems say why."),
-                    (Some(_), None) if !self.shown.notices.is_empty() => "The notices above say why nothing is drawn.".to_owned(),
-                    (Some(name), None) if self.shown.listing.functions.is_empty() => {
-                        format!("`{name}` has no function to draw. Open another folder, or drop one on the page.")
-                    }
-                    (Some(_), None) => "Choose a function on the left.".to_owned(),
-                    (None, _) => "Open a folder, or drop one on the page, to see its functions.".to_owned(),
-                };
-                let working = self.reading || self.shown.busy;
-                ui.vertical_centered(|ui| {
-                    ui.add_space((ui.available_height() / 2.0 - 24.0).max(0.0));
-                    if working {
-                        ui.spinner();
-                    }
-                    ui.label(text);
-                });
-                return;
-            }
-            let tabs = Tabs { arms: self.shown.state.arms.iter().cloned().collect() };
-            let response = self.canvas.show(ui, self.theme, &tabs);
-            if let (Some((structure, arm)), Some(function)) = (response.tab, self.shown.state.function.clone()) {
-                self.command("view.set_state", json!({ "function": function, "state": { "arms": { structure: arm } } }));
-            }
-        });
+        let host = self.has_project().then_some(&self.shared as &dyn Host);
+        let outward = self.ide.show(ui, host, &self.start);
+        self.perform();
+        for asked in outward {
+            self.outward(ui.ctx(), asked);
+        }
+        if self.ide.take_prefs_changed() {
+            write_prefs(&self.ide.prefs());
+        }
+        // Leaving the page, or reloading it, loses a project that changed: the browser asks first.
+        let changed = self.changed();
+        if self.guarded != changed {
+            self.guarded = changed;
+            LEAVING_LOSES.with(|loses| loses.set(changed));
+        }
+        self.write_address();
         let now = ui.input(|input| input.time);
         self.smoke(now, ui.ctx());
+    }
+}
+
+/// The settings of the user, from the storage of the browser; until the user changes one, those of the viewer of M0v,
+/// and the theme and the motion that the system asks for at each start.
+fn read_prefs() -> Prefs {
+    if let Some(prefs) = stored(PREFS_KEY).and_then(|json| serde_json::from_str::<Prefs>(&json).ok()) {
+        return prefs;
+    }
+    let mut prefs =
+        Prefs { dark: prefers("(prefers-color-scheme: dark)"), reduced_motion: prefers("(prefers-reduced-motion: reduce)"), ..Prefs::default() };
+    match stored(VIEWER_THEME_KEY).as_deref() {
+        Some("dark") => prefs.dark = true,
+        Some("light") => prefs.dark = false,
+        _ => {}
+    }
+    if let Some(standard) = stored(VIEWER_STANDARD_KEY) {
+        prefs.standard_everywhere = standard == "true";
+    }
+    prefs
+}
+
+/// Keeps the settings, which then replace those of the viewer of M0v.
+fn write_prefs(prefs: &Prefs) {
+    if let Ok(json) = serde_json::to_string(prefs) {
+        store(PREFS_KEY, &json);
+    }
+    if let Some(storage) = storage() {
+        let _ = storage.remove_item(VIEWER_THEME_KEY);
+        let _ = storage.remove_item(VIEWER_STANDARD_KEY);
     }
 }
 
@@ -701,8 +664,7 @@ async fn dropped_files(roots: Vec<FileSystemEntry>) -> Result<Listed, (String, S
             }
             for value in batch.iter() {
                 if listed.files.len() + listed.folders.len() >= folder::MAX_LISTED {
-                    listed.stopped =
-                        Some(format!("the folder holds more than {} files and folders: the viewer reads no further", folder::MAX_LISTED));
+                    listed.stopped = Some(format!("the folder holds more than {} files and folders: the page reads no further", folder::MAX_LISTED));
                     return Ok(listed);
                 }
                 take(value.unchecked_into(), &prefix, &mut pending, &mut listed);

@@ -296,6 +296,22 @@ impl Memory {
         self.lock().current = Some(lexical(path.as_ref()));
     }
 
+    /// Every file under `folder` with the time of its last change, links not followed: what the web page compares to
+    /// keep a copy of the files of a project (architecture 12.9). A file renamed has a new path, and so is seen.
+    pub fn files(&self, folder: impl AsRef<Path>) -> Vec<(PathBuf, u128)> {
+        let folder = lexical(folder.as_ref());
+        let nodes = self.lock();
+        nodes
+            .by_path
+            .range(folder.clone()..)
+            .take_while(|(path, _)| path.starts_with(&folder))
+            .filter_map(|(path, node)| match node {
+                Node::File { modified, .. } => Some((path.clone(), *modified)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The bytes of a file, a link followed.
     pub fn get(&self, path: impl AsRef<Path>) -> Option<Vec<u8>> {
         let nodes = self.lock();
@@ -615,6 +631,23 @@ mod tests {
         memory.set_read_only("/f.lcf", true);
         assert_eq!(memory.write(Path::new("/f.lcf"), b"c").unwrap_err().kind(), io::ErrorKind::PermissionDenied);
         assert!(memory.write(Path::new("/nowhere/f.lcf"), b"c").is_err(), "the folder must exist");
+    }
+
+    #[test]
+    fn the_files_under_a_folder_say_when_each_changed() {
+        let memory = Memory::new();
+        memory.put("/p/a.lcf", "a");
+        memory.put("/p/sub/b.lcf", "b");
+        memory.put("/q/c.lcf", "c");
+        memory.put("/pq.lcf", "outside: a name that starts like the folder");
+        let before = memory.files("/p");
+        let paths: Vec<&Path> = before.iter().map(|(path, _)| path.as_path()).collect();
+        assert_eq!(paths, [Path::new("/p/a.lcf"), Path::new("/p/sub/b.lcf")]);
+        memory.write(Path::new("/p/a.lcf"), b"a2").unwrap();
+        memory.rename(Path::new("/p/sub/b.lcf"), Path::new("/p/b.lcf")).unwrap();
+        let after = memory.files("/p");
+        let changed: Vec<&Path> = after.iter().filter(|seen| !before.contains(seen)).map(|(path, _)| path.as_path()).collect();
+        assert_eq!(changed, [Path::new("/p/a.lcf"), Path::new("/p/b.lcf")], "a write and a rename are both seen");
     }
 
     #[test]

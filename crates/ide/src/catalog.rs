@@ -4,6 +4,7 @@
 use craft_keymap::{CommandRef, Keymap};
 use kit_shell::Planned;
 use kit_shell::palette::{Entry, Param, State};
+use kit_shell::start::Example;
 use kit_shell::workspaces::{Availability, Workspace};
 use labcraft_engine::registry;
 use serde_json::Value;
@@ -15,6 +16,16 @@ pub const ROADMAP: &str = "https://github.com/corail-labs/labcraft/blob/main/doc
 
 fn issue(number: u32) -> String {
     format!("https://github.com/corail-labs/labcraft/issues/{number}")
+}
+
+/// An example of the start page (ide.md 10), by the name of its folder: `examples` or `docs/rfc`.
+pub fn example(name: &str) -> Example {
+    let (title, line) = match name {
+        "examples" => ("The examples", "A bench: a power supply, a multimeter, relays, and the functions that test with them"),
+        "docs/rfc" => ("The programs of the RFCs", "The programs that the RFCs of the language give"),
+        _ => ("An example", ""),
+    };
+    Example { name: title.to_owned(), line: line.to_owned() }
 }
 
 /// The workspaces of ide.md 6.
