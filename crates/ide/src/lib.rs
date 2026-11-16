@@ -1006,6 +1006,10 @@ impl Ide {
         style.accent = tokens.accent;
         // Room between the panels, so that each reads as a surface of its own (owner, 2026-11-16).
         style.gap = 4.0;
+        // Rounded panels, as every surface of `kit_shell::theme`; the room between them is the
+        // `CentralPanel` below, `base`.
+        style.corner_radius = f32::from(kit_shell::theme::RADIUS);
+        style.corner_fill = tokens.base;
         self.native.clear();
         let mut content = Content {
             ide: self,

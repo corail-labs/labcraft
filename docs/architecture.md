@@ -378,7 +378,9 @@ their actions pinned by commit.
 (`Cargo.toml`); one revision for all of them, so that no crate is built twice. The `main` of the fork follows
 `storytold/craft-libs`. A change of the docking (or of any other crate) is a commit on the branch `labcraft`, then a
 pull request here that moves the revision. A change that is not ours alone also goes to `storytold/craft-libs` as a pull
-request from its own branch, and we never wait on its merge. D-03 is unchanged (egui and `craft-libs`).
+request from its own branch, and we never wait on its merge. D-03 is unchanged (egui and `craft-libs`). The branch
+`labcraft` holds one change of ours: the corner radius of the docked panels (`DockStyle::corner_radius`), which the
+IDE sets to the radius of `kit_shell::theme`, proposed upstream as storytold/craft-libs#1955.
 
 ## 8. Tests
 
