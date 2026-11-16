@@ -373,6 +373,13 @@ follows the `main` branch of another organization, and its job name would replac
 check required on `main`. Our jobs take the same steps, split into parts that run side by side (section 8), with
 their actions pinned by commit.
 
+**Where `craft-libs` comes from.** Every crate of `craft-libs` comes from our fork,
+[`corail-labs/craft-libs`](https://github.com/corail-labs/craft-libs), pinned to one revision of its branch `labcraft`
+(`Cargo.toml`); one revision for all of them, so that no crate is built twice. The `main` of the fork follows
+`storytold/craft-libs`. A change of the docking (or of any other crate) is a commit on the branch `labcraft`, then a
+pull request here that moves the revision. A change that is not ours alone also goes to `storytold/craft-libs` as a pull
+request from its own branch, and we never wait on its merge. D-03 is unchanged (egui and `craft-libs`).
+
 ## 8. Tests
 
 A crate is tested on its own first: the corpora need no CLI to reach `format` and `check`, and the
