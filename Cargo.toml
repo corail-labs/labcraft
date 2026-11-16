@@ -33,13 +33,13 @@ labcraft-results-log = { path = "examples/results_log" }
 kit-shell = { path = "kit/kit-shell" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
-craft-atomic = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
-craft-dialogs = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
-craft-keymap = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6", features = ["egui"] }
-craft-menu = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
-craft-settings = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6" }
-craft-ui = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6", features = ["system_fonts"] }
-craft-window = { git = "https://github.com/corail-labs/craft-libs", rev = "2e2312ddaf21bc3d85cd3395d0955c7d239306f6", features = ["egui"] }
+craft-atomic = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f" }
+craft-dialogs = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f" }
+craft-keymap = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f", features = ["egui"] }
+craft-menu = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f" }
+craft-settings = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f" }
+craft-ui = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f", features = ["system_fonts"] }
+craft-window = { git = "https://github.com/corail-labs/craft-libs", rev = "892ef9116c432d7afb5c08aba93e93a4e0b1548f", features = ["egui"] }
 
 # The suite's fork of egui, at the revision that craft-libs pins (`[patch.crates-io]` below). No default fonts:
 # the canvas and the app install their own (architecture 11.5).
