@@ -21,24 +21,6 @@ pub struct BundledFile {
 
 include!(concat!(env!("OUT_DIR"), "/bundled.rs"));
 
-/// The name of an example on the start page.
-pub fn title(name: &str) -> &'static str {
-    match name {
-        "examples" => "The examples",
-        "docs/rfc" => "The programs of the RFCs",
-        _ => "An example",
-    }
-}
-
-/// One line on what it holds.
-pub fn line(name: &str) -> &'static str {
-    match name {
-        "examples" => "A bench: a power supply, a multimeter, relays, and the functions that test with them",
-        "docs/rfc" => "The programs that the RFCs of the language give",
-        _ => "",
-    }
-}
-
 /// Copies the example of this index into `folder`, which must be empty or not exist yet.
 pub fn copy(at: usize, folder: &Path) -> Result<(), CommandError> {
     let Some(bundled) = BUNDLED.get(at) else {
@@ -63,7 +45,7 @@ mod tests {
     fn the_examples_and_the_programs_of_the_rfcs_are_built_in() {
         assert_eq!(BUNDLED.iter().map(|bundled| bundled.name).collect::<Vec<_>>(), ["examples", "docs/rfc"]);
         assert!(BUNDLED.iter().all(|bundled| !bundled.files.is_empty()));
-        assert!(BUNDLED.iter().all(|bundled| title(bundled.name) != "An example"));
+        assert!(BUNDLED.iter().all(|bundled| labcraft_ide::catalog::example(bundled.name).name != "An example"));
     }
 
     #[test]

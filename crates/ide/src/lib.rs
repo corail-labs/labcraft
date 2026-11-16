@@ -105,6 +105,8 @@ pub struct StartList {
     pub examples: Vec<Example>,
     /// A project that did not open, said on the page.
     pub problem: Option<String>,
+    /// The projects are held in memory, as on the web (ide.md 12): an example opens as it is, and none is recent.
+    pub in_memory: bool,
 }
 
 /// What the history says, for the top bar and the status bar.
@@ -140,8 +142,11 @@ pub struct Ide {
     /// The `movable` flag last given to AppKit (`craft_window::title_bar::sync_movable`).
     #[cfg(target_os = "macos")]
     movable: Option<bool>,
-    /// The project the per-project state below belongs to.
+    /// The project the per-project state below belongs to, and the session of the app it came from.
     project: Option<String>,
+    session: u64,
+    /// The project is in memory (`StartList::in_memory`): the status bar says so, not "saved".
+    in_memory: bool,
     drawn: HashMap<String, Drawn>,
     texts: HashMap<String, text::Kept>,
     callables: panels::Callables,
@@ -182,6 +187,8 @@ impl Ide {
             #[cfg(target_os = "macos")]
             movable: None,
             project: None,
+            session: 0,
+            in_memory: false,
             drawn: HashMap::new(),
             texts: HashMap::new(),
             callables: panels::Callables::default(),
@@ -212,6 +219,12 @@ impl Ide {
     /// Whether the settings changed since the last call: the app writes them.
     pub fn take_prefs_changed(&mut self) -> bool {
         std::mem::take(&mut self.prefs_changed)
+    }
+
+    /// Whether the history of the project shown has nothing to undo or redo, as the window last read it: the web page
+    /// asks before another project replaces one that changed (ide.md 12).
+    pub fn history_is_empty(&self) -> bool {
+        self.history.undo.is_none() && self.history.redo.is_none()
     }
 
     /// Says a problem that the app met, as a failure of a command is said.
@@ -324,6 +337,7 @@ impl Ide {
                 self.failures.clear();
             }
         }
+        self.in_memory = start.in_memory;
         let status = self.status(&view);
         if let Some(command) = egui::Panel::bottom("ide-status")
             .frame(kit_shell::theme::bar_frame(&tokens).inner_margin(egui::Margin::symmetric(8, 3)))
@@ -362,10 +376,11 @@ impl Ide {
     fn new_project(&mut self, snapshot: &Snapshot) {
         // A new session counts from 0 again, even for the same folder.
         let again = snapshot.view.drawing_generation < self.drawing_generation || snapshot.view.overlay_generation < self.overlay_generation;
-        if self.project == snapshot.project && !again {
+        if self.project == snapshot.project && self.session == snapshot.session && !again {
             return;
         }
         self.project.clone_from(&snapshot.project);
+        self.session = snapshot.session;
         self.drawn.clear();
         self.texts.clear();
         self.callables = panels::Callables::default();
@@ -542,7 +557,11 @@ impl Ide {
     fn status(&self, view: &Published) -> (Vec<Segment>, Vec<Segment>) {
         let mut left = Vec::new();
         if let Some(file) = view.function.as_deref().and_then(|function| file_of_tab(view, function)) {
-            left.push(Segment::new(format!("{file} · saved")).hover("The window writes every change to the file at once"));
+            left.push(if self.in_memory {
+                Segment::new(format!("{file} · in memory")).hover("The page holds the project in memory: nothing leaves your browser")
+            } else {
+                Segment::new(format!("{file} · saved")).hover("The window writes every change to the file at once")
+            });
         }
         if let Some(last) = &self.history.last {
             left.push(Segment::new(last.clone()).hover("The last step of the history"));
@@ -563,8 +582,9 @@ impl Ide {
                 title: "LabCraft",
                 line: "A graphical dataflow language, open and cross-platform",
                 actions: &actions,
-                recent: &start.recent,
+                recent: (!start.in_memory).then_some(start.recent.as_slice()),
                 examples: &start.examples,
+                examples_note: if start.in_memory { "Each opens in this page, in memory" } else { "Each opens as a copy, in a folder you choose" },
                 problem: start.problem.as_deref(),
             },
         )

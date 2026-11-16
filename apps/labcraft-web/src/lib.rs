@@ -1,5 +1,5 @@
-//! The viewer of M0v in the browser (`docs/architecture.md`, 11.5), read-only: the same viewer as `apps/labcraft`, its
-//! session of `engine` in a Web Worker, which a trap of WASM can stop without stopping the page.
+//! The IDE in the browser (`docs/architecture.md`, 12.9): the same window as `apps/labcraft`, the one of `ide`, its
+//! session of `engine` in a Web Worker, which a trap of WASM can stop without stopping the page, on a project in memory.
 //!
 //! The library is what both ends need, and what is tested without a browser: what they say to each other
 //! ([`protocol`]), what the worker does ([`host`]), what the page knows of its worker and does when it traps
@@ -77,11 +77,12 @@ mod tests {
             let answer: Answer = decode(&encode(&host.handle(open)).unwrap()).unwrap();
             assert!(answer.result.is_ok(), "{}: {:?}", bundled.name, answer.result);
             let listing = answer.listing.unwrap_or_else(|| panic!("{}: no listing", bundled.name));
-            assert_eq!((listing.errors, listing.problems.as_str()), (0, ""), "{}", bundled.name);
+            assert_eq!((listing.errors, listing.problems.as_slice()), (0, [].as_slice()), "{}", bundled.name);
             let functions: Vec<String> = listing.functions.iter().map(|listed| listed.function.clone()).collect();
             assert!(!functions.is_empty(), "{}", bundled.name);
             for function in functions {
-                let message = ToWorker::Command { id: "view.show_function".to_owned(), params: json!({ "function": function }).to_string() };
+                let params = json!({ "function": function }).to_string();
+                let message = ToWorker::Command { request: 1, id: "view.show_function".to_owned(), params };
                 let answer: Answer = decode(&encode(&host.handle(message)).unwrap()).unwrap();
                 assert!(answer.result.is_ok(), "{}: {function}: {:?}", bundled.name, answer.result);
                 let drawing = answer.drawing.unwrap_or_else(|| panic!("{}: {function}: no drawing", bundled.name));
@@ -104,7 +105,7 @@ mod tests {
             show: Some(DEFAULT_FUNCTION.to_owned()),
         };
         let answer = Host::new(None).handle(open);
-        assert_eq!(answer.state.function.as_deref(), Some(DEFAULT_FUNCTION));
+        assert_eq!(answer.seen.function.as_deref(), Some(DEFAULT_FUNCTION));
         assert_eq!(answer.drawing.map(|drawing| drawing.function.clone()).as_deref(), Some(DEFAULT_FUNCTION));
     }
 }

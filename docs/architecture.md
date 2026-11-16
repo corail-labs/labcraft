@@ -1841,6 +1841,21 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `settings.set` of the user's store, which the page writes. Those of the project are its `.labcraft/config.toml`, in
   memory and in the zip. Opening a folder of the computer to write it in place (the File
   System Access API, in Chromium only) is not in M1. No agent is attached on the web in M1 (ide.md 12).
+- **As step 1b writes them.** The page is the window of `ide`, with no frame of its own; its `Host` is the supervisor of
+  the worker (`supervisor::Shared`): a command waits there, one in flight at a time, and its answer comes back to its
+  reply. The worker says what the session published (`protocol::Seen`), the listing and the diagnostics when a check
+  gives new ones, the drawing when it is a new one, and the files that the command wrote, renamed or removed, the
+  journal left out (`engine::Memory::files` compares their times of change); the page makes a `Published` of them, whose
+  generation changes only with what the session published, so that a read (`history.list`) changes nothing. With no
+  watcher in the browser, the worker tells the session of the files a command changed, as the watch does on the desktop.
+  The session of the worker has a window (`with_window`). There is no trace and no value on the web: a run needs threads
+  (D-22). Without an address the page opens on its start page (ide.md 10): its examples open in memory, as they are, and
+  it lists no recent project; a project that changed (a file written, or a step in its history) asks before another
+  replaces it, or the page is left. A worker that traps starts again on the files as they are, on the function shown:
+  the history, the other tabs, their views and the selection go with it; a trap after the files changed counts again
+  as a first. A folder read keeps only its program files: `.labcraft/config.toml` comes with the settings (step 6).
+  The address names the folder always, `?folder=examples&fn=check_voltage`. The settings of the window are kept as JSON in `localStorage`, those of
+  the viewer of M0v read into them once.
 - **`labcraft-cli`** gains the editing commands through `engine`, one per process, with no history (commands.md 9.5).
 
 ### 12.10 Tests

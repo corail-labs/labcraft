@@ -2298,12 +2298,14 @@ name = "labcraft-web"
 version = "0.3.0-m0"
 dependencies = [
  "craft-ui",
+ "craft-window",
  "eframe",
  "egui",
  "js-sys",
  "labcraft-diagram",
  "labcraft-editor",
  "labcraft-engine",
+ "labcraft-ide",
  "labcraft-libs",
  "labcraft-types",
  "postcard",
