@@ -706,7 +706,7 @@ dependencies = [
 [[package]]
 name = "craft-atomic"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "rustix 1.1.6",
 ]
@@ -714,7 +714,7 @@ dependencies = [
 [[package]]
 name = "craft-dialogs"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.5",
@@ -727,12 +727,12 @@ dependencies = [
 [[package]]
 name = "craft-fonts-build"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 
 [[package]]
 name = "craft-i18n"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "fixed_decimal",
  "icu_decimal",
@@ -755,7 +755,7 @@ dependencies = [
 [[package]]
 name = "craft-keymap"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "egui",
  "serde",
@@ -765,7 +765,7 @@ dependencies = [
 [[package]]
 name = "craft-menu"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "craft-keymap",
  "craft-quit",
@@ -778,7 +778,7 @@ dependencies = [
 [[package]]
 name = "craft-quit"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "dispatch2",
  "egui",
@@ -789,7 +789,7 @@ dependencies = [
 [[package]]
 name = "craft-settings"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "craft-atomic",
  "dirs",
@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "craft-ui"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "craft-fonts-build",
  "craft-i18n",
@@ -823,7 +823,7 @@ dependencies = [
 [[package]]
 name = "craft-window"
 version = "0.1.0"
-source = "git+https://github.com/corail-labs/craft-libs?rev=892ef9116c432d7afb5c08aba93e93a4e0b1548f#892ef9116c432d7afb5c08aba93e93a4e0b1548f"
+source = "git+https://github.com/corail-labs/craft-libs?rev=5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db#5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db"
 dependencies = [
  "egui",
  "objc2 0.6.5",
