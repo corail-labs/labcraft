@@ -46,8 +46,10 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
   (section 5); on the right, the state of the agent (section 8), the settings, the help, the version and, where the
   desktop draws none, the buttons of the window. An empty part of the bar moves the window, a double click
   maximizes it. On macOS the menus are those of the system bar, and the bar leaves room for the buttons of the
-  system; elsewhere they open from the bar. One description of the menus, as data, gives both (`craft-menu`), and
-  `craft-window` decides who draws the frame.
+  system; elsewhere they open from the bar. One description of the menus, as data, gives both (`craft-menu`). Who
+  draws the frame: on Windows the IDE, as the other Craft apps and VS Code do (its buttons at the right end of the
+  bar, its edges resize the window); on macOS the system, its title bar see-through over the top bar; elsewhere
+  `craft-window` decides. `LABCRAFT_TITLEBAR=system` keeps the frame of the system, `=app` asks for the IDE's.
 - **Left: what the user takes.** `Project` (the tree of the folder) and `Palette` (the functions to place), two tabs
   of one dock.
 - **Centre: the tabs of the functions**, each with its views (section 3).

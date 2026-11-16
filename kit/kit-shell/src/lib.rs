@@ -17,6 +17,7 @@
 )]
 #![forbid(unsafe_code)]
 
+pub mod frame;
 pub mod fuzzy;
 pub mod icon;
 pub mod inspector;
