@@ -2,7 +2,7 @@
 //! they are is the layout of the user (`craft-ui` docking), kept in the settings of the user, never the project's; which
 //! functions have a tab is the state of the session, so the tabs of functions are never saved with the layout.
 
-use craft_ui::docking::{Layout, Node, Permissions, Workspace};
+use craft_ui::docking::{Floating, Layout, Node, Permissions, Workspace};
 use craft_ui::layout::{SplitAxis, SplitSize};
 use serde::{Deserialize, Serialize};
 
@@ -56,6 +56,27 @@ pub fn permissions(_pane: &Pane) -> Permissions {
     Permissions::default()
 }
 
+/// The permissions of a pane where it is: a floating window takes no other tab and no split, so that a detached window
+/// holds one function, and a function never joins a window of panels (ide.md 9; decision of the owner, 2026-11-16).
+pub fn permissions_in(pane: &Pane, floating: bool) -> Permissions {
+    if floating { Permissions { accepts_tabs: false, accepts_splits: false, ..permissions(pane) } } else { permissions(pane) }
+}
+
+/// The panes in a floating window of the layout.
+pub fn floating(layout: &Layout<Pane>) -> Vec<Pane> {
+    layout.floating.iter().flat_map(|window| window.panels().cloned().collect::<Vec<_>>()).collect()
+}
+
+/// The floating window that holds the pane: for the tab of a function, its detached window.
+pub fn floating_window<'a>(layout: &'a Layout<Pane>, pane: &Pane) -> Option<&'a Floating<Pane>> {
+    layout.floating.iter().find(|window| window.contains(pane))
+}
+
+/// Whether the pane is in a floating window: for the tab of a function, a detached window.
+pub fn is_floating(layout: &Layout<Pane>, pane: &Pane) -> bool {
+    floating_window(layout, pane).is_some()
+}
+
 /// The layout of ide.md 2: `Project` and `Palette` on the left, the tabs in the centre over `Problems` and `Run`,
 /// `Inspector` on the right.
 pub fn default_layout() -> Layout<Pane> {
@@ -91,8 +112,9 @@ pub fn to_save(workspace: &Workspace<Pane>) -> Workspace<Pane> {
     let mut saved = workspace.clone();
     let functions: Vec<Pane> = saved.layout.panels().into_iter().filter(|pane| pane.function().is_some()).cloned().collect();
     for pane in functions {
-        // The start page takes the place of the tabs, so that the next functions open there.
-        if !saved.layout.contains(&Pane::Start) {
+        // The start page takes the place of the tabs, so that the next functions open there; a detached window just
+        // closes.
+        if !saved.layout.contains(&Pane::Start) && !is_floating(&saved.layout, &pane) {
             let _ = saved.apply(craft_ui::docking::Action::Open { panel: Pane::Start, anchor: Some(pane.clone()) }, permissions);
         }
         let _ = saved.apply(craft_ui::docking::Action::Close { panel: pane }, permissions);

@@ -21,6 +21,12 @@ labcraft-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[features]
+default = []
+# The tab of a function detaches into a window of the system (ide.md 9): the desktop app turns it on; the web, which has
+# one window of the browser, floats it in the page.
+native-windows = ["craft-ui/native-windows"]
+
 [dev-dependencies]
 egui_kittest = { workspace = true }
 

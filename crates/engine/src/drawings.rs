@@ -139,7 +139,24 @@ pub fn drawing_of(
     limits: &DiagramLimits,
     report: &mut Report,
 ) -> Drawn3 {
-    let mut codes = report.keeping_from_drawing(&function.shown);
+    let keeping = report.keeping_from_drawing(&function.shown);
+    drawing_apart(function, checked, files, names, view, limits, keeping, report)
+}
+
+/// [`drawing_of`], with the codes that keep the function from being drawn read from the report of the check before, and
+/// what drawing it adds put in `added`: a window keeps what its drawing added apart from the check.
+#[allow(clippy::too_many_arguments)]
+pub fn drawing_apart(
+    function: &Function,
+    checked: Option<&Checked>,
+    files: &HashMap<&str, usize>,
+    names: &Interner,
+    view: &ViewState,
+    limits: &DiagramLimits,
+    keeping: Vec<Code>,
+    report: &mut Report,
+) -> Drawn3 {
+    let mut codes = keeping;
     let (Some(checked), Some(&index)) = (checked, files.get(function.shown.as_str())) else { return (None, None, codes) };
     let nodes = labcraft_diagram::count_nodes(checked, index, names);
     if !codes.is_empty() {

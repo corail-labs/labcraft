@@ -114,11 +114,11 @@ fn shown(supervisor: &Supervisor) -> Arc<Published> {
 }
 
 fn shown_function(supervisor: &Supervisor) -> Option<String> {
-    shown(supervisor).function.clone()
+    shown(supervisor).main.function.clone()
 }
 
 fn drawn_function(supervisor: &Supervisor) -> Option<String> {
-    shown(supervisor).drawing.as_ref().map(|drawing| drawing.function.clone())
+    shown(supervisor).main.drawing.as_ref().map(|drawing| drawing.function.clone())
 }
 
 fn opened(folder: Folder, function: Option<&str>) -> (Supervisor, Worker) {
@@ -133,8 +133,8 @@ fn a_folder_opens_and_draws_its_first_function() {
     poison(&[]);
     let (mut supervisor, mut worker) = opened(folder(), None);
     let snapshot = supervisor.snapshot();
-    assert_eq!((snapshot.view.function.as_deref(), snapshot.project.as_deref()), (Some("alpha"), Some("bench")));
-    assert!(snapshot.view.drawing.is_some() && snapshot.notices.is_empty() && !supervisor.busy());
+    assert_eq!((snapshot.view.main.function.as_deref(), snapshot.project.as_deref()), (Some("alpha"), Some("bench")));
+    assert!(snapshot.view.main.drawing.is_some() && snapshot.notices.is_empty() && !supervisor.busy());
     assert_eq!(snapshot.view.functions.len(), 2);
     assert!(snapshot.view.report.is_some());
     let result = command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" }));
@@ -151,11 +151,11 @@ fn what_is_published_counts_up_across_folders() {
     let before = shown(&supervisor);
     command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" })).unwrap();
     let after = shown(&supervisor);
-    assert!(after.generation > before.generation && after.drawing_generation > before.drawing_generation);
+    assert!(after.generation > before.generation && after.main.drawing_generation > before.main.drawing_generation);
     let actions = supervisor.open(folder(), None);
     drive(&mut supervisor, &mut worker, actions);
     let again = shown(&supervisor);
-    assert!(again.generation > after.generation && again.drawing_generation > after.drawing_generation && again.checks > after.checks);
+    assert!(again.generation > after.generation && again.main.drawing_generation > after.main.drawing_generation && again.checks > after.checks);
 }
 
 /// The diagnostics of the worker reach `Problems` as a report, with their code, place and function.
@@ -185,7 +185,7 @@ fn a_folder_opens_on_the_function_asked_for_when_it_has_it() {
         let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
         let actions = supervisor.open(folder(), asked.map(str::to_owned));
         // Nothing is drawn before the worker answers, whatever was asked, and nothing is said yet.
-        assert!(shown(&supervisor).drawing.is_none() && supervisor.busy() && supervisor.notices().is_empty());
+        assert!(shown(&supervisor).main.drawing.is_none() && supervisor.busy() && supervisor.notices().is_empty());
         drive(&mut supervisor, &mut worker, actions);
         assert_eq!((shown_function(&supervisor).as_deref(), drawn_function(&supervisor).as_deref()), (Some(expected), Some(expected)), "{asked:?}");
         let said: &[&str] = if asked == Some("gamma") { &["`bench` has no function `gamma`: here is `alpha`"] } else { &[] };
@@ -203,7 +203,7 @@ fn a_folder_opens_on_the_function_asked_for_when_it_has_it() {
 fn a_function_asked_for_that_traps_is_its_own_fault() {
     poison(&["beta"]);
     let (supervisor, worker) = opened(folder(), Some("beta"));
-    assert_eq!((shown_function(&supervisor).as_deref(), shown(&supervisor).drawing.is_none(), worker.started), (Some("beta"), true, 2));
+    assert_eq!((shown_function(&supervisor).as_deref(), shown(&supervisor).main.drawing.is_none(), worker.started), (Some("beta"), true, 2));
     let notices = supervisor.notices();
     assert_eq!(notices.len(), 1, "{notices:?}");
     assert!(notices.iter().all(|notice| notice.starts_with("LC0099: drawing `beta`")), "{notices:?}");
@@ -232,9 +232,9 @@ fn a_drawing_that_traps_keeps_its_last_drawing_and_is_not_drawn_again() {
     assert!(failed.message.contains("LC0099"), "{failed:?}");
     assert_eq!(worker.started, 2, "restarted once");
     let view = shown(&supervisor);
-    assert_eq!(view.function.as_deref(), Some("beta"));
+    assert_eq!(view.main.function.as_deref(), Some("beta"));
     assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"), "its last drawing");
-    assert!(view.kept);
+    assert!(view.main.kept);
     assert!(supervisor.notices().iter().any(|notice| notice.starts_with("LC0099: drawing `beta`")), "{:?}", supervisor.notices());
     // The new worker never draws it: shown again, it does not trap.
     command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "alpha" })).unwrap();
@@ -257,7 +257,7 @@ fn a_first_function_that_traps_is_its_own_fault_not_the_folders() {
     let (mut supervisor, mut worker) = opened(folder(), None);
     assert_eq!(worker.started, 2);
     assert_eq!(shown_function(&supervisor).as_deref(), Some("alpha"));
-    assert!(shown(&supervisor).drawing.is_none() && !supervisor.busy());
+    assert!(shown(&supervisor).main.drawing.is_none() && !supervisor.busy());
     assert!(supervisor.notices().iter().any(|notice| notice.starts_with("LC0099: drawing `alpha`")), "{:?}", supervisor.notices());
     command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" })).unwrap();
     assert_eq!(drawn_function(&supervisor).as_deref(), Some("beta"));
@@ -282,7 +282,7 @@ fn a_folder_that_traps_twice_shows_lc0099_until_another_is_opened() {
     let actions = supervisor.open(folder(), None);
     drive(&mut supervisor, &mut worker, actions);
     assert_eq!(worker.started, 3);
-    assert!(supervisor.notices().is_empty() && shown(&supervisor).drawing.is_some());
+    assert!(supervisor.notices().is_empty() && shown(&supervisor).main.drawing.is_some());
 }
 
 #[test]
@@ -296,9 +296,9 @@ fn a_trap_restarts_the_worker_on_the_same_files_and_the_function_shown() {
     drive(&mut supervisor, &mut worker, actions);
     assert_eq!(worker.started, 2);
     let view = shown(&supervisor);
-    assert_eq!(view.function.as_deref(), Some("beta"), "the function shown before");
+    assert_eq!(view.main.function.as_deref(), Some("beta"), "the function shown before");
     assert!(view.standard_everywhere, "the preference");
-    assert!(supervisor.notices().is_empty() && view.drawing.is_some());
+    assert!(supervisor.notices().is_empty() && view.main.drawing.is_some());
 }
 
 /// A file written in the session is in the copy of the page: a worker that traps after it opens the file as it was
@@ -379,9 +379,9 @@ fn only_the_last_zoom_waits() {
     let (mut supervisor, mut worker) = opened(folder(), None);
     let (sender, _reply) = Reply::channel();
     let actions = supervisor.command("view.show_function", json!({ "function": "beta" }), sender);
-    assert!(supervisor.zoom(1.5).is_empty() && supervisor.zoom(2.0).is_empty(), "the command is in flight");
-    assert_eq!(supervisor.pending.iter().filter(|request| matches!(request, Request::Zoom(_))).count(), 1);
-    assert!(supervisor.pending.contains(&Request::Zoom(2.0)));
+    assert!(supervisor.zoom("beta", 1.5).is_empty() && supervisor.zoom("beta", 2.0).is_empty(), "the command is in flight");
+    assert_eq!(supervisor.pending.iter().filter(|request| matches!(request, Request::Zoom(..))).count(), 1);
+    assert!(supervisor.pending.contains(&Request::Zoom("beta".to_owned(), 2.0)));
     drive(&mut supervisor, &mut worker, actions);
     let state = command(&mut supervisor, &mut worker, "view.get_state", json!({})).unwrap();
     assert_eq!(state.pointer("/windows/0/zoom").and_then(Value::as_f64), Some(2.0), "{state}");
@@ -399,7 +399,7 @@ fn the_window_sends_through_the_shared_host() {
     assert!(matches!(actions.as_slice(), [Action::Send(_)]));
     drive(&mut shared.supervisor.borrow_mut(), &mut worker, actions);
     assert!(reply.take().unwrap().is_ok());
-    assert_eq!(shared.snapshot().view.function.as_deref(), Some("beta"));
+    assert_eq!(shared.snapshot().view.main.function.as_deref(), Some("beta"));
 }
 
 /// The window reads the history at each publication: a read publishes nothing, or the two would ask each other forever.
@@ -502,4 +502,29 @@ fn a_failure_of_the_page_is_said_until_a_message_succeeds() {
     assert_eq!(supervisor.notices(), ["params.invalid: unreadable"]);
     command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" })).unwrap();
     assert!(supervisor.notices().is_empty());
+}
+
+/// A trap restarts the worker with the detached windows (ide.md 9): each comes back with its function, and one whose
+/// drawing trapped comes back not drawn, with `LC0099`.
+#[test]
+fn a_trap_restarts_the_worker_with_the_detached_windows() {
+    poison(&[]);
+    let (mut supervisor, mut worker) = opened(folder(), None);
+    command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" })).unwrap();
+    command(&mut supervisor, &mut worker, "view.detach", json!({ "function": "beta" })).unwrap();
+    let view = shown(&supervisor);
+    assert!(view.is_detached("beta") && view.window_of("beta").is_some_and(|window| window.drawing.is_some()));
+    let actions = supervisor.trap();
+    drive(&mut supervisor, &mut worker, actions);
+    assert_eq!(worker.started, 2);
+    let view = shown(&supervisor);
+    assert!(view.is_detached("beta") && view.window_of("beta").is_some_and(|window| window.drawing.is_some()), "{:?}", view.opened);
+    assert_eq!((view.main.function.as_deref(), view.opened.as_slice()), (Some("alpha"), ["alpha".to_owned()].as_slice()));
+    // Its drawing traps: it comes back not drawn, and its window says so.
+    poison(&["beta"]);
+    command(&mut supervisor, &mut worker, "view.set_standard_view", json!({ "on": true })).ok();
+    let view = shown(&supervisor);
+    assert!(view.is_detached("beta"), "{:?}", view.opened);
+    let notices = supervisor.notices();
+    assert!(notices.iter().any(|notice| notice.starts_with("LC0099: drawing `beta`")), "{notices:?}");
 }

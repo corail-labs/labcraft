@@ -1287,27 +1287,21 @@ pub(super) fn catalog() -> Vec<Command> {
             object(&[("function", string("The function whose tab is open."))], &["function"]),
             WINDOW_ERRORS,
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.detach",
-                "Detach Tab",
-                "Move the tab of a function into a window of its own",
-                "Moves the tab of the function into a window of its own; on the web, a floating panel.",
-                object(&[("function", string("The function."))], &["function"]),
-                WINDOW_ERRORS,
-            ),
+        window(
+            "view.detach",
+            "Detach Tab",
+            "Move the tab of a function into a window of its own",
+            "Moves the tab of the function into a window of its own, with what it shows; on the web, a floating panel. The window of the project shows its next tab. A function already in a window of its own stays there. Returns `{ \"shown\" }`, the function that the window of the project shows.",
+            object(&[("function", string("The function whose tab is open."))], &["function"]),
+            WINDOW_ERRORS,
         ),
-        planned(
-            STEP_1,
-            window(
-                "view.dock",
-                "Dock Tab",
-                "Move a detached tab back among the tabs of the project",
-                "Moves the tab of the function back among the tabs of the window of the project.",
-                object(&[("function", string("The function."))], &["function"]),
-                WINDOW_ERRORS,
-            ),
+        window(
+            "view.dock",
+            "Dock Tab",
+            "Move a detached tab back among the tabs of the project",
+            "Moves the tab of the function back among the tabs of the window of the project, as its last tab, and shows it there. A function whose tab is there already stays. Returns `{ \"shown\" }`.",
+            object(&[("function", string("The function in a window of its own."))], &["function"]),
+            WINDOW_ERRORS,
         ),
         window(
             "view.toggle_panel",
@@ -1345,7 +1339,6 @@ pub(super) fn catalog() -> Vec<Command> {
     ]
 }
 
-const STEP_1: &str = "M1 step 1 (#160)";
 const STEP_2: &str = "M1 step 2 (#161)";
 const STEP_3: &str = "M1 step 3 (#162)";
 const STEP_4: &str = "M1 step 4 (#163)";

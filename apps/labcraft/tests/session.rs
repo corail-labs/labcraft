@@ -33,7 +33,7 @@ fn the_commands_of_the_viewer_answer_as_commands_md_says() {
     assert_eq!(opened["functions"][1]["drawable"], json!(true));
     assert_eq!(opened["check"]["schema"], json!("labcraft-check/1"));
     // The first function is shown; another is opened in its tab.
-    assert_eq!(session.snapshot().view.function.as_deref(), Some("helper"));
+    assert_eq!(session.snapshot().view.main.function.as_deref(), Some("helper"));
     let entry = session.execute("view.show_function", &json!({ "function": "main" })).unwrap();
     assert_eq!((entry["function"].clone(), entry["file"].clone(), entry["drawn"].clone()), (json!("main"), json!("main.lcf"), json!(true)));
     assert_eq!(session.snapshot().view.opened, ["helper", "main"]);
@@ -66,11 +66,11 @@ fn a_state_refused_changes_nothing_and_an_entry_says_what_is_drawn() {
     let (mut session, _) = open(&folder.0);
     let refused = session.execute("view.set_state", &json!({ "function": "main", "state": { "arms": { "k": 1 }, "zzz": { "a": true } } }));
     assert!(refused.is_err());
-    assert!(session.snapshot().view.arms.is_empty());
+    assert!(session.snapshot().view.main.arms.is_empty());
     let entry = session.execute("view.set_state", &json!({ "function": "main", "state": { "arms": { "k": 1 } } })).unwrap();
     assert_eq!(entry["drawn"], json!(false));
     assert_eq!(entry["codes"], json!(["LC2001"]));
-    assert_eq!(session.snapshot().view.arms.get("k"), Some(&1));
+    assert_eq!(session.snapshot().view.main.arms.get("k"), Some(&1));
 }
 
 /// Two files give one name (`a.b.lcf`, always `LC2023`, and `a/b.lcf`): the viewer shows the one that draws.
@@ -89,11 +89,11 @@ fn b(x: f64) -> (y: f64) {
     let entry = session.execute("view.show_function", &json!({ "function": "a.b" })).unwrap();
     assert_eq!((entry["file"].clone(), entry["drawn"].clone()), (json!("a/b.lcf"), json!(true)));
     // It breaks: its last drawing stays, and the other file of that name is not shown instead.
-    let drawn = session.snapshot().view.drawing.clone().unwrap();
+    let drawn = session.snapshot().view.main.drawing.clone().unwrap();
     std::fs::write(folder.0.join("a/b.lcf"), BROKEN.replace("main", "b")).unwrap();
     session.files_changed();
-    assert!(session.snapshot().view.kept);
-    assert!(Arc::ptr_eq(session.snapshot().view.drawing.as_ref().unwrap(), &drawn));
+    assert!(session.snapshot().view.main.kept);
+    assert!(Arc::ptr_eq(session.snapshot().view.main.drawing.as_ref().unwrap(), &drawn));
     let entry = session.execute("view.set_state", &json!({ "function": "a.b", "state": {} })).unwrap();
     assert_eq!((entry["file"].clone(), entry["drawn"].clone()), (json!("a/b.lcf"), json!(false)));
 }
@@ -104,20 +104,20 @@ fn the_view_state_draws_again_only_what_placement_depends_on() {
     let arms = "labcraft 1\n\nfn main(x: f64, n: i64) -> (y: f64) {\n    y = match n {\n        0 => yield x\n        _ => yield 0.0\n    }\n}\n";
     let folder = Folder::new(&[("main.lcf", arms)]);
     let (mut session, _) = open(&folder.0);
-    let drawing = session.snapshot().view.drawing.clone().unwrap();
+    let drawing = session.snapshot().view.main.drawing.clone().unwrap();
     let structure = drawing.arms.first().unwrap().structure.clone();
-    let generation = session.snapshot().view.drawing_generation;
+    let generation = session.snapshot().view.main.drawing_generation;
     session.execute("view.set_state", &json!({ "function": "main", "state": { "arms": { structure.clone(): 1 } } })).unwrap();
-    assert_eq!(session.snapshot().view.drawing_generation, generation);
-    assert_eq!(session.snapshot().view.arms.get(&structure), Some(&1));
+    assert_eq!(session.snapshot().view.main.drawing_generation, generation);
+    assert_eq!(session.snapshot().view.main.arms.get(&structure), Some(&1));
     session.execute("view.set_state", &json!({ "function": "main", "state": { "unfolded": { structure.clone(): true } } })).unwrap();
-    assert_ne!(session.snapshot().view.drawing_generation, generation);
-    assert!(session.snapshot().view.drawing.as_ref().unwrap().arms.is_empty());
+    assert_ne!(session.snapshot().view.main.drawing_generation, generation);
+    assert!(session.snapshot().view.main.drawing.as_ref().unwrap().arms.is_empty());
     // Kept across a change of the file, by the key of the structure.
     std::fs::write(folder.0.join("main.lcf"), arms.replace("yield 0.0", "yield 1.0")).unwrap();
     session.files_changed();
-    assert!(session.snapshot().view.drawing.as_ref().unwrap().arms.is_empty());
-    assert_eq!(session.snapshot().view.arms.get(&structure), Some(&1));
+    assert!(session.snapshot().view.main.drawing.as_ref().unwrap().arms.is_empty());
+    assert_eq!(session.snapshot().view.main.arms.get(&structure), Some(&1));
 }
 
 /// A function that is no longer drawable keeps its last drawing with its diagnostics (scenario 6, point 3); one that
@@ -126,20 +126,20 @@ fn the_view_state_draws_again_only_what_placement_depends_on() {
 fn a_function_no_longer_drawable_keeps_its_last_drawing() {
     let folder = Folder::new(&[("main.lcf", ONE)]);
     let (mut session, _) = open(&folder.0);
-    let drawn = session.snapshot().view.drawing.clone().unwrap();
-    assert!(!drawn.undrawn && !session.snapshot().view.kept);
+    let drawn = session.snapshot().view.main.drawing.clone().unwrap();
+    assert!(!drawn.undrawn && !session.snapshot().view.main.kept);
     std::fs::write(folder.0.join("main.lcf"), BROKEN).unwrap();
     session.files_changed();
     let published = session.snapshot();
-    assert!(published.view.kept);
-    assert!(Arc::ptr_eq(published.view.drawing.as_ref().unwrap(), &drawn));
+    assert!(published.view.main.kept);
+    assert!(Arc::ptr_eq(published.view.main.drawing.as_ref().unwrap(), &drawn));
     let codes: Vec<&str> = published.view.report.as_ref().unwrap().diagnostics().iter().map(|diagnostic| diagnostic.code().as_str()).collect();
     assert!(codes.contains(&"LC2001"), "{codes:?}");
     assert!(!published.view.functions[0].drawable && published.view.functions[0].errors == 1);
     // Never drawable: its diagnostics.
     let other = Folder::new(&[("main.lcf", BROKEN)]);
     let (fresh, _) = open(&other.0);
-    assert!(fresh.snapshot().view.drawing.as_ref().unwrap().undrawn && !fresh.snapshot().view.kept);
+    assert!(fresh.snapshot().view.main.drawing.as_ref().unwrap().undrawn && !fresh.snapshot().view.main.kept);
 }
 
 /// Every example, library and program of the RFCs opened, each function shown in both views, each structure
@@ -159,7 +159,7 @@ fn every_example_opened_changes_no_program_file() {
                 session.execute("view.set_standard_view", &json!({ "on": standard })).unwrap();
                 session.execute("view.show_function", &json!({ "function": listed.function })).unwrap();
                 let structures: Vec<String> =
-                    session.snapshot().view.drawing.iter().flat_map(|drawing| drawing.arms.iter().map(|arm| arm.structure.clone())).collect();
+                    session.snapshot().view.main.drawing.iter().flat_map(|drawing| drawing.arms.iter().map(|arm| arm.structure.clone())).collect();
                 for structure in structures {
                     session.execute("view.set_state", &json!({ "function": listed.function, "state": { "unfolded": { structure: true } } })).unwrap();
                 }
@@ -235,33 +235,33 @@ fn a_file_of_values_starts_as_the_defaults_and_draws_again_with_what_it_says() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), file_of(&Style::default()));
     assert!(session.snapshot().notices.is_empty());
     session.open(false).unwrap();
-    let before = session.snapshot().view.drawing.clone().unwrap();
-    assert_eq!(before, plain.snapshot().view.drawing.clone().unwrap());
+    let before = session.snapshot().view.main.drawing.clone().unwrap();
+    assert_eq!(before, plain.snapshot().view.main.drawing.clone().unwrap());
     // 16 units more of margin on each side, by hand: 32 units wider and higher.
     std::fs::write(&path, "[canvas]\nmargin = 32\n").unwrap();
-    let generation = session.snapshot().view.drawing_generation;
+    let generation = session.snapshot().view.main.drawing_generation;
     session.style_changed();
-    let after = session.snapshot().view.drawing.clone().unwrap();
-    assert_ne!(session.snapshot().view.drawing_generation, generation);
-    assert!(session.snapshot().view.glide);
+    let after = session.snapshot().view.main.drawing.clone().unwrap();
+    assert_ne!(session.snapshot().view.main.drawing_generation, generation);
+    assert!(session.snapshot().view.main.glide);
     assert_eq!((after.width, after.height), (before.width + 3200, before.height + 3200));
-    assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, 3200);
+    assert_eq!(session.snapshot().view.main.drawing.as_ref().unwrap().style.numbers.margin, 3200);
     assert!(session.snapshot().notices.is_empty());
     // Refused: the values before stay, and the drawing.
     std::fs::write(&path, "[canvas]\nmargin = 1000\n").unwrap();
-    let generation = session.snapshot().view.drawing_generation;
+    let generation = session.snapshot().view.main.drawing_generation;
     session.style_changed();
     let notice = session.snapshot().notices.join("; ");
     assert!(notice.contains("`canvas.margin`: 1000 is not between 0 and 64; the values before stay"), "{notice}");
-    assert_eq!(session.snapshot().view.drawing_generation, generation);
-    assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, 3200);
+    assert_eq!(session.snapshot().view.main.drawing_generation, generation);
+    assert_eq!(session.snapshot().view.main.drawing.as_ref().unwrap().style.numbers.margin, 3200);
     // Taken, and said: an error wire as light as the canvas.
     std::fs::write(&path, "[colors.light]\n\"wire.error\" = \"#F7F7F5\"\n").unwrap();
     session.style_changed();
     let notice = session.snapshot().notices.join("; ");
     assert!(notice.contains("colours below the contrasts of notation 8: `wire.error` on `canvas.fill` (light): 1.00:1"), "{notice}");
     assert!(notice.contains("more"), "{notice}");
-    assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, 800 * 2);
+    assert_eq!(session.snapshot().view.main.drawing.as_ref().unwrap().style.numbers.margin, 800 * 2);
     // A file gone: said, the values stay.
     std::fs::remove_file(&path).unwrap();
     session.style_changed();
@@ -269,12 +269,12 @@ fn a_file_of_values_starts_as_the_defaults_and_draws_again_with_what_it_says() {
     // A drawing kept while its file is broken is painted with the values it was drawn with.
     std::fs::write(folder.0.join("main.lcf"), BROKEN).unwrap();
     session.files_changed();
-    assert!(session.snapshot().view.kept);
-    let kept = session.snapshot().view.drawing.clone().unwrap();
+    assert!(session.snapshot().view.main.kept);
+    let kept = session.snapshot().view.main.drawing.clone().unwrap();
     std::fs::write(&path, "[canvas]\nmargin = 48\n").unwrap();
     session.style_changed();
-    assert_eq!(session.snapshot().view.drawing.clone().unwrap(), kept);
-    assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, 1600);
+    assert_eq!(session.snapshot().view.main.drawing.clone().unwrap(), kept);
+    assert_eq!(session.snapshot().view.main.drawing.as_ref().unwrap().style.numbers.margin, 1600);
 }
 
 /// A trace of `main` with `x` in and `y` out, its file named from the folder.
@@ -288,7 +288,7 @@ fn trace_of(x: f64, y: f64) -> String {
 }
 
 fn value_of_y(published: &labcraft_ide::Snapshot) -> Option<String> {
-    let overlay = published.view.overlay.as_ref()?;
+    let overlay = published.view.main.overlay.as_ref()?;
     overlay.bubbles.iter().find(|bubble| bubble.wire == "y").map(|bubble| bubble.title.clone())
 }
 
@@ -308,8 +308,8 @@ fn a_new_run_shows_its_values_within_a_second_and_a_trace_draws_nothing_again() 
     }
     let published = session.snapshot();
     assert_eq!(value_of_y(&published).as_deref(), Some("2.0"));
-    assert_eq!(published.view.trace.as_ref().map(|trace| trace.file.as_str()), Some(".labcraft/runs/main.trace.jsonl"));
-    let drawn = published.view.drawing_generation;
+    assert_eq!(published.view.main.trace.as_ref().map(|trace| trace.file.as_str()), Some(".labcraft/runs/main.trace.jsonl"));
+    let drawn = published.view.main.drawing_generation;
     // A run replaces it, as a run does: written beside, then renamed over it.
     std::thread::sleep(Duration::from_millis(50));
     let partial = folder.0.join(".labcraft/runs/main.trace.jsonl.1-1-r2.partial");
@@ -322,7 +322,7 @@ fn a_new_run_shows_its_values_within_a_second_and_a_trace_draws_nothing_again() 
     }
     // Looked at every second; a loaded runner may take longer.
     assert!(start.elapsed() < Duration::from_millis(2500), "{:?}", start.elapsed());
-    assert_eq!(session.snapshot().view.drawing_generation, drawn, "a trace is no program file");
+    assert_eq!(session.snapshot().view.main.drawing_generation, drawn, "a trace is no program file");
 }
 
 /// The session of a project on its thread, opened.
@@ -344,7 +344,7 @@ fn a_new_project_is_main_in_an_empty_folder() {
     // Canonical (spec 5.2): written by hand, then `labcraft-cli fmt` changes nothing in it and `check` finds nothing.
     assert_eq!(std::fs::read_to_string(folder.join("main.lcf")).unwrap(), "labcraft 1\n\nfn main() -> () {}\n");
     let snapshot = session.snapshot();
-    assert_eq!(snapshot.view.function.as_deref(), Some("main"));
+    assert_eq!(snapshot.view.main.function.as_deref(), Some("main"));
     assert_eq!(snapshot.view.errors, 0, "{:?}", snapshot.view.report);
     let full = Folder::new(&[("main.lcf", ONE)]);
     assert_eq!(labcraft::session::make_new_folder(&full.0).unwrap_err().code, "path.exists");

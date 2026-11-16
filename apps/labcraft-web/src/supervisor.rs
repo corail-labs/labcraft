@@ -17,12 +17,12 @@ use std::sync::mpsc::Sender;
 
 use labcraft_diagram::Drawing;
 use labcraft_engine::CommandError;
-use labcraft_engine::view::{self, Published, Selection, Tab, ViewKind, WorkspaceId};
+use labcraft_engine::view::{self, Published, Selection, Shown, Tab, ViewKind, WorkspaceId};
 use labcraft_ide::{Host, Reply, Snapshot};
 use labcraft_types::{Code, Diagnostic, Position, Report, Span};
 use serde_json::Value;
 
-use crate::protocol::{Folder, FromWorker, Listing, Seen, ToWorker, decode, encode};
+use crate::protocol::{Folder, FromWorker, Listing, Seen, SeenWindow, ToWorker, decode, encode};
 
 /// What the page must do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub enum Action {
 enum Request {
     Open,
     Command { request: u64, id: String, params: Value },
-    Zoom(f32),
+    Zoom(String, f32),
     Trap,
 }
 
@@ -96,8 +96,8 @@ pub struct Supervisor {
     report: Option<Arc<Report>>,
     /// The last drawing of each function, which a function whose drawing trapped keeps.
     drawings: BTreeMap<String, Arc<Drawing>>,
-    /// The drawing published last.
-    published_drawing: Option<Arc<Drawing>>,
+    /// The drawing published last for each function, and its count.
+    published_drawings: HashMap<String, (Arc<Drawing>, u64)>,
     /// What went wrong between the page and its worker.
     failure: Option<String>,
     /// The function that [`Supervisor::open`] was asked to show, until the worker answers.
@@ -143,14 +143,14 @@ impl Supervisor {
         self.next()
     }
 
-    /// The zoom of the canvas shown: only the last one waits.
-    pub fn zoom(&mut self, zoom: f32) -> Vec<Action> {
+    /// The zoom of the canvas of the window that shows `function`: only the last one of each waits.
+    pub fn zoom(&mut self, function: &str, zoom: f32) -> Vec<Action> {
         if self.refused().is_some() {
             return Vec::new();
         }
-        match self.pending.iter_mut().find(|request| matches!(request, Request::Zoom(_))) {
-            Some(waiting) => *waiting = Request::Zoom(zoom),
-            None => self.pending.push_back(Request::Zoom(zoom)),
+        match self.pending.iter_mut().find(|request| matches!(request, Request::Zoom(of, _) if of == function)) {
+            Some(waiting) => *waiting = Request::Zoom(function.to_owned(), zoom),
+            None => self.pending.push_back(Request::Zoom(function.to_owned(), zoom)),
         }
         self.next()
     }
@@ -225,7 +225,7 @@ impl Supervisor {
 
                 // A change of what the session published, not each answer: the window reads the history again at each
                 // one, which a read does not change.
-                let changed = answer.seen != self.seen || answer.listing.is_some() || answer.drawing.is_some();
+                let changed = answer.seen != self.seen || answer.listing.is_some() || !answer.drawings.is_empty();
                 // A check of the session, as `engine` counts them: a drawing gives a new report too (`LC7005`), not a check.
                 if answer.seen.checks != self.seen.checks {
                     self.counts.checks += 1;
@@ -234,19 +234,19 @@ impl Supervisor {
                     self.report = Some(Arc::new(report_of(&listing)));
                     self.listing = listing;
                 }
-                if let (Some(drawing), Some(function)) = (answer.drawing, &answer.seen.function) {
-                    self.drawings.insert(function.clone(), drawing);
+                for (function, drawing) in answer.drawings {
+                    self.drawings.insert(function, drawing);
                 }
                 // The first answer, to the folder opened: the function asked is shown, or the folder lacks it.
                 if let Some(asked) = self.asked.take()
                     && self.folder.is_some()
-                    && answer.seen.function.as_ref() != Some(&asked)
+                    && answer.seen.main.function.as_ref() != Some(&asked)
                     && answer.seen.folder.is_some()
                 {
-                    self.missing = Some((asked, answer.seen.function.clone()));
+                    self.missing = Some((asked, answer.seen.main.function.clone()));
                 }
                 // Said until another function is shown.
-                if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.seen.function) {
+                if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.seen.main.function) {
                     self.missing = None;
                 }
                 // The preference is the session's: a worker that starts again takes the one it had.
@@ -289,7 +289,10 @@ impl Supervisor {
         }
         if let Some(function) = self.drawing.take() {
             self.trapped.insert(function.clone());
-            self.seen.function = Some(function);
+            // The window that showed it shows it again, not drawn; the window of the project, when none did.
+            if !self.seen.detached.iter().any(|window| window.function.as_ref() == Some(&function)) {
+                self.seen.main.function = Some(function);
+            }
         } else if self.traps == Traps::None {
             self.traps = Traps::Once;
         } else {
@@ -343,14 +346,15 @@ impl Supervisor {
                         folder: Arc::clone(folder),
                         standard_everywhere: self.standard_everywhere,
                         skipped: self.trapped.iter().cloned().collect(),
-                        show: self.seen.function.clone().or_else(|| self.asked.clone()),
+                        show: self.seen.main.function.clone().or_else(|| self.asked.clone()),
+                        detached: self.seen.detached.iter().filter_map(|window| window.function.clone()).collect(),
                     },
                     None,
                 ),
                 None => return Vec::new(),
             },
             Request::Command { request, id, params } => (ToWorker::Command { request, id, params: params.to_string() }, Some(request)),
-            Request::Zoom(zoom) => (ToWorker::Zoom(zoom), None),
+            Request::Zoom(function, zoom) => (ToWorker::Zoom(function, zoom), None),
             Request::Trap => (ToWorker::Trap, None),
         };
         match encode(&message) {
@@ -392,13 +396,11 @@ impl Supervisor {
 
     /// What the session published, made again as the window reads it.
     fn publish(&mut self) {
-        let function = self.seen.function.clone();
-        let drawing = function.as_ref().and_then(|function| self.drawings.get(function)).cloned();
-        let trapped = function.as_ref().is_some_and(|function| self.trapped.contains(function));
-        if drawing.as_ref().map(Arc::as_ptr) != self.published_drawing.as_ref().map(Arc::as_ptr) {
-            self.counts.drawing_generation += 1;
-            self.published_drawing.clone_from(&drawing);
-        }
+        // What the session said, aside while each window is made again from it, which counts its drawings.
+        let seen = std::mem::take(&mut self.seen);
+        let main = self.shown(&seen.main);
+        let detached = seen.detached.iter().map(|window| self.shown(window)).collect();
+        self.seen = seen;
         let seen = &self.seen;
         let tabs = seen
             .tabs
@@ -408,7 +410,6 @@ impl Supervisor {
                 Some((function.clone(), tab))
             })
             .collect();
-        let (selected, nodes, wires, terminals) = seen.selection.clone();
         let workspace = view::window::WORKSPACES.iter().find(|(id, _)| *id == seen.workspace).map(|(id, _)| WorkspaceId(id)).unwrap_or_default();
         let functions = self
             .listing
@@ -430,20 +431,44 @@ impl Supervisor {
             checks: self.counts.checks,
             errors: self.listing.errors,
             warnings: self.listing.warnings,
-            function,
+            main,
+            detached,
             opened: seen.opened.clone(),
-            kept: seen.kept || (trapped && drawing.is_some()),
-            drawing,
-            drawing_generation: self.counts.drawing_generation,
-            glide: seen.glide,
-            arms: seen.arms.iter().cloned().collect(),
             standard_everywhere: seen.standard_everywhere,
             tabs,
             preview: seen.preview.clone(),
-            selection: Selection { function: selected, nodes, wires, terminals },
             workspace,
-            ..Published::default()
         });
+    }
+
+    /// What a window shows, made again with the drawing of its function: a function whose drawing trapped keeps its
+    /// last one. A new drawing of a function counts once.
+    fn shown(&mut self, window: &SeenWindow) -> Shown {
+        let drawing = window.function.as_ref().and_then(|function| self.drawings.get(function)).cloned();
+        let trapped = window.function.as_ref().is_some_and(|function| self.trapped.contains(function));
+        let mut drawing_generation = 0;
+        if let (Some(function), Some(drawing)) = (&window.function, &drawing) {
+            let published = self.published_drawings.get(function).filter(|(before, _)| Arc::ptr_eq(before, drawing)).map(|(_, count)| *count);
+            drawing_generation = match published {
+                Some(count) => count,
+                None => {
+                    self.counts.drawing_generation += 1;
+                    self.published_drawings.insert(function.clone(), (drawing.clone(), self.counts.drawing_generation));
+                    self.counts.drawing_generation
+                }
+            };
+        }
+        let (selected, nodes, wires, terminals) = window.selection.clone();
+        Shown {
+            function: window.function.clone(),
+            kept: window.kept || (trapped && drawing.is_some()),
+            drawing,
+            drawing_generation,
+            glide: window.glide,
+            arms: window.arms.iter().cloned().collect(),
+            selection: Selection { function: selected, nodes, wires, terminals },
+            ..Shown::default()
+        }
     }
 
     /// What the window must say: the traps (`LC0099`), a function asked for that the folder lacks, a failure of the page.
@@ -452,8 +477,8 @@ impl Supervisor {
         if self.traps == Traps::Twice {
             notices.push("LC0099: this project stopped its session twice, which is a bug of LabCraft: open it again".to_owned());
         }
-        let function = self.seen.function.as_ref();
-        if let Some(function) = function.filter(|function| self.trapped.contains(*function)) {
+        let functions = self.seen.main.function.iter().chain(self.seen.detached.iter().filter_map(|window| window.function.as_ref()));
+        for function in functions.filter(|function| self.trapped.contains(*function)) {
             let kept = if self.drawings.contains_key(function) { "; its last drawing stays" } else { "" };
             notices.push(format!("LC0099: drawing `{function}` stopped the session, which is a bug of LabCraft: it is not drawn again{kept}"));
         }
@@ -539,8 +564,8 @@ impl Host for Shared {
         self.supervisor.borrow().snapshot()
     }
 
-    fn set_zoom(&self, zoom: f32) {
-        self.with(|supervisor| supervisor.zoom(zoom));
+    fn set_zoom(&self, function: &str, zoom: f32) {
+        self.with(|supervisor| supervisor.zoom(function, zoom));
     }
 }
 

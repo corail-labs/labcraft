@@ -31,12 +31,12 @@ pub struct File {
 pub enum ToWorker {
     /// Opens a folder in a new session, with the preference of the window. `skipped`: the functions whose drawing
     /// trapped a worker before, which this one never draws. `show`: the function to show once it is open, the one shown
-    /// before a restart.
-    Open { folder: Arc<Folder>, standard_everywhere: bool, skipped: Vec<String>, show: Option<String> },
+    /// before a restart. `detached`: the functions in a window of their own before a restart, which have it again.
+    Open { folder: Arc<Folder>, standard_everywhere: bool, skipped: Vec<String>, show: Option<String>, detached: Vec<String> },
     /// A command of the session (`docs/commands.md`), its parameters as JSON; `request` names its answer.
     Command { request: u64, id: String, params: String },
-    /// The zoom of the canvas shown, which `view.get_state` returns: no command.
-    Zoom(f32),
+    /// The zoom of the canvas of the window that shows the function, which `view.get_state` returns: no command.
+    Zoom(String, f32),
     /// Traps the worker, as a bug would: what the smoke test of the page restarts from.
     Trap,
 }
@@ -65,8 +65,8 @@ pub struct Answer {
     /// The functions and the diagnostics, when they are not those the worker sent last: they change with a check, not
     /// with a click.
     pub listing: Option<Listing>,
-    /// The drawing of [`Seen::function`], when it is not the one the worker sent last.
-    pub drawing: Option<Arc<Drawing>>,
+    /// The drawing of the function of each window, by its function, when it is not the one the worker sent last.
+    pub drawings: Vec<(String, Arc<Drawing>)>,
     /// The files that the message changed, when it changed any.
     pub files: Option<Changed>,
 }
@@ -79,7 +79,7 @@ impl Answer {
             result: Err(Failure { code: code.to_owned(), message }),
             seen: Seen::default(),
             listing: None,
-            drawing: None,
+            drawings: Vec::new(),
             files: None,
         }
     }
@@ -101,19 +101,27 @@ pub struct Seen {
     /// The checks of the folder that the session made: what the window reads the files again on.
     pub checks: u64,
     pub folder: Option<String>,
-    pub function: Option<String>,
+    /// What the window of the project shows, and each detached window (ide.md 9).
+    pub main: SeenWindow,
+    pub detached: Vec<SeenWindow>,
     pub opened: Vec<String>,
-    pub glide: bool,
-    pub kept: bool,
-    /// The arm shown of each structure in tabs, by its key.
-    pub arms: Vec<(String, usize)>,
     pub standard_everywhere: bool,
     /// The view of each tab whose view is not the diagram alone: the function, its view, the second view of a split.
     pub tabs: Vec<(String, String, Option<String>)>,
     pub preview: Option<String>,
+    pub workspace: String,
+}
+
+/// What one window shows: `engine::view::Shown`, without the drawing, the trace and the values.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeenWindow {
+    pub function: Option<String>,
+    pub glide: bool,
+    pub kept: bool,
+    /// The arm shown of each structure in tabs, by its key.
+    pub arms: Vec<(String, usize)>,
     /// The selection: the function, its nodes, wires and terminals.
     pub selection: (String, Vec<String>, Vec<String>, Vec<String>),
-    pub workspace: String,
 }
 
 /// The functions of the folder and its diagnostics, from one report.

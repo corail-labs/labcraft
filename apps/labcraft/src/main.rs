@@ -139,7 +139,8 @@ enum Ask {
     Open,
     New,
     Example(usize),
-    Trace,
+    /// A trace for the window that shows this function (the window that had focus), or for the window of the project.
+    Trace(Option<String>),
 }
 
 /// A project being opened: its session started, `view.open` not answered yet.
@@ -306,7 +307,9 @@ impl App {
                 self.dialogs.ask(FileDialog::folder().title("Choose an empty folder for the copy of the example"), Ask::Example(at))
             }
             Outward::OpenLink(link) => ctx.open_url(egui::OpenUrl::new_tab(link)),
-            Outward::OpenTrace => self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace),
+            Outward::OpenTrace(function) => {
+                self.dialogs.ask(FileDialog::open().title("Open a trace").filter("Trace", &["jsonl"]), Ask::Trace(function))
+            }
         }
     }
 
@@ -332,9 +335,9 @@ impl App {
                 Ok(()) => self.open(ctx, &path, false),
                 Err(error) => self.say_on_start(error.message),
             },
-            Ask::Trace => {
+            Ask::Trace(function) => {
                 if let Some(project) = &self.project {
-                    project.open_trace(&path);
+                    project.open_trace(function, &path);
                 }
             }
         }
@@ -387,7 +390,7 @@ impl eframe::App for App {
         for (ask, answer) in self.dialogs.take_answers() {
             self.answered(&ctx, ask, answer);
         }
-        let shown = self.project.as_ref().and_then(|project| project.snapshot().view.function.clone());
+        let shown = self.project.as_ref().and_then(|project| project.snapshot().view.main.function.clone());
         if let (Some(timing), Some(function)) = (&mut self.timing, &shown)
             && let Some((canvas, rect)) = self.ide.shown_canvas(function)
         {

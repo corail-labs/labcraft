@@ -26,6 +26,14 @@ pub enum Icon {
     Panel,
     /// Four corners: fit the diagram to the view.
     Fit,
+    /// A frame with an arrow leaving it at its top right: move the tab into a window of its own.
+    Detach,
+    /// A frame with an arrow coming into it: move the window back among the tabs.
+    Dock,
+    /// A window with a column on its right: the inspector, beside the canvas.
+    Inspector,
+    /// A window with a column of lines on its left: the palette of functions, beside the canvas.
+    Palette,
 }
 
 /// A button showing an icon that can be on, as one of a group (the views of a tab): its hover text names it; the one on
@@ -145,6 +153,25 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, stroke: Stroke) {
             corner(1.0, 0.0, -0.3, 0.3);
             corner(0.0, 1.0, 0.3, -0.3);
             corner(1.0, 1.0, -0.3, -0.3);
+        }
+        Icon::Detach | Icon::Dock => {
+            // The frame, open at its top right where the arrow passes.
+            line(&[at(0.45, 0.1), at(0.0, 0.1), at(0.0, 1.0), at(0.9, 1.0), at(0.9, 0.55)]);
+            if icon == Icon::Detach {
+                line(&[at(0.4, 0.6), at(1.0, 0.0)]);
+                line(&[at(0.6, 0.0), at(1.0, 0.0), at(1.0, 0.4)]);
+            } else {
+                line(&[at(1.0, 0.0), at(0.4, 0.6)]);
+                line(&[at(0.4, 0.2), at(0.4, 0.6), at(0.8, 0.6)]);
+            }
+        }
+        Icon::Inspector | Icon::Palette => {
+            painter.rect_stroke(Rect::from_min_max(at(0.0, 0.05), at(1.0, 0.95)), 1.0, stroke, egui::StrokeKind::Inside);
+            let (edge, from, to) = if icon == Icon::Inspector { (0.62, 0.72, 0.9) } else { (0.38, 0.1, 0.28) };
+            line(&[at(edge, 0.05), at(edge, 0.95)]);
+            for y in [0.3, 0.5, 0.7] {
+                line(&[at(from, y), at(to, y)]);
+            }
         }
     }
 }

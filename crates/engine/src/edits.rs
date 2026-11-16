@@ -427,16 +427,22 @@ impl Texts {
     }
 }
 
-/// `view.select`: each name of the selection names what the function shown has, as an editing command names it
-/// (commands.md 9.2; decision of the owner, 2026-11-16).
-pub(crate) fn selectable(session: &mut Session, nodes: &[String], wires: &[String], terminals: &[String]) -> Result<(), CommandError> {
+/// `view.select`: each name of the selection names what the function of the window has, in its `file`, as an editing
+/// command names it (commands.md 9.2; decision of the owner, 2026-11-16).
+pub(crate) fn selectable(
+    session: &mut Session,
+    file: Option<&str>,
+    nodes: &[String],
+    wires: &[String],
+    terminals: &[String],
+) -> Result<(), CommandError> {
     if nodes.is_empty() && wires.is_empty() && terminals.is_empty() {
         return Ok(());
     }
-    let Some(file) = session.view.shown_file().map(str::to_owned) else {
+    let Some(file) = file else {
         return Err(CommandError::of("params.invalid", "function", "the function shown has no file, so nothing of it can be selected"));
     };
-    let target = target(session, &file)?;
+    let target = target(session, file)?;
     let text = read_text(session, &target)?;
     let root = session.root.clone();
     session.checked(&root)?;

@@ -40,20 +40,20 @@ fn a_change_of_the_file_is_drawn_within_200_ms() {
     std::thread::sleep(Duration::from_millis(300));
     let mut slowest = Duration::ZERO;
     for text in [TWO, ONE, TWO] {
-        let before = session.snapshot().view.drawing_generation;
+        let before = session.snapshot().view.main.drawing_generation;
         let start = Instant::now();
         std::fs::write(folder.0.join("main.lcf"), text).unwrap();
         loop {
-            if session.snapshot().view.drawing_generation != before {
+            if session.snapshot().view.main.drawing_generation != before {
                 break;
             }
             assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
             std::thread::sleep(Duration::from_millis(2));
         }
         slowest = slowest.max(start.elapsed());
-        let nodes = session.snapshot().view.drawing.as_ref().unwrap().placed.len();
+        let nodes = session.snapshot().view.main.drawing.as_ref().unwrap().placed.len();
         assert_eq!(nodes, if text == TWO { 2 } else { 1 });
-        assert!(session.snapshot().view.glide);
+        assert!(session.snapshot().view.main.glide);
         // The next change starts once this one is settled.
         std::thread::sleep(Duration::from_millis(200));
     }
@@ -91,7 +91,7 @@ fn a_busy_log_and_a_missing_library_path_hold_nothing_back() {
     std::fs::write(folder.0.join("main.lcf"), TWO).unwrap();
     // Each write of `other.lcf` draws again too, sometimes before `main.lcf` is read: what counts is the first drawing
     // that shows the change of `main.lcf`, its two nodes, not the first new drawing.
-    while session.snapshot().view.drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
+    while session.snapshot().view.main.drawing.as_ref().map_or(0, |drawing| drawing.placed.len()) != 2 {
         assert!(start.elapsed() < Duration::from_secs(5), "`main.lcf` not drawn again while the log is written");
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -116,18 +116,18 @@ fn a_file_of_values_saved_is_drawn_within_200_ms() {
     std::thread::sleep(Duration::from_millis(300));
     let mut slowest = Duration::ZERO;
     for margin in [24, 40, 16] {
-        let before = session.snapshot().view.drawing_generation;
+        let before = session.snapshot().view.main.drawing_generation;
         let start = Instant::now();
         std::fs::write(&path, format!("[canvas]\nmargin = {margin}\n")).unwrap();
         loop {
-            if session.snapshot().view.drawing_generation != before {
+            if session.snapshot().view.main.drawing_generation != before {
                 break;
             }
             assert!(start.elapsed() < Duration::from_secs(10), "no new drawing");
             std::thread::sleep(Duration::from_millis(2));
         }
         slowest = slowest.max(start.elapsed());
-        assert_eq!(session.snapshot().view.drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
+        assert_eq!(session.snapshot().view.main.drawing.as_ref().unwrap().style.numbers.margin, margin * 100);
         std::thread::sleep(Duration::from_millis(200));
     }
     println!("file of values saved to new drawing: {} ms at most", slowest.as_millis());

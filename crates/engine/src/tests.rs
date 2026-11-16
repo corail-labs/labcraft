@@ -637,10 +637,10 @@ fn the_viewer_opens_a_folder_of_the_project_and_shows_its_first_function() {
     assert_eq!(opened["check"]["schema"], "labcraft-check/1");
     let view = session.view();
     assert_eq!(
-        (view.folder.as_deref(), view.function.as_deref(), view.opened.as_slice()),
+        (view.folder.as_deref(), view.main.function.as_deref(), view.opened.as_slice()),
         (Some("."), Some("double"), ["double".to_owned()].as_slice())
     );
-    assert!(view.drawing.is_some() && !view.kept);
+    assert!(view.main.drawing.is_some() && !view.main.kept);
     let entry = ok(&mut session, "view.show_function", json!({ "function": "double" }));
     assert_eq!((entry["function"].as_str(), entry["drawn"].as_bool()), (Some("double"), Some(true)));
     assert_eq!(ok(&mut session, "view.set_standard_view", json!({ "on": true })), json!({ "before": false }));
@@ -656,14 +656,14 @@ fn the_viewer_opens_a_folder_of_the_project_and_shows_its_first_function() {
 fn a_file_written_by_a_command_is_read_again_by_the_next_command_of_the_viewer() {
     let (mut session, _) = session();
     ok(&mut session, "view.open", json!({ "folder": "." }));
-    let drawn = session.view().drawing.clone().unwrap();
+    let drawn = session.view().main.drawing.clone().unwrap();
     ok(&mut session, "file.write", json!({ "path": "double.lcf", "text": DOUBLE_BROKEN }));
     // `nowhere` is an unknown function, `LC2002`, of the family `LC20`: not drawable (`docs/cli.md`, 7.1). The last drawing stays.
     let entry = ok(&mut session, "view.show_function", json!({ "function": "double" }));
     assert_eq!((entry["drawn"].as_bool(), &entry["codes"]), (Some(false), &json!(["LC2002"])), "{entry}");
     let view = session.view();
-    assert!(view.kept);
-    assert!(Arc::ptr_eq(view.drawing.as_ref().unwrap(), &drawn));
+    assert!(view.main.kept);
+    assert!(Arc::ptr_eq(view.main.drawing.as_ref().unwrap(), &drawn));
     assert_eq!(view.errors, 1);
 }
 
@@ -673,11 +673,11 @@ fn a_function_skipped_is_shown_without_a_drawing() {
     session.skip_drawing(["double".to_owned()].into());
     ok(&mut session, "view.open", json!({ "folder": "." }));
     let view = session.view();
-    assert_eq!(view.function.as_deref(), Some("double"));
-    assert!(view.drawing.is_none() && !view.kept);
+    assert_eq!(view.main.function.as_deref(), Some("double"));
+    assert!(view.main.drawing.is_none() && !view.main.kept);
     session.skip_drawing(Default::default());
     ok(&mut session, "view.show_function", json!({ "function": "double" }));
-    assert!(session.view().drawing.is_some());
+    assert!(session.view().main.drawing.is_some());
 }
 
 /// The function that the app asks for is the only one `view.open` draws and opens; one that the folder lacks gives way
@@ -692,12 +692,12 @@ fn view_open_shows_the_function_asked_for_and_draws_no_other() {
         session.open_on(asked.map(str::to_owned));
         ok(&mut session, "view.open", json!({ "folder": "." }));
         let view = session.view();
-        assert_eq!((view.function.as_deref(), view.opened.clone()), (Some(shown), vec![shown.to_owned()]), "{asked:?}");
-        assert_eq!(view.drawing.as_ref().map(|drawing| drawing.function.as_str()), Some(shown));
+        assert_eq!((view.main.function.as_deref(), view.opened.clone()), (Some(shown), vec![shown.to_owned()]), "{asked:?}");
+        assert_eq!(view.main.drawing.as_ref().map(|drawing| drawing.function.as_str()), Some(shown));
         assert_eq!(ANNOUNCED.with_borrow(Clone::clone), [shown], "{asked:?}");
         // Asked once: the next `view.open` shows the first function.
         ok(&mut session, "view.open", json!({ "folder": "." }));
-        assert_eq!(session.view().function.as_deref(), Some("b"), "{asked:?}");
+        assert_eq!(session.view().main.function.as_deref(), Some("b"), "{asked:?}");
     }
 }
 
@@ -723,17 +723,17 @@ fn each_drawing_is_announced_before_it_is_made() {
 fn a_change_that_the_app_sees_is_drawn_again_and_glides() {
     let (mut session, counting) = session();
     ok(&mut session, "view.open", json!({ "folder": "." }));
-    let before = session.view().drawing_generation;
-    assert!(!session.view().glide);
+    let before = session.view().main.drawing_generation;
+    assert!(!session.view().main.glide);
     counting.memory.put("/p/double.lcf", "labcraft 1\n\nuse core\n\nfn double(x: f64) -> (y: f64) {\n    y = core.add(x, x)\n}\n");
     session.files_changed();
     let view = session.view();
-    assert!(view.drawing_generation > before && view.glide && !view.kept && view.errors == 0);
+    assert!(view.main.drawing_generation > before && view.main.glide && !view.main.kept && view.errors == 0);
     // The file gone: nothing shown, nothing listed.
     counting.memory.remove_file(Path::new("/p/double.lcf")).unwrap();
     session.files_changed();
     let view = session.view();
-    assert!(view.functions.is_empty() && view.function.is_none() && view.drawing.is_none() && view.opened.is_empty());
+    assert!(view.functions.is_empty() && view.main.function.is_none() && view.main.drawing.is_none() && view.opened.is_empty());
 }
 
 #[test]
@@ -803,7 +803,7 @@ fn the_viewer_lists_the_warnings_of_the_drawing_shown() {
     let mut session = session_on(Arc::new(memory));
     ok(&mut session, "view.open", json!({ "folder": "." }));
     // `double` comes first in code point order: nothing added.
-    assert_eq!(session.view().function.as_deref(), Some("double"));
+    assert_eq!(session.view().main.function.as_deref(), Some("double"));
     assert_eq!(session.view().warnings, 0);
     ok(&mut session, "view.show_function", json!({ "function": "sum3" }));
     let view = session.view();
@@ -829,7 +829,7 @@ fn trace_of(function: &str, names: &[(&str, &str)], x: f64, y: f64) -> String {
 
 /// The value that the viewer shows on the wire `wire`, whole.
 fn value_on(session: &Session, wire: &str) -> Option<String> {
-    let overlay = session.view().overlay.clone()?;
+    let overlay = session.view().main.overlay.clone()?;
     overlay.bubbles.iter().find(|bubble| bubble.wire == wire).map(|bubble| bubble.title.clone())
 }
 
@@ -855,15 +855,15 @@ fn the_viewer_shows_the_last_run_of_the_function_and_reads_it_again_when_a_run_r
     ok(&mut session, "view.open", json!({ "folder": "." }));
     // No trace: nothing to read, no values.
     assert!(session.look_at_trace(), "the drawing is new");
-    assert!(session.view().overlay.is_none() && session.view().trace.is_none());
+    assert!(session.view().main.overlay.is_none() && session.view().main.trace.is_none());
     assert!(!session.look_at_trace(), "nothing changed");
     // `labcraft-cli run p double` from the folder above: the files named from there.
     counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("p/double.lcf", MAIN)], 2.0, 4.0));
     assert!(session.look_at_trace());
     let view = session.view();
-    let part = view.trace.clone().unwrap();
+    let part = view.main.trace.clone().unwrap();
     assert_eq!((part.file.as_str(), part.events, part.status.as_deref(), part.stale.len()), (".labcraft/runs/double.trace.jsonl", 3, Some("ok"), 0));
-    assert!(!view.trace_opened && view.warnings == 0, "{:?}", codes_of(&session));
+    assert!(!view.main.trace_opened && view.warnings == 0, "{:?}", codes_of(&session));
     assert_eq!(value_on(&session, "y").as_deref(), Some("4.0"));
     assert!(!session.look_at_trace());
     // A new run replaces it.
@@ -873,11 +873,11 @@ fn the_viewer_shows_the_last_run_of_the_function_and_reads_it_again_when_a_run_r
     // The file changed since the run: the banner names it, with the time of the trace.
     counting.memory.put("/p/double.lcf", MAIN.replace("Second line.", "Changed."));
     session.files_changed();
-    assert!(session.view().overlay.is_none(), "the drawing is new: no values until its trace is read");
+    assert!(session.view().main.overlay.is_none(), "the drawing is new: no values until its trace is read");
     assert!(session.look_at_trace());
     let view = session.view();
-    assert_eq!(view.trace.as_ref().unwrap().stale, ["double.lcf"]);
-    let banner: Vec<String> = view.overlay.as_ref().unwrap().banner.iter().filter_map(text_of).collect();
+    assert_eq!(view.main.trace.as_ref().unwrap().stale, ["double.lcf"]);
+    let banner: Vec<String> = view.main.overlay.as_ref().unwrap().banner.iter().filter_map(text_of).collect();
     assert!(banner.iter().any(|text| text.contains("has changed since this run (00:00Z)")), "{banner:?}");
 }
 
@@ -889,12 +889,12 @@ fn the_last_run_is_the_most_recent_in_the_folder_or_above_it() {
     // A session whose root is `/p` ran `double` of `sub`.
     counting.memory.put("/p/.labcraft/runs/sub/double.trace.jsonl", trace_of("double", &[("sub/double.lcf", MAIN)], 1.0, 2.0));
     session.look_at_trace();
-    assert_eq!(session.view().trace.as_ref().unwrap().file, "../.labcraft/runs/sub/double.trace.jsonl");
+    assert_eq!(session.view().main.trace.as_ref().unwrap().file, "../.labcraft/runs/sub/double.trace.jsonl");
     assert_eq!(value_on(&session, "y").as_deref(), Some("2.0"));
     // Then `labcraft-cli run sub double`, later: in the folder.
     counting.memory.put("/p/sub/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("double.lcf", MAIN)], 5.0, 10.0));
     assert!(session.look_at_trace());
-    assert_eq!(session.view().trace.as_ref().unwrap().file, ".labcraft/runs/double.trace.jsonl");
+    assert_eq!(session.view().main.trace.as_ref().unwrap().file, ".labcraft/runs/double.trace.jsonl");
     assert_eq!(value_on(&session, "y").as_deref(), Some("10.0"));
     // The one above runs again: it is the most recent.
     counting.memory.put("/p/.labcraft/runs/sub/double.trace.jsonl", trace_of("double", &[("sub/double.lcf", MAIN)], 4.0, 8.0));
@@ -911,7 +911,7 @@ fn the_last_run_of_the_function_named_from_a_root_above_is_shown() {
     ok(&mut session, "view.open", json!({ "folder": "sub" }));
     counting.memory.put("/p/.labcraft/runs/sub.double.trace.jsonl", trace_of("sub.double", &[("sub/double.lcf", MAIN)], 1.0, 2.0));
     session.look_at_trace();
-    assert_eq!(session.view().trace.as_ref().unwrap().file, "../.labcraft/runs/sub.double.trace.jsonl");
+    assert_eq!(session.view().main.trace.as_ref().unwrap().file, "../.labcraft/runs/sub.double.trace.jsonl");
     assert_eq!(value_on(&session, "y").as_deref(), Some("2.0"));
     assert!(codes_of(&session).is_empty(), "{:?}", codes_of(&session));
     // A run given `folder: "sub"`, later, is the most recent.
@@ -938,7 +938,7 @@ fn the_last_run_named_from_a_root_two_folders_above_is_shown() {
     ok(&mut session, "view.open", json!({ "folder": "a/b" }));
     counting.memory.put("/p/.labcraft/runs/a.b.double.trace.jsonl", trace_of("a.b.double", &[("a/b/double.lcf", MAIN)], 1.5, 3.0));
     session.look_at_trace();
-    assert_eq!(session.view().trace.as_ref().unwrap().file, "../../.labcraft/runs/a.b.double.trace.jsonl");
+    assert_eq!(session.view().main.trace.as_ref().unwrap().file, "../../.labcraft/runs/a.b.double.trace.jsonl");
     assert_eq!(value_on(&session, "y").as_deref(), Some("3.0"));
     assert!(codes_of(&session).is_empty(), "{:?}", codes_of(&session));
 }
@@ -954,7 +954,7 @@ fn a_trace_opened_by_hand_stays_until_another_function_is_shown() {
     counting.memory.put("/p/kept/r7.jsonl", trace_of("double", &[("double.lcf", MAIN)], 7.0, 14.0));
     let part = ok(&mut session, "view.open_trace", json!({ "file": "kept/r7.jsonl" }));
     assert_eq!((part["file"].as_str(), part["events"].as_u64()), (Some("kept/r7.jsonl"), Some(3)));
-    assert!(session.view().trace_opened);
+    assert!(session.view().main.trace_opened);
     assert_eq!(value_on(&session, "y").as_deref(), Some("14.0"));
     // A new run does not replace it.
     counting.memory.put("/p/.labcraft/runs/double.trace.jsonl", trace_of("double", &[("double.lcf", MAIN)], 3.0, 6.0));
@@ -970,18 +970,18 @@ fn a_trace_opened_by_hand_stays_until_another_function_is_shown() {
     ok(&mut session, "view.show_function", json!({ "function": "half" }));
     session.look_at_trace();
     let view = session.view();
-    assert!(!view.trace_opened && view.trace.is_none() && view.overlay.is_none());
+    assert!(!view.main.trace_opened && view.main.trace.is_none() && view.main.overlay.is_none());
     // A trace of another function: no values, `LC7102`, in Problems.
     let part = ok(&mut session, "view.open_trace", json!({ "file": "kept/r7.jsonl" }));
     assert_eq!(part["events"], 0);
-    assert!(session.view().overlay.is_none());
+    assert!(session.view().main.overlay.is_none());
     assert_eq!(codes_of(&session), ["LC7102"]);
     // A file that does not exist: `LC7101`, not an error of the command.
     ok(&mut session, "view.open_trace", json!({ "file": "nowhere.jsonl" }));
     assert_eq!(codes_of(&session), ["LC7101"]);
     // Anywhere on the disk, from the window.
-    session.open_trace_at(PathBuf::from("/elsewhere/t.jsonl")).unwrap();
-    assert_eq!(session.view().trace.as_ref().unwrap().file, "/elsewhere/t.jsonl");
+    session.open_trace_at(None, PathBuf::from("/elsewhere/t.jsonl")).unwrap();
+    assert_eq!(session.view().main.trace.as_ref().unwrap().file, "/elsewhere/t.jsonl");
 }
 
 /// Counts to `last`: at iteration `k`, from 0, the carry `i` is `k` and `m` is `k + 1`; the loop stops when `m` reaches
@@ -1009,7 +1009,7 @@ fn number_on(session: &Session, wire: &str) -> Option<f64> {
 /// The loop of `spin` reached by the run: its key, its iterations, the one shown.
 fn the_loop(session: &Session) -> (String, u64, u64) {
     let view = session.view();
-    let overlay = view.overlay.clone().unwrap_or_else(|| panic!("no values: {:?} {:?}", view.trace, codes_of(session)));
+    let overlay = view.main.overlay.clone().unwrap_or_else(|| panic!("no values: {:?} {:?}", view.main.trace, codes_of(session)));
     assert_eq!(overlay.loops.len(), 1, "{:?}", overlay.loops);
     overlay.loops[0].clone()
 }
@@ -1025,7 +1025,7 @@ fn an_iteration_chosen_shows_its_values_and_is_kept_across_runs_unless_it_is_the
     let (key, count, shown) = the_loop(&session);
     assert_eq!((count, shown), (5, 4));
     assert_eq!((number_on(&session, "i"), number_on(&session, "m")), (Some(4.0), Some(5.0)));
-    let overlay = session.view().overlay.clone().unwrap();
+    let overlay = session.view().main.overlay.clone().unwrap();
     assert_eq!(overlay.selectors.len(), 1);
     assert_eq!((overlay.selectors[0].key.as_str(), overlay.selectors[0].count, overlay.selectors[0].shown), (key.as_str(), 5, 4));
     // The second iteration: `i` is 1, `m` 2; the trace is not read again for it.
@@ -1072,8 +1072,8 @@ fn the_values_of_a_wire_over_the_iterations_and_at_the_inputs_of_a_node_come_fro
     let (key, _, _) = the_loop(&session);
     ok(&mut session, "view.set_state", json!({ "function": "spin", "state": { "iterations": { key.as_str(): 2 } } }));
     let view = session.view();
-    let (drawing, overlay) = (view.drawing.clone().unwrap(), view.overlay.clone().unwrap());
-    let (trace, choice) = view.run.clone().unwrap();
+    let (drawing, overlay) = (view.main.drawing.clone().unwrap(), view.main.overlay.clone().unwrap());
+    let (trace, choice) = view.main.run.clone().unwrap();
     let group = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "m")).unwrap();
     // By hand: `m` is 1 to 5, a real number, its curve marks the third.
     let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
@@ -1100,10 +1100,10 @@ fn when_an_outer_loop_moves_the_inner_ones_go_to_their_last_iteration() {
     ok(&mut session, "view.open", json!({ "folder": "." }));
     ok(&mut session, "view.show_function", json!({ "function": "grid" }));
     run_and_look(&mut session, "grid");
-    let loops = session.view().overlay.clone().unwrap().loops.clone();
+    let loops = session.view().main.overlay.clone().unwrap().loops.clone();
     assert_eq!(loops.iter().map(|(_, count, shown)| (*count, *shown)).collect::<Vec<_>>(), [(3, 2), (2, 1)], "outer, then inner");
     let (outer, inner) = (loops[0].0.clone(), loops[1].0.clone());
-    let drawing = session.view().drawing.clone().unwrap();
+    let drawing = session.view().main.drawing.clone().unwrap();
     assert_eq!(labcraft_diagram::loops_inside(&drawing, &outer), std::slice::from_ref(&inner));
     assert!(labcraft_diagram::loops_inside(&drawing, &inner).is_empty());
     // By hand: at the last iterations, `v` is 2 + 1.
@@ -1113,14 +1113,14 @@ fn when_an_outer_loop_moves_the_inner_ones_go_to_their_last_iteration() {
     // The outer one moves: the inner one goes back to its last, `v` 1 + 1.
     ok(&mut session, "view.set_state", json!({ "function": "grid", "state": { "iterations": { outer.as_str(): 1 } } }));
     assert_eq!(value_on(&session, "v").as_deref(), Some("2"));
-    let loops = session.view().overlay.clone().unwrap().loops.clone();
+    let loops = session.view().main.overlay.clone().unwrap().loops.clone();
     assert_eq!(loops.iter().map(|(_, _, shown)| *shown).collect::<Vec<_>>(), [1, 1]);
     // Both in one call: each as given, `v` 1 + 0.
     ok(&mut session, "view.set_state", json!({ "function": "grid", "state": { "iterations": { outer.as_str(): 1, inner.as_str(): 0 } } }));
     assert_eq!(value_on(&session, "v").as_deref(), Some("1"));
     // The values of `v` over `j`, within `i` = 1: 1 and 2, an integer as a curve.
     let view = session.view();
-    let (trace, choice) = view.run.clone().unwrap();
+    let (trace, choice) = view.main.run.clone().unwrap();
     let group = drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "v")).unwrap();
     let series = labcraft_diagram::series(&drawing, &trace, &choice, group).unwrap();
     let texts: Vec<&str> = series.values.iter().map(|sample| sample.value.as_ref().map_or("", |(text, _)| text.as_str())).collect();
@@ -1140,23 +1140,23 @@ fn a_tab_picked_gives_way_to_the_arm_the_run_took_when_another_trace_arrives() {
     let report = ok(&mut session, "run.start", json!({ "function": "pick", "args": { "x": 0 } }));
     assert_eq!(report["status"], "ok", "{report}");
     session.look_at_trace();
-    let taken = session.view().overlay.clone().unwrap().taken.clone();
+    let taken = session.view().main.overlay.clone().unwrap().taken.clone();
     let (structure, arm) = taken.iter().next().map(|(structure, arm)| (structure.clone(), *arm)).unwrap();
     assert_eq!(arm, 0, "the first arm");
-    assert_eq!(session.view().arms.get(&structure), Some(&0), "shown by default");
+    assert_eq!(session.view().main.arms.get(&structure), Some(&0), "shown by default");
     // The developer picks the other tab: it wins, and stays when another function is shown and this one again.
     ok(&mut session, "view.set_state", json!({ "function": "pick", "state": { "arms": { structure.as_str(): 1 } } }));
-    assert_eq!(session.view().arms.get(&structure), Some(&1));
+    assert_eq!(session.view().main.arms.get(&structure), Some(&1));
     ok(&mut session, "view.show_function", json!({ "function": "double" }));
     session.look_at_trace();
     ok(&mut session, "view.show_function", json!({ "function": "pick" }));
     session.look_at_trace();
-    assert_eq!(session.view().arms.get(&structure), Some(&1), "no new trace: the pick stays");
+    assert_eq!(session.view().main.arms.get(&structure), Some(&1), "no new trace: the pick stays");
     // Another run, which takes the first arm again: the pick gives way to it.
     let report = ok(&mut session, "run.start", json!({ "function": "pick", "args": { "x": 0 } }));
     assert_eq!(report["status"], "ok", "{report}");
     session.look_at_trace();
-    assert_eq!(session.view().arms.get(&structure), Some(&0), "a new trace: the arm the run took");
+    assert_eq!(session.view().main.arms.get(&structure), Some(&0), "a new trace: the arm the run took");
 }
 
 /// The commands of the window (commands.md 6.7, "The window"): enabled only in a session that a window shows; the view
@@ -1177,7 +1177,7 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     {
         assert_eq!(error(&mut session, id, params).code, "command.not_enabled", "{id}");
     }
-    assert_eq!(error(&mut session, "view.detach", json!({ "function": "b" })).code, "command.not_enabled");
+    assert_eq!(error(&mut session, "view.detach", json!({ "function": "b" })).code, "params.invalid", "no folder is open");
     ok(&mut session, "view.open", json!({ "folder": "." }));
     let state = ok(&mut session, "view.get_state", json!({}));
     assert_eq!(
@@ -1209,7 +1209,7 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     assert_eq!(error(&mut session, "view.set_view", json!({ "function": "nowhere", "view": "text" })).code, "params.invalid");
     // The selection of the function shown.
     assert_eq!(ok(&mut session, "view.select", json!({ "function": "c", "nodes": ["y"] })), json!({ "selected": 1 }));
-    session.set_zoom(1.5);
+    session.set_zoom("c", 1.5);
     let state = ok(&mut session, "view.get_state", json!({}));
     let window = &state["windows"][0];
     assert_eq!((&window["shown"], &window["tabs"][2]["view"], &window["tabs"][2]["split"]), (&json!(2), &json!("text"), &json!("diagram")));
@@ -1217,10 +1217,10 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     assert_eq!(error(&mut session, "view.select", json!({ "function": "c", "wires": [1] })).code, "params.invalid");
     // Closing the tab shown shows the next one, else the one before; its view and its selection go with it.
     assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "c" })), json!({ "shown": "double" }));
-    assert!(session.view().tabs.is_empty() && session.view().selection.is_empty());
+    assert!(session.view().tabs.is_empty() && session.view().main.selection.is_empty());
     assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "b" })), json!({ "shown": "double" }));
     assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "double" })), json!({ "shown": null }));
-    assert!(session.view().drawing.is_none());
+    assert!(session.view().main.drawing.is_none());
     assert_eq!(error(&mut session, "view.close_function", json!({ "function": "double" })).code, "params.invalid");
     // `edit` is the workspace of M1; the others are planned.
     assert_eq!(ok(&mut session, "view.set_workspace", json!({ "workspace": "edit" })), json!({ "before": "edit" }));
@@ -1277,6 +1277,75 @@ fn the_window_refuses_an_agent_and_a_selection_of_nothing() {
     ok(&mut session, "view.show_function", json!({ "function": "double", "preview": true }));
     ok(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"] }));
     ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));
-    assert!(session.view().selection.is_empty());
+    assert!(session.view().main.selection.is_empty());
     assert_eq!(session.view().opened, ["b", "c"]);
+}
+
+/// Step 1b (ide.md 9; decisions of the owner, 2026-11-16): a tab detaches into a window of its own with what it shows,
+/// each window has its drawing, its selection and its zoom, closing the window closes the tab, and it docks back.
+#[test]
+fn a_tab_detaches_into_a_window_of_its_own_and_docks_back() {
+    let (mut session, counting) = session();
+    counting.memory.put("/p/b.lcf", MAIN.replace("double", "b"));
+    counting.memory.put("/p/c.lcf", MAIN.replace("double", "c"));
+    session.with_window();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "c" }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    assert_eq!(session.view().opened, ["b", "c", "double"]);
+    ok(&mut session, "view.select", json!({ "function": "double", "nodes": ["y"] }));
+    session.set_zoom("double", 2.0);
+    let drawing = session.view().main.drawing.clone().unwrap();
+    // The tab shown takes its window with it: its drawing, its selection, its zoom; the project shows the one before it.
+    assert_eq!(ok(&mut session, "view.detach", json!({ "function": "double" })), json!({ "shown": "c" }));
+    let view = session.view();
+    assert_eq!((view.opened.clone(), view.main.function.clone()), (vec!["b".to_owned(), "c".to_owned()], Some("c".to_owned())));
+    let detached = view.window_of("double").unwrap();
+    assert!(view.is_detached("double") && Arc::ptr_eq(detached.drawing.as_ref().unwrap(), &drawing));
+    assert!(view.main.drawing.is_some() && view.main.selection.is_empty());
+    // The zoom is that of the canvas of each function: the project, which shows `c` now, has none until it gives one.
+    let state = ok(&mut session, "view.get_state", json!({}));
+    assert_eq!(state["windows"][0]["zoom"], Value::Null);
+    session.set_zoom("c", 0.5);
+    let state = ok(&mut session, "view.get_state", json!({}));
+    assert_eq!((&state["windows"][0]["zoom"], state["windows"].as_array().map(Vec::len)), (&json!(0.5), Some(2)));
+    assert_eq!(
+        state["windows"][1],
+        json!({ "tabs": [{ "function": "double", "file": "double.lcf", "view": "diagram", "split": null }], "shown": 0,
+                "selection": { "nodes": ["y"], "wires": [], "terminals": [] }, "zoom": 2.0 })
+    );
+    // Detached again, it stays; a function without a tab, or unknown, is refused.
+    assert_eq!(ok(&mut session, "view.detach", json!({ "function": "double" })), json!({ "shown": "c" }));
+    assert_eq!(error(&mut session, "view.detach", json!({ "function": "nowhere" })).code, "params.invalid");
+    // A tab that is not shown gets a window of its own, drawn there; the project keeps the one it shows.
+    assert_eq!(ok(&mut session, "view.detach", json!({ "function": "b" })), json!({ "shown": "c" }));
+    assert!(session.view().window_of("b").is_some_and(|window| window.drawing.is_some()));
+    assert_eq!(session.view().opened, ["c"]);
+    // Each window has its selection; the view of a detached tab is set as any.
+    ok(&mut session, "view.select", json!({ "function": "b", "nodes": ["y"] }));
+    ok(&mut session, "view.select", json!({ "function": "c", "terminals": ["input x"] }));
+    assert_eq!(session.view().window_of("b").map(|window| window.selection.nodes.clone()), Some(vec!["y".to_owned()]));
+    ok(&mut session, "view.set_view", json!({ "function": "b", "view": "text" }));
+    // Shown again, a detached function stays in its window and opens no tab.
+    ok(&mut session, "view.show_function", json!({ "function": "b" }));
+    assert_eq!((session.view().opened.clone(), session.view().main.function.clone()), (vec!["c".to_owned()], Some("c".to_owned())));
+    // The trace of a window is named by its function; a function in no window is refused.
+    assert!(session.execute("view.open_trace", &json!({ "function": "b" })).is_ok());
+    assert_eq!(error(&mut session, "view.open_trace", json!({ "function": "nowhere" })).code, "params.invalid");
+    // Closing a detached window closes its tab, with its view.
+    assert_eq!(ok(&mut session, "view.close_function", json!({ "function": "b" })), json!({ "shown": "c" }));
+    assert!(!session.view().is_detached("b") && session.view().tabs.is_empty());
+    // Docked, it is the last tab, shown with what its window showed.
+    assert_eq!(ok(&mut session, "view.dock", json!({ "function": "double" })), json!({ "shown": "double" }));
+    let view = session.view();
+    assert_eq!(view.opened, ["c", "double"]);
+    assert!(view.detached.is_empty() && Arc::ptr_eq(view.main.drawing.as_ref().unwrap(), &drawing));
+    assert_eq!(view.main.selection.nodes, ["y"]);
+    assert_eq!(ok(&mut session, "view.dock", json!({ "function": "double" })), json!({ "shown": "double" }));
+    assert_eq!(error(&mut session, "view.dock", json!({ "function": "b" })).code, "params.invalid");
+    // A file gone closes the window that shows its function.
+    ok(&mut session, "view.detach", json!({ "function": "c" }));
+    counting.memory.remove_file(Path::new("/p/c.lcf")).unwrap();
+    session.files_changed();
+    assert!(session.view().detached.is_empty() && session.view().opened == ["double"]);
 }
