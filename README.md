@@ -168,6 +168,9 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 The language is not frozen: feedback from users of LabVIEW and other test and measurement tools is
 what matters most right now. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+You don't need to know Rust to fix an issue: [CONTRIBUTING.md](CONTRIBUTING.md#contribute-with-a-coding-agent) has
+a prompt to paste into any coding agent, which takes you from an open issue to a pull request.
+
 ## License
 
 Your choice of [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE). LabCraft is an independent

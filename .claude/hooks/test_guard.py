@@ -1,6 +1,6 @@
 """Tests of guard.py, run by `cargo xtask hooks`. Each expected verdict comes from the rule of AGENTS.md (D-23,
-Commits) and the decisions of the owner on the hook, not from the output of the hook. No file of the tests exists:
-the hook judges names, and never opens them."""
+A change, points 5 and 6) and the decisions of the maintainers on the hook, not from the output of the hook. No file
+of the tests exists: the hook judges names, and never opens them."""
 
 import json
 import os
@@ -17,7 +17,7 @@ import guard
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 
-# The owner's list: the four extensions of D-23, and .vit, .ctt, .llb, .lvclass. Written out here rather than taken
+# The maintainers' list: the four extensions of D-23, and .vit, .ctt, .llb, .lvclass. Written out here rather than taken
 # from guard.py, so that a name dropped there turns a test red.
 EXTENSIONS = ["vi", "ctl", "lvproj", "lvlib", "vit", "ctt", "llb", "lvclass"]
 
@@ -306,7 +306,7 @@ class MergeWithoutTheHead(unittest.TestCase):
     def assertRefused(self, command):
         refusal = bash(command, self.clone.path)
         self.assertIsNotNone(refusal, command)
-        self.assertIn("labcraft-ship-step", refusal, command)
+        self.assertIn("AGENTS.md, A change, point 6", refusal, command)
 
     def test_merge_without_match_head_commit(self):
         self.assertRefused("gh pr merge 12 --squash")

@@ -11,7 +11,7 @@ or an alias gets past it.
 
 Claude Code sends the call as JSON on standard input (`.claude/settings.json` runs `guard.sh`, which finds a Python 3).
 Exit 2 refuses it and tells the agent why, on standard error; exit 0 lets it through. When the hook itself fails, it
-exits 1, which Claude Code shows and lets through: fail open, the owner's choice. Tests: `test_guard.py`, run by
+exits 1, which Claude Code shows and lets through: fail open, the maintainers' choice. Tests: `test_guard.py`, run by
 `cargo xtask hooks`.
 """
 
@@ -112,13 +112,13 @@ def _refuse_labview(what):
 
 def _refuse_push(command, reason):
     return (
-        "Refused by .claude/hooks/guard.py (AGENTS.md, Commits): `%s` pushes to main (%s). main is protected: every "
+        "Refused by .claude/hooks/guard.py (AGENTS.md, A change, point 5): `%s` pushes to main (%s). main is protected: every "
         "change goes through a topic branch and a pull request. Push the topic branch." % (_short(command), reason)
     )
 
 
 def _refuse_merge(command, reason):
-    return "Refused by .claude/hooks/guard.py (AGENTS.md, Commits; skill labcraft-ship-step, stage 5): `%s`: %s" % (
+    return "Refused by .claude/hooks/guard.py (AGENTS.md, A change, point 6): `%s`: %s" % (
         _short(command),
         reason,
     )
@@ -596,13 +596,13 @@ def _judge_gh(command, words, start, directory):
             return _refuse_merge(
                 command,
                 "--admin bypasses the protection of main. If a permission check refuses the merge, say so and leave "
-                "the choice to the owner.",
+                "the choice to a maintainer.",
             )
         if not any(word == "--match-head-commit" or word.startswith("--match-head-commit=") for word in rest):
             return _refuse_merge(
                 command,
                 "gh pr merge needs --match-head-commit with the head commit whose checks are green, and merges only "
-                "on the owner's word for this pull request.",
+                "on a maintainer's word for this pull request.",
             )
     if group != "api":
         return None

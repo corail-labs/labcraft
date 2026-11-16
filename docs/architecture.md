@@ -330,8 +330,9 @@ character boundary, and these crates hold little numerical code.
 
 | `cargo xtask` | Checks |
 |---|---|
-| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `spec`, `figures`, `frames`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
-| `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands` and `assets` below, then `clippy -D warnings` |
+| `ci` | The whole gate: `lint`, `test`, `bounds` and `wasm`, in that order, stopping at the first failure. Everything below but `setup`, `figures`, `frames`, `unicode`, `fuzz-licences`, `web`, `web-smoke` and `web-serve`. The workflow `checks` runs these parts in jobs of their own, side by side (section 8) |
+| `setup` | Not a check: installs what `ci` needs beyond the toolchain of `rust-toolchain.toml` and is missing, the target `wasm32-unknown-unknown` and `wasm-bindgen-test-runner` at the version of `wasm-bindgen` in `Cargo.lock` (`cargo install --locked`), printing each command before it runs it; then reports Python (for `hooks`) and `cargo-nextest`, which it does not install, and fails on Windows when a folder of the path of the repository starts with `x` or `u`, which the WASM test runner writes raw into JavaScript, where it reads as an escape |
+| `lint` | `cargo fmt --check`, then `layers`, `licences`, `libs`, `codes`, `commands`, `assets` and `clean-room` below, then `clippy -D warnings` |
 | `test` | The tests of the workspace: through `cargo-nextest` when it is installed, which runs the test binaries side by side (but the tests that `.config/nextest.toml` runs alone), then the doctests, which nextest does not run; through `cargo test` otherwise, so that the gate needs no other tool |
 | `layers` | A crate depends only on lower layers, and directly on no UI toolkit below L7, from `cargo metadata` and a table, as in GridCraft. A crate missing from the table is an error |
 | `licences` | No GPL, LGPL or AGPL dependency (D-23), on any platform, tests and tools included; a licence that cannot be read is an error. Refusing is ours: SolidCraft's command of that name lists the licences for a release |
@@ -345,6 +346,7 @@ character boundary, and these crates hold little numerical code.
 | `web-serve` | Not a check: serves `target/web` on the loopback, to try the viewer in a browser |
 | `frames` | Not a check: writes the function of 1,000 nodes and 2,000 wires of `bounds` into `target/frames/`, builds `labcraft` in release, and opens it there with `LABCRAFT_FRAMES` (cli.md 8), to see 60 frames/s by hand before a tag (section 11.6) |
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
+| `clean-room` | No LabVIEW file (D-23): no file that git tracks, or would add (untracked and not ignored), ends with an extension of `.ignore`, in any case. In `lint`, so the job `lint` refuses such a pull request even when it changes only prose; the hook of `.claude/hooks/` protects Claude Code alone. A test keeps its list, `.ignore` and the hook's in step |
 | `hooks` | The Python tests of the hooks of the agents (`.claude/hooks/`), with the standard library only: the interpreter is `python`, then `python3`, and a missing interpreter is an error that says so. Prints `ok` or `FAIL` and the output of a failure. Not part of `ci`, which needs no Python: the job `lint` of the workflow `checks` runs it. The code blocks of the spec and of `skills/`, and the programs of `examples/`, `libs/` and `docs/rfc/`, are checked by tests of `ci` (`doc_blocks.rs` of `format`, `check.rs`, `fmt.rs` and `corpora.rs` of `labcraft-cli`) |
 | `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
@@ -421,7 +423,8 @@ and no string of the Rust code of `crates/`, `apps/`, `fuzz/` or `tests/` names 
 `docs/cli.md` and `docs/visual-notation.md`): a file of the root or of `docs/` is named when a string ends with
 its name, a file of `.claude/` when a string holds its whole path or starts with `.claude`; a mention in a comment
 does not count, and `.claude/README.md` and `.claude/skills/README.md` stay code, since neither sits in a
-subfolder. Every other file is code. For `fuzz` the test of the strings is left out, since the fuzz targets read no
+subfolder. A template of GitHub (`.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`) is prose with no
+test of the strings: GitHub alone reads it. Every other file is code. For `fuzz` the test of the strings is left out, since the fuzz targets read no
 document of `docs/` apart from `docs/rfc/`: a document that a test reads is prose for it (the script takes the name of
 its workflow, `checks` or `fuzz`). The job `checks` then accepts a skipped part only when `changes` passed and said prose.
 

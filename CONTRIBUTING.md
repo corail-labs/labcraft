@@ -6,12 +6,53 @@ LabCraft is an AI-native graphical dataflow language and IDE, written to be read
 people and by AI agents alike. The goal is to do at least what LabVIEW does, in pure Rust, open and
 cross-platform.
 
+## Contribute with a coding agent
+
+You don't need to know Rust: a coding agent (Codex, Claude Code, Cursor, Copilot, Gemini or another) can do the
+work, and you decide. You need a GitHub account, [git](https://git-scm.com/), [Rust](https://rustup.rs) and, to fork
+and open the pull request from the agent, the [GitHub CLI](https://cli.github.com/) (`gh auth login` once). Open
+your agent in an empty folder and paste this prompt:
+
+```text
+I want to contribute to LabCraft (https://github.com/corail-labs/labcraft) with you as my coding agent.
+
+1. Fork and clone it here: gh repo fork corail-labs/labcraft --clone, then work inside
+   the folder labcraft it makes. Read AGENTS.md: its rules bind you, the
+   non-negotiables first.
+2. List the open issues labelled "good first issue" that nobody holds: no comment
+   "I'm working on this" from the last 7 days (gh issue view N --comments), no open
+   pull request that links them (gh pr list --search N).
+   Show me up to three, with what each asks, and let me choose.
+3. Read the issue I choose against the documents it names. If it contradicts them,
+   tell me and draft a comment for the issue, then stop.
+4. Draft the comment "I'm working on this" for the issue; post it when I agree.
+5. Run cargo xtask setup. Do what the issue asks and nothing it puts out of scope;
+   ask me before you change any other behaviour.
+6. Run cargo xtask ci and the commands of the issue's "How to check", and show me
+   their output.
+7. When I agree, push a branch to my fork and open a pull request whose body is
+   .github/pull_request_template.md filled in, every box answered: "Closes #N",
+   what changed, the commands you ran and their output.
+```
+
+**Claiming an issue.** Comment "I'm working on this" on the issue before you start. The claim holds 7 days, and each
+comment that shows progress (a commit, a draft pull request) renews it; a comment without either does not. After 7 days without news anyone may take the issue over,
+and the pull request credits both (a `Co-authored-by:` trailer). When two pull requests close the same issue, the
+first one that does what it asks is merged.
+
+**What gets reviewed.** Review is what costs the project, so a pull request without a linked issue, or that does
+what the issue puts out of scope, is closed without review; a fix of a few lines of prose (a typo, a broken link) is
+the only exception. A maintainer's pull request is exempt, and links its issue when there is one. To propose
+something else, open an issue first (the templates are `Task`, `Bug` and `RFC`). An
+issue can be wrong: when it contradicts the documents, say so on the issue instead of following it.
+
 ## Where the project is
 
-LabCraft has **done M0a and M0b, the first two parts of its first milestone in Rust**: `labcraft-cli`
-reads, checks, writes and runs programs against simulated instruments, and serves them to an agent over MCP. The repository holds the language and file format specification, the decisions behind it, example
-programs and the Rust workspace. The throwaway Python tools of the specification phase (a proof of concept and a
-viewer) were retired after M0 (2026-11-15).
+LabCraft has **done M0, its first milestone in Rust** (tag `v0.3.0-m0`): `labcraft-cli` reads, checks, writes and
+runs programs against simulated instruments and serves them to an agent over MCP, and a viewer draws them. M1, the
+diagram editor, is under way. The repository holds the language and file format specification, the decisions behind
+it, example programs and the Rust workspace. The throwaway Python tools of the specification phase (a proof of
+concept and a viewer) were retired after M0 (2026-11-15).
 
 Code contributions in Rust open in stages. Since the tag of M0 (`v0.3.0-m0`, after `v0.1.0-m0a` and
 `v0.2.0-m0b`), they have been open on all that exists: bugs and improvements of `fmt`, `check`, `run` and the MCP
@@ -60,7 +101,7 @@ differ. The grammar exists once, in the spec (section 14, EBNF). `.lcf` and `.lc
 1. **Independent of NI.** LabCraft is designed from public documentation, general domain knowledge
    and user feedback. Don't use LabVIEW to design LabCraft: no running, scripting, inspecting or
    screenshotting it for this project, no `.vi`, `.ctl`, `.lvproj` or `.lvlib` files, no LabVIEW
-   benchmarks. Don't contribute NI code, icons, help text, screenshots or examples. Describing your
+   benchmarks. The CI refuses a pull request that adds such a file (`cargo xtask clean-room`). Don't contribute NI code, icons, help text, screenshots or examples. Describing your
    own experience as a user is welcome. The reasons are in [docs/decisions.md](docs/decisions.md)
    (D-23).
 2. **No GPL, LGPL or AGPL code, not even reading it.** LabCraft is MIT OR Apache-2.0. Permissive
@@ -75,8 +116,9 @@ ci` runs the checks of the Rust code.
 
 ## Sending a change
 
-1. Every change goes through a pull request, the maintainers' too. Keep it to one topic and say
-   what you checked; the `checks` workflow must be green. GitHub requires only its job `checks`, so that a
+1. Every change goes through a pull request, the maintainers' too, linked to its issue (above; a maintainer links one when there is one). Keep it to one topic
+   and fill the template: what you checked, with the commands and their output; the `checks` workflow must be green.
+   `cargo xtask setup` installs what `cargo xtask ci` needs. GitHub requires only its job `checks`, so that a
    broken nightly or runner can never block `main`, but a red job `windows`, a red `fuzz` workflow or a red
    `release` workflow also stops the merge unless a maintainer decides otherwise for that pull request
    ([fuzz/README.md](fuzz/README.md)).

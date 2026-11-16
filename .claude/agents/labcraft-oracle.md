@@ -42,4 +42,4 @@ Only the `expected.json` of the cases you were given, in the format of their cor
 
 ## Report
 
-For each case: written or not, the values that are not obvious, the sections they rest on, and how sure you are. Then, apart, each question the documents leave open, for the owner. Write in English, under 500 words unless the caller says otherwise, and end with the list of files you wrote.
+For each case: written or not, the values that are not obvious, the sections they rest on, and how sure you are. Then, apart, each question the documents leave open, for a maintainer. Write in English, under 500 words unless the caller says otherwise, and end with the list of files you wrote.

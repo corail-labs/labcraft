@@ -2,6 +2,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod assets;
+mod clean_room;
 mod codes;
 mod commands;
 mod hooks;
@@ -9,6 +10,7 @@ mod layers;
 mod libs;
 mod licences;
 mod notices;
+mod setup;
 mod unicode;
 mod web;
 
@@ -26,7 +28,9 @@ usage: cargo xtask <command>
 
 commands:
   ci        lint, test, bounds, wasm; stops at the first failure
-  lint      fmt --check, layers, licences, libs, codes, commands, assets, clippy -D warnings
+  setup     installs what ci needs and is missing (the WASM target, wasm-bindgen-test-runner), saying each command;
+            checks Python and, on Windows, the path of the repository
+  lint      fmt --check, layers, licences, libs, codes, commands, assets, clean-room, clippy -D warnings
   test      the tests of the workspace, through cargo-nextest when it is installed, then the doctests
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
@@ -34,6 +38,7 @@ commands:
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required, their defaults
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
+  clean-room no LabVIEW file in the repository, tracked or about to be added (D-23)
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
   wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
   hooks     the Python tests of the hook of the agents (.claude/hooks); not part of ci
@@ -81,6 +86,8 @@ fn main() -> ExitCode {
         Some("web-serve") => web::serve(&root()),
         Some("web-smoke") => web::smoke(&root()),
         Some("hooks") => hooks::run(&root()),
+        Some("clean-room") => clean_room::check(&root()),
+        Some("setup") => setup::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
@@ -113,6 +120,7 @@ fn lint() -> Result<(), String> {
     check_codes()?;
     check_commands()?;
     check_assets()?;
+    clean_room::check(&root())?;
     run(&["clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"])
 }
 
