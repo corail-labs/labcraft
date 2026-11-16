@@ -49,7 +49,7 @@ fn too_old(report: &str) -> Option<String> {
 }
 
 /// The first interpreter that is recent enough. When none is, the problem of the first one that runs.
-fn interpreter(root: &Path) -> Result<&'static str, String> {
+pub(crate) fn interpreter(root: &Path) -> Result<&'static str, String> {
     let mut problem = None;
     for &python in INTERPRETERS {
         let Ok(output) = python_command(root, python).arg("-c").arg(PROBE).output() else {

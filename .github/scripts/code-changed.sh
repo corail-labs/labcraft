@@ -4,7 +4,8 @@
 #
 # A changed file is prose when it is a Markdown file at the root, directly in docs/, in .claude/agents/ or
 # anywhere under .claude/skills/ (instructions for agents, which no code reads; the `*` of the pattern crosses `/`,
-# so any depth counts), or a file of docs/images/ or design/ (FigCraft files, which no code reads), and, for
+# so any depth counts), or a file of docs/images/ or design/ (FigCraft files, which no code reads), or a template of
+# GitHub, .github/ISSUE_TEMPLATE/ and .github/pull_request_template.md (GitHub alone reads them), and, for
 # `checks`, no Rust string names it: the tests read docs/language-spec-v0.md, docs/cli.md and
 # docs/visual-notation.md, so those count as code. An instruction file of .claude/ is named by its whole path, or
 # by a string literal that starts with `.claude` (a path built piece by piece), not by its bare name: `skills/`
@@ -49,6 +50,8 @@ code=false
 while IFS= read -r file; do
   case "$file" in
     design/*) echo "prose: $file"; continue ;;
+    # GitHub shows them when an issue or a pull request is opened; no code, test or workflow reads them.
+    .github/ISSUE_TEMPLATE/* | .github/pull_request_template.md) echo "prose: $file"; continue ;;
     # Instructions for agents: prose, unless a Rust string names the file by its path, or starts a path under
     # `.claude/` (a bare `SKILL.md` belongs to `skills/`, which is code).
     .claude/agents/*.md | .claude/skills/*/*.md)

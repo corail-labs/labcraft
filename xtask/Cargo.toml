@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "LabCraft workspace tooling: cargo xtask ci | layers | licences | libs | codes | commands | assets | unicode | bounds | wasm | spec"
+description = "LabCraft workspace tooling: cargo xtask ci | setup | lint | layers | licences | libs | codes | commands | assets | clean-room | unicode | bounds | wasm"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
