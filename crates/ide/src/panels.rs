@@ -25,6 +25,12 @@ pub enum Asked {
     Window(&'static str),
 }
 
+/// Whether `file` holds one function only, named like it (its last name): it is shown as that function, on one line.
+fn alone(file: &str, functions: &[&Listed]) -> bool {
+    let stem = file.strip_suffix(".lcf").unwrap_or(file);
+    matches!(functions, [only] if only.function.rsplit('.').next() == Some(stem))
+}
+
 /// `Project`: the files of the folder, as a tree of folders, each file with its functions.
 pub fn project(ui: &mut egui::Ui, published: &Published, preview_tabs: bool) -> Option<Asked> {
     let Some(folder) = &published.folder else {
@@ -46,7 +52,12 @@ pub fn project(ui: &mut egui::Ui, published: &Published, preview_tabs: bool) -> 
         for (folders, files) in &tree {
             let mut body = |ui: &mut egui::Ui| {
                 for (file, functions) in files {
-                    ui.label(RichText::new(*file).small().weak());
+                    // A file of one function of its name is that function: one line, its file on hover. Else the
+                    // file, then its functions under it.
+                    let alone = alone(file, functions);
+                    if !alone {
+                        ui.label(RichText::new(*file).small().weak());
+                    }
                     for listed in functions {
                         let shown = published.function.as_deref() == Some(listed.function.as_str());
                         let text = if listed.drawable || listed.errors == 0 {
@@ -55,7 +66,11 @@ pub fn project(ui: &mut egui::Ui, published: &Published, preview_tabs: bool) -> 
                             RichText::new(format!("{}  ({} error{})", listed.function, listed.errors, if listed.errors == 1 { "" } else { "s" }))
                                 .color(ui.visuals().warn_fg_color)
                         };
-                        let response = ui.indent(("project", &listed.file, &listed.function), |ui| ui.selectable_label(shown, text)).inner;
+                        let response = if alone {
+                            ui.selectable_label(shown, text)
+                        } else {
+                            ui.indent(("project", &listed.file, &listed.function), |ui| ui.selectable_label(shown, text)).inner
+                        };
                         let response = response.on_hover_text(&listed.file);
                         if response.double_clicked() {
                             asked = Some(Asked::Show { function: listed.function.clone(), preview: false });
@@ -329,4 +344,25 @@ pub fn trace_status(trace: &TracePart) -> String {
         said.push("the files have changed since".to_owned());
     }
     said.join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listed(function: &str, file: &str) -> Listed {
+        Listed { function: function.to_owned(), file: file.to_owned(), drawable: true, errors: 0, warnings: 0 }
+    }
+
+    #[test]
+    fn a_file_of_one_function_of_its_name_is_one_line_and_any_other_keeps_its_name() {
+        let main = listed("main", "main.lcf");
+        let helper = listed("helper", "main.lcf");
+        let qualified = listed("psu.set_voltage", "psu/set_voltage.lcf");
+        assert!(alone("main.lcf", &[&main]));
+        assert!(alone("set_voltage.lcf", &[&qualified]));
+        assert!(!alone("main.lcf", &[&main, &helper]));
+        assert!(!alone("main.lcf", &[&helper]));
+        assert!(!alone("main.lcf", &[]));
+    }
 }

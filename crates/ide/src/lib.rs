@@ -24,6 +24,7 @@ use craft_keymap::{Active, CommandRef, Keymap, Platform};
 use craft_menu::{ItemState, LayoutOptions, MenuBar, Target};
 use craft_ui::docking::{Action, DockArea, DockContent, DockStyle, PanelState, Workspace};
 use egui::{FontId, RichText};
+use kit_shell::icon::{self, Icon};
 use kit_shell::palette::{self, Chosen, Palette};
 use kit_shell::start::{self, Example, Recent};
 use kit_shell::status::Segment;
@@ -55,6 +56,8 @@ pub struct Prefs {
     /// Where the panels are, without the tabs of functions; none, the layout of ide.md 2.
     pub layout: Option<Workspace<Pane>>,
     pub dark: bool,
+    /// The look of the window: `studio` (graphite, indigo), the default, or `lab` (slate, teal).
+    pub look: String,
     /// Every node in standard view (notation 3).
     pub standard_everywhere: bool,
     /// No glide (notation 2.1).
@@ -67,7 +70,15 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { layout: None, dark: false, standard_everywhere: false, reduced_motion: false, preview_tabs: true, values_shown: true }
+        Prefs {
+            layout: None,
+            dark: false,
+            look: "studio".to_owned(),
+            standard_everywhere: false,
+            reduced_motion: false,
+            preview_tabs: true,
+            values_shown: true,
+        }
     }
 }
 
@@ -124,6 +135,8 @@ pub struct Ide {
     palette: Palette,
     card: Card,
     frame: craft_window::Frame,
+    /// The look given to egui last (`Prefs::look`).
+    installed_look: String,
     /// The `movable` flag last given to AppKit (`craft_window::title_bar::sync_movable`).
     #[cfg(target_os = "macos")]
     movable: Option<bool>,
@@ -148,16 +161,15 @@ pub struct Ide {
     canvas_rect: Option<egui::Rect>,
 }
 
-/// The height of the top bar, the title bar of the window (ide.md 2), in points.
-const TOP_BAR: f32 = 34.0;
-
 impl Ide {
     /// The window, with the settings of the user. `frame`: who draws the frame of the window (`craft-window`).
     pub fn new(ctx: &egui::Context, prefs: Prefs, frame: craft_window::Frame) -> Ide {
         let platform = craft_keymap::egui::platform(ctx);
         let workspace = pane::restored(prefs.layout.clone());
         ctx.set_theme(if prefs.dark { egui::Theme::Dark } else { egui::Theme::Light });
+        kit_shell::theme::install(ctx, kit_shell::theme::Look::named(&prefs.look).unwrap_or_default());
         Ide {
+            installed_look: prefs.look.clone(),
             prefs,
             prefs_changed: false,
             workspace,
@@ -213,9 +225,18 @@ impl Ide {
         if self.prefs.dark { Theme::Dark } else { Theme::Light }
     }
 
+    /// The look of the preferences; a name it does not know is the default.
+    fn look(&self) -> kit_shell::theme::Look {
+        kit_shell::theme::Look::named(&self.prefs.look).unwrap_or_default()
+    }
+
     /// Draws the window in `ui`, the whole of the viewport: with no host, the start page alone.
     pub fn show(&mut self, ui: &mut egui::Ui, host: Option<&dyn Host>, start: &StartList) -> Vec<Outward> {
         let mut outward = Vec::new();
+        if self.installed_look != self.prefs.look {
+            self.installed_look = self.prefs.look.clone();
+            kit_shell::theme::install(ui.ctx(), self.look());
+        }
         let theme = if self.prefs.dark { egui::Theme::Dark } else { egui::Theme::Light };
         if ui.ctx().theme() != theme {
             ui.ctx().set_theme(theme);
@@ -248,8 +269,10 @@ impl Ide {
         let right: Vec<Segment> = host.iter().map(|_| Segment::new("No agent").hover("Connecting an AI agent comes with step 8 of M1")).collect();
         // When the app draws the frame (Windows): the edges resize the window, the top bar is its title bar.
         kit_shell::frame::edges(ui.ctx(), &self.frame);
+        let tokens = kit_shell::theme::Tokens::of(ui.ctx());
         let answers = egui::Panel::top("ide-top")
-            .exact_size(TOP_BAR)
+            .exact_size(kit_shell::theme::TOP_BAR)
+            .frame(kit_shell::theme::bar_frame(&tokens))
             .show(ui, |ui| {
                 top_bar::show(
                     ui,
@@ -302,7 +325,11 @@ impl Ide {
             }
         }
         let status = self.status(&view);
-        if let Some(command) = egui::Panel::bottom("ide-status").show(ui, |ui| kit_shell::status::show(ui, &status.0, &status.1)).inner {
+        if let Some(command) = egui::Panel::bottom("ide-status")
+            .frame(kit_shell::theme::bar_frame(&tokens).inner_margin(egui::Margin::symmetric(8, 3)))
+            .show(ui, |ui| kit_shell::status::show(ui, &status.0, &status.1))
+            .inner
+        {
             self.run(CommandRef::new(command), host, &view, &mut outward);
         }
         match host {
@@ -481,9 +508,10 @@ impl Ide {
             let id = command.id.as_str();
             let param = |name: &str| command.params.get(name).and_then(Value::as_str).map(str::to_owned);
             match id {
-                "project.new" | "project.open" | keys::HOME | keys::PALETTE | keys::DARK | keys::REDUCED_MOTION | keys::ABOUT => {
+                "project.new" | "project.open" | keys::HOME | keys::PALETTE | keys::DARK | keys::LAB | keys::REDUCED_MOTION | keys::ABOUT => {
                     let checked = match id {
                         keys::DARK => Some(self.prefs.dark),
+                        keys::LAB => Some(self.look() == kit_shell::theme::Look::Lab),
                         keys::REDUCED_MOTION => Some(self.prefs.reduced_motion),
                         _ => None,
                     };
@@ -559,7 +587,16 @@ impl Ide {
 
     /// The dock: the panels and the tabs of the functions.
     fn dock(&mut self, ui: &mut egui::Ui, host: &dyn Host, view: &Arc<Published>, start: &StartList, outward: &mut Vec<Outward>) {
-        let style = DockStyle::from_ui(ui);
+        let mut style = DockStyle::from_ui(ui);
+        let tokens = kit_shell::theme::Tokens::of(ui.ctx());
+        style.background = tokens.chrome;
+        style.tab_background = tokens.chrome;
+        style.active_background = tokens.base;
+        style.text = tokens.text;
+        style.inactive_text = tokens.text_weak;
+        style.border = egui::Stroke::new(1.0, tokens.border);
+        style.accent = tokens.accent;
+        style.gap = 1.0;
         let mut content = Content { ide: self, host, view, start, asked: Vec::new(), chosen: None };
         let output = egui::CentralPanel::default()
             .show(ui, |ui| DockArea::new(egui::Id::unique("ide-dock")).show_content(ui, &content.ide.workspace.layout.clone(), &style, &mut content))
@@ -650,6 +687,11 @@ impl Ide {
             }),
             keys::DARK => {
                 self.prefs.dark = !self.prefs.dark;
+                self.prefs_changed = true;
+            }
+            keys::LAB => {
+                let look = if self.look() == kit_shell::theme::Look::Lab { kit_shell::theme::Look::Studio } else { kit_shell::theme::Look::Lab };
+                self.prefs.look = look.name().to_owned();
                 self.prefs_changed = true;
             }
             keys::REDUCED_MOTION => {
@@ -744,6 +786,34 @@ struct Content<'a> {
 
 impl DockContent<Pane> for Content<'_> {
     fn body(&mut self, ui: &mut egui::Ui, pane: &Pane) {
+        // The panels have a margin; the tab of a function gives its canvas the whole of it.
+        if matches!(pane, Pane::Function(_)) {
+            self.body_inside(ui, pane);
+        } else {
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| self.body_inside(ui, pane));
+        }
+    }
+
+    fn logical_label(&self, pane: &Pane) -> String {
+        pane.title()
+    }
+
+    fn label(&mut self, _ui: &egui::Ui, pane: &Pane, logical: &str, _font: &FontId, _color: egui::Color32) -> egui::WidgetText {
+        // A tab in preview has its title in italics (ide.md 3).
+        match pane {
+            Pane::Function(function) if self.view.preview.as_deref() == Some(function.as_str()) => RichText::new(logical).italics().into(),
+            _ => logical.into(),
+        }
+    }
+
+    fn permissions(&self, pane: &Pane) -> craft_ui::docking::Permissions {
+        pane::permissions(pane)
+    }
+}
+
+impl Content<'_> {
+    /// What a pane shows.
+    fn body_inside(&mut self, ui: &mut egui::Ui, pane: &Pane) {
         let view = self.view;
         let asked = match pane {
             Pane::Project => panels::project(ui, view, self.ide.prefs.preview_tabs),
@@ -768,47 +838,48 @@ impl DockContent<Pane> for Content<'_> {
         self.asked.extend(asked);
     }
 
-    fn logical_label(&self, pane: &Pane) -> String {
-        pane.title()
-    }
-
-    fn label(&mut self, _ui: &egui::Ui, pane: &Pane, logical: &str, _font: &FontId, _color: egui::Color32) -> egui::WidgetText {
-        // A tab in preview has its title in italics (ide.md 3).
-        match pane {
-            Pane::Function(function) if self.view.preview.as_deref() == Some(function.as_str()) => RichText::new(logical).italics().into(),
-            _ => logical.into(),
-        }
-    }
-
-    fn permissions(&self, pane: &Pane) -> craft_ui::docking::Permissions {
-        pane::permissions(pane)
-    }
-}
-
-impl Content<'_> {
     /// The tab of a function: its views, and the view or the two of a split.
     fn function(&mut self, ui: &mut egui::Ui, function: &str) -> Option<panels::Asked> {
         let view = self.view;
         let shown = view.function.as_deref() == Some(function);
         let tab = tab_of(view, function);
         let mut asked = None;
+        // The toolbar of the tab (ide.md 3): its views as icons, then what acts on the diagram.
+        let split = tab.split.is_some();
+        let zoom = self.ide.drawn.get(function).map(|drawn| drawn.canvas.viewport().0);
+        let tokens = kit_shell::theme::Tokens::of(ui.ctx());
         ui.horizontal(|ui| {
-            for (kind, label) in [(ViewKind::Diagram, "Diagram"), (ViewKind::Text, "Text"), (ViewKind::Block, "Block")] {
-                if ui.selectable_label(tab.view == kind && tab.split.is_none(), label).clicked() {
-                    asked = Some(panels::Asked::Command("view.set_view".to_owned(), json!({ "function": function, "view": kind.as_str() })));
-                }
-            }
-            let split = tab.split.is_some();
-            if ui.selectable_label(split, "Text | Diagram").on_hover_text("The text beside the diagram").clicked() {
-                let params = if split {
-                    json!({ "function": function, "view": "diagram" })
-                } else {
-                    json!({ "function": function, "view": "text", "split": "diagram" })
-                };
-                asked = Some(panels::Asked::Command("view.set_view".to_owned(), params));
-            }
-            if ui.selectable_label(false, RichText::new("Panel").weak()).on_hover_text("Planned, M3").clicked() {
-                asked = Some(panels::Asked::Window("ide.planned.panel_view"));
+            // The views are a mode, one at a time: a group of their own, apart from the actions that follow.
+            egui::Frame::new()
+                .fill(tokens.sunken)
+                .stroke(egui::Stroke::new(1.0, tokens.border))
+                .corner_radius(egui::CornerRadius::same(kit_shell::theme::RADIUS))
+                .inner_margin(egui::Margin::same(2))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    for (kind, icon, hover) in
+                        [(ViewKind::Diagram, Icon::Diagram, "Diagram"), (ViewKind::Text, Icon::Text, "Text"), (ViewKind::Block, Icon::Block, "Block")]
+                    {
+                        if icon::toggle(ui, icon, tab.view == kind && !split, true, hover).clicked() {
+                            asked = Some(panels::Asked::Command("view.set_view".to_owned(), json!({ "function": function, "view": kind.as_str() })));
+                        }
+                    }
+                    if icon::toggle(ui, Icon::Split, split, true, "Text | Diagram: the text beside the diagram").clicked() {
+                        let params = if split {
+                            json!({ "function": function, "view": "diagram" })
+                        } else {
+                            json!({ "function": function, "view": "text", "split": "diagram" })
+                        };
+                        asked = Some(panels::Asked::Command("view.set_view".to_owned(), params));
+                    }
+                    if icon::toggle(ui, Icon::Panel, false, true, "Panel: planned, M3").clicked() {
+                        asked = Some(panels::Asked::Window("ide.planned.panel_view"));
+                    }
+                });
+            ui.separator();
+            // The actions on the diagram (the zoom is in the status bar): Fit now; arrange, detach and the tools of editing come with their steps.
+            if icon::button(ui, Icon::Fit, shown && zoom.is_some(), "Fit the diagram to the view").clicked() {
+                asked = Some(panels::Asked::Window(keys::FIT));
             }
         });
         ui.separator();
