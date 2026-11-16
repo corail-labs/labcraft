@@ -150,9 +150,10 @@ impl Session {
         self.engine.look_at_trace()
     }
 
-    /// Shows the values of the trace at `path`, chosen in the window, over the function shown.
-    pub fn open_trace_at(&mut self, path: PathBuf) -> Result<Value, CommandError> {
-        self.engine.open_trace_at(path).map(|()| Value::Null)
+    /// Shows the values of the trace at `path`, chosen in the window, over the function of the window that shows
+    /// `function`, else of the window of the project.
+    pub fn open_trace_at(&mut self, function: Option<&str>, path: PathBuf) -> Result<Value, CommandError> {
+        self.engine.open_trace_at(function, path).map(|()| Value::Null)
     }
 
     /// The files watched changed: the session reads, checks and draws again.
@@ -160,8 +161,8 @@ impl Session {
         self.engine.files_changed();
     }
 
-    pub fn set_zoom(&mut self, zoom: f32) {
-        self.engine.set_zoom(zoom);
+    pub fn set_zoom(&mut self, function: &str, zoom: f32) {
+        self.engine.set_zoom(function, zoom);
     }
 }
 
@@ -174,9 +175,9 @@ pub enum Message {
         reply: Option<Sender<Result<Value, CommandError>>>,
     },
     /// A trace chosen in the window, anywhere on the disk.
-    OpenTrace(PathBuf),
+    OpenTrace(Option<String>, PathBuf),
     /// The zoom of the canvas shown.
-    Zoom(f32),
+    Zoom(String, f32),
     /// A file watched changed.
     Changed,
     /// The file of `--style` changed.
@@ -241,9 +242,10 @@ impl Handle {
         Ok((Handle { sender, snapshot, thread: Some(thread) }, reply))
     }
 
-    /// Shows the values of a trace chosen in the window; what it changes shows in what is published.
-    pub fn open_trace(&self, path: &Path) {
-        let _ = self.sender.send(Message::OpenTrace(path.to_path_buf()));
+    /// Shows the values of a trace chosen in the window, over the function of the window that shows `function`; what
+    /// it changes shows in what is published.
+    pub fn open_trace(&self, function: Option<String>, path: &Path) {
+        let _ = self.sender.send(Message::OpenTrace(function, path.to_path_buf()));
     }
 }
 
@@ -258,8 +260,8 @@ impl Host for Handle {
         self.snapshot.lock().unwrap_or_else(PoisonError::into_inner).clone()
     }
 
-    fn set_zoom(&self, zoom: f32) {
-        let _ = self.sender.send(Message::Zoom(zoom));
+    fn set_zoom(&self, function: &str, zoom: f32) {
+        let _ = self.sender.send(Message::Zoom(function.to_owned(), zoom));
     }
 }
 
@@ -316,11 +318,11 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
                     let _ = reply.send(result);
                 }
             }
-            Message::OpenTrace(path) => {
-                let _ = caught(|| session.open_trace_at(path));
+            Message::OpenTrace(function, path) => {
+                let _ = caught(|| session.open_trace_at(function.as_deref(), path));
             }
-            Message::Zoom(zoom) => {
-                session.set_zoom(zoom);
+            Message::Zoom(function, zoom) => {
+                session.set_zoom(&function, zoom);
                 continue;
             }
             first @ (Message::Changed | Message::StyleChanged) => {

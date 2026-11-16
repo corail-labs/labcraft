@@ -67,6 +67,7 @@ pub trait Host {
     /// What the session last published.
     fn snapshot(&self) -> Snapshot;
 
-    /// The zoom of the canvas shown, which `view.get_state` returns: given by the window, not a command.
-    fn set_zoom(&self, zoom: f32);
+    /// The zoom of the canvas of the window that shows `function`, which `view.get_state` returns: given by the window,
+    /// not a command.
+    fn set_zoom(&self, function: &str, zoom: f32);
 }

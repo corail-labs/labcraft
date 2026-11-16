@@ -1,6 +1,7 @@
 //! The panels of the window (ide.md 4), as 1a has them: `Project`, the tree of the folder; `Palette`, the functions
 //! the project can call, searched; `Inspector`, the function itself (node, wire and terminal come with the selection,
-//! step 2); `Problems`, the diagnostics by file, error first; `Run`, the trace of the function shown.
+//! step 2); `Problems`, the diagnostics by file, error first; `Run`, the trace of the function shown. Each shows the
+//! window it is given: the one that has focus, or for the inspector of a detached window, that window (ide.md 9).
 
 use std::collections::BTreeMap;
 
@@ -8,7 +9,7 @@ use egui::RichText;
 use kit_shell::fuzzy;
 use kit_shell::inspector::{self, Field, Section};
 use labcraft_engine::drawings::TracePart;
-use labcraft_engine::view::{Listed, Published};
+use labcraft_engine::view::{Listed, Published, Shown};
 use labcraft_types::Severity;
 use serde_json::{Value, json};
 
@@ -32,7 +33,8 @@ fn alone(file: &str, functions: &[&Listed]) -> bool {
 }
 
 /// `Project`: the files of the folder, as a tree of folders, each file with its functions.
-pub fn project(ui: &mut egui::Ui, published: &Published, preview_tabs: bool) -> Option<Asked> {
+/// `focused`: the function of the window that has focus, marked in the tree.
+pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, preview_tabs: bool) -> Option<Asked> {
     let Some(folder) = &published.folder else {
         ui.label(RichText::new("No folder open").weak());
         return None;
@@ -59,7 +61,7 @@ pub fn project(ui: &mut egui::Ui, published: &Published, preview_tabs: bool) -> 
                         ui.label(RichText::new(*file).small().weak());
                     }
                     for listed in functions {
-                        let shown = published.function.as_deref() == Some(listed.function.as_str());
+                        let shown = focused == Some(listed.function.as_str());
                         let text = if listed.drawable || listed.errors == 0 {
                             RichText::new(&listed.function)
                         } else {
@@ -199,8 +201,8 @@ fn row(ui: &mut egui::Ui, callable: &Callable) {
 
 /// `Inspector`, with nothing selected: the function itself, its signature, its documentation and its frame (ide.md 4;
 /// decisions of the owner, 2026-11-16).
-pub fn inspector(ui: &mut egui::Ui, published: &Published, callables: &Callables) {
-    let Some(function) = &published.function else {
+pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callables: &Callables) {
+    let Some(function) = &shown.function else {
         inspector::show(ui, "Nothing shown", &[]);
         return;
     };
@@ -217,7 +219,7 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, callables: &Callables
     if let Some(callable) = own {
         fields.push(Field::code("Signature", callable.signature.as_str()));
     }
-    if let Some(drawing) = &published.drawing {
+    if let Some(drawing) = &shown.drawing {
         // In units of the notation, as `layout` writes `frame size` (spec 11); the drawing counts hundredths.
         fields.push(Field::new("Frame", format!("{} × {}", drawing.width / 100, drawing.height / 100)));
         fields.push(Field::new("Nodes", drawing.placed.len().to_string()));
@@ -237,18 +239,18 @@ pub struct ProblemsFilter {
 }
 
 /// `Problems`: the diagnostics of the project, by file, error first; a click shows the function.
-pub fn problems(ui: &mut egui::Ui, published: &Published, filter: &mut ProblemsFilter) -> Option<Asked> {
+pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter: &mut ProblemsFilter) -> Option<Asked> {
     let mut asked = None;
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("{}, {}", counted(published.errors, "error"), counted(published.warnings, "warning"))).strong());
         ui.checkbox(&mut filter.errors_only, "Errors only");
         ui.checkbox(&mut filter.shown_only, "Function shown only");
     });
-    if published.kept {
+    if shown.kept {
         ui.label(RichText::new("This function does not draw now: its last drawing stays, with the diagnostics of its file.").weak());
     }
     let Some(report) = &published.report else { return None };
-    let shown_file = published
+    let shown_file = shown
         .function
         .as_ref()
         .and_then(|function| published.functions.iter().find(|listed| listed.function == *function))
@@ -292,18 +294,18 @@ pub fn problems(ui: &mut egui::Ui, published: &Published, filter: &mut ProblemsF
 }
 
 /// `Run`: the trace of the function shown and how its run ended (the bar of the viewer of M0v, as a panel).
-pub fn run(ui: &mut egui::Ui, published: &Published, values_shown: bool) -> Option<Asked> {
+pub fn run(ui: &mut egui::Ui, shown: &Shown, values_shown: bool) -> Option<Asked> {
     let mut asked = None;
-    if published.function.is_none() {
+    let Some(function) = &shown.function else {
         ui.label(RichText::new("No function shown").weak());
         return None;
-    }
-    match &published.trace {
+    };
+    match &shown.trace {
         Some(trace) => {
             ui.horizontal(|ui| {
-                ui.label(format!("{}: {}", if published.trace_opened { "Trace" } else { "Last run" }, trace.file));
-                if published.trace_opened && kit_shell::icon::button(ui, kit_shell::icon::Icon::Close, true, "Back to the last run").clicked() {
-                    asked = Some(Asked::Command("view.open_trace".to_owned(), json!({})));
+                ui.label(format!("{}: {}", if shown.trace_opened { "Trace" } else { "Last run" }, trace.file));
+                if shown.trace_opened && kit_shell::icon::button(ui, kit_shell::icon::Icon::Close, true, "Back to the last run").clicked() {
+                    asked = Some(Asked::Command("view.open_trace".to_owned(), json!({ "function": function })));
                 }
             });
             ui.label(trace_status(trace));

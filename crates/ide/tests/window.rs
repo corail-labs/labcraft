@@ -34,8 +34,8 @@ impl Host for Fake {
         Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0 }
     }
 
-    fn set_zoom(&self, zoom: f32) {
-        self.session.borrow_mut().set_zoom(zoom);
+    fn set_zoom(&self, function: &str, zoom: f32) {
+        self.session.borrow_mut().set_zoom(function, zoom);
     }
 }
 
@@ -154,7 +154,7 @@ fn a_click_in_project_shows_the_function_in_preview_and_the_next_preview_takes_i
     harness.get_by_label("helper").click();
     harness.run_steps(4);
     let view = harness.state().host.snapshot().view;
-    assert_eq!(view.function.as_deref(), Some("helper"));
+    assert_eq!(view.main.function.as_deref(), Some("helper"));
     assert_eq!(view.preview.as_deref(), Some("helper"));
     assert_eq!(view.opened, ["main", "helper"]);
     // The next preview takes its place.
@@ -221,7 +221,7 @@ fn the_start_page_stays_in_front_of_the_function_shown() {
     run_in_palette(&mut harness, "ide.home {}");
     // Frames after, the session still shows `main`, and the start page is still the one in front.
     harness.run_steps(6);
-    assert_eq!(harness.state().host.snapshot().view.function.as_deref(), Some("main"));
+    assert_eq!(harness.state().host.snapshot().view.main.function.as_deref(), Some("main"));
     assert!(harness.query_by_label_contains("Open folder").is_some(), "the start page went behind the function");
     shot(&mut harness, "home");
 }
@@ -233,4 +233,73 @@ fn the_palette_gives_the_folder_typed_to_the_app() {
     assert_eq!(harness.state().outward, [Outward::OpenFolder(Some("/q".to_owned()))]);
     run_in_palette(&mut harness, "project.new {\"folder\": \"/r\"}");
     assert_eq!(harness.state().outward.last(), Some(&Outward::NewProject(Some("/r".to_owned()))));
+}
+
+/// Step 1b (ide.md 9): a tab detaches into a window of its own, which floats in the window here (kittest has one
+/// viewport, as the web), with its toolbar and its inspector; the palette and `Fit` then act on it, and it docks back.
+#[test]
+fn a_tab_detaches_into_a_floating_window_and_docks_back() {
+    let mut harness = harness(fake());
+    run_in_palette(&mut harness, "view.show_function {\"function\": \"helper\"}");
+    run_in_palette(&mut harness, "view.detach {\"function\": \"helper\"}");
+    harness.run_steps(4);
+    let view = harness.state().host.snapshot().view;
+    assert!(view.is_detached("helper") && view.opened == ["main"], "{:?}", view.opened);
+    assert_eq!(view.main.function.as_deref(), Some("main"));
+    let layout = harness.state().ide.prefs().layout.unwrap();
+    assert!(!layout.layout.contains(&labcraft_ide::Pane::Function("helper".to_owned())), "the tab of a function is never saved");
+    // The detached window draws its function, and its inspector names it.
+    assert!(view.window_of("helper").is_some_and(|window| window.drawing.is_some()));
+    assert!(harness.query_all_by_label("helper").count() >= 2, "the title of the window and its inspector");
+    shot(&mut harness, "detached");
+    // Its place is kept for the next one.
+    assert!(harness.state().ide.prefs().detached.is_some());
+    // A press in it gives it focus: the palette acts on its function.
+    let place = harness.state().ide.prefs().detached.unwrap().rect;
+    harness.hover_at(egui::pos2(place[0] + place[2] / 2.0, place[1] + place[3] / 2.0));
+    harness.event(egui::Event::PointerButton {
+        pos: egui::pos2(place[0] + place[2] / 2.0, place[1] + place[3] / 2.0),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.event(egui::Event::PointerButton {
+        pos: egui::pos2(place[0] + place[2] / 2.0, place[1] + place[3] / 2.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run_steps(3);
+    assert_eq!(harness.state().ide.focused(&harness.state().host.snapshot().view).as_deref(), Some("helper"));
+    // Ctrl+W closes the tab of the window that has focus: the detached window closes, with its tab (ide.md 9).
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::W);
+    harness.run_steps(4);
+    let view = harness.state().host.snapshot().view;
+    assert!(view.detached.is_empty() && view.opened == ["main"], "{:?}", view.opened);
+    // Detached again, then docked back: it is the last tab of the project, shown.
+    run_in_palette(&mut harness, "view.show_function {\"function\": \"helper\"}");
+    run_in_palette(&mut harness, "view.detach {\"function\": \"helper\"}");
+    run_in_palette(&mut harness, "view.dock {\"function\": \"helper\"}");
+    harness.run_steps(4);
+    let view = harness.state().host.snapshot().view;
+    assert!(view.detached.is_empty() && view.opened == ["main", "helper"], "{:?}", view.opened);
+    assert_eq!(view.main.function.as_deref(), Some("helper"));
+    let layout = &harness.state().ide.prefs().layout.unwrap().layout;
+    assert!(layout.floating.is_empty(), "no floating window is left");
+}
+
+/// `view.reset_layout` docks every detached tab again (commands.md 6.7), and no floating window is left.
+#[test]
+fn reset_layout_docks_the_detached_tabs() {
+    let mut harness = harness(fake());
+    run_in_palette(&mut harness, "view.show_function {\"function\": \"helper\"}");
+    run_in_palette(&mut harness, "view.detach {\"function\": \"helper\"}");
+    harness.run_steps(4);
+    assert!(harness.state().host.snapshot().view.is_detached("helper"));
+    run_in_palette(&mut harness, "view.reset_layout {}");
+    harness.run_steps(6);
+    let view = harness.state().host.snapshot().view;
+    assert!(view.detached.is_empty() && view.opened == ["main", "helper"], "{:?}", view.opened);
+    let state = harness.state_mut();
+    assert!(state.ide.prefs().layout.unwrap().layout.floating.is_empty(), "no floating window is left");
 }

@@ -245,10 +245,11 @@ impl Session {
         published
     }
 
-    /// Shows the values of the trace at `path` over the function shown, as `view.open_trace` does, for a trace that the
-    /// window chose anywhere on the disk, which a command cannot name (`docs/commands.md`, 2).
-    pub fn open_trace_at(&mut self, path: std::path::PathBuf) -> Result<(), CommandError> {
-        let opened = crate::view::open_trace_at(self, path);
+    /// Shows the values of the trace at `path` over the function of a window (the one that shows `function`, else the
+    /// window of the project), as `view.open_trace` does, for a trace that the window chose anywhere on the disk, which
+    /// a command cannot name (`docs/commands.md`, 2).
+    pub fn open_trace_at(&mut self, function: Option<&str>, path: std::path::PathBuf) -> Result<(), CommandError> {
+        let opened = crate::view::open_trace_at(self, function, path);
         self.view.settle();
         opened
     }
@@ -258,10 +259,10 @@ impl Session {
         self.has_window = true;
     }
 
-    /// The zoom of the canvas of the window, which `view.get_state` returns. Not a command: the window says what it
-    /// shows, as the app says what changed on the disk.
-    pub fn set_zoom(&mut self, zoom: f32) {
-        self.view.zoom = Some(zoom);
+    /// The zoom of the canvas of the window that shows `function`, which `view.get_state` returns. Not a command: the
+    /// window says what it shows, as the app says what changed on the disk.
+    pub fn set_zoom(&mut self, function: &str, zoom: f32) {
+        self.view.set_zoom(function, zoom);
     }
 
     /// A session of the command line, which runs one command per process: it keeps no history, so `history.*` is not
@@ -397,6 +398,8 @@ impl Session {
             "view.set_view" => crate::view::window::set_view(self, params),
             "view.set_workspace" => crate::view::window::set_workspace(self, params),
             "view.select" => crate::view::window::select(self, params),
+            "view.detach" => crate::view::window::detach(self, params),
+            "view.dock" => crate::view::window::dock(self, params),
             "view.get_state" => Ok(crate::view::window::get_state(self)),
             #[cfg(not(target_arch = "wasm32"))]
             "run.start" => self.runs.start(self, params, waiter),

@@ -20,6 +20,9 @@ pub const REDUCED_MOTION: &str = "ide.reduced_motion";
 pub const VALUES: &str = "ide.values";
 pub const OPEN_TRACE: &str = "ide.open_trace";
 pub const ABOUT: &str = "ide.about";
+/// The inspector and the palette of functions beside the canvas of a detached window (ide.md 9).
+pub const DETACHED_INSPECTOR: &str = "ide.detached_inspector";
+pub const DETACHED_PALETTE: &str = "ide.detached_palette";
 /// The entries to come, each with its card (ide.md 6).
 pub const PLANNED_INSTRUMENTS: &str = "ide.planned.instruments";
 pub const PLANNED_AGENT: &str = "ide.planned.agent";
@@ -34,6 +37,8 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (REDUCED_MOTION, "Reduced motion"),
     (VALUES, "Values of the run on the wires"),
     (OPEN_TRACE, "Open a trace…"),
+    (DETACHED_INSPECTOR, "Inspector in detached windows"),
+    (DETACHED_PALETTE, "Palette of functions in detached windows"),
     (ABOUT, "About LabCraft"),
 ];
 

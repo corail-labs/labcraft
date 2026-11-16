@@ -348,7 +348,9 @@ impl Page {
             // The page keeps no project of its own: what was opened is gone with it.
             Outward::OpenRecent(_) => {}
             Outward::OpenLink(link) => ctx.open_url(egui::OpenUrl::new_tab(link)),
-            Outward::OpenTrace => self.say("A trace comes from a run, which the web page cannot make: runs need the desktop app (D-22)".to_owned()),
+            Outward::OpenTrace(_) => {
+                self.say("A trace comes from a run, which the web page cannot make: runs need the desktop app (D-22)".to_owned())
+            }
         }
     }
 
@@ -358,7 +360,7 @@ impl Page {
         if self.shared.supervisor.borrow().busy() {
             return;
         }
-        let function = snapshot.view.function.clone();
+        let function = snapshot.view.main.function.clone();
         let now = (self.bundled, snapshot.project.clone(), function.clone());
         if self.written.as_ref() == Some(&now) {
             return;
@@ -387,9 +389,9 @@ impl Page {
         let Some(step) = self.smoke.take() else { return };
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
         let snapshot = self.shared.snapshot();
-        let drawing = snapshot.view.drawing.clone();
+        let drawing = snapshot.view.main.drawing.clone();
         let drawn = !self.shared.supervisor.borrow().busy() && drawing.is_some() && snapshot.notices.is_empty();
-        let function = snapshot.view.function.clone().unwrap_or_default();
+        let function = snapshot.view.main.function.clone().unwrap_or_default();
         self.smoke = Some(match step {
             Smoke::Drawing { .. } if drawn && self.started == 1 => {
                 let groups = drawing.as_ref().map_or(0, |drawing| drawing.groups.len());

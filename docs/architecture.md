@@ -1785,8 +1785,9 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   language service (diagnostics, completions, hover, definitions, in the types of `lsp-types`), with no UI toolkit
   (ide.md 7). **`kit-text-egui`** paints it and takes its keys. **`kit-shell`**: the top bar, the workspace selector
   with its planned entries, the start page, the command palette and its JSON form, the inspector as a list of fields
-  (ide.md 11), on egui and `craft-ui`. Docking and detached windows come from `craft-ui` and `craft-window`, menus
-  from `craft-menu`.
+  (ide.md 11), on egui and `craft-ui`. Docking and detached windows come from `craft-ui` (a detached window is a
+  floating window of its dock, a window of the system with its feature `native-windows`, which the desktop app turns
+  on), the frame of the window from `craft-window`, menus from `craft-menu`.
 - **`ide`** is the window of LabCraft on these pieces: the views of a tab (`Diagram`, `Text`, `Block`, `Split`), the
   panels (`Project`, `Palette`, `Inspector`, `Problems`, `Run`), the language service of `kit-text` made of the lexer
   of `format` and the check of the session, the canvas of `editor`, and what turns intents and keys into commands of
@@ -1795,7 +1796,8 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   of the viewer, written twice in M0v, go.
 - **As step 1a writes them.** `Host` has three methods: `send(id, params) -> Reply`, a reply that the window takes
   when it comes, never waiting for it; `snapshot() -> Snapshot`, the `Arc<Published>` of the session with the folder
-  of the project and the notices of the app; `set_zoom`, the zoom of the canvas shown, which is no command. What only
+  of the project and the notices of the app; `set_zoom(function, zoom)`, the zoom of the canvas of a function with a
+  tab, which is no command (step 1b: each window has its canvas). What only
   an app does, the window asks for as `Outward`: a new project, a folder to open, a recent project, an example, a
   link, a trace anywhere on the disk. The layout is a `Workspace<Pane>` of `craft-ui`, kept in the settings of the
   user without the tabs of functions, which are the session's (`opened`): the window follows them each frame. The

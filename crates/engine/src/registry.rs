@@ -694,8 +694,14 @@ fn catalog() -> Vec<Command> {
             id: "view.open_trace",
             label: "Open Trace",
             summary: "Show the values of a run on the function shown",
-            description: "Reads a trace (`labcraft-trace/1`) and shows its values on the wires of the function shown, until another function is shown; without `file`, those of its last run again. Returns the `trace` part of `labcraft-diagram/1`, or null when the function has no trace.",
-            params: object(&[("file", string("A trace file of the project; without it, the last run of the function."))], &[]),
+            description: "Reads a trace (`labcraft-trace/1`) and shows its values on the wires of the function shown in a window, until that window shows another function; without `file`, those of its last run again. The window is the one that shows `function`, else the window of the project. Returns the `trace` part of `labcraft-diagram/1`, or null when the function has no trace.",
+            params: object(
+                &[
+                    ("file", string("A trace file of the project; without it, the last run of the function.")),
+                    ("function", string("The function of the window; without it, the one the window of the project shows.")),
+                ],
+                &[],
+            ),
             result: "the trace part of labcraft-diagram/1, or null",
             errors: TRACE_ERRORS,
             effects: &[],

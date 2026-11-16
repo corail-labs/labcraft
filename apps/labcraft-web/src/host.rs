@@ -8,12 +8,12 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use labcraft_diagram::Drawing;
-use labcraft_engine::view::Published;
+use labcraft_engine::view::{Published, Shown};
 use labcraft_engine::{CommandError, Config, Memory, Session, Still};
 use labcraft_types::{Limits, Report};
 use serde_json::{Value, json};
 
-use crate::protocol::{Answer, Changed, Failure, File, Folder, Listed, Listing, Problem, Seen, ToWorker};
+use crate::protocol::{Answer, Changed, Failure, File, Folder, Listed, Listing, Problem, Seen, SeenWindow, ToWorker};
 
 /// Where the folder given lies in the memory of the worker: every path of a report is shown from it.
 const ROOT: &str = "/folder";
@@ -30,7 +30,7 @@ pub struct Host {
     before_drawing: Option<fn(&str)>,
     /// Called with the files a message changed, before the session draws again after them.
     on_files: Option<fn(&Changed)>,
-    sent: Option<Arc<Drawing>>,
+    sent: HashMap<String, Arc<Drawing>>,
     listed: Option<Arc<Report>>,
     files: HashMap<PathBuf, u128>,
 }
@@ -50,9 +50,11 @@ impl Host {
     /// Answers a message; [`ToWorker::Trap`] is the worker's to do, and is answered here as an unknown command.
     pub fn handle(&mut self, message: ToWorker) -> Answer {
         let mut request = None;
-        let zoom = matches!(message, ToWorker::Zoom(_));
+        let zoom = matches!(message, ToWorker::Zoom(..));
         let result = match message {
-            ToWorker::Open { folder, standard_everywhere, skipped, show } => self.open(folder, standard_everywhere, skipped, show),
+            ToWorker::Open { folder, standard_everywhere, skipped, show, detached } => {
+                self.open(folder, standard_everywhere, skipped, show, detached)
+            }
             ToWorker::Command { request: asked, id, params } => {
                 request = Some(asked);
                 match serde_json::from_str::<Value>(&params) {
@@ -60,9 +62,9 @@ impl Host {
                     Err(error) => Err(CommandError::new("params.invalid", format!("the parameters are not JSON: {error}"))),
                 }
             }
-            ToWorker::Zoom(zoom) => {
+            ToWorker::Zoom(function, zoom) => {
                 if let Some(session) = &mut self.session {
-                    session.set_zoom(zoom);
+                    session.set_zoom(&function, zoom);
                 }
                 Ok(Value::Null)
             }
@@ -71,7 +73,14 @@ impl Host {
         self.answer(request, result, !zoom)
     }
 
-    fn open(&mut self, folder: Arc<Folder>, standard_everywhere: bool, skipped: Vec<String>, show: Option<String>) -> Result<Value, CommandError> {
+    fn open(
+        &mut self,
+        folder: Arc<Folder>,
+        standard_everywhere: bool,
+        skipped: Vec<String>,
+        show: Option<String>,
+        detached: Vec<String>,
+    ) -> Result<Value, CommandError> {
         // The session before goes first, and the bytes move into the memory of the new one: a folder is held once.
         self.session = None;
         self.memory = None;
@@ -102,12 +111,23 @@ impl Host {
         session.before_drawing(self.before_drawing);
         session.execute("view.set_standard_view", &json!({ "on": standard_everywhere }))?;
         // The function shown before a restart, or that the address names, when the folder has it: the only one drawn.
-        session.open_on(show);
+        session.open_on(show.clone());
         let opened = session.execute("view.open", &json!({ "folder": "." }));
+        // The detached windows again, each with its function, then the function the window of the project showed: a
+        // function that the folder lost, or that trapped, is not drawn, and its window says why (`Supervisor::notices`).
+        if opened.is_ok() && !detached.is_empty() {
+            for function in &detached {
+                let _ = session.execute("view.show_function", &json!({ "function": function }));
+                let _ = session.execute("view.detach", &json!({ "function": function }));
+            }
+            if let Some(show) = &show {
+                let _ = session.execute("view.show_function", &json!({ "function": show }));
+            }
+        }
         self.files = files(&memory);
         self.session = Some(session);
         self.memory = Some(memory);
-        self.sent = None;
+        self.sent.clear();
         self.listed = None;
         opened
     }
@@ -127,7 +147,7 @@ impl Host {
             on_files(files);
         }
         let Some(session) = &mut self.session else {
-            return Answer { request, result, seen: Seen::default(), listing: None, drawing: None, files };
+            return Answer { request, result, seen: Seen::default(), listing: None, drawings: Vec::new(), files };
         };
         // What the watcher of the files does on the desktop: the session reads, checks and draws again.
         if files.is_some() {
@@ -142,11 +162,15 @@ impl Host {
             }
             _ => None,
         };
-        let drawing = view.drawing.clone().filter(|drawing| !self.sent.as_ref().is_some_and(|sent| Arc::ptr_eq(sent, drawing)));
-        if let Some(drawing) = &drawing {
-            self.sent = Some(drawing.clone());
+        let mut drawings = Vec::new();
+        for shown in view.windows() {
+            let (Some(function), Some(drawing)) = (&shown.function, &shown.drawing) else { continue };
+            if !self.sent.get(function).is_some_and(|sent| Arc::ptr_eq(sent, drawing)) {
+                self.sent.insert(function.clone(), drawing.clone());
+                drawings.push((function.clone(), drawing.clone()));
+            }
         }
-        Answer { request, result, seen: seen(view), listing, drawing, files }
+        Answer { request, result, seen: seen(view), listing, drawings, files }
     }
 
     /// The files written, renamed or removed since the last answer; not the journal, which is the session's: a new
@@ -178,29 +202,36 @@ fn files(memory: &Memory) -> HashMap<PathBuf, u128> {
 
 /// What the window shows, but the drawing and the listing.
 fn seen(view: &Published) -> Seen {
-    let mut arms: Vec<(String, usize)> = view.arms.iter().map(|(key, arm)| (key.clone(), *arm)).collect();
-    arms.sort();
     let mut tabs: Vec<(String, String, Option<String>)> = view
         .tabs
         .iter()
         .map(|(function, tab)| (function.clone(), tab.view.as_str().to_owned(), tab.split.map(|split| split.as_str().to_owned())))
         .collect();
     tabs.sort();
-    let selection = &view.selection;
     Seen {
         generation: view.generation,
         checks: view.checks,
         folder: view.folder.clone(),
-        function: view.function.clone(),
+        main: seen_window(&view.main),
+        detached: view.detached.iter().map(seen_window).collect(),
         opened: view.opened.clone(),
-        glide: view.glide,
-        kept: view.kept,
-        arms,
         standard_everywhere: view.standard_everywhere,
         tabs,
         preview: view.preview.clone(),
-        selection: (selection.function.clone(), selection.nodes.clone(), selection.wires.clone(), selection.terminals.clone()),
         workspace: view.workspace.0.to_owned(),
+    }
+}
+
+fn seen_window(shown: &Shown) -> SeenWindow {
+    let mut arms: Vec<(String, usize)> = shown.arms.iter().map(|(key, arm)| (key.clone(), *arm)).collect();
+    arms.sort();
+    let selection = &shown.selection;
+    SeenWindow {
+        function: shown.function.clone(),
+        glide: shown.glide,
+        kept: shown.kept,
+        arms,
+        selection: (selection.function.clone(), selection.nodes.clone(), selection.wires.clone(), selection.terminals.clone()),
     }
 }
 
@@ -265,7 +296,7 @@ mod tests {
     }
 
     fn open(folder: Arc<Folder>) -> ToWorker {
-        ToWorker::Open { folder, standard_everywhere: false, skipped: Vec::new(), show: None }
+        ToWorker::Open { folder, standard_everywhere: false, skipped: Vec::new(), show: None, detached: Vec::new() }
     }
 
     fn command(id: &str, params: Value) -> ToWorker {
@@ -296,13 +327,13 @@ mod tests {
         let mut host = Host::new(None);
         let answer = host.handle(open(folder()));
         assert!(answer.result.is_ok(), "{:?}", answer.result);
-        assert_eq!((answer.request, answer.seen.function.as_deref()), (None, Some("double")));
-        assert!(answer.drawing.is_some() && answer.listing.is_some() && answer.files.is_none());
+        assert_eq!((answer.request, answer.seen.main.function.as_deref()), (None, Some("double")));
+        assert!(!answer.drawings.is_empty() && answer.listing.is_some() && answer.files.is_none());
         let again = host.handle(command("view.show_function", json!({ "function": "double" })));
         assert!(again.result.is_ok());
-        assert!(again.drawing.is_some(), "a new drawing of the same function is sent");
+        assert!(!again.drawings.is_empty(), "a new drawing of the same function is sent");
         let state = host.handle(command("view.set_standard_view", json!({ "on": false })));
-        assert!(state.drawing.is_none(), "nothing new to draw");
+        assert!(state.drawings.is_empty(), "nothing new to draw");
         assert!(state.listing.is_none(), "nothing new to list");
     }
 
@@ -381,9 +412,15 @@ mod tests {
     #[test]
     fn a_function_skipped_is_not_drawn() {
         let mut host = Host::new(None);
-        let answer = host.handle(ToWorker::Open { folder: folder(), standard_everywhere: false, skipped: vec!["double".to_owned()], show: None });
+        let answer = host.handle(ToWorker::Open {
+            folder: folder(),
+            standard_everywhere: false,
+            skipped: vec!["double".to_owned()],
+            show: None,
+            detached: Vec::new(),
+        });
         assert!(answer.result.is_ok());
-        assert_eq!(answer.seen.function.as_deref(), Some("double"));
-        assert!(answer.drawing.is_none());
+        assert_eq!(answer.seen.main.function.as_deref(), Some("double"));
+        assert!(answer.drawings.is_empty());
     }
 }

@@ -204,6 +204,15 @@ A chat panel inside the window, and a visible pointer of the agent, are left for
   own selection; the menus stay in the window of the project, which keeps `Project`, `Palette`, `Problems` and `Run`.
   Ctrl+Z, in any window of the project, undoes the last step of the project. A layout where the window of the
   project holds only the panels and every function has its own window is a layout like the others, kept by the user.
+- **A detached window, in use** (decisions of the owner, 2026-11-16). It holds one function: a tab dropped on it is
+  refused. Its toolbar has the views, `Fit`, `Dock`, and two toggles: its inspector, on the right and shown until the
+  user hides it, and the palette of functions, on the left and hidden until the user shows it. A tab is detached by
+  `Detach` in its toolbar or its menu, by the command palette, or by dragging it out of the window, and docked again by
+  `Dock`, by dragging it back, or by `view.reset_layout`; closing the window closes the tab. A detached window opens
+  where the last one was, a second screen included. The window that has focus is the one the keys, the command palette
+  and the commands that take the function shown act on (`Fit`, a view, Ctrl+W, a trace opened by hand); Ctrl+Z still
+  undoes the last step of the project. `Problems` and `Run` follow that window; the inspector of the window of the
+  project stays on its function. Each window shows the values of the last run of its function.
 - On the web there is one window of the browser: a detached tab becomes a panel floating in it.
 
 ## 10. Start, new and open

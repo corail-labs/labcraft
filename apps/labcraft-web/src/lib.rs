@@ -73,7 +73,13 @@ mod tests {
         let mut drawn = 0usize;
         for bundled in BUNDLED {
             let mut host = Host::new(None);
-            let open = ToWorker::Open { folder: std::sync::Arc::new(bundled.folder()), standard_everywhere: false, skipped: Vec::new(), show: None };
+            let open = ToWorker::Open {
+                folder: std::sync::Arc::new(bundled.folder()),
+                standard_everywhere: false,
+                skipped: Vec::new(),
+                show: None,
+                detached: Vec::new(),
+            };
             let answer: Answer = decode(&encode(&host.handle(open)).unwrap()).unwrap();
             assert!(answer.result.is_ok(), "{}: {:?}", bundled.name, answer.result);
             let listing = answer.listing.unwrap_or_else(|| panic!("{}: no listing", bundled.name));
@@ -85,7 +91,12 @@ mod tests {
                 let message = ToWorker::Command { request: 1, id: "view.show_function".to_owned(), params };
                 let answer: Answer = decode(&encode(&host.handle(message)).unwrap()).unwrap();
                 assert!(answer.result.is_ok(), "{}: {function}: {:?}", bundled.name, answer.result);
-                let drawing = answer.drawing.unwrap_or_else(|| panic!("{}: {function}: no drawing", bundled.name));
+                let drawing = answer
+                    .drawings
+                    .into_iter()
+                    .next()
+                    .map(|(_, drawing)| drawing)
+                    .unwrap_or_else(|| panic!("{}: {function}: no drawing", bundled.name));
                 assert!(!drawing.groups.is_empty(), "{}: {function}", bundled.name);
                 drawn += 1;
             }
@@ -103,9 +114,10 @@ mod tests {
             standard_everywhere: false,
             skipped: Vec::new(),
             show: Some(DEFAULT_FUNCTION.to_owned()),
+            detached: Vec::new(),
         };
         let answer = Host::new(None).handle(open);
-        assert_eq!(answer.seen.function.as_deref(), Some(DEFAULT_FUNCTION));
-        assert_eq!(answer.drawing.map(|drawing| drawing.function.clone()).as_deref(), Some(DEFAULT_FUNCTION));
+        assert_eq!(answer.seen.main.function.as_deref(), Some(DEFAULT_FUNCTION));
+        assert_eq!(answer.drawings.first().map(|(_, drawing)| drawing.function.clone()).as_deref(), Some(DEFAULT_FUNCTION));
     }
 }
