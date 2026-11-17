@@ -4,12 +4,14 @@
 //! window it is given: the one that has focus, or for the inspector of a detached window, that window (ide.md 9).
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use egui::RichText;
-use kit_shell::fuzzy;
 use kit_shell::icon::{self, Icon};
 use kit_shell::inspector::{self, Field, Section};
 use labcraft_diagram::{Drawing, Overlay};
+use labcraft_editor::Dragged;
+use labcraft_editor::insertion::{self, Catalog, EntryKind};
 use labcraft_engine::drawings::TracePart;
 use labcraft_engine::view::{Listed, Published, Shown};
 use labcraft_types::Severity;
@@ -117,6 +119,8 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
 pub struct Callable {
     pub name: String,
     pub library: String,
+    /// `function` or `type`.
+    pub kind: String,
     pub signature: String,
     pub doc: Option<String>,
 }
@@ -131,6 +135,8 @@ pub struct Callables {
     asked: Option<Reply>,
     pub failure: Option<String>,
     pub search: String,
+    /// The catalog of quick insertion and of the palette, read from the list (notation 2.6).
+    pub catalog: Arc<Catalog>,
 }
 
 impl Callables {
@@ -156,6 +162,7 @@ impl Callables {
                                 Some(Callable {
                                     name: text(entry, "name")?,
                                     library: text(entry, "library").unwrap_or_default(),
+                                    kind: text(entry, "kind").unwrap_or_default(),
                                     signature: text(entry, "signature").unwrap_or_default(),
                                     doc: text(entry, "doc"),
                                 })
@@ -163,6 +170,17 @@ impl Callables {
                             .collect()
                     })
                     .unwrap_or_default();
+                let listed: Vec<insertion::Listed> = self
+                    .list
+                    .iter()
+                    .map(|callable| insertion::Listed {
+                        name: callable.name.clone(),
+                        library: callable.library.clone(),
+                        kind: callable.kind.clone(),
+                        signature: callable.signature.clone(),
+                    })
+                    .collect();
+                self.catalog = Arc::new(Catalog::new(&listed));
             }
             Err(error) => self.failure = Some(error.message),
         }
@@ -174,30 +192,38 @@ impl Callables {
     }
 }
 
-/// `Palette`: the functions to place, by library, searched as quick insertion searches. Placing one comes with step 4.
+/// `Palette`: the functions to place, by library, searched as quick insertion searches; each dragged onto the canvas.
 pub fn palette(ui: &mut egui::Ui, callables: &mut Callables) {
     ui.add(egui::TextEdit::singleline(&mut callables.search).hint_text("Search a function").desired_width(f32::INFINITY));
     if let Some(failure) = &callables.failure {
         ui.label(RichText::new(failure).color(ui.visuals().warn_fg_color));
     }
-    let ranked = fuzzy::rank(&callables.search, &callables.list, |callable| vec![callable.name.as_str(), callable.library.as_str()]);
+    // Ranked as quick insertion ranks (`Catalog::search`): the best match first, then the order of the list.
+    let mut ranked: Vec<(i64, usize)> = callables
+        .list
+        .iter()
+        .enumerate()
+        .filter_map(|(at, callable)| Catalog::search(callables.search.trim(), &call_of(callable), &callable.library).map(|score| (score, at)))
+        .collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let catalog = callables.catalog.clone();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if callables.search.trim().is_empty() {
             let mut by_library: BTreeMap<&str, Vec<&Callable>> = BTreeMap::new();
             for callable in &callables.list {
                 by_library.entry(callable.library.as_str()).or_default().push(callable);
             }
-            for (library, callables) in by_library {
+            for (library, listed) in by_library {
                 let title = if library.is_empty() { "This project" } else { library };
                 egui::CollapsingHeader::new(title).default_open(library.is_empty()).show(ui, |ui| {
-                    for callable in callables {
-                        row(ui, callable);
+                    for callable in listed {
+                        row(ui, callable, &catalog);
                     }
                 });
             }
         } else {
-            for callable in ranked.iter().filter_map(|&at| callables.list.get(at)) {
-                row(ui, callable);
+            for callable in ranked.iter().filter_map(|&(_, at)| callables.list.get(at)) {
+                row(ui, callable, &catalog);
             }
         }
         if callables.truncated {
@@ -206,9 +232,26 @@ pub fn palette(ui: &mut egui::Ui, callables: &mut Callables) {
     });
 }
 
-fn row(ui: &mut egui::Ui, callable: &Callable) {
-    let name = if callable.library.is_empty() { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) };
-    let response = ui.label(RichText::new(name).monospace());
+/// How a call names the callable: `visa.open`, `settle`.
+fn call_of(callable: &Callable) -> String {
+    if callable.library.is_empty() || callable.name.contains('.') { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) }
+}
+
+/// A row of the palette: dragged onto the canvas, its function is a node added there, or into the wire it is dropped on
+/// (`node.add`, notation 2.5).
+fn row(ui: &mut egui::Ui, callable: &Callable, catalog: &Arc<Catalog>) {
+    let name = call_of(callable);
+    let entry = catalog.index_of(&name).filter(|&at| catalog.entries.get(at).is_some_and(|entry| entry.kind != EntryKind::Constant));
+    let response =
+        ui.add(egui::Label::new(RichText::new(&name).monospace()).sense(if entry.is_some() { egui::Sense::drag() } else { egui::Sense::hover() }));
+    if let Some(entry) = entry {
+        response.dnd_set_drag_payload(Dragged { catalog: catalog.clone(), entry });
+        if response.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+    }
     let hover = match &callable.doc {
         Some(doc) => format!("{}\n\n{doc}", callable.signature),
         None => callable.signature.clone(),

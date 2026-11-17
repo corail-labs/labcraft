@@ -25,9 +25,11 @@ use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
 mod fonts;
+pub mod insertion;
 pub(crate) mod moving;
 pub(crate) mod paint;
 mod pins;
+mod quick;
 pub(crate) mod rerouting;
 pub(crate) mod select;
 pub(crate) mod series;
@@ -35,6 +37,7 @@ pub(crate) mod view;
 pub(crate) mod wiring;
 
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
+pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
@@ -85,6 +88,9 @@ pub struct Shown {
     /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt, for a
     /// desktop that keeps Alt and a drag to move windows. Off by default.
     pub route_with_shift_alt: bool,
+    /// The setting "inserting into a wire" (notation 2.6): a function of the panel `Palette` dropped on a wire that it
+    /// can take goes into it. On in the IDE by default; the host says it.
+    pub into_wire: bool,
 }
 
 impl Shown {
@@ -113,9 +119,12 @@ pub enum Intent {
     /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
     /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`.
     Rewire { disconnect: Vec<String>, connect: Vec<(String, String, bool, bool)> },
-    /// A wire dropped on the empty canvas, from this terminal as a command names it, at this point in units: quick
-    /// insertion, filtered by what takes it (notation 2.6), which comes with step 4 of M1.
-    QuickInsert { from: String, at: (i64, i64) },
+    /// Quick insertion (notation 2.6): a wire dropped on the empty canvas; the host opens the list where it says, and
+    /// Space opens it too ([`Canvas::quick_insert`]).
+    QuickInsert(Quick),
+    /// A function of the panel `Palette` dropped on the canvas (notation 2.5): `node.add` with `at`, in units of the frame
+    /// of the function, or `into` the wire it was dropped on.
+    Drop { call: String, at: (i64, i64), into: Option<String> },
     /// What the status bar says, and a screen reader announces (notation 2.6): why a drop wrote nothing.
     Say(String),
 }
@@ -218,6 +227,8 @@ pub struct Canvas {
     rerouting: Option<rerouting::Rerouting>,
     /// The wire routed by hand that a right-click was on, by its group, for its menu (notation 2.4).
     wire_context: Option<usize>,
+    /// The room of the last frame, on the screen: where quick insertion opens.
+    rect: Rect,
 }
 
 /// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
@@ -245,6 +256,8 @@ const WIRE_REACH: f32 = 4.0;
 /// A plain drag that starts within this many units of a wire grabs it for a branch (notation 2.5), or 5 points on the
 /// screen when that is more.
 const BRANCH_REACH: f32 = 4.0;
+/// The ghost of a function dragged from the panel `Palette`, in units *(proposed)*: the size of a small block.
+const GHOST: (f32, f32) = (96.0, 40.0);
 
 /// The values of a run over a drawing, with the box of each of their parts, in units, to find what the viewport shows and
 /// what the pointer is over.
@@ -379,6 +392,7 @@ impl Canvas {
             retract: None,
             rerouting: None,
             wire_context: None,
+            rect: Rect::NOTHING,
         }
     }
 
@@ -624,6 +638,7 @@ impl Canvas {
 
     fn show_in_style(&mut self, ui: &mut Ui, theme: Theme, shown: &Shown) -> CanvasResponse {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        self.rect = rect;
         ui.painter_at(rect).rect_filled(rect, 0.0, theme.color("canvas.fill"));
         let Some(drawing) = self.drawing.clone() else {
             return CanvasResponse { response, tab: None, iteration: None, hovered: None, intents: Vec::new(), gesture: None };
@@ -924,6 +939,7 @@ impl Canvas {
             }
         }
         self.pinned_values(frame, input);
+        self.palette_drop(response, frame, shown, input);
         // The tooltip of a terminal under the pointer: its name, its exact type, the default of an input that no argument
         // wires (notation 3.2, 4.1).
         input.hint = frame.at.filter(|_| self.wiring.is_none()).and_then(|unit| {
@@ -936,6 +952,51 @@ impl Canvas {
         if input.hint.is_none() && shown.mark_fixed && !coarse {
             input.hint = frame.at.and_then(|unit| pins::under(drawing, frame, &self.grid, unit)).map(|placed| pins::tooltip(drawing, placed));
         }
+    }
+
+    /// A function dragged from the panel `Palette` (notation 2.5): its ghost follows the pointer, outlined dashed in
+    /// `select.stroke`, on the grid; over a wire it can take, that wire shows in `select.stroke`, and the drop inserts the
+    /// node into it; elsewhere the node falls where the ghost is.
+    fn palette_drop(&mut self, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
+        let Some(dragged) = egui::DragAndDrop::payload::<Dragged>(&frame.ctx) else { return };
+        let rect = frame.rect;
+        let Some(pointer) = frame.ctx.pointer_latest_pos().filter(|at| rect.contains(*at)) else { return };
+        let (zoom, origin) = (self.viewport.zoom, self.viewport.origin);
+        let unit = (origin + (pointer - rect.min) / zoom).to_pos2();
+        let reach = (5.0 / zoom).max(WIRE_REACH);
+        let visible = |within: Option<usize>| frame.visible(within);
+        let wire_under = select::wire_at(&frame.drawing, &frame.groups, unit, reach, &visible);
+        let into = self.dragged_over(&dragged, unit, wire_under, shown.into_wire);
+        let at = quick::frame_point(&frame.drawing, unit);
+        if response.dnd_release_payload::<Dragged>().is_some() {
+            let call = dragged.catalog.entries.get(dragged.entry).map(|entry| entry.call.clone()).unwrap_or_default();
+            input.intents.push(Intent::Drop { call, at, into: into.map(|(_, name)| name) });
+            return;
+        }
+        let to_screen = |unit: Vec2| rect.min + (unit - origin) * zoom;
+        let painter =
+            frame.ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("labcraft-palette-ghost"))).with_clip_rect(rect);
+        let stroke = egui::Stroke::new(2.0, frame.theme.color("select.stroke"));
+        if let Some(wire) = into.and_then(|(group, _)| frame.drawing.groups.get(group)).and_then(|group| group.wire.as_ref()) {
+            for (_, path) in &wire.readers {
+                let points: Vec<Pos2> = path.iter().map(|&(x, y)| to_screen(Vec2::new(x as f32, y as f32) / 100.0)).collect();
+                painter.add(egui::Shape::line(points, stroke));
+            }
+        }
+        // The ghost: a block of the size of a small node, on the grid, with what it calls.
+        let corner = to_screen(
+            Vec2::new(at.0 as f32, at.1 as f32)
+                + frame.drawing.bodies.first().map_or(Vec2::ZERO, |body| Vec2::new(body.origin.0 as f32, body.origin.1 as f32) / 100.0),
+        );
+        let ghost = Rect::from_min_size(corner, Vec2::new(GHOST.0, GHOST.1) * zoom);
+        painter.add(egui::Shape::dashed_line(
+            &[ghost.left_top(), ghost.right_top(), ghost.right_bottom(), ghost.left_bottom(), ghost.left_top()],
+            stroke,
+            6.0,
+            4.0,
+        ));
+        let call = dragged.catalog.entries.get(dragged.entry).map(|entry| entry.call.as_str()).unwrap_or_default();
+        painter.text(ghost.center(), egui::Align2::CENTER_CENTER, call, egui::FontId::proportional((12.0 * zoom).clamp(9.0, 18.0)), stroke.color);
     }
 
     /// A run of presses of Ctrl and an arrow ends a second after the last press, or at a press of the pointer or of
@@ -1165,10 +1226,15 @@ impl Canvas {
     fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input) {
         let Some(mut wiring) = self.wiring.take() else { return };
         let Some(over) = wiring.over else {
-            let from = drawing.ports.get(wiring.from).map(|port| port.name.clone()).unwrap_or_default();
             // Ctrl and a drag that ends nowhere leaves the wire as it was.
-            if wiring.taken == wiring::Taken::Nothing {
-                input.intents.push(Intent::QuickInsert { from, at: (wiring.at.x.round() as i64, wiring.at.y.round() as i64) });
+            if wiring.taken == wiring::Taken::Nothing
+                && let Some(port) = drawing.ports.get(wiring.from)
+                && let Some(wanted) = insertion::Wanted::of_port(drawing, wiring.from)
+            {
+                let replace = port.input && matches!(port.holds, labcraft_diagram::Holds::Wire | labcraft_diagram::Holds::Constant(_));
+                let source = Source::Terminal { name: port.name.clone(), wanted, replace };
+                let screen = self.rect.min + (wiring.at.to_vec2() - self.viewport.origin) * self.viewport.zoom;
+                input.intents.push(Intent::QuickInsert(Quick { at: Some(quick::frame_point(drawing, wiring.at)), screen, source }));
             }
             return;
         };
@@ -1381,13 +1447,6 @@ impl Canvas {
             self.wiring = None;
             return true;
         }
-        if take(egui::Key::Space, false) {
-            let from = self.wiring.take().and_then(|wiring| drawing.ports.get(wiring.from).map(|port| (port.name.clone(), wiring::centre(port))));
-            if let Some((from, at)) = from {
-                input.intents.push(Intent::QuickInsert { from, at: (at.x.round() as i64 + 64, at.y.round() as i64) });
-            }
-            return true;
-        }
         if take(egui::Key::Enter, false) {
             if self.wiring.as_ref().is_some_and(|wiring| wiring.over.is_none()) {
                 input.intents.push(Intent::Say("No terminal takes this wire".to_owned()));
@@ -1439,12 +1498,6 @@ impl Canvas {
         };
         if pressed(egui::Key::Escape) {
             self.port_focus = None;
-            return true;
-        }
-        // Space: quick insertion, as a wire from it dropped on the empty canvas (notation 2.6), with step 4.
-        if pressed(egui::Key::Space) {
-            let at = wiring::centre(port);
-            input.intents.push(Intent::QuickInsert { from: port.name.clone(), at: (at.x.round() as i64 + 64, at.y.round() as i64) });
             return true;
         }
         if pressed(egui::Key::Enter) {

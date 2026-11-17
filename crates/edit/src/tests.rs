@@ -102,7 +102,7 @@ fn refused(before: &str, op: Op, code: &str) -> EditError {
 }
 
 fn add(call: &str) -> Op {
-    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None }
+    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: None }
 }
 
 fn connect(from: &str, to: &str) -> Op {
@@ -164,20 +164,26 @@ fn string_format_is_written_with_the_empty_template() {
 
 #[test]
 fn a_node_given_a_place_is_fixed_there() {
-    let op = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: 40, y: -80 }), name: Some("total".to_owned()) };
+    let op = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.add".to_owned(),
+        at: Some(Point { x: 40, y: -80 }),
+        name: Some("total".to_owned()),
+        into: None,
+    };
     gives(EMPTY, op, "use core\n\nfn f(x: f64) -> (y: f64) {\n    total = core.add()\n    y = x\n}\n\nlayout {\n    node total at (40, -80)\n}\n");
 }
 
 #[test]
 fn node_add_refuses_what_it_cannot_name() {
-    let named = |name: &str| Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: None, name: Some(name.to_owned()) };
+    let named = |name: &str| Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: None, name: Some(name.to_owned()), into: None };
     refused(EMPTY, named("x"), "name.taken");
     refused(EMPTY, named("match"), "name.invalid");
     refused(EMPTY, named("2x"), "name.invalid");
     let error = refused(EMPTY, add("core.ad"), "edit.unknown");
     assert_eq!(error.expected, ["core.add"]);
     refused(EMPTY, add("core..add"), "params.invalid");
-    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: 1_000_001, y: 0 }), name: None };
+    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: 1_000_001, y: 0 }), name: None, into: None };
     refused(EMPTY, far, "params.invalid");
 }
 
@@ -219,6 +225,48 @@ fn a_constant_is_one_constant_of_the_language() {
     refused(EMPTY, constant("1\n    z = 2"), "params.invalid");
     refused(EMPTY, constant("?"), "params.invalid");
     refused(EMPTY, constant("Point { x: 1, y: 2 }"), "params.invalid");
+}
+
+// node.add with `into` (commands.md 6.7; decision of the owner, 2026-11-17): the value enters the first input that takes
+// it, and the first output that the reader takes goes where the wire went; the lines in the order of spec 5.2.
+
+fn into(call: &str, wire: &str) -> Op {
+    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: Some(wire.to_owned()) }
+}
+
+#[test]
+fn a_node_goes_into_a_wire_between_two_nodes() {
+    let edited = gives(
+        TWO,
+        into("core.abs", "a -> b.a"),
+        "use core\n\nfn f(x: f64) -> (y: f64) {\n    a = core.add(x, 1)\n    abs = core.abs(a)\n    b = core.mul(abs, 2)\n    y = b\n}\n",
+    );
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("abs"));
+    // A wire named without its input, when one wire joins the two; the name of the node numbered when taken.
+    gives(
+        "use core\n\nfn f(x: f64) -> (y: f64) {\n    abs = core.abs(x)\n    y = abs\n}\n",
+        into("core.abs", "x -> abs"),
+        "use core\n\nfn f(x: f64) -> (y: f64) {\n    abs2 = core.abs(x)\n    abs = core.abs(abs2)\n    y = abs\n}\n",
+    );
+}
+
+#[test]
+fn a_node_into_the_wire_of_an_output_takes_the_name_of_the_output() {
+    // Wiring another node to an output bound by name folds the new one (notation 2.4).
+    gives(
+        TWO,
+        into("core.abs", "b -> y"),
+        "use core\n\nfn f(x: f64) -> (y: f64) {\n    a = core.add(x, 1)\n    b = core.mul(a, 2)\n    y = core.abs(b)\n}\n",
+    );
+}
+
+#[test]
+fn a_node_that_nothing_fits_goes_into_no_wire() {
+    // No input takes the value, no output goes where it went: nothing is written.
+    refused(TWO, into("time.now", "a -> b.a"), "params.invalid");
+    refused(TWO, into("sound.beep", "a -> b.a"), "params.invalid");
+    refused(TWO, into("core.abs", "a -> nothing"), "edit.unknown");
+    refused(TWO, into("visa.nothing", "a -> b.a"), "edit.unknown");
 }
 
 // node.delete
@@ -457,7 +505,7 @@ fn a_value_is_not_folded_into_an_output_that_a_body_inside_binds() {
 
 #[test]
 fn coordinates_and_places_past_their_bounds_are_refused() {
-    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: i64::MIN, y: 0 }), name: None };
+    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: i64::MIN, y: 0 }), name: None, into: None };
     refused(EMPTY, far, "params.invalid");
     let before = "use string\n\nfn f(a: string, b: string) -> (y: string) {\n    t = string.concat(a, b)\n    y = t\n}\n";
     let op =
@@ -979,7 +1027,7 @@ fn a_junction_follows_its_trunk_whatever_names_a_command_adds() {
     let trunk_before = drawn("a -> y.x", &[(100, 40), (200, 40)]);
     let trunk_after = drawn("a -> y.x", &[(100, 56), (200, 56)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 56)\n"), "{written}");
@@ -1021,7 +1069,7 @@ fn a_junction_that_goes_takes_only_its_own_entry() {
     // After, the trunk has another number of segments, and no longer goes through the junction.
     let trunk_after = drawn("a -> y.x", &[(100, 40), (120, 40), (120, 80), (200, 80)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(!written.contains("a -> z") && written.contains("    wire a -> y\n"), "{written}");
@@ -1036,7 +1084,7 @@ fn a_junction_off_the_grid_of_units_goes() {
     let mut trunk_after = drawn("a -> y.x", &[(100, 40), (200, 40)]);
     trunk_after.path = vec![(10_000, 5_650), (20_000, 5_650)];
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (160, 120)\n"), "{written}");
@@ -1054,7 +1102,7 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
     let trunk_before = drawn("a -> b.x", &[(100, 40), (240, 40)]);
     let trunk_after = drawn("a -> b.x", &[(100, 48), (240, 48)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![y_after, z.clone(), trunk_after]), ("fn f", vec![y_before, z, trunk_before])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 48)\n"), "{written}");

@@ -48,6 +48,7 @@ use serde_json::{Map, Value, json};
 
 pub mod catalog;
 pub mod host;
+mod insert;
 pub mod keys;
 pub mod pane;
 pub mod panels;
@@ -102,6 +103,12 @@ pub struct Prefs {
     /// default.
     #[serde(default)]
     pub route_with_shift_alt: bool,
+    /// The settings "autopatch from the keyboard" and "inserting into a wire" (notation 2.6). On by default.
+    pub autopatch: bool,
+    pub into_wire: bool,
+    /// The insertions of this user, the most recent first, which order quick insertion (notation 2.6): kept on their
+    /// machine, with their settings.
+    pub recent: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -124,6 +131,9 @@ impl Default for Prefs {
             replace_with_alt: false,
             accept_mismatch: false,
             route_with_shift_alt: false,
+            autopatch: true,
+            into_wire: true,
+            recent: Vec::new(),
         }
     }
 }
@@ -270,7 +280,8 @@ pub struct Ide {
     pending: Vec<(String, Reply)>,
     /// The editing commands asked for, by the function they edit: a failure puts the nodes of a move back on its canvas,
     /// and a node that got a label stays selected by it (commands.md 9.3, `renamed`).
-    edits: Vec<(String, Reply)>,
+    /// The editing commands sent, by function, and the call to remember among the recent insertions once it is done.
+    edits: Vec<(String, Reply, Option<String>)>,
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
@@ -280,6 +291,10 @@ pub struct Ide {
     /// The function whose canvas had the keyboard, and the widget of that canvas: the keys of the canvas act on it while
     /// egui still gives it the focus (notation 2.6).
     canvas_focus: Option<(String, egui::Id)>,
+    /// Where the pointer was last, on the screen: quick insertion opens under it (notation 2.6).
+    pointer: Option<egui::Pos2>,
+    /// The list of quick insertion, while it is open (notation 2.6).
+    quick: Option<insert::QuickList>,
     /// The run the window started, followed to its end (decisions of the owner, 2026-11-16).
     running: Option<running::Running>,
     /// The time of the frame, on the clock of egui.
@@ -338,6 +353,8 @@ impl Ide {
             failures: Vec::new(),
             canvas_rect: None,
             canvas_focus: None,
+            pointer: None,
+            quick: None,
             selecting: Vec::new(),
             running: None,
             now: 0.0,
@@ -435,6 +452,7 @@ impl Ide {
             self.keymap = keys::keymap(platform);
         }
         self.now = ui.input(|input| input.time);
+        self.pointer = ui.ctx().pointer_latest_pos();
         if !std::mem::replace(&mut self.loaders, true) {
             kit_shell::icon::install(ui.ctx());
         }
@@ -557,6 +575,14 @@ impl Ide {
             }
             Some(host) => self.dock(ui, host, &view, start, &entries, &mut outward),
         }
+        // The list of quick insertion opened in a window of the system is drawn there (`Content::window_drawn`): its
+        // place is in the frame of that window.
+        let quick_elsewhere = self.quick.as_ref().is_some_and(|list| self.native.contains(&list.function));
+        if let Some(host) = host
+            && !quick_elsewhere
+        {
+            self.show_quick(ui.ctx(), host);
+        }
         // The palette opened in a window of the system is drawn there (`Content::window_drawn`).
         let elsewhere = self.palette_in.as_ref().is_some_and(|function| self.native.contains(function));
         if !elsewhere && let Some(chosen) = self.palette.show(ui.ctx(), &entries) {
@@ -643,9 +669,12 @@ impl Ide {
         self.pending.retain(|(id, reply)| take(id, reply));
         let mut moved_back = Vec::new();
         let mut relabelled = Vec::new();
-        self.edits.retain(|(function, reply)| match reply.take() {
+        let mut inserted = Vec::new();
+        self.edits.retain(|(function, reply, call)| match reply.take() {
             None => true,
             Some(Ok(result)) => {
+                // Only an insertion done goes among the recent ones (notation 2.6).
+                inserted.extend(call.clone());
                 // A move that changed nothing brings no new drawing: its nodes go back now.
                 if result.get("step").is_some_and(Value::is_null) {
                     moved_back.push(function.clone());
@@ -659,6 +688,10 @@ impl Ide {
                 false
             }
         });
+        for call in inserted {
+            labcraft_editor::insertion::remember(&mut self.prefs.recent, &call);
+            self.prefs_changed = true;
+        }
         for function in moved_back {
             if let Some(drawn) = self.drawn.get_mut(&function) {
                 drawn.canvas.cancel_move();
@@ -1037,7 +1070,11 @@ impl Ide {
                 | keys::SELECT_ALL_UPSTREAM
                 | keys::SELECT_ALL_DOWNSTREAM
                 | keys::ARRANGE
-                | keys::WIRE => ItemState { enabled: shown.is_some(), checked: None },
+                | keys::WIRE
+                | keys::QUICK_INSERT
+                | keys::DELETE => ItemState { enabled: shown.is_some(), checked: None },
+                keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
+                keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
                 _ => ItemState { enabled: project, checked: None },
             }
         });
@@ -1327,7 +1364,7 @@ impl Ide {
             commands.push(json!({ "id": "node.move", "params": moving }));
             host.send("commands.batch", json!({ "commands": commands, "label": "Move Nodes" }))
         };
-        self.edits.push((function.to_owned(), reply));
+        self.edits.push((function.to_owned(), reply, None));
     }
 
     /// Asks for a move as the canvas of `function` would: for an app that drives the canvas itself (the scripted drag of
@@ -1335,6 +1372,77 @@ impl Ide {
     pub fn ask_canvas_move(&mut self, host: &dyn Host, function: &str, nodes: &[String], by: (i64, i64)) {
         let view = host.snapshot().view;
         self.ask_move(host, &view, function, nodes, by);
+    }
+
+    /// Opens quick insertion on the canvas of `function` (notation 2.6); the canvas that has the keyboard gets it back
+    /// when the list closes.
+    fn open_quick(&mut self, view: &Published, function: &str, quick: labcraft_editor::Quick) {
+        let Some(file) = file_of(view, function) else { return };
+        let canvas = self.canvas_focus.as_ref().filter(|(focused, _)| focused == function).map(|(_, id)| *id);
+        self.quick = Some(insert::QuickList::new(function.to_owned(), file, quick, canvas));
+    }
+
+    /// The list of quick insertion, while it is open: a choice is one step, the node and its wire (notation 2.6).
+    fn show_quick(&mut self, ctx: &egui::Context, host: &dyn Host) {
+        let Some(mut list) = self.quick.take() else { return };
+        let catalog = self.callables.catalog.clone();
+        match list.show(ctx, &catalog, &self.prefs.recent) {
+            insert::Closed::Open => {
+                self.quick = Some(list);
+                return;
+            }
+            insert::Closed::Cancelled => {}
+            insert::Closed::Picked(picked) => {
+                let (id, params) = insert::command(&list.file, &list.quick, &picked, &catalog);
+                let reply = host.send(&id, params);
+                let call = match &picked {
+                    insert::Picked::Entry(entry) => Some(entry.call.clone()),
+                    insert::Picked::Constant(_) => None,
+                };
+                self.edits.push((list.function.clone(), reply, call));
+            }
+        }
+        if let Some(canvas) = list.canvas {
+            ctx.memory_mut(|memory| memory.request_focus(canvas));
+        }
+    }
+
+    /// Delete on the canvas of `function` (notation 2.6): `node.delete` for the nodes selected, `wire.disconnect` for the
+    /// wires selected and for those of the terminals selected or in focus, one step. A wire of a node deleted goes with
+    /// it, and is not named again.
+    fn delete(&mut self, host: &dyn Host, view: &Published, function: &str) {
+        let Some(file) = file_of(view, function) else { return };
+        let Some(window) = view.window_of(function) else { return };
+        let selection = canvas_shown(window, &self.prefs).selection;
+        let Some(drawn) = self.drawn.get(function) else { return };
+        let mut wires: Vec<String> = selection.wires.clone();
+        for terminal in &selection.terminals {
+            wires.extend(drawn.canvas.wires_of_terminal(Some(terminal)));
+        }
+        if selection.is_empty() {
+            wires.extend(drawn.canvas.wires_of_terminal(None));
+        }
+        // A wire that a deleted node gives or reads goes with the node.
+        let deleted = |name: &str| selection.nodes.iter().any(|node| node == name);
+        wires.retain(|wire| {
+            let Some((from, to)) = wire.split_once("->") else { return false };
+            let source = from.trim().split('.').next().unwrap_or_default();
+            let reader = to.trim().split('.').next().unwrap_or_default();
+            !deleted(source) && !deleted(reader)
+        });
+        wires.sort();
+        wires.dedup();
+        let mut commands: Vec<Value> =
+            wires.iter().map(|wire| json!({ "id": "wire.disconnect", "params": { "file": file, "wire": wire } })).collect();
+        if !selection.nodes.is_empty() {
+            commands.push(json!({ "id": "node.delete", "params": { "file": file, "nodes": selection.nodes } }));
+        }
+        if commands.is_empty() {
+            self.say("Delete removes the nodes and the wires selected, or the wires of the terminal in focus");
+            return;
+        }
+        let reply = host.send("commands.batch", json!({ "commands": commands, "label": "Delete" }));
+        self.edits.push((function.to_owned(), reply, None));
     }
 
     /// Asks the session for a selection of the canvas of `function` (`view.select`).
@@ -1464,6 +1572,33 @@ impl Ide {
                     self.say("W starts a wire from the terminal in focus: select a node, then Enter goes to its terminals");
                 }
             }
+            keys::AUTOPATCH => {
+                self.prefs.autopatch = !self.prefs.autopatch;
+                self.prefs_changed = true;
+            }
+            keys::INTO_WIRE => {
+                self.prefs.into_wire = !self.prefs.into_wire;
+                self.prefs_changed = true;
+            }
+            // Space (notation 2.6): quick insertion from what the canvas that has the keyboard holds.
+            keys::QUICK_INSERT => {
+                let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
+                let Some(window) = view.window_of(&function) else { return };
+                let canvas_shown = canvas_shown(window, &self.prefs);
+                let pointer = self.pointer;
+                let autopatch = self.prefs.autopatch;
+                let quick = self.drawn.get_mut(&function).and_then(|drawn| drawn.canvas.quick_insert(&canvas_shown, autopatch, pointer));
+                if let Some(quick) = quick {
+                    self.open_quick(view, &function, quick);
+                }
+            }
+            // Delete (notation 2.6): the nodes and the wires selected, or what the terminals selected or in focus hold, one
+            // step.
+            keys::DELETE => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(host), Some(function)) = (host, function) else { return };
+                self.delete(host, view, &function);
+            }
             // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
             keys::ARRANGE => {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
@@ -1480,7 +1615,7 @@ impl Ide {
                     }
                 }
                 let reply = host.send("layout.arrange", Value::Object(params));
-                self.edits.push((function, reply));
+                self.edits.push((function, reply, None));
             }
             keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
                 let step = match id.as_str() {
@@ -1557,7 +1692,7 @@ impl Ide {
                     .and_then(|file| view.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone()));
                 let reply = host.send(&id, Value::Object(params));
                 match edited {
-                    Some(function) => self.edits.push((function, reply)),
+                    Some(function) => self.edits.push((function, reply, None)),
                     None => self.pending.push((id, reply)),
                 }
             }
@@ -1604,6 +1739,7 @@ fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
         replace_with_alt: prefs.replace_with_alt,
         accept_mismatch: prefs.accept_mismatch,
         route_with_shift_alt: prefs.route_with_shift_alt,
+        into_wire: prefs.into_wire,
     }
 }
 
@@ -1722,6 +1858,8 @@ impl DockContent<Pane> for Content<'_> {
         // Its keys while it has focus; its palette, open in it, stays drawn in it when it loses it.
         if ctx.input(|input| input.viewport().focused.unwrap_or(false)) {
             self.ide.focus = Some(function.clone());
+            // Where quick insertion falls is read in the frame of this window.
+            self.ide.pointer = ctx.pointer_latest_pos();
             for command in self.ide.key_hits(&ctx) {
                 if command.id == keys::PALETTE {
                     self.ide.open_palette(self.view);
@@ -1729,6 +1867,9 @@ impl DockContent<Pane> for Content<'_> {
                     self.commands.push(command);
                 }
             }
+        }
+        if self.ide.quick.as_ref().is_some_and(|list| list.function == function) {
+            self.ide.show_quick(&ctx, self.host);
         }
         if self.ide.palette_in.as_deref() == Some(function.as_str())
             && let Some(chosen) = self.ide.palette.show(&ctx, self.entries)
@@ -2003,7 +2144,7 @@ impl Content<'_> {
                             json!({ "file": file, "wires": selection.wires })
                         };
                         let reply = self.host.send("layout.arrange", params);
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // A wire dropped, or wired with Enter (notation 2.6): one step of undo; a branch with its junction, in one
@@ -2021,7 +2162,7 @@ impl Content<'_> {
                                 self.host.send("commands.batch", json!({ "commands": commands, "label": "Branch Wire" }))
                             }
                         };
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // A segment moved by hand (notation 2.4): every wire it moves, in one step.
@@ -2032,7 +2173,7 @@ impl Content<'_> {
                             .map(|(wire, via)| json!({ "id": "wire.route", "params": { "file": file, "wire": wire, "via": via } }))
                             .collect();
                         let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Route Wire" }));
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // Ctrl and a drag on a wired terminal: its wires to another terminal, in one step (notation 2.6).
@@ -2046,11 +2187,22 @@ impl Content<'_> {
                             }))
                             .collect();
                         let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Move Wire" }));
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
-                // Quick insertion comes with step 4 of M1 (decision of the owner, 2026-11-17).
-                Intent::QuickInsert { .. } => self.ide.say("Quick insertion comes with M1 step 4"),
+                // Quick insertion (notation 2.6): the list opens where the wire was dropped.
+                Intent::QuickInsert(quick) => self.ide.open_quick(view, function, quick),
+                // A function of the panel `Palette` dropped on the canvas (notation 2.5).
+                Intent::Drop { call, at, into } => {
+                    if let Some(file) = file_of(view, function) {
+                        let params = match into {
+                            Some(wire) => json!({ "file": file, "call": call, "into": wire }),
+                            None => json!({ "file": file, "call": call, "at": [at.0, at.1] }),
+                        };
+                        let reply = self.host.send("node.add", params);
+                        self.ide.edits.push((function.to_owned(), reply, Some(call)));
+                    }
+                }
                 Intent::Say(text) => self.ide.say(text),
             }
         }

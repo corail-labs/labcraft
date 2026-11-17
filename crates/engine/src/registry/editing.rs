@@ -190,7 +190,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "node.add",
             "Add Node",
             "Add a node: a call of a function, a struct or a variant with values, named at once",
-            "Adds a node to the body of the function. `call` is a function as a call names it (`visa.open`, `settle`), a struct type, or a variant that holds values. The command adds the `use` the file then needs. The node is named from its output (`timestamp`, `timestamp2`); an output that says nothing (`result` of `core`) names it from its function (`sum`, `product`). A node with no output gets a label (`#beep`). The required inputs stay unwired (`LC2101`); a value of a variant or a field of a struct gets a hole `?`. `at` fixes the node there (a `node … at` entry of `layout`); without it, the node is placed near its neighbours. `names.node` gives its name. `inside` and `arm` come with M1 step 5, `into` with M1 step 4.",
+            "Adds a node to the body of the function. `call` is a function as a call names it (`visa.open`, `settle`), a struct type, or a variant that holds values. The command adds the `use` the file then needs. The node is named from its output (`timestamp`, `timestamp2`); an output that says nothing (`result` of `core`) names it from its function (`sum`, `product`). A node with no output gets a label (`#beep`). The required inputs stay unwired (`LC2101`); a value of a variant or a field of a struct gets a hole `?`. `at` fixes the node there (a `node … at` entry of `layout`); without it, the node is placed near its neighbours. `names.node` gives its name. `into` names a wire to insert the node into: the value enters the first input that takes its type, and the first output that the reader takes goes where the wire went; a parameter that takes only a literal (the template of `string.format`) never takes it, and a node that no input or no output fits is `params.invalid`. `inside` and `arm` come with M1 step 5.",
             object(
                 &[
                     ("file", string(FILE)),
@@ -199,7 +199,7 @@ pub(super) fn catalog() -> Vec<Command> {
                     ("arm", string("The arm of that structure, by its patterns (M1 step 5).")),
                     ("at", position("Where to fix the node, `[x, y]` in canvas units; without it, it is placed automatically.")),
                     ("name", string("Its name, instead of the one it would get.")),
-                    ("into", string("A wire to insert the node into (M1 step 4).")),
+                    ("into", string("A wire to insert the node into, named as `wire.disconnect` names it: `reading -> verdict.a`.")),
                     ("expected_revision", revision()),
                 ],
                 &["file", "call"],
@@ -345,7 +345,7 @@ pub(super) fn catalog() -> Vec<Command> {
             id: "commands.batch",
             label: "Run Batch",
             summary: "Run editing commands in order, as one step of undo",
-            description: "Runs a list of `{ \"id\", \"params\" }` in order, on the texts in memory, written once at the end, as one step of undo. If one fails, nothing is written, and the error gives its `index`. Otherwise it returns, for each command, its `names` and `renamed` (`commands`), and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root. It takes the commands that edit, at most 1,000; `expected_revision` is the batch's, judged once before its first command, and its commands take none.",
+            description: "Runs a list of `{ \"id\", \"params\" }` in order, on the texts in memory, written once at the end, as one step of undo. If one fails, nothing is written, and the error gives its `index`. Otherwise it returns, for each command, its `names` and `renamed` (`commands`), and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root. It takes the commands that edit, at most 1,000; `expected_revision` is the batch's, judged once before its first command, and its commands take none. In a parameter that names a node or a wire, `$i` names the node that the earlier command `i` named (`names.node`): `{ \"to\": \"$0.a\" }` after a `node.add`.",
             params: object(
                 &[
                     (

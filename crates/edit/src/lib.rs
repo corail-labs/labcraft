@@ -27,6 +27,7 @@ use labcraft_types::{Diagnostic, Limits};
 
 mod add;
 mod delete;
+mod into;
 mod layout;
 mod model;
 mod names;
@@ -82,6 +83,8 @@ pub enum Op {
         call: String,
         at: Option<Point>,
         name: Option<String>,
+        /// A wire to insert the node into.
+        into: Option<String>,
     },
     /// `constant.add`: `value` is a constant written as in a file (`240 V`).
     ConstantAdd {
@@ -323,8 +326,16 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
     let Some(text) = files.get(path) else {
         return Err(EditError::new("path.not_found", format!("`{path}` is not a file of the project")).of("file"));
     };
-    let mut edit = model::Edit::read(path, text, limits)?;
     let mut edited = Edited::default();
+    if let Op::NodeAdd { call, at, name, into: Some(into), .. } = op {
+        let inserted = into::node(path, text, judge, limits, call, *at, name.as_deref(), into, &mut edited)?;
+        let new_text = route::follow(path, text, inserted, judge, limits)?;
+        if new_text != text {
+            edited.texts.insert(path.to_owned(), new_text);
+        }
+        return Ok(edited);
+    }
+    let mut edit = model::Edit::read(path, text, limits)?;
     match op {
         Op::NodeAdd { call, at, name, .. } => add::node(&mut edit, judge, call, *at, name.as_deref(), &mut edited)?,
         Op::ConstantAdd { value, at, name, .. } => add::constant(&mut edit, value, *at, name.as_deref(), &mut edited)?,
