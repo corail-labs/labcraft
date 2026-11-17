@@ -2283,6 +2283,7 @@ dependencies = [
  "egui",
  "egui_kittest",
  "kit-shell",
+ "labcraft-diagram",
  "labcraft-editor",
  "labcraft-engine",
  "labcraft-format",

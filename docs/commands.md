@@ -512,7 +512,7 @@ what the window shows are `agent.not_allowed` too (ide.md 8).
 | `project.new` | `folder` | Makes the folder with `main.lcf` (`fn main() -> () {}`), and opens it with `main` shown (ide.md 10). A folder that exists and is not empty is `path.exists` |
 | `project.open` | `folder` | Opens the folder as a project: in this window when it shows the start page, in a new window otherwise |
 | `view.get_state` | | `{ "workspace": "edit", "windows": [{ "tabs": [{ "function", "file", "view", "split" }], "shown", "selection", "zoom" }], "truncated": false }`: for each window of the project, the window of the project first and then the detached ones in the order they were detached (a detached window has the one tab of its function), its tabs (the function named as in 6.5, its file, its view among `diagram`, `text` and `block`, the second view of a split or `null`), the index of the tab shown or `null` on the start page, the selection of the tab shown as the editing commands name it (9.2), at most 1,000 items *(proposed)*, and the zoom. Not `view.set_state` (6.5), which sets the view state of a drawing |
-| `view.select` | `function`, *`nodes`*, *`wires`*, *`terminals`* (each `[]`) | Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The function is the one shown, else `params.invalid`; each name names what the function has, as an editing command names it (9.2): a node, a wire that exists, `input x` or `output x`, else `edit.unknown` (or `edit.ambiguous`) on its parameter; at most 1,000 names *(proposed)*. The window calls it on each click and rectangle of selection ([architecture.md](architecture.md), 12.5) |
+| `view.select` | `function`, *`nodes`*, *`wires`*, *`terminals`* (each `[]`) | Sets the selection of the window that shows the function, which `view.get_state` returns; all empty clears it. The function is the one shown, else `params.invalid`; each name names what the function has, as an editing command names it (9.2): a node, a wire that exists, `input x` or `output x`, else `edit.unknown` (or `edit.ambiguous`) on its parameter; at most 1,000 names *(proposed)*. The window calls it on each click and rectangle of selection ([architecture.md](architecture.md), 12.5). A node named by its line (`@N`, 9.2) leaves the selection, with the wires into it, when the file changes so that its line names another node or none |
 | `view.close_function` | `function` (a function whose tab is open) | Closes its tab; when it was shown, the next tab is shown, else the one before it. The tab of a function in a window of its own closes with its window (ide.md 9). Returns `{ "shown" }`, the function that the window of the project shows after, or `null` |
 | `view.set_view` | `function`, `view`, *`split`* (`null`) | Shows the function in its tab with that view, and with `split` the second view beside it: `text` with `diagram` or with `block`. `panel` is `command.not_enabled` until M3; another pair is `params.invalid` |
 | `view.detach` | `function` (a function whose tab is open) | Moves the tab of the function into a window of its own (ide.md 9), with what it shows: its drawing, its values, its selection, its zoom; on the web, a floating panel. When it was shown, the window of the project shows the next tab, else the one before it. A function already in a window of its own stays there. Returns `{ "shown" }`, the function that the window of the project shows, or `null` |
@@ -719,6 +719,11 @@ file and calls a command uses one vocabulary.
   not parse cannot be edited as a graph: `file.unparsed`, and `file.write` or the `Text` panel mends it. A file with
   errors of types or of `check` is edited like any other.
 - **A node** is named by its label (`#close`) or by the name of its line, and a named constant by its name (spec 11).
+  It is also named by `@N`, the line where it starts in the file, from 1 as diagnostics count, as the reports write a
+  node with no name (`docs/cli.md`, 4.3): `@41`, and `x -> @41.b` for a wire into it. So a node with no name, or with
+  a name defined in two arms, is named without a label (decision of the owner, 2026-11-17). The line is that of the
+  text as the file holds it; when canonical form would move a line, `@N` names nothing. The `layout` section has no
+  such name (spec 11).
   A structure is a node. **A wire** is named by `value -> node` or `value -> node.input`, and **a terminal of the
   frame** by `input x` or `output x`.
 - **An input**, which a command wires or sets (`to`), is named as the end of a wire in spec 11: `verdict`,
@@ -742,8 +747,8 @@ file and calls a command uses one vocabulary.
     one (N-14), which the result gives.
 - **Names that fail.** A name that names nothing is `edit.unknown`, and `expected` gives the nearest names. A name
   that names several things, such as a name defined in two arms, is `edit.ambiguous`, and `expected` lists them: a
-  label or the name of the input settles it. A node that has no name, such as a call statement without a label, or a
-  name defined in two arms, gets a label from `node.set_label`, which names the node by its line. The editor never
+  label, its line (`@N`) or the name of the input settles it. A node that has no name, such as a call statement
+  without a label, or a name defined in two arms, gets a label from `node.set_label`, which names the node by its line. The editor never
   makes such a node, since it names every node it places (N-14), but a text written by hand can.
 - **Positions** are `[x, y]` in canvas units, in the frame of what they place (spec 11). They are integers in the
   range of spec 11; any other value is `params.invalid`.

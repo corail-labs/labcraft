@@ -207,3 +207,38 @@ fn diagram_svg_gives_the_svgs_that_labcraft_cli_diagram_writes() {
     assert_eq!(from_the_session, from_the_command_line);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+/// What the canvas selects on the drawing of each function of `examples/` is a name that `view.select` takes
+/// (commands.md 9.2): each node that has a name, each wire that the drawing names, each terminal of the frame of the
+/// function. A name of the drawing that the command refused would make a click select nothing.
+#[test]
+fn view_select_takes_every_name_that_the_drawings_of_the_examples_give() {
+    on_examples(|session| {
+        session.with_window();
+        ok(session, "view.open", json!({ "folder": "." }));
+        let functions: Vec<String> = session.view().functions.iter().map(|listed| listed.function.clone()).collect();
+        assert!(functions.len() > 10, "{functions:?}");
+        let mut counted = (0, 0, 0);
+        let mut lines = 0;
+        for function in functions {
+            ok(session, "view.show_function", json!({ "function": function }));
+            let Some(drawing) = session.view().main.drawing.clone() else { continue };
+            let nodes: Vec<String> = drawing.placed.iter().map(|placed| placed.name.clone()).filter(|name| !name.is_empty()).collect();
+            let wires: Vec<String> = drawing.groups.iter().filter_map(|group| group.wire.as_ref()).flat_map(|wire| wire.named.clone()).collect();
+            let terminals: Vec<String> = drawing.hints.iter().filter_map(|hint| hint.selects.clone()).collect();
+            counted = (counted.0 + nodes.len(), counted.1 + wires.len(), counted.2 + terminals.len());
+            lines += nodes.iter().filter(|name| name.starts_with('@')).count();
+            for (part, names) in [("nodes", &nodes), ("wires", &wires), ("terminals", &terminals)] {
+                for name in names {
+                    if let Err(error) = session.execute("view.select", &json!({ "function": function, part: [name] })) {
+                        panic!("{function}: `{name}` in `{part}`: {}", error.to_json());
+                    }
+                }
+            }
+        }
+        // Each kind is met: the test would pass on drawings that name nothing; and the nodes named by their line, the
+        // three `s` of the arms of `station` among them (commands.md 9.2).
+        assert!(counted.0 > 50 && counted.1 > 50 && counted.2 > 20, "{counted:?}");
+        assert!(lines >= 3, "{lines} nodes named by their line");
+    });
+}

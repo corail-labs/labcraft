@@ -470,6 +470,15 @@ pub struct WireOf {
     /// Whether its value starts in this body, where its bubble shows: not a value that enters by a notch, which shows
     /// outside (notation 6.1). Not in the SVG.
     pub starts: bool,
+    /// Its wires as an editing command names them (commands.md 9.2), `value -> node.input`, `value -> output`, one per
+    /// reader that a command can name: a click selects them all, the whole value (notation 2.5). A reader that no
+    /// command names yet (a node with no name; the `next`, `until`, `collect` or `yield` of a structure) has none. Not in
+    /// the SVG.
+    pub named: Vec<String>,
+    /// The node it leaves and the nodes it reaches, by [`Placed::key`]: for what feeds a node and what it feeds
+    /// (notation 2.6, Alt+Left and Alt+Right). None for a terminal of a frame. Not in the SVG.
+    pub from_node: Option<String>,
+    pub to_nodes: Vec<String>,
 }
 
 /// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input
@@ -487,6 +496,9 @@ pub struct Hint {
     pub placed: Option<usize>,
     /// As [`Group::within`].
     pub within: Option<usize>,
+    /// A terminal of the frame of the function, as `view.select` names it, `input x` or `output x`: a click on it selects
+    /// it (notation 2.6). None for a terminal of a node or of the frame of a structure.
+    pub selects: Option<String>,
 }
 
 /// A drawing: what it draws, in the order of drawing, and its extent.
@@ -562,6 +574,16 @@ pub struct Placed {
     /// The bodies of a structure, by their index in the graph: one, or one per arm, in the order of its arms. Empty for
     /// another node.
     pub holds: Vec<usize>,
+    /// As an editing command names it (commands.md 9.2), for the selection of the window: its label or the name of its
+    /// line, `#close`, `dmm`; empty for a node that has neither (a call statement without a label), which a command
+    /// cannot name.
+    pub name: String,
+    /// The line of the file where it starts, from 1, which the `Text` view highlights when it is selected (notation
+    /// 2.5); 0 when the file does not say.
+    pub line: u32,
+    /// Where its `node … at` entry fixes it, in hundredths, from the top-left corner of its frame (spec 11); none for a
+    /// node placed automatically.
+    pub at: Option<(i64, i64)>,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

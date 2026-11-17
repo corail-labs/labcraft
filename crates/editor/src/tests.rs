@@ -178,7 +178,7 @@ fn a_click_on_a_tab_asks_for_its_arm() {
     let structure = tabs.arms[1].structure.clone();
     assert_eq!(clicked, Some((structure.clone(), 1)));
     // The host shows it: two nodes more than the arm of a single `yield`.
-    let shown = Shown { arms: [(structure, 1)].into() };
+    let shown = Shown { arms: [(structure, 1)].into(), ..Shown::default() };
     let (shapes, _) = frame(&ctx, &mut canvas, &shown, input(0.4));
     assert_eq!(count(&shapes, |shape| matches!(shape, Painted::Mesh(_))), first_count + 4, "two nodes and their two wires");
 }
@@ -230,6 +230,9 @@ fn the_glide_eases_from_the_old_place() {
             rank: 0,
             body: 0,
             holds: Vec::new(),
+            name: "a".into(),
+            line: 0,
+            at: None,
         }],
         ..Drawing::default()
     };
@@ -478,31 +481,103 @@ fn run_of_count(drawing: &Drawing) -> (Arc<Overlay>, Arc<labcraft_diagram::Trace
     (Arc::new(overlay), trace)
 }
 
-/// A frame with these events, at 100 % from the corner of the drawing: what the canvas painted and the iteration it asks for.
-fn frame_with(ctx: &egui::Context, canvas: &mut Canvas, time: f64, events: Vec<egui::Event>) -> (Vec<ClippedShape>, Option<(String, u64)>) {
+/// A frame with these events, at 100 % from the corner of the drawing, the host showing `shown`: what the canvas painted,
+/// the iteration it asks for and what its gestures ask for.
+fn frame_shown(
+    ctx: &egui::Context,
+    canvas: &mut Canvas,
+    time: f64,
+    events: Vec<egui::Event>,
+    shown: &Shown,
+) -> (Vec<ClippedShape>, Option<(String, u64)>, Vec<Intent>) {
     let mut raw = input(time);
     raw.events = events;
+    run_frame(ctx, canvas, raw, shown)
+}
+
+/// A frame of this input, the host showing `shown`.
+fn run_frame(ctx: &egui::Context, canvas: &mut Canvas, raw: RawInput, shown: &Shown) -> (Vec<ClippedShape>, Option<(String, u64)>, Vec<Intent>) {
     let mut iteration = None;
-    let mut output = ctx.run_ui(raw, |ui| iteration = canvas.show(ui, Theme::Light, &Shown::default()).iteration);
+    let mut intents = Vec::new();
+    let mut output = ctx.run_ui(raw, |ui| {
+        let response = canvas.show(ui, Theme::Light, shown);
+        iteration = response.iteration;
+        intents = response.intents;
+    });
     let shapes = std::mem::take(&mut output.shapes);
     output.drop_without_applying_deltas();
+    (shapes, iteration, intents)
+}
+
+/// A frame with these events, at 100 % from the corner of the drawing: what the canvas painted and the iteration it asks for.
+fn frame_with(ctx: &egui::Context, canvas: &mut Canvas, time: f64, events: Vec<egui::Event>) -> (Vec<ClippedShape>, Option<(String, u64)>) {
+    let (shapes, iteration, _) = frame_shown(ctx, canvas, time, events, &Shown::default());
     (shapes, iteration)
+}
+
+/// A press and a release of the primary button at `at`, with `modifiers`, over two frames from `time`, the host showing
+/// `shown`: the iteration and what the gestures ask for.
+fn click_with(
+    ctx: &egui::Context,
+    canvas: &mut Canvas,
+    at: Pos2,
+    time: f64,
+    modifiers: egui::Modifiers,
+    shown: &Shown,
+) -> (Option<(String, u64)>, Vec<Intent>) {
+    // egui reads the modifiers that the input says, not those of the event.
+    let frame_at = |canvas: &mut Canvas, time: f64, pressed: bool| {
+        let mut raw = input(time);
+        raw.events = vec![
+            egui::Event::ModifiersChanged(modifiers),
+            egui::Event::PointerMoved(at),
+            egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers },
+        ];
+        run_frame(ctx, canvas, raw, shown)
+    };
+    let (_, first, mut intents) = frame_at(canvas, time, true);
+    let (_, second, more) = frame_at(canvas, time + 0.05, false);
+    intents.extend(more);
+    let mut raw = input(time + 0.1);
+    raw.events = vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)];
+    intents.extend(run_frame(ctx, canvas, raw, shown).2);
+    (first.or(second), intents)
 }
 
 /// A click at `at`, over two frames, from `time`: what the second asks for.
 fn click(ctx: &egui::Context, canvas: &mut Canvas, at: Pos2, time: f64) -> Option<(String, u64)> {
-    let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
-    let (_, first) = frame_with(ctx, canvas, time, vec![egui::Event::PointerMoved(at), button(true)]);
-    let (_, second) = frame_with(ctx, canvas, time + 0.05, vec![egui::Event::PointerMoved(at), button(false)]);
-    first.or(second)
+    click_with(ctx, canvas, at, time, egui::Modifiers::NONE, &Shown::default()).0
 }
 
 fn middle((left, top, right, bottom): (i64, i64, i64, i64)) -> Pos2 {
     Pos2::new((left + right) as f32 / 200.0, (top + bottom) as f32 / 200.0)
 }
 
+fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+    egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers }
+}
+
+/// The centre of a node, in units, at 100 % from the corner of the drawing.
+fn centre_of(drawing: &Drawing, name: &str) -> Pos2 {
+    let placed = drawing.placed.iter().find(|placed| placed.name == name).unwrap();
+    Pos2::new((placed.x + placed.width / 2) as f32 / 100.0, (placed.y + placed.height / 2) as f32 / 100.0)
+}
+
+fn selecting(nodes: &[&str], wires: &[String], terminals: &[&str]) -> Intent {
+    Intent::Select(Selection {
+        nodes: nodes.iter().map(|name| (*name).to_owned()).collect(),
+        wires: wires.to_vec(),
+        terminals: terminals.iter().map(|name| (*name).to_owned()).collect(),
+    })
+}
+
+fn showing(intent: &Intent) -> Shown {
+    let Intent::Select(selection) = intent;
+    Shown { selection: selection.clone(), ..Shown::default() }
+}
+
 #[test]
-fn a_selector_steps_its_iterations_and_a_click_selects_a_node_until_escape() {
+fn a_selector_steps_its_iterations_and_a_click_asks_for_a_selection_that_the_host_shows() {
     let ctx = context();
     install_fonts(&ctx);
     let mut canvas = Canvas::new();
@@ -520,38 +595,113 @@ fn a_selector_steps_its_iterations_and_a_click_selects_a_node_until_escape() {
     assert_eq!(click(&ctx, &mut canvas, middle(selector.back), 0.2), Some((selector.key.clone(), 1)));
     // Until the values of the second come, a step goes from it.
     assert_eq!(click(&ctx, &mut canvas, middle(selector.forward), 0.3), Some((selector.key.clone(), 2)));
-    // The values of the last come back: forward from it asks nothing.
+    // The values of the last come back: forward from it asks nothing, and a click on a selector selects nothing.
     canvas.set_values(Some(overlay.clone()), Some((run_of_count(&drawn).1, labcraft_diagram::Choice::default())));
-    assert_eq!(click(&ctx, &mut canvas, middle(selector.forward), 0.4), None);
-    assert!(canvas.selected_node().is_none(), "a click on a selector selects nothing");
-    // A click on `done` selects it; its input `m`, 3 at the last iteration, shows once more than its bubble alone.
-    let done = drawn.placed.iter().find(|placed| placed.key.ends_with("done")).unwrap();
-    let at = Pos2::new((done.x + done.width / 2) as f32 / 100.0, (done.y + done.height / 2) as f32 / 100.0);
+    let (iteration, intents) = click_with(&ctx, &mut canvas, middle(selector.forward), 0.4, egui::Modifiers::NONE, &Shown::default());
+    assert_eq!((iteration, intents), (None, Vec::new()));
+    // A click on `done` asks for it; the host shows it, and its input `m`, 3 at the last iteration, shows once more than
+    // its bubble alone.
+    let at = centre_of(&drawn, "done");
     let away = Pos2::new(1.0, 550.0);
     let (unselected, _) = frame_with(&ctx, &mut canvas, 0.6, vec![egui::Event::PointerMoved(away)]);
-    click(&ctx, &mut canvas, at, 0.8);
-    assert_eq!(canvas.selected_node(), Some(done.key.as_str()));
-    let (selected, _) = frame_with(&ctx, &mut canvas, 1.0, vec![egui::Event::PointerMoved(away)]);
+    let (_, intents) = click_with(&ctx, &mut canvas, at, 0.8, egui::Modifiers::NONE, &Shown::default());
+    assert_eq!(intents, vec![selecting(&["done"], &[], &[])]);
+    let selected = showing(&intents[0]);
+    let (painted, _, _) = frame_shown(&ctx, &mut canvas, 1.0, vec![egui::Event::PointerMoved(away)], &selected);
     let threes = |shapes: &[ClippedShape]| texts(shapes).iter().filter(|text| *text == "3").count();
-    assert_eq!(threes(&selected), threes(&unselected) + 1, "{:?}", texts(&selected));
-    // Escape selects nothing.
-    let escape = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
-    frame_with(&ctx, &mut canvas, 1.2, vec![escape.clone()]);
-    assert!(canvas.selected_node().is_none());
-    // A click on the wire `m` selects it and pins its values over the 3 iterations: a curve from 1 to 3, by hand.
+    assert_eq!(threes(&painted), threes(&unselected) + 1, "{:?}", texts(&painted));
+    // The click gave the canvas the focus: Escape goes up one level, to the loop that holds `done`.
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.2, vec![key(egui::Key::Escape, egui::Modifiers::NONE)], &selected);
+    assert_eq!(intents, vec![selecting(&["n"], &[], &[])]);
+    // A click on the wire `m` asks for each of its wires, and pins its values over the 3 iterations while the host shows
+    // it selected: a curve from 1 to 3, by hand.
     let m = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "m")).unwrap();
-    let path = &drawn.groups[m].wire.as_ref().unwrap().readers[0].1;
+    let wire = drawn.groups[m].wire.as_ref().unwrap();
+    assert_eq!(wire.named, ["m -> done.a"], "`m` also reaches `next i`, which no command names yet");
+    let path = &wire.readers[0].1;
     let ((x0, y0), (x1, y1)) = (path[0], path[1]);
     let on_wire = Pos2::new((x0 + x1) as f32 / 200.0, (y0 + y1) as f32 / 200.0);
     let (before, _) = frame_with(&ctx, &mut canvas, 1.4, vec![egui::Event::PointerMoved(away)]);
     assert!(!texts(&before).iter().any(|text| text == "3 iterations"));
-    click(&ctx, &mut canvas, on_wire, 1.6);
-    assert_eq!(canvas.selected_wire(), Some(m));
-    let (pinned, _) = frame_with(&ctx, &mut canvas, 1.8, vec![egui::Event::PointerMoved(away)]);
+    let (_, intents) = click_with(&ctx, &mut canvas, on_wire, 1.6, egui::Modifiers::NONE, &Shown::default());
+    assert_eq!(intents, vec![selecting(&[], &wire.named, &[])]);
+    let selected = showing(&intents[0]);
+    let (pinned, _, _) = frame_shown(&ctx, &mut canvas, 1.8, vec![egui::Event::PointerMoved(away)], &selected);
     let painted = texts(&pinned);
     assert!(["1", "3", "3 iterations"].iter().all(|wanted| painted.iter().any(|text| text == wanted)), "{painted:?}");
-    frame_with(&ctx, &mut canvas, 2.0, vec![escape]);
-    assert_eq!(canvas.selected_wire(), None);
+    // Escape at the top selects nothing, and the values are pinned no more.
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 2.0, vec![key(egui::Key::Escape, egui::Modifiers::NONE)], &selected);
+    assert_eq!(intents, vec![selecting(&[], &[], &[])]);
+    let (unpinned, _, _) = frame_shown(&ctx, &mut canvas, 2.2, vec![egui::Event::PointerMoved(away)], &Shown::default());
+    assert!(!texts(&unpinned).iter().any(|text| text == "3 iterations"));
+}
+
+/// Three nodes in a row and two inputs: what a click, Shift, a rectangle and the keys select.
+const ROW: &str =
+    "labcraft 1\n\nuse core\n\nfn main(x: f64, k: f64) -> (y: f64) {\n    a = core.mul(x, k)\n    b = core.add(a, 1.0)\n    y = core.neg(b)\n}\n";
+
+#[test]
+fn a_click_shift_a_rectangle_and_the_keys_ask_for_their_selections() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    let none = Shown::default();
+    // A click on `a`, then Shift and a click on `b`: both; Ctrl and a click on `a` again: `b` alone.
+    let (_, intents) = click_with(&ctx, &mut canvas, centre_of(&drawn, "a"), 0.2, egui::Modifiers::NONE, &none);
+    assert_eq!(intents, vec![selecting(&["a"], &[], &[])]);
+    let a = showing(&intents[0]);
+    let (_, intents) = click_with(&ctx, &mut canvas, centre_of(&drawn, "b"), 0.4, egui::Modifiers::SHIFT, &a);
+    assert_eq!(intents, vec![selecting(&["a", "b"], &[], &[])]);
+    let both = showing(&intents[0]);
+    let (_, intents) = click_with(&ctx, &mut canvas, centre_of(&drawn, "a"), 0.6, egui::Modifiers::COMMAND, &both);
+    assert_eq!(intents, vec![selecting(&["b"], &[], &[])]);
+    // A click on the empty canvas selects nothing.
+    let (_, intents) = click_with(&ctx, &mut canvas, Pos2::new(1.0, 550.0), 0.8, egui::Modifiers::NONE, &both);
+    assert_eq!(intents, vec![selecting(&[], &[], &[])]);
+    // A click on the terminal of the input `k`.
+    let k = drawn.hints.iter().find(|hint| hint.selects.as_deref() == Some("input k")).unwrap();
+    let on_k = Pos2::new((k.x + k.width / 2) as f32 / 100.0, (k.y + k.height / 2) as f32 / 100.0);
+    let (_, intents) = click_with(&ctx, &mut canvas, on_k, 1.0, egui::Modifiers::NONE, &none);
+    assert_eq!(intents, vec![selecting(&[], &[], &["input k"])]);
+    // A rectangle from the empty corner over `a` and `b`, not `y`: the two of them.
+    let (b, y) = (drawn.placed.iter().find(|p| p.name == "b").unwrap(), drawn.placed.iter().find(|p| p.name == "y").unwrap());
+    assert!(b.x + b.width < y.x, "`y` is right of `b`");
+    let corner = Pos2::new(1.0, 1.0);
+    let end = Pos2::new((b.x + b.width / 2) as f32 / 100.0, 540.0);
+    let pointer =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    frame_shown(&ctx, &mut canvas, 1.2, vec![egui::Event::PointerMoved(corner), pointer(corner, true)], &none);
+    frame_shown(&ctx, &mut canvas, 1.3, vec![egui::Event::PointerMoved(corner + Vec2::new(40.0, 40.0))], &none);
+    frame_shown(&ctx, &mut canvas, 1.4, vec![egui::Event::PointerMoved(end)], &none);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.5, vec![egui::Event::PointerMoved(end), pointer(end, false)], &none);
+    assert_eq!(intents, vec![selecting(&["a", "b"], &[], &[])]);
+    // The keys, with the focus that the press gave: Tab from `a` to `b`, then to `y`, then to the output; the arrow Left
+    // from `b` to `a`.
+    let a = showing(&selecting(&["a"], &[], &[]));
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.6, vec![key(egui::Key::Tab, egui::Modifiers::NONE)], &a);
+    assert_eq!(intents, vec![selecting(&["b"], &[], &[])]);
+    let y = showing(&selecting(&["y"], &[], &[]));
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.7, vec![key(egui::Key::Tab, egui::Modifiers::NONE)], &y);
+    assert_eq!(intents, vec![selecting(&[], &[], &["output y"])]);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.8, vec![key(egui::Key::Tab, egui::Modifiers::SHIFT)], &a);
+    assert_eq!(intents, vec![selecting(&[], &[], &["input k"])], "before `a`: the inputs, in the order of the text");
+    let b = showing(&selecting(&["b"], &[], &[]));
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.9, vec![key(egui::Key::ArrowLeft, egui::Modifiers::NONE)], &b);
+    assert_eq!(intents, vec![selecting(&["a"], &[], &[])]);
+    // What feeds `b` and what it feeds; every node; one level then all.
+    assert_eq!(canvas.step_selection(Step::Upstream { every: false }, &b).unwrap().nodes, ["a", "b"]);
+    assert_eq!(canvas.step_selection(Step::Downstream { every: false }, &a).unwrap().nodes, ["a", "b"]);
+    assert_eq!(canvas.step_selection(Step::Downstream { every: true }, &a).unwrap().nodes, ["a", "b", "y"]);
+    assert_eq!(canvas.step_selection(Step::All, &none).unwrap().nodes, ["a", "b", "y"]);
+    // From a wire: what feeds it is the node it leaves, what it feeds the node it reaches.
+    let wire = drawn.groups.iter().find_map(|group| group.wire.as_ref().filter(|wire| wire.value == "a")).unwrap();
+    let on_a = showing(&selecting(&[], &wire.named, &[]));
+    assert_eq!(canvas.step_selection(Step::Upstream { every: false }, &on_a).unwrap().nodes, ["a"]);
+    assert_eq!(canvas.step_selection(Step::Downstream { every: false }, &on_a).unwrap().nodes, ["b"]);
 }
 
 /// Two nodes close together: `a` leaves `mul` and enters `add` a few units further.
@@ -601,9 +751,9 @@ fn painted_at(shapes: &[ClippedShape], text: &str) -> Vec<Pos2> {
 
 /// A click in the middle of a placed node, then a frame with the pointer away: what it paints.
 fn select_and_paint(ctx: &egui::Context, canvas: &mut Canvas, drawing: &Drawing, node: usize, time: f64) -> Vec<ClippedShape> {
-    let block = &drawing.placed[node];
-    click(ctx, canvas, Pos2::new((block.x + block.width / 2) as f32 / 100.0, (block.y + block.height / 2) as f32 / 100.0), time);
-    frame_with(ctx, canvas, time + 0.4, vec![egui::Event::PointerMoved(Pos2::new(1.0, 550.0))]).0
+    let selection = Selection { nodes: vec![drawing.placed[node].name.clone()], ..Selection::default() };
+    let shown = Shown { selection, ..Shown::default() };
+    frame_shown(ctx, canvas, time, vec![egui::Event::PointerMoved(Pos2::new(1.0, 550.0))], &shown).0
 }
 
 /// A node selected shows the value at its input; the bubble of the same wire that it covers, the same value, is not
@@ -780,4 +930,85 @@ fn a_zoom_moved_by_the_host_settles_as_a_gesture() {
     let panned = after(3.0, &mut canvas);
     assert!(panned > never, "{panned:?}");
     assert_eq!(canvas.viewport(), (0.8, Vec2::new(20.0, 0.0)));
+}
+
+/// `a` is read three times; the line between `a` and `y` has no name.
+const UNNAMED: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.mul(x, 2.0)\n    _ = core.add(a, 1.0)\n    \
+                       y = core.neg(a)\n    z = core.mul(a, 3.0)\n}\n";
+
+#[test]
+fn a_node_with_no_name_is_named_by_its_line_and_a_click_on_a_wire_asks_for_each_of_its_wires() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(UNNAMED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    frame_with(&ctx, &mut canvas, 0.0, Vec::new());
+    // The line `_ = …`, line 7 of the text by hand, has no name: a command names it `@7` (commands.md 9.2).
+    assert_eq!(drawn.placed.iter().filter(|placed| placed.name == "@7").count(), 1);
+    // The focus from a click on `a`, then Tab: that node, in the order of the text.
+    let (_, intents) = click_with(&ctx, &mut canvas, centre_of(&drawn, "a"), 0.2, egui::Modifiers::NONE, &Shown::default());
+    let a = showing(&intents[0]);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.4, vec![key(egui::Key::Tab, egui::Modifiers::NONE)], &a);
+    assert_eq!(intents, vec![selecting(&["@7"], &[], &[])]);
+    // The wire `a`, read three times: its three wires, as a command names each (commands.md 9.2).
+    let group = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+    let wire = drawn.groups[group].wire.as_ref().unwrap();
+    assert_eq!(wire.named, ["a -> @7.a", "a -> y.x", "a -> z.a"], "by hand: `add(a, b)`, `neg(x)`, `mul(a, b)`");
+    let path = &wire.readers[0].1;
+    let on_wire = Pos2::new((path[0].0 + path[1].0) as f32 / 200.0, (path[0].1 + path[1].1) as f32 / 200.0);
+    let (_, intents) = click_with(&ctx, &mut canvas, on_wire, 0.6, egui::Modifiers::NONE, &Shown::default());
+    assert_eq!(intents, vec![selecting(&[], &wire.named, &[])]);
+}
+
+#[test]
+fn with_the_setting_a_drag_on_the_empty_canvas_pans_and_shift_with_it_selects() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let pans = Shown { drag_pans: true, ..Shown::default() };
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &pans);
+    let drag = |canvas: &mut Canvas, time: f64, modifiers: egui::Modifiers| {
+        let (from, to) = (Pos2::new(1.0, 1.0), Pos2::new(1200.0, 540.0));
+        let button = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers };
+        let mut intents = Vec::new();
+        let steps = [
+            vec![egui::Event::ModifiersChanged(modifiers), egui::Event::PointerMoved(from), button(from, true)],
+            vec![egui::Event::PointerMoved(from + Vec2::new(40.0, 40.0))],
+            vec![egui::Event::PointerMoved(to)],
+            vec![egui::Event::PointerMoved(to), button(to, false)],
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
+        ];
+        for (at, events) in steps.into_iter().enumerate() {
+            intents.extend(frame_shown(&ctx, canvas, time + at as f64 * 0.1, events, &pans).2);
+        }
+        intents
+    };
+    // A plain drag pans, and selects nothing.
+    let before = canvas.viewport().1;
+    assert_eq!(drag(&mut canvas, 0.2, egui::Modifiers::NONE), Vec::new());
+    assert_ne!(canvas.viewport().1, before, "the drag panned");
+    // A drag from a node does not pan: only the empty canvas does (notation 2.6).
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let on_b = centre_of(&drawn, "b");
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    for (at, events) in [
+        vec![egui::Event::PointerMoved(on_b), button(on_b, true)],
+        vec![egui::Event::PointerMoved(on_b + Vec2::new(40.0, 40.0))],
+        vec![egui::Event::PointerMoved(on_b + Vec2::new(80.0, 80.0)), button(on_b + Vec2::new(80.0, 80.0), false)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        frame_shown(&ctx, &mut canvas, 0.6 + at as f64 * 0.1, events, &pans);
+    }
+    assert_eq!(canvas.viewport().1, Vec2::ZERO, "a drag from a node never pans");
+    // Shift and a drag: a rectangle, over the three nodes, from where the drawing is now.
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    assert_eq!(drag(&mut canvas, 1.0, egui::Modifiers::SHIFT), vec![selecting(&["a", "b", "y"], &[], &[])]);
 }

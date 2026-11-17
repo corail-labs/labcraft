@@ -443,3 +443,76 @@ fn twice(x: f64, k: f64 = 2.0) -> (y: f64) {
     assert!(matches!(&status, Err(error) if error.code == "run.unknown"), "no run started: {status:?}");
     assert!(harness.query_by_label_contains("`x` has no default value").is_some(), "said in the window");
 }
+
+/// A press and a release of the primary button at `at`, with `modifiers`.
+fn click_at(harness: &mut Harness<'_, State>, at: egui::Pos2, modifiers: egui::Modifiers) {
+    let events = &mut harness.input_mut().events;
+    events.push(egui::Event::ModifiersChanged(modifiers));
+    events.push(egui::Event::PointerMoved(at));
+    events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers });
+    harness.run_steps(1);
+    harness.input_mut().events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers });
+    harness.run_steps(1);
+    harness.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run_steps(3);
+}
+
+/// The element of the canvas of this name in the tree of AccessKit: its centre, and whether it is selected.
+fn canvas_element(harness: &Harness<'_, State>, name: &str) -> (egui::Pos2, bool) {
+    use egui_kittest::kittest::NodeT as _;
+    let node = harness
+        .query_all_by_label(name)
+        .find(|node| node.accesskit_node().role() == egui::accesskit::Role::ListBoxOption)
+        .unwrap_or_else(|| panic!("no element `{name}` on the canvas"));
+    (node.rect().center(), node.accesskit_node().is_selected() == Some(true))
+}
+
+fn selection(harness: &Harness<'_, State>) -> labcraft_engine::view::Selection {
+    harness.state().host.session.borrow().view().main.selection.clone()
+}
+
+#[test]
+fn a_click_on_a_node_selects_it_in_the_session_and_the_inspector_and_the_keys_follow() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    // Each node of the canvas is an element of the tree, named by its name and what it calls (notation 2.6).
+    let (on_a, selected) = canvas_element(&harness, "a, core.mul");
+    assert!(!selected);
+    click_at(&mut harness, on_a, egui::Modifiers::NONE);
+    // The session holds the selection (`view.select`); the canvas and the inspector show what it holds.
+    let held = selection(&harness);
+    assert_eq!((held.function.as_str(), held.nodes.as_slice()), ("main", ["a".to_owned()].as_slice()));
+    assert!(canvas_element(&harness, "a, core.mul").1, "the element says it is selected");
+    assert!(harness.query_by_label("Placed automatically").is_some(), "the inspector of the node says where it is");
+    assert!(harness.query_by_label("core.mul").is_some(), "and what it calls");
+    // Shift and a click on `y`: both, and the inspector counts them.
+    let (on_y, _) = canvas_element(&harness, "y, core.add");
+    click_at(&mut harness, on_y, egui::Modifiers::SHIFT);
+    assert_eq!(selection(&harness).nodes, ["a", "y"]);
+    assert!(harness.query_by_label("2 nodes").is_some());
+    // The canvas has the keyboard: Escape selects nothing, Ctrl+A every node of the frame.
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(3);
+    assert!(selection(&harness).nodes.is_empty());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run_steps(3);
+    assert_eq!(selection(&harness).nodes, ["a", "y"]);
+    shot(&mut harness, "selection");
+}
+
+#[test]
+fn a_text_field_keeps_its_keys_once_the_canvas_has_lost_the_focus() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, egui::Modifiers::NONE);
+    assert_eq!(selection(&harness).nodes, ["a"]);
+    // The field of the command palette takes the focus: Ctrl+A is its own, not the canvas's (notation 2.6: the focus
+    // decides).
+    harness.key_press(Key::F1);
+    harness.run_steps(3);
+    assert!(harness.query_by_role(egui::accesskit::Role::TextInput).is_some(), "the field of the palette");
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run_steps(3);
+    assert_eq!(selection(&harness).nodes, ["a"], "Ctrl+A in the field selects no node");
+}

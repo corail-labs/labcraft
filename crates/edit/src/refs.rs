@@ -1,5 +1,6 @@
-//! The names of commands.md 9.2, written as in the `layout` section: a node by its label or by the name of its line, an
-//! input as the end of a wire, a wire by `value -> node` or `value -> node.input`, a terminal by `output x`.
+//! The names of commands.md 9.2, written as in the `layout` section: a node by its label, by the name of its line, or by
+//! `@N`, the line where it starts; an input as the end of a wire, a wire by `value -> node` or `value -> node.input`, a
+//! terminal by `output x`.
 
 use labcraft_graph::{Function, StatementKind};
 
@@ -12,13 +13,19 @@ use crate::scope::{self, Loc};
 pub(crate) struct NodeName {
     pub text: String,
     pub is_label: bool,
+    /// `@N`: the node that starts on line `N` of the file, from 1, as the reports name a node with no name (`docs/cli.md`,
+    /// 4.3) and as a name of several bodies is told apart (decision of the owner, 2026-11-17).
+    pub line: Option<u32>,
 }
 
 impl NodeName {
     pub fn parse(text: &str) -> NodeName {
+        if let Some(line) = text.strip_prefix('@').and_then(|line| line.parse::<u32>().ok()).filter(|line| *line > 0) {
+            return NodeName { text: text.to_owned(), is_label: false, line: Some(line) };
+        }
         match text.strip_prefix('#') {
-            Some(label) => NodeName { text: label.to_owned(), is_label: true },
-            None => NodeName { text: text.to_owned(), is_label: false },
+            Some(label) => NodeName { text: label.to_owned(), is_label: true, line: None },
+            None => NodeName { text: text.to_owned(), is_label: false, line: None },
         }
     }
 
@@ -99,6 +106,20 @@ pub(crate) fn split_wire(text: &str) -> Result<(String, String), EditError> {
 
 /// The statements that a node name names.
 pub(crate) fn find_nodes(edit: &Edit, function: &Function, name: &NodeName) -> Vec<Loc> {
+    if let Some(line) = name.line {
+        let mut found: Vec<Loc> = edit
+            .lines
+            .iter()
+            .filter(|(_, at)| **at == line)
+            .map(|(loc, _)| loc.clone())
+            .filter(|loc| {
+                scope::statement(function, loc)
+                    .is_some_and(|statement| !matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_)))
+            })
+            .collect();
+        found.sort();
+        return found;
+    }
     let Some(wanted) = edit.names.find(&name.text) else { return Vec::new() };
     scope::all(function)
         .into_iter()

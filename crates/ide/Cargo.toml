@@ -14,6 +14,7 @@ craft-ui = { workspace = true, features = ["serde"] }
 craft-window = { workspace = true }
 egui = { workspace = true }
 kit-shell = { workspace = true }
+labcraft-diagram = { workspace = true }
 labcraft-editor = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }

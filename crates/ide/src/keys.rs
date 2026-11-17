@@ -38,6 +38,17 @@ pub const STOP: &str = "ide.stop";
 pub const RECORD: &str = "ide.record_values";
 /// Every function in a window of its own, planned until the windows of the system are real ones (craft-libs#1903).
 pub const PLANNED_DETACHED_MODE: &str = "ide.planned.detached_mode";
+/// The selection on the canvas that has the focus (notation 2.6): every node of its frame, what feeds it, what it feeds.
+pub const SELECT_ALL: &str = "ide.select_all";
+pub const SELECT_UPSTREAM: &str = "ide.select_upstream";
+pub const SELECT_DOWNSTREAM: &str = "ide.select_downstream";
+pub const SELECT_ALL_UPSTREAM: &str = "ide.select_all_upstream";
+pub const SELECT_ALL_DOWNSTREAM: &str = "ide.select_all_downstream";
+/// The setting "drag on the empty canvas pans" (notation 2.6; decision of the owner, 2026-11-17: a setting of the user
+/// from step 2, off by default).
+pub const DRAG_PANS: &str = "ide.drag_pans";
+/// The scope of the keys that act on the canvas that has the focus.
+pub const DIAGRAM_SCOPE: &str = "Diagram";
 
 /// The actions of the window, with their labels, for the command palette: each `ide.*` once.
 pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
@@ -54,6 +65,12 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (RECORD, "Record the values of a run"),
     (DETACHED_INSPECTOR, "Inspector in detached windows"),
     (DETACHED_PALETTE, "Palette of functions in detached windows"),
+    (SELECT_ALL, "Select every node of the frame"),
+    (SELECT_UPSTREAM, "Select what feeds the selection"),
+    (SELECT_DOWNSTREAM, "Select what the selection feeds"),
+    (SELECT_ALL_UPSTREAM, "Select everything upstream"),
+    (SELECT_ALL_DOWNSTREAM, "Select everything downstream"),
+    (DRAG_PANS, "Drag on the empty canvas pans"),
     (ABOUT, "About LabCraft"),
 ];
 
@@ -63,6 +80,12 @@ fn binding(text: &str) -> Option<Binding> {
 
 fn bindable(command: CommandRef, label: &str, keys: &[&str]) -> Bindable {
     keys.iter().filter_map(|key| binding(key)).fold(Bindable::new(command, label, Scope::app()), Bindable::with_default)
+}
+
+/// A key that acts on the canvas that has the focus only (notation 2.6: the focus decides).
+fn on_canvas(id: &str, label: &str, keys: &[&str]) -> Option<Bindable> {
+    let scope = Scope::new(DIAGRAM_SCOPE)?;
+    Some(keys.iter().filter_map(|key| binding(key)).fold(Bindable::new(CommandRef::new(id), label, scope), Bindable::with_default))
 }
 
 /// The keymap of the window, with the keys of notation 2.6 by default.
@@ -79,7 +102,16 @@ pub fn keymap(platform: Platform) -> Keymap {
         bindable(CommandRef::new(RUN), "Run", &(if cfg!(target_arch = "wasm32") { vec![] } else { vec!["F5"] })),
         bindable(CommandRef::new(STOP), "Stop", &(if cfg!(target_arch = "wasm32") { vec![] } else { vec!["Shift+F5"] })),
     ];
-    Keymap::new(catalog, Scopes::new(), platform)
+    let canvas = [
+        on_canvas(SELECT_ALL, "Select all", &["Cmd+A"]),
+        on_canvas(SELECT_UPSTREAM, "Select upstream", &["Alt+Left"]),
+        on_canvas(SELECT_DOWNSTREAM, "Select downstream", &["Alt+Right"]),
+        on_canvas(SELECT_ALL_UPSTREAM, "Select everything upstream", &["Shift+Alt+Left"]),
+        on_canvas(SELECT_ALL_DOWNSTREAM, "Select everything downstream", &["Shift+Alt+Right"]),
+    ];
+    let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
+    // A key of the canvas never acts when the canvas does not have the focus.
+    Keymap::new(catalog, Scopes::new().with_panel(DIAGRAM_SCOPE).with_panel_fallthrough(false), platform)
 }
 
 /// The key of a command, as the platform shows it.
@@ -111,9 +143,22 @@ pub fn menus() -> MenuBar {
         ],
     )
     .role(MenuRole::File);
-    let edit =
-        Menu::new("Edit", vec![item("history.undo", "Undo"), item("history.redo", "Redo"), Node::Separator, item(PALETTE, "Command palette…")])
-            .role(MenuRole::Edit);
+    let edit = Menu::new(
+        "Edit",
+        vec![
+            item("history.undo", "Undo"),
+            item("history.redo", "Redo"),
+            Node::Separator,
+            item(SELECT_ALL, "Select all"),
+            item(SELECT_UPSTREAM, "Select upstream"),
+            item(SELECT_DOWNSTREAM, "Select downstream"),
+            item(SELECT_ALL_UPSTREAM, "Select everything upstream"),
+            item(SELECT_ALL_DOWNSTREAM, "Select everything downstream"),
+            Node::Separator,
+            item(PALETTE, "Command palette…"),
+        ],
+    )
+    .role(MenuRole::Edit);
     let mut view = Vec::new();
     for (_, name, title) in PANELS {
         view.push(Node::Item(Item::new(toggle_panel(name), *title).check(true)));
@@ -132,6 +177,7 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new(DARK), "Dark theme").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(LAB), "Lab look (slate, teal)").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(REDUCED_MOTION), "Reduced motion").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(DRAG_PANS), "Drag on the empty canvas pans").check(false)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
         "Run",
@@ -162,7 +208,17 @@ mod tests {
 
     #[test]
     fn every_default_key_reads() {
-        for keys in [["Cmd+Shift+P", "F1"].as_slice(), &["Cmd+N"], &["Cmd+O"], &["Cmd+W"], &["Cmd+Z"], &["Cmd+Y", "Cmd+Shift+Z"], &["Cmd+0"]] {
+        for keys in [
+            ["Cmd+Shift+P", "F1"].as_slice(),
+            &["Cmd+N"],
+            &["Cmd+O"],
+            &["Cmd+W"],
+            &["Cmd+Z"],
+            &["Cmd+Y", "Cmd+Shift+Z"],
+            &["Cmd+0"],
+            &["Cmd+A"],
+            &["Alt+Left", "Alt+Right", "Shift+Alt+Left", "Shift+Alt+Right"],
+        ] {
             for key in keys {
                 assert!(binding(key).is_some(), "{key}");
             }
@@ -174,5 +230,17 @@ mod tests {
         let keymap = keymap(Platform::Windows);
         assert_eq!(keymap.bindings(&CommandRef::new(PALETTE)).len(), 2);
         assert_eq!(key_of(&keymap, &CommandRef::new(PALETTE)).as_deref(), Some("Ctrl+Shift+P"));
+    }
+
+    #[test]
+    fn the_keys_of_the_selection_act_on_the_canvas_alone() {
+        let keymap = keymap(Platform::Windows);
+        assert_eq!(key_of(&keymap, &CommandRef::new(SELECT_ALL)).as_deref(), Some("Ctrl+A"));
+        assert_eq!(keymap.bindings(&CommandRef::new(SELECT_UPSTREAM)).len(), 1);
+        // Ctrl+A selects on the canvas that has the keyboard, and nowhere else (notation 2.6: the focus decides).
+        let chord = craft_keymap::Chord::parse("Cmd+A").unwrap();
+        let canvas = craft_keymap::Active { panel: Some(DIAGRAM_SCOPE), contexts: &[], typing: false };
+        assert_eq!(keymap.lookup(&chord, false, &canvas), craft_keymap::Lookup::Run(CommandRef::new(SELECT_ALL)));
+        assert_eq!(keymap.lookup(&chord, false, &craft_keymap::Active::NONE), craft_keymap::Lookup::None);
     }
 }
