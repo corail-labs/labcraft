@@ -27,5 +27,5 @@ pub use report::{
     CheckCounts, CheckDocument, CheckSummary, Diagnostic, Edit, FileCounts, FileEntry, FileResult, Fix, FmtDocument, FmtSummary, MAX_LIST, MAX_TEXT,
     Node, Position, Related, Report, Span, Status, Wire, cut_text,
 };
-pub use ty::{FnParam, LibraryId, MAX_ARRAY_DIMENSIONS, NumberKind, Ty, TyId, TypeOutOfBounds, TypeTable, Variant};
+pub use ty::{Fit, FitKey, FnParam, LibraryId, MAX_ARRAY_DIMENSIONS, NumberKind, Ty, TyId, TypeOutOfBounds, TypeTable, Variant};
 pub use unit::{Unit, UnitError, parse_unit};

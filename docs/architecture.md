@@ -1709,6 +1709,25 @@ fuzzing looks for (12.10).
   above the block of its structure (`Sized::over`, `Placed::over`), which the placement of the body around does not
   count, so that the structure keeps its place and the frame around grows upward instead. The scenario 5 test holds
   it, moving each node down and up.
+- **As step 3a writes them.** The drawing lists its terminals as ports (`Drawing::ports`, `Port`), not in the SVG:
+  where a wire meets each, the node or the frame it belongs to, its body, whether it takes a wire, its name as
+  `wire.connect` names it (commands.md 9.2: `sq.b`, `msg.parts.2`, `n.after`, `output y` for an end, a value or
+  `node.output` for a start; empty for what no command wires yet), what it holds (a wire, a constant, a default, a hole,
+  nothing) and the style of a wire from it. Its types are listed once each (`Drawing::types`), with what the rule of
+  fit reads of each (`Drawing::type_keys`, `labcraft_types::FitKey`: a number, its kind and its unit, `duration`, a
+  type of no parts, or the shape that the table gives the others), so that the drawing judges a type without the table
+  and its size grows with the number of types, not with its square. `TypeTable::fit`, the rule of `check`, reads the
+  same keys. An input judges a wire by what it takes (`graph::Expects`): the type that its signature declares; for a
+  primitive, its fixed type (`f64` without a unit), its family (an array of a type variable: an array of as many
+  dimensions), or the type of the input of the same type variable that holds something (a number when nothing does);
+  anything when the call settles it. `diagram::wiring(&Drawing, port)` judges a wire from a port to every other one, in
+  the order of `wire.connect`: out of scope (a body between that binds the name hides the value, R-3), a cycle (between
+  the nodes of a body, a structure standing for what it holds), what the input holds, the type. A test holds it to the
+  command on the functions of `examples/` (`apps/labcraft-cli/tests/engine.rs`), from both ends of each wire, with and
+  without `replace`; what it leaves to the command, which judges again at the drop, is counted there: an input judged
+  by its family or one whose type the call settles, where only `check` follows what the new wire changes downstream; a
+  name that the reader sees for another value; the template of `string.format`, which no wire reaches (spec 5.4); and
+  an input of the function to the output of its name (R-2).
 
 ### 12.5 `engine` (L6)
 
@@ -1839,6 +1858,19 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   menu, "Remove the fixed position"; the pin is drawn by `pins.rs` under the setting "mark the fixed nodes"
   (`Shown::mark_fixed`). `Canvas::hold_move` and `Canvas::drop_held` let a host drive a move: the scripted drag of
   `LABCRAFT_FRAMES`.
+- **As step 3a writes them.** `Intent::Wire { from, to, replace, accept_mismatch }`, `Intent::Rewire` (the wires that
+  Ctrl and a drag take to another terminal: `wire.disconnect`, then `wire.connect`, in one batch),
+  `Intent::QuickInsert` (a wire dropped on the empty canvas, until step 4) and `Intent::Say` (why a drop wrote
+  nothing), and `Gesture::Wire`. A wire under way is the canvas's own state (`wiring.rs`): from a port, by a drag, or by
+  W on the terminal in focus (`Canvas::start_wire`); the canvas judges each port once at its start
+  (`diagram::wiring`), rings those that take it, snaps within 12 units, and paints it on the square route of a drag, or
+  dashed in `mark.invalid` with the reason over one that refuses it. The settings "replace only with Alt" and "accept
+  it" come from the host (`Shown`), and Alt is read at the drop: held when the drag starts, it moves a terminal of a
+  block (step 6). After the drop, the wire shows until the new drawing, or until the host says the command failed
+  (`Canvas::cancel_wire`), and the old wire that it replaced retracts. Enter on a node gives the focus to its terminals
+  (`Canvas::port_focus`): the arrows go along a side and across, Enter on a wired one selects its wire, Escape goes
+  back; Tab then goes through the terminals that take the wire, and Enter wires it. Each terminal of a node is an
+  element of the tree of AccessKit.
 
 ### 12.7 The window: `kit-*` and `ide` (L8)
 
@@ -1877,6 +1909,11 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   until the card `Settings` of step 6. The inspector of `kit-shell` gains fields that edit (`Control`: an integer, a
   choice, a button), which give back what the user did (`Answer`): for a node, X and Y (`node.place`), its view
   (`node.set_view`) and "Remove the fixed position" (`layout.arrange`); for several, the view and the button.
+- **As step 3a writes them.** `Intent::Wire` is `wire.connect`, `Intent::Rewire` a `commands.batch` ("Move Wire"),
+  followed as a move is (`Ide::edits`): a failure says why and takes the wire back. `ide.wire` (W, scope `Diagram`, menu
+  `Edit`) starts a wire from the terminal in focus. A drop on the empty canvas says that quick insertion comes with step
+  4 (decision of the owner, 2026-11-17). The settings "replace only with Alt" and "accept it" (both off) are preferences
+  of the user, in the menu `View` and the palette, as those of step 2.
 
 ### 12.8 `mcp` (L7)
 

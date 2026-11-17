@@ -373,8 +373,10 @@ Nothing is greyed out during a gesture, and nothing moves: a mark stays inside t
 - **In progress**: dragged from a terminal, the wire follows the pointer in the style of its family (4.1); the inputs
   that would take it get the ring of a hover, a wired one too, since a drop there replaces its wire (2.4) unless "replace
   only with Alt" is on and Alt is up.
-- **Snapped**: near an input that takes it, the wire snaps and takes the route it will have. Releasing it is one
-  `wire.connect` ([commands.md](commands.md), 9.4), one step of undo.
+- **Snapped**: near an input that takes it, the wire snaps to it on a square route, through the middle, as the wires of
+  a drag (architecture 12.4): nothing moves during the gesture, and its route comes with the drop, where the nodes
+  placed automatically may move round it (decision of the owner, 2026-11-17). Releasing it is one `wire.connect`
+  ([commands.md](commands.md), 9.4), one step of undo.
 - **Refused**: over an input that `wire.connect` would refuse, the wire turns to `mark.invalid`, dashed, and the reason
   sits where it would be dropped: the message of the refusal (`wire.type_mismatch`, `wire.cycle`, `wire.out_of_scope`,
   or `wire.occupied` when Alt is needed to replace). Releasing it writes nothing. With the setting "accept it" (2.4), a

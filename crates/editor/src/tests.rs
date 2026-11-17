@@ -1200,3 +1200,238 @@ fn a_drawing_that_comes_during_a_drag_keeps_it() {
     let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.4, vec![egui::Event::PointerMoved(to), button(to, false)], &b);
     assert_eq!(intents, vec![moving_of(&["b"], (48, 0))]);
 }
+
+/// Two nodes in a row, a value of another family beside them: the wiring of notation 2.4 to 2.6.
+const WIRED: &str =
+    "labcraft 1\n\nuse core\n\nfn main(x: f64, flag: bool) -> (y: f64) {\n    a = core.add(x, 1.0)\n    b = core.mul(a, 2.0)\n    y = b\n}\n";
+
+/// The centre of the port that a command names `name`, an input or an output, in units at 100 % from the corner.
+fn port_of(drawing: &Drawing, name: &str, input: bool) -> Pos2 {
+    let port = drawing.ports.iter().find(|port| port.name == name && port.input == input).unwrap_or_else(|| panic!("no port {name}"));
+    Pos2::new(port.x as f32, port.y as f32) / 100.0
+}
+
+fn wiring_of(from: &str, to: &str, replace: bool) -> Intent {
+    Intent::Wire { from: from.to_owned(), to: to.to_owned(), replace, accept_mismatch: false }
+}
+
+/// A drag of the primary button from `from` to `to`, with `modifiers` held, over frames from `time`: what it asks for.
+fn drag_holding(
+    ctx: &egui::Context,
+    canvas: &mut Canvas,
+    (from, to): (Pos2, Pos2),
+    time: f64,
+    modifiers: egui::Modifiers,
+    shown: &Shown,
+) -> Vec<Intent> {
+    let button = |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers };
+    let held = egui::Event::ModifiersChanged(modifiers);
+    let mut intents = Vec::new();
+    let steps = [
+        vec![held.clone(), egui::Event::PointerMoved(from), button(from, true)],
+        vec![held.clone(), egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![held.clone(), egui::Event::PointerMoved(to)],
+        vec![held, egui::Event::PointerMoved(to), button(to, false)],
+    ];
+    for (at, events) in steps.into_iter().enumerate() {
+        intents.extend(frame_shown(ctx, canvas, time + at as f64 * 0.1, events, shown).2);
+    }
+    intents.extend(frame_shown(ctx, canvas, time + 0.5, vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)], shown).2);
+    intents
+}
+
+/// A drag of the primary button from `from` to `to`, Alt pressed before the drop, over frames from `time`.
+fn drag_then_alt(ctx: &egui::Context, canvas: &mut Canvas, (from, to): (Pos2, Pos2), time: f64, shown: &Shown) -> Vec<Intent> {
+    let button = |at, pressed, modifiers| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers };
+    let none = egui::Modifiers::NONE;
+    let mut intents = Vec::new();
+    let steps = [
+        vec![egui::Event::PointerMoved(from), button(from, true, none)],
+        vec![egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![egui::Event::ModifiersChanged(egui::Modifiers::ALT), egui::Event::PointerMoved(to)],
+        vec![egui::Event::ModifiersChanged(egui::Modifiers::ALT), egui::Event::PointerMoved(to), button(to, false, egui::Modifiers::ALT)],
+        vec![egui::Event::ModifiersChanged(none)],
+    ];
+    for (at, events) in steps.into_iter().enumerate() {
+        intents.extend(frame_shown(ctx, canvas, time + at as f64 * 0.1, events, shown).2);
+    }
+    intents
+}
+
+/// A drag from an output to an input asks for `wire.connect`, `replace` when the input holds something; from an input,
+/// back to an output; a drop near the input snaps to it (notation 2.5, 2.6).
+#[test]
+fn a_wire_dragged_from_a_terminal_to_one_that_takes_it_asks_to_connect_them() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    // To the constant `2.0` of `b`, which the wire replaces; dropped 5 units off it, it snaps.
+    let (from, to) = (port_of(&drawn, "a", false), port_of(&drawn, "b.b", true));
+    let intents = drag_with(&ctx, &mut canvas, (from, to + Vec2::new(5.0, 3.0)), 0.2, &none);
+    assert_eq!(intents, vec![wiring_of("a", "b.b", true)]);
+    canvas.cancel_wire();
+    // From the input `a.b` back to the input `x` of the function.
+    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "a.b", true), port_of(&drawn, "x", false)), 1.0, &none);
+    assert_eq!(intents, vec![wiring_of("x", "a.b", true)]);
+    canvas.cancel_wire();
+    // To the output `y` of the function, which `b` gives already: it replaces that wire.
+    let intents = drag_with(&ctx, &mut canvas, (from, port_of(&drawn, "output y", true)), 2.0, &none);
+    assert_eq!(intents, vec![wiring_of("a", "output y", true)]);
+}
+
+/// A wire that the input would refuse writes nothing, and says why (notation 2.5): a value of another family, a cycle,
+/// an input that holds something while "replace only with Alt" is on and Alt is up; dropped on the empty canvas, it asks
+/// for quick insertion (notation 2.6), which comes with step 4.
+#[test]
+fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let said = |intents: Vec<Intent>| match intents.as_slice() {
+        [Intent::Say(text)] => text.clone(),
+        other => panic!("a reason expected, got {other:?}"),
+    };
+    // `core.mul` takes numbers (spec A.1): from its input back to `flag`.
+    let text = said(drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 0.2, &none));
+    assert_eq!(text, "`bool` where `a number` is expected");
+    // `b` reads `a`: a wire from `b` back into `a` closes a cycle.
+    let text = said(drag_with(&ctx, &mut canvas, (port_of(&drawn, "b", false), port_of(&drawn, "a.b", true)), 1.0, &none));
+    assert!(text.contains("cycle"), "{text}");
+    // With "replace only with Alt", the constant stays unless Alt is down.
+    let alt = Shown { replace_with_alt: true, ..Shown::default() };
+    let (from, to) = (port_of(&drawn, "a", false), port_of(&drawn, "b.b", true));
+    let text = said(drag_with(&ctx, &mut canvas, (from, to), 2.0, &alt));
+    assert_eq!(text, "`b` already holds `2.0`: hold Alt to replace it");
+    // Alt read at the drop: held when the drag starts, it would move the terminal (notation 2.4).
+    let intents = drag_then_alt(&ctx, &mut canvas, (from, to), 3.0, &alt);
+    assert_eq!(intents, vec![wiring_of("a", "b.b", true)]);
+    canvas.cancel_wire();
+    // With "accept it", a wire of the wrong type is written.
+    let accept = Shown { accept_mismatch: true, ..Shown::default() };
+    let intents = drag_with(&ctx, &mut canvas, (to, port_of(&drawn, "flag", false)), 4.0, &accept);
+    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true }]);
+    canvas.cancel_wire();
+    // On the empty canvas, far from every terminal.
+    let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(0.0, 160.0)), 5.0, &none);
+    assert!(matches!(intents.as_slice(), [Intent::QuickInsert { from, .. }] if from == "a"), "{intents:?}");
+}
+
+/// Ctrl and a drag on a wired input takes the end of its wire to another input: the old wire goes, the new one comes, in
+/// one batch (notation 2.6).
+#[test]
+fn ctrl_and_a_drag_on_a_wired_input_takes_its_wire_to_another_input() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let ends = (port_of(&drawn, "b.a", true), port_of(&drawn, "b.b", true));
+    let intents = drag_holding(&ctx, &mut canvas, ends, 0.2, egui::Modifiers::COMMAND, &none);
+    assert_eq!(
+        intents,
+        vec![Intent::Rewire { disconnect: vec!["a -> b.a".to_owned()], connect: vec![("a".to_owned(), "b.b".to_owned(), true, false)] }]
+    );
+}
+
+/// Enter on a node goes to its terminals, the inputs first; W starts a wire from the one in focus, Tab goes through the
+/// terminals that would take it, in the order of the text, and Enter wires it (notation 2.6).
+#[test]
+fn the_keyboard_draws_a_wire_from_a_terminal() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    // The focus comes with a click on `b`.
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    click_with(&ctx, &mut canvas, centre_of(&drawn, "b"), 0.05, egui::Modifiers::NONE, &b);
+    frame_shown(&ctx, &mut canvas, 0.2, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &b);
+    assert_eq!(canvas.port_focus(), Some(("b.a".to_owned(), true)));
+    frame_shown(&ctx, &mut canvas, 0.3, vec![key(egui::Key::ArrowDown, egui::Modifiers::NONE)], &b);
+    assert_eq!(canvas.port_focus(), Some(("b.b".to_owned(), true)));
+    // W: the wire starts at the first output that takes it, `a`; Tab goes to the input `x` of the function, past `flag`,
+    // a bool, and `b`, which would close a cycle.
+    assert!(canvas.start_wire(&b));
+    frame_shown(&ctx, &mut canvas, 0.4, vec![key(egui::Key::Tab, egui::Modifiers::NONE)], &b);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.5, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &b);
+    assert_eq!(intents, vec![wiring_of("x", "b.b", true)]);
+}
+
+/// The terminal in focus belongs to the node selected: another selection takes the focus away, and Space on a terminal
+/// asks for quick insertion (notation 2.6). A drag on a terminal of the frame of the function moves it, from step 6, and
+/// draws no wire; "accept it" from a wired input replaces what it holds.
+#[test]
+fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_no_wire() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    click_with(&ctx, &mut canvas, centre_of(&drawn, "b"), 0.05, egui::Modifiers::NONE, &b);
+    frame_shown(&ctx, &mut canvas, 0.2, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &b);
+    assert_eq!(canvas.port_focus(), Some(("b.a".to_owned(), true)));
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.3, vec![key(egui::Key::Space, egui::Modifiers::NONE)], &b);
+    assert!(matches!(intents.as_slice(), [Intent::QuickInsert { from, .. }] if from == "b.a"), "{intents:?}");
+    let a = showing(&selecting(&["a"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.4, Vec::new(), &a);
+    assert_eq!(canvas.port_focus(), None);
+    // From `x`, a terminal of the frame: no wire, and why.
+    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "x", false), port_of(&drawn, "b.b", true)), 1.0, &a);
+    assert_eq!(intents, vec![Intent::Say("Moving a terminal of the frame comes with M1 step 6".to_owned())]);
+    // From the input `b.b`, which holds `2.0`, back to `flag`, a bool, with "accept it": written, replacing the constant.
+    let accept = Shown { accept_mismatch: true, ..Shown::default() };
+    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 2.0, &accept);
+    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true }]);
+}
+
+/// A drawing that comes while a wire is drawn keeps it, from its terminal found again (as a drag of nodes); Enter on a
+/// wired output selects its wire, its whole value (notation 2.6).
+#[test]
+fn a_drawing_that_comes_while_a_wire_is_drawn_keeps_it() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let (from, to) = (port_of(&drawn, "a", false), port_of(&drawn, "b.b", true));
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let mut intents = Vec::new();
+    intents.extend(frame_shown(&ctx, &mut canvas, 0.1, vec![egui::Event::PointerMoved(from), button(from, true)], &none).2);
+    intents.extend(frame_shown(&ctx, &mut canvas, 0.2, vec![egui::Event::PointerMoved(from + (to - from) / 2.0)], &none).2);
+    canvas.set_drawing(drawing(WIRED, &ViewState::default()), true);
+    intents.extend(frame_shown(&ctx, &mut canvas, 0.3, vec![egui::Event::PointerMoved(to)], &none).2);
+    intents.extend(frame_shown(&ctx, &mut canvas, 0.4, vec![egui::Event::PointerMoved(to), button(to, false)], &none).2);
+    assert_eq!(intents, vec![wiring_of("a", "b.b", true)]);
+    canvas.cancel_wire();
+    // The output of `a` in focus: Enter selects its wire.
+    let a = showing(&selecting(&["a"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 1.0, Vec::new(), &a);
+    click_with(&ctx, &mut canvas, centre_of(&drawn, "a"), 1.05, egui::Modifiers::NONE, &a);
+    frame_shown(&ctx, &mut canvas, 1.2, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &a);
+    frame_shown(&ctx, &mut canvas, 1.3, vec![key(egui::Key::ArrowRight, egui::Modifiers::NONE)], &a);
+    assert_eq!(canvas.port_focus(), Some(("a".to_owned(), false)));
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.4, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &a);
+    assert!(matches!(intents.as_slice(), [Intent::Select(selection)] if selection.wires.contains(&"a -> b.a".to_owned())), "{intents:?}");
+}

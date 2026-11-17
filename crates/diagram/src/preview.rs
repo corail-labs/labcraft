@@ -86,8 +86,9 @@ pub fn preview(drawing: &Drawing, moved: &[usize], by: (i64, i64)) -> Preview {
     preview
 }
 
-/// A square route from `from`, which leaves to the right, to `to`, which it enters from the left.
-fn square(from: (i64, i64), to: (i64, i64)) -> Vec<(i64, i64)> {
+/// A square route from `from`, which leaves to the right, to `to`, which it enters from the left: that of a wire whose
+/// route the drop gives (notation 2.5), through the middle, or round when it goes back.
+pub fn square(from: (i64, i64), to: (i64, i64)) -> Vec<(i64, i64)> {
     if from.1 == to.1 && to.0 >= from.0 {
         return vec![from, to];
     }

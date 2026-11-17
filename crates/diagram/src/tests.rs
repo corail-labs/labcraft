@@ -115,6 +115,7 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         default: None,
         traced: None,
         place: None,
+        expects: crate::graph::Expects::Type,
     }
 }
 
@@ -1868,4 +1869,35 @@ fn corners_round_by_the_radius_or_half_the_shorter_side() {
     assert_eq!(corners(&back)[1], Corner::Round { from: (3000, 600), corner: (3000, 0), to: (2400, 0) });
     assert!(corners(&[]).is_empty());
     assert_eq!(corners(&[(7, 9)]), [Corner::Point((7, 9))]);
+}
+
+/// The verdict of the drawing on a wire from the port named `from` to the input named `to` (notation 2.5).
+fn verdict_of(drawing: &crate::Drawing, from: &str, to: &str) -> crate::Verdict {
+    let start = drawing.ports.iter().position(|port| !port.input && port.name == from).unwrap_or_else(|| panic!("no output {from}"));
+    let end = drawing.ports.iter().position(|port| port.input && port.name == to).unwrap_or_else(|| panic!("no input {to}"));
+    crate::wiring(drawing, start).into_iter().nth(end).flatten().unwrap_or_else(|| panic!("{from} -> {to} is no wire"))
+}
+
+fn code_of(verdict: &crate::Verdict) -> &'static str {
+    match verdict {
+        crate::Verdict::Takes { .. } => "takes",
+        crate::Verdict::Refused { refusal, .. } => refusal.code,
+    }
+}
+
+/// The ports name their ends as `wire.connect` does (commands.md 9.2), and the drawing judges a wire as the command
+/// would, from the documents: a carry hides the outer value of its name inside its loop (spec R-3); `array.len` takes an
+/// array, whatever its elements (spec A.2); a value from inside a loop does not reach outside it.
+#[test]
+fn the_drawing_judges_a_wire_by_scope_and_by_family() {
+    let main = "labcraft 1\n\nuse array\nuse core\nuse time\n\nfn main(xs: [f64], k: i32, e: error = none) -> (n: i32, out: error) {\n    n = array.len(xs)\n    out = loop carry e = e {\n        d = core.add(1.0, 2.0)\n        f = time.wait(1 s, err: e)\n        next e = f\n        until true\n    }\n}\n";
+    let drawing = drawing_of(main);
+    // `array.len(array: [T])`, spec A.2.
+    let len = "n.array";
+    assert_eq!(code_of(&verdict_of(&drawing, "xs", len)), "takes");
+    assert_eq!(code_of(&verdict_of(&drawing, "k", len)), "wire.type_mismatch");
+    // Inside the loop, `e` is the carry: the input `e` of the function is hidden there.
+    let hidden = verdict_of(&drawing, "e", "f.err");
+    assert!(matches!(&hidden, crate::Verdict::Refused { refusal, .. } if refusal.code == "wire.out_of_scope"), "{hidden:?}");
+    assert_eq!(code_of(&verdict_of(&drawing, "d", len)), "wire.out_of_scope");
 }

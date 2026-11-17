@@ -383,3 +383,139 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
             .unwrap();
     });
 }
+
+/// What the canvas says of a wire while it is drawn is what `wire.connect` does at the drop (notation 2.5, 2.6: the
+/// filter is the predicate of the command): on each function of `examples/`, a wire between two ports, judged on the
+/// drawing by `labcraft_diagram::wiring` from its start, an output, and from its end, an input, which must agree, then
+/// given to the command with `replace`, which a drop on a wired input passes, and without it when the canvas says the
+/// wire replaces something, which the command then refuses (`wire.occupied`). Every pair of a small function, and of a
+/// large one a pair in so many, the same each run. A wire that the canvas takes the command writes, and one that it
+/// refuses the command refuses with the same code; each wire written is undone before the next. Three cases are left to
+/// the command, which judges again at the drop (architecture 12.4), and counted: an input that takes a family whatever
+/// its unit or a type that the call settles, the canvas taking it, where `check` alone knows what the new wire changes
+/// downstream; a value whose name the reader sees in another body, which the canvas refuses for the port drawn and the
+/// command takes for the value that the name gives; and an input that no wire reaches yet (the template of
+/// `string.format`), which the canvas refuses.
+#[test]
+fn the_canvas_judges_a_wire_as_wire_connect_does() {
+    let memory = examples_in_memory();
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(labcraft_format::STACK_SIZE)
+            .spawn_scoped(scope, || {
+                let config = Config {
+                    root: PathBuf::from("/p"),
+                    lib_paths: Vec::new(),
+                    limits: Limits::default(),
+                    shipped: labcraft_cli::shipped(),
+                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    clock: Arc::new(labcraft_engine::Still),
+                    process: 0,
+                };
+                let workspace: Arc<dyn labcraft_engine::Workspace> = memory.clone();
+                let mut session = Session::new(workspace, config, true).unwrap();
+                session.with_window();
+                ok(&mut session, "view.open", json!({ "folder": "." }));
+                let listed: Vec<(String, String)> = session
+                    .view()
+                    .functions
+                    .iter()
+                    .filter(|listed| listed.drawable)
+                    .map(|listed| (listed.function.clone(), listed.file.clone()))
+                    .collect();
+                let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+                let mut wrong = Vec::new();
+                for (function, file) in listed {
+                    ok(&mut session, "view.show_function", json!({ "function": function }));
+                    let Some(drawing) = session.view().main.drawing.clone() else { continue };
+                    let path = format!("/p/{file}");
+                    let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
+                    let mut pairs = Vec::new();
+                    let backward: Vec<Vec<Option<labcraft_diagram::Verdict>>> = (0..drawing.ports.len())
+                        .map(|at| if drawing.ports[at].input { labcraft_diagram::wiring(&drawing, at) } else { Vec::new() })
+                        .collect();
+                    for from in (0..drawing.ports.len()).filter(|&at| !drawing.ports[at].input && !drawing.ports[at].name.is_empty()) {
+                        for (to, verdict) in labcraft_diagram::wiring(&drawing, from).into_iter().enumerate() {
+                            if let Some(verdict) = verdict {
+                                // From the input, the same wire is judged the same.
+                                let back = backward[to].get(from).cloned().flatten();
+                                assert_eq!(
+                                    back.as_ref(),
+                                    Some(&verdict),
+                                    "{function}: from {} back to {}",
+                                    drawing.ports[to].name,
+                                    drawing.ports[from].name
+                                );
+                                pairs.push((from, to, verdict));
+                            }
+                        }
+                    }
+                    let named_twice = |name: &str| drawing.ports.iter().filter(|port| !port.input && port.name == name).count() > 1;
+                    // Every pair of a small function; of a large one, a pair in so many, the same each run.
+                    let step = pairs.len().div_ceil(400).max(1);
+                    for (from_port, to_port, verdict) in pairs.into_iter().step_by(step) {
+                        let (source, target) = (&drawing.ports[from_port], &drawing.ports[to_port]);
+                        let (from, to) = (source.name.clone(), target.name.clone());
+                        let given = session.execute("wire.connect", &json!({ "file": file, "from": from, "to": to, "replace": true }));
+                        let said = match &verdict {
+                            labcraft_diagram::Verdict::Takes { .. } => "takes".to_owned(),
+                            labcraft_diagram::Verdict::Refused { refusal, .. } => refusal.code.to_owned(),
+                        };
+                        let did = match &given {
+                            Ok(_) => "takes".to_owned(),
+                            Err(error) => error.code.to_owned(),
+                        };
+                        *counts.entry(format!("{said} / {did}")).or_insert(0) += 1;
+                        // An input of the function to the output of its name (R-2) is left to the command, which
+                        // changes nothing.
+                        if to == format!("output {from}") {
+                            *counts.entry("left to the command".to_owned()).or_insert(0) += 1;
+                            if given.as_ref().is_ok_and(|result| !result["step"].is_null()) {
+                                ok(&mut session, "history.undo", json!({}));
+                            }
+                            continue;
+                        }
+                        // Without `replace`, a wire that replaces something is refused, and one that does not is written.
+                        if let (labcraft_diagram::Verdict::Takes { replaces: true }, Ok(_)) = (&verdict, &given) {
+                            if !given.as_ref().is_ok_and(|result| result["step"].is_null()) {
+                                ok(&mut session, "history.undo", json!({}));
+                            }
+                            let plain = session.execute("wire.connect", &json!({ "file": file, "from": from, "to": to }));
+                            assert_eq!(
+                                plain.as_ref().err().map(|error| error.code),
+                                Some("wire.occupied"),
+                                "{function}: {from} -> {to} without replace"
+                            );
+                            *counts.entry("replaces".to_owned()).or_insert(0) += 1;
+                            assert_eq!(String::from_utf8(memory.get(&path).unwrap()).unwrap(), text, "nothing written");
+                            continue;
+                        }
+                        let left = (said == "takes" && did == "wire.type_mismatch" && target.ty.is_none())
+                            || (said == "wire.out_of_scope" && named_twice(&from))
+                            || !target.never.is_empty();
+                        if left {
+                            *counts.entry("left to the command".to_owned()).or_insert(0) += 1;
+                        } else if said != did {
+                            let message = given.as_ref().err().map(|error| error.message.clone()).unwrap_or_default();
+                            wrong.push(format!("{function}: {from} -> {to}: the canvas says {said}, the command {did} ({message})"));
+                        }
+                        // A wire that is there already changes nothing, and makes no step.
+                        if given.as_ref().is_ok_and(|result| !result["step"].is_null()) {
+                            ok(&mut session, "history.undo", json!({}));
+                            assert_eq!(String::from_utf8(memory.get(&path).unwrap()).unwrap(), text, "undo gives the bytes back");
+                        }
+                    }
+                }
+                eprintln!("{counts:?}");
+                assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), counts.values().sum::<usize>(), wrong.join("\n"));
+                // Each verdict is met, agreed on.
+                for code in ["takes", "wire.cycle", "wire.out_of_scope", "wire.type_mismatch"] {
+                    assert!(counts.get(&format!("{code} / {code}")).is_some_and(|&count| count > 10), "{code}: {counts:?}");
+                }
+                assert!(counts.get("replaces").is_some_and(|&count| count > 10), "{counts:?}");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    });
+}
