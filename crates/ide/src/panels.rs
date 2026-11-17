@@ -1,6 +1,6 @@
 //! The panels of the window (ide.md 4), as 1a has them: `Project`, the tree of the folder; `Palette`, the functions
-//! the project can call, searched; `Inspector`, the function itself (node, wire and terminal come with the selection,
-//! step 2); `Problems`, the diagnostics by file, error first; `Run`, the trace of the function shown. Each shows the
+//! the project can call, searched; `Inspector`, what the selection is, or the function itself;
+//! `Problems`, the diagnostics by file, error first; `Run`, the trace of the function shown. Each shows the
 //! window it is given: the one that has focus, or for the inspector of a detached window, that window (ide.md 9).
 
 use std::collections::BTreeMap;
@@ -9,6 +9,7 @@ use egui::RichText;
 use kit_shell::fuzzy;
 use kit_shell::icon::{self, Icon};
 use kit_shell::inspector::{self, Field, Section};
+use labcraft_diagram::{Drawing, Overlay};
 use labcraft_engine::drawings::TracePart;
 use labcraft_engine::view::{Listed, Published, Shown};
 use labcraft_types::Severity;
@@ -215,16 +216,51 @@ fn row(ui: &mut egui::Ui, callable: &Callable) {
     response.on_hover_text(hover);
 }
 
-/// `Inspector`, with nothing selected: the function itself, its signature, its documentation and its frame (ide.md 4;
-/// decisions of the owner, 2026-11-16).
+/// `Inspector`: what the selection is (ide.md 4; decision of the owner, 2026-11-14), read only in step 2a: one node, one
+/// wire (its whole value), one terminal of the frame, several; nothing selected, the function itself, its signature, its
+/// documentation and its frame (decisions of the owner, 2026-11-16). The fields that change it come with their commands.
 pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callables: &Callables) {
     let Some(function) = &shown.function else {
         inspector::show(ui, "Nothing shown", &[]);
         return;
     };
+    let selection = &shown.selection;
+    let drawing = shown.drawing.as_deref();
+    let (Some(drawing), true) = (drawing, selection.function == *function && !selection.is_empty()) else {
+        return of_function(ui, published, shown, function, callables);
+    };
+    // The values that the selection names: a wire is selected with every wire of its value.
+    let values: std::collections::BTreeSet<usize> = selection
+        .wires
+        .iter()
+        .filter_map(|name| drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.named.contains(name))))
+        .collect();
+    let overlay = shown.overlay.as_deref();
+    match (selection.nodes.as_slice(), values.len(), selection.terminals.as_slice()) {
+        ([node], 0, []) => of_node(ui, drawing, overlay, node, callables),
+        ([], 1, []) => {
+            if let Some(&group) = values.first() {
+                of_wire(ui, drawing, overlay, group);
+            }
+        }
+        ([], 0, [terminal]) => of_terminal(ui, drawing, terminal),
+        (nodes, values, terminals) => {
+            let mut fields = Vec::new();
+            for (count, label, what) in [(nodes.len(), "Nodes", "node"), (values, "Wires", "wire"), (terminals.len(), "Terminals", "terminal")] {
+                if count > 0 {
+                    fields.push(Field::new(label, counted(count as u64, what)));
+                }
+            }
+            inspector::show(ui, "Selection", &[Section { title: None, fields, text: None }]);
+        }
+    }
+}
+
+/// The inspector of the function itself.
+fn of_function(ui: &mut egui::Ui, published: &Published, shown: &Shown, function: &str, callables: &Callables) {
     let mut sections = Vec::new();
     let listed = published.functions.iter().find(|listed| listed.function == *function);
-    let mut fields = vec![Field::code("Function", function.as_str())];
+    let mut fields = vec![Field::code("Function", function)];
     if let Some(listed) = listed {
         fields.push(Field::code("File", listed.file.as_str()));
         if listed.errors + listed.warnings > 0 {
@@ -245,6 +281,97 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
         sections.push(Section { title: Some("Documentation".to_owned()), fields: Vec::new(), text: Some(doc.clone()) });
     }
     inspector::show(ui, "Function", &sections);
+}
+
+/// The inspector of one node: what it calls, its signature and documentation, where it is, the values of the last run
+/// on the wires it gives (ide.md 4).
+fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name: &str, callables: &Callables) {
+    let Some((placed_at, placed)) = drawing.placed.iter().enumerate().find(|(_, placed)| placed.name == name) else {
+        inspector::show(ui, "Node", &[Section { title: None, fields: vec![Field::code("Node", name)], text: None }]);
+        return;
+    };
+    let calls =
+        drawing.groups.iter().find(|group| group.placed == Some(placed_at) && group.is_node()).map(|group| group.title.as_str()).unwrap_or_default();
+    let callable = callables.list.iter().find(|callable| {
+        let full = if callable.library.is_empty() { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) };
+        !calls.is_empty() && full == calls
+    });
+    let mut fields = vec![Field::code("Node", name)];
+    if !calls.is_empty() {
+        fields.push(Field::code("Calls", calls));
+    }
+    if let Some(callable) = callable {
+        fields.push(Field::code("Signature", callable.signature.as_str()));
+    }
+    // In units of the notation, from the corner of its frame, as `layout` writes it (spec 11).
+    let position = match placed.at {
+        Some((x, y)) => format!("Fixed at ({}, {})", x / 100, y / 100),
+        None => "Placed automatically".to_owned(),
+    };
+    fields.push(Field::new("Position", position));
+    if placed.line > 0 {
+        fields.push(Field::new("Line", placed.line.to_string()));
+    }
+    let mut sections = vec![Section { title: None, fields, text: None }];
+    // The values of the last run on the wires that the node gives.
+    if let Some(overlay) = overlay {
+        let given: Vec<Field> = drawing
+            .groups
+            .iter()
+            .enumerate()
+            .filter_map(|(group, found)| Some((group, found.wire.as_ref()?)))
+            .filter(|(_, wire)| wire.from_node.as_deref() == Some(placed.key.as_str()))
+            .filter_map(|(group, wire)| Some(Field::code(wire.value.clone(), overlay.wires.get(&group)?.title.clone())))
+            .collect();
+        if !given.is_empty() {
+            sections.push(Section { title: Some("Last run".to_owned()), fields: given, text: None });
+        }
+    }
+    if let Some(doc) = callable.and_then(|callable| callable.doc.as_ref()) {
+        sections.push(Section { title: Some("Documentation".to_owned()), fields: Vec::new(), text: Some(doc.clone()) });
+    }
+    inspector::show(ui, "Node", &sections);
+}
+
+/// The inspector of one wire, its whole value: its type, where it comes from and goes, its route, its value of the last
+/// run (ide.md 4).
+fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, group: usize) {
+    let Some(wire) = drawing.groups.get(group).and_then(|group| group.wire.as_ref()) else { return };
+    let mut fields = vec![Field::code("Value", wire.value.as_str())];
+    if !wire.ty.is_empty() {
+        fields.push(Field::code("Type", wire.ty.as_str()));
+    }
+    if let Some(from) = &wire.from {
+        fields.push(Field::code("From", from.as_str()));
+    }
+    if !wire.to.is_empty() {
+        fields.push(Field::code("To", wire.to.join(", ")));
+    }
+    fields.push(Field::new("Route", if wire.via { "By hand (`via` in `layout`)" } else { "Automatic" }));
+    if let Some(valued) = overlay.and_then(|overlay| overlay.wires.get(&group)) {
+        fields.push(Field::code("Last run", valued.title.as_str()));
+    }
+    inspector::show(ui, "Wire", &[Section { title: None, fields, text: None }]);
+}
+
+/// The inspector of one terminal of the frame: its name, its type and its default, as its tooltip gives them. Whether it
+/// is fixed comes with `input x at y` and `terminal.move` (step 6).
+fn of_terminal(ui: &mut egui::Ui, drawing: &Drawing, name: &str) {
+    let mut fields = vec![Field::code("Terminal", name)];
+    if let Some(hint) = drawing.hints.iter().find(|hint| hint.selects.as_deref() == Some(name)) {
+        let mut lines = hint.text.lines();
+        if let Some((_, ty)) = lines.next().and_then(|line| line.split_once(": ")) {
+            fields.push(Field::code("Type", ty));
+        }
+        for line in lines {
+            if let Some((label, value)) = line.split_once(": ") {
+                let mut chars = label.chars();
+                let label: String = chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default();
+                fields.push(Field::code(label, value));
+            }
+        }
+    }
+    inspector::show(ui, "Terminal", &[Section { title: None, fields, text: None }]);
 }
 
 /// What `Problems` filters.

@@ -80,6 +80,8 @@ pub struct Terminal {
     /// (spec 3.3): the node gives the value before the conversion, as `ir` lowers it, and so does the trace
     /// (`docs/commands.md`, 8).
     pub traced: Option<String>,
+    /// A value of a variadic parameter: its place in it, from 0, by which a command names it (`e3.errs.1`, spec 11).
+    pub place: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -236,6 +238,8 @@ pub struct Node<'a> {
     pub body: usize,
     /// Its line.
     pub statement: Id,
+    /// The line of the file where it starts, from 1; 0 when the file does not say.
+    pub line: u32,
     /// The bodies of a structure, in `Graph::bodies`: one, or one per arm.
     pub bodies: Vec<usize>,
     /// Where the `layout` section puts it, in hundredths, from the top-left corner of the frame that holds it.
@@ -757,6 +761,7 @@ impl<'a> Builder<'a> {
             stable: String::new(),
             body: 0,
             statement: statement.id,
+            line: self.file.source_map.span(statement.id).map_or(0, |span| span.start.line),
             bodies: Vec::new(),
             at: None,
             placed_by: None,
@@ -817,6 +822,7 @@ impl<'a> Builder<'a> {
             ty_text: self.own_id.map_or_else(String::new, |own| self.types().display(ty, own, self.names)),
             default: None,
             traced: None,
+            place: None,
         }
     }
 
@@ -1006,6 +1012,8 @@ impl<'a> Builder<'a> {
         wired.sort_by_key(|&(position, index, _)| (position, index));
         let mut inputs = Vec::new();
         let mut unwired = callee.wires.iter().copied().peekable();
+        // The place of each value in its variadic parameter.
+        let mut places: HashMap<usize, usize> = HashMap::new();
         for &(position, _, operand) in &wired {
             // The parameters that come before, and that no argument wires: a terminal each, so that the drawing shows
             // where (a missing one, which `check` says, or one with a default).
@@ -1023,6 +1031,11 @@ impl<'a> Builder<'a> {
                 let mut input = self.input(param.name.clone(), operand, param.ty);
                 if let (true, Some(text)) = (param.fixed, &param.ty_text) {
                     input.ty_text.clone_from(text);
+                }
+                if param.variadic {
+                    let place = places.entry(position).or_insert(0);
+                    input.place = Some(*place);
+                    *place += 1;
                 }
                 inputs.push(input);
             }

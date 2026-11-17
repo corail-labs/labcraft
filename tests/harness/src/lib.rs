@@ -612,7 +612,7 @@ mod tests {
                         let drawing = std::sync::Arc::new(drawing);
                         let mut choices = vec![Shown::default()];
                         for arm in &drawing.arms {
-                            choices.push(Shown { arms: [(arm.structure.clone(), arm.arm)].into() });
+                            choices.push(Shown { arms: [(arm.structure.clone(), arm.arm)].into(), ..Shown::default() });
                         }
                         for theme in [Theme::Light, Theme::Dark] {
                             for shown in &choices {

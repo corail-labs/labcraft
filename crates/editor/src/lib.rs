@@ -1,8 +1,10 @@
-//! L7: the canvas that a Craft app embeds to show the drawings of `diagram` (`docs/architecture.md`, 11.4; D-27),
-//! read-only in M0v. It depends on `diagram` and egui only: no engine, no file, no window.
+//! L7: the canvas that a Craft app embeds to show the drawings of `diagram` (`docs/architecture.md`, 11.4 and 12.6;
+//! D-27). It depends on `diagram` and egui only: no engine, no file, no window.
 //!
 //! It paints, and decides nothing of the notation: every position, text and colour comes from the [`Drawing`]. What a
-//! click asks for comes back in [`CanvasResponse`], and the host makes it a command (`view.set_state`).
+//! gesture asks for comes back in [`CanvasResponse`], as an [`Intent`] or a choice of the view, and the host makes it a
+//! command (`view.select`, `view.set_state`). The selection is the host's ([`Shown::selection`]): the canvas finds it
+//! on the drawing and paints it.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -18,19 +20,22 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use egui::{Color32, Pos2, Rect, Sense, Ui, Vec2};
+use egui::{Color32, PointerButton, Pos2, Rect, Response, Sense, Ui, Vec2};
 use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
 mod fonts;
 pub(crate) mod paint;
+pub(crate) mod select;
 pub(crate) mod series;
 pub(crate) mod view;
 
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
+pub use select::{Selection, Step};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use paint::{Over, Painted, Painter};
+use select::{Found, Hit, Index};
 use view::{Glide, Grid, Viewport};
 
 /// The colours of the theme tokens (notation 8): those of the style in force in `diagram`, light or dark.
@@ -50,17 +55,37 @@ impl Theme {
     }
 }
 
-/// What the host shows of a drawing without drawing it again (architecture 11.4): the arm shown of each structure in
-/// tabs, by the key of the structure; the first when it is not said, or when the structure has fewer arms now.
+/// What the host shows of a drawing without drawing it again (architecture 11.4, 12.6): the arm shown of each structure
+/// in tabs, by the key of the structure, the first when it is not said or when the structure has fewer arms now; the
+/// selection of the window; and how a drag on the empty canvas acts.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Shown {
     pub arms: HashMap<String, usize>,
+    /// The selection of the window (`view.select`), as the host holds it.
+    pub selection: Selection,
+    /// The setting "drag on the empty canvas pans" (notation 2.6): a drag on the empty canvas pans, and Shift with it
+    /// selects. Off by default: a drag selects with a rectangle.
+    pub drag_pans: bool,
 }
 
 impl Shown {
     pub fn arm_of(&self, structure: &str) -> usize {
         self.arms.get(structure).copied().unwrap_or(0)
     }
+}
+
+/// What a gesture asks for (architecture 12.6): the host makes it a command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Intent {
+    /// `view.select`: this selection, the whole of it.
+    Select(Selection),
+}
+
+/// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gesture {
+    /// A rectangle of selection is being drawn.
+    Rectangle,
 }
 
 /// What a frame of the canvas gives back to the host.
@@ -73,6 +98,21 @@ pub struct CanvasResponse {
     pub iteration: Option<(String, u64)>,
     /// The node under the pointer, by its index in [`Drawing::placed`].
     pub hovered: Option<usize>,
+    /// What the gestures of this frame ask for, in their order.
+    pub intents: Vec<Intent>,
+    /// The gesture under way, if any.
+    pub gesture: Option<Gesture>,
+}
+
+/// A drag of the primary button, from where it started.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Drag {
+    /// A rectangle of selection, in units, adding to the selection or not.
+    Rectangle { from: Pos2, to: Pos2, adding: bool },
+    /// The setting "drag on the empty canvas pans" is on.
+    Pan,
+    /// From a node, a wire or a terminal: moving and wiring come with steps 2b and 3.
+    Held,
 }
 
 /// The canvas: the drawing shown, its viewport, its caches, the glide.
@@ -82,6 +122,8 @@ pub struct Canvas {
     generation: u64,
     viewport: Viewport,
     grid: Grid,
+    /// What the drawing names, for the selection.
+    index: Index,
     glide: Option<Glide>,
     reduced_motion: bool,
     painter: Painter,
@@ -96,8 +138,17 @@ pub struct Canvas {
     run: Option<(Arc<Trace>, Choice)>,
     /// The series of each wire hovered or selected, by its group: none for a wire outside every loop.
     series: HashMap<usize, Option<Arc<Series>>>,
-    /// What a click selected (notation 6.1; decisions of the owner, 2026-11-13).
-    selected: Option<Selected>,
+    /// The selection of the host found on the drawing, and the selection it was found for.
+    found: Found,
+    found_for: Option<Selection>,
+    /// The selection asked for last, until the host's changes: what Shift, Ctrl or a rectangle adds to, so that a second
+    /// click before the host answers keeps the first.
+    asked_found: Option<Found>,
+    /// The wire clicked last, by its group, and where, in units: its values stay pinned there while it is selected
+    /// (notation 6.1; decisions of the owner, 2026-11-13).
+    pinned: Option<(usize, Pos2)>,
+    /// The drag under way.
+    drag: Option<Drag>,
     /// A number being typed into the selector of a loop.
     typing: Option<Typing>,
     /// What the wheel turned over a selector and did not make a step yet, in points.
@@ -105,14 +156,6 @@ pub struct Canvas {
     /// The iteration asked for last, until the values for it come: the next step goes from it, and the same is not asked
     /// twice.
     asked: Option<(String, u64)>,
-}
-
-/// What a click selected: a node, by its key, which follows it to a new drawing; or a wire, by its group, with the point
-/// where it was clicked, in units, by which its values stay pinned.
-#[derive(Clone, Debug, PartialEq)]
-enum Selected {
-    Node(String),
-    Wire { group: usize, at: Pos2 },
 }
 
 /// The number typed into the selector of a loop: the loop, its iterations, the text, the corner of the field in units.
@@ -128,6 +171,9 @@ struct Typing {
 
 /// The wheel turned this far over a selector makes one step *(proposed)*: a notch of a mouse.
 const WHEEL_STEP: f32 = 40.0;
+/// A wire is hit within this many units of its route *(proposed)*, or 5 points on the screen when that is more
+/// (architecture 12.4).
+const WIRE_REACH: f32 = 4.0;
 
 /// The values of a run over a drawing, with the box of each of their parts, in units, to find what the viewport shows and
 /// what the pointer is over.
@@ -160,6 +206,12 @@ impl Values {
     }
 }
 
+/// The box of a shape, in units: that of `diagram`, the one box of a shape (architecture 12.4).
+pub(crate) fn extent(shape: &Shape) -> Rect {
+    let (left, top, right, bottom) = labcraft_diagram::extent(shape);
+    Rect::from_min_max(Pos2::new(left as f32, top as f32) / 100.0, Pos2::new(right as f32, bottom as f32) / 100.0)
+}
+
 /// The box of shapes, in units; none for no shape.
 fn boxed(shapes: &[Shape]) -> Option<Rect> {
     shapes.iter().map(extent).reduce(|a, b| a.union(b))
@@ -168,6 +220,50 @@ fn boxed(shapes: &[Shape]) -> Option<Rect> {
 /// Whether two boxes share some area: boxes that only touch do not.
 fn overlaps(a: &Rect, b: &Rect) -> bool {
     a.min.x < b.max.x && b.min.x < a.max.x && a.min.y < b.max.y && b.min.y < a.max.y
+}
+
+/// What a frame works with, read before the input and the painting.
+struct Frame {
+    rect: Rect,
+    drawing: Arc<Drawing>,
+    theme: Theme,
+    ctx: egui::Context,
+    now: f64,
+    /// Whether each arm in tabs is shown, by its index in [`Drawing::arms`].
+    arms: Vec<bool>,
+    /// The values shown, while they show.
+    values: Option<Arc<Overlay>>,
+    /// Where each node stands from its place while nodes glide, by its index in [`Drawing::placed`].
+    offsets: Option<Vec<Vec2>>,
+    /// The groups that the viewport shows, in the order of drawing.
+    groups: Vec<usize>,
+    /// The point under the pointer, in units.
+    at: Option<Pos2>,
+    hovered: Option<usize>,
+    wire_under: Option<usize>,
+}
+
+impl Frame {
+    fn visible(&self, within: Option<usize>) -> bool {
+        within.is_none_or(|arm| self.arms.get(arm).copied().unwrap_or(false))
+    }
+
+    fn offset_of(&self, placed: Option<usize>) -> Vec2 {
+        match (&self.offsets, placed) {
+            (Some(offsets), Some(placed)) => offsets.get(placed).copied().unwrap_or(Vec2::ZERO),
+            _ => Vec2::ZERO,
+        }
+    }
+}
+
+/// What the input of a frame asks for and decides, which the painting reads.
+#[derive(Default)]
+struct Input {
+    tab: Option<(String, usize)>,
+    iteration: Option<(String, u64)>,
+    intents: Vec<Intent>,
+    /// The hint under the pointer, its text, while nothing else says more.
+    hint: Option<String>,
 }
 
 impl Default for Canvas {
@@ -183,6 +279,7 @@ impl Canvas {
             generation: 0,
             viewport: Viewport::default(),
             grid: Grid::default(),
+            index: Index::default(),
             glide: None,
             reduced_motion: false,
             list: None,
@@ -191,7 +288,11 @@ impl Canvas {
             values_shown: true,
             run: None,
             series: HashMap::new(),
-            selected: None,
+            found: Found::default(),
+            found_for: None,
+            asked_found: None,
+            pinned: None,
+            drag: None,
             typing: None,
             wheel: 0.0,
             asked: None,
@@ -209,32 +310,6 @@ impl Canvas {
         self.painter.clear_values();
     }
 
-    /// The node selected, by its key; none when nothing is, or a wire.
-    pub fn selected_node(&self) -> Option<&str> {
-        match &self.selected {
-            Some(Selected::Node(key)) => Some(key),
-            _ => None,
-        }
-    }
-
-    /// Selects the node of this key, as a click on it does; none to select nothing.
-    pub fn select_node(&mut self, key: Option<&str>) {
-        self.selected = key.map(|key| Selected::Node(key.to_owned()));
-    }
-
-    /// The group of the wire selected, whose values stay pinned.
-    pub fn selected_wire(&self) -> Option<usize> {
-        match &self.selected {
-            Some(Selected::Wire { group, .. }) => Some(*group),
-            _ => None,
-        }
-    }
-
-    /// Selects the wire of the group `group`, as a click on it at `at`, in units, does: its values are pinned there.
-    pub fn select_wire(&mut self, group: usize, at: Pos2) {
-        self.selected = Some(Selected::Wire { group, at });
-    }
-
     /// Hides the values of the run, or shows them again: a state of the view, which places nothing (notation 6.1).
     pub fn set_values_shown(&mut self, shown: bool) {
         self.values_shown = shown;
@@ -246,21 +321,22 @@ impl Canvas {
 
     /// Shows another drawing, keeping the viewport (scenario 6, point 3). With `glide`, which the host asks for when the
     /// file of the function shown changed (notation 2.1), each node goes from its old place to its new one, found by
-    /// its key, unless the system asks for reduced motion; not for another function.
+    /// its key, unless the system asks for reduced motion; not for another function. The selection, which the host
+    /// names, is found again on it.
     pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool) {
         self.glide = match (&self.drawing, glide && !self.reduced_motion) {
             (Some(old), true) => Glide::between(old, &drawing),
             _ => None,
         };
         self.grid = Grid::of(&drawing);
+        self.index = Index::of(&drawing);
         // A list open on the drawing before: its structure may be another one now.
         self.list = None;
         self.typing = None;
-        // A node selected stays, found by its key; a wire is another one.
-        self.selected = match self.selected.take() {
-            Some(Selected::Node(key)) if drawing.placed.iter().any(|placed| placed.key == key) => Some(Selected::Node(key)),
-            _ => None,
-        };
+        self.found_for = None;
+        self.asked_found = None;
+        self.pinned = None;
+        self.drag = None;
         self.generation = self.generation.wrapping_add(1);
         self.drawing = Some(drawing);
         self.set_values(None, None);
@@ -308,8 +384,19 @@ impl Canvas {
         self.glide.is_some()
     }
 
-    /// Paints the drawing in all the room that `ui` gives, and reads the pointer: drag to pan, the wheel with Ctrl or
-    /// a pinch to zoom, the wheel alone to scroll, a click on a tab.
+    /// The selection that a key of notation 2.6 asks for (Ctrl+A, Alt+Left, Alt+Right…), from the selection of `shown`;
+    /// none without a drawing. The host binds the keys (`craft-keymap`) and makes it `view.select`.
+    pub fn step_selection(&self, step: Step, shown: &Shown) -> Option<Selection> {
+        let drawing = self.drawing.as_ref()?;
+        let arms = arms_shown(drawing, shown);
+        let visible = |within: Option<usize>| within.is_none_or(|arm| arms.get(arm).copied().unwrap_or(false));
+        let found = self.index.find(&shown.selection);
+        Some(self.index.name(drawing, &select::step(drawing, &self.index, &found, step, &visible)))
+    }
+
+    /// Paints the drawing in all the room that `ui` gives, and reads the pointer and the keys (notation 2.6): a click or
+    /// a rectangle selects, the middle button or the wheel pans, the wheel with Ctrl or a pinch zooms, a click on a tab
+    /// shows its arm; with the focus, Tab, the arrows, Enter and Escape move the selection.
     pub fn show(&mut self, ui: &mut Ui, theme: Theme, shown: &Shown) -> CanvasResponse {
         // With the values its drawing was drawn with (notation 10).
         let style = self.drawing.as_ref().map(|drawing| drawing.style.clone()).unwrap_or_default();
@@ -318,9 +405,46 @@ impl Canvas {
 
     fn show_in_style(&mut self, ui: &mut Ui, theme: Theme, shown: &Shown) -> CanvasResponse {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, theme.color("canvas.fill"));
-        let Some(drawing) = self.drawing.clone() else { return CanvasResponse { response, tab: None, iteration: None, hovered: None } };
+        ui.painter_at(rect).rect_filled(rect, 0.0, theme.color("canvas.fill"));
+        let Some(drawing) = self.drawing.clone() else {
+            return CanvasResponse { response, tab: None, iteration: None, hovered: None, intents: Vec::new(), gesture: None };
+        };
+        if self.found_for.as_ref() != Some(&shown.selection) {
+            self.found = self.index.find(&shown.selection);
+            self.found_for = Some(shown.selection.clone());
+            self.asked_found = None;
+            // A wire that a command names is pinned while the host holds it; one that it cannot name, while nothing
+            // else is selected.
+            self.pinned = self.pinned.filter(|(group, _)| {
+                let named = drawing.groups.get(*group).and_then(|found| found.wire.as_ref()).is_some_and(|wire| !wire.named.is_empty());
+                if named { self.found.groups.contains(group) } else { self.found.is_empty() }
+            });
+        }
+        let mut input = Input::default();
+        let frame = self.begin(ui, &response, (rect, theme), drawing, shown, &mut input);
+        self.input(ui, &response, &frame, shown, &mut input);
+        let response = self.paint(ui, response, &frame, theme, &input);
+        self.describe(ui, &response, &frame);
+        // Never the same iteration twice while its values are on their way.
+        let iteration = input.iteration.filter(|asked| self.asked.as_ref() != Some(asked));
+        if iteration.is_some() {
+            self.asked.clone_from(&iteration);
+        }
+        let gesture = matches!(self.drag, Some(Drag::Rectangle { .. })).then_some(Gesture::Rectangle);
+        CanvasResponse { response, tab: input.tab, iteration, hovered: frame.hovered, intents: input.intents, gesture }
+    }
+
+    /// What the frame works with: the viewport moved by the pointer, the glide, what the viewport shows and what the
+    /// pointer is over.
+    fn begin(
+        &mut self,
+        ui: &Ui,
+        response: &Response,
+        (rect, theme): (Rect, Theme),
+        drawing: Arc<Drawing>,
+        shown: &Shown,
+        input: &mut Input,
+    ) -> Frame {
         let ctx = ui.ctx().clone();
         let now = ctx.input(|input| input.time);
         let values = self.values.as_ref().filter(|_| self.values_shown).map(|values| values.overlay.clone());
@@ -331,13 +455,11 @@ impl Canvas {
         let selectors_shown = values.is_some() && self.viewport.zoom >= style::factor(style::coarse_zoom());
         let unit_of = |viewport: &Viewport, at: Pos2| (viewport.origin + (at - rect.min) / viewport.zoom).to_pos2();
         // The wheel over a selector steps its iterations, down forward, and does not scroll (decisions of the owner,
-        // 2026-11-13).
-        // Not while nodes glide, when no selector shows.
+        // 2026-11-13). Not while nodes glide, when no selector shows.
         let under_wheel = response.hover_pos().filter(|_| selectors_shown && self.glide.is_none()).and_then(|at| {
             let selector = self.values.as_ref()?.selector_at(unit_of(&self.viewport, at), &visible_arm)?;
             Some((selector.key.clone(), self.shown_of(selector), selector.count))
         });
-        let mut iteration = None;
         match &under_wheel {
             Some((key, shown, count)) if ctx.input(|input| input.zoom_delta()) == 1.0 => {
                 self.wheel += ctx.input(|input| input.smooth_scroll_delta.y);
@@ -345,22 +467,17 @@ impl Canvas {
                 self.wheel -= steps * WHEEL_STEP;
                 let next = (i128::from(*shown) - steps as i128).clamp(0, i128::from(count.saturating_sub(1)));
                 if steps != 0.0 && next != i128::from(*shown) {
-                    iteration = u64::try_from(next).ok().map(|next| (key.clone(), next));
+                    input.iteration = u64::try_from(next).ok().map(|next| (key.clone(), next));
                 }
             }
             _ => self.wheel = 0.0,
         }
-        self.viewport.read_input(&ctx, &response, rect, &drawing, room, under_wheel.is_some());
-        let zoom = self.viewport.zoom;
+        // The middle button pans, and the primary one when the setting says so (notation 2.6).
+        let pan = response.dragged_by(PointerButton::Middle) || (response.dragged_by(PointerButton::Primary) && self.drag == Some(Drag::Pan));
+        self.viewport.read_input(&ctx, response, rect, &drawing, room, under_wheel.is_some(), pan);
         // A frame when the zoom has settled, to lay its texts out again at the zoom itself.
         if let Some(left) = self.viewport.settles_in(now) {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(left));
-        }
-        // The texts wait for the fonts of the notation: a host that never installed them, or set its fonts again.
-        let texts = has_family(&ctx);
-        if !texts {
-            install_fonts(&ctx);
-            ctx.request_repaint();
         }
         let offsets = match &mut self.glide {
             Some(glide) => {
@@ -375,17 +492,8 @@ impl Canvas {
             }
             None => None,
         };
-        let to_screen = |unit: Vec2| rect.min + (unit - self.viewport.origin) * zoom;
+        let zoom = self.viewport.zoom;
         let seen = Rect::from_min_max(self.viewport.origin.to_pos2(), (self.viewport.origin + rect.size() / zoom).to_pos2());
-        let step = self.viewport.step(now);
-        let key = paint::Key { generation: self.generation, theme, step: step.to_bits(), pixels: ctx.pixels_per_point().to_bits() };
-        self.painter.begin(&ctx, key);
-        let coarse = zoom < style::factor(style::coarse_zoom());
-        let put = |painted: &Painted, offset: Vec2| painted.paint(&painter, to_screen(offset), zoom / step, zoom, texts);
-        let offset_of = |placed: Option<usize>| match (&offsets, placed) {
-            (Some(offsets), Some(placed)) => offsets.get(placed).copied().unwrap_or(Vec2::ZERO),
-            _ => Vec2::ZERO,
-        };
         // While nodes glide, those whose way crosses the viewport too.
         let mut groups = self.grid.seen(seen);
         if offsets.is_some()
@@ -395,100 +503,61 @@ impl Canvas {
             groups.sort_unstable();
             groups.dedup();
         }
-        // What is under the pointer: a node, and a wire within 3 units, or 5 points on the screen when that is more; no wire
-        // while nodes glide, as wires do not show.
+        // What is under the pointer: a node, and a wire within its reach; no wire while nodes glide, as wires do not
+        // show.
         let at = response.hover_pos().map(|at| unit_of(&self.viewport, at));
-        let hovered = at.and_then(|unit| self.grid.node_at(&drawing, unit, &visible_arm));
-        let wire_under = at.filter(|_| offsets.is_none()).and_then(|unit| {
-            let reach = (5.0 / zoom).max(3.0);
-            groups.iter().filter_map(|&index| Some((index, drawing.groups.get(index)?))).filter(|(_, group)| visible_arm(group.within)).find_map(
-                |(index, group)| {
-                    let wire = group.wire.as_ref()?;
-                    let near = wire.readers.iter().any(|(_, points)| {
-                        points.windows(2).any(|pair| match pair {
-                            [a, b] => near_segment(unit, *a, *b, reach),
-                            _ => false,
-                        })
-                    });
-                    near.then_some(index)
-                },
-            )
-        });
-        // The title of the function, then each group in the order of drawing, then the tabs, then the marks.
-        if let Some(painted) = self.painter.loose(&ctx, &drawing, theme, step) {
-            put(&painted, Vec2::ZERO);
-        }
-        for &index in &groups {
-            let Some(group) = drawing.groups.get(index) else { continue };
-            if !visible_arm(group.within) {
-                continue;
-            }
-            // The new wires show at the end of the glide.
-            if offsets.is_some() && group.wire.is_some() {
-                continue;
-            }
-            let offset = offset_of(group.placed);
-            let placed = group.placed.and_then(|placed| drawing.placed.get(placed));
-            if coarse
-                && group.arm.is_none()
-                && let Some(placed) = placed.filter(|placed| placed.holds.is_empty())
-            {
-                // A node as a plain rectangle (notation 7).
-                let corner = to_screen(offset + Vec2::new(placed.x as f32, placed.y as f32) / 100.0);
-                let size = Vec2::new(placed.width as f32, placed.height as f32) / 100.0 * zoom;
-                painter.add(paint::coarse_rect(Rect::from_min_size(corner, size), COARSE_NODE, theme, zoom));
-                continue;
-            }
-            if let Some(painted) = self.painter.group(&ctx, &drawing, index, theme, step) {
-                put(&painted, offset);
-            }
-        }
-        let mut tab = None;
-        let mut opened = false;
+        let hovered = at.and_then(|unit| select::node_at(&drawing, &self.index, unit, &visible_arm));
+        let reach = (5.0 / zoom).max(WIRE_REACH);
+        let wire_under = at.filter(|_| offsets.is_none()).and_then(|unit| select::wire_at(&drawing, &groups, unit, reach, &visible_arm));
+        Frame { rect, drawing, theme, ctx, now, arms, values, offsets, groups, at, hovered, wire_under }
+    }
+
+    /// The input of a frame: the tabs, the selectors and their fields, the selection by the pointer and the keys.
+    fn input(&mut self, ui: &mut Ui, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
+        let (ctx, drawing, rect) = (&frame.ctx, &frame.drawing, frame.rect);
+        let zoom = self.viewport.zoom;
+        let origin = self.viewport.origin;
+        let to_screen = |unit: Vec2| rect.min + (unit - origin) * zoom;
+        let unit_of = |at: Pos2| (origin + (at - rect.min) / zoom).to_pos2();
+        let visible = |within: Option<usize>| frame.visible(within);
+        let coarse = zoom < style::factor(style::coarse_zoom());
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked());
-        for (index, found) in drawing.tabs.iter().enumerate() {
-            let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible_arm(arm.within));
-            // A part of a selector shows with the arm it stands for.
-            let with_its_arm = found.when.is_none_or(|when| arms.get(when).copied().unwrap_or(false));
+        let clicked_unit = pointer.map(unit_of);
+        // A click on a tab shows its arm; on the title of a selector, opens the list of its arms.
+        let mut opened = false;
+        for found in &drawing.tabs {
+            let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible(arm.within));
+            let with_its_arm = found.when.is_none_or(|when| frame.arms.get(when).copied().unwrap_or(false));
             if !structure_shown || !with_its_arm {
                 continue;
             }
-            let offset = offset_of(Some(found.structure));
             let unit = Rect::from_min_size(
-                Pos2::new(found.x as f32 / 100.0, found.y as f32 / 100.0) + offset,
+                Pos2::new(found.x as f32 / 100.0, found.y as f32 / 100.0) + frame.offset_of(Some(found.structure)),
                 Vec2::new(found.width as f32, found.height as f32) / 100.0,
             );
-            if !unit.intersects(seen) {
-                continue;
-            }
-            let is_shown = arms.get(found.arm).copied().unwrap_or(false);
-            if let Some(painted) = self.painter.tab(&ctx, &drawing, index, is_shown, theme, step) {
-                put(&painted, offset);
-            }
-            let area = Rect::from_min_size(to_screen(unit.min.to_vec2()), unit.size() * zoom);
-            if pointer.is_some_and(|at| area.contains(at))
+            if clicked_unit.is_some_and(|at| unit.contains(at))
                 && let Some(arm) = drawing.arms.get(found.arm)
             {
                 if found.kind == TabKind::Name {
                     self.list = Some((found.structure, Pos2::new(unit.min.x, unit.max.y)));
                     opened = true;
                 } else {
-                    tab = Some((arm.structure.clone(), arm.arm));
+                    input.tab = Some((arm.structure.clone(), arm.arm));
                 }
             }
         }
         // The list of the arms of a selector: one line per arm, the one shown selected; a choice, or a click elsewhere,
         // closes it.
         if let Some((structure, anchor)) = self.list {
-            let corner = to_screen(anchor.to_vec2() + offset_of(Some(structure)));
+            let corner = to_screen(anchor.to_vec2() + frame.offset_of(Some(structure)));
             let entries: Vec<(&str, usize, bool)> = drawing
                 .tabs
                 .iter()
                 .filter(|found| found.kind == TabKind::Name && found.structure == structure)
-                .map(|found| (found.caption.as_str(), found.arm, arms.get(found.arm).copied().unwrap_or(false)))
+                .map(|found| (found.caption.as_str(), found.arm, frame.arms.get(found.arm).copied().unwrap_or(false)))
                 .collect();
             let mut chosen = None;
-            let area = egui::Area::new(egui::Id::unique("labcraft-arms-list")).order(egui::Order::Foreground).fixed_pos(corner).show(&ctx, |ui| {
+            let area = egui::Area::new(egui::Id::unique("labcraft-arms-list")).order(egui::Order::Foreground).fixed_pos(corner).show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                         for &(caption, arm, is_shown) in &entries {
@@ -500,7 +569,7 @@ impl Canvas {
                 });
             });
             if let Some(arm) = chosen.and_then(|arm| drawing.arms.get(arm)) {
-                tab = Some((arm.structure.clone(), arm.arm));
+                input.tab = Some((arm.structure.clone(), arm.arm));
                 self.list = None;
             } else {
                 let clicked_at = ctx.input(|input| input.pointer.any_click().then(|| input.pointer.interact_pos()).flatten());
@@ -510,55 +579,385 @@ impl Canvas {
                 }
             }
         }
+        // A click on a selector: a step back or forward, or the number, which opens a field to type one.
+        let shown_values = self.values.as_ref().filter(|_| frame.values.is_some() && frame.offsets.is_none());
+        let mut consumed = input.tab.is_some() || opened;
+        let at_selector = clicked_unit.zip(shown_values.filter(|_| !coarse && !consumed)).and_then(|(unit, found)| {
+            let selector = found.selector_at(unit, &visible)?;
+            let shown = self.shown_of(selector);
+            let inside = |(left, top, right, bottom): (i64, i64, i64, i64)| {
+                Rect::from_min_max(Pos2::new(left as f32, top as f32) / 100.0, Pos2::new(right as f32, bottom as f32) / 100.0).contains(unit)
+            };
+            Some((selector.clone(), shown, inside(selector.back), inside(selector.forward)))
+        });
+        if let Some((selector, shown, back, forward)) = at_selector {
+            consumed = true;
+            if back {
+                input.iteration = shown.checked_sub(1).map(|back| (selector.key.clone(), back));
+            } else if forward {
+                input.iteration = Some(shown + 1).filter(|next| *next < selector.count).map(|next| (selector.key.clone(), next));
+            } else {
+                let (left, _, _, bottom) = selector.number;
+                let at = Pos2::new(left as f32, bottom as f32) / 100.0;
+                let hint = (shown + 1).to_string();
+                self.typing = Some(Typing { key: selector.key.clone(), count: selector.count, text: String::new(), hint, at, focused: false });
+            }
+        }
+        self.select_by_pointer(response, frame, shown, clicked_unit.filter(|_| !consumed), input);
+        self.select_by_keys(ui, response, frame, input);
+        // The number typed into a selector: Enter chooses that iteration, from 1 as the selector counts; Escape, or a click
+        // elsewhere, closes the field.
+        if let Some(typing) = &mut self.typing {
+            let corner = to_screen(typing.at.to_vec2());
+            let mut done = false;
+            egui::Area::new(egui::Id::unique("labcraft-iteration-field")).order(egui::Order::Foreground).fixed_pos(corner).show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    let field = ui.add(egui::TextEdit::singleline(&mut typing.text).desired_width(64.0).hint_text(typing.hint.as_str()));
+                    if !typing.focused {
+                        field.request_focus();
+                        typing.focused = true;
+                    }
+                    if field.lost_focus() {
+                        if ui.input(|input| input.key_pressed(egui::Key::Enter))
+                            && let Ok(number) = typing.text.trim().replace(',', "").parse::<u64>()
+                        {
+                            input.iteration = Some((typing.key.clone(), number.clamp(1, typing.count.max(1)) - 1));
+                        }
+                        done = true;
+                    }
+                });
+            });
+            if done {
+                self.typing = None;
+            }
+        }
+        self.pinned_values(frame, input);
+        // The tooltip of a terminal under the pointer: its name, its exact type, the default of an input that no argument
+        // wires (notation 3.2, 4.1).
+        input.hint = frame.at.and_then(|unit| {
+            drawing.hints.iter().rev().filter(|hint| visible(hint.within)).find_map(|hint| {
+                let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + frame.offset_of(hint.placed);
+                Rect::from_min_size(corner, Vec2::new(hint.width as f32, hint.height as f32) / 100.0).contains(unit).then(|| hint.text.clone())
+            })
+        });
+    }
+
+    /// A click selects what it is on, Shift or Ctrl with it adds or takes out; a drag on the empty canvas draws a
+    /// rectangle that selects the nodes it touches in its frame (notation 2.6).
+    fn select_by_pointer(&mut self, response: &Response, frame: &Frame, shown: &Shown, clicked: Option<Pos2>, input: &mut Input) {
+        let (ctx, drawing, rect) = (&frame.ctx, &frame.drawing, frame.rect);
+        let (zoom, origin) = (self.viewport.zoom, self.viewport.origin);
+        let unit_of = |at: Pos2| (origin + (at - rect.min) / zoom).to_pos2();
+        let visible = |within: Option<usize>| frame.visible(within);
+        let modifiers = ctx.input(|input| input.modifiers);
+        // A press takes the keys of the canvas, for those of notation 2.6.
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
+        let reach = (5.0 / zoom).max(WIRE_REACH);
+        if response.drag_started_by(PointerButton::Primary) {
+            let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
+            let hit = from.and_then(|from| select::hit(drawing, &self.index, &frame.groups, from, reach, &visible));
+            self.drag = match (from, hit) {
+                (Some(_), Some(_)) => Some(Drag::Held),
+                // On the empty canvas: with the setting, a drag pans and Shift with it selects, only Ctrl then adding.
+                (Some(_), None) if shown.drag_pans && !modifiers.shift => Some(Drag::Pan),
+                (Some(from), None) if frame.offsets.is_none() => {
+                    Some(Drag::Rectangle { from, to: from, adding: modifiers.command || (modifiers.shift && !shown.drag_pans) })
+                }
+                _ => None,
+            };
+        }
+        if let Some(Drag::Rectangle { to, .. }) = &mut self.drag
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            *to = unit_of(at);
+        }
+        if response.drag_stopped_by(PointerButton::Primary) {
+            if let Some(Drag::Rectangle { from, to, adding }) = self.drag.take() {
+                let mut found = if adding { self.asked_found.clone().unwrap_or_else(|| self.found.clone()) } else { Found::default() };
+                found.nodes.extend(select::rectangle(drawing, &self.index, from, to, &visible));
+                if !adding {
+                    self.pinned = None;
+                }
+                input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+                self.asked_found = Some(found);
+            }
+            self.drag = None;
+        }
+        let Some(at) = clicked else { return };
+        let adding = modifiers.shift || modifiers.command;
+        let hit = select::hit(drawing, &self.index, &frame.groups, at, reach, &visible);
+        let base = self.asked_found.clone().unwrap_or_else(|| self.found.clone());
+        let found = select::click(&base, hit, adding);
+        self.pinned = match hit {
+            Some(Hit::Wire(group)) if select::holds(&found, Hit::Wire(group)) => Some((group, at)),
+            _ if adding => self.pinned.filter(|(group, _)| found.groups.contains(group)),
+            _ => None,
+        };
+        input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+        self.asked_found = Some(found);
+    }
+
+    /// With the focus: Tab and Shift+Tab, the arrows, Enter and Escape move the selection, which is the focus (notation
+    /// 2.6). Tab past the last one, or Shift+Tab before the first, leaves the canvas.
+    fn select_by_keys(&mut self, ui: &mut Ui, response: &Response, frame: &Frame, input: &mut Input) {
+        if !response.has_focus() || self.typing.is_some() {
+            return;
+        }
+        let id = response.id;
+        ui.memory_mut(|memory| {
+            memory.set_focus_lock_filter(id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true });
+        });
+        let drawing = frame.drawing.clone();
+        let drawing = &drawing;
+        let visible = |within: Option<usize>| frame.visible(within);
+        let asked = input.intents.len();
+        self.keys_of_focus(ui, input, drawing, &visible);
+        // The canvas scrolls to keep the focus in view (notation 2.6).
+        if input.intents.len() > asked
+            && let Some(Intent::Select(selection)) = input.intents.last()
+            && let Some(area) = select::focus_rect(drawing, &self.index.find(selection))
+        {
+            let zoom = self.viewport.zoom;
+            let seen = Rect::from_min_size(self.viewport.origin.to_pos2(), frame.rect.size() / zoom);
+            if !seen.contains_rect(area) {
+                self.viewport.origin = (area.center() - seen.size() / 2.0).to_vec2();
+            }
+        }
+    }
+
+    /// The keys of the focus, each a selection asked for.
+    fn keys_of_focus(&mut self, ui: &mut Ui, input: &mut Input, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool) {
+        // Exactly these modifiers: Alt or Shift with an arrow is a key of the host (Alt+Left, notation 2.6).
+        let pressed = |key: egui::Key, modifiers: egui::Modifiers| {
+            ui.input_mut(|input| {
+                let at = input.events.iter().position(|event| {
+                    matches!(event, egui::Event::Key { key: found, pressed: true, modifiers: with, .. } if *found == key && *with == modifiers)
+                });
+                at.map(|at| input.events.remove(at)).is_some()
+            })
+        };
+        if pressed(egui::Key::Escape, egui::Modifiers::NONE) {
+            // A gesture first, then a list open, then up one level, then nothing.
+            if matches!(self.drag, Some(Drag::Rectangle { .. })) {
+                self.drag = Some(Drag::Held);
+            } else if self.list.is_some() {
+                self.list = None;
+            } else {
+                self.pinned = None;
+                input.intents.push(Intent::Select(self.index.name(drawing, &select::up(drawing, &self.index, &self.found))));
+            }
+            return;
+        }
+        let tab = if pressed(egui::Key::Tab, egui::Modifiers::NONE) {
+            Some(true)
+        } else if pressed(egui::Key::Tab, egui::Modifiers::SHIFT) {
+            Some(false)
+        } else {
+            None
+        };
+        if let Some(forward) = tab {
+            match select::tab(drawing, &self.index, &self.found, forward, &visible) {
+                Some(found) => input.intents.push(Intent::Select(self.index.name(drawing, &found))),
+                None => {
+                    let direction = if forward { egui::FocusDirection::Next } else { egui::FocusDirection::Previous };
+                    ui.memory_mut(|memory| memory.move_focus(direction));
+                }
+            }
+            return;
+        }
+        let arrows = [
+            (egui::Key::ArrowLeft, Vec2::new(-1.0, 0.0)),
+            (egui::Key::ArrowRight, Vec2::X),
+            (egui::Key::ArrowUp, Vec2::new(0.0, -1.0)),
+            (egui::Key::ArrowDown, Vec2::Y),
+        ];
+        for (key, direction) in arrows {
+            if pressed(key, egui::Modifiers::NONE) {
+                if let Some(found) = select::arrow(drawing, &self.index, &self.found, direction, &visible) {
+                    input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+                }
+                return;
+            }
+        }
+        if pressed(egui::Key::Enter, egui::Modifiers::NONE)
+            && let Some(found) = select::enter(drawing, &self.index, &self.found, &visible)
+        {
+            input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+        }
+    }
+
+    /// The values of the wire clicked last, over the iterations of its loop, pinned where it was clicked while it is
+    /// selected and that place is in sight (notation 6.1).
+    fn pinned_values(&mut self, frame: &Frame, input: &mut Input) {
+        let Some((group, unit)) = self.pinned else { return };
+        let coarse = self.viewport.zoom < style::factor(style::coarse_zoom());
+        let seen = Rect::from_min_max(self.viewport.origin.to_pos2(), (self.viewport.origin + frame.rect.size() / self.viewport.zoom).to_pos2());
+        let readable = frame.values.is_some() && !coarse && frame.offsets.is_none();
+        let in_sight = frame.drawing.groups.get(group).is_some_and(|found| frame.visible(found.within)) && seen.contains(unit);
+        if !readable || !in_sight {
+            return;
+        }
+        let Some(title) = self.named(frame, group) else { return };
+        let series = self.series_of(frame, group);
+        let corner = frame.rect.min + (unit.to_vec2() - self.viewport.origin) * self.viewport.zoom + Vec2::new(12.0, 12.0);
+        let theme = frame.theme;
+        egui::Area::new(egui::Id::unique("labcraft-pinned-values")).order(egui::Order::Foreground).fixed_pos(corner).show(&frame.ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| match &series {
+                Some(series) => {
+                    if let Some(chosen) = series::show(ui, &title, series, theme, true) {
+                        input.iteration = Some((series.key.clone(), chosen));
+                    }
+                }
+                None => {
+                    ui.label(&title);
+                }
+            });
+        });
+    }
+
+    /// The series of a wire over the iterations of its loop, worked out once.
+    fn series_of(&mut self, frame: &Frame, group: usize) -> Option<Arc<Series>> {
+        let (trace, choice) = self.run.as_ref()?;
+        let drawing = &frame.drawing;
+        self.series.entry(group).or_insert_with(|| labcraft_diagram::series(drawing, trace, choice, group).map(Arc::new)).clone()
+    }
+
+    /// The name of a wire, its exact type and, while the values show, the value of the run.
+    fn named(&self, frame: &Frame, group: usize) -> Option<String> {
+        let wire = frame.drawing.groups.get(group)?.wire.as_ref()?;
+        let value = labcraft_types::cut_text(&wire.value);
+        let named = if wire.ty.is_empty() { value.into_owned() } else { format!("{value}: {}", wire.ty) };
+        let coarse = self.viewport.zoom < style::factor(style::coarse_zoom());
+        let run = self
+            .values
+            .as_ref()
+            .filter(|_| frame.values.is_some() && !coarse && frame.offsets.is_none())
+            .and_then(|values| values.overlay.wires.get(&group))
+            .map(|valued| valued.title.clone());
+        Some(match run {
+            Some(run) => format!("{named}\n{run}"),
+            None => named,
+        })
+    }
+
+    /// The painting of a frame, which decides nothing: the drawing, the values, the selection and the gesture under
+    /// way, then the tooltips.
+    fn paint(&mut self, ui: &Ui, response: Response, frame: &Frame, theme: Theme, input: &Input) -> Response {
+        let (ctx, drawing, rect) = (&frame.ctx, &frame.drawing, frame.rect);
+        let painter = ui.painter_at(rect);
+        let zoom = self.viewport.zoom;
+        let origin = self.viewport.origin;
+        let to_screen = |unit: Vec2| rect.min + (unit - origin) * zoom;
+        let seen = Rect::from_min_max(origin.to_pos2(), (origin + rect.size() / zoom).to_pos2());
+        let visible = |within: Option<usize>| frame.visible(within);
+        // The texts wait for the fonts of the notation: a host that never installed them, or set its fonts again.
+        let texts = has_family(ctx);
+        if !texts {
+            install_fonts(ctx);
+            ctx.request_repaint();
+        }
+        let step = self.viewport.step(frame.now);
+        let key = paint::Key { generation: self.generation, theme, step: step.to_bits(), pixels: ctx.pixels_per_point().to_bits() };
+        self.painter.begin(ctx, key);
+        let coarse = zoom < style::factor(style::coarse_zoom());
+        let put = |painted: &Painted, offset: Vec2| painted.paint(&painter, to_screen(offset), zoom / step, zoom, texts);
+        // The title of the function, then each group in the order of drawing, then the tabs, then the marks.
+        if let Some(painted) = self.painter.loose(ctx, drawing, theme, step) {
+            put(&painted, Vec2::ZERO);
+        }
+        for &index in &frame.groups {
+            let Some(group) = drawing.groups.get(index) else { continue };
+            if !visible(group.within) {
+                continue;
+            }
+            // The new wires show at the end of the glide.
+            if frame.offsets.is_some() && group.wire.is_some() {
+                continue;
+            }
+            let offset = frame.offset_of(group.placed);
+            let placed = group.placed.and_then(|placed| drawing.placed.get(placed));
+            if coarse
+                && group.arm.is_none()
+                && let Some(placed) = placed.filter(|placed| placed.holds.is_empty())
+            {
+                // A node as a plain rectangle (notation 7).
+                let corner = to_screen(offset + Vec2::new(placed.x as f32, placed.y as f32) / 100.0);
+                let size = Vec2::new(placed.width as f32, placed.height as f32) / 100.0 * zoom;
+                painter.add(paint::coarse_rect(Rect::from_min_size(corner, size), COARSE_NODE, theme, zoom));
+                continue;
+            }
+            if let Some(painted) = self.painter.group(ctx, drawing, index, theme, step) {
+                put(&painted, offset);
+            }
+        }
+        for (index, found) in drawing.tabs.iter().enumerate() {
+            let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible(arm.within));
+            // A part of a selector shows with the arm it stands for.
+            let with_its_arm = found.when.is_none_or(|when| frame.arms.get(when).copied().unwrap_or(false));
+            if !structure_shown || !with_its_arm {
+                continue;
+            }
+            let offset = frame.offset_of(Some(found.structure));
+            let unit = Rect::from_min_size(
+                Pos2::new(found.x as f32 / 100.0, found.y as f32 / 100.0) + offset,
+                Vec2::new(found.width as f32, found.height as f32) / 100.0,
+            );
+            if !unit.intersects(seen) {
+                continue;
+            }
+            let is_shown = frame.arms.get(found.arm).copied().unwrap_or(false);
+            if let Some(painted) = self.painter.tab(ctx, drawing, index, is_shown, theme, step) {
+                put(&painted, offset);
+            }
+        }
         // The values of the run, but while nodes glide (notation 6.1): the veils, hatching, outlines and counters under the
         // marks, the banner and the bubbles over everything; the bubbles from `zoom.values` on, and on hover down to
         // `zoom.coarse` (notation 7).
-        let shown_values = self.values.as_ref().filter(|_| values.is_some() && offsets.is_none());
+        let shown_values = self.values.as_ref().filter(|_| frame.values.is_some() && frame.offsets.is_none());
         // A counter that a selector stands in for, when the header has room for only one.
         let replaced: Vec<usize> = shown_values
             .filter(|_| !coarse)
             .map(|found| {
-                found
-                    .overlay
-                    .selectors
-                    .iter()
-                    .filter(|selector| visible_arm(selector.layer.within))
-                    .filter_map(|selector| selector.replaces)
-                    .collect()
+                found.overlay.selectors.iter().filter(|selector| visible(selector.layer.within)).filter_map(|selector| selector.replaces).collect()
             })
             .unwrap_or_default();
         if let Some(Values { overlay, under, .. }) = shown_values {
             for (index, layer) in overlay.under.iter().enumerate() {
-                if visible_arm(layer.within)
+                if visible(layer.within)
                     && !replaced.contains(&index)
                     && under.get(index).is_some_and(|area| area.intersects(seen))
-                    && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Under(index), theme, step)
+                    && let Some(painted) = self.painter.over(ctx, drawing, overlay, Over::Under(index), theme, step)
                 {
                     put(&painted, Vec2::ZERO);
                 }
             }
         }
-        // The selection: the halo of a wire, the outline of a node (notation 6.1, 8).
-        let selected_placed = match &self.selected {
-            Some(Selected::Node(key)) => drawing.placed.iter().position(|placed| placed.key == *key),
-            _ => None,
-        };
-        if offsets.is_none() {
-            if let Some(Selected::Wire { group, .. }) = &self.selected
-                && drawing.groups.get(*group).is_some_and(|found| visible_arm(found.within))
-            {
-                let group = *group;
+        // The selection (notation 2.5): the halo of each wire, the outline of each node, a ring around each terminal.
+        let selected_nodes: Vec<usize> = self.found.nodes.iter().copied().filter(|&placed| self.grid.shown(placed, &visible)).collect();
+        if frame.offsets.is_none() {
+            let mut wires: Vec<usize> = self.found.groups.iter().copied().collect();
+            wires.extend(self.pinned.map(|(group, _)| group).filter(|group| !wires.contains(group)));
+            for group in wires {
+                if drawing.groups.get(group).is_some_and(|found| visible(found.within)) {
+                    let painted =
+                        self.painter.made(ctx, drawing, Over::SelectedWire(group), theme, step, || labcraft_diagram::selected_wire(drawing, group));
+                    put(&painted, Vec2::ZERO);
+                }
+            }
+            for &placed in &selected_nodes {
                 let painted =
-                    self.painter.made(&ctx, &drawing, Over::SelectedWire(group), theme, step, || labcraft_diagram::selected_wire(&drawing, group));
+                    self.painter.made(ctx, drawing, Over::SelectedNode(placed), theme, step, || labcraft_diagram::selected_node(drawing, placed));
                 put(&painted, Vec2::ZERO);
             }
-            if let Some(placed) = selected_placed.filter(|&placed| self.grid.shown(placed, &visible_arm)) {
-                let painted =
-                    self.painter.made(&ctx, &drawing, Over::SelectedNode(placed), theme, step, || labcraft_diagram::selected_node(&drawing, placed));
-                put(&painted, Vec2::ZERO);
+            let ring = egui::Stroke::new((style::mark_width() as f32 / 100.0 * zoom).max(1.0), theme.color("select.stroke"));
+            for hint in self.found.terminals.iter().filter_map(|&at| drawing.hints.get(at)) {
+                let centre = Vec2::new((hint.x + hint.width / 2) as f32, (hint.y + hint.height / 2) as f32) / 100.0;
+                painter.circle_stroke(to_screen(centre), hint.width.min(hint.height) as f32 / 200.0 * zoom, ring);
             }
             for index in 0..drawing.marks.len() {
-                if let Some(painted) = self.painter.mark(&ctx, &drawing, index, theme, step) {
+                if let Some(painted) = self.painter.mark(ctx, drawing, index, theme, step) {
                     put(&painted, Vec2::ZERO);
                 }
             }
@@ -569,26 +968,30 @@ impl Canvas {
         let mut hidden = std::collections::BTreeSet::new();
         if let Some(Values { overlay, banner, bubbles, selectors, .. }) = shown_values {
             if banner.intersects(seen)
-                && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Banner, theme, step)
+                && let Some(painted) = self.painter.over(ctx, drawing, overlay, Over::Banner, theme, step)
             {
                 put(&painted, Vec2::ZERO);
             }
             for (index, selector) in overlay.selectors.iter().enumerate() {
                 if !coarse
-                    && visible_arm(selector.layer.within)
+                    && visible(selector.layer.within)
                     && selectors.get(index).is_some_and(|area| area.intersects(seen))
-                    && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Selector(index), theme, step)
+                    && let Some(painted) = self.painter.over(ctx, drawing, overlay, Over::Selector(index), theme, step)
                 {
                     put(&painted, Vec2::ZERO);
                 }
             }
-            // The values at the inputs of the node hovered and of the node selected: the bubble of the same wire that one
-            // covers gives the same value and is not drawn (notation 6.1; decision of the owner, 2026-11-13).
+            // The values at the inputs of the node hovered and of the node selected alone: the bubble of the same wire
+            // that one covers gives the same value and is not drawn (notation 6.1; decision of the owner, 2026-11-13).
+            let alone = match selected_nodes.as_slice() {
+                [only] => Some(*only),
+                _ => None,
+            };
             let nodes: std::collections::BTreeSet<usize> =
-                if coarse { std::collections::BTreeSet::new() } else { [hovered, selected_placed].into_iter().flatten().collect() };
+                if coarse { std::collections::BTreeSet::new() } else { [frame.hovered, alone].into_iter().flatten().collect() };
             for &placed in &nodes {
                 let boxes = self.painter.input_boxes(placed, || {
-                    labcraft_diagram::input_boxes(&drawing, overlay, placed)
+                    labcraft_diagram::input_boxes(drawing, overlay, placed)
                         .into_iter()
                         .map(|(group, (left, top, right, bottom))| {
                             let area = Rect::from_min_max(Pos2::new(left as f32, top as f32) / 100.0, Pos2::new(right as f32, bottom as f32) / 100.0);
@@ -604,10 +1007,10 @@ impl Canvas {
             }
             for (index, bubble) in overlay.bubbles.iter().enumerate() {
                 if bubbles_drawn
-                    && visible_arm(bubble.layer.within)
+                    && visible(bubble.layer.within)
                     && !hidden.contains(&index)
                     && bubbles.get(index).is_some_and(|area| area.intersects(seen))
-                    && let Some(painted) = self.painter.over(&ctx, &drawing, overlay, Over::Bubble(index), theme, step)
+                    && let Some(painted) = self.painter.over(ctx, drawing, overlay, Over::Bubble(index), theme, step)
                 {
                     put(&painted, Vec2::ZERO);
                 }
@@ -615,161 +1018,97 @@ impl Canvas {
             // The values at the inputs, over everything (notation 6.1).
             for placed in nodes {
                 let painted =
-                    self.painter.made(&ctx, &drawing, Over::Inputs(placed), theme, step, || labcraft_diagram::inputs_of(&drawing, overlay, placed));
+                    self.painter.made(ctx, drawing, Over::Inputs(placed), theme, step, || labcraft_diagram::inputs_of(drawing, overlay, placed));
                 put(&painted, Vec2::ZERO);
             }
         }
-        // A click on a selector: a step back or forward, or the number, which opens a field to type one.
-        let clicked_unit = pointer.map(|at| unit_of(&self.viewport, at));
-        let mut consumed = tab.is_some() || opened;
-        let at_selector = clicked_unit.zip(shown_values.filter(|_| !coarse && !consumed)).and_then(|(unit, found)| {
-            let selector = found.selector_at(unit, &visible_arm)?;
-            let shown = self.shown_of(selector);
-            let inside = |(left, top, right, bottom): (i64, i64, i64, i64)| {
-                Rect::from_min_max(Pos2::new(left as f32, top as f32) / 100.0, Pos2::new(right as f32, bottom as f32) / 100.0).contains(unit)
-            };
-            Some((selector.clone(), shown, inside(selector.back), inside(selector.forward)))
-        });
-        if let Some((selector, shown, back, forward)) = at_selector {
-            consumed = true;
-            if back {
-                iteration = shown.checked_sub(1).map(|back| (selector.key.clone(), back));
-            } else if forward {
-                iteration = Some(shown + 1).filter(|next| *next < selector.count).map(|next| (selector.key.clone(), next));
-            } else {
-                let (left, _, _, bottom) = selector.number;
-                let at = Pos2::new(left as f32, bottom as f32) / 100.0;
-                let hint = (shown + 1).to_string();
-                self.typing = Some(Typing { key: selector.key.clone(), count: selector.count, text: String::new(), hint, at, focused: false });
-            }
+        // The rectangle of selection under way, in `select.stroke`.
+        if let Some(Drag::Rectangle { from, to, .. }) = self.drag {
+            let area = Rect::from_two_pos(to_screen(from.to_vec2()), to_screen(to.to_vec2()));
+            let stroke = theme.color("select.stroke");
+            painter.rect(area, 0.0, stroke.gamma_multiply(0.12), egui::Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+            ctx.request_repaint();
         }
-        // A click elsewhere selects the wire or the node under it, or nothing; Escape selects nothing.
-        if pointer.is_some() && !consumed {
-            self.selected = match (wire_under, clicked_unit, hovered) {
-                (Some(group), Some(at), _) => Some(Selected::Wire { group, at }),
-                (None, _, Some(placed)) => drawing.placed.get(placed).map(|found| Selected::Node(found.key.clone())),
-                _ => None,
-            };
-        }
-        if self.typing.is_none() && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            self.selected = None;
-        }
-        // The number typed into a selector: Enter chooses that iteration, from 1 as the selector counts; Escape, or a click
-        // elsewhere, closes the field.
-        if let Some(typing) = &mut self.typing {
-            let corner = to_screen(typing.at.to_vec2());
-            let mut done = false;
-            egui::Area::new(egui::Id::unique("labcraft-iteration-field")).order(egui::Order::Foreground).fixed_pos(corner).show(&ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    let field = ui.add(egui::TextEdit::singleline(&mut typing.text).desired_width(64.0).hint_text(typing.hint.as_str()));
-                    if !typing.focused {
-                        field.request_focus();
-                        typing.focused = true;
-                    }
-                    if field.lost_focus() {
-                        if ui.input(|input| input.key_pressed(egui::Key::Enter))
-                            && let Ok(number) = typing.text.trim().replace(',', "").parse::<u64>()
-                        {
-                            iteration = Some((typing.key.clone(), number.clamp(1, typing.count.max(1)) - 1));
-                        }
-                        done = true;
-                    }
-                });
-            });
-            if done {
-                self.typing = None;
-            }
-        }
-        // The values that the tooltip and the pinned values show: those of the wire over the iterations of its loop.
+        // The tooltip under the pointer: a bubble, its value whole (notation 6.1); a terminal (input); else the node, the
+        // full name of what it calls (notation 3.2); else a wire, its name, its exact type, its value, and its values
+        // over the iterations of its loop.
         let readable = shown_values.filter(|_| !coarse);
-        let pinned = match &self.selected {
-            Some(Selected::Wire { group, at }) => {
-                // Pinned where the wire was clicked, while that place is in sight.
-                (readable.is_some()
-                    && offsets.is_none()
-                    && drawing.groups.get(*group).is_some_and(|found| visible_arm(found.within))
-                    && seen.contains(*at))
-                .then_some((*group, *at))
-            }
-            _ => None,
-        };
-        let run = self.run.clone();
-        let cache = &mut self.series;
-        let mut series_of = |group: usize| -> Option<Arc<Series>> {
-            let (trace, choice) = run.as_ref()?;
-            cache.entry(group).or_insert_with(|| labcraft_diagram::series(&drawing, trace, choice, group).map(Arc::new)).clone()
-        };
-        let named = |group: usize| -> Option<String> {
-            let wire = drawing.groups.get(group)?.wire.as_ref()?;
-            let value = labcraft_types::cut_text(&wire.value);
-            let named = if wire.ty.is_empty() { value.into_owned() } else { format!("{value}: {}", wire.ty) };
-            // While the values show, the value of the run under its name.
-            let run = readable.and_then(|readable| readable.overlay.wires.get(&group)).map(|valued| valued.title.clone());
-            Some(match run {
-                Some(run) => format!("{named}\n{run}"),
-                None => named,
-            })
-        };
-        if let Some((group, unit)) = pinned
-            && let Some(title) = named(group)
-        {
-            let series = series_of(group);
-            let corner = to_screen(unit.to_vec2()) + Vec2::new(12.0, 12.0);
-            egui::Area::new(egui::Id::unique("labcraft-pinned-values")).order(egui::Order::Foreground).fixed_pos(corner).show(&ctx, |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| match &series {
-                    Some(series) => {
-                        if let Some(chosen) = series::show(ui, &title, series, theme, true) {
-                            iteration = Some((series.key.clone(), chosen));
-                        }
-                    }
-                    None => {
-                        ui.label(&title);
-                    }
-                });
-            });
-        }
-        // The tooltip under the pointer: a bubble, its value whole (notation 6.1); a terminal, its name, its exact type and
-        // the default of an input that no argument wires (notation 3.2, 4.1); else the node, the full name of what it calls
-        // (notation 3.2); else a wire, its name, its exact type, its value, and its values over the iterations of its loop.
         let bubble = || {
-            let (unit, readable) = (at?, readable?);
+            let (unit, readable) = (frame.at?, readable?);
             readable.overlay.bubbles.iter().zip(&readable.bubbles).enumerate().rev().find_map(|(index, (bubble, area))| {
-                (bubbles_drawn && !hidden.contains(&index) && visible_arm(bubble.layer.within) && area.contains(unit)).then(|| bubble.title.clone())
+                (bubbles_drawn && !hidden.contains(&index) && visible(bubble.layer.within) && area.contains(unit)).then(|| bubble.title.clone())
             })
         };
-        let hint = at.and_then(|unit| {
-            drawing.hints.iter().rev().filter(|hint| visible_arm(hint.within)).find_map(|hint| {
-                let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + offset_of(hint.placed);
-                Rect::from_min_size(corner, Vec2::new(hint.width as f32, hint.height as f32) / 100.0).contains(unit).then(|| hint.text.clone())
-            })
-        });
         let title = || {
-            hovered
+            frame
+                .hovered
                 .and_then(|placed| self.grid.group_of(placed))
                 .and_then(|group| drawing.groups.get(group))
                 .map(|group| group.title.clone())
                 .filter(|title| !title.is_empty())
         };
-        let text = bubble().or(hint).or_else(title);
-        let response = match (text, wire_under) {
+        let text = bubble().or_else(|| input.hint.clone()).or_else(title);
+        let pinned = self.pinned.filter(|_| readable.is_some()).map(|(group, _)| group);
+        match (text, frame.wire_under) {
             (Some(text), _) => response.on_hover_text_at_pointer(text),
             // The values pinned already show those of the wire selected.
-            (None, Some(group)) if pinned.is_some_and(|(pinned, _)| pinned == group) => response,
-            (None, Some(group)) => match (named(group), readable.and_then(|_| series_of(group))) {
-                (Some(title), Some(series)) => response.on_hover_ui_at_pointer(|ui| {
-                    series::show(ui, &title, &series, theme, false);
-                }),
-                (Some(title), None) => response.on_hover_text_at_pointer(title),
-                (None, _) => response,
-            },
+            (None, Some(group)) if pinned == Some(group) => response,
+            (None, Some(group)) => {
+                let series = if readable.is_some() { self.series_of(frame, group) } else { None };
+                match (self.named(frame, group), series) {
+                    (Some(title), Some(series)) => response.on_hover_ui_at_pointer(|ui| {
+                        series::show(ui, &title, &series, theme, false);
+                    }),
+                    (Some(title), None) => response.on_hover_text_at_pointer(title),
+                    (None, _) => response,
+                }
+            }
             (None, None) => response,
-        };
-        // Never the same iteration twice while its values are on their way.
-        let iteration = iteration.filter(|asked| self.asked.as_ref() != Some(asked));
-        if iteration.is_some() {
-            self.asked.clone_from(&iteration);
         }
-        CanvasResponse { response, tab, iteration, hovered }
+    }
+
+    /// The canvas in the tree of AccessKit (notation 2.6): a list of what can be selected, each node and terminal of the
+    /// frame of the function an element with its name, selected or not. Built only while a reader of the tree asks.
+    fn describe(&self, ui: &mut Ui, response: &Response, frame: &Frame) {
+        let drawing = &frame.drawing;
+        let label = format!("Diagram of {}", drawing.function);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ListBox, true, label.clone()));
+        let active = frame.ctx.accesskit_node_builder(response.id, |_| ()).is_some();
+        if !active {
+            return;
+        }
+        let (zoom, origin, rect) = (self.viewport.zoom, self.viewport.origin, frame.rect);
+        let screen =
+            |area: Rect| Rect::from_min_max(rect.min + (area.min.to_vec2() - origin) * zoom, rect.min + (area.max.to_vec2() - origin) * zoom);
+        let mut element = |salt: (&str, usize), area: Rect, name: String, selected: bool| {
+            let child = ui.new_child(egui::UiBuilder::new().id_salt(salt).max_rect(screen(area)).accessibility_parent(response.id));
+            frame.ctx.accesskit_node_builder(child.unique_id(), |node| {
+                node.set_role(egui::accesskit::Role::ListBoxOption);
+                node.set_label(name);
+                node.set_selected(selected);
+                let area = screen(area);
+                node.set_bounds(egui::accesskit::Rect { x0: area.min.x.into(), y0: area.min.y.into(), x1: area.max.x.into(), y1: area.max.y.into() });
+            });
+        };
+        for (at, hint) in drawing.hints.iter().enumerate() {
+            let Some(name) = &hint.selects else { continue };
+            let ty = hint.text.lines().next().and_then(|line| line.split_once(": ")).map(|(_, ty)| format!(", {ty}")).unwrap_or_default();
+            let area = Rect::from_min_size(Pos2::new(hint.x as f32, hint.y as f32) / 100.0, Vec2::new(hint.width as f32, hint.height as f32) / 100.0);
+            element(("terminal", at), area, format!("{name}{ty}"), self.found.terminals.contains(&at));
+        }
+        for (at, placed) in drawing.placed.iter().enumerate() {
+            if !self.grid.shown(at, &|within| frame.visible(within)) {
+                continue;
+            }
+            let Some(area) = select::node_rect(drawing, at) else { continue };
+            let title = self.grid.group_of(at).and_then(|group| drawing.groups.get(group)).map(|group| group.title.as_str()).unwrap_or_default();
+            let name = match (placed.name.as_str(), title) {
+                ("", title) => title.to_owned(),
+                (name, "") => name.to_owned(),
+                (name, title) => format!("{name}, {title}"),
+            };
+            element(("node", at), area, name, self.found.nodes.contains(&at));
+        }
     }
 
     /// The iteration a selector shows, or the one asked for last when its values have not come yet.
@@ -779,14 +1118,6 @@ impl Canvas {
             _ => selector.shown,
         }
     }
-}
-
-/// Whether `at`, in units, is within `reach` of the orthogonal segment from `a` to `b`, in hundredths.
-fn near_segment(at: Pos2, a: (i64, i64), b: (i64, i64), reach: f32) -> bool {
-    let (ax, ay, bx, by) = (a.0 as f32 / 100.0, a.1 as f32 / 100.0, b.0 as f32 / 100.0, b.1 as f32 / 100.0);
-    let x = at.x.clamp(ax.min(bx), ax.max(bx));
-    let y = at.y.clamp(ay.min(by), ay.max(by));
-    (at.x - x).abs() <= reach && (at.y - y).abs() <= reach
 }
 
 /// Whether each arm in tabs is shown: the arm that `shown` chooses for its structure, inside an arm shown.
@@ -805,22 +1136,6 @@ fn arms_shown(drawing: &Drawing, shown: &Shown) -> Vec<bool> {
         result.push(around && arm.arm == chosen);
     }
     result
-}
-
-/// The box of a shape, in units.
-fn extent(shape: &Shape) -> Rect {
-    let (x0, y0, x1, y1) = match shape {
-        Shape::Rect { x, y, width, height, .. } => (*x, *y, x + width, y + height),
-        Shape::Circle { x, y, radius, .. } => (x - radius, y - radius, x + radius, y + radius),
-        Shape::Poly { points, .. } | Shape::Wire { points, .. } => {
-            let fold = points.iter().fold((i64::MAX, i64::MAX, i64::MIN, i64::MIN), |(a, b, c, d), &(x, y)| (a.min(x), b.min(y), c.max(x), d.max(y)));
-            let half = if let Shape::Wire { style, .. } = shape { style.width.max(600) / 2 } else { 100 };
-            (fold.0 - half, fold.1 - half, fold.2 + half, fold.3 + half)
-        }
-        Shape::Text { x, y, size, width, .. } => (*x, y - i64::from(*size), x + width, y + i64::from(*size) / 2),
-        Shape::Icon { x, y, side, .. } => (*x, *y, x + side, y + side),
-    };
-    Rect::from_min_max(Pos2::new(x0 as f32 / 100.0, y0 as f32 / 100.0), Pos2::new(x1 as f32 / 100.0, y1 as f32 / 100.0))
 }
 
 #[cfg(test)]

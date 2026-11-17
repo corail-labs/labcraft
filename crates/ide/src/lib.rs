@@ -38,7 +38,7 @@ use kit_shell::status::Segment;
 use kit_shell::top_bar::{self, Answer, Bar, Tool};
 use kit_shell::workspaces::Asked as WorkspaceAsked;
 use kit_shell::{Card, Planned};
-use labcraft_editor::{Canvas, Shown, Theme};
+use labcraft_editor::{Canvas, Intent, Selection, Shown, Step, Theme};
 use labcraft_engine::view::{
     Published, Shown as WindowShown, Tab, ViewKind,
     window::{file_of_tab, tab_of},
@@ -82,6 +82,9 @@ pub struct Prefs {
     pub detached_palette: bool,
     /// A run records its values, its trace, for the wires (decision of the owner, 2026-11-16: off by default).
     pub record_values: bool,
+    /// The setting "drag on the empty canvas pans" (notation 2.6): off, a drag on the empty canvas selects with a
+    /// rectangle (decision of the owner, 2026-11-17).
+    pub drag_pans: bool,
 }
 
 impl Default for Prefs {
@@ -98,6 +101,7 @@ impl Default for Prefs {
             detached_inspector: true,
             detached_palette: false,
             record_values: false,
+            drag_pans: false,
         }
     }
 }
@@ -245,6 +249,12 @@ pub struct Ide {
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
+    /// The selections asked of the session (`view.select`), with what they asked: one refused for a name by its line is
+    /// asked again without them (`@N`, commands.md 9.2, names nothing in a file that canonical form would reorder).
+    selecting: Vec<(Selection, String, Reply)>,
+    /// The function whose canvas had the keyboard, and the widget of that canvas: the keys of the canvas act on it while
+    /// egui still gives it the focus (notation 2.6).
+    canvas_focus: Option<(String, egui::Id)>,
     /// The run the window started, followed to its end (decisions of the owner, 2026-11-16).
     running: Option<running::Running>,
     /// The time of the frame, on the clock of egui.
@@ -301,6 +311,8 @@ impl Ide {
             pending: Vec::new(),
             failures: Vec::new(),
             canvas_rect: None,
+            canvas_focus: None,
+            selecting: Vec::new(),
             running: None,
             now: 0.0,
             loaders: false,
@@ -362,8 +374,14 @@ impl Ide {
     /// The commands of the keys pressed in the viewport of `ctx`: the window of the project, or a detached window of the
     /// system.
     fn key_hits(&mut self, ctx: &egui::Context) -> Vec<CommandRef> {
-        let typing = ctx.egui_wants_keyboard_input();
-        let hits = ctx.input_mut(|input| self.dispatcher.dispatch(input, &self.keymap, &Active { panel: None, contexts: &[], typing }));
+        // The canvas takes the keyboard, but is no text field: its keys are the window's (notation 2.6). Asked of egui each
+        // frame, since another widget, a tab or a window can take the focus without the canvas being drawn again.
+        if self.canvas_focus.as_ref().is_some_and(|(_, id)| !ctx.memory(|memory| memory.has_focus(*id))) {
+            self.canvas_focus = None;
+        }
+        let typing = ctx.egui_wants_keyboard_input() && self.canvas_focus.is_none();
+        let panel = self.canvas_focus.as_ref().map(|_| keys::DIAGRAM_SCOPE);
+        let hits = ctx.input_mut(|input| self.dispatcher.dispatch(input, &self.keymap, &Active { panel, contexts: &[], typing }));
         hits.into_iter().map(|hit| hit.command).collect()
     }
 
@@ -589,6 +607,23 @@ impl Ide {
             }
         };
         self.pending.retain(|(id, reply)| take(id, reply));
+        let mut again = Vec::new();
+        self.selecting.retain(|(selection, function, reply)| match reply.take() {
+            None => true,
+            Some(Ok(_)) => false,
+            Some(Err(error)) => {
+                let without = without_lines(selection);
+                if without != *selection {
+                    again.push((function.clone(), without));
+                } else {
+                    failures.push(format!("view.select: {}", error.message));
+                }
+                false
+            }
+        });
+        for (function, selection) in again {
+            self.ask_select(host, &function, selection);
+        }
         self.placing.retain_mut(|placing| {
             if !placing.answered {
                 match placing.reply.take() {
@@ -869,11 +904,20 @@ impl Ide {
             let id = command.id.as_str();
             let param = |name: &str| command.params.get(name).and_then(Value::as_str).map(str::to_owned);
             match id {
-                "project.new" | "project.open" | keys::HOME | keys::PALETTE | keys::DARK | keys::LAB | keys::REDUCED_MOTION | keys::ABOUT => {
+                "project.new"
+                | "project.open"
+                | keys::HOME
+                | keys::PALETTE
+                | keys::DARK
+                | keys::LAB
+                | keys::REDUCED_MOTION
+                | keys::DRAG_PANS
+                | keys::ABOUT => {
                     let checked = match id {
                         keys::DARK => Some(self.prefs.dark),
                         keys::LAB => Some(self.look() == kit_shell::theme::Look::Lab),
                         keys::REDUCED_MOTION => Some(self.prefs.reduced_motion),
+                        keys::DRAG_PANS => Some(self.prefs.drag_pans),
                         _ => None,
                     };
                     ItemState { enabled: true, checked }
@@ -902,6 +946,9 @@ impl Ide {
                 "history.undo" => ItemState { enabled: self.history.undo.is_some(), checked: None },
                 "history.redo" => ItemState { enabled: self.history.redo.is_some(), checked: None },
                 "view.close_function" | keys::FIT | "view.open_trace" | keys::OPEN_TRACE => ItemState { enabled: shown.is_some(), checked: None },
+                keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
+                    ItemState { enabled: shown.is_some(), checked: None }
+                }
                 _ => ItemState { enabled: project, checked: None },
             }
         });
@@ -1151,6 +1198,12 @@ impl Ide {
         }
     }
 
+    /// Asks the session for a selection of the canvas of `function` (`view.select`).
+    fn ask_select(&mut self, host: &dyn Host, function: &str, selection: Selection) {
+        let reply = host.send("view.select", select_params(function, &selection));
+        self.selecting.push((selection, function.to_owned(), reply));
+    }
+
     /// Runs a command of a menu, a key, the palette, a button: an action of the window here, a command of the session
     /// through the host. What takes the function shown takes that of the window that has focus.
     fn run(&mut self, command: CommandRef, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
@@ -1239,6 +1292,26 @@ impl Ide {
                 self.prefs.detached_inspector = !self.prefs.detached_inspector;
                 self.prefs_changed = true;
             }
+            keys::DRAG_PANS => {
+                self.prefs.drag_pans = !self.prefs.drag_pans;
+                self.prefs_changed = true;
+            }
+            keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
+                let step = match id.as_str() {
+                    keys::SELECT_ALL => Step::All,
+                    keys::SELECT_UPSTREAM => Step::Upstream { every: false },
+                    keys::SELECT_DOWNSTREAM => Step::Downstream { every: false },
+                    keys::SELECT_ALL_UPSTREAM => Step::Upstream { every: true },
+                    _ => Step::Downstream { every: true },
+                };
+                // The canvas that has the keyboard, else that of the window that has focus.
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(host), Some(function)) = (host, function) else { return };
+                let Some(window) = view.window_of(&function) else { return };
+                let canvas_shown = canvas_shown(window, self.prefs.drag_pans);
+                let Some(selection) = self.drawn.get(&function).and_then(|drawn| drawn.canvas.step_selection(step, &canvas_shown)) else { return };
+                self.ask_select(host, &function, selection);
+            }
             keys::DETACHED_PALETTE => {
                 self.prefs.detached_palette = !self.prefs.detached_palette;
                 self.prefs_changed = true;
@@ -1295,6 +1368,56 @@ impl Ide {
             }
         }
     }
+}
+
+/// What the canvas of a window shows without drawing again: its arms, its selection when it is of its function, and the
+/// setting of the drag (notation 2.6).
+fn canvas_shown(window: &WindowShown, drag_pans: bool) -> Shown {
+    let selection = &window.selection;
+    let selection = if window.function.as_deref() == Some(selection.function.as_str()) {
+        Selection { nodes: selection.nodes.clone(), wires: selection.wires.clone(), terminals: selection.terminals.clone() }
+    } else {
+        Selection::default()
+    };
+    Shown { arms: window.arms.clone(), selection, drag_pans }
+}
+
+/// The lines of the file that the selection of a window names (notation 2.5): those of its nodes, and for a wire the
+/// line that gives its value and those that read it.
+fn selected_lines(window: &WindowShown) -> std::collections::BTreeSet<u32> {
+    let mut lines = std::collections::BTreeSet::new();
+    let (Some(drawing), Some(function)) = (&window.drawing, &window.function) else { return lines };
+    let selection = &window.selection;
+    if selection.function != *function {
+        return lines;
+    }
+    let lines_of: std::collections::HashMap<&str, u32> = drawing.placed.iter().map(|placed| (placed.key.as_str(), placed.line)).collect();
+    let line_of_key = |key: &str| lines_of.get(key).copied();
+    for name in &selection.nodes {
+        lines.extend(drawing.placed.iter().filter(|placed| placed.name == *name).map(|placed| placed.line));
+    }
+    for wire in drawing.groups.iter().filter_map(|group| group.wire.as_ref()) {
+        if selection.wires.iter().any(|name| wire.named.contains(name)) {
+            lines.extend(wire.from_node.as_deref().and_then(line_of_key));
+            lines.extend(wire.to_nodes.iter().filter_map(|key| line_of_key(key)));
+        }
+    }
+    lines.remove(&0);
+    lines
+}
+
+/// A selection without the names by their line (`@N`, commands.md 9.2) and the wires into them.
+fn without_lines(selection: &Selection) -> Selection {
+    Selection {
+        nodes: selection.nodes.iter().filter(|name| !name.starts_with('@')).cloned().collect(),
+        wires: selection.wires.iter().filter(|name| !name.contains('@')).cloned().collect(),
+        terminals: selection.terminals.clone(),
+    }
+}
+
+/// The parameters of `view.select` for a selection of the canvas of `function`.
+fn select_params(function: &str, selection: &Selection) -> Value {
+    json!({ "function": function, "nodes": selection.nodes, "wires": selection.wires, "terminals": selection.terminals })
 }
 
 /// The actions of the start page (ide.md 10).
@@ -1611,7 +1734,7 @@ impl Content<'_> {
         match kind {
             ViewKind::Diagram => self.diagram(ui, function, theme),
             ViewKind::Text => match file {
-                Some(file) => self.text(ui, file, theme == Theme::Dark),
+                Some(file) => self.text(ui, function, file, theme),
                 None => {
                     ui.label(RichText::new("This function has no file").weak());
                 }
@@ -1634,10 +1757,21 @@ impl Content<'_> {
             ui.centered_and_justified(|ui| ui.label(RichText::new(text).weak()));
             return;
         }
-        let arms = window.map(|window| window.arms.clone()).unwrap_or_default();
-        let response = drawn.canvas.show(ui, theme, &Shown { arms });
+        let shown = window.map(|window| canvas_shown(window, self.ide.prefs.drag_pans)).unwrap_or_default();
+        let response = drawn.canvas.show(ui, theme, &shown);
+        if response.response.has_focus() {
+            self.ide.canvas_focus = Some((function.to_owned(), response.response.id));
+        } else if self.ide.canvas_focus.as_ref().is_some_and(|(focused, _)| focused == function) {
+            self.ide.canvas_focus = None;
+        }
         if window.is_none() {
             return;
+        }
+        // A gesture asks for a selection: the session holds it (`view.select`), and the canvas shows what it holds.
+        for intent in response.intents {
+            match intent {
+                Intent::Select(selection) => self.ide.ask_select(self.host, function, selection),
+            }
         }
         if view.main.function.as_deref() == Some(function) {
             self.ide.canvas_rect = Some(response.response.rect);
@@ -1655,7 +1789,11 @@ impl Content<'_> {
         }
     }
 
-    fn text(&mut self, ui: &mut egui::Ui, file: &str, dark: bool) {
+    fn text(&mut self, ui: &mut egui::Ui, function: &str, file: &str, theme: Theme) {
+        let dark = theme == Theme::Dark;
+        // The lines of what is selected in the diagram, tinted (notation 2.5): a node, and a wire's line that gives it
+        // and the lines that read it.
+        let lines = self.view.window_of(function).map(selected_lines).unwrap_or_default();
         let kept = self.ide.texts.entry(file.to_owned()).or_insert_with(|| text::Kept::new(file));
         kept.refresh(self.host, self.view.checks);
         if let Some(failure) = &kept.failure {
@@ -1670,8 +1808,21 @@ impl Content<'_> {
         let galley = kept.galley(ui, dark, &font);
         let cut = kept.cut;
         egui::ScrollArea::both().id_salt(("ide-text", file)).auto_shrink([false, false]).show(ui, |ui| {
-            // Laid out once: a label of the galley, which the user can select and copy, read only.
-            ui.add(egui::Label::new(galley).selectable(true).extend());
+            // Laid out once: a label of the galley, which the user can select and copy, read only; the tint of the lines
+            // selected under it, a row of the galley per line, since it never wraps.
+            let tint = ui.painter().add(egui::Shape::Noop);
+            let response = ui.add(egui::Label::new(galley.clone()).selectable(true).extend());
+            let color = theme.color("select.stroke").gamma_multiply(0.18);
+            let width = response.rect.x_range().max.max(ui.clip_rect().max.x);
+            let rows: Vec<egui::Shape> = lines
+                .iter()
+                .filter_map(|&line| galley.rows.get(usize::try_from(line).ok()?.checked_sub(1)?))
+                .map(|row| {
+                    let area = row.rect().translate(response.rect.min.to_vec2());
+                    egui::Shape::rect_filled(egui::Rect::from_x_y_ranges(response.rect.min.x..=width, area.y_range()), 0.0, color)
+                })
+                .collect();
+            ui.painter().set(tint, egui::Shape::Vec(rows));
             if cut {
                 ui.label(RichText::new(format!("The rest of the file is not shown: past {} MiB", text::MAX_TEXT / 1024 / 1024)).weak());
             }

@@ -114,6 +114,7 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         ty_text: String::new(),
         default: None,
         traced: None,
+        place: None,
     }
 }
 

@@ -106,7 +106,10 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
     if let labcraft_graph::Decl::Extern(external) = &checked_file.file.decl {
         // A native function has a frame and no body.
         let builder = Builder::new(checked, checked_file, names);
-        return Drawn::Drawing(drawing(&builder.empty(external.name, &external.signature), names, view));
+        let mut drawn = drawing(&builder.empty(external.name, &external.signature), names, view);
+        // Nothing of it can be edited, so nothing of it is selected (commands.md 9.2).
+        drawn.hints.iter_mut().for_each(|hint| hint.selects = None);
+        return Drawn::Drawing(drawn);
     }
     let Some(function) = graph::function_of(checked_file) else { return Drawn::NotDrawn(Vec::new()) };
     let orders = graph::orders_of(checked_file, function, names);
@@ -322,6 +325,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         .collect();
     let (plan, sources) = values::plan(graph, &placement, &placed_of);
     drawing.trace = plan;
+    let command_names = command_names(graph);
     // The function's frame, then each node, a structure with its frame before what it holds.
     if let (Some(body), Some(frame)) = (graph.bodies.first(), placement.frames.first()) {
         drawing.loose = frame_shapes(
@@ -335,7 +339,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
         .map(|body| {
-            let mut groups = wire_groups(graph, body, &placement, &sized, &sources);
+            let mut groups = wire_groups(graph, body, &placement, &sized, &sources, &command_names);
             groups.iter_mut().for_each(|group| group.within = within(body));
             groups
         })
@@ -404,6 +408,9 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             rank: at.rank,
             body: node.body,
             holds: node.bodies.clone(),
+            name: command_names.get(index).cloned().flatten().unwrap_or_default(),
+            line: node.line,
+            at: node.at,
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
@@ -1015,8 +1022,9 @@ fn structure_shapes(
     }
 }
 
-/// The box that a shape covers.
-fn extent(shape: &Shape) -> (i64, i64, i64, i64) {
+/// The box that a shape covers, in hundredths, `(left, top, right, bottom)`: the one box of a shape (architecture 12.4), by
+/// which the canvas hits, culls and fits what it draws.
+pub fn extent(shape: &Shape) -> (i64, i64, i64, i64) {
     match shape {
         Shape::Rect { x, y, width, height, .. } => (*x, *y, x + width, y + height),
         Shape::Circle { x, y, radius, .. } => (x - radius, y - radius, x + radius, y + radius),
@@ -1084,7 +1092,26 @@ fn hint_text(terminal: &graph::Terminal) -> String {
 /// A tooltip around a terminal at (`x`, `y`): at least 8 across, so that a small terminal is easy to reach.
 fn hint_at(terminal: &graph::Terminal, (x, y): (i64, i64), half: i64, placed: Option<usize>, within: Option<usize>) -> Hint {
     let half = half.max(400);
-    Hint { x: x - half, y: y - half, width: 2 * half, height: 2 * half, text: hint_text(terminal), placed, within }
+    Hint { x: x - half, y: y - half, width: 2 * half, height: 2 * half, text: hint_text(terminal), placed, within, selects: None }
+}
+
+/// Each node as an editing command names it (commands.md 9.2), by its index in the graph: its label or the name of its
+/// line, `#close`, `dmm`; else `@N`, the line where it starts, for a node with no name (`docs/cli.md`, 4.3) and for a name
+/// that several bodies define (two arms), which names no node alone (decision of the owner, 2026-11-17). None when the
+/// file does not say its line.
+fn command_names(graph: &Graph<'_>) -> Vec<Option<String>> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for node in &graph.nodes {
+        *counts.entry(node.key.as_str()).or_insert(0) += 1;
+    }
+    graph
+        .nodes
+        .iter()
+        .map(|node| {
+            let alone = !node.key.is_empty() && !node.key.starts_with('@') && counts.get(node.key.as_str()) == Some(&1);
+            if alone { Some(node.key.clone()) } else { (node.line > 0).then(|| format!("@{}", node.line)) }
+        })
+        .collect()
 }
 
 /// The tooltips of the terminals of the frame of a body.
@@ -1110,6 +1137,12 @@ fn frame_hints(graph: &Graph<'_>, body: usize, frame: &place::FrameAt, placed: O
                 hint.text.push_str("\nconverted: ");
                 hint.text.push_str(conversion);
             }
+            // The terminals of the function, which `view.select` names; an input and an output of one name (R-2) apart.
+            hint.selects = match terminal.edge {
+                graph::Edge::Input if body == 0 => Some(format!("input {}", terminal.terminal.name)),
+                graph::Edge::Output if body == 0 => Some(format!("output {}", terminal.terminal.name)),
+                _ => None,
+            };
             hints.push(hint);
         }
     }
@@ -1170,7 +1203,14 @@ fn frame_fill(depth: u32) -> Token {
 
 /// The wires of a body, one group per value: its branches, each from the source to one reader, the trunk drawn by each,
 /// and its junction points (notation 2.2, 4).
-fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, sized: &[size::Sized], sources: &values::Sources) -> Vec<Group> {
+fn wire_groups(
+    graph: &Graph<'_>,
+    body: usize,
+    placement: &place::Placement,
+    sized: &[size::Sized],
+    sources: &values::Sources,
+    names: &[Option<String>],
+) -> Vec<Group> {
     let (Some(of), Some(routes)) = (graph.bodies.get(body), placement.routes.get(body)) else { return Vec::new() };
     let core = frame_fill(placement.frames.get(body).map_or(0, |frame| frame.depth));
     // What a name must not cover: the nodes of the body, its wires, the pills.
@@ -1283,6 +1323,15 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                 .filter_map(|wire| terminal_form(graph, of, body, &wire.to, false, &ordinals))
                 .collect();
             to.dedup();
+            let wires_of = || routed.wires.iter().filter_map(|&wire| of.wires.get(wire));
+            let mut named: Vec<String> = wires_of().filter_map(|wire| command_wire(graph, of, body, wire, names)).collect();
+            named.dedup();
+            let stable = |end: &graph::End| match *end {
+                graph::End::Node { node, .. } | graph::End::Order(node) => graph.nodes.get(node).map(|found| found.stable.clone()),
+                _ => None,
+            };
+            let mut to_nodes: Vec<String> = wires_of().filter_map(|wire| stable(&wire.to)).collect();
+            to_nodes.dedup();
             let readers = routed
                 .wires
                 .iter()
@@ -1318,6 +1367,9 @@ fn wire_groups(graph: &Graph<'_>, body: usize, placement: &place::Placement, siz
                         .collect(),
                     source,
                     starts,
+                    named,
+                    from_node: stable(&first.from),
+                    to_nodes,
                 }),
                 placed: None,
                 within: None,
@@ -1451,6 +1503,36 @@ fn wire_names(
         put(x0 + side, x1 - side, y, true, &mut shapes);
     }
     shapes
+}
+
+/// A wire as an editing command names it (commands.md 9.2): `value -> node.input`, `#label -> node.after` for an order,
+/// `value -> output` for an output of the function, the node by its name of `command_names`. None for what no command
+/// names yet: a value with no name (`_`), the inputs of a structure and its `next`, `until`, `collect` or `yield` (step 5
+/// of M1).
+fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph::Wire, names: &[Option<String>]) -> Option<String> {
+    let value = wire.name.split('.').next().filter(|value| !value.is_empty() && *value != "_" && !value.starts_with('@'))?;
+    let end = match wire.to {
+        // The inputs of a structure (its selector, its carries, the values that cross its edge) come with step 5.
+        graph::End::Node { node, terminal } => {
+            let found = graph.nodes.get(node).filter(|found| !matches!(found.kind, Kind::Structure(_)))?;
+            let name = names.get(node)?.as_deref()?;
+            match found.inputs.get(terminal) {
+                Some(input) if input.name.is_empty() => name.to_owned(),
+                Some(input) => match input.place {
+                    Some(place) => format!("{name}.{}.{place}", input.name),
+                    None => format!("{name}.{}", input.name),
+                },
+                None => name.to_owned(),
+            }
+        }
+        graph::End::Order(node) => format!("{}.after", names.get(node)?.as_deref()?),
+        graph::End::Right(index) if body == 0 => {
+            let terminal = of.right.get(index).filter(|terminal| terminal.edge == graph::Edge::Output)?;
+            terminal.terminal.name.clone()
+        }
+        _ => return None,
+    };
+    Some(format!("{value} -> {end}"))
 }
 
 /// A terminal as the reports write it (`docs/cli.md`, 4.3), when it has a form there.

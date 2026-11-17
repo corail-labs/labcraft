@@ -1370,10 +1370,11 @@ apart from the drawing (`Canvas::set_values`), its layers, its banner and its bu
 by their boxes, not painted while nodes glide, the bubbles from `zoom.values` on and their values on hover down to
 `zoom.coarse`, the value of the run under the name of a wire in its tooltip, and `Canvas::set_values_shown` for the
 button that hides them; with step 8b2, the iteration selectors (a click, the wheel, a number typed, each coming back
-as `CanvasResponse::iteration`), the selection of a node or a wire (`Canvas::selected_node`, `select_node`), the values
+as `CanvasResponse::iteration`), the selection of a node or a wire, the values
 at the inputs of the node hovered or selected, and the values of a wire over the iterations of its loop, from the
-trace that `set_values` gives with the overlay, worked out once per wire, in its tooltip or pinned. The selection is
-the canvas's own, as the hover is, until the editor of M1 makes it a command. Without the folds. Drag pans, the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
+trace that `set_values` gives with the overlay, worked out once per wire, in its tooltip or pinned. The selection was
+the canvas's own, as the hover is, until step 2a of M1 made it the host's (12.6). Without the folds. Drag pans (the
+middle button from step 2a of M1), the wheel scrolls, the wheel with Ctrl or a pinch zooms around the pointer, between 5 % and
 400 %; the first drawing is fitted, at 100 % at most (notation 7), and a new one keeps the viewport. Tested without a
 window (`editor` tests, and every function of the repository painted in both themes, unfolded and in tabs, each arm
 shown, at three zooms, in `tests/harness`); 60 frames/s is measured by hand before the tag (11.6).*
@@ -1787,6 +1788,24 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 - **The selection** comes from the host, as the session holds it (12.5); a click gives `Intent::Select`.
 - **The keys** of notation 2.6 come through `craft-keymap`, from the keys the host gives, so that the user changes
   them.
+- **As step 2a writes them.** One intent, `Intent::Select(Selection)`: a click, Shift or Ctrl with a click, a rectangle
+  on the empty canvas (or Shift and a drag, with the setting "drag on the empty canvas pans", a preference of the user
+  until the card `Settings` of step 6), and on the canvas that has the focus Tab, the arrows, Enter and Escape, which it
+  reads itself; Ctrl+A and Alt+Left or Alt+Right are keys of `ide` in the scope `Diagram` of its keymap, which asks the
+  canvas for the selection (`Canvas::step_selection`). A rectangle adds to the selection with Ctrl, or with Shift when
+  the setting is off; Tab and the arrows pass a node that no command names (its line unknown), and the canvas scrolls
+  to keep the focus in view. The selection is named as the commands name it, `ide` makes it
+  `view.select`, and the canvas finds on the drawing what `Shown::selection` names. The drawing names what can be
+  selected: `Placed::name`, `WireOf::named` (each wire of the value that a command names: a click selects the whole
+  value) and `Hint::selects` (`input x`, `output x`); a node with no name, or with a name of two arms, is named by its
+  line, `@N` (commands.md 9.2), which `edit` reads by the lines of the text kept before canonical form; a name that no
+  command reads yet is left out (the inputs of a structure until step 5), and the wire keeps its halo and its values
+  pinned.
+  A test holds every name of the drawings of `examples/` to `view.select` (`apps/labcraft-cli/tests/engine.rs`).
+  `show_in_style` is `begin` (the viewport, the glide, what the viewport shows and the pointer is over), `input` and
+  `paint`; `describe` gives the tree of AccessKit, the canvas a list box and each node and terminal of the frame an
+  option, selected or not. The box of a shape is `diagram::extent`; a node is hit on its box, a structure on its header
+  and its edges (its frames are canvas), a wire within 4 units of its route.
 
 ### 12.7 The window: `kit-*` and `ide` (L8)
 
@@ -1896,7 +1915,9 @@ stay.
    on `ide` (its `Host` in the worker) and the detached windows (a floating panel on the web).
 2. **Selection and move.** The intents of the canvas, the cut of `show_in_style`, one box per shape, the preview of a
    drag and the cuts of `diagram`, `node.move`, `node.place`, `layout.arrange`, the pin of a fixed node, the
-   inspector.
+   inspector. In two parts (decision of the owner, 2026-11-17): 2a, the selection (the intents, the cut, one box, the
+   keys of the selection, the inspector read only); 2b, the move (the commands, the preview, the pin, what the inspector
+   changes).
 3. **Wiring.** Drawing a wire, a refusal at the drop, replacing, `wire.route` and branches (notation 2.4), the names of
    outputs.
 4. **Insertion and the rest of the nodes.** Quick insertion, delete, copy and paste (`fragment.*`), constants, rename,

@@ -42,6 +42,8 @@ impl Viewport {
     /// Pans and zooms as the pointer says; fits the drawing the first time, with `above` units over it, and as wide as
     /// `width` when that is more: the banner of the values of a run (notation 6.1).
     /// `wheel_taken`: the wheel turns an iteration selector, and does not scroll (notation 6.1); it still zooms with Ctrl.
+    /// `pan`: the drag under way pans (the middle button, or the setting "drag on the empty canvas pans").
+    #[allow(clippy::too_many_arguments)]
     pub fn read_input(
         &mut self,
         ctx: &egui::Context,
@@ -50,6 +52,7 @@ impl Viewport {
         drawing: &Drawing,
         (above, width): (f32, f32),
         wheel_taken: bool,
+        pan: bool,
     ) {
         let now = ctx.input(|input| input.time);
         if std::mem::take(&mut self.zoom_moved) {
@@ -64,7 +67,7 @@ impl Viewport {
             self.fitted = true;
             self.changed = now;
         }
-        if response.dragged() {
+        if pan {
             self.origin -= response.drag_delta() / self.zoom;
         }
         if response.hovered() {
@@ -241,11 +244,6 @@ impl Grid {
     /// Whether a node shows: every arm in tabs around it is shown.
     pub fn shown(&self, placed: usize, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
         visible(self.within.get(placed).copied().flatten())
-    }
-
-    /// The innermost node shown under `at`: the last drawn that holds it.
-    pub fn node_at(&self, _drawing: &Drawing, at: Pos2, visible: &dyn Fn(Option<usize>) -> bool) -> Option<usize> {
-        self.nodes.iter().enumerate().filter(|(index, area)| area.contains(at) && self.shown(*index, visible)).map(|(index, _)| index).last()
     }
 }
 

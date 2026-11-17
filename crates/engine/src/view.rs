@@ -919,6 +919,7 @@ fn draw_in(view: &mut View, window: &mut Window, glide: bool) -> Value {
     view.publish();
     window.shown.drawing_generation = view.count();
     window.shown.glide = glide;
+    let before = window.shown.drawing.clone();
     // The values of the drawing before are not those of this one: they come once its trace is read.
     window.traced.due = true;
     window.drawn = false;
@@ -938,6 +939,7 @@ fn draw_in(view: &mut View, window: &mut Window, glide: bool) -> Value {
         _ => None,
     };
     let Some((file, (picture, drawn, entry, added))) = rendered else {
+        keep_lines(&mut window.shown.selection, before.as_deref(), None);
         window.shown.drawing = None;
         window.shown.kept = false;
         window.shown.trace = None;
@@ -957,12 +959,32 @@ fn draw_in(view: &mut View, window: &mut Window, glide: bool) -> Value {
         window.shown.kept = false;
         picture
     };
+    keep_lines(&mut window.shown.selection, before.as_deref(), Some(&shown));
     window.shown.drawing = Some(shown);
     // The warnings of the drawing (`LC7005`) have no mark: the problems of the viewer list them.
     window.drawing_report = Some(added);
     window.shown.arms = view.views.get(&file).map(|of| of.arms.clone()).unwrap_or_default();
     window.entry = entry.clone();
     entry
+}
+
+/// A node named by its line (`@N`, commands.md 9.2) stays in the selection while the same node, known by its key, starts
+/// on that line in the new drawing; otherwise its line names another node now, or none, and it leaves the selection with
+/// the wires that reach it (decision of the owner, 2026-11-17).
+fn keep_lines(selection: &mut window::Selection, before: Option<&Drawing>, after: Option<&Drawing>) {
+    // `@N` is the node that starts on line N, whatever its name in the drawing.
+    let key_of = |drawing: Option<&Drawing>, name: &str| {
+        let line = name.strip_prefix('@')?.parse::<u32>().ok()?;
+        drawing?.placed.iter().find(|placed| placed.line == line).map(|placed| placed.key.clone())
+    };
+    let stays = |name: &str| {
+        let key = key_of(before, name);
+        key.is_some() && key == key_of(after, name)
+    };
+    selection.nodes.retain(|name| !name.starts_with('@') || stays(name));
+    selection.wires.retain(|wire| {
+        wire.split(|letter: char| !(letter.is_alphanumeric() || letter == '@' || letter == '_')).filter(|piece| piece.starts_with('@')).all(stays)
+    });
 }
 
 /// An entry of `diagrams` in `labcraft-diagram/1` (`docs/cli.md`, 7.5), without the path of an SVG.

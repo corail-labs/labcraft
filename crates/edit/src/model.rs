@@ -1,10 +1,13 @@
 //! One file being edited: its model in canonical form, the names it interns, and the way back to text.
 
+use std::collections::HashMap;
+
 use labcraft_format::{canonicalize, format, read};
 use labcraft_graph::{Decl, File, Function, Id, SourceMap};
 use labcraft_types::{Interner, Limits, Name, Position, Report, Span};
 
 use crate::EditError;
+use crate::scope::{self, Loc};
 
 pub(crate) struct Edit {
     pub path: String,
@@ -12,9 +15,31 @@ pub(crate) struct Edit {
     pub original: String,
     pub names: Interner,
     pub file: File,
+    /// The line where each statement starts in the text as it was given, by its place, for a node named `@N` (commands.md
+    /// 9.2), a line of that text as the drawing and the diagnostics count it. Canonical form renumbers the ids, so the
+    /// lines are read before it, and kept only when it moved no statement: a place then names the same statement in
+    /// both. Empty otherwise, and `@N` names nothing.
+    pub lines: HashMap<Loc, u32>,
     /// Where new ids come from: an id only names a place in the map that made it, and the text is read again at the end.
     ids: SourceMap,
     limits: Limits,
+}
+
+/// What tells a statement from another: its kind, its label, the values it binds.
+type Shape = (std::mem::Discriminant<labcraft_graph::StatementKind>, Option<Name>, Vec<Name>);
+
+/// Each statement of the function of `file` by its place, with its line in `map` when one is given, and its shape.
+fn shapes(file: &File, map: Option<&SourceMap>) -> Vec<(Loc, Option<u32>, Shape)> {
+    let Decl::Function(function) = &file.decl else { return Vec::new() };
+    scope::all(function)
+        .into_iter()
+        .filter_map(|loc| {
+            let statement = scope::statement(function, &loc)?;
+            let line = map.and_then(|map| map.span(statement.id)).map(|span| span.start.line);
+            let shape = (std::mem::discriminant(&statement.kind), statement.label.map(|label| label.name), scope::targets(statement));
+            Some((loc, line, shape))
+        })
+        .collect()
 }
 
 impl Edit {
@@ -28,12 +53,16 @@ impl Edit {
             let why = reading.report.diagnostics().first().map(|diagnostic| diagnostic.message.clone()).unwrap_or_default();
             return Err(EditError::new("file.unparsed", format!("`{path}` does not parse, so it cannot be edited as a graph: {why}")).of("file"));
         };
+        let before = shapes(&file, Some(&reading.source_map));
         let mut changes = Report::for_limits(&limits);
         let file = canonicalize(file, &reading.source_map, &mut names, &mut changes);
         if !matches!(file.decl, Decl::Function(_)) {
             return Err(EditError::invalid("file", format!("`{path}` holds no function with a body")));
         }
-        Ok(Edit { path: path.to_owned(), original: text.to_owned(), names, file, ids: SourceMap::default(), limits })
+        let after = shapes(&file, None);
+        let same = before.len() == after.len() && before.iter().zip(&after).all(|(a, b)| a.0 == b.0 && a.2 == b.2);
+        let lines = if same { before.into_iter().filter_map(|(loc, line, _)| Some((loc, line?))).collect() } else { HashMap::new() };
+        Ok(Edit { path: path.to_owned(), original: text.to_owned(), names, file, lines, ids: SourceMap::default(), limits })
     }
 
     pub fn function(&self) -> Option<&Function> {

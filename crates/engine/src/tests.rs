@@ -1281,6 +1281,47 @@ fn the_window_refuses_an_agent_and_a_selection_of_nothing() {
     assert_eq!(session.view().opened, ["b", "c"]);
 }
 
+/// A node is also named by its line, `@N` (commands.md 9.2; decision of the owner, 2026-11-17), for a node with no name
+/// or a name of several arms; it leaves the selection when its file changes, since the line may be another node's then.
+#[test]
+fn a_node_named_by_its_line_is_selected_and_leaves_the_selection_when_its_file_changes() {
+    let (mut session, _) = session();
+    session.with_window();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "double" }));
+    // `y = core.mul(x, 2)` starts on line 8 of MAIN, by hand; `x` reaches it by one wire.
+    let selected = json!({ "function": "double", "nodes": ["@8", "y"], "wires": ["x -> @8"] });
+    assert_eq!(ok(&mut session, "view.select", selected), json!({ "selected": 3 }));
+    for wrong in ["@9", "@0"] {
+        let refused = error(&mut session, "view.select", json!({ "function": "double", "nodes": [wrong] }));
+        assert_eq!((refused.code, refused.parameter.as_deref()), ("edit.unknown", Some("nodes")), "{wrong}");
+    }
+    // A line after it leaves its line to it: it stays selected, its key the same (by hand: `y` is still on line 8).
+    let after = MAIN.replace(
+        "    y = core.mul(x, 2)
+",
+        "    y = core.mul(x, 2)
+    k = core.add(y, 1)
+",
+    );
+    ok(&mut session, "file.write", json!({ "path": "double.lcf", "text": after }));
+    // The view is drawn again when the app says that files changed, as its watch does.
+    session.files_changed();
+    assert_eq!(session.view().main.selection.nodes, ["@8", "y"]);
+    // A line above it moves it to line 9: `@8` names another node now, so it leaves, with the wire into it.
+    let above = after.replace(
+        "fn double(x: f64) -> (y: f64) {
+",
+        "fn double(x: f64) -> (y: f64) {
+    m = core.add(x, 1)
+",
+    );
+    ok(&mut session, "file.write", json!({ "path": "double.lcf", "text": above }));
+    session.files_changed();
+    let selection = session.view().main.selection.clone();
+    assert_eq!((selection.nodes.as_slice(), selection.wires.len()), (["y".to_owned()].as_slice(), 0));
+}
+
 /// Step 1b (ide.md 9; decisions of the owner, 2026-11-16): a tab detaches into a window of its own with what it shows,
 /// each window has its drawing, its selection and its zoom, closing the window closes the tab, and it docks back.
 #[test]
