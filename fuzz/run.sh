@@ -53,10 +53,11 @@ log=target/$target.log
 cargo run --quiet --locked --bin deep_seeds -- "$seeds"
 mkdir -p "corpus/$target" "artifacts/$target"
 # New inputs go to the first folder; the others are only read, and libFuzzer walks them recursively. `edit` reads its
-# input as steps, a byte at a time, on a project built into the target: the files of the repository give it nothing a
-# random input does not, and their 272 inputs of up to 500 steps took more than its 60 s to read in the job `fuzz`.
-folders=("corpus/$target")
-if [ "$target" != edit ]; then folders+=(../examples ../libs ../docs/rfc ../tests/acceptance "$seeds"); fi
+# input as steps, a byte at a time, on a project built into the target, and each input of the repository takes about
+# 0.6 s: all of them took more than its 60 s in the job `fuzz`. It reads only `examples/`, for long inputs from the
+# start; with none, libFuzzer grows its inputs slowly, and 60 s stayed at 4 bytes.
+folders=("corpus/$target" ../examples)
+if [ "$target" != edit ]; then folders+=(../libs ../docs/rfc ../tests/acceptance "$seeds"); fi
 # Built before the clock starts, so that the time of the build does not hide a run that stopped early.
 cargo fuzz build "$target"
 
