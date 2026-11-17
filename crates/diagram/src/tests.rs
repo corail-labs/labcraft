@@ -681,8 +681,8 @@ fn an_icon_number_has_no_exponent() {
     assert_eq!(crate::size::icon_number("0.006", false), 1);
 }
 
-/// More than three inputs on a D, a variadic `add`, from the top, one per place: the D grows by two places at a time,
-/// its output at the middle, on the grid.
+/// Above three inputs, a D draws every input from the top, one per place, including extra inputs that `check` refuses.
+/// The D grows by two places at a time, with its output at the middle, on the grid.
 #[test]
 fn a_d_holds_all_its_inputs() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = core.add(a, b, a, b, a)\n}\n";
