@@ -145,10 +145,11 @@ pub(crate) fn read_constant(edit: &mut Edit, value: &str) -> Result<Operand, Edi
     let text = format!("labcraft 1\n\nfn f() -> () {{\n    x = {value}\n}}\n");
     let limits = edit.limits().clone();
     let reading = read(text.as_bytes(), &mut edit.names, &limits);
-    let not_one = || EditError::invalid("value", format!("`{value}` is not one constant of the language"));
+    let shown = crate::cut(value);
+    let not_one = || EditError::invalid("value", format!("`{shown}` is not one constant of the language"));
     let Some(file) = reading.file else {
         let why = reading.report.diagnostics().first().map(|diagnostic| diagnostic.message.clone()).unwrap_or_default();
-        return Err(EditError::invalid("value", format!("`{value}` does not read: {why}")));
+        return Err(EditError::invalid("value", format!("`{shown}` does not read: {why}")));
     };
     let labcraft_graph::Decl::Function(function) = file.decl else { return Err(not_one()) };
     let [statement] = function.body.statements.as_slice() else { return Err(not_one()) };
@@ -156,7 +157,7 @@ pub(crate) fn read_constant(edit: &mut Edit, value: &str) -> Result<Operand, Edi
         return Err(not_one());
     }
     let StatementKind::Binding { value: Rhs::Operand(operand), targets } = &statement.kind else {
-        return Err(EditError::invalid("value", format!("`{value}` is not a constant: a struct or a variant with values is a node (`node.add`)")));
+        return Err(EditError::invalid("value", format!("`{shown}` is not a constant: a struct or a variant with values is a node (`node.add`)")));
     };
     if targets.len() != 1 {
         return Err(not_one());
@@ -164,7 +165,7 @@ pub(crate) fn read_constant(edit: &mut Edit, value: &str) -> Result<Operand, Edi
     if !is_constant(operand) {
         return Err(EditError::invalid(
             "value",
-            format!("`{value}` is a value, not a constant: a literal, an array of them, or a variant such as `Verdict.Pass`"),
+            format!("`{shown}` is a value, not a constant: a literal, an array of them, or a variant such as `Verdict.Pass`"),
         ));
     }
     Ok(operand.clone())

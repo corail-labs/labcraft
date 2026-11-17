@@ -108,6 +108,11 @@ pub(crate) fn take_out(edit: &mut Edit, judge: &dyn Judge, name: Name, label: bo
             }
         }
     }
+    leave_out_holes(edit, judge, leave_out)
+}
+
+/// Leaves out each argument at these places, a hole now, where the text can leave it out (9.1).
+pub(crate) fn leave_out_holes(edit: &mut Edit, judge: &dyn Judge, mut leave_out: Vec<(Loc, usize)>) -> Result<(), EditError> {
     // Last first, so that the indices of the others hold; the rule reads the arguments as the holes left them.
     leave_out.sort();
     leave_out.dedup();

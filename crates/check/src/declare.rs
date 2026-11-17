@@ -24,7 +24,7 @@ use crate::{Libraries, Origin};
 mod body;
 
 pub use self::body::{Align, Format, MAX_ICON_SHAPES, PathSegment, Piece, icon_refused, path_segments};
-pub(crate) use self::body::{read_escapes, template_fields, template_pieces};
+pub(crate) use self::body::{read_escapes, template_fields, template_pieces, template_read};
 #[cfg(test)]
 mod tests;
 

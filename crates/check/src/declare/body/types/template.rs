@@ -335,6 +335,23 @@ pub(crate) fn template_fields(text: &str) -> Vec<String> {
     read_template(text, &mut |_| {}).0.into_iter().map(|field| field.name.into_owned()).filter(|name| seen.insert(name.clone())).collect()
 }
 
+/// The fields of a template whose escapes are read, as `template_fields` gives them, or the message of the first mistake
+/// that `check` would say of it (R-12): what `node.set_template` refuses.
+pub(crate) fn template_read(text: &str) -> Result<Vec<String>, String> {
+    let mut first: Option<String> = None;
+    let (fields, malformed) = read_template(text, &mut |mistake| {
+        first.get_or_insert(mistake.message);
+    });
+    if let Some(message) = first {
+        return Err(message);
+    }
+    if malformed {
+        return Err("the template does not read (5.4, R-12)".to_owned());
+    }
+    let mut seen = HashSet::new();
+    Ok(fields.into_iter().map(|field| field.name.into_owned()).filter(|name| seen.insert(name.clone())).collect())
+}
+
 /// The parts of a template whose escapes are read, in order, as the runtime writes them out; `None` for a template that
 /// `check` refuses (R-12). A field written twice is in each of its places, with the format of that place.
 pub(crate) fn template_pieces(text: &str) -> Option<Vec<Piece<'_>>> {

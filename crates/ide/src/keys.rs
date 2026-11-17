@@ -67,6 +67,8 @@ pub const ROUTE_WITH_SHIFT_ALT: &str = "ide.route_with_shift_alt";
 pub const QUICK_INSERT: &str = "ide.quick_insert";
 /// Delete and Backspace (notation 2.6): the selection, or what the terminal in focus holds, one step.
 pub const DELETE: &str = "ide.delete";
+/// F2 (notation 2.6): the name of the node selected in a field in place, or its label.
+pub const RENAME: &str = "ide.rename";
 /// The settings "autopatch from the keyboard" and "inserting into a wire" of notation 2.6, on by default: preferences of
 /// the user until the card `Settings` of step 6, as those of steps 2 and 3.
 pub const AUTOPATCH: &str = "ide.autopatch";
@@ -104,6 +106,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (ROUTE_WITH_SHIFT_ALT, "Move a wire with Shift+Alt"),
     (QUICK_INSERT, "Quick insertion"),
     (DELETE, "Delete the selection"),
+    (RENAME, "Rename the node selected"),
     (AUTOPATCH, "Autopatch from the keyboard"),
     (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
@@ -147,6 +150,7 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(WIRE, "Start a wire", &["W"]),
         on_canvas(QUICK_INSERT, "Quick insertion", &["Space"]),
         on_canvas(DELETE, "Delete", &["Delete", "Backspace"]),
+        on_canvas(RENAME, "Rename", &["F2"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
     // A key of the canvas never acts when the canvas does not have the focus.
@@ -198,6 +202,7 @@ pub fn menus() -> MenuBar {
             item(WIRE, "Start a wire from the terminal"),
             item(QUICK_INSERT, "Quick insertion…"),
             item(DELETE, "Delete"),
+            item(RENAME, "Rename…"),
             Node::Separator,
             item(PALETTE, "Command palette…"),
         ],

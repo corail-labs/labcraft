@@ -24,6 +24,7 @@ use egui::{Color32, PointerButton, Pos2, Rect, Response, Sense, Ui, Vec2};
 use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
+mod fields;
 mod fonts;
 pub mod insertion;
 pub(crate) mod moving;
@@ -36,6 +37,7 @@ pub(crate) mod series;
 pub(crate) mod view;
 pub(crate) mod wiring;
 
+pub use fields::FieldKind;
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
@@ -127,6 +129,9 @@ pub enum Intent {
     Drop { call: String, at: (i64, i64), into: Option<String> },
     /// What the status bar says, and a screen reader announces (notation 2.6): why a drop wrote nothing.
     Say(String),
+    /// A field in place written (notation 2.6): the host sends its command, and calls [`Canvas::close_field`] when it is
+    /// done or [`Canvas::field_refused`] with the message of a refusal.
+    Field { kind: FieldKind, text: String },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -229,6 +234,8 @@ pub struct Canvas {
     wire_context: Option<usize>,
     /// The room of the last frame, on the screen: where quick insertion opens.
     rect: Rect,
+    /// The field in place open (notation 2.6).
+    field: Option<fields::Field>,
 }
 
 /// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
@@ -393,6 +400,7 @@ impl Canvas {
             rerouting: None,
             wire_context: None,
             rect: Rect::NOTHING,
+            field: None,
         }
     }
 
@@ -910,6 +918,14 @@ impl Canvas {
                 self.typing = Some(Typing { key: selector.key.clone(), count: selector.count, text: String::new(), hint, at, focused: false });
             }
         }
+        // A double-click on what a field in place edits opens it (notation 2.6).
+        if response.double_clicked()
+            && !consumed
+            && let Some(at) = response.interact_pointer_pos()
+            && self.field_at(frame, unit_of(at))
+        {
+            consumed = true;
+        }
         self.select_by_pointer(response, frame, shown, clicked_unit.filter(|_| !consumed), input);
         self.select_by_keys(ui, response, frame, input);
         // The number typed into a selector: Enter chooses that iteration, from 1 as the selector counts; Escape, or a click
@@ -938,6 +954,7 @@ impl Canvas {
                 self.typing = None;
             }
         }
+        self.show_field(frame, input);
         self.pinned_values(frame, input);
         self.palette_drop(response, frame, shown, input);
         // The tooltip of a terminal under the pointer: its name, its exact type, the default of an input that no argument
@@ -1021,8 +1038,7 @@ impl Canvas {
     /// wire" (notation 2.4).
     fn fixed_menu(&mut self, response: &Response, frame: &Frame, input: &mut Input) {
         if response.secondary_clicked() {
-            self.context =
-                frame.hovered.filter(|&placed| frame.drawing.placed.get(placed).is_some_and(|found| found.at.is_some() && !found.name.is_empty()));
+            self.context = frame.hovered;
             let unit_of = |at: Pos2| (self.viewport.origin + (at - frame.rect.min) / self.viewport.zoom).to_pos2();
             let visible = |within: Option<usize>| frame.visible(within);
             let reach = (5.0 / self.viewport.zoom).max(WIRE_REACH);
@@ -1049,16 +1065,25 @@ impl Canvas {
             return;
         }
         let Some(placed) = self.context else { return };
-        let name = frame.drawing.placed.get(placed).map(|found| found.name.clone()).unwrap_or_default();
-        let mut asked = false;
+        let (name, fixed) =
+            frame.drawing.placed.get(placed).map(|found| (found.name.clone(), found.at.is_some() && !found.name.is_empty())).unwrap_or_default();
+        let (mut arrange, mut label) = (false, false);
         response.context_menu(|ui| {
-            if ui.button("Remove the fixed position").clicked() {
-                asked = true;
+            if ui.button("Label…").clicked() {
+                label = true;
+                ui.close();
+            }
+            if fixed && ui.button("Remove the fixed position").clicked() {
+                arrange = true;
                 ui.close();
             }
         });
-        if asked {
+        if arrange {
             input.intents.push(Intent::Arrange(Selection { nodes: vec![name], ..Selection::default() }));
+            self.context = None;
+        }
+        if label {
+            self.edit_label(placed);
             self.context = None;
         }
     }

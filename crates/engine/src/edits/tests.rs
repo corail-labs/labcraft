@@ -534,3 +534,27 @@ fn a_junction_follows_its_trunk_after_the_move_of_an_agent() {
     assert_ne!((x, y), junction, "{after}");
     assert!(!on_path(&trunk.path, junction), "{trunk:?}");
 }
+
+/// The fields in place of M1 step 4b through the session: each a step that undo reverses, the template read by the
+/// check of the session (commands.md 6.7, 9.1).
+#[test]
+fn the_fields_in_place_are_steps_of_history() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\nuse string\n\nfn h(x: f64) -> (y: f64, t: string) {\n    a = core.mul(x, 2.0)\n    t = string.format(\"{v}\", v: a)\n    y = core.add(a, 1.0)\n}\n";
+    memory.put("/p/h.lcf", before);
+    ok(&mut session, "input.set_constant", json!({ "file": "h.lcf", "to": "y.b", "value": "5.0", "replace": true }));
+    let renamed = ok(&mut session, "value.rename", json!({ "file": "h.lcf", "value": "a", "name": "doubled" }));
+    assert_eq!(renamed["names"], json!({ "value": "doubled" }));
+    ok(&mut session, "node.set_template", json!({ "file": "h.lcf", "node": "t", "template": "\"{v} and {u}\"" }));
+    let after = "labcraft 1\n\nuse core\nuse string\n\nfn h(x: f64) -> (y: f64, t: string) {\n    doubled = core.mul(x, 2.0)\n    t = string.format(\"{v} and {u}\", v: doubled)\n    y = core.add(doubled, 5.0)\n}\n";
+    assert_eq!(text(&memory, "/p/h.lcf"), after);
+    let author = Author::User;
+    let bad = refused(&mut session, &author, "node.set_template", json!({ "file": "h.lcf", "node": "t", "template": "\"{v\"" }));
+    assert_eq!((bad.code, bad.parameter.as_deref()), ("params.invalid", Some("template")));
+    let line = refused(&mut session, &author, "node.set_label", json!({ "file": "h.lcf", "line": 0, "label": "#a" }));
+    assert_eq!((line.code, line.parameter.as_deref()), ("params.invalid", Some("line")));
+    for _ in 0..3 {
+        ok(&mut session, "history.undo", json!({}));
+    }
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+}

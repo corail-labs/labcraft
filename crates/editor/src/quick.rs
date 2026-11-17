@@ -115,6 +115,14 @@ impl Canvas {
     /// The wires that Delete on a terminal removes (notation 2.6): of a terminal of the frame (`input x`, `output y`) or
     /// of the terminal in focus, as `wire.disconnect` names them. An input of a node, or an output of the function, has
     /// its one wire; an output of a node, or an input of the function, every wire of its value.
+    /// The input in focus when it holds a constant, as `input.clear_constant` names it: Delete takes the constant out
+    /// (notation 2.6).
+    pub fn constant_in_focus(&self) -> Option<String> {
+        let drawing = self.drawing.as_ref()?;
+        let port = self.port_focus.and_then(|at| drawing.ports.get(at))?;
+        (port.input && matches!(port.holds, Holds::Constant(_)) && port.never.is_empty() && !port.name.is_empty()).then(|| port.name.clone())
+    }
+
     pub fn wires_of_terminal(&self, terminal: Option<&str>) -> Vec<String> {
         let Some(drawing) = self.drawing.as_ref() else { return Vec::new() };
         let port = match terminal {

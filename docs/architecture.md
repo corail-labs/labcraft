@@ -1938,6 +1938,14 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   is a `commands.batch` ("Delete") of the `wire.disconnect` of the wires selected and of those of the terminals, then
   `node.delete`. The catalog is read again after each check (`Callables::catalog`); the recent insertions, at most 32,
   and the settings "autopatch from the keyboard" and "inserting into a wire" (both on) are preferences of the user.
+- **As step 4b writes them.** The fields in place are the canvas's own (`fields.rs`): a double-click, `ide.rename` (F2,
+  scope `Diagram`, menu `Edit`) or "Label…" of the context menu of a node opens one, and Enter or the loss of the focus
+  gives `Intent::Field`, which the window sends as one command (`value.rename`, `node.set_label`, `input.set_constant`
+  with `replace`, `input.clear_constant` for an empty field on a constant, `node.set_template`) and follows apart
+  (`Ide::field_edits`): done, the field closes; refused, it stays open with the message. A `string.format` that quick
+  insertion adds opens its template field once the drawing holds it. Delete on a terminal in focus clears its constant
+  too. `edit` reads a template through `Judge::template`, which the session gives from `check` (`template_read`), so
+  that a template refused has the message of `check`; a field of the template is an input by its name (`text.u`).
 
 ### 12.8 `mcp` (L7)
 

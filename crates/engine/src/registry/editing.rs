@@ -390,25 +390,22 @@ pub(super) fn catalog() -> Vec<Command> {
             direct: true,
             window: false,
         },
-        planned(
-            STEP_4,
-            editing(
-                "node.set_template",
-                "Set Template",
-                "Write the template of a `string.format`",
-                "Writes the template of a `string.format` (spec 5.4), a string literal as the text writes it. Each new field gets its named input, unwired; the named argument of each field that is gone goes, with its wire; the others keep their wires, by name. A node that is not a `string.format`, or a template that is not a literal or whose fields do not read, is `params.invalid`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("node", string("The `string.format` node.")),
-                        ("template", string("The template, a string literal as the text writes it: `\"{a} and {b}\"`.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "node", "template"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "node.set_template",
+            "Set Template",
+            "Write the template of a `string.format`",
+            "Writes the template of a `string.format` (spec 5.4), a string literal as the text writes it. Each new field gets its named input, unwired; the named argument of each field that is gone goes, with its wire; the others keep their wires, by name. A node that is not a `string.format`, or a template that is not a literal or whose fields do not read, is `params.invalid`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("node", string("The `string.format` node.")),
+                    ("template", string("The template, a string literal as the text writes it: `\"{a} and {b}\"`.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "node", "template"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         editing(
             "node.move",
@@ -464,103 +461,85 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_4,
-            editing(
-                "value.rename",
-                "Rename Value",
-                "Rename a value or a label everywhere in the function",
-                "Renames a value or a label (`#close` to `#shut`) everywhere in the function: its readers, its `node` line and its `wire` lines. A name that the function already binds is `name.taken`, and so is the name of an output of the function. A name that is not an identifier, or is a keyword, is `name.invalid`. An input or an output of the function is renamed by `signature.rename`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("value", string("The value or the label to rename.")),
-                        ("name", string("Its new name.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "value", "name"],
-                ),
-                NAMING_ERRORS,
-                true,
+        editing(
+            "value.rename",
+            "Rename Value",
+            "Rename a value or a label everywhere in the function",
+            "Renames a value or a label (`#close` to `#shut`) everywhere in the function: its readers, its `node` line and its `wire` lines. A name that the function already binds is `name.taken`, and so is the name of an output of the function. A name that is not an identifier, or is a keyword, is `name.invalid`. An input or an output of the function is renamed by `signature.rename`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("value", string("The value or the label to rename.")),
+                    ("name", string("Its new name.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "value", "name"],
             ),
+            NAMING_ERRORS,
+            true,
         ),
-        planned(
-            STEP_4,
-            editing(
-                "node.set_label",
-                "Set Label",
-                "Give a label to the node that starts on a line, or replace it",
-                "Gives a label (`#close`) to the node that starts on line `line` of the file (from 1, as diagnostics count), or replaces its label. It is the one command that names a node by its line. A line where no node starts is `edit.unknown`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("line", integer("The line where the node starts, from 1.", 1, 4_294_967_295, None)),
-                        ("label", string("The label: `#close`.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "line", "label"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "node.set_label",
+            "Set Label",
+            "Give a label to the node that starts on a line, or replace it",
+            "Gives a label (`#close`) to the node that starts on line `line` of the file (from 1, as diagnostics count), or replaces its label. It is the one command that names a node by its line. A line where no node starts is `edit.unknown`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("line", integer("The line where the node starts, from 1.", 1, 4_294_967_295, None)),
+                    ("label", string("The label: `#close`.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "line", "label"],
             ),
+            NAMING_ERRORS,
+            false,
         ),
-        planned(
-            STEP_4,
-            editing(
-                "input.set_constant",
-                "Set Constant",
-                "Write a constant on an input",
-                "Writes a constant on the input (spec 5.1). For an input that is already wired or that holds a constant, and for a constant of a type that the input does not take, `replace` and `accept_mismatch` act as in `wire.connect`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("to", string("The input: `sq.b`, `msg.parts.2`.")),
-                        ("arm", string("The arm of a structure, by its patterns (M1 step 5).")),
-                        ("value", string("The constant, as a file writes it: `240 V`.")),
-                        ("replace", boolean("Replace what the input holds.", false)),
-                        ("accept_mismatch", boolean("Write a constant of the wrong type anyway.", false)),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "to", "value"],
-                ),
-                CONSTANT_ERRORS,
-                true,
+        editing(
+            "input.set_constant",
+            "Set Constant",
+            "Write a constant on an input",
+            "Writes a constant on the input (spec 5.1). For an input that is already wired or that holds a constant, and for a constant of a type that the input does not take, `replace` and `accept_mismatch` act as in `wire.connect`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("to", string("The input: `sq.b`, `msg.parts.2`.")),
+                    ("arm", string("The arm of a structure, by its patterns (M1 step 5).")),
+                    ("value", string("The constant, as a file writes it: `240 V`.")),
+                    ("replace", boolean("Replace what the input holds.", false)),
+                    ("accept_mismatch", boolean("Write a constant of the wrong type anyway.", false)),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "to", "value"],
             ),
+            CONSTANT_ERRORS,
+            true,
         ),
-        planned(
-            STEP_4,
-            editing(
-                "input.clear_constant",
-                "Clear Constant",
-                "Remove the constant of an input",
-                "Removes the constant of an input: the input goes back to its default, is unwired, or gets a hole `?`. A constant is never the text `?`: clearing is what writes a hole (`params.invalid`).",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("to", string("The input: `sq.b`.")),
-                        ("arm", string("The arm of a structure, by its patterns (M1 step 5).")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "to"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "input.clear_constant",
+            "Clear Constant",
+            "Remove the constant of an input",
+            "Removes the constant of an input: the input goes back to its default, is unwired, or gets a hole `?`. A constant is never the text `?`: clearing is what writes a hole (`params.invalid`).",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("to", string("The input: `sq.b`.")),
+                    ("arm", string("The arm of a structure, by its patterns (M1 step 5).")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "to"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_4,
-            editing(
-                "input.remove_value",
-                "Remove Value",
-                "Remove a value of a variadic parameter or an element of an array",
-                "Removes a value of a variadic parameter or an element of an array (`msg.parts.2`, `k.1`), with its wire or its constant. The values after it move up one place: this command alone moves them, on purpose.",
-                object(
-                    &[("file", string(FILE)), ("to", string("The value: `msg.parts.2`, `k.1`.")), ("expected_revision", revision())],
-                    &["file", "to"],
-                ),
-                EDIT_ERRORS,
-                false,
-            ),
+        editing(
+            "input.remove_value",
+            "Remove Value",
+            "Remove a value of a variadic parameter or an element of an array",
+            "Removes a value of a variadic parameter or an element of an array (`msg.parts.2`, `k.1`), with its wire or its constant. The values after it move up one place: this command alone moves them, on purpose.",
+            object(&[("file", string(FILE)), ("to", string("The value: `msg.parts.2`, `k.1`.")), ("expected_revision", revision())], &["file", "to"]),
+            EDIT_ERRORS,
+            false,
         ),
         editing(
             "wire.route",

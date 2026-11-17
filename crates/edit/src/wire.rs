@@ -32,13 +32,15 @@ const TYPE_CODES: &[Code] = &[
 
 /// Where a wire ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum End {
+pub(crate) enum End {
     /// A place that the node has already, a hole or a value.
     Slot(Loc, Slot),
     /// A parameter that the call does not give yet, by its index in the signature; for a variadic one, its value at `at`.
     NewArg { loc: Loc, param: usize, variadic: Option<usize> },
     /// The `after:` of a call (R-15).
     After(Loc),
+    /// A field of the template of a `string.format` that the call does not give yet, by its name (spec 5.4).
+    Field { loc: Loc, field: String },
     /// An output of the function, a terminal of its frame.
     Output(Name),
 }
@@ -46,7 +48,7 @@ enum End {
 impl End {
     fn loc(&self) -> Option<&Loc> {
         match self {
-            End::Slot(loc, _) | End::NewArg { loc, .. } | End::After(loc) => Some(loc),
+            End::Slot(loc, _) | End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } => Some(loc),
             End::Output(_) => None,
         }
     }
@@ -148,10 +150,16 @@ pub(crate) fn connect(
             let statement = scope::statement(&function, loc).cloned().ok_or_else(|| EditError::internal("a node that went"))?;
             let callable =
                 callee(edit, judge, &statement).ok_or_else(|| EditError::internal("a parameter of a call that the check does not know"))?;
-            add_arg(edit, loc, &callable, *param, variadic.is_some(), value.name)?;
+            let id = edit.id();
+            add_arg(edit, loc, &callable, *param, variadic.is_some(), Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
+        }
+        End::Field { loc, field } => {
+            let Start::Value(value) = &start else { return Err(EditError::internal("a label to a field")) };
+            let id = edit.id();
+            add_field(edit, loc, field, Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
         }
     }
-    judge_types(edit, judge, from, to, accept_mismatch)
+    judge_types(edit, judge, &format!("a wire from `{from}` to `{to}`"), accept_mismatch)
 }
 
 pub(crate) fn disconnect(edit: &mut Edit, judge: &dyn Judge, wire: &str, edited: &mut Edited) -> Result<(), EditError> {
@@ -260,22 +268,22 @@ fn after_holds(statement: &Statement, name: Name, label: bool) -> bool {
     })
 }
 
-fn step_five(parameter: &'static str, what: &str) -> EditError {
+pub(crate) fn step_five(parameter: &'static str, what: &str) -> EditError {
     EditError::invalid(parameter, format!("{what} is edited from M1 step 5 (structures)"))
 }
 
-fn occupied(edit: &Edit, to: &str, held: &Operand) -> EditError {
+pub(crate) fn occupied(edit: &Edit, to: &str, held: &Operand) -> EditError {
     let what = labcraft_format::write_operand(held, &edit.names, 60);
     EditError::new("wire.occupied", format!("`{to}` already holds `{what}`: pass `replace` to replace it")).of("to")
 }
 
 /// The name of the node of a statement, as `layout` names it.
-fn statement_node(statement: &Statement) -> Option<(Name, bool)> {
+pub(crate) fn statement_node(statement: &Statement) -> Option<(Name, bool)> {
     statement.label.map(|label| (label.name, true)).or_else(|| scope::line_name(statement).map(|name| (name, false)))
 }
 
 /// The name of an input of a node, as the end of a wire names it after the node (spec 11): `b`, `0`, `parts.2`.
-fn input_name(edit: &Edit, judge: &dyn Judge, statement: &Statement, slot: Slot) -> Option<String> {
+pub(crate) fn input_name(edit: &Edit, judge: &dyn Judge, statement: &Statement, slot: Slot) -> Option<String> {
     match slot {
         Slot::Arg(index) => {
             let args = args(statement)?;
@@ -457,7 +465,7 @@ fn from_output(edit: &Edit, function: &Function, from: &str, output: &str) -> Re
 
 /// Removes the entries of `layout` for the wire of `value` to a node: the one that names the input, and the one that
 /// names none when the value no longer reaches the node.
-fn forget_wire(edit: &mut Edit, value: Name, node: Option<(Name, bool)>, input: Option<&str>) {
+pub(crate) fn forget_wire(edit: &mut Edit, value: Name, node: Option<(Name, bool)>, input: Option<&str>) {
     let Some((node, is_label)) = node else { return };
     let input = input.map(|text| edit.names.find(text));
     let still_reaches = edit.function().is_some_and(|function| {
@@ -484,7 +492,7 @@ fn forget_wire(edit: &mut Edit, value: Name, node: Option<(Name, bool)>, input: 
 }
 
 /// The arguments of the call at `loc`.
-fn call_args<'e>(edit: &'e mut Edit, loc: &Loc) -> Result<&'e mut Box<[Arg]>, EditError> {
+pub(crate) fn call_args<'e>(edit: &'e mut Edit, loc: &Loc) -> Result<&'e mut Box<[Arg]>, EditError> {
     let function = edit.body_function_mut()?;
     scope::statement_mut(function, loc).and_then(crate::places::args_mut).ok_or_else(|| EditError::internal("a call that went"))
 }
@@ -492,7 +500,7 @@ fn call_args<'e>(edit: &'e mut Edit, loc: &Loc) -> Result<&'e mut Box<[Arg]>, Ed
 /// Adds the argument of a parameter that the call does not give. Positional arguments come first (R-11): the value goes
 /// in its position when every parameter before it is given by position, by name otherwise. A value of a variadic parameter
 /// is positional: the parameters before it are given by position first, a hole where nothing feeds them (9.1).
-fn add_arg(edit: &mut Edit, loc: &Loc, callable: &Callable, param: usize, variadic: bool, value: Name) -> Result<(), EditError> {
+pub(crate) fn add_arg(edit: &mut Edit, loc: &Loc, callable: &Callable, param: usize, variadic: bool, operand: Operand) -> Result<(), EditError> {
     let names: Vec<Name> = callable.inputs.iter().map(|input| edit.intern(&input.name)).collect();
     let mut ids = Vec::with_capacity(param + 2);
     for _ in 0..=param + 1 {
@@ -502,7 +510,6 @@ fn add_arg(edit: &mut Edit, loc: &Loc, callable: &Callable, param: usize, variad
     let mut list = std::mem::take(args).into_vec();
     let positional = list.iter().take_while(|arg| matches!(arg, Arg::Value { name: None, .. })).count();
     let value_id = ids.pop().unwrap_or_else(|| labcraft_graph_id_fallback(&list));
-    let operand = Operand::Path(Path { id: value_id, first: value, rest: Box::new([]) });
     let named_only = callable.inputs.get(param).is_some_and(|input| input.named_only);
     if variadic || (positional == param && !named_only) {
         let target = if variadic { callable.inputs.iter().position(|input| input.variadic).unwrap_or(param) } else { param };
@@ -548,13 +555,13 @@ fn reader_body(function: &Function, end: &End) -> BodyPath {
         End::Slot(loc, slot) => scope::statement(function, loc)
             .and_then(|statement| slots(statement, loc).into_iter().find(|(found, _)| found == slot).map(|(_, seen_in)| seen_in))
             .unwrap_or_else(|| loc.body.clone()),
-        End::NewArg { loc, .. } | End::After(loc) => loc.body.clone(),
+        End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } => loc.body.clone(),
         End::Output(_) => Vec::new(),
     }
 }
 
 /// What the end of a wire names.
-fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, name: &InputName, from: Option<&str>) -> Result<End, EditError> {
+pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, name: &InputName, from: Option<&str>) -> Result<End, EditError> {
     let (node_name, part) = match name {
         InputName::Output(text) => {
             let output = function.signature.outputs.iter().find(|output| edit.text(output.name) == text.as_str());
@@ -593,6 +600,13 @@ fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, name: &Input
     }
     match &statement.kind {
         StatementKind::Call(call) | StatementKind::Binding { value: Rhs::Call(call), .. } => {
+            if let Part::Name(input) = part
+                && edit_node_text(edit, call) == FORMAT
+                && input != "template"
+                && let Some(field) = format_field(edit, judge, &loc, call, input)
+            {
+                return Ok(field);
+            }
             let callable = callee(edit, judge, statement);
             call_end(edit, &loc, call, callable.as_ref(), part, &unknown)
         }
@@ -719,7 +733,41 @@ fn call_end(
     Ok(End::NewArg { loc: loc.clone(), param, variadic: None })
 }
 
-fn edit_node_text(edit: &Edit, call: &labcraft_graph::Call) -> String {
+/// The call whose template names its other inputs (spec 5.4).
+pub(crate) const FORMAT: &str = "string.format";
+
+/// The template of a `string.format`, as the text writes it: its first argument given by position, or the one named
+/// `template`.
+pub(crate) fn template_of<'c>(edit: &Edit, call: &'c labcraft_graph::Call) -> Option<(usize, &'c Operand)> {
+    call.args.iter().enumerate().find_map(|(index, arg)| match arg {
+        Arg::Value { name: None, value, .. } if index == 0 => Some((index, value)),
+        Arg::Value { name: Some(name), value, .. } if edit.text(*name) == "template" => Some((index, value)),
+        _ => None,
+    })
+}
+
+/// A field of the template of a `string.format`: the argument that gives it, or the field the call does not give yet.
+fn format_field(edit: &Edit, judge: &dyn Judge, loc: &Loc, call: &labcraft_graph::Call, input: &str) -> Option<End> {
+    if let Some(index) = call.args.iter().position(|arg| matches!(arg, Arg::Value { name: Some(name), .. } if edit.text(*name) == input)) {
+        return Some(End::Slot(loc.clone(), Slot::Arg(index)));
+    }
+    let Some((_, Operand::Text(_, literal))) = template_of(edit, call) else { return None };
+    let fields = judge.template(literal).ok()?;
+    fields.iter().any(|field| field == input).then(|| End::Field { loc: loc.clone(), field: input.to_owned() })
+}
+
+/// Gives a field of a `string.format` by name, after the other arguments (R-11).
+pub(crate) fn add_field(edit: &mut Edit, loc: &Loc, field: &str, operand: Operand) -> Result<(), EditError> {
+    let name = edit.intern(field);
+    let id = edit.id();
+    let args = call_args(edit, loc)?;
+    let mut list = std::mem::take(args).into_vec();
+    list.push(Arg::Value { id, name: Some(name), value: operand });
+    *args = list.into_boxed_slice();
+    Ok(())
+}
+
+pub(crate) fn edit_node_text(edit: &Edit, call: &labcraft_graph::Call) -> String {
     let segments: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
     segments.join(".")
 }
@@ -923,7 +971,8 @@ fn names_in(operand: &Operand, found: &mut Vec<Name>) {
 }
 
 /// A wire of the wrong type is refused (`wire.type_mismatch`), unless it is accepted: it then gives `LC3001` (2.4).
-fn judge_types(edit: &Edit, judge: &dyn Judge, from: &str, to: &str, accept_mismatch: bool) -> Result<(), EditError> {
+/// `what` says what is written: "a wire from `a` to `b`", "the constant `1 V` on `b`".
+pub(crate) fn judge_types(edit: &Edit, judge: &dyn Judge, what: &str, accept_mismatch: bool) -> Result<(), EditError> {
     if accept_mismatch {
         return Ok(());
     }
@@ -945,7 +994,7 @@ fn judge_types(edit: &Edit, judge: &dyn Judge, from: &str, to: &str, accept_mism
                 };
                 return Err(EditError::new(
                     "wire.type_mismatch",
-                    format!("a wire from `{from}` to `{to}` has the wrong type{types}; pass `accept_mismatch` to write it anyway"),
+                    format!("{what} has the wrong type{types}; pass `accept_mismatch` to write it anyway"),
                 )
                 .of("to"));
             }

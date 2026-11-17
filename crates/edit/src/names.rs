@@ -46,8 +46,11 @@ pub(crate) fn fresh(base: &str, taken: &BTreeSet<String>) -> String {
 /// A name that the caller gives: one name of the language, free in the function.
 pub(crate) fn given(text: &str, taken: &BTreeSet<String>, parameter: &'static str) -> Result<String, EditError> {
     if !is_name(text) {
-        return Err(EditError::new("name.invalid", format!("`{text}` is not a name: a letter, then letters, digits and `_`, and no reserved word"))
-            .of(parameter));
+        return Err(EditError::new(
+            "name.invalid",
+            format!("`{}` is not a name: a letter, then letters, digits and `_`, and no reserved word", crate::cut(text)),
+        )
+        .of(parameter));
     }
     if taken.contains(text) {
         return Err(EditError::new("name.taken", format!("`{text}` is already a name of this function")).of(parameter));
