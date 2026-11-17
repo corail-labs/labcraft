@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use labcraft_check::primitives::{PRIMITIVES, PrimitiveLibrary, primitive};
 use labcraft_check::{Checked, DeclaredFunction, DeclaredLibrary};
+use labcraft_diagram::{DiagramLimits, Drawn, style};
 use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Point};
 use labcraft_types::{Diagnostic, Interner, Severity, Ty};
 use serde_json::{Map, Value, json};
@@ -30,7 +31,8 @@ pub const MAX_DIAGNOSTICS: usize = 200;
 pub const MAX_BATCH: usize = 1_000;
 
 /// The editing commands built, which `Session::dispatch` sends here (commands.md 6.7).
-pub const EDITING: &[&str] = &["node.add", "constant.add", "node.delete", "wire.connect", "wire.disconnect"];
+pub const EDITING: &[&str] =
+    &["node.add", "constant.add", "node.delete", "wire.connect", "wire.disconnect", "node.move", "node.place", "node.set_view", "layout.arrange"];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
 pub fn revision(bytes: &[u8]) -> String {
@@ -106,6 +108,27 @@ fn point(params: &Params, name: &str) -> Result<Option<Point>, CommandError> {
     }
 }
 
+/// A position that the command needs.
+fn required_point(params: &Params, name: &str) -> Result<Point, CommandError> {
+    point(params, name)?.ok_or_else(|| CommandError::of("params.invalid", name, format!("`{name}` is `[x, y]`, two integers")))
+}
+
+/// A list of names, each a text; none when the parameter is not given.
+fn texts(params: &Params, name: &str) -> Result<Option<Vec<String>>, CommandError> {
+    let Some(given) = params.get(name).filter(|value| !value.is_null()) else { return Ok(None) };
+    let Some(given) = given.as_array() else {
+        return Err(CommandError::of("params.invalid", name, format!("`{name}` is a list of names")));
+    };
+    let mut found = Vec::with_capacity(given.len());
+    for value in given {
+        let Some(text) = value.as_str() else {
+            return Err(CommandError::of("params.invalid", name, format!("each of `{name}` is named by a text: `reading`, `#close`")));
+        };
+        found.push(text.to_owned());
+    }
+    Ok(Some(found))
+}
+
 /// A parameter that a later step builds (decision of the owner, 2026-11-15).
 fn not_yet(params: &Params, name: &str, step: &str) -> Result<(), CommandError> {
     match params.get(name) {
@@ -131,16 +154,29 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             not_yet(params, "arm", "5")?;
             Op::ConstantAdd { file, value: params.text("value")?.to_owned(), at: point(params, "at")?, name }
         }
-        "node.delete" => {
-            let given = params.get("nodes").and_then(Value::as_array).cloned().unwrap_or_default();
-            let mut nodes = Vec::with_capacity(given.len());
-            for node in &given {
-                let Some(node) = node.as_str() else {
-                    return Err(CommandError::of("params.invalid", "nodes", "each node is named by a text: `reading`, `#close`"));
-                };
-                nodes.push(node.to_owned());
+        "node.delete" => Op::NodeDelete { file, nodes: texts(params, "nodes")?.unwrap_or_default() },
+        "node.move" => Op::NodeMove { file, nodes: texts(params, "nodes")?.unwrap_or_default(), by: required_point(params, "by")? },
+        "node.place" => Op::NodePlace { file, node: params.text("node")?.to_owned(), at: required_point(params, "at")? },
+        "node.set_view" => {
+            let view = match params.text("view")? {
+                "standard" => Some(labcraft_graph::View::Standard),
+                "compact" => Some(labcraft_graph::View::Compact),
+                "default" => None,
+                other => {
+                    return Err(CommandError::of("params.invalid", "view", format!("`{other}` is no view: `standard`, `compact` or `default`")));
+                }
+            };
+            Op::NodeSetView { file, nodes: texts(params, "nodes")?.unwrap_or_default(), view }
+        }
+        "layout.arrange" => {
+            not_yet(params, "inside", "5")?;
+            not_yet(params, "arm", "5")?;
+            Op::LayoutArrange {
+                file,
+                nodes: texts(params, "nodes")?,
+                wires: texts(params, "wires")?.unwrap_or_default(),
+                terminals: texts(params, "terminals")?.unwrap_or_default(),
             }
-            Op::NodeDelete { file, nodes }
         }
         "wire.connect" => {
             not_yet(params, "arm", "5")?;
@@ -341,6 +377,36 @@ impl Judge for SessionJudge<'_> {
         let report = if as_on_disk { self.kept.report.diagnostics().to_vec() } else { self.check_with(&files).report.diagnostics().to_vec() };
         report.into_iter().filter(|diagnostic| diagnostic.severity() == Severity::Error && diagnostic.file == file).collect()
     }
+
+    fn places(&self, file: &str, text: &str) -> Vec<labcraft_edit::Place> {
+        let session = self.session;
+        let mut files = self.memory.clone();
+        files.insert(session.root.join(file), text.as_bytes().to_vec());
+        let as_on_disk = files.iter().all(|(path, bytes)| bytes_now(session, path).ok().flatten().as_deref() == Some(bytes.as_slice()));
+        let fresh;
+        let kept = if as_on_disk {
+            self.kept
+        } else {
+            fresh = self.check_with(&files);
+            &fresh
+        };
+        let Some((checked, names)) = kept.checked.first() else { return Vec::new() };
+        let Some(index) = checked.files.iter().position(|found| found.shown == file) else { return Vec::new() };
+        let (state, style) = session.view.state_of(file);
+        let work = || style::scope(&style, || labcraft_diagram::draw(checked, index, names, &state, &DiagramLimits::default()));
+        let Ok(Drawn::Drawing(drawing)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) else { return Vec::new() };
+        drawing
+            .placed
+            .iter()
+            .enumerate()
+            .filter_map(|(at, placed)| {
+                let (x, y) = drawing.in_frame(at)?;
+                // In units, as `layout` writes them: hundredths rounded to the nearest unit.
+                let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+                Some(labcraft_edit::Place { line: placed.line, name: placed.name.clone(), at: Point { x: unit(x), y: unit(y) } })
+            })
+            .collect()
+    }
 }
 
 /// What `call` names in the check, seen from `file`.
@@ -483,7 +549,8 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
 }
 
 fn names_json(edited: &labcraft_edit::Edited) -> (Value, Value) {
-    let names: Map<String, Value> = edited.names.iter().map(|(key, value)| ((*key).to_owned(), json!(value))).collect();
+    let mut names: Map<String, Value> = edited.names.iter().map(|(key, value)| ((*key).to_owned(), json!(value))).collect();
+    names.extend(edited.lists.iter().map(|(key, value)| ((*key).to_owned(), json!(value))));
     let renamed: Vec<Value> = edited.renamed.iter().map(|renamed| json!({ "file": renamed.file, "from": renamed.from, "to": renamed.to })).collect();
     (Value::Object(names), Value::Array(renamed))
 }
@@ -625,13 +692,14 @@ pub(crate) fn edit(session: &mut Session, author: &Author, command: &Command, pa
 
 /// `commands.batch`: its commands on the texts in memory, written once at the end, one step (commands.md 6.7).
 pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> Result<Value, CommandError> {
-    let list = params.get("commands").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut list = params.get("commands").and_then(Value::as_array).cloned().unwrap_or_default();
     if list.len() > MAX_BATCH {
         return Err(CommandError::of("params.invalid", "commands", format!("a batch holds at most {MAX_BATCH} commands")));
     }
     judge_revisions(session, params)?;
     let before = session.root_check_document()?;
     let mut texts = Texts::default();
+    let mut early = label_first(session, &mut list, &mut texts);
     let mut results = Vec::with_capacity(list.len());
     let mut labels = Vec::new();
     for (index, item) in list.iter().enumerate() {
@@ -664,7 +732,10 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
         }
         let judged = crate::params::judge(command, &given).map_err(at)?;
         let edited = apply_one(session, id, &judged, &mut texts).map_err(at)?;
-        let (names, renamed) = names_json(&edited);
+        let (names, mut renamed) = names_json(&edited);
+        if let (Some(given), Value::Array(list)) = (early.remove(&index), &mut renamed) {
+            list.splice(0..0, given);
+        }
         results.push(json!({ "names": names, "renamed": renamed }));
         labels.push(command.label);
     }
@@ -672,6 +743,113 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
     let mut extra = Map::new();
     extra.insert("commands".to_owned(), Value::Array(results));
     finish(session, author, label, texts, &before, extra)
+}
+
+/// The lines that a text names as nodes do (`@41`, `x -> @41.b`), each once.
+fn lines_named(value: &Value, found: &mut BTreeSet<u32>) {
+    match value {
+        Value::String(text) => found.extend(line_tokens(text).into_iter().map(|(_, _, line)| line)),
+        Value::Array(list) => list.iter().for_each(|value| lines_named(value, found)),
+        Value::Object(map) => map.values().for_each(|value| lines_named(value, found)),
+        _ => {}
+    }
+}
+
+/// Each `@N` of a text, where it starts and ends, and `N`: an `@` that no letter, digit or `_` comes before, then digits.
+fn line_tokens(text: &str) -> Vec<(usize, usize, u32)> {
+    let mut found = Vec::new();
+    let mut previous: Option<char> = None;
+    for (at, letter) in text.char_indices() {
+        let free = previous.is_none_or(|before| !(before.is_alphanumeric() || before == '_'));
+        if letter == '@' && free {
+            let rest = text.get(at + 1..).unwrap_or_default();
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            if let Ok(line) = digits.parse::<u32>() {
+                found.push((at, at + 1 + digits.len(), line));
+            }
+        }
+        previous = Some(letter);
+    }
+    found
+}
+
+/// Each `@N` of the strings of `value` replaced by how `renamed` names that node now.
+fn substitute(value: &mut Value, renamed: &BTreeMap<String, String>) {
+    match value {
+        Value::String(text) => {
+            let mut out = String::with_capacity(text.len());
+            let mut last = 0;
+            for (start, end, _) in line_tokens(text) {
+                let token = text.get(start..end).unwrap_or_default();
+                if let Some(name) = renamed.get(token) {
+                    out.push_str(text.get(last..start).unwrap_or_default());
+                    out.push_str(name);
+                    last = end;
+                }
+            }
+            out.push_str(text.get(last..).unwrap_or_default());
+            *text = out;
+        }
+        Value::Array(list) => list.iter_mut().for_each(|value| substitute(value, renamed)),
+        Value::Object(map) => map.values_mut().for_each(|value| substitute(value, renamed)),
+        _ => {}
+    }
+}
+
+/// Before the commands of a batch, the nodes that they name by their line (`@N`) and that the `layout` section cannot
+/// name get their labels, in one pass over each file as it was, and each `@N` is replaced by how the node is named
+/// then: a label that a command gives would otherwise move lines (spec 5.2), and a later `@N` name another node
+/// (commands.md 6.7; decision of the owner, 2026-11-17). What each command gave a label to is in its `renamed`, by the
+/// index of the first command that names it. A file that cannot be labelled so is left to the commands, which say why.
+fn label_first(session: &mut Session, list: &mut [Value], texts: &mut Texts) -> BTreeMap<usize, Vec<Value>> {
+    let mut by_file: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
+    for item in list.iter() {
+        let Some(params) = item.get("params") else { continue };
+        let Some(file) = params.get("file").and_then(Value::as_str) else { continue };
+        let mut lines = BTreeSet::new();
+        lines_named(params, &mut lines);
+        if !lines.is_empty() {
+            by_file.entry(file.to_owned()).or_default().extend(lines);
+        }
+    }
+    let mut early: BTreeMap<usize, Vec<Value>> = BTreeMap::new();
+    for (file, lines) in by_file {
+        let Ok(target) = target(session, &file) else { continue };
+        if !texts.files.contains_key(&target.path) {
+            let Ok(text) = read_text(session, &target) else { continue };
+            texts.files.insert(target.path.clone(), (target.shown.clone(), text.as_bytes().to_vec(), text));
+        }
+        let Some((shown, _, now)) = texts.files.get(&target.path) else { continue };
+        let mut files = Files::new();
+        files.insert(shown, now);
+        let lines: Vec<u32> = lines.into_iter().collect();
+        let Ok(labelled) = labcraft_edit::label_lines(&files, shown, &lines, &session.config.limits) else { continue };
+        let renamed: BTreeMap<String, String> = labelled.renamed.iter().map(|renamed| (renamed.from.clone(), renamed.to.clone())).collect();
+        let given = labelled.texts.into_values().next();
+        let mut said = BTreeSet::new();
+        for (index, item) in list.iter_mut().enumerate() {
+            if item.get("params").and_then(|params| params.get("file")).and_then(Value::as_str) != Some(file.as_str()) {
+                continue;
+            }
+            let mut named = BTreeSet::new();
+            if let Some(params) = item.get("params") {
+                lines_named(params, &mut named);
+            }
+            for renamed in labelled.renamed.iter().filter(|renamed| renamed.from != renamed.to && renamed.to.starts_with('#')) {
+                let line = renamed.from.trim_start_matches('@').parse::<u32>().unwrap_or_default();
+                if named.contains(&line) && said.insert(line) {
+                    early.entry(index).or_default().push(json!({ "file": renamed.file, "from": renamed.from, "to": renamed.to }));
+                }
+            }
+            if let Some(params) = item.get_mut("params") {
+                substitute(params, &renamed);
+            }
+        }
+        if let (Some(given), Some((_, _, now))) = (given, texts.files.get_mut(&target.path)) {
+            *now = given;
+        }
+    }
+    early
 }
 
 /// `commands.execute`: the command `id`, as its own tool would run it (commands.md 6.7).

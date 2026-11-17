@@ -242,3 +242,144 @@ fn view_select_takes_every_name_that_the_drawings_of_the_examples_give() {
         assert!(lines >= 3, "{lines} nodes named by their line");
     });
 }
+
+/// The program files of `examples/`, in memory under `/p`, so that a test edits them without touching the repository.
+fn examples_in_memory() -> Arc<labcraft_engine::Memory> {
+    let memory = Arc::new(labcraft_engine::Memory::new());
+    let root = repository().join("examples");
+    let mut pending = vec![root.clone()];
+    while let Some(folder) = pending.pop() {
+        for entry in std::fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "lcf" || extension == "lct" || extension == "toml") {
+                let relative = path.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+                memory.put(format!("/p/{relative}"), std::fs::read(&path).unwrap());
+            }
+        }
+    }
+    memory
+}
+
+/// What a diff of lines shows between `before` and `after`, as git counts it: the lines added and the lines removed,
+/// outside a longest sequence of lines that both keep in their order.
+fn changed_lines(before: &str, after: &str) -> (Vec<String>, Vec<String>) {
+    let (old, new): (Vec<&str>, Vec<&str>) = (before.lines().collect(), after.lines().collect());
+    // The length of the longest common sequence of each pair of suffixes.
+    let mut longest = vec![vec![0usize; new.len() + 1]; old.len() + 1];
+    for i in (0..old.len()).rev() {
+        for j in (0..new.len()).rev() {
+            longest[i][j] = if old[i] == new[j] { longest[i + 1][j + 1] + 1 } else { longest[i + 1][j].max(longest[i][j + 1]) };
+        }
+    }
+    let (mut added, mut removed) = (Vec::new(), Vec::new());
+    let (mut i, mut j) = (0, 0);
+    while i < old.len() || j < new.len() {
+        if i < old.len() && j < new.len() && old[i] == new[j] {
+            (i, j) = (i + 1, j + 1);
+        } else if j < new.len() && (i == old.len() || longest[i][j + 1] >= longest[i + 1][j]) {
+            added.push(new[j].to_owned());
+            j += 1;
+        } else {
+            removed.push(old[i].to_owned());
+            i += 1;
+        }
+    }
+    (added, removed)
+}
+
+/// Scenario 5 of `docs/acceptance-m1.md`, point 1: moving one node of a function of `examples/` changes its entry of
+/// `layout` alone, or adds it, with the section when the file had none; a node that the section cannot name gets its
+/// label first (commands.md 6.7, `node.move`). And where it goes is where it was in its frame, plus the move (spec 11):
+/// the place in its frame of the new drawing is the old one, plus `by`. Each move is undone before the next.
+#[test]
+fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
+    let memory = examples_in_memory();
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(labcraft_format::STACK_SIZE)
+            .spawn_scoped(scope, || {
+                let config = Config {
+                    root: PathBuf::from("/p"),
+                    lib_paths: Vec::new(),
+                    limits: Limits::default(),
+                    shipped: labcraft_cli::shipped(),
+                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    clock: Arc::new(labcraft_engine::Still),
+                    process: 0,
+                };
+                let workspace: Arc<dyn labcraft_engine::Workspace> = memory.clone();
+                let mut session = Session::new(workspace, config, true).unwrap();
+                session.with_window();
+                ok(&mut session, "view.open", json!({ "folder": "." }));
+                let listed: Vec<(String, String)> = session
+                    .view()
+                    .functions
+                    .iter()
+                    .filter(|listed| listed.drawable)
+                    .map(|listed| (listed.function.clone(), listed.file.clone()))
+                    .collect();
+                let (mut moved, mut labels, mut frames_moved) = (0, 0, 0);
+                // Down and to the right, then up and to the left, past the top of a small frame (the move that brought a
+                // node back to its place in an arm, before the decision of the owner of 2026-11-17).
+                for ((function, file), by) in listed.iter().flat_map(|listed| [(listed.clone(), (8, 16)), (listed.clone(), (-16, -40))]) {
+                    ok(&mut session, "view.show_function", json!({ "function": function }));
+                    let Some(before) = session.view().main.drawing.clone() else { continue };
+                    let path = format!("/p/{file}");
+                    let text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
+                    for (at, placed) in before.placed.iter().enumerate().filter(|(_, placed)| !placed.name.is_empty()) {
+                        let result = ok(&mut session, "node.move", json!({ "file": file, "nodes": [placed.name], "by": [by.0, by.1] }));
+                        let after_text = String::from_utf8(memory.get(&path).unwrap()).unwrap();
+                        let (added, removed) = changed_lines(&text, &after_text);
+                        let entry = |line: &String| line.trim_start().starts_with("node ") && line.contains(" at (");
+                        let labelled = result["renamed"].as_array().is_some_and(|renamed| !renamed.is_empty());
+                        let section = !text.contains("\nlayout {");
+                        // The entry, and its label on the line of the node; the section, its end, and a blank line before it.
+                        let room = 1 + usize::from(labelled) + if section { 3 } else { 0 };
+                        assert!(
+                            added.iter().filter(|line| entry(line)).count() == 1 && added.len() <= room,
+                            "{function}, {}: added {added:?}",
+                            placed.name
+                        );
+                        assert!(removed.len() <= 1 + usize::from(labelled), "{function}, {}: removed {removed:?}", placed.name);
+                        assert!(removed.iter().all(|line| entry(line) || labelled), "{function}, {}: removed {removed:?}", placed.name);
+                        // Where it went: in its frame, where it was plus the move. The app tells the session of what it wrote.
+                        session.files_changed();
+                        let after = session.view().main.drawing.clone().unwrap();
+                        let now = after.placed.iter().position(|found| found.line == placed.line && found.body == placed.body).unwrap();
+                        let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+                        let (x, y) = before.in_frame(at).unwrap();
+                        let (x1, y1) = after.in_frame(now).unwrap();
+                        assert_eq!((unit(x1), unit(y1)), (unit(x) + by.0, unit(y) + by.1), "{function}, {}", placed.name);
+                        assert_eq!(after.placed[now].at, Some(((unit(x) + by.0) * 100, (unit(y) + by.1) * 100)));
+                        // And on the screen: its frame stays where it was from the frame of the function, which the canvas
+                        // keeps in place, so the node goes where it is dropped (a frame that its structure moved back over
+                        // it would bring it back: decision of the owner, 2026-11-17).
+                        let from_function = |drawing: &labcraft_diagram::Drawing| {
+                            let (frame, function) = (drawing.bodies[placed.body].origin, drawing.bodies[0].origin);
+                            (frame.0 - function.0, frame.1 - function.1)
+                        };
+                        // A node that got its label shows it above itself, which can move what is around it by the height
+                        // of a line: counted, not held.
+                        if labelled {
+                            frames_moved += usize::from(from_function(&after) != from_function(&before));
+                        } else {
+                            assert_eq!(from_function(&after), from_function(&before), "{function}, {}: its frame moved", placed.name);
+                        }
+                        ok(&mut session, "history.undo", json!({}));
+                        session.files_changed();
+                        assert_eq!(String::from_utf8(memory.get(&path).unwrap()).unwrap(), text, "undo gives the bytes back");
+                        moved += 1;
+                        labels += usize::from(labelled);
+                    }
+                }
+                // The three `s` of the arms of `station` are named by their line: they get a label (commands.md 9.2).
+                assert!(moved > 50 && labels >= 3, "{moved} nodes moved, {labels} labelled");
+                eprintln!("scenario 5: {moved} nodes moved, {labels} labelled, of which {frames_moved} moved their frame");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    });
+}

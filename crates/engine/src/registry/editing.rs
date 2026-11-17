@@ -410,68 +410,59 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_2,
-            editing(
-                "node.move",
-                "Move Nodes",
-                "Move nodes of one frame by an offset, and fix them",
-                "Moves nodes of one frame by `[dx, dy]` and fixes each one. Nodes of several frames are `params.invalid`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("nodes", names("The nodes to move.")),
-                        ("by", position("The offset `[dx, dy]`, in canvas units.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "nodes", "by"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "node.move",
+            "Move Nodes",
+            "Move nodes of one frame by an offset, and fix them",
+            "Moves nodes of one frame by `[dx, dy]` and fixes each one. Nodes of several frames are `params.invalid`. A node that the `layout` section cannot name (no name, or a name of several bodies) gets a label first, from the name of its line or of what it calls; `names.nodes` gives the nodes as named after it, and `renamed` each `@N` that became a label.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("nodes", names("The nodes to move.")),
+                    ("by", position("The offset `[dx, dy]`, in canvas units.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "nodes", "by"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_2,
-            editing(
-                "node.place",
-                "Place Node",
-                "Place one node at a position of its frame, and fix it",
-                "Places one node at `at` in its frame, and fixes it.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("node", string("The node to place.")),
-                        ("at", position("Where to fix the node, `[x, y]` in canvas units.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "node", "at"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "node.place",
+            "Place Node",
+            "Place one node at a position of its frame, and fix it",
+            "Places one node at `at` in its frame, and fixes it. A node that the `layout` section cannot name gets a label first, as for `node.move`; `names.node` gives its name.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("node", string("The node to place.")),
+                    ("at", position("Where to fix the node, `[x, y]` in canvas units.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "node", "at"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_2,
-            editing(
-                "node.set_view",
-                "Set Node View",
-                "Write `view standard` or `view compact` on nodes",
-                "Writes `view standard` or `view compact` on each node. With `default`, it removes the line.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("nodes", names("The nodes to change.")),
-                        (
-                            "view",
-                            json!({ "type": "string", "description": "The view to write, or `default` to remove it.", "enum": ["standard", "compact", "default"] }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "nodes", "view"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "node.set_view",
+            "Set Node View",
+            "Write `view standard` or `view compact` on nodes",
+            "Writes `view standard` or `view compact` on each node. With `default`, it removes the line.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("nodes", names("The nodes to change.")),
+                    (
+                        "view",
+                        json!({ "type": "string", "description": "The view to write, or `default` to remove it.", "enum": ["standard", "compact", "default"] }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "nodes", "view"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_4,
@@ -594,34 +585,31 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_2,
-            editing(
-                "layout.arrange",
-                "Arrange",
-                "Remove fixed positions so that the automatic placement arranges them",
-                "Removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals`. With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("nodes", names("The nodes to arrange.")),
-                        (
-                            "wires",
-                            json!({ "type": "array", "description": "The wires whose routes to arrange.", "items": { "type": "string" }, "minItems": 1 }),
-                        ),
-                        (
-                            "terminals",
-                            json!({ "type": "array", "description": "The terminals to arrange: `input x`, `output x`.", "items": { "type": "string" }, "minItems": 1 }),
-                        ),
-                        ("inside", string("A structure whose branch to arrange.")),
-                        ("arm", string("The arm of that structure, by its patterns.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "layout.arrange",
+            "Arrange",
+            "Remove fixed positions so that the automatic placement arranges them",
+            "Removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals`. With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("nodes", names("The nodes to arrange.")),
+                    (
+                        "wires",
+                        json!({ "type": "array", "description": "The wires whose routes to arrange.", "items": { "type": "string" }, "minItems": 1 }),
+                    ),
+                    (
+                        "terminals",
+                        json!({ "type": "array", "description": "The terminals to arrange: `input x`, `output x`.", "items": { "type": "string" }, "minItems": 1 }),
+                    ),
+                    ("inside", string("A structure whose branch to arrange.")),
+                    ("arm", string("The arm of that structure, by its patterns.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -1339,7 +1327,6 @@ pub(super) fn catalog() -> Vec<Command> {
     ]
 }
 
-const STEP_2: &str = "M1 step 2 (#161)";
 const STEP_3: &str = "M1 step 3 (#162)";
 const STEP_4: &str = "M1 step 4 (#163)";
 const STEP_5: &str = "M1 step 5 (#164)";

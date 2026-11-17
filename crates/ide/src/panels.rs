@@ -216,19 +216,23 @@ fn row(ui: &mut egui::Ui, callable: &Callable) {
     response.on_hover_text(hover);
 }
 
-/// `Inspector`: what the selection is (ide.md 4; decision of the owner, 2026-11-14), read only in step 2a: one node, one
-/// wire (its whole value), one terminal of the frame, several; nothing selected, the function itself, its signature, its
-/// documentation and its frame (decisions of the owner, 2026-11-16). The fields that change it come with their commands.
-pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callables: &Callables) {
+/// `Inspector`: what the selection is (ide.md 4; decision of the owner, 2026-11-14): one node, one wire (its whole value),
+/// one terminal of the frame, several; nothing selected, the function itself, its signature, its documentation and its
+/// frame (decisions of the owner, 2026-11-16). From step 2b, a node's place (`node.place`), its view (`node.set_view`)
+/// and "Remove the fixed position" (`layout.arrange`) change there, each the command of the same gesture (decision of
+/// the owner, 2026-11-17); its name and its constants come with step 4.
+pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callables: &Callables) -> Option<Asked> {
     let Some(function) = &shown.function else {
         inspector::show(ui, "Nothing shown", &[]);
-        return;
+        return None;
     };
     let selection = &shown.selection;
     let drawing = shown.drawing.as_deref();
     let (Some(drawing), true) = (drawing, selection.function == *function && !selection.is_empty()) else {
-        return of_function(ui, published, shown, function, callables);
+        of_function(ui, published, shown, function, callables);
+        return None;
     };
+    let file = published.functions.iter().find(|listed| listed.function == *function).map(|listed| listed.file.clone());
     // The values that the selection names: a wire is selected with every wire of its value.
     let values: std::collections::BTreeSet<usize> = selection
         .wires
@@ -236,14 +240,18 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
         .filter_map(|name| drawing.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.named.contains(name))))
         .collect();
     let overlay = shown.overlay.as_deref();
-    match (selection.nodes.as_slice(), values.len(), selection.terminals.as_slice()) {
+    let answer = match (selection.nodes.as_slice(), values.len(), selection.terminals.as_slice()) {
         ([node], 0, []) => of_node(ui, drawing, overlay, node, callables),
         ([], 1, []) => {
             if let Some(&group) = values.first() {
                 of_wire(ui, drawing, overlay, group);
             }
+            None
         }
-        ([], 0, [terminal]) => of_terminal(ui, drawing, terminal),
+        ([], 0, [terminal]) => {
+            of_terminal(ui, drawing, terminal);
+            None
+        }
         (nodes, values, terminals) => {
             let mut fields = Vec::new();
             for (count, label, what) in [(nodes.len(), "Nodes", "node"), (values, "Wires", "wire"), (terminals.len(), "Terminals", "terminal")] {
@@ -251,9 +259,57 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
                     fields.push(Field::new(label, counted(count as u64, what)));
                 }
             }
-            inspector::show(ui, "Selection", &[Section { title: None, fields, text: None }]);
+            let placed: Vec<&labcraft_diagram::Placed> =
+                nodes.iter().filter_map(|name| drawing.placed.iter().find(|placed| placed.name == *name)).collect();
+            fields.extend(layout_fields(&placed));
+            inspector::show(ui, "Selection", &[Section { title: None, fields, text: None }])
         }
+    };
+    let file = file?;
+    asked_of(answer?, &file, &selection.nodes, drawing)
+}
+
+/// The views a node can have, in the order of the inspector: `node.set_view` takes them so.
+const VIEWS: [&str; 3] = ["default", "standard", "compact"];
+
+/// The fields of the place and the view of nodes, which edit: one node, its place too (notation 2.4).
+fn layout_fields(placed: &[&labcraft_diagram::Placed]) -> Vec<Field> {
+    let mut fields = Vec::new();
+    let Some(first) = placed.first() else { return fields };
+    // The view that every node has, or none chosen when they differ.
+    let view =
+        |placed: &labcraft_diagram::Placed| VIEWS.iter().position(|view| *view == placed.view || (view == &"default" && placed.view.is_empty()));
+    let chosen = view(first).filter(|chosen| placed.iter().all(|other| view(other) == Some(*chosen))).unwrap_or(usize::MAX);
+    fields.push(Field::choice("View", "view", &["Default", "Standard", "Compact"], chosen));
+    if placed.iter().any(|placed| placed.at.is_some()) {
+        fields.push(Field::button("Fixed position", "arrange", "Remove the fixed position"));
     }
+    fields
+}
+
+/// The command that a field edited asks for, on the nodes selected.
+fn asked_of(answer: inspector::Answer, file: &str, nodes: &[String], drawing: &Drawing) -> Option<Asked> {
+    match answer {
+        inspector::Answer::Integer { key, value } => {
+            // One node: its place in its frame, the other coordinate as it is (spec 11).
+            let [node] = nodes else { return None };
+            let at = drawing.placed.iter().position(|placed| placed.name == *node)?;
+            let (x, y) = place_in_frame(drawing, at)?;
+            let at = if key == "x" { [value, y] } else { [x, value] };
+            Some(Asked::Command("node.place".to_owned(), json!({ "file": file, "node": node, "at": at })))
+        }
+        inspector::Answer::Choice { chosen, .. } => {
+            let view = VIEWS.get(chosen)?;
+            Some(Asked::Command("node.set_view".to_owned(), json!({ "file": file, "nodes": nodes, "view": view })))
+        }
+        inspector::Answer::Pressed { .. } => Some(Asked::Command("layout.arrange".to_owned(), json!({ "file": file, "nodes": nodes }))),
+    }
+}
+
+/// Where a node is in its frame, in units: where `layout` fixes it, else where the automatic placement puts it.
+fn place_in_frame(drawing: &Drawing, at: usize) -> Option<(i64, i64)> {
+    let (x, y) = drawing.in_frame(at)?;
+    Some(((x + 50).div_euclid(100), (y + 50).div_euclid(100)))
 }
 
 /// The inspector of the function itself.
@@ -285,10 +341,10 @@ fn of_function(ui: &mut egui::Ui, published: &Published, shown: &Shown, function
 
 /// The inspector of one node: what it calls, its signature and documentation, where it is, the values of the last run
 /// on the wires it gives (ide.md 4).
-fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name: &str, callables: &Callables) {
+fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name: &str, callables: &Callables) -> Option<inspector::Answer> {
     let Some((placed_at, placed)) = drawing.placed.iter().enumerate().find(|(_, placed)| placed.name == name) else {
         inspector::show(ui, "Node", &[Section { title: None, fields: vec![Field::code("Node", name)], text: None }]);
-        return;
+        return None;
     };
     let calls =
         drawing.groups.iter().find(|group| group.placed == Some(placed_at) && group.is_node()).map(|group| group.title.as_str()).unwrap_or_default();
@@ -303,12 +359,14 @@ fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name
     if let Some(callable) = callable {
         fields.push(Field::code("Signature", callable.signature.as_str()));
     }
-    // In units of the notation, from the corner of its frame, as `layout` writes it (spec 11).
-    let position = match placed.at {
-        Some((x, y)) => format!("Fixed at ({}, {})", x / 100, y / 100),
-        None => "Placed automatically".to_owned(),
-    };
+    // In units of the notation, from the corner of its frame, as `layout` writes it (spec 11); a value typed fixes it.
+    let position = if placed.at.is_some() { "Fixed" } else { "Placed automatically" };
     fields.push(Field::new("Position", position));
+    if let Some((x, y)) = place_in_frame(drawing, placed_at) {
+        fields.push(Field::integer("X", "x", x));
+        fields.push(Field::integer("Y", "y", y));
+    }
+    fields.extend(layout_fields(&[placed]));
     if placed.line > 0 {
         fields.push(Field::new("Line", placed.line.to_string()));
     }
@@ -330,7 +388,7 @@ fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name
     if let Some(doc) = callable.and_then(|callable| callable.doc.as_ref()) {
         sections.push(Section { title: Some("Documentation".to_owned()), fields: Vec::new(), text: Some(doc.clone()) });
     }
-    inspector::show(ui, "Node", &sections);
+    inspector::show(ui, "Node", &sections)
 }
 
 /// The inspector of one wire, its whole value: its type, where it comes from and goes, its route, its value of the last

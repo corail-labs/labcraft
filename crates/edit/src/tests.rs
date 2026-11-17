@@ -572,3 +572,209 @@ fn selecting_changes_nothing_and_needs_the_file() {
     // The same wire is still there to unwire.
     assert!(apply(&files, &disconnect("x -> s"), &Table, &Limits::default()).is_ok());
 }
+
+// node.move, node.place, node.set_view, layout.arrange: the texts written by hand from spec 11 (one entry per node, the
+// order of 5.2), commands.md 6.7 and 9.2, notation 2.4, and the decisions of the owner of 2026-11-17 (a node that the
+// section cannot name gets a label from the name of its line or of what it calls).
+
+/// The places of a drawing, as `engine` would give them, the rest from [`Table`].
+struct Placing(Vec<crate::Place>);
+
+impl Judge for Placing {
+    fn callable(&self, file: &str, call: &str) -> Lookup {
+        Table.callable(file, call)
+    }
+    fn errors(&self, file: &str, text: &str) -> Vec<Diagnostic> {
+        Table.errors(file, text)
+    }
+    fn places(&self, _: &str, _: &str) -> Vec<crate::Place> {
+        self.0.clone()
+    }
+}
+
+fn place_of(line: u32, name: &str, x: i64, y: i64) -> crate::Place {
+    crate::Place { line, name: name.to_owned(), at: Point { x, y } }
+}
+
+fn run_with(before: &str, op: Op, places: Vec<crate::Place>) -> Result<Edited, EditError> {
+    let before = text(before);
+    let mut files = Files::new();
+    files.insert(FILE, &before);
+    apply(&files, &op, &Placing(places), &Limits::default())
+}
+
+#[track_caller]
+fn moves(before: &str, op: Op, places: Vec<crate::Place>, after: &str) -> Edited {
+    let edited = run_with(before, op, places).unwrap_or_else(|error| panic!("{error:?}"));
+    assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(text(after).as_str()));
+    edited
+}
+
+fn moving(nodes: &[&str], x: i64, y: i64) -> Op {
+    Op::NodeMove { file: FILE.to_owned(), nodes: nodes.iter().map(|node| (*node).to_owned()).collect(), by: Point { x, y } }
+}
+
+fn placing(node: &str, x: i64, y: i64) -> Op {
+    Op::NodePlace { file: FILE.to_owned(), node: node.to_owned(), at: Point { x, y } }
+}
+
+fn viewing(nodes: &[&str], view: Option<labcraft_graph::View>) -> Op {
+    Op::NodeSetView { file: FILE.to_owned(), nodes: nodes.iter().map(|node| (*node).to_owned()).collect(), view }
+}
+
+fn arranging(nodes: Option<&[&str]>, wires: &[&str]) -> Op {
+    Op::LayoutArrange {
+        file: FILE.to_owned(),
+        nodes: nodes.map(|nodes| nodes.iter().map(|node| (*node).to_owned()).collect()),
+        wires: wires.iter().map(|wire| (*wire).to_owned()).collect(),
+        terminals: Vec::new(),
+    }
+}
+
+/// [`TWO`] with a `layout` section.
+fn placed(entries: &str) -> String {
+    format!("use core\n\nfn f(x: f64) -> (y: f64) {{\n    a = core.add(x, 1)\n    b = core.mul(a, 2)\n    y = b\n}}\n\nlayout {{\n{entries}}}\n")
+}
+
+const PLACED: &str = "    node a at (40, 80) view compact\n    node b at (200, 80)\n    wire a -> b via (120, 80)\n";
+
+#[test]
+fn moving_a_fixed_node_changes_its_entry_alone() {
+    let edited = moves(
+        &placed(PLACED),
+        moving(&["a"], 8, -16),
+        vec![],
+        &placed("    node a at (48, 64) view compact\n    node b at (200, 80)\n    wire a -> b via (120, 80)\n"),
+    );
+    assert_eq!(edited.lists.get("nodes"), Some(&vec!["a".to_owned()]));
+    // Two nodes at once, each by the same; up and left of the origin, the coordinates are negative (spec 11).
+    moves(
+        &placed(PLACED),
+        moving(&["b", "a"], -64, -96),
+        vec![],
+        &placed("    node a at (-24, -16) view compact\n    node b at (136, -16)\n    wire a -> b via (120, 80)\n"),
+    );
+}
+
+#[test]
+fn moving_a_free_node_fixes_it_from_where_it_is_drawn() {
+    // `a` starts on line 6 of the text: `labcraft 1`, a blank, `use core`, a blank, the header.
+    let edited = moves(TWO, moving(&["a"], 16, 8), vec![place_of(6, "a", 40, 80), place_of(7, "b", 200, 80)], &placed("    node a at (56, 88)\n"));
+    assert!(edited.renamed.is_empty());
+    // A node that the drawing does not place has nowhere to move from.
+    let error = run_with(TWO, moving(&["a"], 16, 8), vec![]).err().map(|error| (error.code, error.parameter));
+    assert_eq!(error, Some(("params.invalid", Some("nodes"))));
+}
+
+#[test]
+fn a_move_by_nothing_changes_nothing() {
+    let edited = run_with(&placed(PLACED), moving(&["a"], 0, 0), vec![]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(edited.texts.is_empty());
+    let edited = run_with(TWO, moving(&["a"], 0, 0), vec![]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(edited.texts.is_empty());
+}
+
+/// `d` in two arms; `first` and `second` are what stands before each.
+fn twice(first: &str, second: &str, layout: &str) -> String {
+    format!(
+        "use core\n\nfn f(x: f64, c: bool) -> (y: f64) {{\n    m = match c {{\n        true => {{\n            {first}d = core.add(x, 1)\n            yield d\n        }}\n        false => {{\n            {second}d = core.add(x, 2)\n            yield d\n        }}\n    }}\n    y = m\n}}\n{layout}"
+    )
+}
+
+#[test]
+fn a_node_that_the_section_cannot_name_gets_a_label() {
+    // `d` of the first arm starts on line 8, that of the second on line 12: a name of two bodies, so `#d`, then `#d2`.
+    let edited = moves(
+        &twice("", "", ""),
+        moving(&["@8"], 8, 0),
+        vec![place_of(8, "@8", 40, 60), place_of(12, "@12", 40, 60)],
+        &twice("#d: ", "", "\nlayout {\n    node #d at (48, 60)\n}\n"),
+    );
+    assert_eq!(edited.lists.get("nodes"), Some(&vec!["#d".to_owned()]));
+    assert_eq!(edited.renamed, vec![crate::Renamed { file: FILE.to_owned(), from: "@8".to_owned(), to: "#d".to_owned() }]);
+    let edited = moves(&twice("#d: ", "", ""), placing("@12", 0, 0), vec![], &twice("#d: ", "#d2: ", "\nlayout {\n    node #d2 at (0, 0)\n}\n"));
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("#d2"));
+    // A call with no output is labelled from what it calls.
+    moves(
+        "use sound\n\nfn f(x: f64) -> (y: f64) {\n    sound.beep()\n    y = x\n}\n",
+        placing("@6", 40, 40),
+        vec![],
+        "use sound\n\nfn f(x: f64) -> (y: f64) {\n    #beep: sound.beep()\n    y = x\n}\n\nlayout {\n    node #beep at (40, 40)\n}\n",
+    );
+}
+
+#[test]
+fn the_nodes_of_one_move_are_in_one_frame() {
+    let both = twice("", "", "");
+    let error = run_with(&both, moving(&["@8", "@12"], 8, 0), vec![]).err().map(|error| (error.code, error.parameter));
+    assert_eq!(error, Some(("params.invalid", Some("nodes"))));
+    let error = run_with(&both, moving(&["m", "@8"], 8, 0), vec![]).err().map(|error| (error.code, error.parameter));
+    assert_eq!(error, Some(("params.invalid", Some("nodes"))));
+    refused(&both, moving(&["d"], 8, 0), "edit.ambiguous");
+    refused(&both, moving(&[], 8, 0), "params.invalid");
+}
+
+#[test]
+fn placing_a_node_where_it_is_changes_nothing() {
+    let edited = run_with(&placed(PLACED), placing("b", 200, 80), vec![]).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(edited.texts.is_empty());
+    assert_eq!(edited.names.get("node").map(String::as_str), Some("b"));
+    let error = run_with(&placed(PLACED), placing("b", 2_000_000, 80), vec![]).err().map(|error| (error.code, error.parameter));
+    assert_eq!(error, Some(("params.invalid", Some("at"))));
+}
+
+#[test]
+fn a_view_is_written_on_the_entry_of_its_node() {
+    use labcraft_graph::View;
+    gives(
+        &placed(PLACED),
+        viewing(&["b"], Some(View::Standard)),
+        &placed("    node a at (40, 80) view compact\n    node b at (200, 80) view standard\n    wire a -> b via (120, 80)\n"),
+    );
+    gives(&placed(PLACED), viewing(&["a"], None), &placed("    node a at (40, 80)\n    node b at (200, 80)\n    wire a -> b via (120, 80)\n"));
+    // A free node gets an entry with its view alone, which `default` takes away with the section.
+    let compact = placed("    node a view compact\n");
+    gives(TWO, viewing(&["a"], Some(View::Compact)), &compact);
+    gives(&compact, viewing(&["a"], None), TWO);
+}
+
+#[test]
+fn arranging_removes_the_entries_of_what_it_arranges() {
+    // The whole function: every place and every route; a view stays.
+    gives(&placed(PLACED), arranging(None, &[]), &placed("    node a view compact\n"));
+    // A node alone: its place, not the route of a wire to a node that is not arranged.
+    gives(&placed(PLACED), arranging(Some(&["b"]), &[]), &placed("    node a at (40, 80) view compact\n    wire a -> b via (120, 80)\n"));
+    // Two nodes: the wires between them too.
+    gives(&placed(PLACED), arranging(Some(&["a", "b"]), &[]), &placed("    node a view compact\n"));
+    // A wire: its route alone.
+    gives(&placed(PLACED), arranging(None, &["a -> b"]), &placed("    node a at (40, 80) view compact\n    node b at (200, 80)\n"));
+    refused(&placed(PLACED), arranging(None, &["x -> b"]), "edit.unknown");
+    refused(&placed(PLACED), arranging(Some(&["c"]), &[]), "edit.unknown");
+    // Nothing to arrange: nothing changes.
+    let edited = run(&text(TWO), arranging(None, &[])).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(edited.texts.is_empty());
+}
+
+// What the independent review found (2026-11-17), each with its text written by hand.
+
+#[test]
+fn a_structure_with_no_name_gets_a_label_that_is_no_reserved_word() {
+    // `_ = match …` starts on line 4, under the header; `match` is a reserved word, so its label is `#match_node`.
+    let before = "fn f(x: f64, c: bool) -> (y: f64) {\n    _ = match c {\n        true => yield x\n        false => yield x\n    }\n    y = x\n}\n";
+    moves(
+        before,
+        placing("@4", 40, 40),
+        vec![],
+        "fn f(x: f64, c: bool) -> (y: f64) {\n    #match_node: _ = match c {\n        true => yield x\n        false => yield x\n    }\n    y = x\n}\n\nlayout {\n    node #match_node at (40, 40)\n}\n",
+    );
+}
+
+#[test]
+fn a_node_on_the_line_of_its_structure_moves_from_its_own_place() {
+    // `scaled` and `s` start on line 6; the drawing places the loop at (40, 40) in the frame of the function, and `s`
+    // at (16, 24) in the frame of the loop.
+    let before = "use core\n\nfn f(readings: [f64]) -> (out: [f64]) {\n    scaled = for x in readings { s = core.mul(x, 2.0)\n        collect s\n    }\n    out = scaled\n}\n";
+    let edited = run_with(before, moving(&["s"], 8, 0), vec![place_of(6, "scaled", 40, 40), place_of(6, "s", 16, 24)]);
+    let text = edited.unwrap_or_else(|error| panic!("{error:?}")).texts.get(FILE).cloned().unwrap_or_default();
+    assert!(text.ends_with("\nlayout {\n    node s at (24, 24)\n}\n"), "{text}");
+}

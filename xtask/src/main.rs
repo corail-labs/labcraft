@@ -47,7 +47,8 @@ commands:
   web-smoke target/web in headless Chrome, as a browser opens it and with WebGL2 asked for: the page draws, traps its worker and draws again; not part of ci
   frames    builds labcraft in release and opens it on the function of 1,000 nodes and 2,000 wires of bounds, timing
             each frame (LABCRAFT_FRAMES), to see 60 frames/s by hand before a tag; not part of ci
-  figures   the size and the figure of stability of each example, in Markdown, for the summary of CI; not part of ci
+  figures [--against FILE]  the size and the figure of stability of each example, in Markdown, for the summary of CI;
+            with --against, fails when a figure of stability is worse than in FILE (scenario 5 of M1); not part of ci
   unicode   writes the tables of types::text from the Unicode Character Database, downloaded once into target/; not part of ci
   fuzz-licences  the same as licences, for fuzz/, outside the workspace; not part of ci: the job fuzz runs it
   notices TARGET OUT  writes into OUT the licences of the crates built into the binaries of a release for TARGET;
@@ -80,7 +81,11 @@ fn main() -> ExitCode {
         Some("unicode") => unicode::generate(&root()),
         Some("wasm") => wasm(),
         Some("bounds") => bounds(),
-        Some("figures") => figures(),
+        Some("figures") => match (std::env::args().nth(2).as_deref(), std::env::args().nth(3)) {
+            (None, _) => figures(None),
+            (Some("--against"), Some(file)) => figures(Some(Path::new(&file))),
+            _ => Err(format!("figures takes nothing, or `--against FILE`\n\n{USAGE}")),
+        },
         Some("frames") => frames(),
         Some("web") => web::build(&root()),
         Some("web-serve") => web::serve(&root()),
@@ -173,8 +178,10 @@ fn frames() -> Result<(), String> {
 }
 
 /// The figures of the viewer (`docs/visual-notation.md`, 2.1 and 7), on standard output and nothing else, so that CI can
-/// add them to its summary: the test writes its table to a file, its own output goes to standard error.
-fn figures() -> Result<(), String> {
+/// add them to its summary: the test writes its table to a file, its own output goes to standard error. With `against`,
+/// a table of figures written once by the code of a tag: a figure of stability worse than there fails (scenario 5 of
+/// `docs/acceptance-m1.md`, point 2).
+fn figures(against: Option<&Path>) -> Result<(), String> {
     let path = root().join("target").join("figures.md");
     let args = [
         "test",
@@ -202,7 +209,53 @@ fn figures() -> Result<(), String> {
     }
     let table = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     print!("{table}");
-    Ok(())
+    let Some(against) = against else { return Ok(()) };
+    let file = if against.is_absolute() { against.to_path_buf() } else { root().join(against) };
+    let then = std::fs::read_to_string(&file).map_err(|error| format!("{}: {error}", file.display()))?;
+    let worse = worse_figures(&stability(&then), &stability(&table));
+    eprintln!("figures: {} functions against {}", stability(&then).len(), against.display());
+    if worse.is_empty() { Ok(()) } else { Err(format!("figures of stability worse than in {}:\n{}", against.display(), worse.join("\n"))) }
+}
+
+/// The figures of stability of a table of `figures`, by function: the nodes that move and those whose column changes,
+/// each a mean and a most.
+fn stability(table: &str) -> std::collections::BTreeMap<String, [f64; 4]> {
+    let mut found = std::collections::BTreeMap::new();
+    for line in table.lines().filter(|line| line.starts_with("| `")) {
+        let cells: Vec<&str> = line.trim_matches('|').split('|').map(str::trim).collect();
+        let (Some(name), Some(moved), Some(column)) = (cells.first(), cells.get(5), cells.get(6)) else { continue };
+        let pair = |cell: &str| -> Option<(f64, f64)> {
+            let (mean, most) = cell.split_once('/')?;
+            // A function with no wire probed has `–` for its mean: nothing moves. Anything else reads, or the row does not.
+            let mean = match mean.trim() {
+                "–" => 0.0,
+                mean => mean.parse::<f64>().ok()?,
+            };
+            Some((mean, most.trim().parse::<f64>().ok()?))
+        };
+        if let (Some(moved), Some(column)) = (pair(moved), pair(column)) {
+            found.insert(name.trim_matches('`').to_owned(), [moved.0, moved.1, column.0, column.1]);
+        }
+    }
+    found
+}
+
+/// Each function whose figures of stability are worse now than then; a function that is new has none to be worse than.
+fn worse_figures(then: &std::collections::BTreeMap<String, [f64; 4]>, now: &std::collections::BTreeMap<String, [f64; 4]>) -> Vec<String> {
+    const NAMES: [&str; 4] = ["moved (mean)", "moved (most)", "column changed (mean)", "column changed (most)"];
+    let mut worse = Vec::new();
+    for (function, before) in then {
+        let Some(after) = now.get(function) else {
+            worse.push(format!("  `{function}`: no figure now"));
+            continue;
+        };
+        for ((name, was), is) in NAMES.iter().zip(before).zip(after) {
+            if is > was {
+                worse.push(format!("  `{function}`: {name} {is} against {was}"));
+            }
+        }
+    }
+    worse
 }
 
 fn check_layers() -> Result<(), String> {
@@ -442,5 +495,20 @@ mod tests {
     #[test]
     fn colours_do_not_hide_the_count() {
         assert_eq!(passed_tests("test result: \u{1b}[32mok\u{1b}[0m. 6 passed; 0 failed\n"), 6);
+    }
+
+    #[test]
+    fn a_figure_of_stability_worse_than_then_fails() {
+        use super::{stability, worse_figures};
+        let a = "| `a` | 3 | 10 × 10 | 100 % | 2 | 1.5 / 2 | 0.5 / 1 |\n";
+        let b = "| `b` | 1 | 5 × 5 | 100 % | 0 | – / 0 | – / 0 |\n";
+        let then = stability(&format!("| Function | Nodes |\n{a}{b}"));
+        assert_eq!(then.get("a"), Some(&[1.5, 2.0, 0.5, 1.0]));
+        assert_eq!(then.get("b"), Some(&[0.0, 0.0, 0.0, 0.0]));
+        // The same, and a function that is new: nothing worse.
+        let same = stability(&format!("{a}{b}| `c` | 9 | 1 × 1 | 1 % | 9 | 9.0 / 9 | 9.0 / 9 |\n"));
+        assert_eq!(worse_figures(&then, &same), Vec::<String>::new());
+        let worse = stability("| `a` | 3 | 10 × 10 | 100 % | 2 | 1.0 / 3 | 0.5 / 1 |\n");
+        assert_eq!(worse_figures(&then, &worse), ["  `a`: moved (most) 3 against 2", "  `b`: no figure now"]);
     }
 }

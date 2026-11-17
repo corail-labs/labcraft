@@ -221,6 +221,20 @@ pub struct View {
 }
 
 impl View {
+    /// The view state that the function of `file` is drawn in, and the values of the notation in force: what a move of a
+    /// node placed automatically starts from is the drawing that the window shows (architecture 12.3).
+    pub(crate) fn state_of(&self, file: &str) -> (ViewState, Arc<Style>) {
+        let of = self.views.get(file).cloned().unwrap_or_default();
+        let state = ViewState {
+            standard_everywhere: self.now.standard_everywhere,
+            fold_constructions: true,
+            tabs: true,
+            unfolded: of.unfolded,
+            standard: of.standard,
+        };
+        (state, self.style.clone())
+    }
+
     pub fn published(&self) -> &Arc<Published> {
         &self.snapshot
     }
@@ -867,14 +881,7 @@ fn file_of(view: &View, name: &str) -> String {
 fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Value, Report)> {
     let loaded = view.loaded.as_ref()?;
     let function = loaded.functions.iter().find(|function| function.shown == file)?;
-    let of = view.views.get(file).cloned().unwrap_or_default();
-    let state = ViewState {
-        standard_everywhere: view.now.standard_everywhere,
-        fold_constructions: true,
-        tabs: true,
-        unfolded: of.unfolded,
-        standard: of.standard,
-    };
+    let (state, _) = view.state_of(file);
     let files = drawings::files_of(loaded.checked.as_ref());
     // Drawn with the values in force (notation 10).
     style::scope(&view.style, || {

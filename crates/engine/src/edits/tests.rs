@@ -373,3 +373,24 @@ fn an_editing_command_takes_a_function_file_of_the_project() {
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "core.add", "at": [1] })).code, "params.invalid");
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "visa.nothing" })).code, "edit.unknown");
 }
+
+/// Two nodes named by their lines in one batch: each gets its label before the commands run, so that the label the first
+/// one gets, which canonical form may move (spec 5.2), never makes the second line name another node (decision of the
+/// owner, 2026-11-17, after the independent review).
+#[test]
+fn a_batch_names_by_their_labels_the_nodes_it_names_by_their_lines() {
+    let (mut session, memory) = session();
+    let unnamed = "labcraft 1\n\nuse core\n\nfn f(x: f64) -> (y: f64) {\n    _ = core.add(x, 1.0)\n    _ = core.mul(x, 2.0)\n    y = x\n}\n";
+    memory.put("/p/f.lcf", unnamed);
+    let commands = json!([
+        { "id": "node.place", "params": { "file": "f.lcf", "node": "@6", "at": [40, 40] } },
+        { "id": "node.place", "params": { "file": "f.lcf", "node": "@7", "at": [200, 40] } },
+    ]);
+    let result = ok(&mut session, "commands.batch", json!({ "commands": commands }));
+    let after = text(&memory, "/p/f.lcf");
+    assert!(after.contains("#add: _ = core.add(x, 1.0)") && after.contains("#mul: _ = core.mul(x, 2.0)"), "{after}");
+    assert!(after.contains("    node #add at (40, 40)\n") && after.contains("    node #mul at (200, 40)\n"), "{after}");
+    assert_eq!(result["commands"][0]["renamed"], json!([{ "file": "f.lcf", "from": "@6", "to": "#add" }]));
+    assert_eq!(result["commands"][1]["renamed"], json!([{ "file": "f.lcf", "from": "@7", "to": "#mul" }]));
+    assert_eq!(result["step"], 1);
+}

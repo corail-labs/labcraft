@@ -85,6 +85,11 @@ pub struct Prefs {
     /// The setting "drag on the empty canvas pans" (notation 2.6): off, a drag on the empty canvas selects with a
     /// rectangle (decision of the owner, 2026-11-17).
     pub drag_pans: bool,
+    /// The setting "fix every node at the first move" (notation 2.4): a move fixes every free node of the function where
+    /// it is, in the same step. Off by default.
+    pub fix_every_node: bool,
+    /// The setting "mark the fixed nodes" (notation 2.4): a pin on each fixed node. On by default.
+    pub mark_fixed: bool,
 }
 
 impl Default for Prefs {
@@ -102,6 +107,8 @@ impl Default for Prefs {
             detached_palette: false,
             record_values: false,
             drag_pans: false,
+            fix_every_node: false,
+            mark_fixed: true,
         }
     }
 }
@@ -246,6 +253,9 @@ pub struct Ide {
     history: History,
     /// Commands whose failure the window says.
     pending: Vec<(String, Reply)>,
+    /// The editing commands asked for, by the function they edit: a failure puts the nodes of a move back on its canvas,
+    /// and a node that got a label stays selected by it (commands.md 9.3, `renamed`).
+    edits: Vec<(String, Reply)>,
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
@@ -309,6 +319,7 @@ impl Ide {
             places_seen: HashMap::new(),
             history: History::default(),
             pending: Vec::new(),
+            edits: Vec::new(),
             failures: Vec::new(),
             canvas_rect: None,
             canvas_focus: None,
@@ -423,8 +434,16 @@ impl Ide {
             self.take_drawing(&view);
             self.callables.refresh(host, view.checks);
         }
-        // The keys first, so that a key the keymap takes reaches no widget.
-        for command in self.key_hits(ui.ctx()) {
+        // The keys first, so that a key the keymap takes reaches no widget. A run of Ctrl and the arrows ends before what
+        // a key does (notation 2.6).
+        // A press of the pointer ends it too: on the top bar, Undo would come before the move.
+        let hits = self.key_hits(ui.ctx());
+        if (!hits.is_empty() || ui.input(|input| input.pointer.any_pressed()))
+            && let Some(host) = host
+        {
+            self.end_runs(host, &view);
+        }
+        for command in hits {
             self.run(command, host, &view, &mut outward);
         }
         let menus = self.menus(&view, host.is_some());
@@ -607,6 +626,42 @@ impl Ide {
             }
         };
         self.pending.retain(|(id, reply)| take(id, reply));
+        let mut moved_back = Vec::new();
+        let mut relabelled = Vec::new();
+        self.edits.retain(|(function, reply)| match reply.take() {
+            None => true,
+            Some(Ok(result)) => {
+                relabelled.push((function.clone(), renamed_nodes(&result)));
+                false
+            }
+            Some(Err(error)) => {
+                failures.push(format!("{}: {}", function, error.message));
+                moved_back.push(function.clone());
+                false
+            }
+        });
+        for function in moved_back {
+            if let Some(drawn) = self.drawn.get_mut(&function) {
+                drawn.canvas.cancel_move();
+            }
+        }
+        // A node named by its line that a command gave a label stays selected by its label (decision of the owner,
+        // 2026-11-17).
+        for (function, renamed) in relabelled {
+            let Some(window) = view.window_of(&function) else { continue };
+            let selection = &window.selection;
+            if renamed.is_empty()
+                || selection.function != function
+                || !selection.nodes.iter().any(|name| renamed.iter().any(|(from, _)| from == name))
+            {
+                continue;
+            }
+            let nodes =
+                selection.nodes.iter().map(|name| renamed.iter().find(|(from, _)| from == name).map_or_else(|| name.clone(), |(_, to)| to.clone()));
+            let wires = selection.wires.iter().filter(|wire| !wire.contains('@')).cloned().collect();
+            let asked = Selection { nodes: nodes.collect(), wires, terminals: selection.terminals.clone() };
+            self.ask_select(host, &function, asked);
+        }
         let mut again = Vec::new();
         self.selecting.retain(|(selection, function, reply)| match reply.take() {
             None => true,
@@ -912,12 +967,16 @@ impl Ide {
                 | keys::LAB
                 | keys::REDUCED_MOTION
                 | keys::DRAG_PANS
+                | keys::FIX_EVERY_NODE
+                | keys::MARK_FIXED
                 | keys::ABOUT => {
                     let checked = match id {
                         keys::DARK => Some(self.prefs.dark),
                         keys::LAB => Some(self.look() == kit_shell::theme::Look::Lab),
                         keys::REDUCED_MOTION => Some(self.prefs.reduced_motion),
                         keys::DRAG_PANS => Some(self.prefs.drag_pans),
+                        keys::FIX_EVERY_NODE => Some(self.prefs.fix_every_node),
+                        keys::MARK_FIXED => Some(self.prefs.mark_fixed),
                         _ => None,
                     };
                     ItemState { enabled: true, checked }
@@ -946,9 +1005,12 @@ impl Ide {
                 "history.undo" => ItemState { enabled: self.history.undo.is_some(), checked: None },
                 "history.redo" => ItemState { enabled: self.history.redo.is_some(), checked: None },
                 "view.close_function" | keys::FIT | "view.open_trace" | keys::OPEN_TRACE => ItemState { enabled: shown.is_some(), checked: None },
-                keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
-                    ItemState { enabled: shown.is_some(), checked: None }
-                }
+                keys::SELECT_ALL
+                | keys::SELECT_UPSTREAM
+                | keys::SELECT_DOWNSTREAM
+                | keys::SELECT_ALL_UPSTREAM
+                | keys::SELECT_ALL_DOWNSTREAM
+                | keys::ARRANGE => ItemState { enabled: shown.is_some(), checked: None },
                 _ => ItemState { enabled: project, checked: None },
             }
         });
@@ -1198,6 +1260,56 @@ impl Ide {
         }
     }
 
+    /// Ends the runs of Ctrl and the arrows of every canvas: the moves they ask for.
+    fn end_runs(&mut self, host: &dyn Host, view: &Published) {
+        let ended: Vec<(String, Intent)> =
+            self.drawn.iter_mut().filter_map(|(function, drawn)| Some((function.clone(), drawn.canvas.end_run()?))).collect();
+        for (function, intent) in ended {
+            if let Intent::Move { nodes, by } = intent {
+                self.ask_move(host, view, &function, &nodes, by);
+            }
+        }
+    }
+
+    /// `node.move` for a drag or a run of keys on the canvas of `function`; with the setting "fix every node at the first
+    /// move", in one batch with a `node.place` of every other free node where it is (notation 2.4; decision of the owner,
+    /// 2026-11-17).
+    fn ask_move(&mut self, host: &dyn Host, view: &Published, function: &str, nodes: &[String], by: (i64, i64)) {
+        let Some(file) = file_of(view, function) else { return };
+        let moving = json!({ "file": file, "nodes": nodes, "by": [by.0, by.1] });
+        let drawing = view.window_of(function).and_then(|window| window.drawing.clone());
+        let fixing: Vec<Value> = match (&drawing, self.prefs.fix_every_node) {
+            (Some(drawing), true) => drawing
+                .placed
+                .iter()
+                .enumerate()
+                .filter(|(_, placed)| placed.at.is_none() && !placed.name.is_empty())
+                .filter_map(|(at, placed)| {
+                    let (x, y) = drawing.in_frame(at)?;
+                    let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+                    Some(json!({ "id": "node.place", "params": { "file": file, "node": placed.name, "at": [unit(x), unit(y)] } }))
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        // A batch holds at most 1,000 commands (commands.md 6.7): past that, the move alone.
+        let reply = if fixing.is_empty() || fixing.len() >= 1_000 {
+            host.send("node.move", moving)
+        } else {
+            let mut commands = fixing;
+            commands.push(json!({ "id": "node.move", "params": moving }));
+            host.send("commands.batch", json!({ "commands": commands, "label": "Move Nodes" }))
+        };
+        self.edits.push((function.to_owned(), reply));
+    }
+
+    /// Asks for a move as the canvas of `function` would: for an app that drives the canvas itself (the scripted drag of
+    /// `LABCRAFT_FRAMES`, scenario 6 of M1).
+    pub fn ask_canvas_move(&mut self, host: &dyn Host, function: &str, nodes: &[String], by: (i64, i64)) {
+        let view = host.snapshot().view;
+        self.ask_move(host, &view, function, nodes, by);
+    }
+
     /// Asks the session for a selection of the canvas of `function` (`view.select`).
     fn ask_select(&mut self, host: &dyn Host, function: &str, selection: Selection) {
         let reply = host.send("view.select", select_params(function, &selection));
@@ -1296,6 +1408,32 @@ impl Ide {
                 self.prefs.drag_pans = !self.prefs.drag_pans;
                 self.prefs_changed = true;
             }
+            keys::FIX_EVERY_NODE => {
+                self.prefs.fix_every_node = !self.prefs.fix_every_node;
+                self.prefs_changed = true;
+            }
+            keys::MARK_FIXED => {
+                self.prefs.mark_fixed = !self.prefs.mark_fixed;
+                self.prefs_changed = true;
+            }
+            // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
+            keys::ARRANGE => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(host), Some(function)) = (host, function) else { return };
+                let Some(file) = file_of(view, &function) else { return };
+                let mut params = Map::new();
+                params.insert("file".to_owned(), json!(file));
+                if let Some(window) = view.window_of(&function) {
+                    let selection = canvas_shown(window, &self.prefs).selection;
+                    for (name, list) in [("nodes", selection.nodes), ("wires", selection.wires), ("terminals", selection.terminals)] {
+                        if !list.is_empty() {
+                            params.insert(name.to_owned(), json!(list));
+                        }
+                    }
+                }
+                let reply = host.send("layout.arrange", Value::Object(params));
+                self.edits.push((function, reply));
+            }
             keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
                 let step = match id.as_str() {
                     keys::SELECT_ALL => Step::All,
@@ -1308,7 +1446,7 @@ impl Ide {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function)) = (host, function) else { return };
                 let Some(window) = view.window_of(&function) else { return };
-                let canvas_shown = canvas_shown(window, self.prefs.drag_pans);
+                let canvas_shown = canvas_shown(window, &self.prefs);
                 let Some(selection) = self.drawn.get(&function).and_then(|drawn| drawn.canvas.step_selection(step, &canvas_shown)) else { return };
                 self.ask_select(host, &function, selection);
             }
@@ -1363,23 +1501,54 @@ impl Ide {
                     self.prefs.standard_everywhere = on;
                     self.prefs_changed = true;
                 }
+                // An editing command: its function, from its file, for what follows its result.
+                let edited = EDITS
+                    .contains(&id.as_str())
+                    .then(|| params.get("file").and_then(Value::as_str))
+                    .flatten()
+                    .and_then(|file| view.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone()));
                 let reply = host.send(&id, Value::Object(params));
-                self.pending.push((id, reply));
+                match edited {
+                    Some(function) => self.edits.push((function, reply)),
+                    None => self.pending.push((id, reply)),
+                }
             }
         }
     }
 }
 
+/// The editing commands whose results the window follows (`Ide::edits`).
+const EDITS: &[&str] = &["node.move", "node.place", "node.set_view", "layout.arrange"];
+
+/// The file of a function, as the session lists it.
+fn file_of(view: &Published, function: &str) -> Option<String> {
+    view.functions.iter().find(|listed| listed.function == function).map(|listed| listed.file.clone())
+}
+
+/// The nodes named by their line that a command gave a label, from its result: each `@N` and its label (commands.md 9.3,
+/// `renamed`), in the result itself or in each command of a batch.
+fn renamed_nodes(result: &Value) -> Vec<(String, String)> {
+    let lists = std::iter::once(result.get("renamed"))
+        .chain(result.get("commands").and_then(Value::as_array).into_iter().flatten().map(|command| command.get("renamed")));
+    lists
+        .flatten()
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|renamed| Some((renamed.get("from")?.as_str()?.to_owned(), renamed.get("to")?.as_str()?.to_owned())))
+        .filter(|(from, _)| from.starts_with('@'))
+        .collect()
+}
+
 /// What the canvas of a window shows without drawing again: its arms, its selection when it is of its function, and the
 /// setting of the drag (notation 2.6).
-fn canvas_shown(window: &WindowShown, drag_pans: bool) -> Shown {
+fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
     let selection = &window.selection;
     let selection = if window.function.as_deref() == Some(selection.function.as_str()) {
         Selection { nodes: selection.nodes.clone(), wires: selection.wires.clone(), terminals: selection.terminals.clone() }
     } else {
         Selection::default()
     };
-    Shown { arms: window.arms.clone(), selection, drag_pans }
+    Shown { arms: window.arms.clone(), selection, drag_pans: prefs.drag_pans, mark_fixed: prefs.mark_fixed }
 }
 
 /// The lines of the file that the selection of a window names (notation 2.5): those of its nodes, and for a wire the
@@ -1539,10 +1708,7 @@ impl Content<'_> {
                 panels::palette(ui, &mut self.ide.callables);
                 None
             }
-            Pane::Inspector => {
-                panels::inspector(ui, view, &view.main, &self.ide.callables);
-                None
-            }
+            Pane::Inspector => panels::inspector(ui, view, &view.main, &self.ide.callables),
             Pane::Problems => panels::problems(ui, view, focused, &mut self.ide.problems),
             Pane::Run => {
                 let said = self.ide.run_said(focused.function.as_deref(), ui.input(|input| input.time));
@@ -1693,7 +1859,7 @@ impl Content<'_> {
             egui::Panel::right(("ide-detached-inspector", function)).resizable(true).default_size(260.0).show(ui, |ui| {
                 egui::Frame::new()
                     .inner_margin(egui::Margin::symmetric(10, 8))
-                    .show(ui, |ui| panels::inspector(ui, view, shown, &self.ide.callables));
+                    .show(ui, |ui| self.asked.extend(panels::inspector(ui, view, shown, &self.ide.callables)));
             });
         }
         if self.ide.prefs.detached_palette {
@@ -1757,7 +1923,7 @@ impl Content<'_> {
             ui.centered_and_justified(|ui| ui.label(RichText::new(text).weak()));
             return;
         }
-        let shown = window.map(|window| canvas_shown(window, self.ide.prefs.drag_pans)).unwrap_or_default();
+        let shown = window.map(|window| canvas_shown(window, &self.ide.prefs)).unwrap_or_default();
         let response = drawn.canvas.show(ui, theme, &shown);
         if response.response.has_focus() {
             self.ide.canvas_focus = Some((function.to_owned(), response.response.id));
@@ -1771,6 +1937,14 @@ impl Content<'_> {
         for intent in response.intents {
             match intent {
                 Intent::Select(selection) => self.ide.ask_select(self.host, function, selection),
+                Intent::Move { nodes, by } => self.ide.ask_move(self.host, view, function, &nodes, by),
+                // "Remove the fixed position" (notation 2.4).
+                Intent::Arrange(selection) => {
+                    if let Some(file) = file_of(view, function) {
+                        let reply = self.host.send("layout.arrange", json!({ "file": file, "nodes": selection.nodes }));
+                        self.ide.edits.push((function.to_owned(), reply));
+                    }
+                }
             }
         }
         if view.main.function.as_deref() == Some(function) {

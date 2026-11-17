@@ -25,7 +25,9 @@ use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
 mod fonts;
+pub(crate) mod moving;
 pub(crate) mod paint;
+mod pins;
 pub(crate) mod select;
 pub(crate) mod series;
 pub(crate) mod view;
@@ -34,6 +36,7 @@ pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use select::{Selection, Step};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
+use moving::Moving;
 use paint::{Over, Painted, Painter};
 use select::{Found, Hit, Index};
 use view::{Glide, Grid, Viewport};
@@ -66,6 +69,9 @@ pub struct Shown {
     /// The setting "drag on the empty canvas pans" (notation 2.6): a drag on the empty canvas pans, and Shift with it
     /// selects. Off by default: a drag selects with a rectangle.
     pub drag_pans: bool,
+    /// The setting "mark the fixed nodes" (notation 2.4): a pin on each node that `layout` fixes. On in the IDE by
+    /// default; the host says it.
+    pub mark_fixed: bool,
 }
 
 impl Shown {
@@ -79,6 +85,11 @@ impl Shown {
 pub enum Intent {
     /// `view.select`: this selection, the whole of it.
     Select(Selection),
+    /// `node.move`: these nodes of one frame, as a command names them, by `[dx, dy]` in units (notation 2.4). The canvas
+    /// shows them there until the next drawing, or until the host calls [`Canvas::cancel_move`].
+    Move { nodes: Vec<String>, by: (i64, i64) },
+    /// `layout.arrange` on these nodes: "Remove the fixed position" (notation 2.4).
+    Arrange(Selection),
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -86,6 +97,8 @@ pub enum Intent {
 pub enum Gesture {
     /// A rectangle of selection is being drawn.
     Rectangle,
+    /// Nodes are being moved, by a drag or by a run of presses of Ctrl and an arrow.
+    Move,
 }
 
 /// What a frame of the canvas gives back to the host.
@@ -156,6 +169,10 @@ pub struct Canvas {
     /// The iteration asked for last, until the values for it come: the next step goes from it, and the same is not asked
     /// twice.
     asked: Option<(String, u64)>,
+    /// A move under way, or asked of the host and not drawn yet.
+    moving: Option<Moving>,
+    /// The fixed node that a right-click was on, for its menu (notation 2.4).
+    context: Option<usize>,
 }
 
 /// The number typed into the selector of a loop: the loop, its iterations, the text, the corner of the field in units.
@@ -233,8 +250,12 @@ struct Frame {
     arms: Vec<bool>,
     /// The values shown, while they show.
     values: Option<Arc<Overlay>>,
-    /// Where each node stands from its place while nodes glide, by its index in [`Drawing::placed`].
+    /// Where each node stands from its place while nodes glide or move, by its index in [`Drawing::placed`].
     offsets: Option<Vec<Vec2>>,
+    /// The offsets are those of a move, not of a glide: the wires of the preview show, and the selection.
+    moving: bool,
+    /// The setting "mark the fixed nodes" (notation 2.4).
+    mark_fixed: bool,
     /// The groups that the viewport shows, in the order of drawing.
     groups: Vec<usize>,
     /// The point under the pointer, in units.
@@ -296,6 +317,8 @@ impl Canvas {
             typing: None,
             wheel: 0.0,
             asked: None,
+            moving: None,
+            context: None,
         }
     }
 
@@ -324,10 +347,29 @@ impl Canvas {
     /// its key, unless the system asks for reduced motion; not for another function. The selection, which the host
     /// names, is found again on it.
     pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool) {
+        // The nodes of a move asked for are where it put them: they do not glide there (architecture 12.4).
+        // A move under way goes on over the new drawing, its nodes found again by their keys; one asked for ends.
+        let (moved, going) = match self.moving.take() {
+            Some(moving) if moving.state == moving::State::Asked => {
+                (Some((moving.preview.carried.into_iter().collect::<Vec<usize>>(), moving.by)), None)
+            }
+            Some(moving) => (None, self.drawing.as_ref().and_then(|old| moving.again(old, &drawing))),
+            None => (None, None),
+        };
         self.glide = match (&self.drawing, glide && !self.reduced_motion) {
-            (Some(old), true) => Glide::between(old, &drawing),
+            (Some(old), true) => match &moved {
+                Some((nodes, by)) => Glide::after_move(old, &drawing, nodes, (by.0 * 100, by.1 * 100)),
+                None => Glide::between(old, &drawing),
+            },
             _ => None,
         };
+        // The viewport follows the frame of the function, when the same function is drawn again: what the file places
+        // above or left of it moves the whole drawing, not what the canvas shows (spec 11).
+        if glide && let Some(old) = &self.drawing {
+            let (dx, dy) = view::shift_of_frame(old, &drawing);
+            self.viewport.origin += Vec2::new(dx as f32, dy as f32) / 100.0;
+        }
+        self.context = None;
         self.grid = Grid::of(&drawing);
         self.index = Index::of(&drawing);
         // A list open on the drawing before: its structure may be another one now.
@@ -340,6 +382,7 @@ impl Canvas {
         self.generation = self.generation.wrapping_add(1);
         self.drawing = Some(drawing);
         self.set_values(None, None);
+        self.moving = going;
     }
 
     pub fn drawing(&self) -> Option<&Arc<Drawing>> {
@@ -382,6 +425,52 @@ impl Canvas {
     /// Whether a glide is under way.
     pub fn gliding(&self) -> bool {
         self.glide.is_some()
+    }
+
+    /// The move asked for failed: its nodes go back to their places.
+    pub fn cancel_move(&mut self) {
+        self.moving = None;
+    }
+
+    /// Ends a run of presses of Ctrl and an arrow now (notation 2.6: another key ends it): the move it asks for, if any.
+    /// The host calls it before it runs a key of its own, so that the move comes before what the key does.
+    pub fn end_run(&mut self) -> Option<Intent> {
+        let moving = self.moving.as_mut().filter(|moving| matches!(moving.state, moving::State::Keys { .. }))?;
+        moving.state = moving::State::Asked;
+        let (by, nodes) = (moving.by, moving.nodes.clone());
+        let drawing = self.drawing.clone()?;
+        self.move_intent(&drawing, &nodes, by)
+    }
+
+    /// Moves these nodes (by their index in [`Drawing::placed`]) by `by` in units, as a drag would, for a host that drives
+    /// the canvas itself: the scripted drag of `LABCRAFT_FRAMES` (scenario 6 of M1). [`Canvas::drop_held`] ends it.
+    pub fn hold_move(&mut self, nodes: &[usize], by: (i64, i64)) {
+        let Some(drawing) = self.drawing.clone() else { return };
+        let moving = match &mut self.moving {
+            Some(moving) if moving.state == moving::State::Held && moving.nodes == nodes => moving,
+            _ => self.moving.insert(Moving::new(&drawing, nodes.to_vec(), moving::State::Held)),
+        };
+        moving.set_by(&drawing, by);
+    }
+
+    /// Ends a move that the host holds: the move it asks for, as at the drop of a drag.
+    pub fn drop_held(&mut self) -> Option<Intent> {
+        let moving = self.moving.as_mut().filter(|moving| moving.state == moving::State::Held)?;
+        moving.state = moving::State::Asked;
+        let (by, nodes) = (moving.by, moving.nodes.clone());
+        let drawing = self.drawing.clone()?;
+        self.move_intent(&drawing, &nodes, by)
+    }
+
+    /// `node.move` for these nodes by `by`; none for a move by nothing, which leaves the nodes where they are.
+    fn move_intent(&mut self, drawing: &Drawing, nodes: &[usize], by: (i64, i64)) -> Option<Intent> {
+        let names: Vec<String> =
+            nodes.iter().filter_map(|&at| drawing.placed.get(at)).map(|placed| placed.name.clone()).filter(|name| !name.is_empty()).collect();
+        if by == (0, 0) || names.is_empty() {
+            self.moving = None;
+            return None;
+        }
+        Some(Intent::Move { nodes: names, by })
     }
 
     /// The selection that a key of notation 2.6 asks for (Ctrl+A, Alt+Left, Alt+Right…), from the selection of `shown`;
@@ -430,7 +519,13 @@ impl Canvas {
         if iteration.is_some() {
             self.asked.clone_from(&iteration);
         }
-        let gesture = matches!(self.drag, Some(Drag::Rectangle { .. })).then_some(Gesture::Rectangle);
+        let gesture = if matches!(self.drag, Some(Drag::Rectangle { .. })) {
+            Some(Gesture::Rectangle)
+        } else if self.moving.as_ref().is_some_and(|moving| !matches!(moving.state, moving::State::Asked)) {
+            Some(Gesture::Move)
+        } else {
+            None
+        };
         CanvasResponse { response, tab: input.tab, iteration, hovered: frame.hovered, intents: input.intents, gesture }
     }
 
@@ -479,7 +574,12 @@ impl Canvas {
         if let Some(left) = self.viewport.settles_in(now) {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(left));
         }
+        let moving = self.moving.is_some();
+        if moving {
+            self.glide = None;
+        }
         let offsets = match &mut self.glide {
+            _ if moving => self.moving.as_ref().map(|moving| moving.offsets(drawing.placed.len())),
             Some(glide) => {
                 let done = glide.advance(now);
                 ctx.request_repaint();
@@ -509,7 +609,25 @@ impl Canvas {
         let hovered = at.and_then(|unit| select::node_at(&drawing, &self.index, unit, &visible_arm));
         let reach = (5.0 / zoom).max(WIRE_REACH);
         let wire_under = at.filter(|_| offsets.is_none()).and_then(|unit| select::wire_at(&drawing, &groups, unit, reach, &visible_arm));
-        Frame { rect, drawing, theme, ctx, now, arms, values, offsets, groups, at, hovered, wire_under }
+        // While nodes move, what moves shows wherever it started.
+        if let Some(moving) = &self.moving {
+            groups.extend(moving.preview.wires.iter().map(|(group, _)| *group));
+            for &placed in &moving.preview.carried {
+                groups.extend_from_slice(self.grid.groups_of(placed));
+            }
+            groups.extend(
+                drawing
+                    .groups
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, group)| group.wire.as_ref().is_some_and(|wire| moving.preview.bodies.contains(&wire.body)))
+                    .map(|(index, _)| index),
+            );
+            groups.sort_unstable();
+            groups.dedup();
+        }
+        let mark_fixed = shown.mark_fixed;
+        Frame { rect, drawing, theme, ctx, now, arms, values, offsets, moving, mark_fixed, groups, at, hovered, wire_under }
     }
 
     /// The input of a frame: the tabs, the selectors and their fields, the selection by the pointer and the keys.
@@ -523,6 +641,8 @@ impl Canvas {
         let coarse = zoom < style::factor(style::coarse_zoom());
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked());
         let clicked_unit = pointer.map(unit_of);
+        self.end_run_when_due(frame, input);
+        self.fixed_menu(response, frame, shown, input);
         // A click on a tab shows its arm; on the title of a selector, opens the list of its arms.
         let mut opened = false;
         for found in &drawing.tabs {
@@ -640,6 +760,50 @@ impl Canvas {
                 Rect::from_min_size(corner, Vec2::new(hint.width as f32, hint.height as f32) / 100.0).contains(unit).then(|| hint.text.clone())
             })
         });
+        // The pin of a fixed node says the entry it comes from (notation 2.4, 2.5).
+        if input.hint.is_none() && shown.mark_fixed && !coarse {
+            input.hint = frame.at.and_then(|unit| pins::under(drawing, frame, &self.grid, unit)).map(|placed| pins::tooltip(drawing, placed));
+        }
+    }
+
+    /// A run of presses of Ctrl and an arrow ends a second after the last press, or at a press of the pointer or of
+    /// another key (notation 2.6): then it is the move it asks for.
+    fn end_run_when_due(&mut self, frame: &Frame, input: &mut Input) {
+        let Some(moving::State::Keys { last }) = self.moving.as_ref().map(|moving| moving.state) else { return };
+        let other_key = frame.ctx.input(|input| {
+            input.events.iter().any(|event| {
+                matches!(event, egui::Event::Key { key, pressed: true, modifiers, .. } if !(is_arrow(*key) && modifiers.command && !modifiers.alt))
+            })
+        });
+        let pressed = frame.ctx.input(|input| input.pointer.any_pressed());
+        let left = moving::RUN_SECONDS - (frame.now - last);
+        if other_key || pressed || left <= 0.0 {
+            input.intents.extend(self.end_run());
+        } else {
+            frame.ctx.request_repaint_after(std::time::Duration::from_secs_f64(left));
+        }
+    }
+
+    /// A right-click on a fixed node opens its menu: "Remove the fixed position" (notation 2.4).
+    fn fixed_menu(&mut self, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
+        if response.secondary_clicked() {
+            self.context =
+                frame.hovered.filter(|&placed| frame.drawing.placed.get(placed).is_some_and(|found| found.at.is_some() && !found.name.is_empty()));
+        }
+        let Some(placed) = self.context else { return };
+        let name = frame.drawing.placed.get(placed).map(|found| found.name.clone()).unwrap_or_default();
+        let _ = shown;
+        let mut asked = false;
+        response.context_menu(|ui| {
+            if ui.button("Remove the fixed position").clicked() {
+                asked = true;
+                ui.close();
+            }
+        });
+        if asked {
+            input.intents.push(Intent::Arrange(Selection { nodes: vec![name], ..Selection::default() }));
+            self.context = None;
+        }
     }
 
     /// A click selects what it is on, Shift or Ctrl with it adds or takes out; a drag on the empty canvas draws a
@@ -658,6 +822,14 @@ impl Canvas {
         if response.drag_started_by(PointerButton::Primary) {
             let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
             let hit = from.and_then(|from| select::hit(drawing, &self.index, &frame.groups, from, reach, &visible));
+            // A drag on a node moves it, or the selection that holds it in its frame (notation 2.6).
+            if let (Some(from), Some(Hit::Node(placed))) = (from, hit)
+                && frame.offsets.is_none()
+                && drawing.placed.get(placed).is_some_and(|found| !found.name.is_empty())
+            {
+                let nodes = self.grabbed(drawing, placed, input);
+                self.moving = Some(Moving::new(drawing, nodes, moving::State::Dragging { from }));
+            }
             self.drag = match (from, hit) {
                 (Some(_), Some(_)) => Some(Drag::Held),
                 // On the empty canvas: with the setting, a drag pans and Shift with it selects, only Ctrl then adding.
@@ -672,6 +844,21 @@ impl Canvas {
             && let Some(at) = response.interact_pointer_pos()
         {
             *to = unit_of(at);
+        }
+        if let Some(moving) = &mut self.moving
+            && let moving::State::Dragging { from } = moving.state
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            moving.set_by(drawing, moving::snapped(unit_of(at) - from));
+            ctx.request_repaint();
+        }
+        if response.drag_stopped_by(PointerButton::Primary)
+            && let Some(moving) = self.moving.as_mut().filter(|moving| matches!(moving.state, moving::State::Dragging { .. }))
+        {
+            moving.state = moving::State::Asked;
+            let (nodes, by) = (moving.nodes.clone(), moving.by);
+            let asked = self.move_intent(drawing, &nodes, by);
+            input.intents.extend(asked);
         }
         if response.drag_stopped_by(PointerButton::Primary) {
             if let Some(Drag::Rectangle { from, to, adding }) = self.drag.take() {
@@ -697,6 +884,46 @@ impl Canvas {
         };
         input.intents.push(Intent::Select(self.index.name(drawing, &found)));
         self.asked_found = Some(found);
+    }
+
+    /// The nodes that a drag from `placed` moves: the selection in the frame of `placed` when it holds it, otherwise
+    /// `placed` alone, which the drag selects (decision of the owner, 2026-11-17).
+    fn grabbed(&mut self, drawing: &Drawing, placed: usize, input: &mut Input) -> Vec<usize> {
+        let base = self.asked_found.clone().unwrap_or_else(|| self.found.clone());
+        let body = drawing.placed.get(placed).map(|found| found.body);
+        if base.nodes.contains(&placed) {
+            return base.nodes.iter().copied().filter(|&at| drawing.placed.get(at).map(|found| found.body) == body).collect();
+        }
+        let found = Found::one(Hit::Node(placed));
+        self.pinned = None;
+        input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+        self.asked_found = Some(found);
+        vec![placed]
+    }
+
+    /// Ctrl and an arrow moves the selection by a step of the grid, by 64 with Shift; the presses that follow one another
+    /// on the same nodes are one move (notation 2.6). The nodes are those of the selection in the frame of the first.
+    fn nudge(&mut self, drawing: &Drawing, step: (i64, i64), now: f64, input: &mut Input) {
+        if self.moving.as_ref().is_some_and(|moving| moving.state == moving::State::Asked) {
+            return;
+        }
+        let base = self.asked_found.clone().unwrap_or_else(|| self.found.clone());
+        let movable: Vec<usize> =
+            base.nodes.iter().copied().filter(|&at| drawing.placed.get(at).is_some_and(|found| !found.name.is_empty())).collect();
+        let Some(body) = movable.first().and_then(|&first| drawing.placed.get(first)).map(|found| found.body) else { return };
+        let nodes: Vec<usize> = movable.into_iter().filter(|&at| drawing.placed.get(at).is_some_and(|found| found.body == body)).collect();
+        // A run on other nodes ends first, with its move.
+        if self.moving.as_ref().is_some_and(|moving| moving.nodes != nodes) {
+            input.intents.extend(self.end_run());
+            return;
+        }
+        let moving = match &mut self.moving {
+            Some(moving) if moving.nodes == nodes => moving,
+            _ => self.moving.insert(Moving::new(drawing, nodes, moving::State::Keys { last: now })),
+        };
+        moving.state = moving::State::Keys { last: now };
+        let by = (moving.by.0 + step.0, moving.by.1 + step.1);
+        moving.set_by(drawing, by);
     }
 
     /// With the focus: Tab and Shift+Tab, the arrows, Enter and Escape move the selection, which is the focus (notation
@@ -740,7 +967,10 @@ impl Canvas {
         };
         if pressed(egui::Key::Escape, egui::Modifiers::NONE) {
             // A gesture first, then a list open, then up one level, then nothing.
-            if matches!(self.drag, Some(Drag::Rectangle { .. })) {
+            if self.moving.as_ref().is_some_and(|moving| matches!(moving.state, moving::State::Dragging { .. })) {
+                self.moving = None;
+                self.drag = Some(Drag::Held);
+            } else if matches!(self.drag, Some(Drag::Rectangle { .. })) {
                 self.drag = Some(Drag::Held);
             } else if self.list.is_some() {
                 self.list = None;
@@ -766,6 +996,25 @@ impl Canvas {
                 }
             }
             return;
+        }
+        // Ctrl and an arrow, Shift with them for 64: Ctrl is the command key of macOS too.
+        let moves = [(egui::Key::ArrowLeft, (-1, 0)), (egui::Key::ArrowRight, (1, 0)), (egui::Key::ArrowUp, (0, -1)), (egui::Key::ArrowDown, (0, 1))];
+        for (key, (dx, dy)) in moves {
+            let found = ui.input_mut(|input| {
+                let at = input.events.iter().position(|event| {
+                    matches!(event, egui::Event::Key { key: found, pressed: true, modifiers, .. } if *found == key && modifiers.command && !modifiers.alt)
+                });
+                at.and_then(|at| match input.events.remove(at) {
+                    egui::Event::Key { modifiers, .. } => Some(modifiers.shift),
+                    _ => None,
+                })
+            });
+            if let Some(big) = found {
+                let size = if big { 64 } else { moving::GRID as i64 };
+                let now = ui.input(|input| input.time);
+                self.nudge(drawing, (dx * size, dy * size), now, input);
+                return;
+            }
         }
         let arrows = [
             (egui::Key::ArrowLeft, Vec2::new(-1.0, 0.0)),
@@ -872,11 +1121,21 @@ impl Canvas {
             if !visible(group.within) {
                 continue;
             }
-            // The new wires show at the end of the glide.
-            if frame.offsets.is_some() && group.wire.is_some() {
-                continue;
+            let mut offset = frame.offset_of(group.placed);
+            if let Some(wire) = &group.wire
+                && frame.offsets.is_some()
+            {
+                // The new wires show at the end of the glide.
+                let Some(moving) = self.moving.as_mut().filter(|_| frame.moving) else { continue };
+                // A wire to a node moved: its preview (architecture 12.4); one inside a structure moved: with it.
+                if let Some(&at) = moving.rerouted.get(&index) {
+                    let shapes = moving.preview.wires.get(at).map(|(_, shapes)| shapes.as_slice()).unwrap_or_default();
+                    let painted = moving.painted.entry(index).or_insert_with(|| Arc::new(Painted::of(ctx, drawing, shapes, theme, step))).clone();
+                    put(&painted, Vec2::ZERO);
+                    continue;
+                }
+                offset = moving.body_offset(wire.body);
             }
-            let offset = frame.offset_of(group.placed);
             let placed = group.placed.and_then(|placed| drawing.placed.get(placed));
             if coarse
                 && group.arm.is_none()
@@ -890,6 +1149,18 @@ impl Canvas {
             }
             if let Some(painted) = self.painter.group(ctx, drawing, index, theme, step) {
                 put(&painted, offset);
+            }
+        }
+        // The pin of each fixed node shown (notation 2.4, 2.5), at the real scale.
+        if frame.mark_fixed && !coarse {
+            for &index in &frame.groups {
+                let Some(placed) = drawing.groups.get(index).filter(|group| group.is_node() && visible(group.within)).and_then(|group| group.placed)
+                else {
+                    continue;
+                };
+                if let Some(area) = pins::area(drawing, placed, frame.offset_of(Some(placed))) {
+                    pins::paint(&painter, Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2())), theme, zoom);
+                }
             }
         }
         for (index, found) in drawing.tabs.iter().enumerate() {
@@ -960,6 +1231,13 @@ impl Canvas {
                 if let Some(painted) = self.painter.mark(ctx, drawing, index, theme, step) {
                     put(&painted, Vec2::ZERO);
                 }
+            }
+        } else if frame.moving {
+            // The nodes selected go with the move.
+            for &placed in &selected_nodes {
+                let painted =
+                    self.painter.made(ctx, drawing, Over::SelectedNode(placed), theme, step, || labcraft_diagram::selected_node(drawing, placed));
+                put(&painted, frame.offset_of(Some(placed)));
             }
         }
         // `zoom.values` may be set below `zoom.coarse`, under which no value shows (notation 7).
@@ -1121,6 +1399,11 @@ impl Canvas {
 }
 
 /// Whether each arm in tabs is shown: the arm that `shown` chooses for its structure, inside an arm shown.
+/// An arrow key.
+fn is_arrow(key: egui::Key) -> bool {
+    matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown)
+}
+
 fn arms_shown(drawing: &Drawing, shown: &Shown) -> Vec<bool> {
     let counts: HashMap<&str, usize> = drawing.arms.iter().fold(HashMap::new(), |mut counts, arm| {
         *counts.entry(arm.structure.as_str()).or_insert(0) += 1;

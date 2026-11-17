@@ -252,6 +252,8 @@ pub struct Node<'a> {
     pub after: bool,
     /// The `layout` section gives it `view standard`.
     pub standard: bool,
+    /// The view that its entry of the `layout` section writes, if any (spec 11): what the inspector shows.
+    pub view: Option<View>,
     pub inputs: Vec<Terminal>,
     pub outputs: Vec<Terminal>,
     /// The name of each output as a trace writes it in `out` (`docs/commands.md`, 8): `m`, `next.s`; none for one that
@@ -534,12 +536,13 @@ impl<'a> Builder<'a> {
             graph.bodies.push(frame);
         }
         // A `node` entry designates a node only when it names one (spec 11): one that names several gives `LC5006`.
-        for ((is_label, name), (at, standard, span)) in entries {
+        for ((is_label, name), (at, view, span)) in entries {
             let Some(&[node]) = flow.designations.get(&(is_label, name)).map(Vec::as_slice) else { continue };
             if let Some(node) = graph.nodes.get_mut(node) {
                 node.at = at;
                 node.placed_by = at.and(span);
-                node.standard = standard;
+                node.standard = view == Some(View::Standard);
+                node.view = view;
             }
         }
         self.wires(&mut graph, &walked, &mut flow, &mut counts, max_terminals)?;
@@ -703,7 +706,7 @@ impl<'a> Builder<'a> {
                 // A second entry for one node is `LC5007`: the first one counts.
                 LayoutKind::Node { node, at, view } if seen.insert((node.is_label, node.name)) => {
                     let at = at.as_ref().and_then(|point| Some((coordinate(&point.x)?, coordinate(&point.y)?)));
-                    Some(((node.is_label, node.name), (at, *view == Some(View::Standard), self.file.source_map.span(item.id))))
+                    Some(((node.is_label, node.name), (at, *view, self.file.source_map.span(item.id))))
                 }
                 _ => None,
             })
@@ -769,6 +772,7 @@ impl<'a> Builder<'a> {
             always,
             after,
             standard: false,
+            view: None,
             inputs,
             outputs,
             values: match &statement.kind {
@@ -1233,7 +1237,7 @@ fn primitive_family(ty: PrimitiveTy) -> Family {
 /// How the `layout` section designates a node: by its label (`true`), or by the name of its line.
 type Designation = (bool, Name);
 /// What a `node` entry gives: a position, and whether the node is in standard view.
-type Entry = (Option<(i64, i64)>, bool, Option<labcraft_types::Span>);
+type Entry = (Option<(i64, i64)>, Option<View>, Option<labcraft_types::Span>);
 
 /// How the `layout` section designates the node of a line (spec 11): by its label, or by the name of its line.
 fn designation_of(statement: &Statement) -> Option<(bool, Name)> {
