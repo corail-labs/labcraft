@@ -45,13 +45,15 @@ Run on a machine with fewer CPUs than targets, the targets share them and each f
 `run.sh` runs one target, for a number of seconds. It also fails, with exit 3, when
 libFuzzer stopped before 90% of the time, which it calls a success when its clock jumps. The time is read from
 `/proc/uptime`, which setting the clock does not move; it still counts a suspend, and without it (macOS) the check
-cannot see a jump. `bash fuzz/run.sh <target> --replay <file>` runs one input again, alone, with the same limits. `--release` with debug assertions and AddressSanitizer are the defaults of `cargo fuzz`.
+cannot see a jump. It fails with exit 4 when libFuzzer fuzzed less than a tenth of the time: it does not cut the reading
+of the seeds short, and a run that spent its time there ends as a success. `bash fuzz/run.sh <target> --replay <file>` runs one input again, alone, with the same limits. `--release` with debug assertions and AddressSanitizer are the defaults of `cargo fuzz`.
 
 **The seeds** are every file of `examples/`, `libs/`, `docs/rfc/` and `tests/acceptance/`, some of which are not
 programs, the simulation files of `libs/visa/sim/` among them, plus what `deep_seeds` generates: the Nesting family, from
 `crates/format/tests/deep`, the files of each folder of those four joined, as many as fit in 64 KiB, for `check`, and
 simulation files nested at the limit of the reader of TOML and one level above it, for `simulation`, and a session of
-requests, for `mcp`. libFuzzer writes
+requests, for `mcp`. `edit` reads only `examples/`: it reads its input as steps on a project built into it, and all the
+seeds took more than its 60 s to read; with none, libFuzzer grows its inputs slowly and stays at a few steps. libFuzzer writes
 what it finds to `corpus/<target>`, ignored by git. Each run of the job starts again from the seeds.
 
 **In Docker Desktop**, add `--security-opt seccomp=unconfined`: the sanitizer may need `personality`, which the

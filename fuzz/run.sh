@@ -11,7 +11,9 @@
 # alone too. A crash, an out-of-memory or a leak still stops the run; one on a seed shows only as the file libFuzzer wrote,
 # so any other file written meanwhile, but a slow unit, fails the run too.
 #
-# usage: run.sh TARGET SECONDS        fuzz; exit 3 when libFuzzer stopped early
+# It also fails when libFuzzer spent its time reading the seeds: it fuzzed less than a tenth of SECONDS.
+#
+# usage: run.sh TARGET SECONDS        fuzz; exit 3 when libFuzzer stopped early, 4 when it hardly fuzzed
 #        run.sh TARGET --replay FILE  run one input again, alone, with the same limits
 set -euo pipefail
 
@@ -50,6 +52,12 @@ seeds=target/seeds/$target
 log=target/$target.log
 cargo run --quiet --locked --bin deep_seeds -- "$seeds"
 mkdir -p "corpus/$target" "artifacts/$target"
+# New inputs go to the first folder; the others are only read, and libFuzzer walks them recursively. `edit` reads its
+# input as steps, a byte at a time, on a project built into the target, and each input of the repository takes about
+# 0.6 s: all of them took more than its 60 s in the job `fuzz`. It reads only `examples/`, for long inputs from the
+# start; with none, libFuzzer grows its inputs slowly, and 60 s stayed at 4 bytes.
+folders=("corpus/$target" ../examples)
+if [ "$target" != edit ]; then folders+=(../libs ../docs/rfc ../tests/acceptance "$seeds"); fi
 # Built before the clock starts, so that the time of the build does not hide a run that stopped early.
 cargo fuzz build "$target"
 
@@ -57,22 +65,24 @@ fork=()
 if [ "$workers" -gt 1 ]; then
     fork=(-fork="$workers" -ignore_crashes=0 -ignore_ooms=0 -ignore_timeouts=1)
 fi
-# When the workers start: libFuzzer writes this line once it has read the seeds.
+# When fuzzing starts: libFuzzer writes this line once it has read the seeds, `INITED` with one worker and
+# `starting to fuzz` with several.
 fuzzing=target/$target.fuzzing
 rm -f "$fuzzing"
+started="INITED"
+if [ "$workers" -gt 1 ]; then started="starting to fuzz"; fi
 mark() {
     local line
     while IFS= read -r line || [ -n "$line" ]; do
         printf '%s\n' "$line"
-        case $line in *"starting to fuzz"*) now > "$fuzzing" ;; esac
+        case $line in *"$started"*) [ -e "$fuzzing" ] || now > "$fuzzing" ;; esac
     done
 }
 
 # What libFuzzer writes from now on is newer than this file.
 touch "target/$target.started"
 start=$(now)
-# New inputs go to the first folder; the others are only read, and libFuzzer walks them recursively.
-cargo fuzz run "$target" "corpus/$target" ../examples ../libs ../docs/rfc ../tests/acceptance "$seeds" -- \
+cargo fuzz run "$target" "${folders[@]}" -- \
     ${fork[@]+"${fork[@]}"} -max_total_time="$seconds" -max_len=65536 -timeout="$timeout" -print_final_stats=1 2>&1 |
     mark | tee "$log"
 end=$(now)
@@ -84,12 +94,19 @@ if [ "$elapsed" -lt $((seconds * 9 / 10)) ]; then
     exit 3
 fi
 
+# libFuzzer does not cut the reading of the seeds short: when it takes the whole budget, the run ends without fuzzing, as a
+# success. Running it again would read the same seeds: exit 4, not 3.
+if [ ! -r "$fuzzing" ]; then
+    echo "error: libFuzzer never started to fuzz in $elapsed s" >&2
+    exit 4
+fi
+fuzzed=$((end - $(cat "$fuzzing")))
+if [ "$fuzzed" -lt $((seconds / 10)) ]; then
+    echo "error: libFuzzer read the seeds for $((elapsed - fuzzed)) s and fuzzed $fuzzed s of $seconds: it did not really fuzz" >&2
+    exit 4
+fi
+
 if [ "$workers" -gt 1 ]; then
-    if [ ! -r "$fuzzing" ]; then
-        echo "error: the workers never started to fuzz" >&2
-        exit 3
-    fi
-    fuzzed=$((end - $(cat "$fuzzing")))
     reading=$((elapsed - fuzzed))
     echo "$workers workers fuzzed $fuzzed s each, after $reading s reading the seeds on one:" \
         "$(awk -v w="$workers" -v s="$fuzzed" -v r="$reading" 'BEGIN { printf "%.1f", (r + w * s) / 3600 }') worker-hours" |
