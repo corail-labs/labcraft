@@ -138,9 +138,12 @@ are the nodes that a `layout` section does not place (spec 11).
   chain if there is one. The other unplaced nodes move apart only as far as needed. With no position in
   the file, this gives the placement above. What the file writes always wins: around a position or a
   `via` that it gives, the rules that say "never" hold as far as they can. Two nodes that the file places one over the other are drawn
-  where it puts them, and `diagram` warns (`LC7005`, decided 2026-11-11), so that the author moves one. The axis of the chain goes
-  through the first node of the chain, placed or not, and a node of the chain that the file does not
-  place goes on the axis.
+  where it puts them, and `diagram` warns (`LC7005`, decided 2026-11-11), so that the author moves one. In the frame of the function, the
+  axis of the chain goes through the first node of the chain, placed or not, and a node of the chain that the file
+  does not place goes on the axis. In the frame of a loop or of an arm, which its structure aligns on the chain
+  outside, the axis stays where the placement puts it: a node of the chain that the file places goes where it is
+  put, off the axis if need be, and the chain bends to reach it, so that moving it never moves its structure back
+  over it (decision of the owner, 2026-11-17).
 - **When the file changes**, in the live viewer, the nodes glide from their old place to the new one in
   about 150 ms *(proposed)*, so that one sees what moved. There is no glide when the system asks for
   reduced motion. The drawing at the end is always the one computed from the file. The update time of
@@ -295,7 +298,7 @@ below.
   so the fixed nodes are what keeps the drawing stable. Setting: "fix every node at the first move". A node that an
   agent adds without a position is placed near its neighbours, without moving the others, and stays free until
   someone moves it.
-- **A fixed node shows it.** A pin icon (`pin` of Tabler Icons, MIT, attributed with the other assets) in `ink.muted` (2.5), and on hover: "Position fixed
+- **A fixed node shows it.** A pin icon (`pin` of Lucide, ISC, the family of the icons of the window, attributed with the other assets; decision of the owner, 2026-11-17) in `ink.muted` (2.5), and on hover: "Position fixed
   (`node x at (…)` in `layout`). Right-click › Remove the fixed position". Setting: "mark the fixed nodes", on by
   default. Removing the fixed position deletes the entry; the node goes back to the automatic placement.
 - **Arrange** (Shift+Alt+F, 2.6): on the selection, a branch or the whole function, it removes
@@ -400,7 +403,7 @@ list of diagnostics. The shape of a mark doubles its color (principle
   `select.stroke`. Over a wire it can take, that wire is drawn in `select.stroke`; releasing it there inserts the node into
   the wire (`node.add` with `into`, one step of undo), and the required inputs it leaves unwired are drawn as holes.
   Elsewhere, a free node.
-- **A fixed node** (2.4): the pin (`pin` of Tabler Icons) in `ink.muted`, 16 across, on the top-left corner of its body;
+- **A fixed node** (2.4): the pin (`pin` of Lucide) in `ink.muted`, 16 across, on the top-left corner of its body;
   its tooltip names the `node … at` entry it comes from. Its size is judged at the real scale, in the editor.
 - **A junction** (2.4): a plain drag that starts within 4 of a wire grabs it; the junction goes to the nearest point of
   the grid of 8 on that wire, drawn in `select.stroke` while the branch is drawn, then in the color of the wire. It
@@ -445,7 +448,7 @@ in progress writes nothing (2.4).
 | Shift+click, Ctrl+click | a node, a wire | Adds it to the selection, or removes it |
 | Drag | the empty canvas | Selects the nodes that the rectangle touches. Setting: "drag on the empty canvas pans", Shift+drag then selects |
 | Middle drag, wheel, two fingers | anywhere | Pans; Shift+wheel pans sideways; Ctrl+wheel or a pinch zooms around the pointer, as the viewer does |
-| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4) |
+| Drag | a node, or the selection | `node.move`, which fixes what it moves (2.4), by whole steps of the grid of 8. From a node of the selection, the nodes of the selection in its frame move, the others stay (decision of the owner, 2026-11-17); from another node, that node, which the drag selects. Escape during the drag puts them back |
 | Drag | an output | Draws a wire to an input (2.5): `wire.connect`. Released on the empty canvas, it opens quick insertion, filtered (below) |
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
@@ -566,9 +569,11 @@ the canvas shows.
   of the text, each drawn with its ring and the wire snapped to it (2.5). The filter is the predicate of
   `wire.connect`. Enter wires it, replacing as a drop does (2.4), and Escape cancels. Space opens quick insertion,
   filtered, as a wire dropped on the empty canvas does; the node falls to the right of the start of the wire.
-- **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid; with Shift, by 64. Each press is a
-  `node.move`. The presses that follow one another on the same nodes are one step of undo, as a drag is
-  ([commands.md](commands.md), 9.1); another key, a click or a second without a press ends the run.
+- **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid; with Shift, by 64. The presses that
+  follow one another on the same nodes are one run, one `node.move` and one step of undo, as a drag is
+  ([commands.md](commands.md), 9.1): the nodes show where they go at each press, as in a drag, and the move is written
+  when the run ends; another key, a click or a second without a press ends it. The nodes of the selection in the frame
+  of the first one move, as a drag moves those of the frame of the node it holds.
 - **AccessKit.** Each node, terminal of a node, terminal of the frame and structure is an element of the tree of
   AccessKit, with a role and a name made of what 2.5 draws and its tooltips say. A node reads as
   "verdict, `core.lt`, error LC3001", and a terminal as "input high of verdict, `f64[V]`, constant 240 V", "wired from

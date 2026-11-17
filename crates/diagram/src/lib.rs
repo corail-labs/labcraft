@@ -27,6 +27,7 @@ mod graph;
 mod marks;
 mod names;
 mod place;
+mod preview;
 mod route;
 mod shape;
 mod short;
@@ -36,9 +37,10 @@ mod svg;
 pub mod theme;
 pub mod values;
 
-pub use labcraft_check::PathSegment;
+pub use labcraft_check::{PathSegment, path_segments};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
+pub use preview::{Preview, preview};
 pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark,
     Paint, Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
@@ -252,11 +254,25 @@ fn title(kind: &Kind<'_>) -> String {
     labcraft_types::cut_text(&text).into_owned()
 }
 
-/// The drawing of a graph: each node in its view, placed (notation 2.1), inside the frames of its bodies.
+/// The drawing of a graph: each node in its view, placed (notation 2.1), inside the frames of its bodies. In parts, as
+/// what a change recomputes cuts it (architecture 12.4): the sizes of the nodes, their placement, the routes and the
+/// shapes, then the extent of the whole and its margin.
 fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
+    let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
+    let mut sized = sizes(graph, names, view, &mut drawing.icons);
+    let titles = titles(graph, view);
+    let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
+    drawing.warnings = overlapping(graph, &sized, &placement);
+    shapes(graph, &titles, &placement, sized, &mut drawing);
+    extent_and_margin(&placement, &mut drawing);
+    drawing
+}
+
+/// The size of each node in its view (notation 3), the icons it shows added to `icons_drawn`, each once; the pill of a
+/// wire widens the room left of its reader.
+fn sizes(graph: &Graph<'_>, names: &Interner, view: &ViewState, icons_drawn: &mut Vec<IconDrawing>) -> Vec<size::Sized> {
     let sizer = Sizer { names, standard_everywhere: view.standard_everywhere };
     let bands = bands(graph);
-    let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
     // Each icon once in the drawing, however many calls show it.
     let mut icons: HashMap<*const labcraft_graph::Icon, usize> = HashMap::new();
     let mut sized: Vec<size::Sized> = graph
@@ -267,8 +283,8 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             let icon = match &node.kind {
                 Kind::Call { glyph: None, icon: Some(icon), .. } if !(view.standard_everywhere || node.standard) => {
                     Some(*icons.entry(std::ptr::from_ref(*icon)).or_insert_with(|| {
-                        drawing.icons.push(sizer.icon(icon));
-                        drawing.icons.len() - 1
+                        icons_drawn.push(sizer.icon(icon));
+                        icons_drawn.len() - 1
                     }))
                 }
                 _ => None,
@@ -283,9 +299,12 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             found.left = found.left.max(pill_reach(pill));
         }
     }
-    let titles = titles(graph, view);
-    let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
-    drawing.warnings = overlapping(graph, &sized, &placement);
+    sized
+}
+
+/// The shapes of the drawing, each node where `placement` puts it, with the routes of the wires of each body: the frame
+/// of the function, the wires, the nodes, the frames of the structures and what they hold, the hints and the tabs.
+fn shapes(graph: &Graph<'_>, titles: &place::Titles, placement: &place::Placement, sized: Vec<size::Sized>, drawing: &mut Drawing) {
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -323,7 +342,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             })
         })
         .collect();
-    let (plan, sources) = values::plan(graph, &placement, &placed_of);
+    let (plan, sources) = values::plan(graph, placement, &placed_of);
     drawing.trace = plan;
     let command_names = command_names(graph);
     // The function's frame, then each node, a structure with its frame before what it holds.
@@ -339,7 +358,7 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
     // The wires of each body, drawn over its frame and under its nodes.
     let mut wires: Vec<Vec<Group>> = (0..graph.bodies.len())
         .map(|body| {
-            let mut groups = wire_groups(graph, body, &placement, &sized, &sources, &command_names);
+            let mut groups = wire_groups(graph, body, placement, &sized, &sources, &command_names);
             groups.iter_mut().for_each(|group| group.within = within(body));
             groups
         })
@@ -385,23 +404,26 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
         let mut arms = Vec::new();
         let mut tabs = Vec::new();
+        // What the frame of a structure grows upward stands above its block (`Sized::over`): its box, its label.
+        let over = sized.over;
         if let Kind::Structure(structure) = &node.kind {
             // The frame, then the wires in the margins of a `match`.
             let margins = std::mem::take(&mut shapes);
             let in_tabs = titles.tabs.contains(&index);
-            (shapes, arms, tabs) = structure_shapes(graph, node, structure, &placement, at, (sized.width, &sized.inputs, &sized.outputs), in_tabs);
+            (shapes, arms, tabs) =
+                structure_shapes(graph, node, structure, placement, (at, over), (sized.width, &sized.inputs, &sized.outputs), in_tabs);
             shapes.extend(margins);
-            shapes.extend(sized_label(node, at));
+            shapes.extend(sized_label(node, &place::NodeAt { y: at.y - over, ..*at }));
             // In tabs, each arm draws its own margins.
             for ((_, arm), margins) in arms.iter_mut().zip(sized.arms) {
                 arm.extend(margins.into_iter().map(|shape| moved(shape, at.x, at.y)));
             }
         }
-        let (width, height) = (sized.width, sized.height);
+        let (width, height) = (sized.width, sized.height + over);
         drawing.placed.push(Placed {
             key: node.stable.clone(),
             x: at.x,
-            y: at.y,
+            y: at.y - over,
             width,
             height,
             column: at.column,
@@ -411,6 +433,12 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             name: command_names.get(index).cloned().flatten().unwrap_or_default(),
             line: node.line,
             at: node.at,
+            view: match node.view {
+                Some(labcraft_graph::View::Standard) => "standard".to_owned(),
+                Some(labcraft_graph::View::Compact) => "compact".to_owned(),
+                None => String::new(),
+            },
+            over,
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
@@ -468,6 +496,11 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             drawing.groups.extend(edges(body, placed, &mut drawing.hints));
         }
     }
+}
+
+/// The extent of the drawing: everything, and the margin around it; a node that the file places left of the frame or
+/// above it moves the whole drawing (spec 11).
+fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
     // The extent: everything, and the margin around it (cli.md 7.2). The frame of the function counts, though it is not
     // drawn: the drawing keeps its place on the grid.
     let (mut right, mut bottom) = (0i64, 0i64);
@@ -524,11 +557,11 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
             axis: frame.axis.map(|axis| axis + dy),
             from_file: frame.from_file,
             frame: (frame.x + dx, frame.y + dy, frame.width, frame.height),
+            origin: (frame.origin.0 + dx, frame.origin.1 + dy),
         })
         .collect();
     drawing.width = right + dx + style::margin();
     drawing.height = bottom + dy + style::margin();
-    drawing
 }
 
 /// The label of a structure, above its frame (notation 3.1).
@@ -947,7 +980,7 @@ fn structure_shapes(
     node: &graph::Node<'_>,
     structure: &graph::Structure,
     placement: &place::Placement,
-    at: &place::NodeAt,
+    (at, over): (&place::NodeAt, i64),
     (width, inputs, outputs): Terminals<'_>,
     in_tabs: bool,
 ) -> (Vec<Shape>, Vec<ArmShapes>, Vec<TabShapes>) {
@@ -982,7 +1015,16 @@ fn structure_shapes(
                 .map(|frame| frame.y + frame.height - at.y + style::frame_pad())
                 .max()
                 .unwrap_or(style::frame_header() + style::frame_pad());
-            let outer = place::FrameAt { x: at.x, y: at.y, width, height, header: style::frame_header(), depth, ..place::FrameAt::default() };
+            // Its header stands as high as an arm that grows upward needs (`Sized::over`).
+            let outer = place::FrameAt {
+                x: at.x,
+                y: at.y - over,
+                width,
+                height: height + over,
+                header: style::frame_header(),
+                depth,
+                ..place::FrameAt::default()
+            };
             let mut shapes = frame_shapes(&outer, &title, structure.badge, Some(Family::of(structure)), stroke);
             // The selector, then the notches of the outer values that the arms read.
             for (index, (input, &(x, y))) in node.inputs.iter().zip(inputs).enumerate() {
@@ -995,7 +1037,7 @@ fn structure_shapes(
             let mut arms = Vec::new();
             let tabs = if in_tabs {
                 let captions: Vec<&str> = node.bodies.iter().filter_map(|&index| graph.bodies.get(index)).map(|body| body.caption.as_str()).collect();
-                tab_row(&captions, (at.x + style::label_start(), at.y + style::frame_header()), width - 2 * style::label_start(), stroke)
+                tab_row(&captions, (at.x + style::label_start(), at.y - over + style::frame_header()), width - 2 * style::label_start(), stroke)
             } else {
                 Vec::new()
             };

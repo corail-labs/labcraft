@@ -540,6 +540,16 @@ pub struct Drawing {
     pub trace: crate::values::TracePlan,
 }
 
+impl Drawing {
+    /// Where a node is in its frame, in hundredths, as its `node … at` entry would write it (spec 11): what a move by
+    /// `[dx, dy]` of a node placed automatically starts from (architecture 12.3).
+    pub fn in_frame(&self, placed: usize) -> Option<(i64, i64)> {
+        let node = self.placed.get(placed)?;
+        let body = self.bodies.get(node.body)?;
+        Some((node.x - body.origin.0, node.y + node.over - body.origin.1))
+    }
+}
+
 /// The mark of a diagnostic: what shows where it is, and its code.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -556,6 +566,9 @@ pub struct BodyDrawn {
     pub axis: Option<i64>,
     pub from_file: bool,
     pub frame: (i64, i64, i64, i64),
+    /// The origin of the coordinates of `layout` in its frame (spec 11), in the coordinates of the drawing.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub origin: (i64, i64),
 }
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.
@@ -584,6 +597,13 @@ pub struct Placed {
     /// Where its `node … at` entry fixes it, in hundredths, from the top-left corner of its frame (spec 11); none for a
     /// node placed automatically.
     pub at: Option<(i64, i64)>,
+    /// The view that its entry of `layout` writes, `standard` or `compact` (spec 11); empty when it writes none.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub view: String,
+    /// How far the frame of a structure rises above the corner that its entry places (its box starts that much higher):
+    /// a loop, or a `match` or a `handle` in tabs, whose body grows upward (`Sized::over`); in hundredths, 0 otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub over: i64,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

@@ -47,6 +47,13 @@ pub const SELECT_ALL_DOWNSTREAM: &str = "ide.select_all_downstream";
 /// The setting "drag on the empty canvas pans" (notation 2.6; decision of the owner, 2026-11-17: a setting of the user
 /// from step 2, off by default).
 pub const DRAG_PANS: &str = "ide.drag_pans";
+/// The settings "fix every node at the first move" (off) and "mark the fixed nodes" (on) of notation 2.4: preferences of
+/// the user until the card `Settings` of step 6 (decision of the owner, 2026-11-17).
+pub const FIX_EVERY_NODE: &str = "ide.fix_every_node";
+pub const MARK_FIXED: &str = "ide.mark_fixed";
+/// Arrange (notation 2.4, 2.6): `layout.arrange` on the selection of the canvas that has the focus, or on the whole
+/// function when nothing is selected.
+pub const ARRANGE: &str = "ide.arrange";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
 
@@ -71,6 +78,9 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (SELECT_ALL_UPSTREAM, "Select everything upstream"),
     (SELECT_ALL_DOWNSTREAM, "Select everything downstream"),
     (DRAG_PANS, "Drag on the empty canvas pans"),
+    (FIX_EVERY_NODE, "Fix every node at the first move"),
+    (MARK_FIXED, "Mark the fixed nodes"),
+    (ARRANGE, "Arrange the selection, or the whole function"),
     (ABOUT, "About LabCraft"),
 ];
 
@@ -108,6 +118,7 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(SELECT_DOWNSTREAM, "Select downstream", &["Alt+Right"]),
         on_canvas(SELECT_ALL_UPSTREAM, "Select everything upstream", &["Shift+Alt+Left"]),
         on_canvas(SELECT_ALL_DOWNSTREAM, "Select everything downstream", &["Shift+Alt+Right"]),
+        on_canvas(ARRANGE, "Arrange", &["Shift+Alt+F"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
     // A key of the canvas never acts when the canvas does not have the focus.
@@ -155,6 +166,8 @@ pub fn menus() -> MenuBar {
             item(SELECT_ALL_UPSTREAM, "Select everything upstream"),
             item(SELECT_ALL_DOWNSTREAM, "Select everything downstream"),
             Node::Separator,
+            item(ARRANGE, "Arrange"),
+            Node::Separator,
             item(PALETTE, "Command palette…"),
         ],
     )
@@ -178,6 +191,8 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new(LAB), "Lab look (slate, teal)").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(REDUCED_MOTION), "Reduced motion").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(DRAG_PANS), "Drag on the empty canvas pans").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(FIX_EVERY_NODE), "Fix every node at the first move").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(MARK_FIXED), "Mark the fixed nodes").check(true)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
         "Run",

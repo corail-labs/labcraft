@@ -47,7 +47,7 @@ pub fn selectable(
 }
 
 /// `input x` or `output x`, a terminal of the frame of the function.
-fn terminal(edit: &Edit, function: &Function, name: &str) -> Result<(), EditError> {
+pub(crate) fn terminal(edit: &Edit, function: &Function, name: &str) -> Result<(), EditError> {
     let text = name.trim();
     let (side, rest) = match (text.strip_prefix("input "), text.strip_prefix("output ")) {
         (Some(rest), _) => ("input", rest.trim()),

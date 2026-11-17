@@ -348,7 +348,7 @@ character boundary, and these crates hold little numerical code.
 | `assets` | Every file of `assets/`, and every file that `unicode` writes, has its line in `ATTRIBUTION.md`, and every file that it names exists |
 | `clean-room` | No LabVIEW file (D-23): no file that git tracks, or would add (untracked and not ignored), ends with an extension of `.ignore`, in any case. In `lint`, so the job `lint` refuses such a pull request even when it changes only prose; the hook of `.claude/hooks/` protects Claude Code alone. A test keeps its list, `.ignore` and the hook's in step |
 | `hooks` | The Python tests of the hooks of the agents (`.claude/hooks/`), with the standard library only: the interpreter is `python`, then `python3`, and a missing interpreter is an error that says so. Prints `ok` or `FAIL` and the output of a failure. Not part of `ci`, which needs no Python: the job `lint` of the workflow `checks` runs it. The code blocks of the spec and of `skills/`, and the programs of `examples/`, `libs/` and `docs/rfc/`, are checked by tests of `ci` (`doc_blocks.rs` of `format`, `check.rs`, `fmt.rs` and `corpora.rs` of `labcraft-cli`) |
-| `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`, and without a threshold |
+| `figures` | Not a check: the size of each function of `examples/`, the zoom at which it fits in the canvas of the window, and the figure of stability (section 11.6), in Markdown on standard output, which the workflow `checks` adds to its summary. Not part of `ci`. With `--against FILE`, it fails when a figure of stability is worse than in `FILE`, which the job `checks` gives as `tests/figures/v0.3.0-m0.md`, the figures of the tag (scenario 5 of M1, point 2) |
 | `unicode` | Not a check: writes the tables of `types::text` and the test file of UAX #29 from the Unicode Character Database of spec 14.1, downloaded once into `target/` with `curl` and refused when a SHA-256 is not the one it pins (section 11.1). Not part of `ci`, which needs no network |
 | `fuzz-licences` | The same as `licences`, for `fuzz/`, which is outside the workspace, and refuses a stale `fuzz/Cargo.lock`. Not part of `ci`: the job `fuzz` runs it (section 8) |
 | `notices` | Not a check: `notices TARGET OUT` writes into `OUT` the licences of the crates built into the binaries of a release for `TARGET`, from `cargo metadata` filtered for it, ours left out, each text once. Not part of `ci`: the workflow `release` runs it (section 8) |
@@ -1667,7 +1667,12 @@ are read from the file alone, in `edit`. From step 2, `Judge` also gives what an
 `diagram` (L5) computes above it: the place and the box of a node placed automatically (a move by `[dx, dy]` of a free
 node, the top-left corner of what `fragment.copy` copies, where `structure.surround` puts the structure), and the
 smallest size of a frame (`frame.resize`). `engine` implements it from the kept check and the drawing of the function,
-so that `edit` stays below `diagram`. An operation never writes a file that does not
+so that `edit` stays below `diagram`. As step 2b writes it, `Judge::places(file, text)` gives each node of the drawing
+of `text`, where it is in its frame, in units: `engine` checks the text with the others in memory, unless it is the
+one on the disk, and draws it in the view state of the window and the values of the notation in force, so that a
+move starts from what the window shows. `node.move` and `node.place` make or change the one entry of the node (its
+view kept), and give a label first to a node that the section cannot name, from the name of its line or of what it
+calls (decision of the owner, 2026-11-17). An operation never writes a file that does not
 parse: `apply` reads back each text it gives, and a text that does not read is `internal`, a bug of `edit`, which the
 fuzzing looks for (12.10).
 
@@ -1689,6 +1694,21 @@ fuzzing looks for (12.10).
 - **One box per shape**, where M0v has two that drifted apart: the box of a shape is that of `diagram::extent`, which the canvas uses to hit,
   to cull and to fit; `editor::extent` goes. A hit on a node is a hit on its box; a hit on a wire is within 4 units of
   its route *(proposed)*.
+- **As step 2b writes them.** `diagram::preview(&Drawing, &[usize], by) -> Preview` reads the drawing alone: the nodes
+  that move (those dragged and every node inside a structure dragged, `carried`), the bodies that go with them
+  (`bodies`, whose wires move whole), and the shapes of each wire that reaches a node dragged from outside, each of its
+  readers from its start to its end, the end that moves moved, on a square route through the middle (`wires`). It
+  computes nothing of the placement, so no part of `drawing` is called again during a drag, and `layout_body` and
+  `plan` are left whole; `drawing` itself is cut into `sizes`, `place::place`, `shapes` and `extent_and_margin`. A drag
+  of 100 nodes of the function of 1,000 is timed by `cargo xtask frames` (12.10). For a move by `[dx, dy]` of a node
+  placed automatically, `Judge::places` gives where the drawing puts each node in its frame, `Drawing::in_frame`, from
+  `BodyDrawn::origin`, the origin of the coordinates of `layout` in each frame (spec 11); `Placed::view` says the view
+  that its entry writes, for the inspector. So that a node goes where it is dropped, a frame keeps its origin: in a
+  loop or an arm, the axis of the chain stays where the placement puts it, and a node fixed off it bends the chain
+  (notation 2.1; decision of the owner, 2026-11-17); what the frame of a loop or of an arm in tabs grows upward stands
+  above the block of its structure (`Sized::over`, `Placed::over`), which the placement of the body around does not
+  count, so that the structure keeps its place and the frame around grows upward instead. The scenario 5 test holds
+  it, moving each node down and up.
 
 ### 12.5 `engine` (L6)
 
@@ -1806,6 +1826,19 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `paint`; `describe` gives the tree of AccessKit, the canvas a list box and each node and terminal of the frame an
   option, selected or not. The box of a shape is `diagram::extent`; a node is hit on its box, a structure on its header
   and its edges (its frames are canvas), a wire within 4 units of its route.
+- **As step 2b writes them.** `Intent::Move { nodes, by }` and `Intent::Arrange(Selection)`, and `Gesture::Move`. A move
+  under way is the canvas's own state (`moving.rs`): the nodes dragged, by whole steps of the grid of 8, or moved by a
+  run of presses of Ctrl and an arrow, which the canvas reads on the focus and ends after a second, at a press of the
+  pointer or at another key; `ide` ends it too before a key of its own (`Canvas::end_run`), so that the move comes
+  before what the key does. Meanwhile the nodes are painted at their offsets, as a glide paints them, and the wires
+  of the preview in place of theirs; the intent comes at the drop, or at the end of the run, and the canvas keeps the
+  nodes there until the next drawing, which they do not glide to (`Glide::after_move`), or until the host says the
+  command failed (`Canvas::cancel_move`). Escape during a drag puts them back. When the file of the function shown changes,
+  the viewport follows the frame of the function (`view::shift_of_frame`): a node placed above it or left of it moves
+  the whole drawing (spec 11), not what the canvas shows. A right-click on a fixed node opens its
+  menu, "Remove the fixed position"; the pin is drawn by `pins.rs` under the setting "mark the fixed nodes"
+  (`Shown::mark_fixed`). `Canvas::hold_move` and `Canvas::drop_held` let a host drive a move: the scripted drag of
+  `LABCRAFT_FRAMES`.
 
 ### 12.7 The window: `kit-*` and `ide` (L8)
 
@@ -1834,6 +1867,16 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   fit, the theme, reduced motion, the values on the wires, a trace to open, the cards of what is planned): the menus,
   the keys and the palette run them as they run commands, and the session never sees them. The icons of `kit-shell`
   are drawn as lines: a glyph that no installed face has stops egui, and the web has no fonts of the system.
+- **As step 2b writes them.** `Intent::Move` is `node.move`; with the setting "fix every node at the first move", a
+  `commands.batch` of a `node.place` of every other free node where the drawing puts it, then the `node.move`, one
+  step (decision of the owner, 2026-11-17). `Intent::Arrange` and `ide.arrange` (Shift+Alt+F, on the canvas that has
+  the focus, menu `Edit`) are `layout.arrange` on the selection, or on the whole function when nothing is selected. The
+  window follows the result of each of these commands (`Ide::edits`): a failure puts the nodes of a move back, and a
+  node named by its line that got a label stays selected by its label (`renamed`). The settings "fix every node at the
+  first move" (off) and "mark the fixed nodes" (on) are preferences of the user, in the menu `View` and the palette,
+  until the card `Settings` of step 6. The inspector of `kit-shell` gains fields that edit (`Control`: an integer, a
+  choice, a button), which give back what the user did (`Answer`): for a node, X and Y (`node.place`), its view
+  (`node.set_view`) and "Remove the fixed position" (`layout.arrange`); for several, the view and the button.
 
 ### 12.8 `mcp` (L7)
 

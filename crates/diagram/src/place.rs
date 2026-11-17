@@ -79,6 +79,9 @@ pub struct FrameAt {
     /// Whether the file places a node of it: the rules that say "never" then hold only as far as they can (notation
     /// 2.1).
     pub from_file: bool,
+    /// The origin of the coordinates of `layout` in it (spec 11): the top-left corner of the frame that the automatic
+    /// placement draws, which stays when the frame grows up or to the left.
+    pub origin: (i64, i64),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -269,6 +272,7 @@ fn place_with(
                 depth,
                 axis: placed.axis.map(|axis| y + axis),
                 from_file: placed.from_file,
+                origin: (x, y),
             };
         }
         if let Some(slot) = placement.routes.get_mut(index) {
@@ -304,21 +308,23 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
     let block = match structure.kind {
         StructureKind::Loop | StructureKind::For => {
             let Some((&body, placed)) = found.bodies.first().and_then(|&body| Some((found.bodies.first()?, bodies.get(body)?))) else { return };
+            // What the frame grows upward stands above the block, as a label does: the block starts at the origin of
+            // the coordinates of `layout` in its frame, which so stays where its structure is (spec 11).
             let rise = placed.rise;
-            let mut block = Sized::new(placed.width, placed.height + rise, Vec::new());
+            let mut block = Sized::new(placed.width, placed.height, Vec::new());
+            block.over = rise;
             block.inputs = (0..found.inputs.len())
                 .map(|input| {
                     let left = structure.inputs_at.get(input).and_then(|at| at.first()).map(|&(_, left)| left);
-                    (0, rise + left.and_then(|left| placed.left.get(left).copied()).unwrap_or(placed.height / 2))
+                    (0, left.and_then(|left| placed.left.get(left).copied()).unwrap_or(placed.height / 2))
                 })
                 .collect();
-            block.outputs = (0..found.outputs.len())
-                .map(|output| (placed.width, rise + placed.right.get(output).copied().unwrap_or(placed.height / 2)))
-                .collect();
+            block.outputs =
+                (0..found.outputs.len()).map(|output| (placed.width, placed.right.get(output).copied().unwrap_or(placed.height / 2))).collect();
             // The first value of a register given as a constant: its pill outside, left of the box (notation 5.1).
             block.left = found.inputs.iter().filter_map(|input| input.constant.as_ref()).map(|constant| constant_reach(constant)).max().unwrap_or(0);
             if let Some(offset) = offsets.get_mut(body) {
-                *offset = (0, rise, placed.width);
+                *offset = (0, 0, placed.width);
             }
             block
         }
@@ -387,9 +393,10 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
     let mut block = block;
     // A label above the frame, as above a block (notation 3.1); an order wire from it starts right after it.
     if let Some(label) = &found.label {
+        let over = block.over;
         block.above = style::label_above() + size::line_height(crate::size::medium());
         let width = Text::new(&format!("{label}:"), crate::size::any_text(), crate::size::medium()).width;
-        block.label_end = Some((width + style::padding(), -style::label_above() - size::line_height(crate::size::medium()) / 2));
+        block.label_end = Some((width + style::padding(), -over - style::label_above() - size::line_height(crate::size::medium()) / 2));
     }
     if let Some(slot) = sized.get_mut(node) {
         *slot = block;
@@ -411,15 +418,19 @@ fn tabs_block(
     let widest = found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| placed.width).max().unwrap_or(0);
     let width = size::up(widest.max(header_width));
     let top = style::frame_header() + style::tab_row() + style::frame_pad();
-    // The highest axis, from the top of each box: every arm moves down until its axis meets it.
-    let reach = found.bodies.iter().filter_map(|&body| bodies.get(body)).filter_map(|placed| Some(placed.rise + placed.axis?)).max();
+    // The highest axis, from the corner of each box: every arm moves down until its axis meets it. What an arm grows
+    // upward does not count: it goes above, over the header if need be, which then stands higher (`Sized::over`), so that
+    // the corner of each arm stays where it is (spec 11).
+    let reach = found.bodies.iter().filter_map(|&body| bodies.get(body)).filter_map(|placed| placed.axis).max();
     let mut arms = Vec::new();
+    let mut over = 0;
     for &body in &found.bodies {
         let Some(placed) = bodies.get(body) else { continue };
         let corner = match (reach, placed.axis) {
             (Some(reach), Some(axis)) => top + reach - axis,
-            _ => top + placed.rise,
+            _ => top,
         };
+        over = over.max(placed.rise - (corner - top));
         arms.push((body, corner, placed));
     }
     let height =
@@ -427,6 +438,7 @@ fn tabs_block(
     let axis = reach.map(|reach| top + reach);
     let last = arms.last();
     let mut block = Sized::new(0, height, Vec::new());
+    block.over = over;
     block.inputs = frame_inputs(structure, found.inputs.len(), axis, height, |arm, left| {
         let (_, corner, placed) = arms.get(arm)?;
         Some(corner + placed.left.get(left).copied()?)
@@ -927,8 +939,11 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     let top = tops.min().unwrap_or(0);
     let bottom = bottoms.max().unwrap_or(0);
     let mut shift = header + style::frame_pad() - top;
-    // The axis goes through the first node of the chain, where the file puts it (notation 2.1).
-    if let Some(&first) = chain.first()
+    // In the frame of the function, the axis goes through the first node of the chain, where the file puts it (notation
+    // 2.1). In a loop or an arm, it stays where the placement puts it, which the structure aligns on the chain outside: a
+    // node fixed off it goes where it is put, and the chain bends to reach it (decision of the owner, 2026-11-17).
+    if index == 0
+        && let Some(&first) = chain.first()
         && let Some(at) = nodes.get(first).and_then(|&node| graph.nodes.get(node)).and_then(|node| node.at)
     {
         shift = at.1 - body.top(first);
@@ -952,15 +967,30 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(style::min_channel());
         width = width.max(size::up(at.x + sized.width + sized.right + after + right_zone));
         height = height.max(at.y + sized.height + style::frame_pad());
-        highest = highest.min(at.y - sized.above);
+        highest = highest.min(at.y - sized.above - sized.over);
     }
     // The wires, where the nodes ended.
     let xs: Vec<i64> = placed.iter().map(|(_, at)| at.x).collect();
     let ys: Vec<i64> = placed.iter().map(|(_, at)| at.y).collect();
     let left_at: Vec<i64> = left.iter().map(|y| y + shift).collect();
     let right_at: Vec<i64> = right.iter().map(|y| y + shift).collect();
-    let ends = wire_ends(&body, frame, &columns, column_count, &xs, &ys, &left_at, &right_at, width);
-    let placed_blocks = column_blocks(&body, &columns, column_count, &ys);
+    // A node that the file places is, for the routes, in the column where it stands: its wires take the channels beside
+    // it and go round it there, not where the automatic placement had put it (the owner's trial, 2026-11-17). Column `c`
+    // reaches from the start of the channel before it to the start of the channel after it.
+    let routed: Vec<usize> = (0..count)
+        .map(|local| {
+            let column = columns.get(local).copied().unwrap_or(0);
+            let fixed = nodes.get(local).and_then(|&node| graph.nodes.get(node)).is_some_and(|node| node.at.is_some());
+            let (Some(sized), Some((_, at))) = (body.sized.get(local), placed.get(local)) else { return column };
+            if !fixed || column_count == 0 {
+                return column;
+            }
+            let centre = at.x + sized.width / 2;
+            (0..column_count).find(|&other| centre < channel_at.get(other + 2).copied().unwrap_or(i64::MAX)).unwrap_or(column_count - 1)
+        })
+        .collect();
+    let ends = wire_ends(&body, frame, &routed, column_count, &xs, &ys, &left_at, &right_at, width);
+    let placed_blocks = column_blocks(&body, &routed, column_count, &ys);
     let axis = has_axis.then_some(shift);
     let plan = route::plan(&route::BodyIn {
         ends: &ends,

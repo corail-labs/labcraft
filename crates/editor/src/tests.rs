@@ -233,6 +233,8 @@ fn the_glide_eases_from_the_old_place() {
             name: "a".into(),
             line: 0,
             at: None,
+            view: String::new(),
+            over: 0,
         }],
         ..Drawing::default()
     };
@@ -572,7 +574,7 @@ fn selecting(nodes: &[&str], wires: &[String], terminals: &[&str]) -> Intent {
 }
 
 fn showing(intent: &Intent) -> Shown {
-    let Intent::Select(selection) = intent;
+    let Intent::Select(selection) = intent else { panic!("a selection expected, got {intent:?}") };
     Shown { selection: selection.clone(), ..Shown::default() }
 }
 
@@ -1008,7 +1010,193 @@ fn with_the_setting_a_drag_on_the_empty_canvas_pans_and_shift_with_it_selects() 
         frame_shown(&ctx, &mut canvas, 0.6 + at as f64 * 0.1, events, &pans);
     }
     assert_eq!(canvas.viewport().1, Vec2::ZERO, "a drag from a node never pans");
+    // It moves the node instead: the move asked for is put back, as when the host says it failed.
+    canvas.cancel_move();
     // Shift and a drag: a rectangle, over the three nodes, from where the drawing is now.
     canvas.set_viewport(1.0, Vec2::ZERO);
     assert_eq!(drag(&mut canvas, 1.0, egui::Modifiers::SHIFT), vec![selecting(&["a", "b", "y"], &[], &[])]);
+}
+
+/// A drag of the primary button from `from` to `to` over frames from `time`, the host showing `shown`: what it asks for.
+fn drag_with(ctx: &egui::Context, canvas: &mut Canvas, (from, to): (Pos2, Pos2), time: f64, shown: &Shown) -> Vec<Intent> {
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let mut intents = Vec::new();
+    let steps = [
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+        vec![egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![egui::Event::PointerMoved(to)],
+        vec![egui::Event::PointerMoved(to), button(to, false)],
+    ];
+    for (at, events) in steps.into_iter().enumerate() {
+        intents.extend(frame_shown(ctx, canvas, time + at as f64 * 0.1, events, shown).2);
+    }
+    intents
+}
+
+fn moving_of(nodes: &[&str], by: (i64, i64)) -> Intent {
+    Intent::Move { nodes: nodes.iter().map(|name| (*name).to_owned()).collect(), by }
+}
+
+#[test]
+fn a_drag_on_a_node_selects_it_and_asks_to_move_it_by_whole_steps_of_the_grid() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    // 43 across and 21 down, at 100 %: 40 and 24, the nearest steps of 8 (notation 2.6).
+    let on_b = centre_of(&drawn, "b");
+    let intents = drag_with(&ctx, &mut canvas, (on_b, on_b + Vec2::new(43.0, 21.0)), 0.2, &none);
+    assert_eq!(intents, vec![selecting(&["b"], &[], &[]), moving_of(&["b"], (40, 24))]);
+    // The canvas keeps `b` where it went until the new drawing comes; a failure puts it back.
+    canvas.cancel_move();
+    // A drag from a node of the selection moves the selection of its frame.
+    let both = showing(&selecting(&["a", "b"], &[], &[]));
+    let on_a = centre_of(&drawn, "a");
+    let intents = drag_with(&ctx, &mut canvas, (on_a, on_a + Vec2::new(-16.0, 64.0)), 1.0, &both);
+    assert_eq!(intents, vec![moving_of(&["a", "b"], (-16, 64))]);
+    canvas.cancel_move();
+    // Back where it started, it asks for nothing.
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let back = on_a + Vec2::new(2.0, -3.0);
+    let mut intents = Vec::new();
+    for (at, events) in [
+        vec![egui::Event::PointerMoved(on_a), button(on_a, true)],
+        vec![egui::Event::PointerMoved(on_a + Vec2::new(40.0, 0.0))],
+        vec![egui::Event::PointerMoved(back), button(back, false)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        intents.extend(frame_shown(&ctx, &mut canvas, 2.0 + at as f64 * 0.1, events, &both).2);
+    }
+    assert_eq!(intents, Vec::new());
+}
+
+#[test]
+fn escape_cancels_a_drag() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    let on_b = centre_of(&drawn, "b");
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let far = on_b + Vec2::new(80.0, 0.0);
+    let mut intents = Vec::new();
+    for (at, events) in [
+        vec![egui::Event::PointerMoved(on_b), button(on_b, true)],
+        vec![egui::Event::PointerMoved(on_b + Vec2::new(40.0, 0.0))],
+        vec![egui::Event::PointerMoved(far), key(egui::Key::Escape, egui::Modifiers::NONE)],
+        vec![egui::Event::PointerMoved(far), button(far, false)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        intents.extend(frame_shown(&ctx, &mut canvas, 0.2 + at as f64 * 0.1, events, &b).2);
+    }
+    assert!(!intents.iter().any(|intent| matches!(intent, Intent::Move { .. })), "{intents:?}");
+}
+
+#[test]
+fn a_run_of_ctrl_and_the_arrows_is_one_move() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    // The focus comes with a click.
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    click_with(&ctx, &mut canvas, centre_of(&drawn, "b"), 0.1, egui::Modifiers::NONE, &b);
+    let ctrl = egui::Modifiers::COMMAND;
+    let ctrl_shift = egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND };
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.5, vec![key(egui::Key::ArrowRight, ctrl)], &b);
+    assert_eq!(intents, Vec::new(), "a run asks for nothing while it goes on");
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.9, vec![key(egui::Key::ArrowDown, ctrl_shift)], &b);
+    assert_eq!(intents, Vec::new());
+    // A second after the last press, the run is one move: 8 right, 64 down.
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.5, Vec::new(), &b);
+    assert_eq!(intents, Vec::new());
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.95, Vec::new(), &b);
+    assert_eq!(intents, vec![moving_of(&["b"], (8, 64))]);
+    canvas.cancel_move();
+    // Another key ends a run at once, and so does the host before a key of its own.
+    frame_shown(&ctx, &mut canvas, 3.0, vec![key(egui::Key::ArrowLeft, ctrl)], &b);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 3.1, vec![key(egui::Key::Tab, egui::Modifiers::NONE)], &b);
+    assert_eq!(intents.first(), Some(&moving_of(&["b"], (-8, 0))));
+    canvas.cancel_move();
+    frame_shown(&ctx, &mut canvas, 4.0, vec![key(egui::Key::ArrowUp, ctrl)], &b);
+    assert_eq!(canvas.end_run(), Some(moving_of(&["b"], (0, -8))));
+    assert_eq!(canvas.end_run(), None);
+}
+
+/// `b` fixed by the file.
+const FIXED: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64, k: f64) -> (y: f64) {\n    a = core.mul(x, k)\n    b = core.add(a, 1.0)\n    y = core.neg(b)\n}\n\nlayout {\n    node b at (400, 200)\n}\n";
+
+#[test]
+fn a_fixed_node_shows_its_pin_under_the_setting() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(FIXED, &ViewState::default());
+    assert!(drawn.placed.iter().any(|placed| placed.name == "b" && placed.at == Some((40_000, 20_000))));
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let lines = |shapes: &[ClippedShape]| shapes.iter().filter(|shape| matches!(shape.shape, egui::Shape::Path(_))).count();
+    let marked = Shown { mark_fixed: true, ..Shown::default() };
+    let (with, _, _) = frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &marked);
+    let (without, _, _) = frame_shown(&ctx, &mut canvas, 0.1, Vec::new(), &Shown::default());
+    assert!(lines(&with) > lines(&without), "the pin is drawn with the setting only");
+    assert_eq!(
+        crate::pins::tooltip(&drawn, drawn.placed.iter().position(|placed| placed.name == "b").unwrap()),
+        "Position fixed (`node b at (400, 200)` in `layout`). Right-click › Remove the fixed position"
+    );
+}
+
+#[test]
+fn the_nodes_moved_do_not_glide_to_the_new_drawing() {
+    let before = drawing(ROW, &ViewState::default());
+    let b = before.placed.iter().position(|placed| placed.name == "b").unwrap();
+    let (x, y) = (before.placed[b].x, before.placed[b].y);
+    // The drawing after the move, its node where the move put it: 40 right of where it was.
+    let mut after = (*before).clone();
+    after.placed[b].x = x + 4_000;
+    after.placed[b].y = y;
+    let glide = crate::view::Glide::after_move(&before, &after, &[b], (4_000, 0));
+    assert!(glide.is_none(), "nothing glides: the node is where the drag left it");
+    assert!(crate::view::Glide::between(&before, &after).is_some());
+}
+
+#[test]
+fn a_drawing_that_comes_during_a_drag_keeps_it() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(ROW, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let b = showing(&selecting(&["b"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &b);
+    let on_b = centre_of(&drawn, "b");
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let to = on_b + Vec2::new(48.0, 0.0);
+    frame_shown(&ctx, &mut canvas, 0.1, vec![egui::Event::PointerMoved(on_b), button(on_b, true)], &b);
+    frame_shown(&ctx, &mut canvas, 0.2, vec![egui::Event::PointerMoved(on_b + Vec2::new(24.0, 0.0))], &b);
+    // Another file changed: a new drawing of the same function, its nodes where they were.
+    canvas.set_drawing(Arc::new((*drawn).clone()), true);
+    frame_shown(&ctx, &mut canvas, 0.3, vec![egui::Event::PointerMoved(to)], &b);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.4, vec![egui::Event::PointerMoved(to), button(to, false)], &b);
+    assert_eq!(intents, vec![moving_of(&["b"], (48, 0))]);
 }

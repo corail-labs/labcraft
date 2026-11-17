@@ -425,7 +425,10 @@ impl eframe::App for App {
             && let Some((canvas, rect)) = self.ide.shown_canvas(function)
         {
             timing.canvas = rect;
-            timing.drive(canvas, now);
+            // The drop of the scripted drag, a move asked as the canvas asks it.
+            if let (Some(labcraft_editor::Intent::Move { nodes, by }), Some(project)) = (timing.drive(canvas, now), &self.project) {
+                self.ide.ask_canvas_move(project, function, &nodes, by);
+            }
         }
         let host = self.project.as_ref().map(|project| project as &dyn Host);
         let outward = self.ide.show(ui, host, &self.start);
@@ -447,6 +450,7 @@ impl eframe::App for App {
             let phase = match timing.motion {
                 Motion::Waiting(_) => "before the motion, the first drawing counted",
                 Motion::Running(_) => "the motion, cut by the window closed",
+                Motion::Dragging(_) | Motion::Dropped(..) => "the drag, cut by the window closed",
                 Motion::Done => "by hand",
             };
             let _ = writeln!(std::io::stderr(), "labcraft: {phase}: {}", timing.frames.phase().line());
@@ -463,6 +467,10 @@ enum Motion {
     Waiting(Option<f64>),
     /// Since when.
     Running(f64),
+    /// The scripted drag of 100 nodes, since when (scenario 6 of M1).
+    Dragging(f64),
+    /// The drop of the drag, when, and the drawing before it, by its address: the new one is another.
+    Dropped(f64, usize),
     /// The window moves by hand.
     Done,
 }
@@ -479,6 +487,9 @@ struct Timing {
     current: Option<(usize, &'static str)>,
     /// The adapter of wgpu has been said on stderr.
     adapter_said: bool,
+    /// The nodes of the scripted drag, and the time of the preview of each of its frames, in milliseconds.
+    dragged: Vec<usize>,
+    previews: Vec<f64>,
 }
 
 impl Timing {
@@ -491,18 +502,28 @@ impl Timing {
             frames::motion_seconds(),
             frames::MOTION_DELAY
         );
-        Timing { frames: Frames::new(), motion: Motion::Waiting(None), canvas: None, centres: None, current: None, adapter_said: false }
+        Timing {
+            frames: Frames::new(),
+            motion: Motion::Waiting(None),
+            canvas: None,
+            centres: None,
+            current: None,
+            adapter_said: false,
+            dragged: Vec::new(),
+            previews: Vec::new(),
+        }
     }
 
-    /// Moves the viewport of `canvas` as the motion says at `now`, and says on stderr how the motion went once it ends.
-    fn drive(&mut self, canvas: &mut Canvas, now: f64) {
-        let (Some(drawing), Some(rect)) = (canvas.drawing().cloned(), self.canvas) else { return };
+    /// Moves the viewport of `canvas` as the motion says at `now`, and says on stderr how the motion went once it ends;
+    /// then drags 100 nodes, and gives the move to ask for at the drop (scenario 6 of M1).
+    fn drive(&mut self, canvas: &mut Canvas, now: f64) -> Option<labcraft_editor::Intent> {
+        let (Some(drawing), Some(rect)) = (canvas.drawing().cloned(), self.canvas) else { return None };
         let start = match self.motion {
             Motion::Waiting(None) => {
                 self.motion = Motion::Waiting(Some(now));
-                return;
+                return None;
             }
-            Motion::Waiting(Some(seen)) if now - seen < frames::MOTION_DELAY => return,
+            Motion::Waiting(Some(seen)) if now - seen < frames::MOTION_DELAY => return None,
             Motion::Waiting(Some(_)) => {
                 // What came before, the first drawing and its fit, is not counted.
                 self.frames.next_phase();
@@ -510,7 +531,24 @@ impl Timing {
                 now
             }
             Motion::Running(start) => start,
-            Motion::Done => return,
+            Motion::Dragging(start) => return self.drag(canvas, &drawing, now, start),
+            Motion::Dropped(at, before) => {
+                // The new drawing, off the thread of the window: no frame waits for it (architecture 12.4).
+                let came = Arc::as_ptr(&drawing) as usize != before;
+                if came || now - at > 10.0 {
+                    let said = if came { format!("came in {:.0} ms", (now - at) * 1000.0) } else { "did not come in 10 s".to_owned() };
+                    let stats = self.frames.next_phase();
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "labcraft: after the drop, the new drawing {said} (budget {} ms): {}",
+                        frames::REDRAW_BUDGET_MS,
+                        stats.line()
+                    );
+                    self.motion = Motion::Done;
+                }
+                return None;
+            }
+            Motion::Done => return None,
         };
         let size = egui::Vec2::new(drawing.width as f32, drawing.height as f32) / 100.0;
         let coarse = style::scope(&drawing.style, || style::factor(style::coarse_zoom()));
@@ -530,9 +568,45 @@ impl Timing {
         match frames::viewport_at(now - start, size, centres, rect.size(), coarse) {
             Some((zoom, origin)) => canvas.move_viewport(zoom, origin),
             None => {
-                self.motion = Motion::Done;
                 let stats = self.frames.next_phase();
                 let _ = writeln!(std::io::stderr(), "labcraft: the motion, {} nodes: {}", drawing.placed.len(), stats.line());
+                // Then the drag, at the fit, where the nodes dragged show.
+                canvas.fit();
+                self.dragged = frames::dragged(&drawing);
+                self.motion = Motion::Dragging(now);
+            }
+        }
+        None
+    }
+
+    /// A frame of the scripted drag: the nodes held where the drag goes, the time of the preview of their wires; at its
+    /// end, the drop, and the move it asks for.
+    #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
+    fn drag(&mut self, canvas: &mut Canvas, drawing: &labcraft_diagram::Drawing, now: f64, start: f64) -> Option<labcraft_editor::Intent> {
+        match frames::drag_at(now - start) {
+            Some(by) => {
+                let began = Instant::now();
+                let preview = labcraft_diagram::preview(drawing, &self.dragged, (by.0 * 100, by.1 * 100));
+                self.previews.push(began.elapsed().as_secs_f64() * 1000.0);
+                drop(preview);
+                canvas.hold_move(&self.dragged, by);
+                None
+            }
+            None => {
+                let stats = self.frames.next_phase();
+                let previews = frames::spread_of(std::mem::take(&mut self.previews));
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "labcraft: the drag of {} nodes: {}; the preview p50 {:.2} p95 {:.2} max {:.2} ms (budget {} ms)",
+                    self.dragged.len(),
+                    stats.line(),
+                    previews.p50,
+                    previews.p95,
+                    previews.max,
+                    frames::PREVIEW_BUDGET_MS
+                );
+                self.motion = Motion::Dropped(now, std::ptr::from_ref(drawing) as usize);
+                canvas.drop_held()
             }
         }
     }
@@ -543,6 +617,8 @@ impl Timing {
         let phase = match self.motion {
             Motion::Waiting(_) => "before the motion".to_owned(),
             Motion::Running(start) => format!("motion, {:.0} of {} s", now - start, frames::motion_seconds()),
+            Motion::Dragging(start) => format!("drag of {} nodes, {:.0} of {} s", self.dragged.len(), now - start, frames::DRAG_SECONDS),
+            Motion::Dropped(..) => "the drop, the new drawing to come".to_owned(),
             Motion::Done => "by hand".to_owned(),
         };
         let spread = |spread: &frames::Spread| format!("p50 {:5.1}  p95 {:5.1}  max {:5.1} ms", spread.p50, spread.p95, spread.max);

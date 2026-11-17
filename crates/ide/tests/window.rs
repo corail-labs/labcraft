@@ -24,6 +24,8 @@ const BROKEN: &str = "labcraft 1\n\nuse core\n\nfn broken(x: f64) -> (y: f64) {\
 /// window, as the desktop app does (`apps/labcraft/src/session.rs`).
 struct Fake {
     session: RefCell<Session>,
+    /// The files of the project, which the tests read.
+    memory: Arc<Memory>,
 }
 
 impl Host for Fake {
@@ -44,7 +46,7 @@ impl Host for Fake {
 }
 
 fn fake() -> Fake {
-    let memory = Memory::new();
+    let memory = Arc::new(Memory::new());
     memory.put("/p/main.lcf", MAIN);
     memory.put("/p/helper.lcf", HELPER);
     memory.put("/p/broken.lcf", BROKEN);
@@ -57,11 +59,11 @@ fn fake() -> Fake {
         clock: Arc::new(Still),
         process: 0,
     };
-    let mut session = Session::new(Arc::new(memory), config, false).unwrap();
+    let mut session = Session::new(memory.clone(), config, false).unwrap();
     session.with_window();
     session.open_on(Some("main".to_owned()));
     session.execute("view.open", &json!({ "folder": "." })).unwrap();
-    Fake { session: RefCell::new(session) }
+    Fake { session: RefCell::new(session), memory }
 }
 
 /// The fonts of the app: Hack everywhere, which the canvas needs under its own name.
@@ -511,8 +513,59 @@ fn a_text_field_keeps_its_keys_once_the_canvas_has_lost_the_focus() {
     // decides).
     harness.key_press(Key::F1);
     harness.run_steps(3);
-    assert!(harness.query_by_role(egui::accesskit::Role::TextInput).is_some(), "the field of the palette");
+    // The field of the palette has the focus; the fields of the inspector (X, Y) are text inputs too.
+    use egui_kittest::kittest::NodeT as _;
+    let focused = harness.query_all_by_role(egui::accesskit::Role::TextInput).any(|node| node.accesskit_node().is_focused());
+    assert!(focused, "the field of the palette");
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.run_steps(3);
     assert_eq!(selection(&harness).nodes, ["a"], "Ctrl+A in the field selects no node");
+}
+
+fn text_of(harness: &Harness<'_, State>, path: &str) -> String {
+    String::from_utf8(harness.state().host.memory.get(path).unwrap()).unwrap()
+}
+
+/// A drag of the primary button from `from` to `to`, over a few frames.
+fn drag_from(harness: &mut Harness<'_, State>, from: egui::Pos2, to: egui::Pos2) {
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    for events in [
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+        vec![egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![egui::Event::PointerMoved(to)],
+        vec![egui::Event::PointerMoved(to), button(to, false)],
+    ] {
+        harness.input_mut().events.extend(events);
+        harness.run_steps(1);
+    }
+    harness.run_steps(4);
+}
+
+#[test]
+fn a_node_dragged_is_fixed_where_it_goes_and_its_fixed_position_is_removed_from_the_inspector() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let before = harness.state().host.session.borrow().view().main.drawing.clone().unwrap();
+    let a = before.placed.iter().position(|placed| placed.name == "a").unwrap();
+    let (x, y) = before.in_frame(a).unwrap();
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    drag_from(&mut harness, on_a, on_a + egui::vec2(60.0, 40.0));
+    // The drag selected `a`, and moved it: its entry of `layout`, the only line that changed (scenario 5), on the grid of
+    // 8 from where it was, right and down (notation 2.4, 2.6).
+    assert_eq!(selection(&harness).nodes, ["a"]);
+    let text = text_of(&harness, "/p/main.lcf");
+    let entry = text.strip_prefix(MAIN).unwrap_or_else(|| panic!("only `layout` added: {text}"));
+    let at = entry.strip_prefix("\nlayout {\n    node a at (").and_then(|rest| rest.strip_suffix(")\n}\n")).unwrap_or_else(|| panic!("{entry}"));
+    let (x1, y1) = at.split_once(", ").map(|(x, y)| (x.parse::<i64>().unwrap(), y.parse::<i64>().unwrap())).unwrap();
+    let (dx, dy) = (x1 - (x + 50).div_euclid(100), y1 - (y + 50).div_euclid(100));
+    assert!(dx > 0 && dy > 0 && dx % 8 == 0 && dy % 8 == 0, "moved by ({dx}, {dy})");
+    // The session drew it again, fixed there: the inspector says so, and removing the fixed position gives the file back.
+    harness.state().host.session.borrow_mut().files_changed();
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Fixed").is_some(), "the inspector says the node is fixed");
+    click_role(&mut harness, "Remove the fixed position", egui::accesskit::Role::Button);
+    harness.run_steps(4);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN);
+    shot(&mut harness, "move");
 }

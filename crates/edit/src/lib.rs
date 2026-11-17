@@ -27,6 +27,7 @@ use labcraft_types::{Diagnostic, Limits};
 
 mod add;
 mod delete;
+mod layout;
 mod model;
 mod names;
 mod places;
@@ -83,6 +84,14 @@ pub enum Op {
     WireConnect { file: String, from: String, to: String, replace: bool, accept_mismatch: bool },
     /// `wire.disconnect`.
     WireDisconnect { file: String, wire: String },
+    /// `node.move`: the nodes of one frame by `by`, each fixed.
+    NodeMove { file: String, nodes: Vec<String>, by: Point },
+    /// `node.place`: one node at `at` in its frame, fixed.
+    NodePlace { file: String, node: String, at: Point },
+    /// `node.set_view`: `None` is `default`, which removes the view.
+    NodeSetView { file: String, nodes: Vec<String>, view: Option<labcraft_graph::View> },
+    /// `layout.arrange`: `nodes` is `None` when the command names no node.
+    LayoutArrange { file: String, nodes: Option<Vec<String>>, wires: Vec<String>, terminals: Vec<String> },
 }
 
 impl Op {
@@ -93,7 +102,11 @@ impl Op {
             | Op::ConstantAdd { file, .. }
             | Op::NodeDelete { file, .. }
             | Op::WireConnect { file, .. }
-            | Op::WireDisconnect { file, .. } => file,
+            | Op::WireDisconnect { file, .. }
+            | Op::NodeMove { file, .. }
+            | Op::NodePlace { file, .. }
+            | Op::NodeSetView { file, .. }
+            | Op::LayoutArrange { file, .. } => file,
         }
     }
 }
@@ -104,6 +117,8 @@ impl Op {
 pub struct Edited {
     pub texts: BTreeMap<String, String>,
     pub names: BTreeMap<&'static str, String>,
+    /// What it named, when that is several names: `nodes` of `node.move`, as a command names them after it.
+    pub lists: BTreeMap<&'static str, Vec<String>>,
     pub renamed: Vec<Renamed>,
 }
 
@@ -196,6 +211,44 @@ pub trait Judge {
     /// The errors of `file` when its text is `text`, the rest of the project as it is: what a wire changes in them tells
     /// a wire of the wrong type.
     fn errors(&self, file: &str, text: &str) -> Vec<Diagnostic>;
+
+    /// Where the drawing of `file`, when its text is `text`, places each node, in its frame: what a move by `[dx, dy]`
+    /// of a node placed automatically starts from (architecture 12.3). None when the function is not drawn.
+    fn places(&self, file: &str, text: &str) -> Vec<Place> {
+        let _ = (file, text);
+        Vec::new()
+    }
+}
+
+/// A node of a drawing, where it is in its frame, in units (spec 11).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    /// The line where it starts in the text drawn, from 1.
+    pub line: u32,
+    /// As a command names it, `#close` or `dmm`; empty for a node that has no such name.
+    pub name: String,
+    pub at: Point,
+}
+
+/// Gives a label to each node of `path` that `lines` names by its line and that the `layout` section cannot name, in one
+/// pass (commands.md 6.7, `commands.batch`): the text, if it changed, and each line that names one node with how a
+/// command names that node now (`@41`, `#s`), in `renamed`; `lists["labelled"]` holds the lines whose node got its
+/// label now.
+pub fn label_lines(files: &Files, path: &str, lines: &[u32], limits: &Limits) -> Result<Edited, EditError> {
+    let Some(text) = files.get(path) else {
+        return Err(EditError::new("path.not_found", format!("`{path}` is not a file of the project")).of("file"));
+    };
+    let mut edit = model::Edit::read(path, text, limits)?;
+    let found = layout::label_lines(&mut edit, lines)?;
+    let labelled: Vec<String> = found.iter().filter(|(_, _, new)| *new).map(|(from, _, _)| from.clone()).collect();
+    let renamed = found.into_iter().map(|(from, to, _)| Renamed { file: path.to_owned(), from, to }).collect();
+    let mut edited = Edited { renamed, ..Edited::default() };
+    edited.lists.insert("labelled", labelled);
+    let new_text = edit.finish()?;
+    if new_text != text {
+        edited.texts.insert(path.to_owned(), new_text);
+    }
+    Ok(edited)
 }
 
 /// Applies one operation to the texts, under the limits of the session (`--max-file-size`, `--max-nesting`). It never
@@ -215,6 +268,10 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
             wire::connect(&mut edit, judge, from, to, *replace, *accept_mismatch, &mut edited)?;
         }
         Op::WireDisconnect { wire, .. } => wire::disconnect(&mut edit, judge, wire, &mut edited)?,
+        Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
+        Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
+        Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
+        Op::LayoutArrange { nodes, wires, terminals, .. } => layout::arrange(&mut edit, judge, nodes.as_deref(), wires, terminals)?,
     }
     let new_text = edit.finish()?;
     if new_text != text {

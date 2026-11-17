@@ -189,7 +189,7 @@ pub struct Painted {
 }
 
 impl Painted {
-    fn of(ctx: &egui::Context, drawing: &Drawing, shapes: &[Shape], theme: Theme, step: f32) -> Painted {
+    pub(crate) fn of(ctx: &egui::Context, drawing: &Drawing, shapes: &[Shape], theme: Theme, step: f32) -> Painted {
         let size = ctx.fonts(|fonts| fonts.font_image_size());
         let discs = Vec::new();
         let options = ctx.tessellation_options(TessellationOptions::clone);

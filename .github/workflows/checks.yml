@@ -115,10 +115,10 @@ jobs:
         run: cargo xtask bounds
       - name: WASM
         run: cargo xtask wasm
-      # A figure, never a threshold (docs/visual-notation.md, 2.1 and 7): it never turns the job red.
+      # The figures, in the summary; from M1 a threshold too (scenario 5 of docs/acceptance-m1.md, point 2): a figure of
+      # stability worse than at the tag v0.3.0-m0 turns the job red.
       - name: Figures of the viewer
-        continue-on-error: true
-        run: cargo xtask figures >> "$GITHUB_STEP_SUMMARY"
+        run: cargo xtask figures --against tests/figures/v0.3.0-m0.md >> "$GITHUB_STEP_SUMMARY"
 
   # The web viewer (docs/architecture.md, 11.5): clippy for WASM and the build of Trunk, then the page in headless Chrome,
   # which draws, traps its worker and draws again. The site built is kept, to download: nothing is hosted (owner, 2026-11-13).

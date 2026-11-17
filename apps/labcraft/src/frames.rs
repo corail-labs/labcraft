@@ -305,6 +305,39 @@ fn height_at(centres: &[Vec2], x: f32) -> Option<f32> {
     }
 }
 
+/// How many nodes the scripted drag holds (scenario 6 of `docs/acceptance-m1.md`, point 1), and for how long.
+pub const DRAGGED: usize = 100;
+pub const DRAG_SECONDS: f64 = 3.0;
+/// The budget of the preview of a drag in a frame (architecture 12.4, *proposed*), and of the new drawing after the drop.
+pub const PREVIEW_BUDGET_MS: f64 = 4.0;
+pub const REDRAW_BUDGET_MS: f64 = 300.0;
+
+/// Where the scripted drag holds its nodes at `t` seconds from its start, in units on the grid of 8: round a loop of 160
+/// by 96 and back, as a hand drags; nothing once it is over.
+pub fn drag_at(t: f64) -> Option<(i64, i64)> {
+    if !(0.0..=DRAG_SECONDS).contains(&t) {
+        return None;
+    }
+    let turn = std::f64::consts::TAU * t / DRAG_SECONDS;
+    let snap = |value: f64| ((value / 8.0).round() * 8.0) as i64;
+    Some((snap(80.0 * turn.sin()), snap(48.0 * (1.0 - turn.cos()))))
+}
+
+/// The nodes that the scripted drag holds: the first [`DRAGGED`] of the frame of the function that a command names.
+pub fn dragged(drawing: &labcraft_diagram::Drawing) -> Vec<usize> {
+    drawing.placed.iter().enumerate().filter(|(_, placed)| placed.body == 0 && !placed.name.is_empty()).map(|(at, _)| at).take(DRAGGED).collect()
+}
+
+/// Milliseconds of each preview: the median, the 95th percentile and the longest.
+pub fn spread_of(mut milliseconds: Vec<f64>) -> Spread {
+    milliseconds.sort_by(f64::total_cmp);
+    let at = |quantile: f64| {
+        let rank = ((milliseconds.len() as f64 * quantile).ceil() as usize).max(1);
+        milliseconds.get(rank - 1).copied().unwrap_or(0.0)
+    };
+    Spread { p50: at(0.50), p95: at(0.95), max: milliseconds.last().copied().unwrap_or(0.0) }
+}
+
 /// The centres of the nodes of `drawing`, in units, ordered by x, for `viewport_at`.
 pub fn centres(drawing: &labcraft_diagram::Drawing) -> Vec<Vec2> {
     columns(

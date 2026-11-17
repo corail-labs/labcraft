@@ -1090,8 +1090,11 @@ labcraft [--lib-path DIR]... [--theme light|dark] [--style FILE] [FOLDER]
   the last 2 seconds (frames a second, the time between two frames and the CPU time of a frame, at the median, the
   95th percentile and the longest, and the frames later than 1.5 times 1/60 s), and stderr says which adapter draws.
   One second after the first drawing, the viewport moves by itself for 12 s, panning and zooming along the nodes of
-  the function shown, and stderr gets the figures of each move and of the whole; then the window moves by hand, and
-  stderr gets the figures of that when it closes. It holds 60 frames/s when there are at least 59 frames a second
+  the function shown, and stderr gets the figures of each move and of the whole. Then it drags 100 nodes of the frame
+  of the function for 3 s and drops them (scenario 6 of M1): stderr gets the figures of the drag with the time of
+  the preview of each frame, then, after the drop, which writes the move, the time the new drawing took to come and
+  the figures of the frames meanwhile; then the window moves by hand, and stderr gets the figures of that when it
+  closes. It holds 60 frames/s when there are at least 59 frames a second
   and at most 1 % of them late, on a display at 60 Hz: on a faster one, a frame between 1/60 s and 1.5/60 s misses
   60 frames/s without counting as late.
 - Exit codes: 0 when the window closes, 1 when it cannot open (no graphics device), 101 for a bug of the window, with

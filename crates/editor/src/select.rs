@@ -58,7 +58,7 @@ impl Found {
         self.nodes.is_empty() && self.groups.is_empty() && self.terminals.is_empty()
     }
 
-    fn one(hit: Hit) -> Found {
+    pub(crate) fn one(hit: Hit) -> Found {
         let mut found = Found::default();
         found.toggle(hit);
         found

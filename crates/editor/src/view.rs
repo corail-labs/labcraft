@@ -111,7 +111,23 @@ pub struct Glide {
 impl Glide {
     /// Nothing when no node moved.
     pub fn between(old: &Drawing, new: &Drawing) -> Option<Glide> {
-        let before: HashMap<&str, (i64, i64)> = old.placed.iter().map(|placed| (placed.key.as_str(), (placed.x, placed.y))).collect();
+        Glide::after_move(old, new, &[], (0, 0))
+    }
+
+    /// As [`Glide::between`], the nodes `moved` of the old drawing (by their index in it) standing `by` from their place,
+    /// in hundredths, as a drag left them: they do not glide to where the move put them (architecture 12.4).
+    pub fn after_move(old: &Drawing, new: &Drawing, moved: &[usize], by: (i64, i64)) -> Option<Glide> {
+        // From the frame of the function, which the canvas keeps in place (`shift_of_frame`).
+        let (dx, dy) = shift_of_frame(old, new);
+        let before: HashMap<&str, (i64, i64)> = old
+            .placed
+            .iter()
+            .enumerate()
+            .map(|(at, placed)| {
+                let shift = if moved.contains(&at) { by } else { (0, 0) };
+                (placed.key.as_str(), (placed.x + shift.0 + dx, placed.y + shift.1 + dy))
+            })
+            .collect();
         let from: Vec<Vec2> = new
             .placed
             .iter()
@@ -141,6 +157,15 @@ impl Glide {
         let left = 1.0 - self.progress;
         let eased = left * left * left;
         self.from.iter().map(|offset| *offset * eased).collect()
+    }
+}
+
+/// How far the frame of the function moved from one drawing to the next, in hundredths: a node that the file places above
+/// it or left of it moves the whole drawing (spec 11), which the canvas follows so that nothing seems to move but what did.
+pub fn shift_of_frame(old: &Drawing, new: &Drawing) -> (i64, i64) {
+    match (old.bodies.first(), new.bodies.first()) {
+        (Some(old), Some(new)) => (new.origin.0 - old.origin.0, new.origin.1 - old.origin.1),
+        _ => (0, 0),
     }
 }
 
@@ -225,6 +250,11 @@ impl Grid {
     }
 
     /// The group that draws a node.
+    /// The groups of a node: the node, then the arms of a structure.
+    pub fn groups_of(&self, placed: usize) -> &[usize] {
+        self.groups.get(placed).map_or(&[], Vec::as_slice)
+    }
+
     pub fn group_of(&self, placed: usize) -> Option<usize> {
         self.groups.get(placed).and_then(|groups| groups.first()).copied()
     }
