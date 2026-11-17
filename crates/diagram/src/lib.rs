@@ -27,6 +27,7 @@ mod graph;
 mod marks;
 mod names;
 mod place;
+mod ports;
 mod preview;
 mod route;
 mod shape;
@@ -40,10 +41,11 @@ pub mod values;
 pub use labcraft_check::{PathSegment, path_segments};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
-pub use preview::{Preview, preview};
+pub use ports::{Refusal, Verdict, occupied, wiring};
+pub use preview::{Preview, preview, square};
 pub use shape::{
-    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, IconDrawing, IconDrawn, IconItem, IconShape, Mark,
-    Paint, Pattern, Placed, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
+    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem, IconShape,
+    Mark, Paint, Pattern, Placed, Port, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
 pub use values::{
@@ -108,9 +110,10 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
     if let labcraft_graph::Decl::Extern(external) = &checked_file.file.decl {
         // A native function has a frame and no body.
         let builder = Builder::new(checked, checked_file, names);
-        let mut drawn = drawing(&builder.empty(external.name, &external.signature), names, view);
-        // Nothing of it can be edited, so nothing of it is selected (commands.md 9.2).
+        let mut drawn = drawing(&builder.empty(external.name, &external.signature), names, view, None);
+        // Nothing of it can be edited, so nothing of it is selected or wired (commands.md 9.2).
         drawn.hints.iter_mut().for_each(|hint| hint.selects = None);
+        drawn.ports.clear();
         return Drawn::Drawing(drawn);
     }
     let Some(function) = graph::function_of(checked_file) else { return Drawn::NotDrawn(Vec::new()) };
@@ -127,7 +130,7 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
             for node in &mut graph.nodes {
                 node.standard |= view.standard.contains(&node.stable);
             }
-            let mut drawn = drawing(&graph, names, view);
+            let mut drawn = drawing(&graph, names, view, Some(&checked.types));
             for warning in &mut drawn.warnings {
                 warning.file.clone_from(&checked_file.shown);
             }
@@ -257,14 +260,17 @@ fn title(kind: &Kind<'_>) -> String {
 /// The drawing of a graph: each node in its view, placed (notation 2.1), inside the frames of its bodies. In parts, as
 /// what a change recomputes cuts it (architecture 12.4): the sizes of the nodes, their placement, the routes and the
 /// shapes, then the extent of the whole and its margin.
-fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState) -> Drawing {
+fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<&labcraft_types::TypeTable>) -> Drawing {
     let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
     let mut sized = sizes(graph, names, view, &mut drawing.icons);
     let titles = titles(graph, view);
     let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
     drawing.warnings = overlapping(graph, &sized, &placement);
-    shapes(graph, &titles, &placement, sized, &mut drawing);
+    let owners = shapes(graph, &titles, &placement, sized, types, &mut drawing);
     extent_and_margin(&placement, &mut drawing);
+    for (body, (owner, looping)) in drawing.bodies.iter_mut().zip(owners) {
+        (body.owner, body.looping) = (owner, looping);
+    }
     drawing
 }
 
@@ -304,7 +310,14 @@ fn sizes(graph: &Graph<'_>, names: &Interner, view: &ViewState, icons_drawn: &mu
 
 /// The shapes of the drawing, each node where `placement` puts it, with the routes of the wires of each body: the frame
 /// of the function, the wires, the nodes, the frames of the structures and what they hold, the hints and the tabs.
-fn shapes(graph: &Graph<'_>, titles: &place::Titles, placement: &place::Placement, sized: Vec<size::Sized>, drawing: &mut Drawing) {
+fn shapes(
+    graph: &Graph<'_>,
+    titles: &place::Titles,
+    placement: &place::Placement,
+    sized: Vec<size::Sized>,
+    types: Option<&labcraft_types::TypeTable>,
+    drawing: &mut Drawing,
+) -> Vec<(Option<usize>, bool)> {
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -399,6 +412,22 @@ fn shapes(graph: &Graph<'_>, titles: &place::Titles, placement: &place::Placemen
             conversions.insert((node, terminal), conversion);
         }
     }
+    // Where the terminals of each node are, for the ports.
+    let terminals: Vec<Option<ports::NodeTerminals>> = graph
+        .nodes
+        .iter()
+        .zip(&sized)
+        .enumerate()
+        .map(|(index, (_, sized))| {
+            let at = placement.nodes.get(index).and_then(Option::as_ref)?;
+            let moved = |&(dx, dy): &(i64, i64)| (at.x + dx, at.y + dy);
+            Some(ports::NodeTerminals {
+                inputs: sized.inputs.iter().map(moved).collect(),
+                outputs: sized.outputs.iter().map(moved).collect(),
+                order: sized.order.as_ref().map(moved),
+            })
+        })
+        .collect();
     for (index, (node, sized)) in graph.nodes.iter().zip(sized).enumerate() {
         let Some(Some(at)) = placement.nodes.get(index) else { continue };
         let mut shapes: Vec<Shape> = sized.shapes.into_iter().map(|shape| moved(shape, at.x, at.y)).collect();
@@ -496,6 +525,10 @@ fn shapes(graph: &Graph<'_>, titles: &place::Titles, placement: &place::Placemen
             drawing.groups.extend(edges(body, placed, &mut drawing.hints));
         }
     }
+    let context =
+        ports::Context { graph, placement, terminals: &terminals, placed_of: &placed_of, command_names: &command_names, within: &within, types };
+    ports::build(&context, drawing);
+    ports::owners(graph, &placed_of)
 }
 
 /// The extent of the drawing: everything, and the margin around it; a node that the file places left of the frame or
@@ -536,6 +569,9 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
         for hint in &mut drawing.hints {
             (hint.x, hint.y) = (hint.x + dx, hint.y + dy);
         }
+        for port in &mut drawing.ports {
+            (port.x, port.y) = (port.x + dx, port.y + dy);
+        }
         for anchor in &mut drawing.trace.anchors {
             *anchor = (anchor.0 + dx, anchor.1 + dy);
         }
@@ -558,6 +594,8 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
             from_file: frame.from_file,
             frame: (frame.x + dx, frame.y + dy, frame.width, frame.height),
             origin: (frame.origin.0 + dx, frame.origin.1 + dy),
+            owner: None,
+            looping: false,
         })
         .collect();
     drawing.width = right + dx + style::margin();
@@ -1233,7 +1271,7 @@ fn to_frame_terminals(of: &graph::BodyOf, frame: Option<&place::FrameAt>, routed
 }
 
 /// The fill of a frame at a depth of nesting (notation 8): the function has none, it is on the canvas.
-fn frame_fill(depth: u32) -> Token {
+pub(crate) fn frame_fill(depth: u32) -> Token {
     match depth.min(4) {
         0 => "canvas.fill",
         1 => "frame.fill.1",

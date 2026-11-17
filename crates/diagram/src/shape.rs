@@ -501,6 +501,77 @@ pub struct Hint {
     pub selects: Option<String>,
 }
 
+/// A terminal where a wire starts or ends, as the wiring of the editor needs it (notation 2.5, 2.6): the canvas judges a
+/// wire on these before `wire.connect` judges it again (architecture 12.6). Not in the SVG.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Port {
+    /// Where its wire meets it, in hundredths.
+    pub x: i64,
+    pub y: i64,
+    /// The node it belongs to, or the structure whose frame holds it, by its index in [`Drawing::placed`]; none for a
+    /// terminal of the frame of the function.
+    pub placed: Option<usize>,
+    /// As [`Group::within`].
+    pub within: Option<usize>,
+    /// The body where its wire lies, by its index in the graph.
+    pub body: usize,
+    /// Whether it takes a wire: an input of a node, its `after:`, an output of the function. Otherwise a wire starts
+    /// there: an output of a node, an input of the function, a value that a frame gives its body.
+    pub input: bool,
+    /// The `after:` of a node (R-15): it takes an order wire from any value.
+    pub order: bool,
+    /// A terminal of a frame: of the function, or of the body of a structure.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub frame: bool,
+    /// A notch: an outer value read inside a structure, whose body ([`Port::body`]) is the one that binds it.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub notch: bool,
+    /// Its family, for an input that takes one family whatever its unit (a parameter of a primitive) and for the
+    /// value that a wire from it carries; empty otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub family: String,
+    /// Why no wire reaches this input yet, when none does (the template of `string.format`, spec 5.4); empty otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub never: String,
+    /// As `wire.connect` names it (commands.md 9.2): its `to` for an input (`sq.b`, `msg.parts.2`, `n.after`,
+    /// `output y`), its `from` for an output (a value, `dmm`, or `node.output`). Empty for what no command wires yet
+    /// (the inputs of a structure and its `next`, `until`, `collect` or `yield`, step 5 of M1).
+    pub name: String,
+    /// Its name in its node (`high`), or in the signature for a terminal of the frame (`limit`); empty for an input
+    /// without a name.
+    pub caption: String,
+    /// Its type, by its index in [`Drawing::types`]; none when `check` does not know it, which takes anything.
+    pub ty: Option<usize>,
+    /// What it holds.
+    pub holds: Holds,
+    /// The value it gives, or that its wire carries; empty otherwise.
+    pub value: String,
+    /// The wire at it, by its group in [`Drawing::groups`]: the wire of its value for an output.
+    pub group: Option<usize>,
+    /// How a wire from it is drawn, in the style of its family (notation 4.1).
+    pub style: WireStyle,
+}
+
+/// What a terminal holds (notation 2.5): an input is wired, given a constant, left to its default, a hole, or a required
+/// input that nothing reaches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Holds {
+    /// An output, or an input that takes nothing yet and needs nothing (`after:`).
+    Nothing,
+    /// A wire, of the value [`Port::value`].
+    Wire,
+    /// A constant, as the text writes it.
+    Constant(String),
+    /// Its default, as the text writes it.
+    Default(String),
+    /// A hole, `?` (spec 5.1).
+    Hole,
+    /// A required input that the call leaves out (`LC2101`).
+    Missing,
+}
+
 /// A drawing: what it draws, in the order of drawing, and its extent.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -528,6 +599,15 @@ pub struct Drawing {
     pub tabs: Vec<Tab>,
     /// The tooltips of the terminals. Not in the SVG.
     pub hints: Vec<Hint>,
+    /// The terminals where a wire starts or ends, for the wiring of the editor. Not in the SVG.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub ports: Vec<Port>,
+    /// The types of the ports, as the language writes them, and what the rule of fit reads of each (spec 3.3, 3.4), by
+    /// [`Port::ty`]. Not in the SVG.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub types: Vec<String>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub type_keys: Vec<labcraft_types::FitKey>,
     /// The values of the notation it was drawn with (notation 10), which the SVG and the canvas paint it with.
     pub style: std::sync::Arc<crate::style::Style>,
     /// What drawing found to say about the file, its warnings (`LC7005`), with no file name: the caller gives it. Not
@@ -569,6 +649,12 @@ pub struct BodyDrawn {
     /// The origin of the coordinates of `layout` in its frame (spec 11), in the coordinates of the drawing.
     #[cfg_attr(feature = "serde", serde(default))]
     pub origin: (i64, i64),
+    /// The structure that holds it, by its index in [`Drawing::placed`]; none for the body of the function.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub owner: Option<usize>,
+    /// Whether it is the body of a `loop` or a `for`, out of which a value goes only by a `collect` or a carry.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub looping: bool,
 }
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.

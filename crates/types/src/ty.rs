@@ -26,7 +26,7 @@ impl TyId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LibraryId(u32);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NumberKind {
     I8,
     I16,
@@ -301,6 +301,21 @@ impl TypeTable {
         self.shape(a) == self.shape(b) || self.has_error(a) || self.has_error(b)
     }
 
+    /// How a value of type `found` comes to what expects `expected` (spec 3.3, 3.4): the rule of `check`, which the
+    /// editor reads too, to refuse a wire of the wrong type at the drop (visual notation 2.5).
+    pub fn fit(&self, found: TyId, expected: TyId) -> Fit {
+        if self.matches(found, expected) {
+            return Fit::Same;
+        }
+        self.fit_key(found).fit(&self.fit_key(expected))
+    }
+
+    /// What the rule of [`TypeTable::fit`] reads of a type, which holds without the table: what the editor judges a
+    /// wire by (visual notation 2.5). Two types of one key match.
+    pub fn fit_key(&self, id: TyId) -> FitKey {
+        FitKey::of(self.get(id)).unwrap_or(FitKey::Shape(self.shape(id).0))
+    }
+
     /// A type as written in the language, units included, cut at [`MAX_TEXT`] code points, as seen
     /// from `viewer`: its own types have no prefix (`Verdict`), and those of other libraries do
     /// (`visa.session`). The cut is what bounds the work: a type shared many times is small here, and
@@ -310,6 +325,70 @@ impl TypeTable {
         writer.ty(id);
         cut_text(&writer.out).into_owned()
     }
+}
+
+/// What the rule of fit reads of a type ([`TypeTable::fit_key`]): a number, its kind and unit; `duration`; a type of no
+/// parts; or, for any other, the shape that the table gives it, which two types match by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum FitKey {
+    Number(NumberKind, Unit),
+    Duration,
+    Bool,
+    String,
+    Bytes,
+    Timestamp,
+    Error,
+    Shape(u32),
+}
+
+impl FitKey {
+    /// The key of a type of no parts, which needs no table: a parameter of a primitive (`f64`, `duration`, appendix A).
+    pub fn of(ty: &Ty) -> Option<FitKey> {
+        Some(match ty {
+            Ty::Number { kind, unit } => FitKey::Number(*kind, *unit),
+            Ty::Duration => FitKey::Duration,
+            Ty::Bool => FitKey::Bool,
+            Ty::String => FitKey::String,
+            Ty::Bytes => FitKey::Bytes,
+            Ty::Timestamp => FitKey::Timestamp,
+            Ty::ErrorValue => FitKey::Error,
+            _ => return None,
+        })
+    }
+
+    /// How a value of this type comes to what expects `expected` (spec 3.3, 3.4), the rule of [`TypeTable::fit`].
+    pub fn fit(&self, expected: &FitKey) -> Fit {
+        if self == expected {
+            return Fit::Same;
+        }
+        let number_to_number = |from_kind: NumberKind, from_unit: &Unit, to_kind: NumberKind, to_unit: &Unit| {
+            if !from_unit.same_dimension(to_unit) {
+                return Fit::No;
+            }
+            let widens = from_kind == to_kind || from_kind.widens_to(to_kind);
+            // A change of scale goes through a floating-point number (3.4).
+            let keeps = from_unit == to_unit || to_kind.is_inexact();
+            if widens && keeps { Fit::Coerce } else { Fit::Narrow }
+        };
+        match (self, expected) {
+            (FitKey::Number(from_kind, from_unit), FitKey::Number(to_kind, to_unit)) => number_to_number(*from_kind, from_unit, *to_kind, to_unit),
+            // `duration` converts to and from `f64[s]` (3.1).
+            (FitKey::Duration, FitKey::Number(kind, unit)) => number_to_number(NumberKind::F64, &Unit::SECOND, *kind, unit),
+            (FitKey::Number(kind, unit), FitKey::Duration) => number_to_number(*kind, unit, NumberKind::F64, &Unit::SECOND),
+            _ => Fit::No,
+        }
+    }
+}
+
+/// How a value comes to what expects a type ([`TypeTable::fit`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fit {
+    Same,
+    /// A conversion that the wire shows (spec 3.3, 3.4).
+    Coerce,
+    /// It would lose something, and needs a node (spec 3.4).
+    Narrow,
+    No,
 }
 
 struct TypeWriter<'a> {

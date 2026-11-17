@@ -31,6 +31,7 @@ mod pins;
 pub(crate) mod select;
 pub(crate) mod series;
 pub(crate) mod view;
+pub(crate) mod wiring;
 
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use select::{Selection, Step};
@@ -40,6 +41,7 @@ use moving::Moving;
 use paint::{Over, Painted, Painter};
 use select::{Found, Hit, Index};
 use view::{Glide, Grid, Viewport};
+use wiring::{Retract, Rules, Wiring};
 
 /// The colours of the theme tokens (notation 8): those of the style in force in `diagram`, light or dark.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -72,6 +74,12 @@ pub struct Shown {
     /// The setting "mark the fixed nodes" (notation 2.4): a pin on each node that `layout` fixes. On in the IDE by
     /// default; the host says it.
     pub mark_fixed: bool,
+    /// The setting "replace only with Alt" (notation 2.4): a wire dropped on an input that holds something replaces it
+    /// only with Alt down. Off by default.
+    pub replace_with_alt: bool,
+    /// The setting "accept it" (notation 2.4): a wire of the wrong type is written, and `check` gives `LC3001`. Off by
+    /// default.
+    pub accept_mismatch: bool,
 }
 
 impl Shown {
@@ -90,6 +98,17 @@ pub enum Intent {
     Move { nodes: Vec<String>, by: (i64, i64) },
     /// `layout.arrange` on these nodes: "Remove the fixed position" (notation 2.4).
     Arrange(Selection),
+    /// `wire.connect` from an output to an input, as a command names them (commands.md 9.2): a wire dropped, or wired
+    /// with Enter (notation 2.6). `replace` when the input holds something that it replaces (notation 2.4).
+    Wire { from: String, to: String, replace: bool, accept_mismatch: bool },
+    /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
+    /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`.
+    Rewire { disconnect: Vec<String>, connect: Vec<(String, String, bool, bool)> },
+    /// A wire dropped on the empty canvas, from this terminal as a command names it, at this point in units: quick
+    /// insertion, filtered by what takes it (notation 2.6), which comes with step 4 of M1.
+    QuickInsert { from: String, at: (i64, i64) },
+    /// What the status bar says, and a screen reader announces (notation 2.6): why a drop wrote nothing.
+    Say(String),
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -99,6 +118,8 @@ pub enum Gesture {
     Rectangle,
     /// Nodes are being moved, by a drag or by a run of presses of Ctrl and an arrow.
     Move,
+    /// A wire is being drawn, by a drag or from the keyboard.
+    Wire,
 }
 
 /// What a frame of the canvas gives back to the host.
@@ -173,6 +194,15 @@ pub struct Canvas {
     moving: Option<Moving>,
     /// The fixed node that a right-click was on, for its menu (notation 2.4).
     context: Option<usize>,
+    /// A wire being drawn, or asked of the host and not drawn yet.
+    wiring: Option<Wiring>,
+    /// The terminal that has the focus, by its index in [`Drawing::ports`]: Enter on a node goes to its terminals
+    /// (notation 2.6).
+    port_focus: Option<usize>,
+    /// The settings that a drop reads, from the host ([`Shown`]).
+    rules: Rules,
+    /// The old wire that a new one replaces, retracting (notation 2.4): asked with the wire, started by the new drawing.
+    retract: Option<Retract>,
 }
 
 /// The number typed into the selector of a loop: the loop, its iterations, the text, the corner of the field in units.
@@ -319,6 +349,10 @@ impl Canvas {
             asked: None,
             moving: None,
             context: None,
+            wiring: None,
+            port_focus: None,
+            rules: Rules::default(),
+            retract: None,
         }
     }
 
@@ -370,6 +404,36 @@ impl Canvas {
             self.viewport.origin += Vec2::new(dx as f32, dy as f32) / 100.0;
         }
         self.context = None;
+        // A wire asked for is in the new drawing, and the old wire it replaced retracts now. A wire under way goes on over
+        // the new one, from its terminal found again by its name; one that Ctrl took ends.
+        self.wiring =
+            self.wiring.take().filter(|wiring| wiring.state != wiring::State::Asked && wiring.taken == wiring::Taken::Nothing).and_then(|wiring| {
+                let old = self.drawing.as_ref()?.ports.get(wiring.from)?;
+                let from = drawing.ports.iter().position(|port| port.input == old.input && port.name == old.name)?;
+                let mut again = Wiring::new(&drawing, from, wiring.at, wiring.state)?;
+                again.over = None;
+                Some(again)
+            });
+        if let Some(retract) = &mut self.retract {
+            retract.drawn = true;
+        }
+        if self.reduced_motion {
+            self.retract = None;
+        }
+        // The terminal of the focus, found again by its name and its node.
+        self.port_focus = self.port_focus.and_then(|at| {
+            let old = self.drawing.as_ref()?.ports.get(at)?;
+            let key = old.placed.and_then(|placed| self.drawing.as_ref()?.placed.get(placed)).map(|placed| placed.key.clone());
+            let same_node = |port: &&labcraft_diagram::Port| {
+                port.input == old.input && port.placed.and_then(|placed| drawing.placed.get(placed)).map(|placed| placed.key.clone()) == key
+            };
+            // By the name a command gives it, else by its name in its node.
+            drawing
+                .ports
+                .iter()
+                .position(|port| same_node(&port) && !old.name.is_empty() && port.name == old.name)
+                .or_else(|| drawing.ports.iter().position(|port| same_node(&port) && port.caption == old.caption))
+        });
         self.grid = Grid::of(&drawing);
         self.index = Index::of(&drawing);
         // A list open on the drawing before: its structure may be another one now.
@@ -433,6 +497,33 @@ impl Canvas {
         if self.moving.as_ref().is_some_and(|moving| moving.state == moving::State::Asked) {
             self.moving = None;
         }
+    }
+
+    /// The wire asked for failed: it goes, and the old wire it would have replaced stays.
+    pub fn cancel_wire(&mut self) {
+        if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked) {
+            self.wiring = None;
+        }
+        self.retract = None;
+    }
+
+    /// W on the terminal that has the focus starts a wire from it (notation 2.6): Tab then goes through the terminals that
+    /// would take it, Enter wires it, Escape cancels. Nothing without a terminal in focus.
+    pub fn start_wire(&mut self, shown: &Shown) -> bool {
+        let (Some(drawing), Some(from)) = (self.drawing.clone(), self.port_focus) else { return false };
+        let Some(port) = drawing.ports.get(from) else { return false };
+        let Some(mut wiring) = Wiring::new(&drawing, from, wiring::centre(port), wiring::State::Keys) else { return false };
+        let arms = arms_shown(&drawing, shown);
+        let visible = |within: Option<usize>| within.is_none_or(|arm| arms.get(arm).copied().unwrap_or(false));
+        wiring.over = wiring.takers(&drawing, rules_of(shown, false), &visible).first().copied();
+        self.wiring = Some(wiring);
+        true
+    }
+
+    /// The terminal that has the focus, as a command names it, and whether it is an input.
+    pub fn port_focus(&self) -> Option<(String, bool)> {
+        let port = self.drawing.as_ref()?.ports.get(self.port_focus?)?;
+        Some((port.name.clone(), port.input))
     }
 
     /// Ends a run of presses of Ctrl and an arrow now (notation 2.6: another key ends it): the move it asks for, if any.
@@ -503,6 +594,10 @@ impl Canvas {
         };
         if self.found_for.as_ref() != Some(&shown.selection) {
             self.found = self.index.find(&shown.selection);
+            // The terminal in focus is one of the node selected: another selection takes it away.
+            self.port_focus = self
+                .port_focus
+                .filter(|&at| drawing.ports.get(at).and_then(|port| port.placed).is_some_and(|placed| self.found.nodes.contains(&placed)));
             self.found_for = Some(shown.selection.clone());
             self.asked_found = None;
             // A wire that a command names is pinned while the host holds it; one that it cannot name, while nothing
@@ -512,6 +607,7 @@ impl Canvas {
                 if named { self.found.groups.contains(group) } else { self.found.is_empty() }
             });
         }
+        self.rules = rules_of(shown, false);
         let mut input = Input::default();
         let frame = self.begin(ui, &response, (rect, theme), drawing, shown, &mut input);
         self.input(ui, &response, &frame, shown, &mut input);
@@ -526,6 +622,8 @@ impl Canvas {
             Some(Gesture::Rectangle)
         } else if self.moving.as_ref().is_some_and(|moving| !matches!(moving.state, moving::State::Asked)) {
             Some(Gesture::Move)
+        } else if self.wiring.as_ref().is_some_and(|wiring| wiring.state != wiring::State::Asked) {
+            Some(Gesture::Wire)
         } else {
             None
         };
@@ -585,6 +683,22 @@ impl Canvas {
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(moving::ASKED_SECONDS));
             }
+        }
+        if let Some(asked) = self.wiring.as_mut().filter(|wiring| wiring.state == wiring::State::Asked) {
+            let since = *asked.asked_at.get_or_insert(now);
+            if now - since > wiring::ASKED_SECONDS {
+                self.wiring = None;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(wiring::ASKED_SECONDS));
+            }
+        }
+        // The retract of an old wire starts at the first frame of the new drawing.
+        if let Some(retract) = self.retract.as_mut().filter(|retract| retract.drawn) {
+            let since = *retract.since.get_or_insert(now);
+            if now - since > wiring::RETRACT_SECONDS {
+                self.retract = None;
+            }
+            ctx.request_repaint();
         }
         let moving = self.moving.is_some();
         if moving {
@@ -766,7 +880,7 @@ impl Canvas {
         self.pinned_values(frame, input);
         // The tooltip of a terminal under the pointer: its name, its exact type, the default of an input that no argument
         // wires (notation 3.2, 4.1).
-        input.hint = frame.at.and_then(|unit| {
+        input.hint = frame.at.filter(|_| self.wiring.is_none()).and_then(|unit| {
             drawing.hints.iter().rev().filter(|hint| visible(hint.within)).find_map(|hint| {
                 let corner = Pos2::new(hint.x as f32 / 100.0, hint.y as f32 / 100.0) + frame.offset_of(hint.placed);
                 Rect::from_min_size(corner, Vec2::new(hint.width as f32, hint.height as f32) / 100.0).contains(unit).then(|| hint.text.clone())
@@ -830,6 +944,47 @@ impl Canvas {
             response.request_focus();
         }
         let reach = (5.0 / zoom).max(WIRE_REACH);
+        let rules = Rules { alt: modifiers.alt, ..self.rules };
+        if response.drag_started_by(PointerButton::Primary) && frame.offsets.is_none() {
+            let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
+            // A drag from a terminal draws a wire; Ctrl with it takes the end of its wire (notation 2.6). Alt with it
+            // moves a terminal of a block, from step 6 of M1.
+            let port = from.and_then(|from| port_at(drawing, from, (6.0 / zoom).max(5.0), &visible));
+            if let (Some(from), Some(port)) = (from, port) {
+                let of_the_function = drawing.ports.get(port).is_some_and(|found| found.frame && found.placed.is_none());
+                if of_the_function {
+                    input.intents.push(Intent::Say("Moving a terminal of the frame comes with M1 step 6".to_owned()));
+                    self.drag = Some(Drag::Held);
+                    return;
+                }
+                if modifiers.alt {
+                    input.intents.push(Intent::Say("Moving a terminal of a block comes with M1 step 6".to_owned()));
+                    self.drag = Some(Drag::Held);
+                    return;
+                }
+                self.wiring =
+                    if modifiers.command { Wiring::taking(drawing, port, from) } else { Wiring::new(drawing, port, from, wiring::State::Dragging) };
+                if self.wiring.is_some() {
+                    self.port_focus = None;
+                    self.drag = Some(Drag::Held);
+                }
+            }
+        }
+        if let Some(wiring) = self.wiring.as_mut().filter(|wiring| wiring.state == wiring::State::Dragging)
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            wiring.at = unit_of(at);
+            wiring.find_over(drawing, (10.0 / zoom).max(wiring::SNAP), &visible);
+            ctx.request_repaint();
+        }
+        if response.drag_stopped_by(PointerButton::Primary) && self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Dragging) {
+            self.drop_wire(drawing, rules, input);
+            self.drag = None;
+            return;
+        }
+        if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Dragging) {
+            return;
+        }
         if response.drag_started_by(PointerButton::Primary) {
             let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
             let hit = from.and_then(|from| select::hit(drawing, &self.index, &frame.groups, from, reach, &visible));
@@ -895,6 +1050,36 @@ impl Canvas {
         };
         input.intents.push(Intent::Select(self.index.name(drawing, &found)));
         self.asked_found = Some(found);
+    }
+
+    /// The drop of the wire being drawn: on a terminal that takes it, the wire; on one that refuses it, nothing, and why;
+    /// on the empty canvas, quick insertion (notation 2.6).
+    fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input) {
+        let Some(mut wiring) = self.wiring.take() else { return };
+        let Some(over) = wiring.over else {
+            let from = drawing.ports.get(wiring.from).map(|port| port.name.clone()).unwrap_or_default();
+            // Ctrl and a drag that ends nowhere leaves the wire as it was.
+            if wiring.taken == wiring::Taken::Nothing {
+                input.intents.push(Intent::QuickInsert { from, at: (wiring.at.x.round() as i64, wiring.at.y.round() as i64) });
+            }
+            return;
+        };
+        match wiring.drop_on(drawing, over, rules) {
+            Some(wiring::Drop::Wire { replace, accept_mismatch }) => {
+                let Some(intent) = wiring.intent(drawing, over, replace, accept_mismatch) else { return };
+                // The old wire retracts, visibly (notation 2.4).
+                let target = if drawing.ports.get(over).is_some_and(|port| port.input) { Some(over) } else { Some(wiring.from) };
+                self.retract = target.filter(|_| replace && !self.reduced_motion).and_then(|target| {
+                    drawing.ports.get(target).filter(|port| port.holds == labcraft_diagram::Holds::Wire)?;
+                    Retract::of(drawing, target)
+                });
+                input.intents.push(intent);
+                wiring.state = wiring::State::Asked;
+                self.wiring = Some(wiring);
+            }
+            Some(wiring::Drop::Refused(refusal)) => input.intents.push(Intent::Say(refusal.message)),
+            None => {}
+        }
     }
 
     /// The nodes that a drag from `placed` moves: the selection in the frame of `placed` when it holds it, otherwise
@@ -973,6 +1158,9 @@ impl Canvas {
 
     /// The keys of the focus, each a selection asked for.
     fn keys_of_focus(&mut self, ui: &mut Ui, input: &mut Input, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool) {
+        if self.wiring_keys(ui, input, drawing, visible) || self.port_keys(ui, input, drawing) {
+            return;
+        }
         // Exactly these modifiers: Alt or Shift with an arrow is a key of the host (Alt+Left, notation 2.6).
         let pressed = |key: egui::Key, modifiers: egui::Modifiers| {
             ui.input_mut(|input| {
@@ -984,7 +1172,10 @@ impl Canvas {
         };
         if pressed(egui::Key::Escape, egui::Modifiers::NONE) {
             // A gesture first, then a list open, then up one level, then nothing.
-            if self.moving.as_ref().is_some_and(|moving| matches!(moving.state, moving::State::Dragging { .. })) {
+            if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Dragging) {
+                self.wiring = None;
+                self.drag = Some(Drag::Held);
+            } else if self.moving.as_ref().is_some_and(|moving| matches!(moving.state, moving::State::Dragging { .. })) {
                 self.moving = None;
                 self.drag = Some(Drag::Held);
             } else if matches!(self.drag, Some(Drag::Rectangle { .. })) {
@@ -1005,6 +1196,8 @@ impl Canvas {
             None
         };
         if let Some(forward) = tab {
+            // Tab leaves the terminals for the next node (notation 2.6).
+            self.port_focus = None;
             match select::tab(drawing, &self.index, &self.found, forward, &visible) {
                 Some(found) => input.intents.push(Intent::Select(self.index.name(drawing, &found))),
                 None => {
@@ -1047,11 +1240,133 @@ impl Canvas {
                 return;
             }
         }
-        if pressed(egui::Key::Enter, egui::Modifiers::NONE)
-            && let Some(found) = select::enter(drawing, &self.index, &self.found, &visible)
-        {
-            input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+        if pressed(egui::Key::Enter, egui::Modifiers::NONE) {
+            if let Some(found) = select::enter(drawing, &self.index, &self.found, &visible) {
+                input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+            } else if let (Some(&placed), 1) = (self.found.nodes.first(), self.found.nodes.len()) {
+                // A node that is not a structure: its terminals, the inputs first (notation 2.6).
+                self.port_focus = node_ports(drawing, placed).first().copied();
+            }
         }
+    }
+
+    /// The keys of a wire drawn from the keyboard (notation 2.6): Tab and Shift+Tab go through the terminals that would
+    /// take it, Enter wires it, Escape cancels, Space opens quick insertion. Whether a key was used.
+    fn wiring_keys(&mut self, ui: &mut Ui, input: &mut Input, drawing: &Drawing, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
+        if !self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Keys) {
+            return false;
+        }
+        let alt = ui.input(|input| input.modifiers.alt);
+        let rules = Rules { alt, ..self.rules };
+        let take = |key: egui::Key, shift: bool| {
+            ui.input_mut(|input| {
+                let at = input.events.iter().position(|event| {
+                    matches!(event, egui::Event::Key { key: found, pressed: true, modifiers, .. } if *found == key && modifiers.shift == shift && !modifiers.command)
+                });
+                at.map(|at| input.events.remove(at)).is_some()
+            })
+        };
+        if take(egui::Key::Escape, false) {
+            self.wiring = None;
+            return true;
+        }
+        if take(egui::Key::Space, false) {
+            let from = self.wiring.take().and_then(|wiring| drawing.ports.get(wiring.from).map(|port| (port.name.clone(), wiring::centre(port))));
+            if let Some((from, at)) = from {
+                input.intents.push(Intent::QuickInsert { from, at: (at.x.round() as i64 + 64, at.y.round() as i64) });
+            }
+            return true;
+        }
+        if take(egui::Key::Enter, false) {
+            if self.wiring.as_ref().is_some_and(|wiring| wiring.over.is_none()) {
+                input.intents.push(Intent::Say("No terminal takes this wire".to_owned()));
+            } else {
+                self.drop_wire(drawing, rules, input);
+            }
+            return true;
+        }
+        let forward = if take(egui::Key::Tab, false) {
+            Some(true)
+        } else if take(egui::Key::Tab, true) {
+            Some(false)
+        } else {
+            None
+        };
+        if let (Some(forward), Some(wiring)) = (forward, self.wiring.as_mut()) {
+            let takers = wiring.takers(drawing, rules, visible);
+            let at = wiring.over.and_then(|over| takers.iter().position(|&found| found == over));
+            let next = match (at, forward) {
+                (Some(at), true) => takers.get(at + 1).or_else(|| takers.first()),
+                (Some(at), false) => at.checked_sub(1).and_then(|before| takers.get(before)).or_else(|| takers.last()),
+                (None, true) => takers.first(),
+                (None, false) => takers.last(),
+            };
+            wiring.over = next.copied();
+            if let Some(port) = wiring.over.and_then(|over| drawing.ports.get(over)) {
+                wiring.at = wiring::centre(port);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// The keys of a terminal in focus (notation 2.6): Up and Down along its side, Left and Right to the other side,
+    /// Enter on a wired one selects its wire, Escape goes back to its node. Whether a key was used.
+    fn port_keys(&mut self, ui: &mut Ui, input: &mut Input, drawing: &Drawing) -> bool {
+        let Some(focus) = self.port_focus else { return false };
+        let Some(port) = drawing.ports.get(focus) else {
+            self.port_focus = None;
+            return false;
+        };
+        let pressed = |key: egui::Key| {
+            ui.input_mut(|input| {
+                let at = input.events.iter().position(
+                    |event| matches!(event, egui::Event::Key { key: found, pressed: true, modifiers, .. } if *found == key && modifiers.is_none()),
+                );
+                at.map(|at| input.events.remove(at)).is_some()
+            })
+        };
+        if pressed(egui::Key::Escape) {
+            self.port_focus = None;
+            return true;
+        }
+        // Space: quick insertion, as a wire from it dropped on the empty canvas (notation 2.6), with step 4.
+        if pressed(egui::Key::Space) {
+            let at = wiring::centre(port);
+            input.intents.push(Intent::QuickInsert { from: port.name.clone(), at: (at.x.round() as i64 + 64, at.y.round() as i64) });
+            return true;
+        }
+        if pressed(egui::Key::Enter) {
+            let wired = port.holds == labcraft_diagram::Holds::Wire || !port.input;
+            match (wired, port.group) {
+                (true, Some(group)) => {
+                    let found = select::Found::one(Hit::Wire(group));
+                    self.port_focus = None;
+                    input.intents.push(Intent::Select(self.index.name(drawing, &found)));
+                }
+                _ => input.intents.push(Intent::Say("Constants, defaults and holes are edited from M1 step 4".to_owned())),
+            }
+            return true;
+        }
+        let Some(placed) = port.placed else { return false };
+        let ports = node_ports(drawing, placed);
+        let side: Vec<usize> = ports.iter().copied().filter(|&at| drawing.ports.get(at).is_some_and(|found| found.input == port.input)).collect();
+        let other: Vec<usize> = ports.iter().copied().filter(|&at| drawing.ports.get(at).is_some_and(|found| found.input != port.input)).collect();
+        let at = side.iter().position(|&found| found == focus).unwrap_or(0);
+        let next = if pressed(egui::Key::ArrowDown) {
+            side.get(at + 1).copied()
+        } else if pressed(egui::Key::ArrowUp) {
+            at.checked_sub(1).and_then(|before| side.get(before)).copied()
+        } else if pressed(egui::Key::ArrowLeft) || pressed(egui::Key::ArrowRight) {
+            // The nearest in height on the other side.
+            other.iter().copied().min_by_key(|&found| drawing.ports.get(found).map_or(i64::MAX, |found| (found.y - port.y).abs()))
+        } else {
+            return false;
+        };
+        if let Some(next) = next {
+            self.port_focus = Some(next);
+        }
+        true
     }
 
     /// The values of the wire clicked last, over the iterations of its loop, pinned where it was clicked while it is
@@ -1317,6 +1632,7 @@ impl Canvas {
                 put(&painted, Vec2::ZERO);
             }
         }
+        self.paint_wiring(&painter, frame, theme, &to_screen);
         // The rectangle of selection under way, in `select.stroke`.
         if let Some(Drag::Rectangle { from, to, .. }) = self.drag {
             let area = Rect::from_two_pos(to_screen(from.to_vec2()), to_screen(to.to_vec2()));
@@ -1362,6 +1678,60 @@ impl Canvas {
         }
     }
 
+    /// The wire being drawn (notation 2.5): a ring on each terminal that would take it, the wire in the style of its
+    /// family, snapped to the terminal it would reach on a square route, or dashed in `mark.invalid` over one that refuses
+    /// it, with the reason where it would be dropped; the terminal that has the focus, and an old wire retracting.
+    fn paint_wiring(&self, painter: &egui::Painter, frame: &Frame, theme: Theme, to_screen: &dyn Fn(Vec2) -> Pos2) {
+        let (drawing, zoom) = (&frame.drawing, self.viewport.zoom);
+        let screen = |at: Pos2| to_screen(at.to_vec2());
+        let select = theme.color("select.stroke");
+        let ring = egui::Stroke::new((style::mark_width() as f32 / 100.0 * zoom).max(1.0), select);
+        if let Some(retract) = &self.retract
+            && let Some(since) = retract.since
+        {
+            let part = retract.part(((frame.now - since) / wiring::RETRACT_SECONDS) as f32);
+            let stroke = egui::Stroke::new((retract.width * zoom).max(1.0), theme.color(retract.token));
+            painter.add(egui::Shape::line(part.into_iter().map(screen).collect(), stroke));
+            frame.ctx.request_repaint();
+        }
+        if let Some(port) = self.port_focus.and_then(|focus| drawing.ports.get(focus)).filter(|_| self.wiring.is_none()) {
+            painter.circle_stroke(screen(wiring::centre(port)), 6.0 * zoom, ring);
+        }
+        let Some(wiring) = &self.wiring else { return };
+        let rules = Rules { alt: frame.ctx.input(|input| input.modifiers.alt), ..self.rules };
+        let visible = |within: Option<usize>| frame.visible(within);
+        for at in wiring.takers(drawing, rules, &visible) {
+            if let Some(port) = drawing.ports.get(at) {
+                painter.circle_stroke(screen(wiring::centre(port)), 5.0 * zoom, ring);
+            }
+        }
+        let refused = wiring.over.and_then(|over| match wiring.drop_on(drawing, over, rules) {
+            Some(wiring::Drop::Refused(refusal)) => Some(refusal),
+            _ => None,
+        });
+        let Some(start) = drawing.ports.get(wiring.from) else { return };
+        let width = (start.style.width as f32 / 100.0 * zoom).max(1.5);
+        for (from, to) in wiring.ends(drawing) {
+            let points: Vec<Pos2> = wiring::route(from, to).into_iter().map(screen).collect();
+            if refused.is_some() {
+                let stroke = egui::Stroke::new(width, theme.color("mark.invalid"));
+                painter.extend(egui::Shape::dashed_line(&points, stroke, 6.0 * zoom, 4.0 * zoom));
+            } else {
+                painter.add(egui::Shape::line(points, egui::Stroke::new(width, theme.color(start.style.token))));
+            }
+        }
+        if let Some(refusal) = refused {
+            let corner = screen(wiring::reason_at(wiring.at));
+            let galley = painter.layout(refusal.message, egui::FontId::proportional(13.0), theme.color("mark.invalid"), 360.0);
+            let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
+            painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, theme.color("mark.invalid")), egui::StrokeKind::Inside);
+            painter.galley(corner, galley, theme.color("mark.invalid"));
+        }
+        if wiring.state == wiring::State::Dragging {
+            frame.ctx.request_repaint();
+        }
+    }
+
     /// The canvas in the tree of AccessKit (notation 2.6): a list of what can be selected, each node and terminal of the
     /// frame of the function an element with its name, selected or not. Built only while a reader of the tree asks.
     fn describe(&self, ui: &mut Ui, response: &Response, frame: &Frame) {
@@ -1404,6 +1774,19 @@ impl Canvas {
             };
             element(("node", at), area, name, self.found.nodes.contains(&at));
         }
+        // The terminals of the nodes shown: "input high of verdict, f64[V], constant 240 V" (notation 2.6).
+        for (at, port) in drawing.ports.iter().enumerate() {
+            let Some(placed) = port.placed.filter(|&placed| !port.frame && self.grid.shown(placed, &|within| frame.visible(within))) else {
+                continue;
+            };
+            let node = drawing.placed.get(placed).map(|node| node.name.as_str()).filter(|name| !name.is_empty()).unwrap_or("its node");
+            element(
+                ("port", at),
+                Rect::from_center_size(wiring::centre(port), Vec2::splat(8.0)),
+                describe_port(drawing, port, node),
+                self.port_focus == Some(at),
+            );
+        }
     }
 
     /// The iteration a selector shows, or the one asked for last when its values have not come yet.
@@ -1415,7 +1798,56 @@ impl Canvas {
     }
 }
 
-/// Whether each arm in tabs is shown: the arm that `shown` chooses for its structure, inside an arm shown.
+/// How a screen reader names a terminal of a node (notation 2.6): its side, its name, its node, its type and what it
+/// holds.
+fn describe_port(drawing: &Drawing, port: &labcraft_diagram::Port, node: &str) -> String {
+    use labcraft_diagram::Holds;
+    let side = if port.input { "input" } else { "output" };
+    let mut name = if port.caption.is_empty() { format!("{side} of {node}") } else { format!("{side} {} of {node}", port.caption) };
+    if let Some(ty) = port.ty.and_then(|ty| drawing.types.get(ty)) {
+        name.push_str(", ");
+        name.push_str(ty);
+    }
+    let holds = match &port.holds {
+        Holds::Wire if port.input => format!("wired from {}", port.value),
+        Holds::Constant(constant) => format!("constant {constant}"),
+        Holds::Default(default) => format!("default {default}"),
+        Holds::Hole | Holds::Missing => "required input, not wired".to_owned(),
+        Holds::Wire | Holds::Nothing => String::new(),
+    };
+    if !holds.is_empty() {
+        name.push_str(", ");
+        name.push_str(&holds);
+    }
+    name
+}
+
+/// The settings of `shown` that a drop reads, with Alt.
+fn rules_of(shown: &Shown, alt: bool) -> Rules {
+    Rules { replace_with_alt: shown.replace_with_alt, accept_mismatch: shown.accept_mismatch, alt }
+}
+
+/// The terminal nearest `at` within `reach` units, shown, that a command wires.
+fn port_at(drawing: &Drawing, at: Pos2, reach: f32, visible: &dyn Fn(Option<usize>) -> bool) -> Option<usize> {
+    drawing
+        .ports
+        .iter()
+        .enumerate()
+        .filter(|(_, port)| !port.name.is_empty() && visible(port.within))
+        .map(|(index, port)| (index, wiring::centre(port).distance(at)))
+        .filter(|(_, distance)| *distance <= reach)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(index, _)| index)
+}
+
+/// The terminals of a node, its inputs then its outputs, each side from the top, by their index in [`Drawing::ports`].
+fn node_ports(drawing: &Drawing, placed: usize) -> Vec<usize> {
+    let mut ports: Vec<usize> =
+        (0..drawing.ports.len()).filter(|&at| drawing.ports.get(at).is_some_and(|port| port.placed == Some(placed) && !port.frame)).collect();
+    ports.sort_by_key(|&at| drawing.ports.get(at).map_or((true, 0), |port| (!port.input, port.y)));
+    ports
+}
+
 /// An arrow key.
 fn is_arrow(key: egui::Key) -> bool {
     matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown)

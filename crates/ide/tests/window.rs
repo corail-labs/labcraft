@@ -569,3 +569,18 @@ fn a_node_dragged_is_fixed_where_it_goes_and_its_fixed_position_is_removed_from_
     assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN);
     shot(&mut harness, "move");
 }
+
+/// A wire dragged from the output of `a` to the constant `1.0` of `y` replaces the constant (notation 2.4, 2.6): one
+/// `wire.connect`, the line of `y` alone changes, written by hand from spec 5.1. The terminals are elements of the tree of
+/// AccessKit, named as notation 2.6 says.
+#[test]
+fn a_wire_dragged_between_two_terminals_is_written() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (from, _) = canvas_element(&harness, "output result of a, f64");
+    let (to, _) = canvas_element(&harness, "input b of y, f64, constant 1.0");
+    drag_from(&mut harness, from, to);
+    let wired = MAIN.replace("y = core.add(a, 1.0)", "y = core.add(a, a)");
+    assert_eq!(text_of(&harness, "/p/main.lcf"), wired);
+    shot(&mut harness, "wire");
+}

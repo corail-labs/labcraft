@@ -82,6 +82,27 @@ pub struct Terminal {
     pub traced: Option<String>,
     /// A value of a variadic parameter: its place in it, from 0, by which a command names it (`e3.errs.1`, spec 11).
     pub place: Option<usize>,
+    /// What an input takes, which the wiring of the editor judges a wire by.
+    pub expects: Expects,
+}
+
+/// What an input takes (notation 2.5): what judges a wire drawn to it before `wire.connect` does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Expects {
+    /// The type of the terminal, which the signature declares: a value of a type that does not fit it is refused.
+    Type,
+    /// A parameter of a primitive of this type (`bool`, `f64`, `duration`, appendix A).
+    Fixed(PrimitiveTy),
+    /// A parameter of a primitive of one family, whose elements the call settles (`[string]`).
+    Family(Family),
+    /// A parameter of a primitive of a type variable: the type of another input of the node of the same variable, which
+    /// settles it; a number when the variable is bound by `Number` (spec 3.5).
+    Variable { variable: usize, numbers: bool },
+    /// A parameter whose type the call settles: any value.
+    Any,
+    /// An input that no wire reaches yet, and why: the template of `string.format`, which takes only text written in it
+    /// (spec 5.4), or the fields of a template, wired from step 4 of M1.
+    Never(&'static str),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -827,6 +848,7 @@ impl<'a> Builder<'a> {
             default: None,
             traced: None,
             place: None,
+            expects: Expects::Type,
         }
     }
 
@@ -926,6 +948,7 @@ impl<'a> Builder<'a> {
                             variadic: false,
                             ty_text: None,
                             fixed: false,
+                            takes: None,
                             default: function.defaults.get(position).cloned().flatten(),
                         })
                         .collect();
@@ -967,6 +990,27 @@ impl<'a> Builder<'a> {
                                     | PrimitiveTy::Rectangle(_)
                                     | PrimitiveTy::Function
                             ),
+                            takes: Some(match param.ty {
+                                _ if primitive.open && param.name == "template" => {
+                                    Expects::Never("the template of `string.format` takes only text written in it, never a wire (spec 5.4)")
+                                }
+                                PrimitiveTy::Var(variable) => Expects::Variable { variable, numbers: primitive.variables.numbers },
+                                PrimitiveTy::Texts => Expects::Family(primitive_family(PrimitiveTy::Texts)),
+                                PrimitiveTy::Bool
+                                | PrimitiveTy::I32
+                                | PrimitiveTy::F32
+                                | PrimitiveTy::F64
+                                | PrimitiveTy::Text
+                                | PrimitiveTy::Timestamp
+                                | PrimitiveTy::Duration
+                                | PrimitiveTy::Error => Expects::Fixed(param.ty),
+                                // An array of a type variable takes an array of as many dimensions; a function, a
+                                // function.
+                                PrimitiveTy::ArrayOf(_) | PrimitiveTy::Rows(_) | PrimitiveTy::Rectangle(_) | PrimitiveTy::Function => {
+                                    Expects::Family(primitive_family(param.ty))
+                                }
+                                PrimitiveTy::None => Expects::Any,
+                            }),
                             default: param.default.map(|default| default.text().to_owned()),
                         })
                         .collect();
@@ -987,6 +1031,7 @@ impl<'a> Builder<'a> {
                         variadic: false,
                         ty_text: None,
                         fixed: false,
+                        takes: None,
                         default: None,
                     })
                     .collect();
@@ -1036,6 +1081,9 @@ impl<'a> Builder<'a> {
                 if let (true, Some(text)) = (param.fixed, &param.ty_text) {
                     input.ty_text.clone_from(text);
                 }
+                if let (None, Some(takes)) = (param.ty, param.takes) {
+                    input.expects = takes;
+                }
                 if param.variadic {
                     let place = places.entry(position).or_insert(0);
                     input.place = Some(*place);
@@ -1049,7 +1097,9 @@ impl<'a> Builder<'a> {
         }
         for (index, name, operand) in free {
             let name = name.map_or_else(|| index.to_string(), |name| self.text(name));
-            inputs.push(self.input(name, operand, None));
+            let mut input = self.input(name, operand, None);
+            input.expects = Expects::Never("a field of a template is wired from M1 step 4, with its template");
+            inputs.push(input);
         }
         inputs
     }
@@ -1065,6 +1115,11 @@ impl<'a> Builder<'a> {
         if let (None, Some(text)) = (param.ty, &param.ty_text) {
             terminal.ty_text.clone_from(text);
         }
+        terminal.expects = match param.ty {
+            Some(ty) if !self.types().has_error(ty) => Expects::Type,
+            None => param.takes.unwrap_or(Expects::Any),
+            Some(_) => Expects::Any,
+        };
         terminal.default.clone_from(&param.default);
         inputs.push(terminal);
     }
@@ -1082,6 +1137,10 @@ impl<'a> Builder<'a> {
         };
         let mut terminal = self.terminal(name, ty, constant, false);
         terminal.reads = self.reads(operand);
+        // What the call settles is what it receives, not what it takes.
+        if !declared.is_some_and(|ty| !self.types().has_error(ty)) {
+            terminal.expects = Expects::Any;
+        }
         terminal
     }
 
@@ -1214,6 +1273,8 @@ struct Param {
     /// Whether that type has no type variable: the tooltip says it even when an argument wires the parameter, rather
     /// than the type that the call settles (`duration` rather than `f64[s]`).
     fixed: bool,
+    /// What a parameter of a primitive takes; none for a declared parameter.
+    takes: Option<Expects>,
     default: Option<String>,
 }
 

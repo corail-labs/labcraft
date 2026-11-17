@@ -28,14 +28,14 @@ const fn ten(power: i32) -> Scale {
 }
 
 /// A temperature scale: kelvins = (value + 273.15) for `°C`, (value + 459.67) * 5 / 9 for `°F`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum Offset {
     None,
     Celsius,
     Fahrenheit,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Unit {
     exponents: [i8; DIMENSIONS],
     scale: Scale,

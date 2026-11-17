@@ -773,11 +773,14 @@ fn resolve_start(
             None => return Err(EditError::new("edit.unknown", format!("`{node_text}` writes fewer targets than its outputs")).of("from")),
         };
         let function = edit.body_function()?;
-        return scope::values(function)
+        let value = scope::values(function)
             .into_iter()
             .find(|value| value.name == name && matches!(&value.bound, Bound::Line(at, i) if *at == loc && *i == index))
-            .map(Start::Value)
-            .ok_or_else(|| EditError::internal("an output that went"));
+            .ok_or_else(|| EditError::internal("an output that went"))?;
+        if !scope::sees(function, &value, reader) {
+            return Err(unseen(function, from, &value, reader));
+        }
+        return Ok(Start::Value(value));
     }
     let Some(name) = edit.names.find(from) else {
         let known: Vec<String> =
@@ -786,7 +789,12 @@ fn resolve_start(
             .of("from")
             .expecting(crate::refs::nearest(from, &known)));
     };
-    let candidates: Vec<Value> = scope::values(function).into_iter().filter(|value| value.name == name).collect();
+    let mut candidates: Vec<Value> = scope::values(function).into_iter().filter(|value| value.name == name).collect();
+    // Reading a name that is an input and an output reads the input (R-2): the line of the function that binds it binds
+    // the output.
+    if candidates.iter().any(|value| matches!(value.bound, Bound::Input)) {
+        candidates.retain(|value| !matches!(&value.bound, Bound::Line(loc, _) if loc.body.is_empty()));
+    }
     if candidates.is_empty() {
         let known: Vec<String> =
             scope::values(function).iter().map(|value| edit.text(value.name).to_owned()).collect::<BTreeSet<_>>().into_iter().collect();
@@ -799,23 +807,28 @@ fn resolve_start(
         [one] => Ok(Start::Value((*one).clone())),
         [] => {
             // Deeper than the reader: out of an arm, or out of a loop.
-            let below = candidates.iter().find_map(|value| {
-                (value.seen_in.len() > reader.len() && value.seen_in.starts_with(reader))
-                    .then(|| scope::frame(function, value.seen_in.get(..=reader.len()).unwrap_or(&[])))
-            });
-            match below {
-                Some(Some(Frame::Arm)) => Err(step_five("from", "a wire out of an arm, which adds an output to its structure,")),
-                Some(Some(Frame::Loop)) => {
-                    Err(EditError::new("wire.out_of_scope", format!("`{from}` is inside a loop: a `collect` or a carry takes a value out of it"))
-                        .of("from"))
-                }
-                _ => {
-                    Err(EditError::new("wire.out_of_scope", format!("`{from}` cannot be seen from there: it is a value of another arm or structure"))
-                        .of("from"))
-                }
-            }
+            let deeper = candidates.iter().find(|value| value.seen_in.len() > reader.len() && value.seen_in.starts_with(reader));
+            Err(match deeper.or(candidates.first()) {
+                Some(value) => unseen(function, from, value, reader),
+                None => EditError::internal("no value to judge"),
+            })
         }
         _ => Err(EditError::new("edit.ambiguous", format!("`{from}` names several values that the input sees")).of("from")),
+    }
+}
+
+/// Why the reader at `reader` does not see `value`: it is inside an arm or a loop around which the reader is, or in
+/// another arm or structure.
+fn unseen(function: &Function, from: &str, value: &Value, reader: &[scope::Step]) -> EditError {
+    let below = (value.seen_in.len() > reader.len() && value.seen_in.starts_with(reader))
+        .then(|| scope::frame(function, value.seen_in.get(..=reader.len()).unwrap_or(&[])))
+        .flatten();
+    match below {
+        Some(Frame::Arm) => step_five("from", "a wire out of an arm, which adds an output to its structure,"),
+        Some(Frame::Loop) => {
+            EditError::new("wire.out_of_scope", format!("`{from}` is inside a loop: a `collect` or a carry takes a value out of it")).of("from")
+        }
+        _ => EditError::new("wire.out_of_scope", format!("`{from}` cannot be seen from there: it is a value of another arm or structure")).of("from"),
     }
 }
 
@@ -835,10 +848,13 @@ fn closes_a_cycle(function: &Function, made_by: &Loc, reader: &Loc) -> bool {
         return true;
     }
     let Some(body) = scope::body(function, body_path) else { return false };
-    // What each line of the body reads of the others, deep.
+    // What each line of the body reads of the others, deep. In the body of the function, reading a name that is an input
+    // and an output reads the input: the line `err = …` binds the output (R-2), and no line reads it.
+    let inputs: HashSet<Name> =
+        if body_path.is_empty() { function.signature.params.iter().map(|param| param.name).collect() } else { HashSet::new() };
     let mut bound_by: HashMap<Name, Vec<usize>> = HashMap::new();
     for (index, statement) in body.statements.iter().enumerate() {
-        for name in scope::targets(statement) {
+        for name in scope::targets(statement).into_iter().filter(|name| !inputs.contains(name)) {
             bound_by.entry(name).or_default().push(index);
         }
         if let Some(label) = statement.label {

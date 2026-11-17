@@ -90,6 +90,14 @@ pub struct Prefs {
     pub fix_every_node: bool,
     /// The setting "mark the fixed nodes" (notation 2.4): a pin on each fixed node. On by default.
     pub mark_fixed: bool,
+    /// The setting "replace only with Alt" (notation 2.4): a wire dropped on an input that holds something replaces it
+    /// only with Alt down. Off by default.
+    #[serde(default)]
+    pub replace_with_alt: bool,
+    /// The setting "accept it" (notation 2.4): a wire of the wrong type is written, and `check` gives `LC3001`. Off by
+    /// default.
+    #[serde(default)]
+    pub accept_mismatch: bool,
 }
 
 impl Default for Prefs {
@@ -109,6 +117,8 @@ impl Default for Prefs {
             drag_pans: false,
             fix_every_node: false,
             mark_fixed: true,
+            replace_with_alt: false,
+            accept_mismatch: false,
         }
     }
 }
@@ -647,6 +657,7 @@ impl Ide {
         for function in moved_back {
             if let Some(drawn) = self.drawn.get_mut(&function) {
                 drawn.canvas.cancel_move();
+                drawn.canvas.cancel_wire();
             }
         }
         // A node named by its line that a command gave a label stays selected by its label (decision of the owner,
@@ -973,6 +984,8 @@ impl Ide {
                 | keys::DRAG_PANS
                 | keys::FIX_EVERY_NODE
                 | keys::MARK_FIXED
+                | keys::REPLACE_WITH_ALT
+                | keys::ACCEPT_MISMATCH
                 | keys::ABOUT => {
                     let checked = match id {
                         keys::DARK => Some(self.prefs.dark),
@@ -981,6 +994,8 @@ impl Ide {
                         keys::DRAG_PANS => Some(self.prefs.drag_pans),
                         keys::FIX_EVERY_NODE => Some(self.prefs.fix_every_node),
                         keys::MARK_FIXED => Some(self.prefs.mark_fixed),
+                        keys::REPLACE_WITH_ALT => Some(self.prefs.replace_with_alt),
+                        keys::ACCEPT_MISMATCH => Some(self.prefs.accept_mismatch),
                         _ => None,
                     };
                     ItemState { enabled: true, checked }
@@ -1014,7 +1029,8 @@ impl Ide {
                 | keys::SELECT_DOWNSTREAM
                 | keys::SELECT_ALL_UPSTREAM
                 | keys::SELECT_ALL_DOWNSTREAM
-                | keys::ARRANGE => ItemState { enabled: shown.is_some(), checked: None },
+                | keys::ARRANGE
+                | keys::WIRE => ItemState { enabled: shown.is_some(), checked: None },
                 _ => ItemState { enabled: project, checked: None },
             }
         });
@@ -1420,6 +1436,23 @@ impl Ide {
                 self.prefs.mark_fixed = !self.prefs.mark_fixed;
                 self.prefs_changed = true;
             }
+            keys::REPLACE_WITH_ALT => {
+                self.prefs.replace_with_alt = !self.prefs.replace_with_alt;
+                self.prefs_changed = true;
+            }
+            keys::ACCEPT_MISMATCH => {
+                self.prefs.accept_mismatch = !self.prefs.accept_mismatch;
+                self.prefs_changed = true;
+            }
+            // W (notation 2.6): a wire from the terminal that has the focus, on the canvas that has the keyboard.
+            keys::WIRE => {
+                let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
+                let canvas_shown = view.window_of(&function).map(|window| canvas_shown(window, &self.prefs)).unwrap_or_default();
+                let started = self.drawn.get_mut(&function).is_some_and(|drawn| drawn.canvas.start_wire(&canvas_shown));
+                if !started {
+                    self.say("W starts a wire from the terminal in focus: select a node, then Enter goes to its terminals");
+                }
+            }
             // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
             keys::ARRANGE => {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
@@ -1552,7 +1585,14 @@ fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
     } else {
         Selection::default()
     };
-    Shown { arms: window.arms.clone(), selection, drag_pans: prefs.drag_pans, mark_fixed: prefs.mark_fixed }
+    Shown {
+        arms: window.arms.clone(),
+        selection,
+        drag_pans: prefs.drag_pans,
+        mark_fixed: prefs.mark_fixed,
+        replace_with_alt: prefs.replace_with_alt,
+        accept_mismatch: prefs.accept_mismatch,
+    }
 }
 
 /// The lines of the file that the selection of a window names (notation 2.5): those of its nodes, and for a wire the
@@ -1949,6 +1989,31 @@ impl Content<'_> {
                         self.ide.edits.push((function.to_owned(), reply));
                     }
                 }
+                // A wire dropped, or wired with Enter (notation 2.6): one step of undo.
+                Intent::Wire { from, to, replace, accept_mismatch } => {
+                    if let Some(file) = file_of(view, function) {
+                        let params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
+                        let reply = self.host.send("wire.connect", params);
+                        self.ide.edits.push((function.to_owned(), reply));
+                    }
+                }
+                // Ctrl and a drag on a wired terminal: its wires to another terminal, in one step (notation 2.6).
+                Intent::Rewire { disconnect, connect } => {
+                    if let Some(file) = file_of(view, function) {
+                        let commands: Vec<Value> = disconnect
+                            .into_iter()
+                            .map(|wire| json!({ "id": "wire.disconnect", "params": { "file": file, "wire": wire } }))
+                            .chain(connect.into_iter().map(|(from, to, replace, accept_mismatch)| {
+                                json!({ "id": "wire.connect", "params": { "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch } })
+                            }))
+                            .collect();
+                        let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Move Wire" }));
+                        self.ide.edits.push((function.to_owned(), reply));
+                    }
+                }
+                // Quick insertion comes with step 4 of M1 (decision of the owner, 2026-11-17).
+                Intent::QuickInsert { .. } => self.ide.say("Quick insertion comes with M1 step 4"),
+                Intent::Say(text) => self.ide.say(text),
             }
         }
         if view.main.function.as_deref() == Some(function) {

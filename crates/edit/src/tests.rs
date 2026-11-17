@@ -778,3 +778,37 @@ fn a_node_on_the_line_of_its_structure_moves_from_its_own_place() {
     let text = edited.unwrap_or_else(|error| panic!("{error:?}")).texts.get(FILE).cloned().unwrap_or_default();
     assert!(text.ends_with("\nlayout {\n    node s at (24, 24)\n}\n"), "{text}");
 }
+
+/// A name that is an input and an output of the function (R-2): reading it reads the input, and the line `err = …` binds
+/// the output, so no wire closes a cycle through that line, and `from: err` is the input. The expected texts are written
+/// by hand from spec R-2 and 5.2.
+#[test]
+fn reading_a_name_that_is_an_input_and_an_output_reads_the_input() {
+    let before = "use visa\n\nfn f(r: string, err: error = none) -> (s: visa.session, err: error) {\n    s, e1 = visa.open(r, err: err)\n    t, e2 = visa.open(r, err: e1)\n    err = e2\n}\n";
+    let replace = |from: &str, to: &str| Op::WireConnect {
+        file: FILE.to_owned(),
+        from: from.to_owned(),
+        to: to.to_owned(),
+        replace: true,
+        accept_mismatch: false,
+    };
+    // `visa.open` reads the input `err`, not the line `err = e2`, which depends on `t`: no cycle; the wire is there
+    // already, and nothing changes.
+    let again = run(&text(before), replace("e1", "t.err")).unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(again.texts.is_empty(), "{:?}", again.texts);
+    gives(
+        before,
+        replace("err", "t.err"),
+        "use visa\n\nfn f(r: string, err: error = none) -> (s: visa.session, err: error) {\n    s, e1 = visa.open(r, err: err)\n    t, e2 = visa.open(r, err: err)\n    err = e2\n}\n",
+    );
+    // A real cycle is still one.
+    refused(before, replace("e2", "s.err"), "wire.cycle");
+}
+
+/// An output of a node named `node.output` is seen from the reader as a value is: from inside a loop to outside, it is
+/// refused, and nothing is written (commands.md 6.7, `wire.connect`).
+#[test]
+fn an_output_named_by_its_node_is_seen_as_a_value_is() {
+    let before = "use core\nuse time\n\nfn f(x: f64) -> (y: f64) {\n    t0 = time.now()\n    n = for v in [1.0, 2.0] {\n        w, _ = core.add(v, x)\n        collect w\n    }\n    y = x\n}\n";
+    refused(before, connect("w.result", "t0.after"), "wire.out_of_scope");
+}

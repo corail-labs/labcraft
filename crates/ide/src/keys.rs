@@ -54,6 +54,12 @@ pub const MARK_FIXED: &str = "ide.mark_fixed";
 /// Arrange (notation 2.4, 2.6): `layout.arrange` on the selection of the canvas that has the focus, or on the whole
 /// function when nothing is selected.
 pub const ARRANGE: &str = "ide.arrange";
+/// W: a wire from the terminal that has the focus (notation 2.6).
+pub const WIRE: &str = "ide.wire";
+/// The settings "replace only with Alt" and "accept it" (a wire of the wrong type) of notation 2.4, off by default:
+/// preferences of the user until the card `Settings` of step 6, as those of step 2.
+pub const REPLACE_WITH_ALT: &str = "ide.replace_with_alt";
+pub const ACCEPT_MISMATCH: &str = "ide.accept_mismatch";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
 
@@ -81,6 +87,9 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (FIX_EVERY_NODE, "Fix every node at the first move"),
     (MARK_FIXED, "Mark the fixed nodes"),
     (ARRANGE, "Arrange the selection, or the whole function"),
+    (WIRE, "Start a wire from the terminal in focus"),
+    (REPLACE_WITH_ALT, "Replace a wire only with Alt"),
+    (ACCEPT_MISMATCH, "Accept a wire of the wrong type"),
     (ABOUT, "About LabCraft"),
 ];
 
@@ -119,6 +128,7 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(SELECT_ALL_UPSTREAM, "Select everything upstream", &["Shift+Alt+Left"]),
         on_canvas(SELECT_ALL_DOWNSTREAM, "Select everything downstream", &["Shift+Alt+Right"]),
         on_canvas(ARRANGE, "Arrange", &["Shift+Alt+F"]),
+        on_canvas(WIRE, "Start a wire", &["W"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
     // A key of the canvas never acts when the canvas does not have the focus.
@@ -167,6 +177,7 @@ pub fn menus() -> MenuBar {
             item(SELECT_ALL_DOWNSTREAM, "Select everything downstream"),
             Node::Separator,
             item(ARRANGE, "Arrange"),
+            item(WIRE, "Start a wire from the terminal"),
             Node::Separator,
             item(PALETTE, "Command palette…"),
         ],
@@ -193,6 +204,8 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new(DRAG_PANS), "Drag on the empty canvas pans").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(FIX_EVERY_NODE), "Fix every node at the first move").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(MARK_FIXED), "Mark the fixed nodes").check(true)));
+    view.push(Node::Item(Item::new(CommandRef::new(REPLACE_WITH_ALT), "Replace a wire only with Alt").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(ACCEPT_MISMATCH), "Accept a wire of the wrong type").check(false)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
         "Run",

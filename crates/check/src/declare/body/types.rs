@@ -17,7 +17,8 @@ use labcraft_graph::{
     StatementKind, Target as Line, UnitExpr, UnitTerm,
 };
 use labcraft_types::{
-    Code, Diagnostic, Edit, Fix, FnParam, Interner, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text, parse_unit,
+    Code, Diagnostic, Edit, Fit, Fix, FnParam, Interner, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text,
+    parse_unit,
 };
 
 use super::super::{DeclaredFunction, Pass, Scope, add_use, path_text, unit_of};
@@ -298,17 +299,6 @@ impl<'a> Plan<'a> {
         }
         order
     }
-}
-
-/// How a value comes to what expects a type.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Fit {
-    Same,
-    /// A conversion that the wire shows (3.3, 3.4).
-    Coerce,
-    /// It would lose something, and needs a node (3.4).
-    Narrow,
-    No,
 }
 
 /// Which output of a node a value comes from.
@@ -943,27 +933,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn fit(&self, found: TyId, expected: TyId) -> Fit {
-        if self.pass.table.matches(found, expected) {
-            return Fit::Same;
-        }
-        let number_to_number = |from_kind: NumberKind, from_unit: &Unit, to_kind: NumberKind, to_unit: &Unit| {
-            if !from_unit.same_dimension(to_unit) {
-                return Fit::No;
-            }
-            let widens = from_kind == to_kind || from_kind.widens_to(to_kind);
-            // A change of scale goes through a floating-point number (3.4).
-            let keeps = from_unit == to_unit || to_kind.is_inexact();
-            if widens && keeps { Fit::Coerce } else { Fit::Narrow }
-        };
-        match (self.pass.table.get(found), self.pass.table.get(expected)) {
-            (Ty::Number { kind: from_kind, unit: from_unit }, Ty::Number { kind: to_kind, unit: to_unit }) => {
-                number_to_number(*from_kind, from_unit, *to_kind, to_unit)
-            }
-            // `duration` converts to and from `f64[s]` (3.1).
-            (Ty::Duration, Ty::Number { kind, unit }) => number_to_number(NumberKind::F64, &Unit::SECOND, *kind, unit),
-            (Ty::Number { kind, unit }, Ty::Duration) => number_to_number(*kind, unit, NumberKind::F64, &Unit::SECOND),
-            _ => Fit::No,
-        }
+        self.pass.table.fit(found, expected)
     }
 
     fn is_scaled(&self, ty: TyId) -> bool {
