@@ -243,10 +243,16 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
     let answer = match (selection.nodes.as_slice(), values.len(), selection.terminals.as_slice()) {
         ([node], 0, []) => of_node(ui, drawing, overlay, node, callables),
         ([], 1, []) => {
-            if let Some(&group) = values.first() {
-                of_wire(ui, drawing, overlay, group);
+            let group = values.first().copied()?;
+            // "Arrange this wire" (notation 2.4): every wire of the value that the file routes.
+            of_wire(ui, drawing, overlay, group)?;
+            let wire = drawing.groups.get(group).and_then(|group| group.wire.as_ref())?;
+            let wires: Vec<&String> = wire.entries.iter().zip(&wire.vias).filter(|(_, via)| **via).filter_map(|(entry, _)| entry.as_ref()).collect();
+            // No wire named would arrange the whole function.
+            if wires.is_empty() {
+                return None;
             }
-            None
+            return Some(Asked::Command("layout.arrange".to_owned(), json!({ "file": file?, "wires": wires })));
         }
         ([], 0, [terminal]) => {
             of_terminal(ui, drawing, terminal);
@@ -393,8 +399,8 @@ fn of_node(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, name
 
 /// The inspector of one wire, its whole value: its type, where it comes from and goes, its route, its value of the last
 /// run (ide.md 4).
-fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, group: usize) {
-    let Some(wire) = drawing.groups.get(group).and_then(|group| group.wire.as_ref()) else { return };
+fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, group: usize) -> Option<inspector::Answer> {
+    let wire = drawing.groups.get(group).and_then(|group| group.wire.as_ref())?;
     let mut fields = vec![Field::code("Value", wire.value.as_str())];
     if !wire.ty.is_empty() {
         fields.push(Field::code("Type", wire.ty.as_str()));
@@ -405,11 +411,15 @@ fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, grou
     if !wire.to.is_empty() {
         fields.push(Field::code("To", wire.to.join(", ")));
     }
-    fields.push(Field::new("Route", if wire.via { "By hand (`via` in `layout`)" } else { "Automatic" }));
+    if wire.via {
+        fields.push(Field::button("Route", "arrange", "Arrange this wire"));
+    } else {
+        fields.push(Field::new("Route", "Automatic"));
+    }
     if let Some(valued) = overlay.and_then(|overlay| overlay.wires.get(&group)) {
         fields.push(Field::code("Last run", valued.title.as_str()));
     }
-    inspector::show(ui, "Wire", &[Section { title: None, fields, text: None }]);
+    inspector::show(ui, "Wire", &[Section { title: None, fields, text: None }])
 }
 
 /// The inspector of one terminal of the frame: its name, its type and its default, as its tooltip gives them. Whether it

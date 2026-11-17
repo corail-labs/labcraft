@@ -479,6 +479,14 @@ pub struct WireOf {
     /// (notation 2.6, Alt+Left and Alt+Right). None for a terminal of a frame. Not in the SVG.
     pub from_node: Option<String>,
     pub to_nodes: Vec<String>,
+    /// By reader, in the order of `readers`: the wire as `wire.route` and a `wire` entry of `layout` name it (spec 11),
+    /// which also names the wires into a structure and those to its `next`, `until`, `collect` or `yield`; none for a
+    /// value with no name. Not in the SVG.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub entries: Vec<Option<String>>,
+    /// By reader: whether the file gives that wire waypoints (`via`). Not in the SVG.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vias: Vec<bool>,
 }
 
 /// What the tooltip says over an area of the canvas: a terminal, its name, its exact type, and the default of an input

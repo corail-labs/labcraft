@@ -43,6 +43,7 @@ pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use ports::{Refusal, Verdict, occupied, wiring};
 pub use preview::{Preview, preview, square};
+pub use route::{on_segment, prefix_to, simplify};
 pub use shape::{
     ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem, IconShape,
     Mark, Paint, Pattern, Placed, Port, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
@@ -1450,6 +1451,8 @@ fn wire_groups(
                     named,
                     from_node: stable(&first.from),
                     to_nodes,
+                    entries: routed.wires.iter().map(|&wire| of.wires.get(wire).and_then(|wire| entry_wire(graph, of, body, wire, names))).collect(),
+                    vias: routed.wires.iter().map(|&wire| graph.vias.contains_key(&(body, wire))).collect(),
                 }),
                 placed: None,
                 within: None,
@@ -1609,6 +1612,36 @@ fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph
         graph::End::Right(index) if body == 0 => {
             let terminal = of.right.get(index).filter(|terminal| terminal.edge == graph::Edge::Output)?;
             terminal.terminal.name.clone()
+        }
+        _ => return None,
+    };
+    Some(format!("{value} -> {end}"))
+}
+
+/// A wire as `wire.route` and a `wire` entry of `layout` name it (spec 11): as an editing command does, and also the
+/// wires that no editing command names yet: into a structure, by its carry, its clause or the outer value that crosses
+/// its edge (`k -> total.k`), or by the selector (`c -> m`); from inside, to `next x` (`grown -> total.acc`), or to
+/// `until`, `collect` or `yield` (`stop -> n`).
+fn entry_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph::Wire, names: &[Option<String>]) -> Option<String> {
+    if let Some(found) = command_wire(graph, of, body, wire, names) {
+        return Some(found);
+    }
+    let value = wire.name.split('.').next().filter(|value| !value.is_empty() && *value != "_" && !value.starts_with('@'))?;
+    let end = match wire.to {
+        graph::End::Node { node, terminal } => {
+            let name = names.get(node)?.as_deref()?;
+            match graph.nodes.get(node)?.inputs.get(terminal) {
+                Some(input) if !input.name.is_empty() => format!("{name}.{}", input.name),
+                _ => name.to_owned(),
+            }
+        }
+        graph::End::Right(index) if body != 0 => {
+            let name = names.get(of.owner?)?.as_deref()?;
+            let terminal = of.right.get(index)?;
+            match terminal.edge {
+                graph::Edge::Register => format!("{name}.{}", terminal.terminal.name.strip_prefix("next ")?),
+                _ => name.to_owned(),
+            }
         }
         _ => return None,
     };

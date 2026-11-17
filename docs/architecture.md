@@ -1672,7 +1672,14 @@ of `text`, where it is in its frame, in units: `engine` checks the text with the
 one on the disk, and draws it in the view state of the window and the values of the notation in force, so that a
 move starts from what the window shows. `node.move` and `node.place` make or change the one entry of the node (its
 view kept), and give a label first to a node that the section cannot name, from the name of its line or of what it
-calls (decision of the owner, 2026-11-17). An operation never writes a file that does not
+calls (decision of the owner, 2026-11-17). As step 3b writes it, `Judge::wires(file, text)` gives each wire of the
+drawing of `text` that a `wire` entry can name, one per reader: its name (`reading -> verdict.a`, `WireOf::entries`),
+its value, its body and its path in the frame of its body. `wire.route` finds with it the wire it is given; and
+after every operation, `apply` makes each junction follow its trunk (notation 2.5): an entry that the operation left
+as it was, whose first point lay on another wire of its value in the drawing before, gets the point at the same
+distance from the start of the same segment of that wire in the drawing after, cut to its length, or loses it when
+that wire has another number of segments and the point is no longer on it (decision of the owner, 2026-11-17). Only a file that has a `wire … via`
+entry is drawn again for it. An operation never writes a file that does not
 parse: `apply` reads back each text it gives, and a text that does not read is `internal`, a bug of `edit`, which the
 fuzzing looks for (12.10).
 

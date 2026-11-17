@@ -562,28 +562,25 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_3,
-            editing(
-                "wire.route",
-                "Route Wire",
-                "Write the points of a wire (`wire … via`)",
-                "Writes `wire … via` with the points of `via`, in the frame of the wire (spec 11). A branch starts at its first point when that point lies on a wire of the same value.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("wire", string("The wire: `reading -> verdict`.")),
-                        (
-                            "via",
-                            json!({ "type": "array", "description": "The points, `[x, y]` each, in canvas units.", "items": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 } }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "wire", "via"],
-                ),
-                WIRE_ERRORS,
-                false,
+        editing(
+            "wire.route",
+            "Route Wire",
+            "Write the points of a wire (`wire … via`)",
+            "Writes `wire … via` with the points of `via`, in the frame of the wire (spec 11), in place of the entry it had. A wire is named as `wire.disconnect` names it, `reading -> verdict.a`, the input left out when one wire joins them; also a wire into a structure (`k -> total.k`) or, from inside, to its `next`, `until`, `collect` or `yield` (`stop -> n`). A branch starts at its first point when that point lies on a wire of the same value: its junction, which then follows its trunk after every editing command (notation 2.5). `layout.arrange` with `wires` gives a wire its automatic route back. `names.wire` gives the wire.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("wire", string("The wire: `reading -> verdict.a`.")),
+                    (
+                        "via",
+                        json!({ "type": "array", "description": "The points, `[x, y]` each, in canvas units, in the frame of the wire.", "items": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 }, "minItems": 1, "maxItems": 256 }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "wire", "via"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         editing(
             "layout.arrange",
@@ -1327,7 +1324,6 @@ pub(super) fn catalog() -> Vec<Command> {
     ]
 }
 
-const STEP_3: &str = "M1 step 3 (#162)";
 const STEP_4: &str = "M1 step 4 (#163)";
 const STEP_5: &str = "M1 step 5 (#164)";
 const STEP_6: &str = "M1 step 6 (#165)";

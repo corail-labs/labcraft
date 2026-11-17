@@ -882,22 +882,6 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         out.junctions = junctions(&out.branches);
         routed.push(out);
     }
-    // Through the waypoints of the file: across, then down to each; down to the height of the reader from the last.
-    for (wire, waypoints) in &plan.through {
-        let Some(found) = ends.get(*wire).copied().flatten() else { continue };
-        let mut points = vec![(found.from.x, found.from.y)];
-        for &(x, y) in waypoints {
-            let height = points.last().map_or(y, |point| point.1);
-            points.push((x, height));
-            points.push((x, y));
-        }
-        if let Some(&(x, _)) = points.last() {
-            points.push((x, found.to.approach));
-        }
-        tail(&found.to, &mut points);
-        let right = found.to_column == plan.slots.len().saturating_sub(1);
-        routed.push(Routed { wires: vec![*wire], branches: vec![simplify(points)], junctions: Vec::new(), right: vec![right], via: true });
-    }
     // Back to the left: up in the channel after the source, over the columns, down in the channel before the reader.
     let mut groups: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
     let mut touched = std::collections::BTreeSet::new();
@@ -945,7 +929,112 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
             found.junctions = junctions(&found.branches);
         }
     }
+    through(plan, ends, &mut routed);
     routed
+}
+
+/// A wire with waypoints not routed yet: the wire, its ends, its points.
+type Pending<'a> = (usize, Ends, &'a [(i64, i64)]);
+
+/// At most this many wires with waypoints in a body look for the wire of their value that their first point lies on
+/// *(proposed)*: past it, each runs from its source, so that the routing of many entries costs their number, not its
+/// square (notation 2.2, a budget as those of architecture 11.3).
+const MAX_BRANCHES: usize = 64;
+
+/// The wires with waypoints of the file (spec 11): across, then down to each; down to the height of the reader from the
+/// last. Each joins the other wires of its value, so that the trunk is drawn once and a junction shows where it leaves
+/// them. A wire whose first point lies on a wire of its value is a branch of it (notation 2.4): it starts at that point,
+/// its junction; the others run from their source. A branch may start on another wire with waypoints: those run first.
+fn through(plan: &Plan, ends: &[Option<Ends>], routed: &mut Vec<Routed>) {
+    let last_column = plan.slots.len().saturating_sub(1);
+    // The net of each source, by the point it starts at.
+    let mut hosts: std::collections::HashMap<(i64, i64), usize> = std::collections::HashMap::new();
+    for (at, found) in routed.iter().enumerate() {
+        if let Some(&start) = found.branches.first().and_then(|branch| branch.first()) {
+            hosts.entry(start).or_insert(at);
+        }
+    }
+    let mut pending: std::collections::VecDeque<Pending<'_>> =
+        plan.through.iter().filter_map(|(wire, points)| Some((*wire, ends.get(*wire).copied().flatten()?, points.as_slice()))).collect();
+    let look = pending.len() <= MAX_BRANCHES;
+    let mut touched = std::collections::BTreeSet::new();
+    let mut join = |routed: &mut Vec<Routed>, hosts: &mut std::collections::HashMap<(i64, i64), usize>, wire: usize, found: &Ends, points| {
+        let source = (found.from.x, found.from.y);
+        let right = found.to_column == last_column;
+        match hosts.get(&source).copied().and_then(|at| Some((at, routed.get_mut(at)?))) {
+            Some((at, other)) => {
+                other.wires.push(wire);
+                other.branches.push(points);
+                other.right.push(right);
+                other.via = true;
+                touched.insert(at);
+            }
+            None => {
+                hosts.insert(source, routed.len());
+                routed.push(Routed { wires: vec![wire], branches: vec![points], junctions: Vec::new(), right: vec![right], via: true });
+            }
+        }
+    };
+    while !pending.is_empty() {
+        // Each that starts on a wire of its value drawn now, until none does; then the first left, from its source.
+        let mut attached = look;
+        while attached {
+            attached = false;
+            let mut left = std::collections::VecDeque::with_capacity(pending.len());
+            while let Some((wire, found, waypoints)) = pending.pop_front() {
+                let source = (found.from.x, found.from.y);
+                let prefix = waypoints.first().and_then(|&first| {
+                    let host = routed.get(*hosts.get(&source)?)?;
+                    host.branches.iter().find_map(|branch| prefix_to(branch, first))
+                });
+                match prefix {
+                    Some(prefix) => {
+                        let points = waypoints_from(prefix, waypoints.get(1..).unwrap_or_default(), &found);
+                        join(routed, &mut hosts, wire, &found, points);
+                        attached = true;
+                    }
+                    None => left.push_back((wire, found, waypoints)),
+                }
+            }
+            pending = left;
+        }
+        let Some((wire, found, waypoints)) = pending.pop_front() else { break };
+        let points = waypoints_from(vec![(found.from.x, found.from.y)], waypoints, &found);
+        join(routed, &mut hosts, wire, &found, points);
+    }
+    for at in touched {
+        if let Some(found) = routed.get_mut(at) {
+            found.junctions = junctions(&found.branches);
+        }
+    }
+}
+
+/// The route from `start` (the source, or a branch up to its junction) through the waypoints to the reader.
+fn waypoints_from(mut points: Vec<(i64, i64)>, waypoints: &[(i64, i64)], found: &Ends) -> Vec<(i64, i64)> {
+    for &(x, y) in waypoints {
+        let height = points.last().map_or(y, |point| point.1);
+        points.push((x, height));
+        points.push((x, y));
+    }
+    if let Some(&(x, _)) = points.last() {
+        points.push((x, found.to.approach));
+    }
+    tail(&found.to, &mut points);
+    simplify(points)
+}
+
+/// The part of a polyline from its start to `at`, when `at` lies on it; none otherwise.
+pub fn prefix_to(branch: &[(i64, i64)], at: (i64, i64)) -> Option<Vec<(i64, i64)>> {
+    let segment = branch.windows(2).position(|pair| matches!(pair, &[a, b] if on_segment(a, b, at)))?;
+    let mut prefix = branch.get(..=segment)?.to_vec();
+    prefix.push(at);
+    Some(prefix)
+}
+
+/// Whether `at` lies on the horizontal or vertical segment from `a` to `b`, its ends included.
+pub fn on_segment(a: (i64, i64), b: (i64, i64), at: (i64, i64)) -> bool {
+    let within = |p: i64, q: i64, r: i64| p.min(q) <= r && r <= p.max(q);
+    (a.0 == b.0 && at.0 == a.0 && within(a.1, b.1, at.1)) || (a.1 == b.1 && at.1 == a.1 && within(a.0, b.0, at.0))
 }
 
 /// The end of a polyline at its reader: from the left at its height, or from above for the top edge.

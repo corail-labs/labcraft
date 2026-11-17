@@ -98,6 +98,10 @@ pub struct Prefs {
     /// default.
     #[serde(default)]
     pub accept_mismatch: bool,
+    /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt. Off by
+    /// default.
+    #[serde(default)]
+    pub route_with_shift_alt: bool,
 }
 
 impl Default for Prefs {
@@ -119,6 +123,7 @@ impl Default for Prefs {
             mark_fixed: true,
             replace_with_alt: false,
             accept_mismatch: false,
+            route_with_shift_alt: false,
         }
     }
 }
@@ -986,6 +991,7 @@ impl Ide {
                 | keys::MARK_FIXED
                 | keys::REPLACE_WITH_ALT
                 | keys::ACCEPT_MISMATCH
+                | keys::ROUTE_WITH_SHIFT_ALT
                 | keys::ABOUT => {
                     let checked = match id {
                         keys::DARK => Some(self.prefs.dark),
@@ -996,6 +1002,7 @@ impl Ide {
                         keys::MARK_FIXED => Some(self.prefs.mark_fixed),
                         keys::REPLACE_WITH_ALT => Some(self.prefs.replace_with_alt),
                         keys::ACCEPT_MISMATCH => Some(self.prefs.accept_mismatch),
+                        keys::ROUTE_WITH_SHIFT_ALT => Some(self.prefs.route_with_shift_alt),
                         _ => None,
                     };
                     ItemState { enabled: true, checked }
@@ -1444,6 +1451,10 @@ impl Ide {
                 self.prefs.accept_mismatch = !self.prefs.accept_mismatch;
                 self.prefs_changed = true;
             }
+            keys::ROUTE_WITH_SHIFT_ALT => {
+                self.prefs.route_with_shift_alt = !self.prefs.route_with_shift_alt;
+                self.prefs_changed = true;
+            }
             // W (notation 2.6): a wire from the terminal that has the focus, on the canvas that has the keyboard.
             keys::WIRE => {
                 let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
@@ -1592,6 +1603,7 @@ fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
         mark_fixed: prefs.mark_fixed,
         replace_with_alt: prefs.replace_with_alt,
         accept_mismatch: prefs.accept_mismatch,
+        route_with_shift_alt: prefs.route_with_shift_alt,
     }
 }
 
@@ -1982,18 +1994,44 @@ impl Content<'_> {
             match intent {
                 Intent::Select(selection) => self.ide.ask_select(self.host, function, selection),
                 Intent::Move { nodes, by } => self.ide.ask_move(self.host, view, function, &nodes, by),
-                // "Remove the fixed position" (notation 2.4).
+                // "Remove the fixed position", "Arrange this wire" (notation 2.4).
                 Intent::Arrange(selection) => {
                     if let Some(file) = file_of(view, function) {
-                        let reply = self.host.send("layout.arrange", json!({ "file": file, "nodes": selection.nodes }));
+                        let params = if selection.wires.is_empty() {
+                            json!({ "file": file, "nodes": selection.nodes })
+                        } else {
+                            json!({ "file": file, "wires": selection.wires })
+                        };
+                        let reply = self.host.send("layout.arrange", params);
                         self.ide.edits.push((function.to_owned(), reply));
                     }
                 }
-                // A wire dropped, or wired with Enter (notation 2.6): one step of undo.
-                Intent::Wire { from, to, replace, accept_mismatch } => {
+                // A wire dropped, or wired with Enter (notation 2.6): one step of undo; a branch with its junction, in one
+                // step too (notation 2.4).
+                Intent::Wire { from, to, replace, accept_mismatch, route } => {
                     if let Some(file) = file_of(view, function) {
                         let params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
-                        let reply = self.host.send("wire.connect", params);
+                        let reply = match route {
+                            None => self.host.send("wire.connect", params),
+                            Some((wire, via)) => {
+                                let commands = json!([
+                                    { "id": "wire.connect", "params": params },
+                                    { "id": "wire.route", "params": { "file": file, "wire": wire, "via": via } },
+                                ]);
+                                self.host.send("commands.batch", json!({ "commands": commands, "label": "Branch Wire" }))
+                            }
+                        };
+                        self.ide.edits.push((function.to_owned(), reply));
+                    }
+                }
+                // A segment moved by hand (notation 2.4): every wire it moves, in one step.
+                Intent::Route(routes) => {
+                    if let Some(file) = file_of(view, function) {
+                        let commands: Vec<Value> = routes
+                            .into_iter()
+                            .map(|(wire, via)| json!({ "id": "wire.route", "params": { "file": file, "wire": wire, "via": via } }))
+                            .collect();
+                        let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Route Wire" }));
                         self.ide.edits.push((function.to_owned(), reply));
                     }
                 }

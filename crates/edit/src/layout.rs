@@ -17,9 +17,9 @@ use crate::{EditError, Edited, Judge, MAX_COORDINATE, Point};
 /// How the `layout` section names a node (spec 11): by its label, or by the name of its line when no other node of the
 /// function bears it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Designation {
-    is_label: bool,
-    name: Name,
+pub(crate) struct Designation {
+    pub is_label: bool,
+    pub name: Name,
 }
 
 /// The nodes that a command names, each once, in the order given.
@@ -80,7 +80,7 @@ fn label_base(edit: &Edit, function: &Function, loc: &Loc) -> String {
 /// The designation of the node at `loc`, after giving it a label when the section could not name it: a node with no
 /// name, or with a name of several bodies (commands.md 9.2; decision of the owner, 2026-11-17). The label is the name of
 /// its line or of what it calls, numbered when another label has it (N-14).
-fn designate(edit: &mut Edit, loc: &Loc, labelled: &mut Vec<(Loc, String)>) -> Result<Designation, EditError> {
+pub(crate) fn designate(edit: &mut Edit, loc: &Loc, labelled: &mut Vec<(Loc, String)>) -> Result<Designation, EditError> {
     let function = edit.body_function()?;
     if let Some(found) = designation(edit, function, loc) {
         return Ok(found);
@@ -105,7 +105,7 @@ fn shown(edit: &Edit, designation: Designation) -> String {
 }
 
 /// The value of a coordinate of `layout`; none for one that is not an integer (`LC5005`).
-fn value_of(edit: &Edit, numeral: &Numeral) -> Option<i64> {
+pub(crate) fn value_of(edit: &Edit, numeral: &Numeral) -> Option<i64> {
     let NumeralKind::Int(text) = numeral.kind else { return None };
     let digits: String = edit.text(text).chars().filter(|letter| *letter != '_').collect();
     let value = digits.parse::<i64>().ok()?;
@@ -290,7 +290,7 @@ pub(crate) fn set_view(edit: &mut Edit, nodes: &[String], view: Option<View>, ed
 }
 
 /// Removes the `node` entries with neither a place nor a view, and the section when nothing is left in it.
-fn drop_empty(edit: &mut Edit) {
+pub(crate) fn drop_empty(edit: &mut Edit) {
     if let Some(layout) = &mut edit.file.layout {
         layout.items.retain(|item| !matches!(item.kind, LayoutKind::Node { at: None, view: None, .. }));
         if layout.items.is_empty() && layout.end.is_empty() && layout.comments == Attached::default() {
@@ -309,21 +309,19 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
     for name in terminals {
         crate::select::terminal(edit, function, name)?;
     }
-    // The routes of the wires named, as `wire.disconnect` names them.
-    let mut routes: Vec<(Name, Name, Option<String>)> = Vec::new();
+    // The routes of the wires named, as `wire.disconnect` names them, or as `wire.route` does: a wire that an entry
+    // routes, into a structure or to its `until` too.
     for name in wires {
-        let (from, to) = refs::split_wire(name).map_err(|error| error.of("wires"))?;
-        crate::wire::find(edit, judge, function, name).map_err(|error| match error.parameter {
-            Some(_) => error.of("wires"),
-            None => error,
-        })?;
-        let (node, input) = match to.split_once('.') {
-            Some((node, input)) => (node.to_owned(), Some(input.to_owned())),
-            None => (to.clone(), None),
-        };
-        let node = node.strip_prefix('#').unwrap_or(&node).to_owned();
-        let (Some(from), Some(node)) = (edit.names.find(from.strip_prefix('#').unwrap_or(&from)), edit.names.find(&node)) else { continue };
-        routes.push((from, node, input));
+        refs::split_wire(name).map_err(|error| error.of("wires"))?;
+        let routed = edit.file.layout.as_ref().is_some_and(|layout| {
+            layout.items.iter().any(|item| matches!(&item.kind, LayoutKind::Wire { from, to, .. } if crate::route::entry_names(edit, from, to, name)))
+        });
+        if !routed {
+            crate::wire::find(edit, judge, function, name).map_err(|error| match error.parameter {
+                Some(_) => error.of("wires"),
+                None => error,
+            })?;
+        }
     }
     let locs = match nodes {
         Some(nodes) => locs(edit, nodes, "nodes")?,
@@ -341,7 +339,6 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
         }
         entries.extend(entry_of(edit, function, loc));
     }
-    let terminal_text = |edit: &Edit, terminal: Option<Name>| terminal.map(|name| edit.text(name).to_owned());
     let Some(mut layout) = edit.file.layout.take() else { return Ok(()) };
     let mut items = std::mem::take(&mut layout.items);
     for (index, item) in items.iter_mut().enumerate() {
@@ -358,11 +355,7 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
         LayoutKind::Node { .. } => true,
         LayoutKind::Wire { from, to, .. } => {
             let between = named.contains(&from.node.name) && named.contains(&to.node.name);
-            let routed = routes.iter().any(|(value, node, input)| {
-                from.node.name == *value
-                    && to.node.name == *node
-                    && input.as_ref().is_none_or(|input| terminal_text(edit, to.terminal).as_ref() == Some(input))
-            });
+            let routed = wires.iter().any(|wire| crate::route::entry_names(edit, from, to, wire));
             !(whole || between || routed)
         }
     });

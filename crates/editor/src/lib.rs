@@ -28,6 +28,7 @@ mod fonts;
 pub(crate) mod moving;
 pub(crate) mod paint;
 mod pins;
+pub(crate) mod rerouting;
 pub(crate) mod select;
 pub(crate) mod series;
 pub(crate) mod view;
@@ -39,6 +40,7 @@ pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use moving::Moving;
 use paint::{Over, Painted, Painter};
+use rerouting::Rerouting;
 use select::{Found, Hit, Index};
 use view::{Glide, Grid, Viewport};
 use wiring::{Retract, Rules, Wiring};
@@ -80,6 +82,9 @@ pub struct Shown {
     /// The setting "accept it" (notation 2.4): a wire of the wrong type is written, and `check` gives `LC3001`. Off by
     /// default.
     pub accept_mismatch: bool,
+    /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt, for a
+    /// desktop that keeps Alt and a drag to move windows. Off by default.
+    pub route_with_shift_alt: bool,
 }
 
 impl Shown {
@@ -100,7 +105,11 @@ pub enum Intent {
     Arrange(Selection),
     /// `wire.connect` from an output to an input, as a command names them (commands.md 9.2): a wire dropped, or wired
     /// with Enter (notation 2.6). `replace` when the input holds something that it replaces (notation 2.4).
-    Wire { from: String, to: String, replace: bool, accept_mismatch: bool },
+    /// `route`: a branch drawn from a wire, with `wire.route` after it in one `commands.batch`, its junction first
+    /// (notation 2.4): the wire as `wire.route` names it and its points in units of its frame.
+    Wire { from: String, to: String, replace: bool, accept_mismatch: bool, route: Option<(String, Vec<(i64, i64)>)> },
+    /// `wire.route` for each of these wires, in one `commands.batch`: a segment moved by hand (notation 2.4).
+    Route(Vec<(String, Vec<(i64, i64)>)>),
     /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
     /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`.
     Rewire { disconnect: Vec<String>, connect: Vec<(String, String, bool, bool)> },
@@ -120,6 +129,8 @@ pub enum Gesture {
     Move,
     /// A wire is being drawn, by a drag or from the keyboard.
     Wire,
+    /// A segment of a wire is being moved (notation 2.4).
+    Route,
 }
 
 /// What a frame of the canvas gives back to the host.
@@ -203,6 +214,16 @@ pub struct Canvas {
     rules: Rules,
     /// The old wire that a new one replaces, retracting (notation 2.4): asked with the wire, started by the new drawing.
     retract: Option<Retract>,
+    /// A segment of a wire being moved, or asked of the host and not drawn yet.
+    rerouting: Option<rerouting::Rerouting>,
+    /// The wire routed by hand that a right-click was on, by its group, for its menu (notation 2.4).
+    wire_context: Option<usize>,
+}
+
+/// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
+fn routed(drawing: &Drawing, group: usize) -> Vec<String> {
+    let Some(wire) = drawing.groups.get(group).and_then(|group| group.wire.as_ref()) else { return Vec::new() };
+    wire.entries.iter().zip(&wire.vias).filter(|(_, via)| **via).filter_map(|(entry, _)| entry.clone()).collect()
 }
 
 /// The number typed into the selector of a loop: the loop, its iterations, the text, the corner of the field in units.
@@ -221,6 +242,9 @@ const WHEEL_STEP: f32 = 40.0;
 /// A wire is hit within this many units of its route *(proposed)*, or 5 points on the screen when that is more
 /// (architecture 12.4).
 const WIRE_REACH: f32 = 4.0;
+/// A plain drag that starts within this many units of a wire grabs it for a branch (notation 2.5), or 5 points on the
+/// screen when that is more.
+const BRANCH_REACH: f32 = 4.0;
 
 /// The values of a run over a drawing, with the box of each of their parts, in units, to find what the viewport shows and
 /// what the pointer is over.
@@ -353,6 +377,8 @@ impl Canvas {
             port_focus: None,
             rules: Rules::default(),
             retract: None,
+            rerouting: None,
+            wire_context: None,
         }
     }
 
@@ -404,6 +430,9 @@ impl Canvas {
             self.viewport.origin += Vec2::new(dx as f32, dy as f32) / 100.0;
         }
         self.context = None;
+        self.wire_context = None;
+        // A route asked for is in the new drawing; a segment being moved belongs to the old one, and ends.
+        self.rerouting = None;
         // A wire asked for is in the new drawing, and the old wire it replaced retracts now. A wire under way goes on over
         // the new one, from its terminal found again by its name; one that Ctrl took ends.
         self.wiring =
@@ -503,6 +532,9 @@ impl Canvas {
     pub fn cancel_wire(&mut self) {
         if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked) {
             self.wiring = None;
+        }
+        if self.rerouting.as_ref().is_some_and(|rerouting| rerouting.state == rerouting::State::Asked) {
+            self.rerouting = None;
         }
         self.retract = None;
     }
@@ -624,6 +656,8 @@ impl Canvas {
             Some(Gesture::Move)
         } else if self.wiring.as_ref().is_some_and(|wiring| wiring.state != wiring::State::Asked) {
             Some(Gesture::Wire)
+        } else if self.rerouting.as_ref().is_some_and(|rerouting| rerouting.state == rerouting::State::Dragging) {
+            Some(Gesture::Route)
         } else {
             None
         };
@@ -682,6 +716,14 @@ impl Canvas {
                 self.moving = None;
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(moving::ASKED_SECONDS));
+            }
+        }
+        if let Some(asked) = self.rerouting.as_mut().filter(|rerouting| rerouting.state == rerouting::State::Asked) {
+            let since = *asked.asked_at.get_or_insert(now);
+            if now - since > wiring::ASKED_SECONDS {
+                self.rerouting = None;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(wiring::ASKED_SECONDS));
             }
         }
         if let Some(asked) = self.wiring.as_mut().filter(|wiring| wiring.state == wiring::State::Asked) {
@@ -910,11 +952,36 @@ impl Canvas {
         }
     }
 
-    /// A right-click on a fixed node opens its menu: "Remove the fixed position" (notation 2.4).
+    /// A right-click on a fixed node opens its menu: "Remove the fixed position"; on a wire routed by hand, "Arrange this
+    /// wire" (notation 2.4).
     fn fixed_menu(&mut self, response: &Response, frame: &Frame, input: &mut Input) {
         if response.secondary_clicked() {
             self.context =
                 frame.hovered.filter(|&placed| frame.drawing.placed.get(placed).is_some_and(|found| found.at.is_some() && !found.name.is_empty()));
+            let unit_of = |at: Pos2| (self.viewport.origin + (at - frame.rect.min) / self.viewport.zoom).to_pos2();
+            let visible = |within: Option<usize>| frame.visible(within);
+            let reach = (5.0 / self.viewport.zoom).max(WIRE_REACH);
+            self.wire_context = match (self.context, frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of)) {
+                (None, Some(at)) => {
+                    select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
+                }
+                _ => None,
+            };
+        }
+        if let Some(group) = self.wire_context {
+            let wires = routed(&frame.drawing, group);
+            let mut asked = false;
+            response.context_menu(|ui| {
+                if ui.button("Arrange this wire").clicked() {
+                    asked = true;
+                    ui.close();
+                }
+            });
+            if asked {
+                input.intents.push(Intent::Arrange(Selection { wires, ..Selection::default() }));
+                self.wire_context = None;
+            }
+            return;
         }
         let Some(placed) = self.context else { return };
         let name = frame.drawing.placed.get(placed).map(|found| found.name.clone()).unwrap_or_default();
@@ -957,7 +1024,7 @@ impl Canvas {
                     self.drag = Some(Drag::Held);
                     return;
                 }
-                if modifiers.alt {
+                if modifiers.alt && (modifiers.shift || !shown.route_with_shift_alt) {
                     input.intents.push(Intent::Say("Moving a terminal of a block comes with M1 step 6".to_owned()));
                     self.drag = Some(Drag::Held);
                     return;
@@ -969,6 +1036,43 @@ impl Canvas {
                     self.drag = Some(Drag::Held);
                 }
             }
+        }
+        // A drag on a wire: with the modifier of the setting, its segment moves (`wire.route`); without, a branch starts at
+        // a junction on it (notation 2.6).
+        if response.drag_started_by(PointerButton::Primary)
+            && frame.offsets.is_none()
+            && self.wiring.is_none()
+            && self.drag.is_none()
+            && let Some(from) = ctx.input(|input| input.pointer.press_origin()).map(unit_of)
+            && let Some(Hit::Wire(group)) = select::hit(drawing, &self.index, &frame.groups, from, reach, &visible)
+        {
+            let reroute = modifiers.alt && (modifiers.shift || !shown.route_with_shift_alt);
+            if reroute {
+                self.rerouting = Rerouting::grab(drawing, group, from, reach);
+            } else {
+                self.wiring = Wiring::branch(drawing, group, from, (5.0 / zoom).max(BRANCH_REACH));
+            }
+            if self.rerouting.is_some() || self.wiring.is_some() {
+                self.port_focus = None;
+                self.drag = Some(Drag::Held);
+            }
+        }
+        if let Some(rerouting) = self.rerouting.as_mut().filter(|rerouting| rerouting.state == rerouting::State::Dragging) {
+            if let Some(at) = response.interact_pointer_pos() {
+                rerouting.set_at(drawing, unit_of(at));
+                ctx.request_repaint();
+            }
+            if response.drag_stopped_by(PointerButton::Primary) {
+                let routes: Vec<(String, Vec<(i64, i64)>)> = rerouting.routes(drawing).into_iter().map(|(name, _, via)| (name, via)).collect();
+                if routes.is_empty() {
+                    self.rerouting = None;
+                } else {
+                    rerouting.state = rerouting::State::Asked;
+                    input.intents.push(Intent::Route(routes));
+                }
+                self.drag = None;
+            }
+            return;
         }
         if let Some(wiring) = self.wiring.as_mut().filter(|wiring| wiring.state == wiring::State::Dragging)
             && let Some(at) = response.interact_pointer_pos()
@@ -1174,6 +1278,9 @@ impl Canvas {
             // A gesture first, then a list open, then up one level, then nothing.
             if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Dragging) {
                 self.wiring = None;
+                self.drag = Some(Drag::Held);
+            } else if self.rerouting.as_ref().is_some_and(|rerouting| rerouting.state == rerouting::State::Dragging) {
+                self.rerouting = None;
                 self.drag = Some(Drag::Held);
             } else if self.moving.as_ref().is_some_and(|moving| matches!(moving.state, moving::State::Dragging { .. })) {
                 self.moving = None;
@@ -1697,6 +1804,16 @@ impl Canvas {
         if let Some(port) = self.port_focus.and_then(|focus| drawing.ports.get(focus)).filter(|_| self.wiring.is_none()) {
             painter.circle_stroke(screen(wiring::centre(port)), 6.0 * zoom, ring);
         }
+        if let Some(rerouting) = &self.rerouting {
+            // The route it will have, in the colour of what is being placed; the old one stays until the drawing comes.
+            let stroke = egui::Stroke::new((2.0 * zoom).max(1.5), select);
+            for (_, path, _) in rerouting.routes(drawing) {
+                painter.add(egui::Shape::line(path.into_iter().map(|point| screen(wiring::unit(point))).collect(), stroke));
+            }
+            if rerouting.state == rerouting::State::Dragging {
+                frame.ctx.request_repaint();
+            }
+        }
         let Some(wiring) = &self.wiring else { return };
         let rules = Rules { alt: frame.ctx.input(|input| input.modifiers.alt), ..self.rules };
         let visible = |within: Option<usize>| frame.visible(within);
@@ -1711,8 +1828,8 @@ impl Canvas {
         });
         let Some(start) = drawing.ports.get(wiring.from) else { return };
         let width = (start.style.width as f32 / 100.0 * zoom).max(1.5);
-        for (from, to) in wiring.ends(drawing) {
-            let points: Vec<Pos2> = wiring::route(from, to).into_iter().map(screen).collect();
+        for path in wiring.paths(drawing) {
+            let points: Vec<Pos2> = path.into_iter().map(screen).collect();
             if refused.is_some() {
                 let stroke = egui::Stroke::new(width, theme.color("mark.invalid"));
                 painter.extend(egui::Shape::dashed_line(&points, stroke, 6.0 * zoom, 4.0 * zoom));

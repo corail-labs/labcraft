@@ -51,7 +51,25 @@ pub(crate) struct Wiring {
     pub state: State,
     /// When the canvas first saw it asked for, by the time of egui.
     pub asked_at: Option<f64>,
+    /// A branch drawn from a wire (notation 2.4): it starts at its junction on the wire.
+    pub branch: Option<Branch>,
 }
+
+/// Where a branch starts: its junction, in hundredths, on the grid of 8 of the frame, on a segment of the wire, and
+/// whether that segment is vertical; the body and the origin of its frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Branch {
+    pub at: (i64, i64),
+    pub vertical: bool,
+    pub body: usize,
+    pub origin: (i64, i64),
+}
+
+/// Points in hundredths, or in units.
+type Path = Vec<(i64, i64)>;
+
+/// How far a branch from a vertical goes across before it turns to its reader, in hundredths *(proposed)*.
+const ACROSS: i64 = 1_600;
 
 /// What a drop would do, the modifiers and the settings counted (notation 2.4).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,7 +93,7 @@ impl Wiring {
     /// A wire from the port `from`; none from a port that no command wires yet.
     pub fn new(drawing: &Drawing, from: usize, at: Pos2, state: State) -> Option<Wiring> {
         drawing.ports.get(from).filter(|port| !port.name.is_empty())?;
-        Some(Wiring { from, taken: Taken::Nothing, verdicts: wiring(drawing, from), at, over: None, state, asked_at: None })
+        Some(Wiring { from, taken: Taken::Nothing, verdicts: wiring(drawing, from), at, over: None, state, asked_at: None, branch: None })
     }
 
     /// Ctrl and a drag on a wired terminal: the end of its wire (an input), or every wire of its value (an output).
@@ -88,7 +106,16 @@ impl Wiring {
             }
             let source = source_of(drawing, port)?;
             let verdicts = wiring(drawing, source);
-            return Some(Wiring { from: source, taken: Taken::Input(from), verdicts, at, over: None, state: State::Dragging, asked_at: None });
+            return Some(Wiring {
+                from: source,
+                taken: Taken::Input(from),
+                verdicts,
+                at,
+                over: None,
+                state: State::Dragging,
+                asked_at: None,
+                branch: None,
+            });
         }
         let readers: Vec<usize> = drawing
             .ports
@@ -120,7 +147,89 @@ impl Wiring {
                 }
             }
         }
-        Some(Wiring { from, taken: Taken::Readers(readers), verdicts, at, over: None, state: State::Dragging, asked_at: None })
+        Some(Wiring { from, taken: Taken::Readers(readers), verdicts, at, over: None, state: State::Dragging, asked_at: None, branch: None })
+    }
+
+    /// A plain drag on the wire of `group`, pressed at `at` within `reach` units of it (notation 2.5): a branch of its
+    /// value, from the nearest point of the grid of 8 on the wire. None for a value that no command wires from.
+    pub fn branch(drawing: &Drawing, group: usize, at: Pos2, reach: f32) -> Option<Wiring> {
+        let wire = drawing.groups.get(group)?.wire.as_ref()?;
+        let source = drawing.ports.iter().position(|port| !port.input && port.group == Some(group) && !port.name.is_empty())?;
+        let origin = drawing.bodies.get(wire.body)?.origin;
+        let point = ((at.x * 100.0).round() as i64, (at.y * 100.0).round() as i64);
+        let reach = (reach * 100.0).round() as i64;
+        let grid = 800;
+        let snap = |value: i64, start: i64, low: i64, high: i64| {
+            let snapped = start + (value - start + grid / 2).div_euclid(grid) * grid;
+            if snapped < low {
+                snapped + grid
+            } else if snapped > high {
+                snapped - grid
+            } else {
+                snapped
+            }
+        };
+        let mut best: Option<(i64, Branch)> = None;
+        for (_, path) in &wire.readers {
+            for pair in path.windows(2) {
+                let (Some(&a), Some(&b)) = (pair.first(), pair.get(1)) else { continue };
+                let vertical = a.0 == b.0;
+                let (low, high) = if vertical { (a.1.min(b.1), a.1.max(b.1)) } else { (a.0.min(b.0), a.0.max(b.0)) };
+                let (along, across, line, start) = if vertical { (point.1, point.0, a.0, origin.1) } else { (point.0, point.1, a.1, origin.0) };
+                if along < low - reach || along > high + reach {
+                    continue;
+                }
+                let distance = (across - line).abs();
+                if distance > reach {
+                    continue;
+                }
+                let on = snap(along.clamp(low, high), start, low, high);
+                if on < low || on > high {
+                    continue;
+                }
+                let at = if vertical { (line, on) } else { (on, line) };
+                if best.is_none_or(|(nearest, _)| distance < nearest) {
+                    best = Some((distance, Branch { at, vertical, body: wire.body, origin }));
+                }
+            }
+        }
+        let (_, branch) = best?;
+        let mut wiring = Wiring::new(drawing, source, unit(branch.at), State::Dragging)?;
+        wiring.branch = Some(branch);
+        Some(wiring)
+    }
+
+    /// The route that a branch takes to `input`, in hundredths, and its points in units of its frame: down (or across,
+    /// from a vertical) from its junction, then to the reader, as the drawing routes a wire through them (notation 2.2).
+    /// None but for a branch to an input of its own body; the others take their junction automatically.
+    fn branch_route(&self, input: &Port) -> Option<(Path, Path)> {
+        let branch = self.branch?;
+        if input.body != branch.body || !input.input || input.name.starts_with("output ") {
+            return None;
+        }
+        let (j, to) = (branch.at, (input.x, input.y));
+        // A junction that the file cannot write where it is, off the grid of units, is left to the drawing.
+        if (j.0 - branch.origin.0) % 100 != 0 || (j.1 - branch.origin.1) % 100 != 0 {
+            return None;
+        }
+        let units = |(x, y): (i64, i64)| ((x - branch.origin.0 + 50).div_euclid(100), (y - branch.origin.1 + 50).div_euclid(100));
+        if branch.vertical {
+            let x = j.0 + if to.0 >= j.0 { ACROSS } else { -ACROSS };
+            Some((labcraft_diagram::simplify(vec![j, (x, j.1), (x, to.1), to]), vec![units(j), units((x, to.1))]))
+        } else {
+            Some((labcraft_diagram::simplify(vec![j, (j.0, to.1), to]), vec![units(j)]))
+        }
+    }
+
+    /// The paths of the wire as it is drawn now, in units: square from its start to the pointer, or to the terminal it
+    /// snaps to; a branch snapped to an input of its body, by the route its points will give it.
+    pub fn paths(&self, drawing: &Drawing) -> Vec<Vec<Pos2>> {
+        if let Some(input) = self.over.and_then(|over| drawing.ports.get(over))
+            && let Some((path, _)) = self.branch_route(input)
+        {
+            return vec![path.into_iter().map(unit).collect()];
+        }
+        self.ends(drawing).into_iter().map(|(from, to)| route(from, to)).collect()
     }
 
     /// The terminal under the pointer that is an end of this wire, within `reach` units, shown.
@@ -173,6 +282,9 @@ impl Wiring {
     pub fn ends(&self, drawing: &Drawing) -> Vec<(Pos2, Pos2)> {
         let Some(start) = drawing.ports.get(self.from) else { return Vec::new() };
         let end = self.over.and_then(|over| drawing.ports.get(over)).map_or(self.at, centre);
+        if let Some(branch) = self.branch {
+            return vec![(unit(branch.at), end)];
+        }
         match &self.taken {
             // Every reader, from the output under the pointer.
             Taken::Readers(readers) => readers.iter().filter_map(|&reader| drawing.ports.get(reader)).map(|reader| (end, centre(reader))).collect(),
@@ -187,7 +299,11 @@ impl Wiring {
         let end = drawing.ports.get(port)?;
         let (source, target) = if start.input { (end, start) } else { (start, end) };
         Some(match &self.taken {
-            Taken::Nothing => crate::Intent::Wire { from: source.name.clone(), to: target.name.clone(), replace, accept_mismatch },
+            Taken::Nothing => {
+                // A branch names its wire by its value and the input it reaches, as `wire.route` names it.
+                let route = self.branch_route(target).map(|(_, points)| (format!("{} -> {}", source.value, target.name), points));
+                crate::Intent::Wire { from: source.name.clone(), to: target.name.clone(), replace, accept_mismatch, route }
+            }
             Taken::Input(input) => {
                 let old = drawing.ports.get(*input)?;
                 if *input == port {

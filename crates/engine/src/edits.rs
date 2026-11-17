@@ -31,8 +31,18 @@ pub const MAX_DIAGNOSTICS: usize = 200;
 pub const MAX_BATCH: usize = 1_000;
 
 /// The editing commands built, which `Session::dispatch` sends here (commands.md 6.7).
-pub const EDITING: &[&str] =
-    &["node.add", "constant.add", "node.delete", "wire.connect", "wire.disconnect", "node.move", "node.place", "node.set_view", "layout.arrange"];
+pub const EDITING: &[&str] = &[
+    "node.add",
+    "constant.add",
+    "node.delete",
+    "wire.connect",
+    "wire.disconnect",
+    "node.move",
+    "node.place",
+    "node.set_view",
+    "layout.arrange",
+    "wire.route",
+];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
 pub fn revision(bytes: &[u8]) -> String {
@@ -113,6 +123,23 @@ fn required_point(params: &Params, name: &str) -> Result<Point, CommandError> {
     point(params, name)?.ok_or_else(|| CommandError::of("params.invalid", name, format!("`{name}` is `[x, y]`, two integers")))
 }
 
+/// A list of positions, `[[x, y], …]`; empty when the parameter is not given.
+fn points(params: &Params, name: &str) -> Result<Vec<Point>, CommandError> {
+    let Some(given) = params.get(name).filter(|value| !value.is_null()) else { return Ok(Vec::new()) };
+    let invalid = || CommandError::of("params.invalid", name, format!("`{name}` is a list of points, `[x, y]` each, two integers"));
+    let Some(given) = given.as_array() else { return Err(invalid()) };
+    if given.len() > labcraft_edit::MAX_VIA {
+        return Err(CommandError::of("params.invalid", name, format!("a route has at most {} points", labcraft_edit::MAX_VIA)));
+    }
+    given
+        .iter()
+        .map(|value| {
+            let pair = value.as_array().filter(|pair| pair.len() == 2).and_then(|pair| Some((pair.first()?.as_i64()?, pair.get(1)?.as_i64()?)));
+            pair.map(|(x, y)| Point { x, y }).ok_or_else(invalid)
+        })
+        .collect()
+}
+
 /// A list of names, each a text; none when the parameter is not given.
 fn texts(params: &Params, name: &str) -> Result<Option<Vec<String>>, CommandError> {
     let Some(given) = params.get(name).filter(|value| !value.is_null()) else { return Ok(None) };
@@ -189,6 +216,7 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             }
         }
         "wire.disconnect" => Op::WireDisconnect { file, wire: params.text("wire")?.to_owned() },
+        "wire.route" => Op::WireRoute { file, wire: params.text("wire")?.to_owned(), via: points(params, "via")? },
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
     Ok((op, target))
@@ -379,22 +407,7 @@ impl Judge for SessionJudge<'_> {
     }
 
     fn places(&self, file: &str, text: &str) -> Vec<labcraft_edit::Place> {
-        let session = self.session;
-        let mut files = self.memory.clone();
-        files.insert(session.root.join(file), text.as_bytes().to_vec());
-        let as_on_disk = files.iter().all(|(path, bytes)| bytes_now(session, path).ok().flatten().as_deref() == Some(bytes.as_slice()));
-        let fresh;
-        let kept = if as_on_disk {
-            self.kept
-        } else {
-            fresh = self.check_with(&files);
-            &fresh
-        };
-        let Some((checked, names)) = kept.checked.first() else { return Vec::new() };
-        let Some(index) = checked.files.iter().position(|found| found.shown == file) else { return Vec::new() };
-        let (state, style) = session.view.state_of(file);
-        let work = || style::scope(&style, || labcraft_diagram::draw(checked, index, names, &state, &DiagramLimits::default()));
-        let Ok(Drawn::Drawing(drawing)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) else { return Vec::new() };
+        let Some(drawing) = self.drawing(file, text) else { return Vec::new() };
         drawing
             .placed
             .iter()
@@ -406,6 +419,21 @@ impl Judge for SessionJudge<'_> {
                 Some(labcraft_edit::Place { line: placed.line, name: placed.name.clone(), at: Point { x: unit(x), y: unit(y) } })
             })
             .collect()
+    }
+
+    fn wires(&self, file: &str, text: &str) -> Vec<labcraft_edit::WireDrawn> {
+        let Some(drawing) = self.drawing(file, text) else { return Vec::new() };
+        let mut found = Vec::new();
+        for wire in drawing.groups.iter().filter_map(|group| group.wire.as_ref()) {
+            let Some(body) = drawing.bodies.get(wire.body) else { continue };
+            let (ox, oy) = body.origin;
+            for ((_, path), entry) in wire.readers.iter().zip(&wire.entries) {
+                let Some(name) = entry else { continue };
+                let path = path.iter().map(|&(x, y)| (x - ox, y - oy)).collect();
+                found.push(labcraft_edit::WireDrawn { name: name.clone(), value: wire.value.clone(), body: wire.body, path });
+            }
+        }
+        found
     }
 }
 
@@ -436,6 +464,30 @@ fn find_in(checked: &Checked, names: &Interner, file: &str, segments: &[&str]) -
 }
 
 impl SessionJudge<'_> {
+    /// The drawing of the function of `file` with `text` in place of the file, in the view of the session: what the
+    /// window would show (architecture 12.3). None when it does not draw.
+    fn drawing(&self, file: &str, text: &str) -> Option<labcraft_diagram::Drawing> {
+        let session = self.session;
+        let mut files = self.memory.clone();
+        files.insert(session.root.join(file), text.as_bytes().to_vec());
+        let as_on_disk = files.iter().all(|(path, bytes)| bytes_now(session, path).ok().flatten().as_deref() == Some(bytes.as_slice()));
+        let fresh;
+        let kept = if as_on_disk {
+            self.kept
+        } else {
+            fresh = self.check_with(&files);
+            &fresh
+        };
+        let (checked, names) = kept.checked.first()?;
+        let index = checked.files.iter().position(|found| found.shown == file)?;
+        let (state, style) = session.view.state_of(file);
+        let work = || style::scope(&style, || labcraft_diagram::draw(checked, index, names, &state, &DiagramLimits::default()));
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+            Ok(Drawn::Drawing(drawing)) => Some(drawing),
+            _ => None,
+        }
+    }
+
     /// A check of the root with these texts in place of those on the disk.
     fn check_with(&self, files: &BTreeMap<PathBuf, Vec<u8>>) -> FoldersChecked {
         let session = self.session;
