@@ -108,6 +108,7 @@ fn terminal(name: &str, ty: labcraft_types::TyId, base: Base) -> Terminal {
         family: Family { base, dimensions: 0 },
         unit: None,
         constant: None,
+        literal: None,
         ignored: false,
         reads: Vec::new(),
         pill: None,

@@ -1587,3 +1587,72 @@ fn a_segment_being_moved_goes_on_over_a_new_drawing() {
     let other = drawing(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"), &ViewState::default());
     assert!(moving.again(&drawn, &other).is_none());
 }
+
+/// The fields in place of M1 step 4b (notation 2.6): what a double-click finds is the text that the drawing writes.
+#[test]
+fn a_field_in_place_opens_on_what_the_drawing_writes() {
+    let text = "labcraft 1
+
+use core
+use string
+
+fn main(x: f64) -> (y: f64, t: string) {
+    sum = core.add(x, 1.5)
+    t = string.format(\"{v}\", v: sum)
+    y = sum
+}
+";
+    let drawn = drawing(text, &ViewState::default());
+    let placed = |name: &str| drawn.placed.iter().position(|found| found.name == name).unwrap();
+    let texts: Vec<String> = fields::texts_of(&drawn, placed("sum")).into_iter().map(|written| written.text).collect();
+    assert!(texts.iter().any(|text| text == "1.5"), "the pill of the constant: {texts:?}");
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn.clone(), false);
+    assert!(canvas.edit_template("t"), "the template of a `string.format`");
+    let field = canvas.field.as_ref().unwrap();
+    // Between its quotes, which the host writes back.
+    assert_eq!((&field.kind, field.text.as_str()), (&FieldKind::Template { node: "t".to_owned() }, "{v}"));
+    canvas.field_refused("no");
+    canvas.close_field();
+    assert!(!canvas.field_open());
+    assert!(!canvas.edit_template("sum"), "not a `string.format`");
+}
+
+/// A field opens on the constant as the file writes it, escapes kept, not on what the pill shows (notation 2.6).
+#[test]
+fn a_field_opens_on_the_text_of_the_file() {
+    let text = "labcraft 1\n\nuse string\n\nfn main(x: f64) -> (t: string) {\n    t = string.format(\"say \\\"{v}\\\"\", v: x)\n}\n";
+    let drawn = drawing(text, &ViewState::default());
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn, false);
+    assert!(canvas.edit_template("t"));
+    assert_eq!(canvas.field.as_ref().map(|field| field.text.as_str()), Some("say \\\"{v}\\\""));
+}
+
+/// Two pills that read the same: a double-click on one edits its own input (notation 2.6).
+#[test]
+fn a_pill_double_clicked_edits_its_own_input() {
+    let text = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    sum = core.add(2.0, 2.0)\n    y = core.mul(x, sum)\n}\n";
+    let drawn = drawing(text, &ViewState::default());
+    let placed = drawn.placed.iter().position(|found| found.name == "sum").unwrap();
+    let pills: Vec<Rect> = fields::texts_of(&drawn, placed).into_iter().filter(|written| written.text == "2.0").map(|written| written.rect).collect();
+    assert_eq!(pills.len(), 2, "two pills");
+    let port = |name: &str| drawn.ports.iter().find(|port| port.name == name).map(|port| Pos2::new(port.x as f32, port.y as f32) / 100.0).unwrap();
+    let nearest = |to: Pos2| *pills.iter().min_by(|a, b| a.right_center().distance(to).total_cmp(&b.right_center().distance(to))).unwrap();
+    for to in ["sum.a", "sum.b"] {
+        let pill = nearest(port(to));
+        let (kind, shown, _) = fields::input_under(&drawn, placed, pill.center(), Vec2::ZERO).unwrap();
+        assert_eq!((kind, shown.as_str()), (FieldKind::Constant { to: to.to_owned(), held: true }, "2.0"));
+    }
+    // F2 on the node selected renames its value; Delete in focus takes the constant out; a field waiting for its answer
+    // lets no other open.
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.found = select::Found::one(select::Hit::Node(placed));
+    assert!(canvas.edit_name());
+    assert_eq!(canvas.field.as_ref().map(|field| field.kind.clone()), Some(FieldKind::Rename { value: "sum".to_owned() }));
+    canvas.close_field();
+    canvas.port_focus = drawn.ports.iter().position(|found| found.name == "sum.b");
+    assert_eq!(canvas.constant_in_focus().as_deref(), Some("sum.b"));
+    assert_eq!(fields::unquoted("\"{v} V\""), "{v} V");
+}

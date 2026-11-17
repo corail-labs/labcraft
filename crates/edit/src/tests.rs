@@ -68,9 +68,13 @@ impl Judge for Table {
         report.finish();
         report.diagnostics().iter().filter(|diagnostic| diagnostic.severity() == Severity::Error).cloned().collect()
     }
+
+    fn template(&self, literal: &str) -> Result<Vec<String>, String> {
+        labcraft_check::template_read(&labcraft_check::read_escapes(literal))
+    }
 }
 
-const FILE: &str = "f.lcf";
+pub(super) const FILE: &str = "f.lcf";
 
 /// `labcraft 1`, then the rest.
 fn text(rest: &str) -> String {
@@ -84,14 +88,14 @@ fn run(before: &str, op: Op) -> Result<Edited, EditError> {
 }
 
 #[track_caller]
-fn gives(before: &str, op: Op, after: &str) -> Edited {
+pub(super) fn gives(before: &str, op: Op, after: &str) -> Edited {
     let edited = run(&text(before), op).unwrap_or_else(|error| panic!("{error:?}"));
     assert_eq!(edited.texts.get(FILE).map(String::as_str), Some(text(after).as_str()));
     edited
 }
 
 #[track_caller]
-fn refused(before: &str, op: Op, code: &str) -> EditError {
+pub(super) fn refused(before: &str, op: Op, code: &str) -> EditError {
     match run(&text(before), op) {
         Ok(edited) => panic!("{code} expected, got {edited:?}"),
         Err(error) => {
@@ -105,7 +109,7 @@ fn add(call: &str) -> Op {
     Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: None }
 }
 
-fn connect(from: &str, to: &str) -> Op {
+pub(super) fn connect(from: &str, to: &str) -> Op {
     Op::WireConnect { file: FILE.to_owned(), from: from.to_owned(), to: to.to_owned(), replace: false, accept_mismatch: false }
 }
 
@@ -271,7 +275,7 @@ fn a_node_that_nothing_fits_goes_into_no_wire() {
 
 // node.delete
 
-const TWO: &str = "use core\n\nfn f(x: f64) -> (y: f64) {\n    a = core.add(x, 1)\n    b = core.mul(a, 2)\n    y = b\n}\n";
+pub(super) const TWO: &str = "use core\n\nfn f(x: f64) -> (y: f64) {\n    a = core.add(x, 1)\n    b = core.mul(a, 2)\n    y = b\n}\n";
 
 #[test]
 fn a_positional_input_before_another_gets_a_hole() {
@@ -336,7 +340,7 @@ fn node_delete_names_what_it_does_not_find() {
 
 // wire.connect
 
-const OPEN: &str = "use core\n\nfn f(x: f64, z: f64) -> (y: f64) {\n    s = core.add()\n    y = x\n}\n";
+pub(super) const OPEN: &str = "use core\n\nfn f(x: f64, z: f64) -> (y: f64) {\n    s = core.add()\n    y = x\n}\n";
 
 #[test]
 fn a_wire_goes_by_position_when_it_can_and_by_name_otherwise() {
@@ -1107,3 +1111,5 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 48)\n"), "{written}");
 }
+
+mod fields;

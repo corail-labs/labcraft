@@ -474,8 +474,8 @@ in progress writes nothing (2.4).
 | Drag | the right edge, the bottom edge or the corner of the frame | `frame.resize` |
 | Drag | a terminal of the frame | `terminal.move` |
 | Alt+drag | a terminal of a block | `block.set_terminal` on the function called, to the place where it is dropped (2.4); the same setting as for a wire |
-| Double-click, or F2 | the name of a node | A field in place: `value.rename` on Enter, nothing on Escape |
-| Double-click | a pill of a constant, a dot of a default, a hole | A field in place: `input.set_constant` on Enter. An empty field on Enter clears a constant (`input.clear_constant`), and does nothing on a dot or a hole |
+| Double-click, or F2 | the name of a node, its label | A field in place: `value.rename` on Enter, nothing on Escape. F2 on a node with no name opens the field of its label above it (`node.set_label`), as "Label…" of its context menu does for any node (decision of the owner, 2026-11-17) |
+| Double-click | a pill of a constant, a dot of a default, a hole | A field in place: `input.set_constant` on Enter. An empty field on Enter clears a constant (`input.clear_constant`), and does nothing on a dot or a hole. On a dot, the field opens with the default, all of it selected; on the template of a `string.format`, `node.set_template` |
 | Double-click | the body of a call to a function of the project | Opens that function in a tab |
 | Right-click | a node, a wire, a terminal | The context menu of what it is on, each entry with its key |
 | Right-click | the empty canvas | The palette of functions (2.4); setting: "menu first" |
@@ -500,6 +500,10 @@ in progress writes nothing (2.4).
 Shift+[ and Shift+] were set aside for upstream and downstream: on an AZERTY keyboard, `[` and `]` need AltGr.
 The editor of M1 is the desktop application; in a browser, some of these keys (Ctrl+Shift+P in Firefox, Alt+Left for
 Back, Ctrl+D for a bookmark, Alt and a letter) belong to the browser, and F1 is there for the palette.
+
+**A field in place** writes on Enter, and on a click elsewhere: what was typed is never lost; Escape writes nothing. A command that refuses leaves the field open with its text, a border in `mark.invalid` and the message under it (decisions of the owner, 2026-11-17). Enter on a text unchanged writes nothing. The field of a template shows it
+between its quotes, which the IDE writes back, a `"` typed escaped; a label is unique among the labels (R-17), and may
+bear the name of a value. While the command of a field is on its way, no other field opens.
 
 **Quick insertion.** One catalog, the one of the panel `Palette`, opened where the work is:
 

@@ -298,6 +298,12 @@ pub fn template_fields(text: &str) -> Vec<String> {
     declare::template_fields(text)
 }
 
+/// The fields of a `string.format` template whose escapes are read, as [`template_fields`] gives them, or the message of
+/// the first mistake that `check` says of it (R-12).
+pub fn template_read(text: &str) -> Result<Vec<String>, String> {
+    declare::template_read(text)
+}
+
 /// The parts of a `string.format` template whose escapes are read, in order, as the runtime writes them out (5.4): text, and
 /// each field with every part of its format, read as `check` reads it. `None` for a template that `check` refuses.
 pub fn template_pieces(text: &str) -> Option<Vec<Piece<'_>>> {

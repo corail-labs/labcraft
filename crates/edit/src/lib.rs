@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 use labcraft_types::{Diagnostic, Limits};
 
 mod add;
+mod constant;
 mod delete;
 mod into;
 mod layout;
@@ -33,6 +34,7 @@ mod model;
 mod names;
 mod places;
 mod refs;
+mod rename;
 mod route;
 mod scope;
 mod select;
@@ -43,6 +45,20 @@ pub use select::selectable;
 
 #[cfg(test)]
 mod tests;
+
+/// At most this many characters of a text that a caller gave go into a message, then `…` (as `wire.occupied` shows what
+/// an input holds).
+const SHOWN: usize = 60;
+
+/// A text that a caller gave, cut for a message.
+pub(crate) fn cut(text: &str) -> String {
+    if text.chars().count() <= SHOWN {
+        return text.to_owned();
+    }
+    let mut shown: String = text.chars().take(SHOWN - 1).collect();
+    shown.push('…');
+    shown
+}
 
 /// The texts an operation may read, by path in the project (commands.md 2).
 #[derive(Clone, Debug, Default)]
@@ -141,6 +157,42 @@ pub enum Op {
         wire: String,
         via: Vec<Point>,
     },
+    /// `input.set_constant`: `value` is a constant written as in a file.
+    InputSetConstant {
+        file: String,
+        to: String,
+        value: String,
+        replace: bool,
+        accept_mismatch: bool,
+    },
+    /// `input.clear_constant`.
+    InputClearConstant {
+        file: String,
+        to: String,
+    },
+    /// `input.remove_value`: a value of a variadic parameter or an element of an array.
+    InputRemoveValue {
+        file: String,
+        to: String,
+    },
+    /// `value.rename`: a value, or a label (`#close`).
+    ValueRename {
+        file: String,
+        value: String,
+        name: String,
+    },
+    /// `node.set_label`: the node that starts on `line`, from 1.
+    NodeSetLabel {
+        file: String,
+        line: u32,
+        label: String,
+    },
+    /// `node.set_template`: `template` is a string literal as the text writes it.
+    NodeSetTemplate {
+        file: String,
+        node: String,
+        template: String,
+    },
 }
 
 impl Op {
@@ -156,7 +208,13 @@ impl Op {
             | Op::NodePlace { file, .. }
             | Op::NodeSetView { file, .. }
             | Op::LayoutArrange { file, .. }
-            | Op::WireRoute { file, .. } => file,
+            | Op::WireRoute { file, .. }
+            | Op::InputSetConstant { file, .. }
+            | Op::InputClearConstant { file, .. }
+            | Op::InputRemoveValue { file, .. }
+            | Op::ValueRename { file, .. }
+            | Op::NodeSetLabel { file, .. }
+            | Op::NodeSetTemplate { file, .. } => file,
         }
     }
 }
@@ -275,6 +333,13 @@ pub trait Judge {
         let _ = (file, text);
         Vec::new()
     }
+
+    /// The fields of a `string.format` template, `literal` as the text writes it between its quotes, each once in the
+    /// order they first appear (spec 5.4); or the message of `check` for a template whose fields do not read (R-12).
+    fn template(&self, literal: &str) -> Result<Vec<String>, String> {
+        let _ = literal;
+        Err("this judge reads no template".to_owned())
+    }
 }
 
 /// A wire drawn, to one reader: its name as `wire.route` takes it (`reading -> verdict.a`), its value, the body that holds
@@ -349,6 +414,14 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
         Op::LayoutArrange { nodes, wires, terminals, .. } => layout::arrange(&mut edit, judge, nodes.as_deref(), wires, terminals)?,
         Op::WireRoute { wire, via, .. } => route::route(&mut edit, judge, wire, via, &mut edited)?,
+        Op::InputSetConstant { to, value, replace, accept_mismatch, .. } => {
+            constant::set(&mut edit, judge, to, value, *replace, *accept_mismatch)?;
+        }
+        Op::InputClearConstant { to, .. } => constant::clear(&mut edit, judge, to)?,
+        Op::InputRemoveValue { to, .. } => constant::remove_value(&mut edit, judge, to)?,
+        Op::ValueRename { value, name, .. } => rename::value(&mut edit, value, name, &mut edited)?,
+        Op::NodeSetLabel { line, label, .. } => rename::set_label(&mut edit, *line, label, &mut edited)?,
+        Op::NodeSetTemplate { node, template, .. } => rename::set_template(&mut edit, judge, node, template)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {

@@ -42,6 +42,12 @@ pub const EDITING: &[&str] = &[
     "node.set_view",
     "layout.arrange",
     "wire.route",
+    "input.set_constant",
+    "input.clear_constant",
+    "input.remove_value",
+    "value.rename",
+    "node.set_label",
+    "node.set_template",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -217,6 +223,30 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         }
         "wire.disconnect" => Op::WireDisconnect { file, wire: params.text("wire")?.to_owned() },
         "wire.route" => Op::WireRoute { file, wire: params.text("wire")?.to_owned(), via: points(params, "via")? },
+        "input.set_constant" => {
+            not_yet(params, "arm", "5")?;
+            Op::InputSetConstant {
+                file,
+                to: params.text("to")?.to_owned(),
+                value: params.text("value")?.to_owned(),
+                replace: params.bool("replace"),
+                accept_mismatch: params.bool("accept_mismatch"),
+            }
+        }
+        "input.clear_constant" => {
+            not_yet(params, "arm", "5")?;
+            Op::InputClearConstant { file, to: params.text("to")?.to_owned() }
+        }
+        "input.remove_value" => Op::InputRemoveValue { file, to: params.text("to")?.to_owned() },
+        "value.rename" => Op::ValueRename { file, value: params.text("value")?.to_owned(), name: params.text("name")?.to_owned() },
+        "node.set_label" => {
+            let line = params.u64("line").and_then(|line| u32::try_from(line).ok()).filter(|line| *line > 0);
+            let Some(line) = line else {
+                return Err(CommandError::of("params.invalid", "line", "`line` is a line of the file, from 1"));
+            };
+            Op::NodeSetLabel { file, line, label: params.text("label")?.to_owned() }
+        }
+        "node.set_template" => Op::NodeSetTemplate { file, node: params.text("node")?.to_owned(), template: params.text("template")?.to_owned() },
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
     Ok((op, target))
@@ -404,6 +434,10 @@ impl Judge for SessionJudge<'_> {
         let as_on_disk = files.iter().all(|(path, bytes)| bytes_now(session, path).ok().flatten().as_deref() == Some(bytes.as_slice()));
         let report = if as_on_disk { self.kept.report.diagnostics().to_vec() } else { self.check_with(&files).report.diagnostics().to_vec() };
         report.into_iter().filter(|diagnostic| diagnostic.severity() == Severity::Error && diagnostic.file == file).collect()
+    }
+
+    fn template(&self, literal: &str) -> Result<Vec<String>, String> {
+        labcraft_check::template_read(&labcraft_check::read_escapes(literal))
     }
 
     fn places(&self, file: &str, text: &str) -> Vec<labcraft_edit::Place> {

@@ -77,8 +77,7 @@ pub(crate) fn callee(edit: &Edit, judge: &dyn Judge, statement: &Statement) -> O
         labcraft_graph::StatementKind::Call(call) | labcraft_graph::StatementKind::Binding { value: labcraft_graph::Rhs::Call(call), .. } => call,
         _ => return None,
     };
-    let text: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
-    match judge.callable(&edit.path, &text.join(".")) {
+    match judge.callable(&edit.path, &crate::wire::edit_node_text(edit, call)) {
         Lookup::Found(callable) => Some(callable),
         Lookup::Unknown(_) => None,
     }
@@ -108,6 +107,11 @@ pub(crate) fn take_out(edit: &mut Edit, judge: &dyn Judge, name: Name, label: bo
             }
         }
     }
+    leave_out_holes(edit, judge, leave_out)
+}
+
+/// Leaves out each argument at these places, a hole now, where the text can leave it out (9.1).
+pub(crate) fn leave_out_holes(edit: &mut Edit, judge: &dyn Judge, mut leave_out: Vec<(Loc, usize)>) -> Result<(), EditError> {
     // Last first, so that the indices of the others hold; the rule reads the arguments as the holes left them.
     leave_out.sort();
     leave_out.dedup();

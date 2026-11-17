@@ -187,8 +187,8 @@ fn the_tools_are_the_direct_commands_enabled_without_the_viewer() {
     let tools = server.out.answer(1)["result"]["tools"].as_array().unwrap().clone();
     let names: Vec<&str> = tools.iter().map(|tool| tool["name"].as_str().unwrap()).collect();
     // The direct tools of mcp.md 2, in the order of commands.md 6: the nineteen of M0b less `view.*` (decision of the owner,
-    // 2026-11-11), then those of editing built in M1 step 0; `input_set_constant` and `value_rename` come with step 4, and
-    // `view_get_state` with an attached server.
+    // 2026-11-11), then those of editing built in M1 step 0, then, after them in the registry, `value_rename` and
+    // `input_set_constant` of step 4; `view_get_state` comes with an attached server.
     assert_eq!(
         names,
         [
@@ -219,6 +219,8 @@ fn the_tools_are_the_direct_commands_enabled_without_the_viewer() {
             "history_undo",
             "commands_execute",
             "commands_batch",
+            "value_rename",
+            "input_set_constant",
         ]
     );
     let tool = |name: &str| tools.iter().find(|tool| tool["name"] == name).unwrap().clone();

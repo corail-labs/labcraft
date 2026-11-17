@@ -46,11 +46,14 @@ pub(crate) fn fresh(base: &str, taken: &BTreeSet<String>) -> String {
 /// A name that the caller gives: one name of the language, free in the function.
 pub(crate) fn given(text: &str, taken: &BTreeSet<String>, parameter: &'static str) -> Result<String, EditError> {
     if !is_name(text) {
-        return Err(EditError::new("name.invalid", format!("`{text}` is not a name: a letter, then letters, digits and `_`, and no reserved word"))
-            .of(parameter));
+        return Err(EditError::new(
+            "name.invalid",
+            format!("`{}` is not a name: a letter, then letters, digits and `_`, and no reserved word", crate::cut(text)),
+        )
+        .of(parameter));
     }
     if taken.contains(text) {
-        return Err(EditError::new("name.taken", format!("`{text}` is already a name of this function")).of(parameter));
+        return Err(EditError::new("name.taken", format!("`{}` is already a name of this function", crate::cut(text))).of(parameter));
     }
     Ok(text.to_owned())
 }
@@ -141,26 +144,27 @@ pub(crate) fn rename(edit: &mut Edit, value: &Value, to: Name) -> Result<(), Edi
     }
     let still_named = scope::values(edit.body_function()?).iter().any(|other| other.name == from);
     if !still_named {
-        rename_in_layout(edit, from, to);
+        rename_in_layout(edit, from, to, false);
     }
     Ok(())
 }
 
-/// The entries of `layout` follow a rename (spec 11): the `node` line, and the `wire` lines that start or end there.
-pub(crate) fn rename_in_layout(edit: &mut Edit, from: Name, to: Name) {
+/// The entries of `layout` follow a rename (spec 11): the `node` line, and the `wire` lines that start or end there; of a
+/// label when `is_label`, of a value otherwise.
+pub(crate) fn rename_in_layout(edit: &mut Edit, from: Name, to: Name, is_label: bool) {
     let Some(layout) = &mut edit.file.layout else { return };
     for item in &mut layout.items {
         match &mut item.kind {
             LayoutKind::Node { node, .. } => {
-                if !node.is_label && node.name == from {
+                if node.is_label == is_label && node.name == from {
                     node.name = to;
                 }
             }
             LayoutKind::Wire { from: start, to: end, .. } => {
-                if !start.node.is_label && start.node.name == from {
+                if start.node.is_label == is_label && start.node.name == from {
                     start.node.name = to;
                 }
-                if !end.node.is_label && end.node.name == from {
+                if end.node.is_label == is_label && end.node.name == from {
                     end.node.name = to;
                 }
             }

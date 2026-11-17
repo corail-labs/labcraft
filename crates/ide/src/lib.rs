@@ -282,6 +282,11 @@ pub struct Ide {
     /// and a node that got a label stays selected by it (commands.md 9.3, `renamed`).
     /// The editing commands sent, by function, and the call to remember among the recent insertions once it is done.
     edits: Vec<(String, Reply, Option<String>)>,
+    /// The command of a field in place, by function: its answer closes the field, or leaves it open with the refusal
+    /// (notation 2.6).
+    field_edits: Vec<(String, Reply)>,
+    /// A `string.format` inserted, by function and name: its template field opens once the drawing holds it.
+    templates: Vec<(String, String)>,
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
@@ -350,6 +355,8 @@ impl Ide {
             history: History::default(),
             pending: Vec::new(),
             edits: Vec::new(),
+            field_edits: Vec::new(),
+            templates: Vec::new(),
             failures: Vec::new(),
             canvas_rect: None,
             canvas_focus: None,
@@ -670,11 +677,18 @@ impl Ide {
         let mut moved_back = Vec::new();
         let mut relabelled = Vec::new();
         let mut inserted = Vec::new();
+        let mut templates = Vec::new();
         self.edits.retain(|(function, reply, call)| match reply.take() {
             None => true,
             Some(Ok(result)) => {
                 // Only an insertion done goes among the recent ones (notation 2.6).
                 inserted.extend(call.clone());
+                // `string.format` arrives with its template field open (notation 2.6).
+                if call.as_deref() == Some("string.format")
+                    && let Some(node) = result.get("names").and_then(|names| names.get("node")).and_then(Value::as_str)
+                {
+                    templates.push((function.clone(), node.to_owned()));
+                }
                 // A move that changed nothing brings no new drawing: its nodes go back now.
                 if result.get("step").is_some_and(Value::is_null) {
                     moved_back.push(function.clone());
@@ -692,6 +706,25 @@ impl Ide {
             labcraft_editor::insertion::remember(&mut self.prefs.recent, &call);
             self.prefs_changed = true;
         }
+        self.templates.extend(templates);
+        self.templates.retain(|(function, node)| match self.drawn.get_mut(function) {
+            Some(drawn) => !drawn.canvas.edit_template(node),
+            None => false,
+        });
+        // A field in place: closed when its command is done, open with the message when it refuses (notation 2.6).
+        let drawn = &mut self.drawn;
+        self.field_edits.retain(|(function, reply)| match reply.take() {
+            None => true,
+            Some(answer) => {
+                if let Some(drawn) = drawn.get_mut(function) {
+                    match answer {
+                        Ok(_) => drawn.canvas.close_field(),
+                        Err(error) => drawn.canvas.field_refused(&error.message),
+                    }
+                }
+                false
+            }
+        });
         for function in moved_back {
             if let Some(drawn) = self.drawn.get_mut(&function) {
                 drawn.canvas.cancel_move();
@@ -1072,7 +1105,8 @@ impl Ide {
                 | keys::ARRANGE
                 | keys::WIRE
                 | keys::QUICK_INSERT
-                | keys::DELETE => ItemState { enabled: shown.is_some(), checked: None },
+                | keys::DELETE
+                | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
                 keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
                 keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
                 _ => ItemState { enabled: project, checked: None },
@@ -1434,6 +1468,12 @@ impl Ide {
         wires.dedup();
         let mut commands: Vec<Value> =
             wires.iter().map(|wire| json!({ "id": "wire.disconnect", "params": { "file": file, "wire": wire } })).collect();
+        // The constant of the terminal in focus goes too (notation 2.6).
+        if selection.is_empty()
+            && let Some(to) = drawn.canvas.constant_in_focus()
+        {
+            commands.push(json!({ "id": "input.clear_constant", "params": { "file": file, "to": to } }));
+        }
         if !selection.nodes.is_empty() {
             commands.push(json!({ "id": "node.delete", "params": { "file": file, "nodes": selection.nodes } }));
         }
@@ -1599,6 +1639,14 @@ impl Ide {
                 let (Some(host), Some(function)) = (host, function) else { return };
                 self.delete(host, view, &function);
             }
+            // F2 (notation 2.6): the name of the node selected, or its label, in a field in place.
+            keys::RENAME => {
+                let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
+                let opened = self.drawn.get_mut(&function).is_some_and(|drawn| drawn.canvas.edit_name());
+                if !opened {
+                    self.say("F2 renames the node selected: select one node");
+                }
+            }
             // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
             keys::ARRANGE => {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
@@ -1698,6 +1746,49 @@ impl Ide {
             }
         }
     }
+}
+
+/// The command of a field in place (notation 2.6, commands.md 6.7).
+fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accept_mismatch: bool) -> (&'static str, Value) {
+    use labcraft_editor::FieldKind;
+    match kind {
+        FieldKind::Rename { value } => ("value.rename", json!({ "file": file, "value": value, "name": text })),
+        FieldKind::Label { line } => ("node.set_label", json!({ "file": file, "line": line, "label": text })),
+        // An empty field clears the constant (notation 2.6).
+        FieldKind::Constant { to, .. } if text.is_empty() => ("input.clear_constant", json!({ "file": file, "to": to })),
+        FieldKind::Constant { to, .. } => {
+            ("input.set_constant", json!({ "file": file, "to": to, "value": text, "replace": true, "accept_mismatch": accept_mismatch }))
+        }
+        // The field shows the template between its quotes; a quote typed is one of the text (spec 14.1).
+        FieldKind::Template { node } => ("node.set_template", json!({ "file": file, "node": node, "template": quoted(text) })),
+    }
+}
+
+/// The field of a function whose file the window no longer knows: refused at once, so that it does not wait.
+fn drawn_canvas_refused(ide: &mut Ide, function: &str) {
+    if let Some(drawn) = ide.drawn.get_mut(function) {
+        drawn.canvas.field_refused("this function has no file now: write it again once the project is read");
+    }
+}
+
+/// A template typed in its field, as a string literal: a `"` that no `\\` escapes gets one.
+fn quoted(text: &str) -> String {
+    let mut literal = String::with_capacity(text.len() + 2);
+    literal.push('"');
+    let mut escaped = false;
+    for c in text.chars() {
+        if c == '"' && !escaped {
+            literal.push('\\');
+        }
+        escaped = c == '\\' && !escaped;
+        literal.push(c);
+    }
+    // A `\` at the end would escape the closing quote.
+    if escaped {
+        literal.push('\\');
+    }
+    literal.push('"');
+    literal
 }
 
 /// The editing commands whose results the window follows (`Ide::edits`).
@@ -2204,6 +2295,16 @@ impl Content<'_> {
                     }
                 }
                 Intent::Say(text) => self.ide.say(text),
+                // A field in place written (notation 2.6).
+                Intent::Field { kind, text } => match file_of(view, function) {
+                    Some(file) => {
+                        let (id, params) = field_command(&file, kind, &text, self.ide.prefs.accept_mismatch);
+                        let reply = self.host.send(id, params);
+                        self.ide.field_edits.push((function.to_owned(), reply));
+                    }
+                    // Nothing sent: the field must not wait for an answer.
+                    None => drawn_canvas_refused(self.ide, function),
+                },
             }
         }
         if view.main.function.as_deref() == Some(function) {
@@ -2260,5 +2361,34 @@ impl Content<'_> {
                 ui.label(RichText::new(format!("The rest of the file is not shown: past {} MiB", text::MAX_TEXT / 1024 / 1024)).weak());
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod field_tests {
+    use super::*;
+    use labcraft_editor::FieldKind;
+
+    /// The command of each field in place (notation 2.6, commands.md 6.7), written by hand.
+    #[test]
+    fn each_field_sends_its_command() {
+        let rename = field_command("f.lcf", FieldKind::Rename { value: "a".to_owned() }, "c", false);
+        assert_eq!(rename, ("value.rename", json!({ "file": "f.lcf", "value": "a", "name": "c" })));
+        let label = field_command("f.lcf", FieldKind::Label { line: 7 }, "#scale", false);
+        assert_eq!(label, ("node.set_label", json!({ "file": "f.lcf", "line": 7, "label": "#scale" })));
+        let set = field_command("f.lcf", FieldKind::Constant { to: "a.b".to_owned(), held: false }, "5 V", true);
+        assert_eq!(set, ("input.set_constant", json!({ "file": "f.lcf", "to": "a.b", "value": "5 V", "replace": true, "accept_mismatch": true })));
+        let clear = field_command("f.lcf", FieldKind::Constant { to: "a.b".to_owned(), held: true }, "", false);
+        assert_eq!(clear, ("input.clear_constant", json!({ "file": "f.lcf", "to": "a.b" })));
+        let template = field_command("f.lcf", FieldKind::Template { node: "text".to_owned() }, "{v} V", false);
+        assert_eq!(template, ("node.set_template", json!({ "file": "f.lcf", "node": "text", "template": "\"{v} V\"" })));
+    }
+
+    #[test]
+    fn a_template_typed_is_quoted_as_a_literal() {
+        assert_eq!(quoted("{v} V"), "\"{v} V\"");
+        assert_eq!(quoted("say \"hi\""), "\"say \\\"hi\\\"\"");
+        assert_eq!(quoted("kept \\\" and \\n"), "\"kept \\\" and \\n\"");
+        assert_eq!(quoted("end \\"), "\"end \\\\\"");
     }
 }
