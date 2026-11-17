@@ -1568,3 +1568,18 @@ fn a_segment_shared_moves_for_every_wire_along_it() {
     let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 3.0, egui::Modifiers::ALT, &shifted);
     assert!(!intents.iter().any(|intent| matches!(intent, Intent::Route(_))), "{intents:?}");
 }
+
+/// A new drawing that draws the wire as it was does not end a segment being moved; one that draws it elsewhere does.
+#[test]
+fn a_segment_being_moved_goes_on_over_a_new_drawing() {
+    let drawn = drawing(CHAIN, &ViewState::default());
+    let (path, _) = path_of(&drawn, "a");
+    let group = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+    let on = units_of(((path[2].0 + path[3].0) / 2, path[2].1));
+    let mut moving = rerouting::Rerouting::grab(&drawn, group, on, 1.0).unwrap();
+    moving.by = 800;
+    let again = moving.again(&drawn, &drawing(CHAIN, &ViewState::default())).unwrap();
+    assert_eq!((again.segment, again.by), (moving.segment, 800));
+    let other = drawing(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"), &ViewState::default());
+    assert!(moving.again(&drawn, &other).is_none());
+}

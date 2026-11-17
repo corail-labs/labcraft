@@ -984,3 +984,78 @@ fn a_junction_follows_its_trunk_whatever_names_a_command_adds() {
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 56)\n"), "{written}");
 }
+
+const LOOPING: &str = "fn f(s: bool) -> (z: bool) {\n    z = loop carry a = s {\n        next a = a\n        until s\n    }\n}\n";
+
+/// `s` reaches `z` by three wires; `s -> z` is the one to `until`, which reaches an input without a name (spec 11).
+fn looping_wires() -> Vec<crate::WireDrawn> {
+    vec![drawn("s -> z.a", &[(0, 40), (40, 40)]), drawn("s -> z.s", &[(0, 40), (40, 56)]), drawn("s -> z", &[(0, 16), (60, 16)])]
+}
+
+/// The entry `s -> z` designates the wire to `until` alone: routing or arranging another wire of `s` to `z` keeps it.
+#[test]
+fn an_entry_without_its_input_is_the_route_of_one_wire() {
+    let before = format!("{LOOPING}\nlayout {{\n    wire s -> z via (16, 4) (40, 4)\n}}\n");
+    let judge = Drawn { by_text: vec![("fn f", looping_wires())] };
+    let edited = run_judged(&judge, &before, route("s -> z.s", &[(20, 50)])).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(written.contains("    wire s -> z via (16, 4) (40, 4)\n") && written.contains("    wire s -> z.s via (20, 50)\n"), "{written}");
+    // Arranging `s -> z.s` takes its entry, and leaves the other.
+    let both = format!("{LOOPING}\nlayout {{\n    wire s -> z via (16, 4) (40, 4)\n    wire s -> z.s via (20, 50)\n}}\n");
+    let edited = run_judged(&judge, &both, arranging(None, &["s -> z.s"])).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(written.contains("    wire s -> z via (16, 4) (40, 4)\n") && !written.contains("z.s via"), "{written}");
+    // Arranging `s -> z` takes the entry of the wire to `until` alone.
+    let edited = run_judged(&judge, &both, arranging(None, &["s -> z"])).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(!written.contains("wire s -> z via") && written.contains("    wire s -> z.s via (20, 50)\n"), "{written}");
+}
+
+/// When a junction goes, the entry that it leaves with no point goes with it; an entry that the file writes with no
+/// point stays.
+#[test]
+fn a_junction_that_goes_takes_only_its_own_entry() {
+    let before = format!("{BRANCHED}\nlayout {{\n    wire a -> z via (140, 40)\n    wire a -> y\n}}\n");
+    let branch = drawn("a -> z.x", &[(100, 40), (140, 40), (140, 120), (200, 120)]);
+    let trunk_before = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    // After, the trunk has another number of segments, and no longer goes through the junction.
+    let trunk_after = drawn("a -> y.x", &[(100, 40), (120, 40), (120, 80), (200, 80)]);
+    let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let edited = run_judged(&judge, &before, add).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(!written.contains("a -> z") && written.contains("    wire a -> y\n"), "{written}");
+}
+
+/// A junction that its trunk would take off the grid of units goes: the file could not write it on the trunk.
+#[test]
+fn a_junction_off_the_grid_of_units_goes() {
+    let before = format!("{BRANCHED}\nlayout {{\n    wire a -> z via (140, 40) (160, 120)\n}}\n");
+    let branch = drawn("a -> z.x", &[(100, 40), (140, 40), (140, 120), (200, 120)]);
+    let trunk_before = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    let mut trunk_after = drawn("a -> y.x", &[(100, 40), (200, 40)]);
+    trunk_after.path = vec![(10_000, 5_650), (20_000, 5_650)];
+    let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let edited = run_judged(&judge, &before, add).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(written.contains("    wire a -> z via (160, 120)\n"), "{written}");
+}
+
+/// The trunk of a branch is a wire without a junction of its own, when one goes through it: another branch along the
+/// same trunk is drawn from its old junction until this pass moves it.
+#[test]
+fn a_junction_follows_the_trunk_and_not_another_branch() {
+    let before = format!("{BRANCHED}\nlayout {{\n    wire a -> y via (180, 40)\n    wire a -> z via (140, 40)\n}}\n");
+    // `a -> y` is a branch too, from (180, 40), along the trunk `a -> x` up to there.
+    let z = drawn("a -> z.x", &[(100, 40), (140, 40), (140, 120), (200, 120)]);
+    let y_before = drawn("a -> y.x", &[(100, 40), (180, 40), (180, 160), (200, 160)]);
+    let y_after = drawn("a -> y.x", &[(100, 40), (180, 40), (180, 160), (200, 160)]);
+    let trunk_before = drawn("a -> b.x", &[(100, 40), (240, 40)]);
+    let trunk_after = drawn("a -> b.x", &[(100, 48), (240, 48)]);
+    let judge = Drawn { by_text: vec![("aa = core.abs()", vec![y_after, z.clone(), trunk_after]), ("fn f", vec![y_before, z, trunk_before])] };
+    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()) };
+    let edited = run_judged(&judge, &before, add).unwrap();
+    let written = edited.texts.get(FILE).unwrap();
+    assert!(written.contains("    wire a -> z via (140, 48)\n"), "{written}");
+}

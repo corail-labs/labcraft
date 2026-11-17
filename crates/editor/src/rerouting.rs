@@ -11,7 +11,7 @@ use labcraft_diagram::Drawing;
 /// How far from a terminal a segment that leaves it jogs, in hundredths *(proposed)*.
 const JOG: i64 = 1_600;
 /// The grid that a segment moved and a junction stand on, in hundredths (notation 2.5).
-const GRID: i64 = 800;
+pub(crate) const GRID: i64 = 800;
 
 /// How the move goes on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +73,33 @@ impl Rerouting {
             return None;
         }
         Some(Rerouting { group, reader, segment, vertical, from: at, by: 0, state: State::Dragging, asked_at: None })
+    }
+
+    /// The same move over a new drawing, while it is dragged and its wire is drawn there along the same path; none
+    /// otherwise.
+    pub fn again(&self, old: &Drawing, new: &Drawing) -> Option<Rerouting> {
+        if self.state != State::Dragging {
+            return None;
+        }
+        let wire = old.groups.get(self.group)?.wire.as_ref()?;
+        let (_, path) = wire.readers.get(self.reader)?;
+        new.groups.iter().enumerate().find_map(|(group, drawn)| {
+            let other = drawn.wire.as_ref()?;
+            if other.value != wire.value || other.body != wire.body {
+                return None;
+            }
+            let reader = other.readers.iter().position(|(_, other)| other == path)?;
+            Some(Rerouting {
+                group,
+                reader,
+                segment: self.segment,
+                vertical: self.vertical,
+                from: self.from,
+                by: self.by,
+                state: self.state,
+                asked_at: None,
+            })
+        })
     }
 
     /// The pointer at `at`: the segment goes across by as much, on the grid of 8 of the frame of the wire.
@@ -194,12 +221,12 @@ fn origin_of(drawing: &Drawing, group: usize) -> At {
 }
 
 /// `value` on the grid of 8 that starts at `start`.
-fn snap(value: i64, start: i64) -> i64 {
+pub(crate) fn snap(value: i64, start: i64) -> i64 {
     start + (value - start + GRID / 2).div_euclid(GRID) * GRID
 }
 
 /// Hundredths to units, rounded.
-fn unit(hundredths: i64) -> i64 {
+pub(crate) fn unit(hundredths: i64) -> i64 {
     (hundredths + 50).div_euclid(100)
 }
 

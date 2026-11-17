@@ -59,8 +59,10 @@ fn named<'a>(edit: &Edit, drawn: &[&'a WireDrawn], value: &str, node: &str, inpu
 }
 
 /// The drawn wires of each value, so that a name costs the wires of its value, not all of them.
-fn by_value(drawn: &[WireDrawn]) -> std::collections::HashMap<&str, Vec<&WireDrawn>> {
-    let mut found: std::collections::HashMap<&str, Vec<&WireDrawn>> = std::collections::HashMap::new();
+pub(crate) type ByValue<'a> = std::collections::HashMap<&'a str, Vec<&'a WireDrawn>>;
+
+pub(crate) fn by_value(drawn: &[WireDrawn]) -> ByValue<'_> {
+    let mut found = ByValue::new();
     for wire in drawn {
         if let Some((value, _, _)) = parts(&wire.name) {
             found.entry(value).or_default().push(wire);
@@ -71,11 +73,10 @@ fn by_value(drawn: &[WireDrawn]) -> std::collections::HashMap<&str, Vec<&WireDra
 
 /// The wire drawn that `wire` names: by its name, or by its value and its node alone when one wire joins them, or one
 /// of them reaches an input without a name.
-fn chosen<'a>(edit: &Edit, drawn: &'a [WireDrawn], wire: &str) -> Result<&'a WireDrawn, EditError> {
+fn chosen<'a>(edit: &Edit, of_value: &ByValue<'a>, wire: &str) -> Result<&'a WireDrawn, EditError> {
     let Some((value, node, input)) = parts(wire) else {
         return Err(EditError::invalid("wire", "a wire is named `value -> node` or `value -> node.input`"));
     };
-    let of_value = by_value(drawn);
     let found = named(edit, of_value.get(value).map_or(&[][..], Vec::as_slice), value, node, input);
     match found.as_slice() {
         [one] => Ok(one),
@@ -114,23 +115,29 @@ fn texts_of(edit: &Edit, from: &TerminalRef, to: &TerminalRef) -> Texts {
     (shown(edit, &from.node), shown(edit, &to.node), to.terminal.map(|name| edit.text(name).to_owned()))
 }
 
-/// Whether the entry designates the wire `drawn`, its nodes read in `edit`.
-fn designates(edit: &Edit, texts: &Texts, drawn: &WireDrawn) -> bool {
-    names(edit, texts, &drawn.name)
+/// The wire drawn that an entry designates, read as spec 11 reads it, its nodes read in `edit`: none when it designates
+/// none, or several.
+fn designated<'a>(edit: &Edit, of_value: &ByValue<'a>, (value, node, input): &Texts) -> Option<&'a WireDrawn> {
+    match named(edit, of_value.get(value.as_str()).map_or(&[][..], Vec::as_slice), value, node, input.as_deref()).as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
 }
 
-/// Whether the entry designates the wire that a command names `wire` (`a -> t.x`, `a -> #k`), its nodes read in `edit`.
-fn names(edit: &Edit, (value, node, input): &Texts, wire: &str) -> bool {
-    let Some((v, n, i)) = parts(wire) else { return false };
-    v == value && input.as_deref().is_none_or(|input| Some(input) == i) && same_node(edit, n, node)
+/// The name of the wire drawn that `wire`, as a command names it, designates; none when it designates none, or several.
+pub(crate) fn resolve(edit: &Edit, of_value: &ByValue<'_>, wire: &str) -> Option<String> {
+    chosen(edit, of_value, wire).ok().map(|found| found.name.clone())
 }
 
-/// Whether the entry `from -> to` of `edit` is one that `wire`, as `layout.arrange` takes it, names: the same value and
-/// node, and the same input when both name one.
-pub(crate) fn entry_names(edit: &Edit, from: &TerminalRef, to: &TerminalRef, wire: &str) -> bool {
-    let (value, node, input) = texts_of(edit, from, to);
+/// Whether the entry `from -> to` of `edit` is the one of `wire`, as `layout.arrange` takes it: the entry designates the
+/// wire drawn that `wire` designates, `drawn` (spec 11); with no drawing, the same value, node and input.
+pub(crate) fn entry_names(edit: &Edit, of_value: &ByValue<'_>, from: &TerminalRef, to: &TerminalRef, wire: &str, drawn: Option<&str>) -> bool {
+    let texts = texts_of(edit, from, to);
+    if let Some(drawn) = drawn {
+        return designated(edit, of_value, &texts).is_some_and(|found| found.name == drawn);
+    }
     let Some((v, n, i)) = parts(wire) else { return false };
-    v == value && (input.is_none() || i.is_none() || input.as_deref() == i) && same_node(edit, n, &node)
+    v == texts.0 && texts.2.as_deref() == i && same_node(edit, n, &texts.1)
 }
 
 /// `wire.route`: the wire named goes through the points of `via`, in the frame of the wire (spec 11): its `wire … via`
@@ -150,13 +157,20 @@ pub(crate) fn route(edit: &mut Edit, judge: &dyn Judge, wire: &str, via: &[Point
     if drawn.is_empty() {
         return Err(EditError::invalid("wire", "the function is not drawn now, so no wire of it can be routed"));
     }
-    let found = chosen(edit, &drawn, wire)?.clone();
+    let of_value = by_value(&drawn);
+    let found = chosen(edit, &of_value, wire)?.clone();
     let Some((value, node, input)) = parts(&found.name) else { return Err(EditError::internal("a wire drawn with no name")) };
     if input.is_some_and(|input| !labcraft_format::is_name(input)) {
         return Err(EditError::invalid("wire", "the `layout` section does not number the values of a variadic parameter yet (spec 11)"));
     }
     // The input only when the value reaches that node by several wires (spec 11).
-    let alone = drawn.iter().filter(|other| parts(&other.name).is_some_and(|(v, n, _)| v == value && same_node(edit, n, node))).count() == 1;
+    let alone = of_value
+        .get(value)
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|other| parts(&other.name).is_some_and(|(_, n, _)| same_node(edit, n, node)))
+        .count()
+        == 1;
     let (value, node, input) = (value.to_owned(), node.to_owned(), input.map(str::to_owned));
     let function = edit.body_function()?;
     let output = input.is_none() && function.signature.outputs.iter().any(|output| edit.text(output.name) == node) && {
@@ -187,11 +201,14 @@ pub(crate) fn route(edit: &mut Edit, judge: &dyn Judge, wire: &str, via: &[Point
     let (layout_id, item_id) = (edit.id(), edit.id());
     let mut layout = edit.file.layout.take().unwrap_or(Layout { id: layout_id, comments: Attached::default(), items: Vec::new(), end: Vec::new() });
     // The entries that designate this wire go: a wire has one entry (`LC5007`); the new one takes the place of the first.
+    // An entry without its input designates the wire that spec 11 gives it, not every wire of its value to that node.
     let mut at = None;
     let mut index = 0;
     layout.items.retain(|item| {
         let keep = match &item.kind {
-            LayoutKind::Wire { from: old_from, to: old_to, .. } => !designates(edit, &texts_of(edit, old_from, old_to), &found),
+            LayoutKind::Wire { from: old_from, to: old_to, .. } => {
+                designated(edit, &of_value, &texts_of(edit, old_from, old_to)).is_none_or(|other| other.name != found.name)
+            }
             LayoutKind::Node { .. } => true,
         };
         if !keep && at.is_none() {
@@ -299,17 +316,27 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
     }
     let drawn_before = judge.wires(path, before);
     let of_value = by_value(&drawn_before);
+    let branches: Vec<(usize, &WireDrawn, (i64, i64))> = kept
+        .iter()
+        .filter_map(|(entry, texts, points)| {
+            let &(x, y) = points.first()?;
+            Some((*entry, designated(&old, &of_value, texts)?, (x.saturating_mul(100), y.saturating_mul(100))))
+        })
+        .collect();
+    // A branch runs along its trunk up to its junction: the trunk of another branch is a wire without a junction of its
+    // own, when one goes through that point, since the path of a branch follows its junction only after this pass.
+    let with_junction: std::collections::HashSet<&str> = branches.iter().map(|(_, branch, _)| branch.name.as_str()).collect();
     let mut junctions: Vec<(OnTrunk, bool, (i64, i64))> = Vec::new();
-    for (entry, texts, points) in kept {
-        let Some(&(x, y)) = points.first() else { continue };
-        let at = (x.saturating_mul(100), y.saturating_mul(100));
-        let wires = of_value.get(texts.0.as_str()).map_or(&[][..], Vec::as_slice);
-        let designated = named(&old, wires, &texts.0, &texts.1, texts.2.as_deref());
-        let [branch] = designated.as_slice() else { continue };
+    for (entry, branch, at) in branches {
+        let wires = of_value.get(branch.value.as_str()).map_or(&[][..], Vec::as_slice);
+        let on = |other: &&WireDrawn| other.body == branch.body && other.name != branch.name;
         let trunk = wires
             .iter()
-            .filter(|other| other.body == branch.body && other.name != branch.name)
-            .find_map(|other| segment_of(&other.path, at).map(|(segment, along)| (*other, segment, along)));
+            .copied()
+            .filter(on)
+            .filter(|other| !with_junction.contains(other.name.as_str()))
+            .chain(wires.iter().copied().filter(on))
+            .find_map(|other| segment_of(&other.path, at).map(|(segment, along)| (other, segment, along)));
         let Some((trunk, segment, along)) = trunk else { continue };
         let vertical = matches!((trunk.path.get(segment), trunk.path.get(segment + 1)), (Some(a), Some(b)) if a.0 == b.0);
         let segments = trunk.path.len().saturating_sub(1);
@@ -324,17 +351,18 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
     }
     let by_name: std::collections::HashMap<&str, &WireDrawn> = drawn_after.iter().map(|drawn| (drawn.name.as_str(), drawn)).collect();
     let mut changed = false;
+    let mut emptied = Vec::new();
     let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
     for (junction, vertical, at) in junctions {
         // At the same distance along the same segment; or where it was, when it still lies on the trunk (a part of it
-        // that did not move); otherwise it goes.
-        let moved = by_name
-            .get(junction.trunk.as_str())
-            .and_then(|trunk| {
-                along_segment(&trunk.path, junction.segment, junction.along, junction.segments, vertical)
-                    .or_else(|| segment_of(&trunk.path, at).map(|_| at))
-            })
-            .map(|(x, y)| (unit(x), unit(y)));
+        // that did not move); otherwise it goes. A point that the file cannot write on the trunk, off the grid of units,
+        // goes too.
+        let moved = by_name.get(junction.trunk.as_str()).and_then(|trunk| {
+            along_segment(&trunk.path, junction.segment, junction.along, junction.segments, vertical)
+                .or_else(|| segment_of(&trunk.path, at).map(|_| at))
+                .map(|(x, y)| (unit(x), unit(y)))
+                .filter(|&(x, y)| segment_of(&trunk.path, (x.saturating_mul(100), y.saturating_mul(100))).is_some())
+        });
         let first: Option<(Numeral, Numeral)> = moved.map(|(x, y)| (coordinate(&mut edit, x), coordinate(&mut edit, y)));
         let Some(layout) = edit.file.layout.as_mut() else { break };
         let Some(LayoutItem { kind: LayoutKind::Wire { via, .. }, .. }) = layout.items.get_mut(junction.entry) else { continue };
@@ -352,6 +380,9 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
                 if !via.is_empty() {
                     via.remove(0);
                     changed = true;
+                    if via.is_empty() {
+                        emptied.push(junction.entry);
+                    }
                 }
             }
         }
@@ -359,8 +390,13 @@ pub(crate) fn follow(path: &str, before: &str, after: String, judge: &dyn Judge,
     if !changed {
         return Ok(after);
     }
+    // The entries that this pass left with no point go; one that the file writes with none stays.
     if let Some(layout) = edit.file.layout.as_mut() {
-        layout.items.retain(|item| !matches!(&item.kind, LayoutKind::Wire { via, .. } if via.is_empty()));
+        let mut index = 0;
+        layout.items.retain(|_| {
+            index += 1;
+            !emptied.contains(&(index - 1))
+        });
     }
     crate::layout::drop_empty(&mut edit);
     edit.finish()

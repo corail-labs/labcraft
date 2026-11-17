@@ -158,13 +158,12 @@ impl Wiring {
         let origin = drawing.bodies.get(wire.body)?.origin;
         let point = ((at.x * 100.0).round() as i64, (at.y * 100.0).round() as i64);
         let reach = (reach * 100.0).round() as i64;
-        let grid = 800;
         let snap = |value: i64, start: i64, low: i64, high: i64| {
-            let snapped = start + (value - start + grid / 2).div_euclid(grid) * grid;
+            let snapped = crate::rerouting::snap(value, start);
             if snapped < low {
-                snapped + grid
+                snapped + crate::rerouting::GRID
             } else if snapped > high {
-                snapped - grid
+                snapped - crate::rerouting::GRID
             } else {
                 snapped
             }
@@ -207,12 +206,17 @@ impl Wiring {
         if input.body != branch.body || !input.input || input.name.starts_with("output ") {
             return None;
         }
+        // A value of a variadic parameter has no name that `wire.route` takes yet (spec 11): its junction is automatic.
+        let numbered = |name: &str| name.contains('.') || name.starts_with(|letter: char| letter.is_ascii_digit());
+        if input.name.split_once('.').is_some_and(|(_, name)| numbered(name)) {
+            return None;
+        }
         let (j, to) = (branch.at, (input.x, input.y));
         // A junction that the file cannot write where it is, off the grid of units, is left to the drawing.
         if (j.0 - branch.origin.0) % 100 != 0 || (j.1 - branch.origin.1) % 100 != 0 {
             return None;
         }
-        let units = |(x, y): (i64, i64)| ((x - branch.origin.0 + 50).div_euclid(100), (y - branch.origin.1 + 50).div_euclid(100));
+        let units = |(x, y): (i64, i64)| (crate::rerouting::unit(x - branch.origin.0), crate::rerouting::unit(y - branch.origin.1));
         if branch.vertical {
             let x = j.0 + if to.0 >= j.0 { ACROSS } else { -ACROSS };
             Some((labcraft_diagram::simplify(vec![j, (x, j.1), (x, to.1), to]), vec![units(j), units((x, to.1))]))

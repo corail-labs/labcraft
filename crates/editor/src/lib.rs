@@ -431,8 +431,12 @@ impl Canvas {
         }
         self.context = None;
         self.wire_context = None;
-        // A route asked for is in the new drawing; a segment being moved belongs to the old one, and ends.
-        self.rerouting = None;
+        // A route asked for is in the new drawing. A segment being moved goes on over the new drawing when its wire is
+        // drawn there as it was; otherwise it ends.
+        self.rerouting = match (self.rerouting.take(), &self.drawing) {
+            (Some(rerouting), Some(old)) => rerouting.again(old, &drawing),
+            _ => None,
+        };
         // A wire asked for is in the new drawing, and the old wire it replaced retracts now. A wire under way goes on over
         // the new one, from its terminal found again by its name; one that Ctrl took ends.
         self.wiring =

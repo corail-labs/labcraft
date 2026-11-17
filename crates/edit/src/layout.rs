@@ -310,12 +310,17 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
         crate::select::terminal(edit, function, name)?;
     }
     // The routes of the wires named, as `wire.disconnect` names them, or as `wire.route` does: a wire that an entry
-    // routes, into a structure or to its `until` too.
-    for name in wires {
+    // routes, into a structure or to its `until` too. Each name stands for the wire drawn that it designates (spec 11).
+    let drawn = if wires.is_empty() { Vec::new() } else { judge.wires(&edit.path, &edit.original) };
+    let of_value = crate::route::by_value(&drawn);
+    let resolved: Vec<(&String, Option<String>)> = wires.iter().map(|wire| (wire, crate::route::resolve(edit, &of_value, wire))).collect();
+    for (name, drawn) in &resolved {
         refs::split_wire(name).map_err(|error| error.of("wires"))?;
-        let routed = edit.file.layout.as_ref().is_some_and(|layout| {
-            layout.items.iter().any(|item| matches!(&item.kind, LayoutKind::Wire { from, to, .. } if crate::route::entry_names(edit, from, to, name)))
-        });
+        let names = |item: &LayoutItem| match &item.kind {
+            LayoutKind::Wire { from, to, .. } => crate::route::entry_names(edit, &of_value, from, to, name, None),
+            LayoutKind::Node { .. } => false,
+        };
+        let routed = drawn.is_some() || edit.file.layout.as_ref().is_some_and(|layout| layout.items.iter().any(names));
         if !routed {
             crate::wire::find(edit, judge, function, name).map_err(|error| match error.parameter {
                 Some(_) => error.of("wires"),
@@ -355,7 +360,7 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
         LayoutKind::Node { .. } => true,
         LayoutKind::Wire { from, to, .. } => {
             let between = named.contains(&from.node.name) && named.contains(&to.node.name);
-            let routed = wires.iter().any(|wire| crate::route::entry_names(edit, from, to, wire));
+            let routed = resolved.iter().any(|(wire, drawn)| crate::route::entry_names(edit, &of_value, from, to, wire, drawn.as_deref()));
             !(whole || between || routed)
         }
     });
