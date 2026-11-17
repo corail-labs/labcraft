@@ -494,7 +494,15 @@ fn functions_list_gives_primitives_then_the_project_as_signatures() {
     let listed = ok(&mut session, "functions.list", json!({ "filter": "double" }));
     assert_eq!(
         listed["entries"],
-        json!([{ "name": "double", "library": "", "kind": "function", "signature": "fn double(x: f64) -> (y: f64)", "doc": "Doubles a number." }])
+        json!([{
+            "name": "double",
+            "library": "",
+            "kind": "function",
+            "signature": "fn double(x: f64) -> (y: f64)",
+            "inputs": [{ "name": "x", "type": "f64", "fit": { "number": "f64" }, "required": true }],
+            "outputs": [{ "name": "y", "type": "f64", "fit": { "number": "f64" } }],
+            "doc": "Doubles a number."
+        }])
     );
     let documented = ok(&mut session, "functions.list", json!({ "filter": "double", "docs": true }));
     assert_eq!(documented["entries"][0]["doc"], "Doubles a number.\nSecond line.");
@@ -503,6 +511,107 @@ fn functions_list_gives_primitives_then_the_project_as_signatures() {
     assert_eq!(get["entries"][0]["categories"], json!(["array.index_out_of_range"]));
     let types = ok(&mut session, "functions.list", json!({ "filter": "Verdict" }));
     assert_eq!(types["entries"][0]["signature"], "type Verdict = enum { Pass, Fail }");
+}
+
+/// The inputs and outputs of each entry, as commands.md 6.1 writes them. Each expected value is read by hand from the
+/// signature: of the primitive in spec appendix A, or of the file written here.
+#[test]
+fn functions_list_gives_the_inputs_and_outputs_of_each_entry() {
+    let (mut session, _) = session();
+    let types = "labcraft 1\n\ntype Volts = f64[mV]\n";
+    let probe = "labcraft 1\n\ntype Probe = struct { gain: Volts, names: [string] }\n";
+    let reading = "labcraft 1\n\ntype Reading = enum { Value(f64[V]), Missing }\n";
+    let join = "labcraft 1\n\nfn join(parts: string..., gap: f64[V] = 0 V) -> (level: Volts) {\n    level = gap\n}\n";
+    let pick = "labcraft 1\n\nfn pick<N: Number>(a: N) -> (b: N) {\n    b = a\n}\n";
+    for (path, text) in [("Volts.lct", types), ("Probe.lct", probe), ("Reading.lct", reading), ("join.lcf", join), ("pick.lcf", pick)] {
+        ok(&mut session, "file.write", json!({ "path": path, "text": text, "check": false }));
+    }
+    let entry = |session: &mut Session, name: &str| {
+        let listed = ok(session, "functions.list", json!({ "filter": name }));
+        listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == name).cloned().unwrap()
+    };
+    let mul = entry(&mut session, "core.mul");
+    assert_eq!(mul["inputs"][0], json!({ "name": "a", "type": "A", "fit": { "variable": "A", "bound": "Number" }, "required": true }));
+    assert_eq!(mul["outputs"], json!([{ "name": "result", "type": "A·B", "fit": { "numbers": ["A", "B"] } }]));
+    let with_unit = entry(&mut session, "core.with_unit");
+    assert_eq!(with_unit["inputs"][1], json!({ "name": "unit", "type": "kind unit", "required": true, "literal": true }));
+    let format = entry(&mut session, "string.format");
+    assert_eq!(format["inputs"], json!([{ "name": "template", "type": "string", "required": true, "literal": true }]));
+    let concat = entry(&mut session, "string.concat");
+    assert_eq!(concat["inputs"], json!([{ "name": "parts", "type": "string", "fit": { "base": "string" }, "variadic": true }]));
+    let get = entry(&mut session, "array.get");
+    assert_eq!(get["inputs"][0], json!({ "name": "array", "type": "[T]", "fit": { "array": { "variable": "T" } }, "required": true }));
+    assert_eq!(get["inputs"][2], json!({ "name": "err", "type": "error", "fit": { "base": "error" } }));
+    // The project's own: a parameter with a default after a variadic one is wired by name only (R-11), and an alias is
+    // followed to what it names.
+    let join = entry(&mut session, "join");
+    assert_eq!(
+        join["inputs"],
+        json!([
+            { "name": "parts", "type": "string", "fit": { "base": "string" }, "variadic": true },
+            { "name": "gap", "type": "f64[V]", "fit": { "number": "f64", "unit": "V" }, "named_only": true }
+        ])
+    );
+    assert_eq!(join["outputs"][0], json!({ "name": "level", "type": "Volts", "fit": { "number": "f64", "unit": "mV" } }));
+    let pick = entry(&mut session, "pick");
+    assert_eq!(pick["inputs"][0], json!({ "name": "a", "type": "N", "fit": { "variable": "N", "bound": "Number" }, "required": true }));
+    assert_eq!(entry(&mut session, "Volts")["is"], json!({ "type": "f64[mV]", "fit": { "number": "f64", "unit": "mV" } }));
+    let probe = entry(&mut session, "Probe");
+    assert_eq!(
+        probe["fields"],
+        json!([
+            { "name": "gain", "type": "Volts", "fit": { "number": "f64", "unit": "mV" } },
+            { "name": "names", "type": "[string]", "fit": { "shape": "[string]" } }
+        ])
+    );
+    assert_eq!(
+        entry(&mut session, "Reading")["variants"],
+        json!([{ "name": "Value", "values": [{ "type": "f64[V]", "fit": { "number": "f64", "unit": "V" } }] }, { "name": "Missing" }])
+    );
+    assert!(entry(&mut session, "Verdict").get("inputs").is_none());
+}
+
+/// A type of a library names its own types by the library, whatever the root names so: `c: cell` in `lab` is the
+/// `f64[V]` of `lab.cell`, not the `string` of the root's `cell`.
+#[test]
+fn functions_list_reads_a_type_of_a_library_in_its_library() {
+    let (mut session, _) = session();
+    for (path, text) in [
+        ("cell.lct", "labcraft 1\n\ntype cell = string\n"),
+        ("lab/cell.lct", "labcraft 1\n\ntype cell = f64[V]\n"),
+        ("lab/probe.lct", "labcraft 1\n\ntype probe = struct { c: cell }\n"),
+    ] {
+        ok(&mut session, "file.write", json!({ "path": path, "text": text, "check": false }));
+    }
+    let listed = ok(&mut session, "functions.list", json!({ "filter": "probe" }));
+    let probe = listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == "lab.probe").cloned().unwrap();
+    assert_eq!(probe["signature"], "type lab.probe = struct { c: cell }");
+    assert_eq!(probe["fields"], json!([{ "name": "c", "type": "lab.cell", "fit": { "number": "f64", "unit": "V" } }]));
+}
+
+/// An alias of a long type named by many fields is not copied into each past the budget of an entry
+/// (`functions::MAX_TYPED`): the rest is left out, and the entry says `truncated`. An array of a type variable in more than
+/// 16 arrays is a `shape`, as a whole.
+#[test]
+fn functions_list_bounds_the_typed_parts_of_an_entry() {
+    let (mut session, _) = session();
+    let long = format!("labcraft 1\n\ntype Long = fn({}f64[V]) -> (f64)\n", "f64[V], ".repeat(120));
+    let fields: Vec<String> = (0..100).map(|index| format!("a{index}: Long")).collect();
+    let wide = format!("labcraft 1\n\ntype Wide = struct {{ {} }}\n", fields.join(", "));
+    let deep = format!("labcraft 1\n\nfn deep<T>(a: {}T{}) -> (n: i32) {{\n    n = 0\n}}\n", "[".repeat(20), "]".repeat(20));
+    for (path, text) in [("Long.lct", long.as_str()), ("Wide.lct", wide.as_str()), ("deep.lcf", deep.as_str())] {
+        ok(&mut session, "file.write", json!({ "path": path, "text": text, "check": false }));
+    }
+    let listed = ok(&mut session, "functions.list", json!({ "filter": "Wide" }));
+    let entry = listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == "Wide").cloned().unwrap();
+    assert_eq!(entry["truncated"], true);
+    let kept = entry["fields"].as_array().unwrap();
+    assert!(!kept.is_empty() && kept.len() < 100, "{}", kept.len());
+    assert!(kept.iter().all(|field| field["fit"]["shape"].as_str().is_some_and(|shape| shape.starts_with("fn(f64[V], "))));
+    assert!(serde_json::to_string(&entry).unwrap().len() < 2 * crate::functions::MAX_TYPED);
+    let listed = ok(&mut session, "functions.list", json!({ "filter": "deep" }));
+    let deep = listed["entries"].as_array().unwrap().iter().find(|entry| entry["name"] == "deep").cloned().unwrap();
+    assert_eq!(deep["inputs"][0]["fit"], json!({ "shape": format!("{}T{}", "[".repeat(20), "]".repeat(20)) }));
 }
 
 /// Every declaration of appendix A, sections A.1 and A.2, is the signature that `functions.list` gives of its primitive,

@@ -295,6 +295,51 @@ past 200 code points, as a message is; `library` is `""` for the root, whose fun
 library is named by it in the signatures (`session: visa.session`), as a program that uses it writes it. The
 categories of a function of a library are those its manifest declares for the library, which say no more.
 
+Beside its signature, which stays the text to read, each entry gives its types as data, so that a client never reads
+the signature again: a function its `inputs` and `outputs`; a type its `fields` (a struct), its `variants` (an enum,
+each `{ "name", "values" }`) or `is` (an alias, what it names); an opaque type none of them. Each input, output, field
+and value is `{ "name", "type", "fit" }`, `name` absent for a value of a variant, `type` the type as the signature
+writes it, and `fit` what the rule of fit (spec 3.3, 3.4) judges it by, which holds outside a check:
+
+- `{ "number": "f64", "unit": "mV" }`: a number, its kind and its unit, `unit` absent for a number without one;
+- `{ "base": "duration" }`: `bool`, `string`, `bytes`, `timestamp`, `duration` or `error`;
+- `{ "variable": "N", "bound": "Number" }`: a type variable of the signature, `bound` absent when it has none;
+- `{ "numbers": ["A", "B"] }`: a number that the call works out from the type variables or the parameters it names
+  (`A·B`, `√N`, `f64[unit]`);
+- `{ "array": { "variable": "T" }, "dimensions": 2 }`: an array of a type variable, `dimensions` absent when the type
+  does not write them; any other array is a `shape`, and so is one in more than 16 arrays *(proposed)*;
+- `{ "shape": "visa.session" }`: any other type, by its text; two such types match when their texts are equal, a `…`
+  matching any part (`fn(…) -> (…)`, the input of `core.call`, takes any function). An alias
+  is followed to what it names, across libraries: an output of type `psu.session`, an alias of `visa.session`, has the
+  fit `{ "shape": "visa.session" }`, and one of an alias of `f64[mV]` the fit of that number.
+
+An input also says, only when it is true, `required` (no default, and not variadic), `variadic`, `named_only` (a
+default after a variadic parameter, wired by name only, R-11) and `literal` (it takes only text written in the call,
+never a wire: a `kind` parameter, the template of `string.format`); a `literal` input has no `fit`. What a signature
+writes `…` (the inputs that the template of `string.format` adds, the outputs of `core.call`) is not listed. The
+typed parts of one entry hold about 64 KiB at most *(proposed)*, each type cut as a signature is: past that, the
+rest is left out and the entry says `truncated`. So `visa.open` is:
+
+```json
+{
+  "name": "visa.open",
+  "library": "visa",
+  "kind": "function",
+  "signature": "fn visa.open(resource: string, timeout: duration = 2 s, err: error = none) -> (session: visa.session, err: error)",
+  "inputs": [
+    { "name": "resource", "type": "string", "fit": { "base": "string" }, "required": true },
+    { "name": "timeout", "type": "duration", "fit": { "base": "duration" } },
+    { "name": "err", "type": "error", "fit": { "base": "error" } }
+  ],
+  "outputs": [
+    { "name": "session", "type": "visa.session", "fit": { "shape": "visa.session" } },
+    { "name": "err", "type": "error", "fit": { "base": "error" } }
+  ],
+  "categories": ["io.timeout", "visa.invalid_session", "visa.resource_not_found"],
+  "doc": "Opens a session on a resource (`SIM::…`: a simulated instrument)."
+}
+```
+
 ### 6.2 Files and libraries
 
 | Command | Parameters | Returns |

@@ -2212,6 +2212,7 @@ dependencies = [
  "labcraft-format",
  "labcraft-trace",
  "labcraft-types",
+ "serde_json",
 ]
 
 [[package]]

@@ -1,14 +1,16 @@
 //! The catalog of quick insertion and of the panel `Palette` (notation 2.6, ide.md 4): what the project can call, read
-//! from the signatures of `functions.list` (commands.md 6.1), with the type of each input and output, so that the list
-//! opened from a wire holds only what takes it. The filter is the predicate of `wire.connect` as the canvas judges a
-//! wire (`labcraft_diagram::wiring`): the same rule of fit (spec 3.3, 3.4), on the types that the signatures write; the
-//! command judges the insertion again (architecture 12.6). The order is deterministic and works offline: what takes the
-//! type, those whose first required input takes it first, then the best match of the search, then what the user inserted
-//! most recently, then the alphabet. No model ranks the list and nothing asks the network.
+//! from the inputs and outputs that `functions.list` gives with each entry (commands.md 6.1), so that the list opened
+//! from a wire holds only what takes it; no signature text is read here. The filter is the predicate of `wire.connect`
+//! as the canvas judges a wire (`labcraft_diagram::wiring`): the same rule of fit (spec 3.3, 3.4), on what the engine
+//! says the rule reads of each type; the command judges the insertion again (architecture 12.6). The order is
+//! deterministic and works offline: what takes the type, those whose first required input takes it first, then the best
+//! match of the search, then what the user inserted most recently, then the alphabet. No model ranks the list and
+//! nothing asks the network.
 
 use std::collections::{BTreeMap, HashMap};
 
 use labcraft_diagram::Drawing;
+use labcraft_types::listing::{Slot as ListedSlot, SlotFit, Typed};
 use labcraft_types::{Fit, FitKey, MAX_NESTING, NumberKind, Unit, parse_unit};
 
 /// An entry of `functions.list`, as the host reads it.
@@ -19,6 +21,8 @@ pub struct Listed {
     /// `function` or `type`.
     pub kind: String,
     pub signature: String,
+    /// Its inputs and outputs, or the fields, variants or alias of a type, as `functions.list` gives them.
+    pub typed: Typed,
 }
 
 /// What a row of the list inserts.
@@ -129,52 +133,45 @@ impl Catalog {
     pub fn new(listed: &[Listed]) -> Catalog {
         let mut aliases = HashMap::new();
         let mut entries = Vec::new();
-        for item in listed.iter().filter(|item| item.kind == "type") {
-            let Some((_, definition)) = item.signature.split_once('=') else { continue };
-            let definition = definition.trim();
+        for item in listed {
             let name = full_name(item);
-            if let Some(body) = definition.strip_prefix("struct") {
-                let fields = inside(body, '{', '}').map(|fields| split_top(fields, ',')).unwrap_or_default();
-                let inputs = fields.iter().filter_map(|field| field.split_once(':')).map(|(field, ty)| slot(field.trim(), ty, &[], true)).collect();
+            let typed = &item.typed;
+            let entry = |call: String, kind: EntryKind, inputs: Vec<Slot>| Entry {
+                call,
+                library: item.library.clone(),
+                signature: item.signature.clone(),
+                kind,
+                inputs,
+                outputs: Vec::new(),
+            };
+            if item.kind != "type" {
                 entries.push(Entry {
-                    call: name.clone(),
-                    library: item.library.clone(),
-                    signature: item.signature.clone(),
-                    kind: EntryKind::Struct,
-                    inputs,
-                    outputs: vec![slot(&name, &name, &[], true)],
+                    inputs: typed.inputs.iter().map(slot).collect(),
+                    outputs: typed.outputs.iter().map(slot).collect(),
+                    ..entry(name, EntryKind::Function, Vec::new())
                 });
-            } else if let Some(body) = definition.strip_prefix("enum") {
-                for variant in inside(body, '{', '}').map(|variants| split_top(variants, ',')).unwrap_or_default() {
-                    let variant = variant.trim();
-                    let (variant_name, values) = match variant.split_once('(') {
-                        Some((variant_name, rest)) => (variant_name.trim(), rest.strip_suffix(')').map(|values| split_top(values, ','))),
-                        None => (variant, None),
-                    };
-                    if variant_name.is_empty() {
-                        continue;
-                    }
-                    let call = format!("{name}.{variant_name}");
-                    let (kind, inputs) = match values {
-                        Some(values) => (EntryKind::Variant, values.iter().map(|ty| slot("", ty, &[], true)).collect()),
-                        None => (EntryKind::Constant, Vec::new()),
-                    };
-                    entries.push(Entry {
-                        call,
-                        library: item.library.clone(),
-                        signature: item.signature.clone(),
-                        kind,
-                        inputs,
-                        outputs: vec![slot(&name, &name, &[], true)],
-                    });
-                }
-            } else if definition != "opaque" {
-                aliases.insert(name, definition.to_owned());
+                continue;
             }
-        }
-        for item in listed.iter().filter(|item| item.kind != "type") {
-            if let Some(entry) = function(item) {
-                entries.push(entry);
+            let itself = Slot { name: name.clone(), ty: SlotTy::Named(name.clone()), required: true, variadic: false };
+            if !typed.fields.is_empty() {
+                let fields = typed.fields.iter().map(|field| Slot { required: true, ..slot(field) }).collect();
+                entries.push(Entry { outputs: vec![itself], ..entry(name, EntryKind::Struct, fields) });
+            } else if !typed.variants.is_empty() {
+                for variant in &typed.variants {
+                    let call = format!("{name}.{}", variant.name);
+                    let (kind, values) = if variant.values.is_empty() {
+                        (EntryKind::Constant, Vec::new())
+                    } else {
+                        (EntryKind::Variant, variant.values.iter().map(|value| Slot { required: true, ..slot(value) }).collect())
+                    };
+                    entries.push(Entry { outputs: vec![itself.clone()], ..entry(call, kind, values) });
+                }
+            } else if let Some(is) = &typed.is {
+                let named = match &is.fit {
+                    Some(SlotFit::Shape { shape }) => shape.clone(),
+                    _ => is.ty.clone(),
+                };
+                aliases.insert(name, named);
             }
         }
         entries.sort_by(|a, b| a.call.cmp(&b.call));
@@ -385,127 +382,30 @@ fn full_name(item: &Listed) -> String {
     if item.library.is_empty() || item.name.contains('.') { item.name.clone() } else { format!("{}.{}", item.library, item.name) }
 }
 
-/// A function, from its signature: `fn visa.open(resource: string, timeout: duration = 2 s, err: error = none) ->
-/// (session: visa.session, err: error)`.
-fn function(item: &Listed) -> Option<Entry> {
-    let signature = item.signature.trim();
-    let rest = signature.strip_prefix("fn ")?;
-    let open = rest.find('(')?;
-    let head = rest.get(..open)?;
-    let (call, variables) = match head.split_once('<') {
-        Some((call, variables)) => (call.trim(), variables.strip_suffix('>').map(|variables| split_top(variables, ',')).unwrap_or_default()),
-        None => (head.trim(), Vec::new()),
-    };
-    let variables: Vec<(String, bool)> = variables
-        .iter()
-        .map(|variable| match variable.split_once(':') {
-            Some((name, bound)) => (name.trim().to_owned(), bound.trim() == "Number"),
-            None => (variable.trim().to_owned(), false),
-        })
-        .collect();
-    let after = rest.get(open..)?;
-    let params = inside(after, '(', ')')?;
-    let closing = matching(after, '(', ')')?;
-    let outputs =
-        after.get(closing + 1..).and_then(|tail| tail.trim().strip_prefix("->")).and_then(|tail| inside(tail, '(', ')')).unwrap_or_default();
-    let format = call == "string.format";
-    let mut inputs = Vec::new();
-    for (rank, param) in split_top(params, ',').iter().enumerate() {
-        let param = param.trim();
-        let Some((name, rest)) = param.split_once(':') else { continue };
-        let (ty, default) = match rest.split_once('=') {
-            Some((ty, default)) => (ty, Some(default)),
-            None => (rest, None),
-        };
-        let variadic = ty.trim().ends_with("...");
-        let ty = ty.trim().trim_end_matches("...");
-        let mut slot = slot(name.trim(), ty, &variables, default.is_none());
-        slot.variadic = variadic;
-        // The template of `string.format` takes only a literal (spec 5.4).
-        if format && rank == 0 {
-            slot.ty = SlotTy::Literal;
-        }
-        inputs.push(slot);
-    }
-    let outputs = split_top(outputs, ',')
-        .iter()
-        .filter_map(|output| output.split_once(':'))
-        .map(|(name, ty)| slot(name.trim(), ty, &variables, true))
-        .collect();
-    Some(Entry {
-        call: call.to_owned(),
-        library: item.library.clone(),
-        signature: item.signature.clone(),
-        kind: EntryKind::Function,
-        inputs,
-        outputs,
-    })
+/// An input, an output, a field or a value, from what `functions.list` gives of it.
+fn slot(listed: &ListedSlot) -> Slot {
+    Slot { name: listed.name.clone(), ty: slot_ty(listed), required: listed.required, variadic: listed.variadic }
 }
 
-fn slot(name: &str, ty: &str, variables: &[(String, bool)], required: bool) -> Slot {
-    Slot { name: name.to_owned(), ty: type_of(ty.trim(), variables), required, variadic: false }
-}
-
-/// The type of a parameter or an output, as a signature writes it.
-fn type_of(text: &str, variables: &[(String, bool)]) -> SlotTy {
-    if text.starts_with("kind ") {
+/// What a slot takes or gives, from what the rule of fit reads of its type (commands.md 6.1).
+fn slot_ty(listed: &ListedSlot) -> SlotTy {
+    if listed.literal {
         return SlotTy::Literal;
     }
-    if let Some((_, numbers)) = variables.iter().find(|(name, _)| name == text) {
-        return if *numbers { SlotTy::Numbers } else { SlotTy::Any };
-    }
-    // What numbers of type variables give: `A·B`, `A/B`, `√N`, `N^exponent`, `f64[unit]`.
-    let of_variables = variables.iter().any(|(name, numbers)| *numbers && text.contains(name.as_str()));
-    if of_variables && (text.contains('·') || text.contains('/') || text.starts_with('√') || text.contains('^')) {
-        return SlotTy::Numbers;
-    }
-    if text.starts_with('[') {
-        let generic =
-            variables.iter().any(|(name, _)| text.trim_start_matches('[').split([']', ';']).next().is_some_and(|inner| inner.trim() == name));
-        return if generic { SlotTy::AnyArray } else { SlotTy::Named(text.to_owned()) };
-    }
-    // A function takes only a function of its signature, which a wire of a value never carries.
-    if text.starts_with("fn(") {
-        return SlotTy::Named(text.to_owned());
-    }
-    if text.contains('…') {
-        return SlotTy::Any;
-    }
-    let (base, unit) = match text.split_once('[') {
-        Some((base, unit)) => (base.trim(), unit.strip_suffix(']')),
-        None => (text, None),
-    };
-    let kind = match base {
-        "i8" => Some(NumberKind::I8),
-        "i16" => Some(NumberKind::I16),
-        "i32" => Some(NumberKind::I32),
-        "i64" => Some(NumberKind::I64),
-        "u8" => Some(NumberKind::U8),
-        "u16" => Some(NumberKind::U16),
-        "u32" => Some(NumberKind::U32),
-        "u64" => Some(NumberKind::U64),
-        "f32" => Some(NumberKind::F32),
-        "f64" => Some(NumberKind::F64),
-        "c64" => Some(NumberKind::C64),
-        "c128" => Some(NumberKind::C128),
-        _ => None,
-    };
-    if let Some(kind) = kind {
-        return match unit {
-            None => SlotTy::Key(FitKey::Number(kind, Unit::ONE)),
-            // A unit named by a parameter (`f64[unit]`) is known only at the call.
-            Some(unit) => parse_unit(unit, MAX_NESTING).map_or(SlotTy::Numbers, |unit| SlotTy::Key(FitKey::Number(kind, unit))),
-        };
-    }
-    match text {
-        "bool" => SlotTy::Key(FitKey::Bool),
-        "string" => SlotTy::Key(FitKey::String),
-        "bytes" => SlotTy::Key(FitKey::Bytes),
-        "timestamp" => SlotTy::Key(FitKey::Timestamp),
-        "duration" => SlotTy::Key(FitKey::Duration),
-        "error" => SlotTy::Key(FitKey::Error),
-        "" => SlotTy::Any,
-        other => SlotTy::Named(other.to_owned()),
+    match &listed.fit {
+        None => SlotTy::Any,
+        Some(fit @ SlotFit::Number { .. }) => fit.key().map_or(SlotTy::Numbers, SlotTy::Key),
+        Some(fit @ SlotFit::Base { .. }) => fit.key().map_or(SlotTy::Any, SlotTy::Key),
+        Some(SlotFit::Variable { bound, .. }) => {
+            if bound.as_deref() == Some("Number") {
+                SlotTy::Numbers
+            } else {
+                SlotTy::Any
+            }
+        }
+        Some(SlotFit::Numbers { .. }) => SlotTy::Numbers,
+        Some(SlotFit::Array { .. }) => SlotTy::AnyArray,
+        Some(SlotFit::Shape { shape }) => SlotTy::Named(shape.clone()),
     }
 }
 
@@ -519,94 +419,6 @@ fn follow(aliases: &HashMap<String, String>, text: &str) -> String {
         }
     }
     now
-}
-
-/// What the first `open` of `text` holds, to its matching `close`.
-fn inside(text: &str, open: char, close: char) -> Option<&str> {
-    let start = text.find(open)?;
-    let end = matching(text, open, close)?;
-    text.get(start + open.len_utf8()..end)
-}
-
-/// Where the `close` that matches the first `open` of `text` is, outside strings.
-fn matching(text: &str, open: char, close: char) -> Option<usize> {
-    let mut depth = 0usize;
-    for (at, c) in Scan::new(text) {
-        if c == open {
-            depth += 1;
-        } else if c == close {
-            depth = depth.checked_sub(1)?;
-            if depth == 0 {
-                return Some(at);
-            }
-        }
-    }
-    None
-}
-
-/// `text` cut at each `separator` that no bracket or string holds.
-fn split_top(text: &str, separator: char) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0;
-    for (at, c) in Scan::new(text) {
-        match c {
-            '(' | '[' | '{' | '<' => depth += 1,
-            ')' | ']' | '}' | '>' => depth -= 1,
-            _ if c == separator && depth == 0 => {
-                parts.push(text.get(start..at).unwrap_or_default());
-                start = at + c.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    let last = text.get(start..).unwrap_or_default();
-    if !last.trim().is_empty() {
-        parts.push(last);
-    }
-    parts.retain(|part| !part.trim().is_empty() && part.trim() != "…");
-    parts
-}
-
-/// The letters of a signature that its structure reads: none inside a string (`"a)"`, `"\""`), and not the `>` of `->`,
-/// which closes no bracket.
-struct Scan<'a> {
-    letters: std::iter::Peekable<std::str::CharIndices<'a>>,
-    quoted: bool,
-    previous: Option<char>,
-}
-
-impl<'a> Scan<'a> {
-    fn new(text: &'a str) -> Scan<'a> {
-        Scan { letters: text.char_indices().peekable(), quoted: false, previous: None }
-    }
-}
-
-impl Iterator for Scan<'_> {
-    type Item = (usize, char);
-
-    fn next(&mut self) -> Option<(usize, char)> {
-        loop {
-            let (at, c) = self.letters.next()?;
-            let previous = self.previous.replace(c);
-            if self.quoted {
-                match c {
-                    '\\' => {
-                        self.letters.next();
-                        self.previous = None;
-                    }
-                    '"' => self.quoted = false,
-                    _ => {}
-                }
-                continue;
-            }
-            match c {
-                '"' => self.quoted = true,
-                '>' if previous == Some('-') => {}
-                _ => return Some((at, c)),
-            }
-        }
-    }
 }
 
 /// The insertions of a user, the most recent first, kept on their machine (notation 2.6): at most this many.
