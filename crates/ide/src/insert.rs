@@ -99,7 +99,7 @@ impl QuickList {
                     }
                     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                         if rows.is_empty() {
-                            ui.label(RichText::new("Nothing here takes this wire").weak());
+                            ui.label(RichText::new(nothing(&self.quick.source)).weak());
                         }
                         for (at, row) in rows.iter().take(SHOWN).enumerate() {
                             let (title, detail) = match row {
@@ -138,6 +138,16 @@ impl QuickList {
             return Closed::Cancelled;
         }
         Closed::Open
+    }
+}
+
+/// What the list says when nothing is in it.
+fn nothing(source: &Source) -> &'static str {
+    match source {
+        Source::Nothing => "Nothing matches",
+        Source::Terminal { wanted, .. } if !wanted.from_output => "Nothing here gives this input its value",
+        Source::Terminal { .. } | Source::Node { .. } => "Nothing here takes this value",
+        Source::Wire { .. } => "Nothing here goes into this wire",
     }
 }
 

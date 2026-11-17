@@ -36,25 +36,32 @@ pub(crate) fn node(
     let function = before.body_function()?.clone();
     let found = wire::find(&before, judge, &function, into).map_err(|error| error.of("into"))?;
     let (from, to) = split_wire(into).map_err(|error| error.of("into"))?;
-    let reader = match found {
+    // Both ends named as the text before the node names them: an `@N` would name another line once the node is added.
+    let (from, reader) = match found {
         Found::Reader { label: true, .. } => {
             return Err(EditError::invalid("into", format!("`{into}` is an order wire: it carries no value for a node to take")));
         }
-        Found::Reader { input, node: Some((node, is_label)), .. } if !input.is_empty() => {
-            let node = before.text(node);
-            format!("{}{node}.{input}", if is_label { "#" } else { "" })
+        Found::Reader { name, input, node, .. } => {
+            let reader = match node {
+                Some((node, is_label)) => {
+                    let node = format!("{}{}", if is_label { "#" } else { "" }, before.text(node));
+                    if input.is_empty() { node } else { format!("{node}.{input}") }
+                }
+                None => to,
+            };
+            (before.text(name).to_owned(), reader)
         }
-        Found::Reader { .. } => to,
-        Found::Alias(_) | Found::Bound { .. } => format!("output {}", output_of(&to)),
+        Found::Alias(_) | Found::Bound { .. } => (from, format!("output {}", output_of(&to))),
     };
     // `add::node` refuses a call that names nothing, with the nearest names.
-    let mut edit = Edit::read(path, text, limits)?;
+    let mut edit = before;
     add::node(&mut edit, judge, call, at, name, edited)?;
     let Lookup::Found(callable) = judge.callable(path, call) else {
         return Err(EditError::internal(format!("`{call}` was found once and not again")));
     };
     let named = edited.names.get("node").cloned().unwrap_or_default();
-    if callable.outputs.is_empty() || named.starts_with('#') {
+    // Only a node with no output gets a label (N-14).
+    if callable.outputs.is_empty() {
         return Err(EditError::invalid("into", format!("`{call}` has no output to go where the wire went")));
     }
     let mut now = edit.finish()?;

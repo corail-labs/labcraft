@@ -78,6 +78,8 @@ pub struct Catalog {
     pub entries: Vec<Entry>,
     /// Each alias to what it names (`psu.session` to `visa.session`).
     aliases: HashMap<String, String>,
+    /// Each call to the index of its entry, built once.
+    by_call: HashMap<String, usize>,
 }
 
 /// The wire that the list is opened from: its type, and which way it goes.
@@ -176,7 +178,8 @@ impl Catalog {
             }
         }
         entries.sort_by(|a, b| a.call.cmp(&b.call));
-        let mut catalog = Catalog { entries, aliases };
+        let by_call = entries.iter().enumerate().map(|(index, entry)| (entry.call.clone(), index)).collect();
+        let mut catalog = Catalog { entries, aliases, by_call };
         let aliases = catalog.aliases.clone();
         for entry in &mut catalog.entries {
             for slot in entry.inputs.iter_mut().chain(entry.outputs.iter_mut()) {
@@ -281,8 +284,7 @@ impl Catalog {
             let score = if query.is_empty() {
                 0
             } else {
-                let library = if entry.library.is_empty() { "" } else { entry.library.as_str() };
-                match [score(query, &entry.call), score(query, library)].into_iter().flatten().max() {
+                match Catalog::search(query, &entry.call, &entry.library) {
                     Some(score) => score,
                     None => continue,
                 }
@@ -297,12 +299,23 @@ impl Catalog {
 
     /// The entry of a call, as `node.add` names it.
     pub fn entry(&self, call: &str) -> Option<&Entry> {
-        self.entries.iter().find(|entry| entry.call == call)
+        self.index_of(call).and_then(|index| self.entries.get(index))
+    }
+
+    /// The index of the entry of `call`.
+    pub fn index_of(&self, call: &str) -> Option<usize> {
+        self.by_call.get(call).copied()
+    }
+
+    /// The score of `call` and its library for a search, as the list ranks them (the panel `Palette` too): None when the
+    /// query does not match.
+    pub fn search(query: &str, call: &str, library: &str) -> Option<i64> {
+        [score(query, call), score(query, library)].into_iter().flatten().max()
     }
 }
 
-/// The fuzzy score of the palette: the letters of the query in order (`kit_shell::fuzzy`, which this crate does not
-/// depend on, scores the same way for the command palette).
+/// The fuzzy score of quick insertion and of the panel `Palette`: the letters of the query in order, a start of a word
+/// and letters in a row counting more.
 fn score(query: &str, text: &str) -> Option<i64> {
     let query: Vec<char> = query.chars().filter(|c| !c.is_whitespace()).flat_map(char::to_lowercase).collect();
     if query.is_empty() {

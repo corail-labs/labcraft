@@ -86,14 +86,7 @@ impl Canvas {
             let group = found.groups.first().copied()?;
             let wire = drawing.groups.get(group)?.wire.as_ref()?;
             let near = self.pinned.filter(|(pinned, _)| *pinned == group).map(|(_, at)| at).or(under);
-            let nearest = wire
-                .readers
-                .iter()
-                .zip(&wire.entries)
-                .filter_map(|((_, path), entry)| Some((distance(path, near?), entry.clone()?)))
-                .min_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|(_, entry)| entry);
-            let name = nearest.or_else(|| wire.named.first().cloned())?;
+            let name = nearest_entry(wire, near)?;
             let wanted = Wanted::of_wire(&drawing, group)?;
             let screen = near.map_or(rect.center(), to_screen);
             return Some(Quick { at: None, screen, source: Source::Wire { name, wanted } });
@@ -149,16 +142,23 @@ impl Canvas {
             return None;
         }
         let wire = drawing.groups.get(group)?.wire.as_ref()?;
-        let name = wire
-            .readers
-            .iter()
-            .zip(&wire.entries)
-            .filter_map(|((_, path), entry)| Some((distance(path, unit), entry.clone()?)))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, entry)| entry)
-            .or_else(|| wire.named.first().cloned())?;
+        let name = nearest_entry(wire, Some(unit))?;
         Some((group, name))
     }
+}
+
+/// The name of the wire, as `wire.*` takes it, to the reader nearest to `near` (in units); without a point, or when no
+/// reader has a name of its own, the first name of the wire.
+fn nearest_entry(wire: &labcraft_diagram::WireOf, near: Option<Pos2>) -> Option<String> {
+    near.and_then(|near| {
+        wire.readers
+            .iter()
+            .zip(&wire.entries)
+            .filter_map(|((_, path), entry)| Some((distance(path, near), entry.clone()?)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, entry)| entry)
+    })
+    .or_else(|| wire.named.first().cloned())
 }
 
 /// The distance from a point, in units, to a path in hundredths.

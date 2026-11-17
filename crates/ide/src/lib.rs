@@ -280,7 +280,8 @@ pub struct Ide {
     pending: Vec<(String, Reply)>,
     /// The editing commands asked for, by the function they edit: a failure puts the nodes of a move back on its canvas,
     /// and a node that got a label stays selected by it (commands.md 9.3, `renamed`).
-    edits: Vec<(String, Reply)>,
+    /// The editing commands sent, by function, and the call to remember among the recent insertions once it is done.
+    edits: Vec<(String, Reply, Option<String>)>,
     failures: Vec<String>,
     /// Where the canvas of the function shown in the window of the project was painted last.
     canvas_rect: Option<egui::Rect>,
@@ -574,7 +575,12 @@ impl Ide {
             }
             Some(host) => self.dock(ui, host, &view, start, &entries, &mut outward),
         }
-        if let Some(host) = host {
+        // The list of quick insertion opened in a window of the system is drawn there (`Content::window_drawn`): its
+        // place is in the frame of that window.
+        let quick_elsewhere = self.quick.as_ref().is_some_and(|list| self.native.contains(&list.function));
+        if let Some(host) = host
+            && !quick_elsewhere
+        {
             self.show_quick(ui.ctx(), host);
         }
         // The palette opened in a window of the system is drawn there (`Content::window_drawn`).
@@ -663,9 +669,12 @@ impl Ide {
         self.pending.retain(|(id, reply)| take(id, reply));
         let mut moved_back = Vec::new();
         let mut relabelled = Vec::new();
-        self.edits.retain(|(function, reply)| match reply.take() {
+        let mut inserted = Vec::new();
+        self.edits.retain(|(function, reply, call)| match reply.take() {
             None => true,
             Some(Ok(result)) => {
+                // Only an insertion done goes among the recent ones (notation 2.6).
+                inserted.extend(call.clone());
                 // A move that changed nothing brings no new drawing: its nodes go back now.
                 if result.get("step").is_some_and(Value::is_null) {
                     moved_back.push(function.clone());
@@ -679,6 +688,10 @@ impl Ide {
                 false
             }
         });
+        for call in inserted {
+            labcraft_editor::insertion::remember(&mut self.prefs.recent, &call);
+            self.prefs_changed = true;
+        }
         for function in moved_back {
             if let Some(drawn) = self.drawn.get_mut(&function) {
                 drawn.canvas.cancel_move();
@@ -1351,7 +1364,7 @@ impl Ide {
             commands.push(json!({ "id": "node.move", "params": moving }));
             host.send("commands.batch", json!({ "commands": commands, "label": "Move Nodes" }))
         };
-        self.edits.push((function.to_owned(), reply));
+        self.edits.push((function.to_owned(), reply, None));
     }
 
     /// Asks for a move as the canvas of `function` would: for an app that drives the canvas itself (the scripted drag of
@@ -1382,11 +1395,11 @@ impl Ide {
             insert::Closed::Picked(picked) => {
                 let (id, params) = insert::command(&list.file, &list.quick, &picked, &catalog);
                 let reply = host.send(&id, params);
-                self.edits.push((list.function.clone(), reply));
-                if let insert::Picked::Entry(entry) = &picked {
-                    labcraft_editor::insertion::remember(&mut self.prefs.recent, &entry.call);
-                    self.prefs_changed = true;
-                }
+                let call = match &picked {
+                    insert::Picked::Entry(entry) => Some(entry.call.clone()),
+                    insert::Picked::Constant(_) => None,
+                };
+                self.edits.push((list.function.clone(), reply, call));
             }
         }
         if let Some(canvas) = list.canvas {
@@ -1429,7 +1442,7 @@ impl Ide {
             return;
         }
         let reply = host.send("commands.batch", json!({ "commands": commands, "label": "Delete" }));
-        self.edits.push((function.to_owned(), reply));
+        self.edits.push((function.to_owned(), reply, None));
     }
 
     /// Asks the session for a selection of the canvas of `function` (`view.select`).
@@ -1602,7 +1615,7 @@ impl Ide {
                     }
                 }
                 let reply = host.send("layout.arrange", Value::Object(params));
-                self.edits.push((function, reply));
+                self.edits.push((function, reply, None));
             }
             keys::SELECT_ALL | keys::SELECT_UPSTREAM | keys::SELECT_DOWNSTREAM | keys::SELECT_ALL_UPSTREAM | keys::SELECT_ALL_DOWNSTREAM => {
                 let step = match id.as_str() {
@@ -1679,7 +1692,7 @@ impl Ide {
                     .and_then(|file| view.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone()));
                 let reply = host.send(&id, Value::Object(params));
                 match edited {
-                    Some(function) => self.edits.push((function, reply)),
+                    Some(function) => self.edits.push((function, reply, None)),
                     None => self.pending.push((id, reply)),
                 }
             }
@@ -1845,6 +1858,8 @@ impl DockContent<Pane> for Content<'_> {
         // Its keys while it has focus; its palette, open in it, stays drawn in it when it loses it.
         if ctx.input(|input| input.viewport().focused.unwrap_or(false)) {
             self.ide.focus = Some(function.clone());
+            // Where quick insertion falls is read in the frame of this window.
+            self.ide.pointer = ctx.pointer_latest_pos();
             for command in self.ide.key_hits(&ctx) {
                 if command.id == keys::PALETTE {
                     self.ide.open_palette(self.view);
@@ -1852,6 +1867,9 @@ impl DockContent<Pane> for Content<'_> {
                     self.commands.push(command);
                 }
             }
+        }
+        if self.ide.quick.as_ref().is_some_and(|list| list.function == function) {
+            self.ide.show_quick(&ctx, self.host);
         }
         if self.ide.palette_in.as_deref() == Some(function.as_str())
             && let Some(chosen) = self.ide.palette.show(&ctx, self.entries)
@@ -2126,7 +2144,7 @@ impl Content<'_> {
                             json!({ "file": file, "wires": selection.wires })
                         };
                         let reply = self.host.send("layout.arrange", params);
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // A wire dropped, or wired with Enter (notation 2.6): one step of undo; a branch with its junction, in one
@@ -2144,7 +2162,7 @@ impl Content<'_> {
                                 self.host.send("commands.batch", json!({ "commands": commands, "label": "Branch Wire" }))
                             }
                         };
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // A segment moved by hand (notation 2.4): every wire it moves, in one step.
@@ -2155,7 +2173,7 @@ impl Content<'_> {
                             .map(|(wire, via)| json!({ "id": "wire.route", "params": { "file": file, "wire": wire, "via": via } }))
                             .collect();
                         let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Route Wire" }));
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // Ctrl and a drag on a wired terminal: its wires to another terminal, in one step (notation 2.6).
@@ -2169,7 +2187,7 @@ impl Content<'_> {
                             }))
                             .collect();
                         let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Move Wire" }));
-                        self.ide.edits.push((function.to_owned(), reply));
+                        self.ide.edits.push((function.to_owned(), reply, None));
                     }
                 }
                 // Quick insertion (notation 2.6): the list opens where the wire was dropped.
@@ -2182,9 +2200,7 @@ impl Content<'_> {
                             None => json!({ "file": file, "call": call, "at": [at.0, at.1] }),
                         };
                         let reply = self.host.send("node.add", params);
-                        self.ide.edits.push((function.to_owned(), reply));
-                        labcraft_editor::insertion::remember(&mut self.ide.prefs.recent, &call);
-                        self.ide.prefs_changed = true;
+                        self.ide.edits.push((function.to_owned(), reply, Some(call)));
                     }
                 }
                 Intent::Say(text) => self.ide.say(text),

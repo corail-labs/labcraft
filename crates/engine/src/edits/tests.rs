@@ -350,7 +350,7 @@ fn a_command_of_a_batch_names_the_node_of_an_earlier_one() {
     ] });
     assert_eq!(refused(&mut session, &Author::User, "commands.batch", batch).code, "params.invalid");
     // A `$i` is a whole name, once in each end: nothing else is replaced, so that a value never grows past two names.
-    for to in ["sum2.b $0", "$0 $0"] {
+    for to in ["sum2.b $0", "$0 $0", "$0abc.a", "$0_x", "$00.a"] {
         let batch = json!({ "commands": [
             { "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } },
             { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": to } },

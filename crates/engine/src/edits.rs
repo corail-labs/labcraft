@@ -791,8 +791,11 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
         // A node named earlier and renamed now (folded into an output, given a label) keeps its `$i`: the name it had
         // may be taken by another node later in the batch.
         for earlier in named.iter_mut().flatten() {
-            if let Some(change) = edited.renamed.iter().find(|change| change.from == *earlier) {
-                earlier.clone_from(&change.to);
+            // In their order: a node given a label then folded is renamed twice by one command.
+            for change in &edited.renamed {
+                if change.from == *earlier {
+                    earlier.clone_from(&change.to);
+                }
             }
         }
         named.push(edited.names.get("node").cloned());
@@ -838,7 +841,13 @@ fn replace_earlier(value: &mut Value, key: &str, named: &[Option<String>], index
             let starts: Vec<usize> = std::iter::once(0)
                 .chain(text.find("->").map(|arrow| arrow + 2 + text.get(arrow + 2..).map_or(0, |rest| rest.len() - rest.trim_start().len())))
                 .collect();
-            if found.len() > 2 || found.iter().any(|(start, _, _)| !starts.contains(start)) {
+            // A whole name: a `$i` ends where the name does (`$0`, `$0.a`, not `$0abc`), and its number has no leading zero.
+            let whole = |&(start, end, _): &(usize, usize, u32)| {
+                starts.contains(&start)
+                    && text.get(end..).and_then(|rest| rest.chars().next()).is_none_or(|next| next == '.' || next.is_whitespace())
+                    && !text.get(start + 1..end).is_some_and(|digits| digits.len() > 1 && digits.starts_with('0'))
+            };
+            if found.len() > 2 || !found.iter().all(whole) {
                 return Err(CommandError::of(
                     "params.invalid",
                     key,

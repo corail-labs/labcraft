@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use egui::RichText;
-use kit_shell::fuzzy;
 use kit_shell::icon::{self, Icon};
 use kit_shell::inspector::{self, Field, Section};
 use labcraft_diagram::{Drawing, Overlay};
@@ -199,7 +198,14 @@ pub fn palette(ui: &mut egui::Ui, callables: &mut Callables) {
     if let Some(failure) = &callables.failure {
         ui.label(RichText::new(failure).color(ui.visuals().warn_fg_color));
     }
-    let ranked = fuzzy::rank(&callables.search, &callables.list, |callable| vec![callable.name.as_str(), callable.library.as_str()]);
+    // Ranked as quick insertion ranks (`Catalog::search`): the best match first, then the order of the list.
+    let mut ranked: Vec<(i64, usize)> = callables
+        .list
+        .iter()
+        .enumerate()
+        .filter_map(|(at, callable)| Catalog::search(callables.search.trim(), &call_of(callable), &callable.library).map(|score| (score, at)))
+        .collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     let catalog = callables.catalog.clone();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if callables.search.trim().is_empty() {
@@ -216,7 +222,7 @@ pub fn palette(ui: &mut egui::Ui, callables: &mut Callables) {
                 });
             }
         } else {
-            for callable in ranked.iter().filter_map(|&at| callables.list.get(at)) {
+            for callable in ranked.iter().filter_map(|&(_, at)| callables.list.get(at)) {
                 row(ui, callable, &catalog);
             }
         }
@@ -226,15 +232,16 @@ pub fn palette(ui: &mut egui::Ui, callables: &mut Callables) {
     });
 }
 
+/// How a call names the callable: `visa.open`, `settle`.
+fn call_of(callable: &Callable) -> String {
+    if callable.library.is_empty() || callable.name.contains('.') { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) }
+}
+
 /// A row of the palette: dragged onto the canvas, its function is a node added there, or into the wire it is dropped on
 /// (`node.add`, notation 2.5).
 fn row(ui: &mut egui::Ui, callable: &Callable, catalog: &Arc<Catalog>) {
-    let name = if callable.library.is_empty() || callable.name.contains('.') {
-        callable.name.clone()
-    } else {
-        format!("{}.{}", callable.library, callable.name)
-    };
-    let entry = catalog.entries.iter().position(|entry| entry.call == name && entry.kind != EntryKind::Constant);
+    let name = call_of(callable);
+    let entry = catalog.index_of(&name).filter(|&at| catalog.entries.get(at).is_some_and(|entry| entry.kind != EntryKind::Constant));
     let response =
         ui.add(egui::Label::new(RichText::new(&name).monospace()).sense(if entry.is_some() { egui::Sense::drag() } else { egui::Sense::hover() }));
     if let Some(entry) = entry {
