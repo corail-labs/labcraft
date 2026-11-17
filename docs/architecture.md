@@ -1945,7 +1945,9 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   (`Ide::field_edits`): done, the field closes; refused, it stays open with the message. A `string.format` that quick
   insertion adds opens its template field once the drawing holds it. Delete on a terminal in focus clears its constant
   too. `edit` reads a template through `Judge::template`, which the session gives from `check` (`template_read`), so
-  that a template refused has the message of `check`; a field of the template is an input by its name (`text.u`).
+  that a template refused has the message of `check`; a field of the template is an input by its name (`text.u`). A
+  field opens on `Port::literal`, the constant as the file writes it, escapes kept, which `diagram` gives up to 4 KiB
+  *(proposed)*: a longer one is edited in the view `Text`. When a field closes, the canvas takes the keyboard back.
 
 ### 12.8 `mcp` (L7)
 

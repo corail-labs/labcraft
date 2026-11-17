@@ -77,8 +77,7 @@ pub(crate) fn callee(edit: &Edit, judge: &dyn Judge, statement: &Statement) -> O
         labcraft_graph::StatementKind::Call(call) | labcraft_graph::StatementKind::Binding { value: labcraft_graph::Rhs::Call(call), .. } => call,
         _ => return None,
     };
-    let text: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
-    match judge.callable(&edit.path, &text.join(".")) {
+    match judge.callable(&edit.path, &crate::wire::edit_node_text(edit, call)) {
         Lookup::Found(callable) => Some(callable),
         Lookup::Unknown(_) => None,
     }

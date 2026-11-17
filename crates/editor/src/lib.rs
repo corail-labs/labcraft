@@ -236,6 +236,8 @@ pub struct Canvas {
     rect: Rect,
     /// The field in place open (notation 2.6).
     field: Option<fields::Field>,
+    /// A field closed: the canvas takes the keyboard back at its next frame.
+    refocus: bool,
 }
 
 /// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
@@ -401,6 +403,7 @@ impl Canvas {
             wire_context: None,
             rect: Rect::NOTHING,
             field: None,
+            refocus: false,
         }
     }
 
@@ -669,6 +672,10 @@ impl Canvas {
         self.rules = rules_of(shown, false);
         let mut input = Input::default();
         let frame = self.begin(ui, &response, (rect, theme), drawing, shown, &mut input);
+        // The keyboard comes back to the canvas when a field closes (notation 2.6).
+        if std::mem::take(&mut self.refocus) {
+            response.request_focus();
+        }
         self.input(ui, &response, &frame, shown, &mut input);
         let response = self.paint(ui, response, &frame, theme, &input);
         self.describe(ui, &response, &frame);
@@ -1038,16 +1045,14 @@ impl Canvas {
     /// wire" (notation 2.4).
     fn fixed_menu(&mut self, response: &Response, frame: &Frame, input: &mut Input) {
         if response.secondary_clicked() {
-            self.context = frame.hovered;
             let unit_of = |at: Pos2| (self.viewport.origin + (at - frame.rect.min) / self.viewport.zoom).to_pos2();
             let visible = |within: Option<usize>| frame.visible(within);
             let reach = (5.0 / self.viewport.zoom).max(WIRE_REACH);
-            self.wire_context = match (self.context, frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of)) {
-                (None, Some(at)) => {
-                    select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
-                }
-                _ => None,
-            };
+            // A wire routed by hand within reach has its menu, over a node too; otherwise the node under the pointer.
+            self.wire_context = frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of).and_then(|at| {
+                select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
+            });
+            self.context = frame.hovered.filter(|_| self.wire_context.is_none());
         }
         if let Some(group) = self.wire_context {
             let wires = routed(&frame.drawing, group);

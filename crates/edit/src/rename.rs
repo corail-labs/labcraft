@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use labcraft_graph::{Arg, Label, LayoutKind, Operand, OrderRef, Rhs, StatementKind};
+use labcraft_graph::{Arg, Label, LayoutKind, Operand, OrderRef};
 use labcraft_types::Name;
 
 use crate::add::read_constant;
@@ -12,7 +12,7 @@ use crate::model::Edit;
 use crate::names::{given, rename, taken};
 use crate::refs::{NodeName, find_nodes, nearest, node};
 use crate::scope::{self, Bound};
-use crate::wire::{FORMAT, edit_node_text, forget_wire, statement_node, step_five, template_of};
+use crate::wire::{forget_wire, format_call, statement_node, step_five, template_of};
 use crate::{EditError, Edited, Judge, cut};
 
 /// `value.rename`.
@@ -34,11 +34,9 @@ pub(crate) fn value(edit: &mut Edit, value: &str, name: &str, edited: &mut Edite
         edited.names.insert("node", format!("#{new}"));
         return Ok(());
     }
-    let signature = |edit: &Edit| {
-        function.signature.params.iter().any(|param| edit.text(param.name) == value)
-            || function.signature.outputs.iter().any(|output| edit.text(output.name) == value)
-    };
-    if signature(edit) {
+    if function.signature.params.iter().any(|param| edit.text(param.name) == value)
+        || function.signature.outputs.iter().any(|output| edit.text(output.name) == value)
+    {
         return Err(EditError::invalid("value", format!("`{}` is an input or an output of the function: `signature.rename` renames it", cut(value))));
     }
     let values: Vec<scope::Value> = scope::values(&function).into_iter().filter(|found| edit.text(found.name) == value).collect();
@@ -91,23 +89,7 @@ fn rename_label(edit: &mut Edit, from: Name, to: Name) -> Result<(), EditError> 
             }
         }
     }
-    let Some(layout) = &mut edit.file.layout else { return Ok(()) };
-    for item in &mut layout.items {
-        match &mut item.kind {
-            LayoutKind::Node { node, .. } => {
-                if node.is_label && node.name == from {
-                    node.name = to;
-                }
-            }
-            LayoutKind::Wire { from: start, to: end, .. } => {
-                for end in [&mut start.node, &mut end.node] {
-                    if end.is_label && end.name == from {
-                        end.name = to;
-                    }
-                }
-            }
-        }
-    }
+    crate::names::rename_in_layout(edit, from, to, true);
     Ok(())
 }
 
@@ -172,11 +154,9 @@ pub(crate) fn set_template(edit: &mut Edit, judge: &dyn Judge, node_name: &str, 
     let function = edit.body_function()?.clone();
     let loc = node(edit, &function, &NodeName::parse(node_name), "node")?;
     let statement = scope::statement(&function, &loc).cloned().ok_or_else(|| EditError::internal("a node that went"))?;
-    let not_format = || EditError::invalid("node", format!("`{node_name}` is not a `string.format`"));
-    let (StatementKind::Call(call) | StatementKind::Binding { value: Rhs::Call(call), .. }) = &statement.kind else { return Err(not_format()) };
-    if edit_node_text(edit, call) != FORMAT {
-        return Err(not_format());
-    }
+    let Some(call) = format_call(edit, &statement) else {
+        return Err(EditError::invalid("node", format!("`{}` is not a `string.format`", cut(node_name))));
+    };
     let written = read_constant(edit, template).map_err(|error| EditError { parameter: Some("template"), ..error })?;
     let Operand::Text(_, literal) = &written else {
         return Err(EditError::invalid(
@@ -188,17 +168,13 @@ pub(crate) fn set_template(edit: &mut Edit, judge: &dyn Judge, node_name: &str, 
     // A call that does not give its template yet gets it first, by position (R-11).
     let at = template_of(edit, call).map(|(at, _)| at);
     // The named arguments of the fields that are gone, with the values they read.
-    let gone: Vec<(usize, String, Option<Name>)> = call
+    let gone: Vec<(usize, String, Vec<Name>)> = call
         .args
         .iter()
         .enumerate()
         .filter_map(|(index, arg)| match arg {
             Arg::Value { name: Some(name), value, .. } if Some(index) != at && !fields.contains(edit.text(*name)) => {
-                let read = match value {
-                    Operand::Path(path) if path.rest.is_empty() => Some(path.first),
-                    _ => None,
-                };
-                Some((index, edit.text(*name).to_owned(), read))
+                Some((index, edit.text(*name).to_owned(), crate::constant::values_read(&function, value)))
             }
             _ => None,
         })
@@ -208,19 +184,26 @@ pub(crate) fn set_template(edit: &mut Edit, judge: &dyn Judge, node_name: &str, 
     let statement_mut = scope::statement_mut(function_mut, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
     let args = crate::places::args_mut(statement_mut).ok_or_else(|| EditError::internal("a call that went"))?;
     let mut list = std::mem::take(args).into_vec();
+    // The template first, at its place before any argument goes; the arguments of the fields gone, last first.
+    let given = match at.and_then(|at| list.get_mut(at)) {
+        Some(Arg::Value { value, .. }) => {
+            *value = written.clone();
+            true
+        }
+        _ => false,
+    };
     for (index, _, _) in gone.iter().rev() {
         if *index < list.len() {
             list.remove(*index);
         }
     }
-    match at.and_then(|at| list.get_mut(at)) {
-        Some(Arg::Value { value, .. }) => *value = written,
-        _ => list.insert(0, Arg::Value { id: template_id, name: None, value: written }),
+    if !given {
+        list.insert(0, Arg::Value { id: template_id, name: None, value: written });
     }
     *args = list.into_boxed_slice();
     for (_, field, read) in &gone {
-        if let Some(read) = read {
-            forget_wire(edit, *read, statement_node(&statement), Some(field));
+        for name in read {
+            forget_wire(edit, *name, statement_node(&statement), Some(field));
         }
     }
     Ok(())

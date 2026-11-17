@@ -1618,6 +1618,17 @@ fn main(x: f64) -> (y: f64, t: string) {
     assert!(!canvas.edit_template("sum"), "not a `string.format`");
 }
 
+/// A field opens on the constant as the file writes it, escapes kept, not on what the pill shows (notation 2.6).
+#[test]
+fn a_field_opens_on_the_text_of_the_file() {
+    let text = "labcraft 1\n\nuse string\n\nfn main(x: f64) -> (t: string) {\n    t = string.format(\"say \\\"{v}\\\"\", v: x)\n}\n";
+    let drawn = drawing(text, &ViewState::default());
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawn, false);
+    assert!(canvas.edit_template("t"));
+    assert_eq!(canvas.field.as_ref().map(|field| field.text.as_str()), Some("say \\\"{v}\\\""));
+}
+
 /// Two pills that read the same: a double-click on one edits its own input (notation 2.6).
 #[test]
 fn a_pill_double_clicked_edits_its_own_input() {

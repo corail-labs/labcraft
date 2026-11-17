@@ -1764,6 +1764,13 @@ fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accep
     }
 }
 
+/// The field of a function whose file the window no longer knows: refused at once, so that it does not wait.
+fn drawn_canvas_refused(ide: &mut Ide, function: &str) {
+    if let Some(drawn) = ide.drawn.get_mut(function) {
+        drawn.canvas.field_refused("this function has no file now: write it again once the project is read");
+    }
+}
+
 /// A template typed in its field, as a string literal: a `"` that no `\\` escapes gets one.
 fn quoted(text: &str) -> String {
     let mut literal = String::with_capacity(text.len() + 2);
@@ -2289,13 +2296,15 @@ impl Content<'_> {
                 }
                 Intent::Say(text) => self.ide.say(text),
                 // A field in place written (notation 2.6).
-                Intent::Field { kind, text } => {
-                    if let Some(file) = file_of(view, function) {
+                Intent::Field { kind, text } => match file_of(view, function) {
+                    Some(file) => {
                         let (id, params) = field_command(&file, kind, &text, self.ide.prefs.accept_mismatch);
                         let reply = self.host.send(id, params);
                         self.ide.field_edits.push((function.to_owned(), reply));
                     }
-                }
+                    // Nothing sent: the field must not wait for an answer.
+                    None => drawn_canvas_refused(self.ide, function),
+                },
             }
         }
         if view.main.function.as_deref() == Some(function) {

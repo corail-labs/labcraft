@@ -245,6 +245,19 @@ fn a_format_without_its_template_gets_it_by_set_template_only() {
 }
 
 #[test]
+fn a_template_named_after_its_fields_is_written_in_its_place() {
+    let named = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(v: x, template: \"{v}\")\n    y = text\n}\n";
+    gives(
+        named,
+        template("text", "\"{w}\""),
+        "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(template: \"{w}\")\n    y = text\n}\n",
+    );
+    // A field that reads a field of a value takes the entry of its wire with it.
+    let read = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(\"{v}\", v: x.volts)\n    y = text\n}\n\nlayout {\n    wire x -> text.v via (50, 50)\n}\n";
+    gives(read, template("text", "\"{w}\""), "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(\"{w}\")\n    y = text\n}\n");
+}
+
+#[test]
 fn set_template_refuses_what_is_no_template_of_a_format() {
     let error = refused(FORMAT, template("text", "\"{v\""), "params.invalid");
     assert!(error.message.contains("nothing closes"), "the message of check: {error:?}");

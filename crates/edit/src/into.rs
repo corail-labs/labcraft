@@ -8,11 +8,9 @@ use labcraft_types::Limits;
 
 use crate::model::Edit;
 use crate::refs::split_wire;
+use crate::wire::FORMAT;
 use crate::wire::{self, Found};
 use crate::{EditError, Edited, Judge, Kind, Lookup, Point, add};
-
-/// The call whose template takes only a literal (spec 5.4).
-const FORMAT: &str = "string.format";
 
 /// The inputs, and the outputs, that `into` tries at most *(proposed)*: each try judges the file again, so that a call of
 /// thousands of parameters would take seconds (architecture 12.1, the bound of 2 s).

@@ -93,10 +93,13 @@ pub(crate) fn input_under(drawing: &Drawing, placed: usize, unit: Pos2, offset: 
     let mut near: Option<(f32, FieldKind, String, Pos2)> = None;
     for port in drawing.ports.iter().filter(|port| port.placed == Some(placed) && port.input && !port.order && !port.name.is_empty()) {
         let point = Pos2::new(port.x as f32, port.y as f32) / 100.0 + offset;
-        let (text, held) = match &port.holds {
-            Holds::Constant(text) => (text.clone(), true),
-            Holds::Default(text) => (text.clone(), false),
-            Holds::Hole => (String::new(), false),
+        // The pill shows the constant with its escapes read, and cut; the field edits it as the file writes it
+        // (`Port::literal`), and does not open on one too long for it.
+        let (text, held, opens_with) = match &port.holds {
+            Holds::Constant(_) if port.literal.is_empty() => continue,
+            Holds::Constant(text) => (text.clone(), true, port.literal.clone()),
+            Holds::Default(text) => (text.clone(), false, text.clone()),
+            Holds::Hole => (String::new(), false, String::new()),
             Holds::Wire | Holds::Nothing | Holds::Missing => continue,
         };
         // The pill of this input: of the texts that read so, the one nearest its terminal.
@@ -114,10 +117,10 @@ pub(crate) fn input_under(drawing: &Drawing, placed: usize, unit: Pos2, offset: 
         }
         let at = pill.map_or(point - Vec2::new(24.0, 6.0), |rect| rect.min) - offset;
         let (kind, text) = if port.never.is_empty() {
-            (FieldKind::Constant { to: port.name.clone(), held }, text)
+            (FieldKind::Constant { to: port.name.clone(), held }, opens_with)
         } else {
             match drawing.placed.get(placed) {
-                Some(found) if !found.name.is_empty() => (FieldKind::Template { node: found.name.clone() }, unquoted(&text)),
+                Some(found) if !found.name.is_empty() => (FieldKind::Template { node: found.name.clone() }, unquoted(&opens_with)),
                 _ => continue,
             }
         };
@@ -148,6 +151,7 @@ impl Canvas {
 
     /// The command of the field is done.
     pub fn close_field(&mut self) {
+        self.refocus |= self.field.is_some();
         self.field = None;
     }
 
@@ -217,11 +221,12 @@ impl Canvas {
         let Some(placed) = drawing.placed.iter().position(|found| found.name == node) else { return false };
         let template = drawing.ports.iter().find(|port| port.placed == Some(placed) && port.input && !port.never.is_empty());
         let Some(port) = template else { return false };
-        let literal = match &port.holds {
-            Holds::Constant(text) => text.clone(),
-            _ => "\"\"".to_owned(),
+        let (shown, literal) = match &port.holds {
+            Holds::Constant(_) if port.literal.is_empty() => return false,
+            Holds::Constant(shown) => (shown.clone(), port.literal.clone()),
+            _ => (String::new(), "\"\"".to_owned()),
         };
-        let at = self.pill_of(&drawing, placed, &literal).unwrap_or_else(|| self.corner_of(&drawing, placed));
+        let at = self.pill_of(&drawing, placed, &shown).unwrap_or_else(|| self.corner_of(&drawing, placed));
         self.field = Some(Field::new(FieldKind::Template { node: node.to_owned() }, unquoted(&literal), at, Some(placed)));
         true
     }
@@ -316,14 +321,14 @@ impl Canvas {
             });
         });
         if cancelled {
-            self.field = None;
+            self.close_field();
             return;
         }
         let Some(text) = written else { return };
         let unchanged = text == field.original.trim();
         let nothing = text.is_empty() && matches!(field.kind, FieldKind::Constant { held: false, .. });
         if unchanged || nothing {
-            self.field = None;
+            self.close_field();
             return;
         }
         field.pending = true;

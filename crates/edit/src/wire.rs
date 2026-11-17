@@ -367,8 +367,8 @@ fn node_name_of(edit: &Edit, judge: &dyn Judge, function: &Function, value: &Val
         .and_then(|statement| {
             let callable = callee(edit, judge, statement)?;
             let StatementKind::Binding { value: Rhs::Call(call), .. } = &statement.kind else { return None };
-            let text: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
-            of_output(&callable, &text.join("."), *index)
+            let text = edit_node_text(edit, call);
+            of_output(&callable, &text, *index)
         })
         .or_else(|| {
             scope::statement(function, loc).and_then(|statement| match &statement.kind {
@@ -767,6 +767,15 @@ pub(crate) fn add_field(edit: &mut Edit, loc: &Loc, field: &str, operand: Operan
     Ok(())
 }
 
+/// The call of a statement when it calls `string.format`.
+pub(crate) fn format_call<'s>(edit: &Edit, statement: &'s Statement) -> Option<&'s labcraft_graph::Call> {
+    match &statement.kind {
+        StatementKind::Call(call) | StatementKind::Binding { value: Rhs::Call(call), .. } => (edit_node_text(edit, call) == FORMAT).then_some(call),
+        _ => None,
+    }
+}
+
+/// What a call names, as a command writes it: `visa.open`.
 pub(crate) fn edit_node_text(edit: &Edit, call: &labcraft_graph::Call) -> String {
     let segments: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
     segments.join(".")
@@ -803,8 +812,8 @@ fn resolve_start(
         let name = match target {
             Some(Target::Name(_, name)) => name,
             Some(Target::Skip(_)) => {
-                let text: Vec<&str> = call.callee.segments().map(|segment| edit.text(segment)).collect();
-                let base = of_output(&callable, &text.join("."), index).unwrap_or_else(|| output.to_owned());
+                let text = edit_node_text(edit, call);
+                let base = of_output(&callable, &text, index).unwrap_or_else(|| output.to_owned());
                 let given = fresh(&base, &taken(edit));
                 let name = edit.intern(&given);
                 let id = edit.id();

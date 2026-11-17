@@ -10,17 +10,21 @@ use crate::model::Edit;
 use crate::places::{Slot, args_mut, operand, operand_mut};
 use crate::refs::{InputName, Part};
 use crate::scope;
-use crate::wire::{End, FORMAT, add_arg, add_field, edit_node_text, forget_wire, input_name, judge_types, occupied, resolve_end, statement_node};
+use crate::wire::{End, add_arg, add_field, forget_wire, format_call, input_name, judge_types, occupied, resolve_end, statement_node};
 use crate::{EditError, Judge, cut};
 
 /// The values of the function that an operand reads: a wire, `p.volts` included (spec 11). A constant reads none; a
 /// variant such as `Verdict.Pass` names a type, not a value.
-pub(crate) fn values_read(edit: &Edit, function: &labcraft_graph::Function, held: &Operand) -> Vec<labcraft_types::Name> {
-    let mut names: Vec<labcraft_types::Name> = function.signature.params.iter().map(|param| param.name).collect();
-    names.extend(scope::values(function).iter().map(|value| value.name));
-    names.sort_unstable_by_key(|name| edit.text(*name).to_owned());
-    names.dedup();
-    names.into_iter().filter(|name| crate::places::reads(held, *name)).collect()
+pub(crate) fn values_read(function: &labcraft_graph::Function, held: &Operand) -> Vec<labcraft_types::Name> {
+    let params = function.signature.params.iter().map(|param| param.name);
+    let mut found: Vec<labcraft_types::Name> = Vec::new();
+    // A name bound in several arms is one value read.
+    for name in params.chain(scope::values(function).into_iter().map(|value| value.name)) {
+        if crate::places::reads(held, name) && !found.contains(&name) {
+            found.push(name);
+        }
+    }
+    found
 }
 
 /// Forgets the `wire` entries of the values that the place read, as `wire.disconnect` does.
@@ -39,9 +43,7 @@ pub(crate) fn set(edit: &mut Edit, judge: &dyn Judge, to: &str, value: &str, rep
     let constant = read_constant(edit, value)?;
     let function = edit.body_function()?.clone();
     let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None)?;
-    if is_template(edit, &function, &end) {
-        return Err(EditError::invalid("to", "the template of `string.format` is written by `node.set_template` (spec 5.4)"));
-    }
+    refuse_template(edit, &function, &end)?;
     match &end {
         End::Output(_) => {
             return Err(EditError::invalid(
@@ -58,7 +60,7 @@ pub(crate) fn set(edit: &mut Edit, judge: &dyn Judge, to: &str, value: &str, rep
                 if !replace {
                     return Err(occupied(edit, to, held));
                 }
-                let read = values_read(edit, &function, held);
+                let read = values_read(&function, held);
                 forget_read(edit, judge, statement, *slot, &read);
             }
             let function_mut = edit.body_function_mut()?;
@@ -77,6 +79,14 @@ pub(crate) fn set(edit: &mut Edit, judge: &dyn Judge, to: &str, value: &str, rep
     judge_types(edit, judge, &format!("the constant `{}` on `{}`", cut(value.trim()), cut(to)), accept_mismatch)
 }
 
+/// The template of a `string.format` is written by `node.set_template` alone.
+fn refuse_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> Result<(), EditError> {
+    if is_template(edit, function, end) {
+        return Err(EditError::invalid("to", "the template of `string.format` is written by `node.set_template` (spec 5.4)"));
+    }
+    Ok(())
+}
+
 /// Whether the end is the template of a `string.format`, which only `node.set_template` writes: the argument that gives
 /// it, or the first parameter of a call that does not give it yet.
 fn is_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> bool {
@@ -85,11 +95,7 @@ fn is_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> b
         End::NewArg { loc, param: 0, variadic: None } => (loc, None),
         _ => return false,
     };
-    let Some(statement) = scope::statement(function, loc) else { return false };
-    let (StatementKind::Call(call) | StatementKind::Binding { value: Rhs::Call(call), .. }) = &statement.kind else { return false };
-    if edit_node_text(edit, call) != FORMAT {
-        return false;
-    }
+    let Some(call) = scope::statement(function, loc).and_then(|statement| format_call(edit, statement)) else { return false };
     match (at, crate::wire::template_of(edit, call)) {
         (Some(index), Some((given, _))) => given == index,
         (None, None) => true,
@@ -102,14 +108,12 @@ pub(crate) fn clear(edit: &mut Edit, judge: &dyn Judge, to: &str) -> Result<(), 
     let function = edit.body_function()?.clone();
     let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None)?;
     let no_constant = || EditError::invalid("to", format!("`{}` holds no constant", cut(to)));
-    if is_template(edit, &function, &end) {
-        return Err(EditError::invalid("to", "the template of `string.format` is written by `node.set_template` (spec 5.4)"));
-    }
+    refuse_template(edit, &function, &end)?;
     let End::Slot(loc, slot) = end else { return Err(no_constant()) };
     let statement = scope::statement(&function, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
     match operand(statement, slot) {
         // A wire, `p.volts` included, is unwired by `wire.disconnect`.
-        Some(held) if !values_read(edit, &function, held).is_empty() => return Err(no_constant()),
+        Some(held) if !values_read(&function, held).is_empty() => return Err(no_constant()),
         Some(Operand::Hole(_)) | None => return Err(no_constant()),
         Some(_) => {}
     }
@@ -177,7 +181,7 @@ pub(crate) fn remove_value(edit: &mut Edit, judge: &dyn Judge, to: &str) -> Resu
         _ => {}
     }
     if let Some(held) = &held {
-        for name in values_read(edit, &function, held) {
+        for name in values_read(&function, held) {
             forget_wire(edit, name, statement_node(&statement), Some(&named));
         }
     }

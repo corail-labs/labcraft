@@ -16,6 +16,9 @@ use labcraft_types::{Interner, LibraryId, Name, Ty, TyId, TypeTable, cut_text};
 
 /// How many bytes of a constant are written before it is cut: far more than the 40 cells a pill shows.
 const CONSTANT_BYTES: usize = 1024;
+/// At most this many bytes of a constant as the file writes it, for a field in place *(proposed)*: a longer one is
+/// edited in the view `Text`.
+pub const LITERAL_BYTES: usize = 4096;
 
 mod flow;
 
@@ -64,6 +67,9 @@ pub struct Terminal {
     pub unit: Option<String>,
     /// The text of an inline constant on an input (spec 5.1), as the text writes it, escapes read.
     pub constant: Option<String>,
+    /// That constant as the file writes it, escapes kept, for a field in place that edits it (notation 2.6); none above
+    /// `LITERAL_BYTES`.
+    pub literal: Option<String>,
     /// An output that the line binds to `_` has no wire (notation 3.1).
     pub ignored: bool,
     /// What an input reads: the paths of its operand that read a value, each the end of a wire, with the name that the
@@ -866,6 +872,7 @@ impl<'a> Builder<'a> {
             family: family(self.types(), &self.checked.libraries, ty),
             unit: unit(self.types(), ty),
             constant,
+            literal: None,
             ignored,
             reads: Vec::new(),
             pill: None,
@@ -1160,7 +1167,12 @@ impl<'a> Builder<'a> {
             },
             _ => Some(self.constant_text(operand)),
         };
+        let literal = constant.as_ref().and_then(|_| {
+            let written = labcraft_format::write_operand(operand, self.names, LITERAL_BYTES);
+            (written.len() < LITERAL_BYTES).then_some(written)
+        });
         let mut terminal = self.terminal(name, ty, constant, false);
+        terminal.literal = literal;
         terminal.reads = self.reads(operand);
         // What the call settles is what it receives, not what it takes.
         if !declared.is_some_and(|ty| !self.types().has_error(ty)) {

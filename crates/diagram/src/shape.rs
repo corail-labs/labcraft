@@ -551,6 +551,10 @@ pub struct Port {
     pub caption: String,
     /// Its type, by its index in [`Drawing::types`]; none when `check` does not know it, which takes anything.
     pub ty: Option<usize>,
+    /// The constant it holds as the file writes it, escapes kept: what a field in place opens with (notation 2.6). Empty
+    /// for another input, or a constant above `LITERAL_BYTES`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub literal: String,
     /// What it holds.
     pub holds: Holds,
     /// The value it gives, or that its wire carries; empty otherwise.

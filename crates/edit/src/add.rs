@@ -10,10 +10,8 @@ use labcraft_types::Name;
 
 use crate::model::Edit;
 use crate::names::{fresh, given, of_output, taken};
+use crate::wire::FORMAT;
 use crate::{EditError, Edited, Judge, Kind, Lookup, MAX_COORDINATE, Point};
-
-/// `string.format` is written with the empty template (commands.md 6.7): its template takes only a literal.
-const FORMAT: &str = "string.format";
 
 pub(crate) fn node(
     edit: &mut Edit,
