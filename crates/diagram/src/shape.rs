@@ -600,8 +600,8 @@ pub struct Placed {
     /// The view that its entry of `layout` writes, `standard` or `compact` (spec 11); empty when it writes none.
     #[cfg_attr(feature = "serde", serde(default))]
     pub view: String,
-    /// How far the frame of a loop rises above the corner that its entry places (its box starts that much higher), in
-    /// hundredths; 0 for another node.
+    /// How far the frame of a structure rises above the corner that its entry places (its box starts that much higher):
+    /// a loop, or a `match` or a `handle` in tabs, whose body grows upward (`Sized::over`); in hundredths, 0 otherwise.
     #[cfg_attr(feature = "serde", serde(default))]
     pub over: i64,
 }

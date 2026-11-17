@@ -72,6 +72,9 @@ pub fn preview(drawing: &Drawing, moved: &[usize], by: (i64, i64)) -> Preview {
                 let end_moves = at_a_moved_node(end);
                 let points = if from_moves && end_moves {
                     points.iter().map(|&point| shift(point, true)).collect()
+                } else if !from_moves && !end_moves {
+                    // A reader that the drag does not reach keeps its route.
+                    points.clone()
                 } else {
                     square(shift(start, from_moves), shift(end, end_moves))
                 };

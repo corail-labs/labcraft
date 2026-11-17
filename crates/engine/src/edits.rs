@@ -745,7 +745,20 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
     finish(session, author, label, texts, &before, extra)
 }
 
-/// The lines that a text names as nodes do (`@41`, `x -> @41.b`), each once.
+/// The parameters of the editing commands that name nodes, wires or inputs (commands.md 9.2): the only ones where a batch
+/// reads `@N`, so that a constant, a call, a label or a path that holds `@` is never touched.
+const NAMING: &[&str] = &["node", "nodes", "wire", "wires", "from", "to", "into", "inside", "structure"];
+
+/// The lines that the naming parameters of `params` name as nodes do (`@41`, `x -> @41.b`), each once.
+fn lines_in(params: &Value, found: &mut BTreeSet<u32>) {
+    for key in NAMING {
+        if let Some(value) = params.get(*key) {
+            lines_named(value, found);
+        }
+    }
+}
+
+/// The lines that a value names as nodes do, each once.
 fn lines_named(value: &Value, found: &mut BTreeSet<u32>) {
     match value {
         Value::String(text) => found.extend(line_tokens(text).into_iter().map(|(_, _, line)| line)),
@@ -807,7 +820,7 @@ fn label_first(session: &mut Session, list: &mut [Value], texts: &mut Texts) -> 
         let Some(params) = item.get("params") else { continue };
         let Some(file) = params.get("file").and_then(Value::as_str) else { continue };
         let mut lines = BTreeSet::new();
-        lines_named(params, &mut lines);
+        lines_in(params, &mut lines);
         if !lines.is_empty() {
             by_file.entry(file.to_owned()).or_default().extend(lines);
         }
@@ -833,16 +846,22 @@ fn label_first(session: &mut Session, list: &mut [Value], texts: &mut Texts) -> 
             }
             let mut named = BTreeSet::new();
             if let Some(params) = item.get("params") {
-                lines_named(params, &mut named);
+                lines_in(params, &mut named);
             }
-            for renamed in labelled.renamed.iter().filter(|renamed| renamed.from != renamed.to && renamed.to.starts_with('#')) {
+            // Only the nodes that got their label now: a node that had one is named by it already.
+            let new = labelled.lists.get("labelled").cloned().unwrap_or_default();
+            for renamed in labelled.renamed.iter().filter(|renamed| new.contains(&renamed.from)) {
                 let line = renamed.from.trim_start_matches('@').parse::<u32>().unwrap_or_default();
                 if named.contains(&line) && said.insert(line) {
                     early.entry(index).or_default().push(json!({ "file": renamed.file, "from": renamed.from, "to": renamed.to }));
                 }
             }
             if let Some(params) = item.get_mut("params") {
-                substitute(params, &renamed);
+                for key in NAMING {
+                    if let Some(value) = params.get_mut(*key) {
+                        substitute(value, &renamed);
+                    }
+                }
             }
         }
         if let (Some(given), Some((_, _, now))) = (given, texts.files.get_mut(&target.path)) {

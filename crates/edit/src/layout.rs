@@ -376,7 +376,7 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
 /// pass over the text, so that the lines name the nodes of that text whatever canonical form then moves: what
 /// `commands.batch` does before its commands (commands.md 6.7; decision of the owner, 2026-11-17). Each line that names
 /// one node gives how a command names it now, `@N` first; a line that names none, or several, is left to the commands.
-pub(crate) fn label_lines(edit: &mut Edit, lines: &[u32]) -> Result<Vec<(String, String)>, EditError> {
+pub(crate) fn label_lines(edit: &mut Edit, lines: &[u32]) -> Result<Vec<(String, String, bool)>, EditError> {
     let mut named = Vec::new();
     for &line in lines {
         let function = edit.body_function()?;
@@ -384,8 +384,9 @@ pub(crate) fn label_lines(edit: &mut Edit, lines: &[u32]) -> Result<Vec<(String,
         let found_here = refs::find_nodes(edit, function, &name);
         let [loc] = found_here.as_slice() else { continue };
         let loc = loc.clone();
-        let designation = designate(edit, &loc, &mut Vec::new())?;
-        named.push((format!("@{line}"), shown(edit, designation)));
+        let mut labelled = Vec::new();
+        let designation = designate(edit, &loc, &mut labelled)?;
+        named.push((format!("@{line}"), shown(edit, designation), !labelled.is_empty()));
     }
     Ok(named)
 }

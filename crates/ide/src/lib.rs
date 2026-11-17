@@ -631,6 +631,10 @@ impl Ide {
         self.edits.retain(|(function, reply)| match reply.take() {
             None => true,
             Some(Ok(result)) => {
+                // A move that changed nothing brings no new drawing: its nodes go back now.
+                if result.get("step").is_some_and(Value::is_null) {
+                    moved_back.push(function.clone());
+                }
                 relabelled.push((function.clone(), renamed_nodes(&result)));
                 false
             }

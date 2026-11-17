@@ -137,8 +137,9 @@ fn edit(ui: &mut egui::Ui, control: &Control) -> Option<Answer> {
                 return None;
             }
             ui.data_mut(|data| data.remove::<Typed>(id));
-            // Enter, or leaving the field: a new integer is the answer; anything else goes back to the value.
-            let typed = text.trim().parse::<i64>().ok().filter(|typed| typed != value);
+            // Enter, or leaving the field: a new integer is the answer; Escape, or anything else, goes back to the value.
+            let escaped = ui.input(|input| input.key_pressed(egui::Key::Escape));
+            let typed = text.trim().parse::<i64>().ok().filter(|typed| typed != value && !escaped);
             match (response.lost_focus(), typed) {
                 (true, Some(typed)) => Some(Answer::Integer { key: key.clone(), value: typed }),
                 _ => None,

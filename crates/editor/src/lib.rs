@@ -428,8 +428,11 @@ impl Canvas {
     }
 
     /// The move asked for failed: its nodes go back to their places.
+    /// A move under way (a drag, a run of keys) is not the one that failed, and goes on.
     pub fn cancel_move(&mut self) {
-        self.moving = None;
+        if self.moving.as_ref().is_some_and(|moving| moving.state == moving::State::Asked) {
+            self.moving = None;
+        }
     }
 
     /// Ends a run of presses of Ctrl and an arrow now (notation 2.6: another key ends it): the move it asks for, if any.
@@ -574,6 +577,15 @@ impl Canvas {
         if let Some(left) = self.viewport.settles_in(now) {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(left));
         }
+        // A move asked for whose drawing does not come (the file no longer draws) gives its nodes back after a while.
+        if let Some(asked) = self.moving.as_mut().filter(|moving| moving.state == moving::State::Asked) {
+            let since = *asked.asked_at.get_or_insert(now);
+            if now - since > moving::ASKED_SECONDS {
+                self.moving = None;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(moving::ASKED_SECONDS));
+            }
+        }
         let moving = self.moving.is_some();
         if moving {
             self.glide = None;
@@ -642,7 +654,7 @@ impl Canvas {
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked());
         let clicked_unit = pointer.map(unit_of);
         self.end_run_when_due(frame, input);
-        self.fixed_menu(response, frame, shown, input);
+        self.fixed_menu(response, frame, input);
         // A click on a tab shows its arm; on the title of a selector, opens the list of its arms.
         let mut opened = false;
         for found in &drawing.tabs {
@@ -785,14 +797,13 @@ impl Canvas {
     }
 
     /// A right-click on a fixed node opens its menu: "Remove the fixed position" (notation 2.4).
-    fn fixed_menu(&mut self, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
+    fn fixed_menu(&mut self, response: &Response, frame: &Frame, input: &mut Input) {
         if response.secondary_clicked() {
             self.context =
                 frame.hovered.filter(|&placed| frame.drawing.placed.get(placed).is_some_and(|found| found.at.is_some() && !found.name.is_empty()));
         }
         let Some(placed) = self.context else { return };
         let name = frame.drawing.placed.get(placed).map(|found| found.name.clone()).unwrap_or_default();
-        let _ = shown;
         let mut asked = false;
         response.context_menu(|ui| {
             if ui.button("Remove the fixed position").clicked() {
@@ -891,8 +902,14 @@ impl Canvas {
     fn grabbed(&mut self, drawing: &Drawing, placed: usize, input: &mut Input) -> Vec<usize> {
         let base = self.asked_found.clone().unwrap_or_else(|| self.found.clone());
         let body = drawing.placed.get(placed).map(|found| found.body);
+        // A node that no command names cannot be moved: it is left where it is.
         if base.nodes.contains(&placed) {
-            return base.nodes.iter().copied().filter(|&at| drawing.placed.get(at).map(|found| found.body) == body).collect();
+            return base
+                .nodes
+                .iter()
+                .copied()
+                .filter(|&at| drawing.placed.get(at).is_some_and(|found| Some(found.body) == body && !found.name.is_empty()))
+                .collect();
         }
         let found = Found::one(Hit::Node(placed));
         self.pinned = None;

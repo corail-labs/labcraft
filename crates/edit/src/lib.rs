@@ -232,15 +232,18 @@ pub struct Place {
 
 /// Gives a label to each node of `path` that `lines` names by its line and that the `layout` section cannot name, in one
 /// pass (commands.md 6.7, `commands.batch`): the text, if it changed, and each line that names one node with how a
-/// command names that node now (`@41`, `#s`), in `renamed`.
+/// command names that node now (`@41`, `#s`), in `renamed`; `lists["labelled"]` holds the lines whose node got its
+/// label now.
 pub fn label_lines(files: &Files, path: &str, lines: &[u32], limits: &Limits) -> Result<Edited, EditError> {
     let Some(text) = files.get(path) else {
         return Err(EditError::new("path.not_found", format!("`{path}` is not a file of the project")).of("file"));
     };
     let mut edit = model::Edit::read(path, text, limits)?;
     let found = layout::label_lines(&mut edit, lines)?;
-    let renamed = found.into_iter().map(|(from, to)| Renamed { file: path.to_owned(), from, to }).collect();
+    let labelled: Vec<String> = found.iter().filter(|(_, _, new)| *new).map(|(from, _, _)| from.clone()).collect();
+    let renamed = found.into_iter().map(|(from, to, _)| Renamed { file: path.to_owned(), from, to }).collect();
     let mut edited = Edited { renamed, ..Edited::default() };
+    edited.lists.insert("labelled", labelled);
     let new_text = edit.finish()?;
     if new_text != text {
         edited.texts.insert(path.to_owned(), new_text);

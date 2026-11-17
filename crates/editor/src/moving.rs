@@ -14,6 +14,9 @@ use crate::paint::Painted;
 pub(crate) const GRID: f32 = 8.0;
 /// A run of presses of Ctrl and an arrow ends a second after the last one (notation 2.6).
 pub(crate) const RUN_SECONDS: f64 = 1.0;
+/// A move asked for keeps its nodes where they went this long at most, waiting for the new drawing (300 ms
+/// *(proposed)*, architecture 12.4).
+pub(crate) const ASKED_SECONDS: f64 = 3.0;
 
 /// How the move goes on.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -39,13 +42,15 @@ pub(crate) struct Moving {
     pub painted: HashMap<usize, Arc<Painted>>,
     /// The place of each wire of the preview in it, by its group.
     pub rerouted: HashMap<usize, usize>,
+    /// When the canvas first saw the move asked for, by the time of egui.
+    pub asked_at: Option<f64>,
 }
 
 impl Moving {
     pub fn new(drawing: &Drawing, nodes: Vec<usize>, state: State) -> Moving {
         let preview = preview(drawing, &nodes, (0, 0));
         let rerouted = preview.wires.iter().enumerate().map(|(at, (group, _))| (*group, at)).collect();
-        Moving { nodes, by: (0, 0), state, preview, painted: HashMap::new(), rerouted }
+        Moving { nodes, by: (0, 0), state, preview, painted: HashMap::new(), rerouted, asked_at: None }
     }
 
     /// Moves to `by`, in units; the preview follows.
