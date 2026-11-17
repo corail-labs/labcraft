@@ -1885,8 +1885,9 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   works it out for Space, which is a key of the host. `Intent::Drop { call, at, into }`: a function dragged from the
   panel `Palette` (an egui drag and drop, its payload `Dragged`), its ghost on the grid and the wire it would go into
   shown in `select.stroke`, under the setting "inserting into a wire" (`Shown::into_wire`). `insertion.rs` is the
-  catalog of quick insertion, read from the signatures of `functions.list`: the type of each input and output, the
-  aliases followed, the type variables and `kind` parameters, the filter of a wire by the rule of fit
+  catalog of quick insertion, read from the inputs and outputs that `functions.list` gives as data
+  (`labcraft_types::listing`, commands.md 6.1; no signature text is read again): the type of each input and output,
+  the type variables and the inputs that take only a literal, the filter of a wire by the rule of fit
   (`FitKey::fit`), and the order of notation 2.6. `Canvas::wires_of_terminal` gives what Delete removes from a terminal.
 
 ### 12.7 The window: `kit-*` and `ide` (L8)

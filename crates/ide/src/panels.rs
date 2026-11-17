@@ -15,6 +15,7 @@ use labcraft_editor::insertion::{self, Catalog, EntryKind};
 use labcraft_engine::drawings::TracePart;
 use labcraft_engine::view::{Listed, Published, Shown};
 use labcraft_types::Severity;
+use labcraft_types::listing::Typed;
 use serde_json::{Value, json};
 
 use crate::host::{Host, Reply};
@@ -123,6 +124,8 @@ pub struct Callable {
     pub kind: String,
     pub signature: String,
     pub doc: Option<String>,
+    /// Its inputs and outputs, or the fields, variants or alias of a type.
+    pub typed: Typed,
 }
 
 /// What `Palette` keeps: the list of `functions.list`, asked again after each check.
@@ -165,6 +168,7 @@ impl Callables {
                                     kind: text(entry, "kind").unwrap_or_default(),
                                     signature: text(entry, "signature").unwrap_or_default(),
                                     doc: text(entry, "doc"),
+                                    typed: serde_json::from_value(entry.clone()).unwrap_or_default(),
                                 })
                             })
                             .collect()
@@ -178,6 +182,7 @@ impl Callables {
                         library: callable.library.clone(),
                         kind: callable.kind.clone(),
                         signature: callable.signature.clone(),
+                        typed: callable.typed.clone(),
                     })
                     .collect();
                 self.catalog = Arc::new(Catalog::new(&listed));

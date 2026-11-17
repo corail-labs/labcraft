@@ -84,6 +84,27 @@ pub fn write_declaration(decl: &Decl, name: &str, names: &Interner, limit: usize
     writer.out
 }
 
+/// A type on one line, as a signature writes it (`f64[V]`, `[visa.session]`, `fn(f64) -> (f64)`), stopped once it passes
+/// `limit` bytes; what is stopped ends with `…`. The inputs and outputs of `functions.list`.
+pub fn write_type(ty: &TypeExpr, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    writer.type_expr(ty, 0, true);
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
+/// A unit as the text writes it (`V`, `kg/(m*s)`, `m/s^2`), stopped once it passes `limit` bytes.
+pub fn write_unit(unit: &UnitExpr, names: &Interner, limit: usize) -> String {
+    let mut writer = Writer::new(names, limit);
+    writer.unit(unit);
+    if writer.over {
+        writer.out.push('\u{2026}');
+    }
+    writer.out
+}
+
 /// A pattern of an arm as the text writes it (`Reading.Value(v)`, `io.timeout(err)`), stopped once it passes `limit` bytes:
 /// the title of an arm in a diagram (`docs/visual-notation.md`, section 5.2).
 pub fn write_pattern(pattern: &Pattern, names: &Interner, limit: usize) -> String {

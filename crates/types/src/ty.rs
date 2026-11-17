@@ -43,6 +43,26 @@ pub enum NumberKind {
 }
 
 impl NumberKind {
+    pub const ALL: [NumberKind; 12] = [
+        NumberKind::I8,
+        NumberKind::I16,
+        NumberKind::I32,
+        NumberKind::I64,
+        NumberKind::U8,
+        NumberKind::U16,
+        NumberKind::U32,
+        NumberKind::U64,
+        NumberKind::F32,
+        NumberKind::F64,
+        NumberKind::C64,
+        NumberKind::C128,
+    ];
+
+    /// The kind that the language writes so (`f64`).
+    pub fn from_name(text: &str) -> Option<NumberKind> {
+        NumberKind::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             NumberKind::I8 => "i8",
