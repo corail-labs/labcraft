@@ -394,3 +394,74 @@ fn a_batch_names_by_their_labels_the_nodes_it_names_by_their_lines() {
     assert_eq!(result["commands"][1]["renamed"], json!([{ "file": "f.lcf", "from": "@7", "to": "#mul" }]));
     assert_eq!(result["step"], 1);
 }
+
+/// `wire.route` writes the `wire … via` entry of a wire the drawing names, as one step; a wire that is not drawn is
+/// refused (commands.md 6.7).
+#[test]
+fn a_wire_is_routed_through_its_points() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    a = core.neg(x)\n    y = core.abs(a)\n}\n";
+    memory.put("/p/h.lcf", before);
+    let result = ok(&mut session, "wire.route", json!({ "file": "h.lcf", "wire": "a -> y.x", "via": [[120, 16], [160, 16]] }));
+    let after = format!("{before}\nlayout {{\n    wire a -> y via (120, 16) (160, 16)\n}}\n");
+    assert_eq!(text(&memory, "/p/h.lcf"), after);
+    assert_eq!(result["names"], json!({ "wire": "a -> y.x" }));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    let author = Author::User;
+    let unknown = refused(&mut session, &author, "wire.route", json!({ "file": "h.lcf", "wire": "x -> y", "via": [[1, 1]] }));
+    assert_eq!((unknown.code, unknown.parameter.as_deref()), ("edit.unknown", Some("wire")));
+    let empty = refused(&mut session, &author, "wire.route", json!({ "file": "h.lcf", "wire": "a -> y", "via": [] }));
+    assert_eq!((empty.code, empty.parameter.as_deref()), ("params.invalid", Some("via")));
+}
+
+/// The wires of `file` with `text` in its place, as the window would draw them: what `edit` asks the session.
+fn wires_of(session: &mut Session, file: &str, text: &str) -> Vec<labcraft_edit::WireDrawn> {
+    use labcraft_edit::Judge;
+    let root = session.root.clone();
+    session.checked(&root).unwrap();
+    let kept = session.kept_root().unwrap();
+    let memory = std::collections::BTreeMap::new();
+    let judge = super::SessionJudge { session, kept: &kept.checked, memory: &memory };
+    judge.wires(file, text)
+}
+
+fn on_path(path: &[(i64, i64)], (x, y): (i64, i64)) -> bool {
+    path.windows(2).any(|pair| {
+        let (a, b) = (pair[0], pair[1]);
+        (a.0 == b.0 && a.0 == x && a.1.min(b.1) <= y && y <= a.1.max(b.1)) || (a.1 == b.1 && a.1 == y && a.0.min(b.0) <= x && x <= a.0.max(b.0))
+    })
+}
+
+/// After a `node.move` that an agent asks for, a junction still lies on its trunk, as the session draws it (visual
+/// notation 2.5; decision of the owner, 2026-11-17): the engine moves it in the same step.
+#[test]
+fn a_junction_follows_its_trunk_after_the_move_of_an_agent() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64, z: f64) {\n    a = core.neg(x)\n    b = core.abs(a)\n    y = core.neg(b)\n    z = core.abs(a)\n}\n";
+    memory.put("/p/h.lcf", before);
+    // A point of the trunk `a -> b.x` on a horizontal, on the grid of units of the frame (whose origin the paths count
+    // from), past its start.
+    let wires = wires_of(&mut session, "h.lcf", before);
+    let trunk = wires.iter().find(|wire| wire.name == "a -> b.x").unwrap().clone();
+    let (start, end) = trunk.path.windows(2).map(|pair| (pair[0], pair[1])).find(|(p, q)| p.1 == q.1 && (q.0 - p.0).abs() >= 300).unwrap();
+    let junction = ((start.0.min(end.0) / 100 + 1) * 100, start.1);
+    assert!(junction.1 % 100 == 0, "{trunk:?}");
+    let via = json!([[junction.0 / 100, junction.1 / 100]]);
+    ok(&mut session, "wire.route", json!({ "file": "h.lcf", "wire": "a -> z.x", "via": via }));
+    // The agent moves `a` and `b` down together: the trunk between them keeps its shape, lower.
+    let agent = Author::Agent("test".to_owned());
+    session.execute_as(&agent, "node.move", &json!({ "file": "h.lcf", "nodes": ["a", "b"], "by": [0, 40] })).unwrap();
+    let after = text(&memory, "/p/h.lcf");
+    let first = after
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("wire a -> z via (")?.split(')').next().map(str::to_owned))
+        .unwrap_or_else(|| panic!("the branch keeps its junction: {after}"));
+    let (x, y) = first.split_once(", ").map(|(x, y)| (x.parse::<i64>().unwrap() * 100, y.parse::<i64>().unwrap() * 100)).unwrap();
+    let moved = wires_of(&mut session, "h.lcf", &after);
+    let trunk = moved.iter().find(|wire| wire.name == "a -> b.x").unwrap();
+    assert!(on_path(&trunk.path, (x, y)), "{first} off {trunk:?}\n{after}");
+    // It moved with the trunk: where it was is no longer on it.
+    assert_ne!((x, y), junction, "{after}");
+    assert!(!on_path(&trunk.path, junction), "{trunk:?}");
+}

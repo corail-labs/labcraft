@@ -60,6 +60,9 @@ pub const WIRE: &str = "ide.wire";
 /// preferences of the user until the card `Settings` of step 6, as those of step 2.
 pub const REPLACE_WITH_ALT: &str = "ide.replace_with_alt";
 pub const ACCEPT_MISMATCH: &str = "ide.accept_mismatch";
+/// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt, for a desktop
+/// that keeps Alt and a drag to move windows. Off by default, a preference of the user as the two above.
+pub const ROUTE_WITH_SHIFT_ALT: &str = "ide.route_with_shift_alt";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
 
@@ -90,6 +93,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (WIRE, "Start a wire from the terminal in focus"),
     (REPLACE_WITH_ALT, "Replace a wire only with Alt"),
     (ACCEPT_MISMATCH, "Accept a wire of the wrong type"),
+    (ROUTE_WITH_SHIFT_ALT, "Move a wire with Shift+Alt"),
     (ABOUT, "About LabCraft"),
 ];
 
@@ -206,6 +210,7 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new(MARK_FIXED), "Mark the fixed nodes").check(true)));
     view.push(Node::Item(Item::new(CommandRef::new(REPLACE_WITH_ALT), "Replace a wire only with Alt").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(ACCEPT_MISMATCH), "Accept a wire of the wrong type").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(ROUTE_WITH_SHIFT_ALT), "Move a wire with Shift+Alt").check(false)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
         "Run",

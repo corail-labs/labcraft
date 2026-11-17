@@ -1295,6 +1295,72 @@ fn a_via_is_kept() {
     assert!(!drawing.bodies[0].from_file);
 }
 
+/// The paths of the readers of a value, in the order of its wires.
+fn reader_paths(drawing: &crate::Drawing, value: &str) -> Vec<Vec<(i64, i64)>> {
+    wire_of(drawing, value).wire.as_ref().unwrap().readers.iter().map(|(_, path)| path.clone()).collect()
+}
+
+/// A wire whose first waypoint lies on a wire of its value is a branch of it: it starts at that point, its junction, and
+/// the trunk is drawn once (notation 2.4).
+#[test]
+fn a_branch_starts_at_its_junction() {
+    let plain = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.neg(x)\n    b = core.abs(a)\n    y = core.neg(b)\n    z = core.abs(a)\n}\n";
+    let before = drawing_of(plain);
+    let (fx, fy, ..) = before.bodies[0].frame;
+    // A point of the trunk of `a` on a horizontal segment, on the grid of units, from its first reader's path.
+    let trunk = reader_paths(&before, "a").into_iter().next().unwrap();
+    let (start, end) = trunk.windows(2).map(|pair| (pair[0], pair[1])).find(|(p, q)| p.1 == q.1 && (q.0 - p.0).abs() >= 300).unwrap();
+    let junction = (((start.0.min(end.0) - fx) / 100 + 1) * 100 + fx, start.1);
+    assert!(junction.0 < start.0.max(end.0));
+    let (jx, jy) = ((junction.0 - fx) / 100, (junction.1 - fy) / 100);
+    let routed = format!("{plain}\nlayout {{\n    wire a -> z via ({jx}, {jy})\n}}\n");
+    let drawing = drawing_of(&routed);
+    let group = wire_of(&drawing, "a");
+    let wire = group.wire.as_ref().unwrap();
+    assert_eq!(wire.vias, [false, true]);
+    assert_eq!(wire.entries, [Some("a -> b.x".to_owned()), Some("a -> z.x".to_owned())]);
+    let paths = reader_paths(&drawing, "a");
+    // The branch runs along the trunk to its junction, then leaves it.
+    assert!(crate::route::prefix_to(&paths[0], junction).is_some(), "{paths:?}");
+    let to_junction = paths[1].iter().position(|&point| point == junction).unwrap();
+    assert_eq!(paths[1][..to_junction], crate::route::prefix_to(&paths[0], junction).unwrap()[..to_junction]);
+    assert_ne!(paths[1].get(to_junction + 1).map(|point| point.1), Some(junction.1), "it leaves the trunk downward: {paths:?}");
+    let circles: Vec<(i64, i64)> = group
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Circle { x, y, .. } => Some((*x, *y)),
+            _ => None,
+        })
+        .collect();
+    assert!(circles.contains(&junction), "{circles:?}");
+}
+
+/// From inside a structure, `wire stop -> n` is the part from the notch to `until`, and it keeps its waypoints (spec 11).
+#[test]
+fn a_via_inside_a_structure_is_kept() {
+    let plain = "labcraft 1\n\nfn main(s: bool) -> (z: bool) {\n    z = loop carry a = s {\n        next a = a\n        until s\n    }\n}\n";
+    let drawing = drawing_of(plain);
+    let inner = drawing.groups.iter().find_map(|group| group.wire.as_ref().filter(|wire| wire.value == "s" && wire.body != 0)).unwrap();
+    assert_eq!(inner.entries, [Some("s -> z".to_owned())]);
+    assert_eq!(inner.vias, [false]);
+    let body = inner.body;
+    let (fx, fy, ..) = drawing.bodies[body].frame;
+    let (ox, oy) = drawing.bodies[body].origin;
+    let routed = format!("{plain}\nlayout {{\n    wire s -> z via (16, 4) (40, 4)\n}}\n");
+    let drawing = drawing_of(&routed);
+    let inner = drawing.groups.iter().find_map(|group| group.wire.as_ref().filter(|wire| wire.value == "s" && wire.body != 0)).unwrap();
+    assert_eq!(inner.vias, [true]);
+    let path = &inner.readers[0].1;
+    let (ox2, oy2) = drawing.bodies[inner.body].origin;
+    assert!(
+        path.contains(&(ox2 + 1_600, oy2 + 400)) && path.contains(&(ox2 + 4_000, oy2 + 400)),
+        "{path:?}, frame {:?} origin {:?}",
+        (fx, fy),
+        (ox, oy)
+    );
+}
+
 // The view state of the viewer (notation 5.2, commands.md 6.5): arms in tabs, a structure unfolded, a node in standard
 // view.
 

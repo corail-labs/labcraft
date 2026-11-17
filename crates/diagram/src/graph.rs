@@ -589,7 +589,8 @@ impl<'a> Builder<'a> {
 
     /// The waypoints of the `wire` entries that name one wire (spec 11): by the value it carries and the node it goes to,
     /// or an output of the function, and the input when one is named. An entry that names none or several gives a
-    /// warning of `check` (`LC5004`, `LC5006`) and nothing here; neither does the part inside a structure that names it.
+    /// warning of `check` (`LC5004`, `LC5006`) and nothing here. From inside a structure, a wire to its `next`, `until`,
+    /// `collect` or `yield` ends at the structure, `next x` at its input `x` (spec 11).
     fn vias(&self, graph: &Graph<'_>, flow: &flow::Flow) -> HashMap<(usize, usize), Vec<(i64, i64)>> {
         let mut vias = HashMap::new();
         let Some(layout) = &self.file.file.layout else { return vias };
@@ -628,6 +629,11 @@ impl<'a> Builder<'a> {
                             End::Right(right) if body == 0 => {
                                 Reader::Output(frame.right.get(right).map(|terminal| terminal.terminal.name.clone()).unwrap_or_default())
                             }
+                            // From inside, a wire to `next`, `until`, `collect` or `yield` ends at the structure (spec 11).
+                            End::Right(_) => match frame.owner {
+                                Some(owner) => Reader::Node(owner),
+                                None => continue,
+                            },
                             _ => continue,
                         };
                         index.entry((wire.name.split('.').next().unwrap_or_default().to_owned(), reader)).or_default().push((body, at));
@@ -655,12 +661,31 @@ impl<'a> Builder<'a> {
                         End::Right(at) if body == 0 && node.is_none() && input.is_none() => {
                             frame.right.get(at).is_some_and(|terminal| Some(&terminal.terminal.name) == output.as_ref())
                         }
+                        // `next x` at its input `x`; `until`, `collect` and `yield` have no name.
+                        End::Right(at) if body != 0 && frame.owner.is_some() && frame.owner == node => input.as_ref().is_none_or(|input| {
+                            frame.right.get(at).is_some_and(|terminal| {
+                                terminal.edge == Edge::Register && terminal.terminal.name.strip_prefix("next ") == Some(input.as_str())
+                            })
+                        }),
                         _ => false,
                     };
                     if fits {
                         found.push((body, index));
                     }
                 }
+            }
+            // With several wires, an entry without a terminal designates the one that reaches an input without a name.
+            if found.len() > 1 && input.is_none() {
+                found.retain(|&(body, at)| {
+                    let Some(frame) = graph.bodies.get(body) else { return false };
+                    match frame.wires.get(at).map(|wire| wire.to) {
+                        Some(End::Node { node, terminal }) => {
+                            graph.nodes.get(node).and_then(|node| node.inputs.get(terminal)).is_some_and(|terminal| terminal.name.is_empty())
+                        }
+                        Some(End::Right(right)) if body != 0 => frame.right.get(right).is_some_and(|terminal| terminal.edge != Edge::Register),
+                        _ => false,
+                    }
+                });
             }
             if let [one] = found.as_slice() {
                 vias.insert(*one, points);

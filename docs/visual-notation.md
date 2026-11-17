@@ -207,8 +207,13 @@ are the nodes that a `layout` section does not place (spec 11).
 - Order wires are routed like the others.
 - The waypoints that a `via` gives (spec 11) are kept, and the routing joins them: across, then down to each, and
   from the last down to the height of the reader *(proposed)*. A `wire` entry keeps its waypoints when it names one
-  wire by its value and the node it reaches, an output of the function or an input named after it; the part inside a
-  structure that `wire stop -> n` names does not keep them yet (to do with the editor, M1).
+  wire by its value and the node it reaches, an output of the function or an input named after it, and from inside
+  a structure, the wire to its `next`, `until`, `collect` or `yield` (`wire stop -> n`). A wire whose first waypoint
+  lies on another wire of its value is a branch of it (2.4): it runs along that wire to that point, its junction,
+  and on from there; the others run from their source. The wires of one value are one net all the same, its trunk
+  drawn once, with a junction point where each leaves the others. Past 64 wires with waypoints in one body, each runs
+  from its source (decision of the owner, 2026-11-17): a budget, as those of architecture 11.3, so that many entries cost
+  their number.
 - A terminal can sit on any side of its node, and the routing leaves it in that direction, so that
   sides chosen later (N-15) need no other routing. Every terminal of a compact block or of a primitive is on the grid
   of 8 (3.2, decided 2026-11-13).
@@ -325,9 +330,14 @@ below.
   Alt".
 - **A wire of the wrong type** is refused by default, and the reason is shown where it is dropped. Setting: "accept
   it": the file then holds it, `check` gives `LC3001` and the wire is drawn broken (2.5).
-- **Moving a wire.** Alt and a drag on a segment moves it and writes `wire a -> b via (…)`; a plain drag from a wire
-  starts a branch instead. "Arrange this wire" removes its entry. The `via` points stay where they are when a node
-  moves (to confirm with use).
+- **Moving a wire.** Alt and a drag on a segment moves it across, on the grid of 8, the segments on each side
+  following, and writes `wire a -> b via (…)`; a plain drag from a wire starts a branch instead. A segment that
+  leaves a terminal gets a jog 16 from it, so that the wire still leaves the terminal in its direction *(proposed)*.
+  A segment that several wires of the value share moves for all of them: the wire dragged gets the route, and each
+  other one that ran along the segment becomes its branch, its junction where it left it, in one step (decision of
+  the owner, 2026-11-17). Setting: "move a wire with Shift+Alt", for a desktop that keeps Alt and a drag to move
+  windows. "Arrange this wire" (its context menu, the inspector) removes its entry. The `via` points stay where they
+  are when a node moves (to confirm with use); a junction follows its trunk (2.5).
 - **A branch from a wire** is a wire from the same value: it starts at a junction where the wire was grabbed, and
   that junction follows the trunk. No syntax is added: the first `via` point of a branch that lies on a wire of the
   same value is its junction, a rule of the editor. Its tolerance, and what a junction does when an automatic trunk
@@ -412,7 +422,12 @@ list of diagnostics. The shape of a mark doubles its color (principle
   follows its trunk: when the trunk moves, the junction keeps its distance from the start of its segment, cut to the
   length of the segment. If the trunk no longer has that segment (the route of an automatic trunk changed its bends),
   the first `via` point of the branch is dropped, in the same step of undo as the move, and the junction becomes
-  automatic again; a later `via` point then never becomes the junction, even if it lies on the trunk.
+  automatic again; a later `via` point then never becomes the junction, even if it lies on the trunk. A junction that
+  still lies on its trunk, on a part of it that did not move, stays where it is (decision of the owner, 2026-11-17). This
+  holds after every editing command, the move of an agent too (decision of the owner, 2026-11-17). Dropped on an input of
+  its frame, a branch goes down from a junction on a horizontal to the height of the input, or 16 across from one
+  on a vertical, then down *(proposed)*: one `wire.connect` and one `wire.route`, one step. To an input of another
+  frame or an output of the function, its junction is automatic.
 
 **An input left to its default.** An optional input of a node that nothing wires shows a dot of 5 in `ink.muted`, its
 center 12 to the left of its terminal in compact view, within the place where a pill would sit; in standard view, inside
@@ -455,7 +470,7 @@ in progress writes nothing (2.4).
 | Drag | an input | Draws a wire back to an output; from an input already wired, the new wire replaces the old one (2.4) |
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
 | Drag | a wire | Starts a branch at a junction (2.5) |
-| Alt+drag | a segment of a wire | `wire.route` (2.4). The modifier is a setting, for a desktop that keeps Alt+drag to move windows |
+| Alt+drag | a segment of a wire | `wire.route` (2.4). The modifier is a setting, Shift+Alt, for a desktop that keeps Alt+drag to move windows |
 | Drag | the right edge, the bottom edge or the corner of the frame | `frame.resize` |
 | Drag | a terminal of the frame | `terminal.move` |
 | Alt+drag | a terminal of a block | `block.set_terminal` on the function called, to the place where it is dropped (2.4); the same setting as for a wire |
@@ -571,6 +586,8 @@ the canvas shows.
   of the text, each drawn with its ring and the wire snapped to it (2.5). The filter is the predicate of
   `wire.connect`. Enter wires it, replacing as a drop does (2.4), and Escape cancels. Space opens quick insertion,
   filtered, as a wire dropped on the empty canvas does; the node falls to the right of the start of the wire.
+- **A route by hand** has no key in M1: "Arrange this wire" gives a wire its automatic route back, and W on an
+  output draws a branch, with an automatic junction (decision of the owner, 2026-11-17).
 - **Moving.** Ctrl and an arrow moves the selection by 8, one step of the grid; with Shift, by 64. The presses that
   follow one another on the same nodes are one run, one `node.move` and one step of undo, as a drag is
   ([commands.md](commands.md), 9.1): the nodes show where they go at each press, as in a drag, and the move is written

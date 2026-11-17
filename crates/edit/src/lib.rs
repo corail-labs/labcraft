@@ -32,10 +32,12 @@ mod model;
 mod names;
 mod places;
 mod refs;
+mod route;
 mod scope;
 mod select;
 mod wire;
 
+pub use route::MAX_VIA;
 pub use select::selectable;
 
 #[cfg(test)]
@@ -75,23 +77,67 @@ pub const MAX_COORDINATE: i64 = 1_000_000;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Op {
     /// `node.add`: `call` is a function as a call names it, a struct type, or a variant that holds values.
-    NodeAdd { file: String, call: String, at: Option<Point>, name: Option<String> },
+    NodeAdd {
+        file: String,
+        call: String,
+        at: Option<Point>,
+        name: Option<String>,
+    },
     /// `constant.add`: `value` is a constant written as in a file (`240 V`).
-    ConstantAdd { file: String, value: String, at: Option<Point>, name: Option<String> },
+    ConstantAdd {
+        file: String,
+        value: String,
+        at: Option<Point>,
+        name: Option<String>,
+    },
     /// `node.delete`.
-    NodeDelete { file: String, nodes: Vec<String> },
+    NodeDelete {
+        file: String,
+        nodes: Vec<String>,
+    },
     /// `wire.connect`.
-    WireConnect { file: String, from: String, to: String, replace: bool, accept_mismatch: bool },
+    WireConnect {
+        file: String,
+        from: String,
+        to: String,
+        replace: bool,
+        accept_mismatch: bool,
+    },
     /// `wire.disconnect`.
-    WireDisconnect { file: String, wire: String },
+    WireDisconnect {
+        file: String,
+        wire: String,
+    },
     /// `node.move`: the nodes of one frame by `by`, each fixed.
-    NodeMove { file: String, nodes: Vec<String>, by: Point },
+    NodeMove {
+        file: String,
+        nodes: Vec<String>,
+        by: Point,
+    },
     /// `node.place`: one node at `at` in its frame, fixed.
-    NodePlace { file: String, node: String, at: Point },
+    NodePlace {
+        file: String,
+        node: String,
+        at: Point,
+    },
     /// `node.set_view`: `None` is `default`, which removes the view.
-    NodeSetView { file: String, nodes: Vec<String>, view: Option<labcraft_graph::View> },
+    NodeSetView {
+        file: String,
+        nodes: Vec<String>,
+        view: Option<labcraft_graph::View>,
+    },
     /// `layout.arrange`: `nodes` is `None` when the command names no node.
-    LayoutArrange { file: String, nodes: Option<Vec<String>>, wires: Vec<String>, terminals: Vec<String> },
+    LayoutArrange {
+        file: String,
+        nodes: Option<Vec<String>>,
+        wires: Vec<String>,
+        terminals: Vec<String>,
+    },
+    WireRoute {
+        file: String,
+        wire: String,
+        via: Vec<Point>,
+    },
 }
 
 impl Op {
@@ -106,7 +152,8 @@ impl Op {
             | Op::NodeMove { file, .. }
             | Op::NodePlace { file, .. }
             | Op::NodeSetView { file, .. }
-            | Op::LayoutArrange { file, .. } => file,
+            | Op::LayoutArrange { file, .. }
+            | Op::WireRoute { file, .. } => file,
         }
     }
 }
@@ -218,6 +265,24 @@ pub trait Judge {
         let _ = (file, text);
         Vec::new()
     }
+
+    /// The wires of the function of `file` as the drawing of `text` routes them, one per reader that a `wire` entry can
+    /// name: what `wire.route` names, and the trunk that a junction follows (notation 2.5). Empty when it is not drawn.
+    fn wires(&self, file: &str, text: &str) -> Vec<WireDrawn> {
+        let _ = (file, text);
+        Vec::new()
+    }
+}
+
+/// A wire drawn, to one reader: its name as `wire.route` takes it (`reading -> verdict.a`), its value, the body that holds
+/// it, and its path from its source to its reader, in hundredths, in the frame of its body (spec 11), the trunk that it
+/// shares with the other wires of its value included.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WireDrawn {
+    pub name: String,
+    pub value: String,
+    pub body: usize,
+    pub path: Vec<(i64, i64)>,
 }
 
 /// A node of a drawing, where it is in its frame, in units (spec 11).
@@ -272,8 +337,9 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
         Op::LayoutArrange { nodes, wires, terminals, .. } => layout::arrange(&mut edit, judge, nodes.as_deref(), wires, terminals)?,
+        Op::WireRoute { wire, via, .. } => route::route(&mut edit, judge, wire, via, &mut edited)?,
     }
-    let new_text = edit.finish()?;
+    let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {
         edited.texts.insert(path.to_owned(), new_text);
     }

@@ -1212,7 +1212,7 @@ fn port_of(drawing: &Drawing, name: &str, input: bool) -> Pos2 {
 }
 
 fn wiring_of(from: &str, to: &str, replace: bool) -> Intent {
-    Intent::Wire { from: from.to_owned(), to: to.to_owned(), replace, accept_mismatch: false }
+    Intent::Wire { from: from.to_owned(), to: to.to_owned(), replace, accept_mismatch: false, route: None }
 }
 
 /// A drag of the primary button from `from` to `to`, with `modifiers` held, over frames from `time`: what it asks for.
@@ -1319,7 +1319,7 @@ fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
     // With "accept it", a wire of the wrong type is written.
     let accept = Shown { accept_mismatch: true, ..Shown::default() };
     let intents = drag_with(&ctx, &mut canvas, (to, port_of(&drawn, "flag", false)), 4.0, &accept);
-    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true }]);
+    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true, route: None }]);
     canvas.cancel_wire();
     // On the empty canvas, far from every terminal.
     let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(0.0, 160.0)), 5.0, &none);
@@ -1399,7 +1399,7 @@ fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_n
     // From the input `b.b`, which holds `2.0`, back to `flag`, a bool, with "accept it": written, replacing the constant.
     let accept = Shown { accept_mismatch: true, ..Shown::default() };
     let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 2.0, &accept);
-    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true }]);
+    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true, route: None }]);
 }
 
 /// A drawing that comes while a wire is drawn keeps it, from its terminal found again (as a drag of nodes); Enter on a
@@ -1434,4 +1434,152 @@ fn a_drawing_that_comes_while_a_wire_is_drawn_keeps_it() {
     assert_eq!(canvas.port_focus(), Some(("a".to_owned(), false)));
     let (_, _, intents) = frame_shown(&ctx, &mut canvas, 1.4, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &a);
     assert!(matches!(intents.as_slice(), [Intent::Select(selection)] if selection.wires.contains(&"a -> b.a".to_owned())), "{intents:?}");
+}
+
+/// The path of the first reader of the wire of `value`, in hundredths, and the origin of its frame.
+fn path_of(drawing: &Drawing, value: &str) -> (Vec<(i64, i64)>, (i64, i64)) {
+    let wire = drawing.groups.iter().find_map(|group| group.wire.as_ref().filter(|wire| wire.value == value)).unwrap();
+    (wire.readers[0].1.clone(), drawing.bodies[wire.body].origin)
+}
+
+fn units_of((x, y): (i64, i64)) -> Pos2 {
+    Pos2::new(x as f32 / 100.0, y as f32 / 100.0)
+}
+
+/// Alt and a drag on a segment moves it across, on the grid of 8 of its frame, and the drop asks for `wire.route` with
+/// the points that give that route: a jog 16 from each terminal it leaves (notation 2.4, 2.6).
+#[test]
+fn alt_and_a_drag_on_a_segment_routes_the_wire() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(CHAIN, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let (path, (ox, oy)) = path_of(&drawn, "a");
+    // `a` rises in the channel to `y`: its last segment, into `y`, moves.
+    assert_eq!(path.len(), 4, "{path:?}");
+    let (p1, p2, p3) = (path[1], path[2], path[3]);
+    let on = units_of(((p2.0 + p3.0) / 2, p2.1));
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(5.0, 21.0)), 0.2, egui::Modifiers::ALT, &none);
+    // Down by 21, to the nearest line of the grid of 8 that starts at the origin of the frame; the vertical before it
+    // stretches, and the segment jogs 16 before `y`, which it reaches at its height.
+    let moved = oy + ((p2.1 + 2_100 - oy) as f64 / 800.0).round() as i64 * 800;
+    let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+    let via = vec![(unit(p1.0 - ox), unit(moved - oy)), (unit(p3.0 - 1_600 - ox), unit(p3.1 - oy))];
+    assert_eq!(intents.last(), Some(&Intent::Route(vec![("a -> y.a".to_owned(), via)])), "{intents:?}");
+    // With the setting, Alt alone draws a branch instead, and Shift+Alt moves the segment.
+    let shifted = Shown { route_with_shift_alt: true, ..Shown::default() };
+    canvas.cancel_wire();
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(0.0, 21.0)), 2.0, egui::Modifiers::ALT | egui::Modifiers::SHIFT, &shifted);
+    assert!(intents.iter().any(|intent| matches!(intent, Intent::Route(_))), "{intents:?}");
+}
+
+/// A plain drag on a wire draws a branch of its value from a junction on the grid of 8 on the wire; dropped on an
+/// input of its frame, it asks for the wire and its junction in one step (notation 2.4, 2.5).
+#[test]
+fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(CHAIN, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let (path, (ox, oy)) = path_of(&drawn, "a");
+    let ((sx, sy), (rx, _)) = (path[0], path[1]);
+    let press = (sx + (rx - sx) / 2 + 300, sy + 200);
+    // The junction: on the wire, at the line of the grid of 8 of the frame nearest the press.
+    let jx = ox + ((press.0 - ox) as f64 / 800.0).round() as i64 * 800;
+    let input = drawn.ports.iter().find(|port| port.name == "y.b").unwrap();
+    let target = units_of((input.x, input.y));
+    let intents = drag_with(&ctx, &mut canvas, (units_of(press), target), 0.2, &none);
+    let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+    let wired = Intent::Wire {
+        from: "a".to_owned(),
+        to: "y.b".to_owned(),
+        replace: true,
+        accept_mismatch: false,
+        route: Some(("a -> y.b".to_owned(), vec![(unit(jx - ox), unit(sy - oy))])),
+    };
+    assert_eq!(intents.last(), Some(&wired), "{intents:?}");
+}
+
+const FORK: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64, z: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n    z = core.add(a, 2.0)\n}\n";
+
+/// A segment that two wires of a value share moves for both: the one dragged gets the route, and the other, which ran
+/// along it, becomes its branch, its junction where it leaves it, moved with the segment (decision of the owner,
+/// 2026-11-17). Escape before the drop asks for nothing.
+#[test]
+fn a_segment_shared_moves_for_every_wire_along_it() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(FORK, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let wire = drawn.groups.iter().find_map(|group| group.wire.as_ref().filter(|wire| wire.value == "a")).unwrap();
+    let (ox, oy) = drawn.bodies[wire.body].origin;
+    let paths: Vec<&Vec<(i64, i64)>> = wire.readers.iter().map(|(_, path)| path).collect();
+    // Both leave `a` across, then down the same vertical of the channel, each off it at the height of its reader.
+    assert_eq!((paths[0].len(), paths[1].len()), (4, 4), "{paths:?}");
+    assert_eq!((paths[0][1], paths[0][0]), (paths[1][1], paths[1][0]), "{paths:?}");
+    let longer = if (paths[0][2].1 - paths[0][1].1).abs() >= (paths[1][2].1 - paths[1][1].1).abs() { 0 } else { 1 };
+    let (dragged, other) = (paths[longer], paths[1 - longer]);
+    let cx = dragged[1].0;
+    let on = units_of((cx, (dragged[1].1 + other[2].1) / 2));
+    // Escape before the drop: nothing.
+    let escaped = {
+        let button =
+            |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::ALT };
+        let mut intents = Vec::new();
+        for (at, events) in [
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::ALT), egui::Event::PointerMoved(on), button(on, true)],
+            vec![egui::Event::PointerMoved(on + Vec2::new(10.0, 0.0))],
+            vec![key(egui::Key::Escape, egui::Modifiers::NONE)],
+            vec![egui::Event::PointerMoved(on + Vec2::new(12.0, 0.0)), button(on + Vec2::new(12.0, 0.0), false)],
+            vec![egui::Event::ModifiersChanged(egui::Modifiers::NONE)],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            intents.extend(frame_shown(&ctx, &mut canvas, 0.1 + at as f64 * 0.1, events, &none).2);
+        }
+        intents
+    };
+    assert!(!escaped.iter().any(|intent| matches!(intent, Intent::Route(_))), "{escaped:?}");
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 1.0, egui::Modifiers::ALT, &none);
+    let Some(Intent::Route(routes)) = intents.last() else { panic!("{intents:?}") };
+    let names: Vec<&str> = routes.iter().map(|(name, _)| name.as_str()).collect();
+    let (first, second) = if longer == 0 { ("a -> y.a", "a -> z.a") } else { ("a -> z.a", "a -> y.a") };
+    assert_eq!(names, [first, second]);
+    // Right by 10, to the nearest line of the grid of 8 of the frame; the other leaves the vertical moved, at its height.
+    let moved = ox + ((cx + 1_000 - ox) as f64 / 800.0).round() as i64 * 800;
+    let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
+    assert_eq!(routes[1].1.first(), Some(&(unit(moved - ox), unit(other[2].1 - oy))), "{routes:?}");
+    // With the setting, Alt alone draws a branch instead.
+    canvas.cancel_wire();
+    let shifted = Shown { route_with_shift_alt: true, ..Shown::default() };
+    let intents = drag_holding(&ctx, &mut canvas, (on, on + Vec2::new(10.0, 0.0)), 3.0, egui::Modifiers::ALT, &shifted);
+    assert!(!intents.iter().any(|intent| matches!(intent, Intent::Route(_))), "{intents:?}");
+}
+
+/// A new drawing that draws the wire as it was does not end a segment being moved; one that draws it elsewhere does.
+#[test]
+fn a_segment_being_moved_goes_on_over_a_new_drawing() {
+    let drawn = drawing(CHAIN, &ViewState::default());
+    let (path, _) = path_of(&drawn, "a");
+    let group = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+    let on = units_of(((path[2].0 + path[3].0) / 2, path[2].1));
+    let mut moving = rerouting::Rerouting::grab(&drawn, group, on, 1.0).unwrap();
+    moving.by = 800;
+    let again = moving.again(&drawn, &drawing(CHAIN, &ViewState::default())).unwrap();
+    assert_eq!((again.segment, again.by), (moving.segment, 800));
+    let other = drawing(&CHAIN.replace("core.add(a, 1.0)", "core.add(1.0, a)"), &ViewState::default());
+    assert!(moving.again(&drawn, &other).is_none());
 }
