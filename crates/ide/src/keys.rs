@@ -63,6 +63,14 @@ pub const ACCEPT_MISMATCH: &str = "ide.accept_mismatch";
 /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt, for a desktop
 /// that keeps Alt and a drag to move windows. Off by default, a preference of the user as the two above.
 pub const ROUTE_WITH_SHIFT_ALT: &str = "ide.route_with_shift_alt";
+/// Quick insertion (notation 2.6): Space on the canvas, from what has the focus.
+pub const QUICK_INSERT: &str = "ide.quick_insert";
+/// Delete and Backspace (notation 2.6): the selection, or what the terminal in focus holds, one step.
+pub const DELETE: &str = "ide.delete";
+/// The settings "autopatch from the keyboard" and "inserting into a wire" of notation 2.6, on by default: preferences of
+/// the user until the card `Settings` of step 6, as those of steps 2 and 3.
+pub const AUTOPATCH: &str = "ide.autopatch";
+pub const INTO_WIRE: &str = "ide.into_wire";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
 
@@ -94,6 +102,10 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (REPLACE_WITH_ALT, "Replace a wire only with Alt"),
     (ACCEPT_MISMATCH, "Accept a wire of the wrong type"),
     (ROUTE_WITH_SHIFT_ALT, "Move a wire with Shift+Alt"),
+    (QUICK_INSERT, "Quick insertion"),
+    (DELETE, "Delete the selection"),
+    (AUTOPATCH, "Autopatch from the keyboard"),
+    (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
 ];
 
@@ -133,6 +145,8 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(SELECT_ALL_DOWNSTREAM, "Select everything downstream", &["Shift+Alt+Right"]),
         on_canvas(ARRANGE, "Arrange", &["Shift+Alt+F"]),
         on_canvas(WIRE, "Start a wire", &["W"]),
+        on_canvas(QUICK_INSERT, "Quick insertion", &["Space"]),
+        on_canvas(DELETE, "Delete", &["Delete", "Backspace"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
     // A key of the canvas never acts when the canvas does not have the focus.
@@ -182,6 +196,8 @@ pub fn menus() -> MenuBar {
             Node::Separator,
             item(ARRANGE, "Arrange"),
             item(WIRE, "Start a wire from the terminal"),
+            item(QUICK_INSERT, "Quick insertion…"),
+            item(DELETE, "Delete"),
             Node::Separator,
             item(PALETTE, "Command palette…"),
         ],
@@ -211,6 +227,8 @@ pub fn menus() -> MenuBar {
     view.push(Node::Item(Item::new(CommandRef::new(REPLACE_WITH_ALT), "Replace a wire only with Alt").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(ACCEPT_MISMATCH), "Accept a wire of the wrong type").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(ROUTE_WITH_SHIFT_ALT), "Move a wire with Shift+Alt").check(false)));
+    view.push(Node::Item(Item::new(CommandRef::new(AUTOPATCH), "Autopatch from the keyboard").check(true)));
+    view.push(Node::Item(Item::new(CommandRef::new(INTO_WIRE), "Insert into a wire on a drop").check(true)));
     let view = Menu::new("View", view).role(MenuRole::View);
     let run = Menu::new(
         "Run",
@@ -251,6 +269,7 @@ mod tests {
             &["Cmd+0"],
             &["Cmd+A"],
             &["Alt+Left", "Alt+Right", "Shift+Alt+Left", "Shift+Alt+Right"],
+            &["W", "Space", "Delete", "Backspace", "Shift+Alt+F"],
         ] {
             for key in keys {
                 assert!(binding(key).is_some(), "{key}");

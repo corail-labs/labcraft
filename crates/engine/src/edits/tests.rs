@@ -320,6 +320,75 @@ fn a_batch_is_one_step_and_a_failure_writes_nothing() {
     }
 }
 
+/// `$i` names the node that an earlier command of the batch named (commands.md 6.7; decision of the owner, 2026-11-17):
+/// quick insertion from a wire, one step, whatever name the node gets.
+#[test]
+fn a_command_of_a_batch_names_the_node_of_an_earlier_one() {
+    let (mut session, memory) = session();
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.add" }));
+    let batch = json!({ "commands": [
+        { "id": "node.add", "params": { "file": "f.lcf", "call": "core.add" } },
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": "$0.a" } },
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "$0", "to": "sum.b" } },
+    ] });
+    ok(&mut session, "commands.batch", batch);
+    let wired = "labcraft 1\n\nuse core\n\nfn f(x: f64) -> (y: f64) {\n    sum2 = core.add(x)\n    sum = core.add(b: sum2)\n    y = x\n}\n";
+    assert_eq!(text(&memory, "/p/f.lcf"), wired);
+    for (to, index) in [("$1.a", 0), ("$5.a", 1)] {
+        let batch = json!({ "commands": [
+            { "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } },
+            { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": to } },
+        ] });
+        let failing = if index == 0 { json!({ "commands": [batch["commands"][1].clone(), batch["commands"][0].clone()] }) } else { batch };
+        let error = refused(&mut session, &Author::User, "commands.batch", failing);
+        assert_eq!((error.code, error.index), ("params.invalid", Some(index)), "{to}");
+    }
+    // A command that named no node.
+    let batch = json!({ "commands": [
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": "sum2.b" } },
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": "$0.a" } },
+    ] });
+    assert_eq!(refused(&mut session, &Author::User, "commands.batch", batch).code, "params.invalid");
+    // A `$i` is a whole name, once in each end: nothing else is replaced, so that a value never grows past two names.
+    for to in ["sum2.b $0", "$0 $0"] {
+        let batch = json!({ "commands": [
+            { "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } },
+            { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": to } },
+        ] });
+        assert_eq!(refused(&mut session, &Author::User, "commands.batch", batch).code, "params.invalid", "{to}");
+    }
+    assert_eq!(text(&memory, "/p/f.lcf"), wired);
+}
+
+/// A node named by `$0` and folded into an output (notation 2.4) keeps its `$0` under its new name, though a later node
+/// of the batch takes the name it had: worked out by hand from N-14 and spec 5.2.
+#[test]
+fn a_node_renamed_in_a_batch_keeps_its_earlier_name() {
+    let (mut session, memory) = session();
+    let batch = json!({ "commands": [
+        { "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } },
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "$0", "to": "output y", "replace": true } },
+        { "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } },
+        { "id": "wire.connect", "params": { "file": "f.lcf", "from": "x", "to": "$0" } },
+    ] });
+    ok(&mut session, "commands.batch", batch);
+    assert_eq!(text(&memory, "/p/f.lcf"), "labcraft 1\n\nuse core\n\nfn f(x: f64) -> (y: f64) {\n    abs = core.abs()\n    y = core.abs(x)\n}\n");
+}
+
+/// `node.add` with `into`, through the session and the shipped `core` (commands.md 6.7).
+#[test]
+fn a_node_goes_into_a_wire() {
+    let (mut session, memory) = session();
+    let result = ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "core.abs", "into": "x -> y" }));
+    assert_eq!((result["names"]["node"].as_str(), result["renamed"][0]["to"].as_str()), (Some("y"), Some("y")), "{result}");
+    assert_eq!(text(&memory, "/p/f.lcf"), "labcraft 1\n\nuse core\n\nfn f(x: f64) -> (y: f64) {\n    y = core.abs(x)\n}\n");
+    // `core.not` takes no number: nothing is written.
+    assert_eq!(
+        refused(&mut session, &Author::User, "node.add", json!({ "file": "f.lcf", "call": "core.not", "into": "x -> y" })).code,
+        "params.invalid"
+    );
+}
+
 #[test]
 fn an_agent_undoes_only_its_own_steps() {
     let (mut session, memory) = session();
@@ -369,7 +438,7 @@ fn an_editing_command_takes_a_function_file_of_the_project() {
     let user = Author::User;
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "notes.toml", "call": "core.add" })).code, "path.invalid");
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "none.lcf", "call": "core.add" })).code, "path.not_found");
-    assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "core.add", "into": "x -> y" })).code, "params.invalid");
+    assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "core.add", "into": "x -> z" })).code, "edit.unknown");
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "core.add", "at": [1] })).code, "params.invalid");
     assert_eq!(refused(&mut session, &user, "node.add", json!({ "file": "f.lcf", "call": "visa.nothing" })).code, "edit.unknown");
 }

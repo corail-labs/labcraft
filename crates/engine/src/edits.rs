@@ -173,8 +173,8 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         "node.add" => {
             not_yet(params, "inside", "5")?;
             not_yet(params, "arm", "5")?;
-            not_yet(params, "into", "4")?;
-            Op::NodeAdd { file, call: params.text("call")?.to_owned(), at: point(params, "at")?, name }
+            let into = params.str("into").map(str::to_owned);
+            Op::NodeAdd { file, call: params.text("call")?.to_owned(), at: point(params, "at")?, name, into }
         }
         "constant.add" => {
             not_yet(params, "inside", "5")?;
@@ -754,6 +754,8 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
     let mut early = label_first(session, &mut list, &mut texts);
     let mut results = Vec::with_capacity(list.len());
     let mut labels = Vec::new();
+    // The node that each command named (`names.node`), for the `$i` of a later one.
+    let mut named: Vec<Option<String>> = Vec::with_capacity(list.len());
     for (index, item) in list.iter().enumerate() {
         let at = |error: CommandError| CommandError { index: u32::try_from(index).ok(), ..error };
         let id = item
@@ -774,7 +776,8 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
         if let Some(reason) = session.not_enabled(command) {
             return Err(at(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}"))));
         }
-        let given = item.get("params").cloned().unwrap_or(Value::Null);
+        let mut given = item.get("params").cloned().unwrap_or(Value::Null);
+        earlier_names(&mut given, &named, index).map_err(at)?;
         if given.get("expected_revision").is_some() {
             return Err(at(CommandError::of(
                 "params.unknown",
@@ -785,6 +788,14 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
         let judged = crate::params::judge(command, &given).map_err(at)?;
         let edited = apply_one(session, id, &judged, &mut texts).map_err(at)?;
         let (names, mut renamed) = names_json(&edited);
+        // A node named earlier and renamed now (folded into an output, given a label) keeps its `$i`: the name it had
+        // may be taken by another node later in the batch.
+        for earlier in named.iter_mut().flatten() {
+            if let Some(change) = edited.renamed.iter().find(|change| change.from == *earlier) {
+                earlier.clone_from(&change.to);
+            }
+        }
+        named.push(edited.names.get("node").cloned());
         if let (Some(given), Value::Array(list)) = (early.remove(&index), &mut renamed) {
             list.splice(0..0, given);
         }
@@ -800,6 +811,70 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
 /// The parameters of the editing commands that name nodes, wires or inputs (commands.md 9.2): the only ones where a batch
 /// reads `@N`, so that a constant, a call, a label or a path that holds `@` is never touched.
 const NAMING: &[&str] = &["node", "nodes", "wire", "wires", "from", "to", "into", "inside", "structure"];
+
+/// Each `$i` of the naming parameters of `params` replaced by the node that command `i` of the batch named, an earlier one
+/// (commands.md 6.7; decision of the owner, 2026-11-17): `{ "to": "$0.a" }` after a `node.add`. A `$i` of a command that
+/// is not earlier, or that named no node, is `params.invalid`.
+fn earlier_names(params: &mut Value, named: &[Option<String>], index: usize) -> Result<(), CommandError> {
+    let Some(map) = params.as_object_mut() else { return Ok(()) };
+    let mut budget = EARLIER_BUDGET;
+    for key in NAMING {
+        if let Some(value) = map.get_mut(*key) {
+            replace_earlier(value, key, named, index, &mut budget)?;
+        }
+    }
+    Ok(())
+}
+
+/// The bytes that the `$i` of one command may bring in all *(proposed)*: a batch never grows past its request by much.
+const EARLIER_BUDGET: usize = 1 << 20;
+
+/// A `$i` is a whole name, at the start of a value (`$0`, `$0.a`) or of the end of a wire after its arrow (`x -> $0.a`):
+/// once in each end, so that a value never grows by more than two names.
+fn replace_earlier(value: &mut Value, key: &str, named: &[Option<String>], index: usize, budget: &mut usize) -> Result<(), CommandError> {
+    match value {
+        Value::String(text) => {
+            let found = tokens(text, '$');
+            let starts: Vec<usize> = std::iter::once(0)
+                .chain(text.find("->").map(|arrow| arrow + 2 + text.get(arrow + 2..).map_or(0, |rest| rest.len() - rest.trim_start().len())))
+                .collect();
+            if found.len() > 2 || found.iter().any(|(start, _, _)| !starts.contains(start)) {
+                return Err(CommandError::of(
+                    "params.invalid",
+                    key,
+                    "a `$i` is the whole name of a node, at the start of a value or of the end of a wire (`$0`, `$0.a`, `x -> $0.a`)",
+                ));
+            }
+            let mut out = String::with_capacity(text.len());
+            let mut last = 0;
+            for (start, end, earlier) in found {
+                let name = usize::try_from(earlier).ok().filter(|&earlier| earlier < index).and_then(|earlier| named.get(earlier).cloned().flatten());
+                let Some(name) = name else {
+                    return Err(CommandError::of(
+                        "params.invalid",
+                        key,
+                        format!("`${earlier}` names the node that an earlier command of the batch named, and command {earlier} is not one that did"),
+                    ));
+                };
+                out.push_str(text.get(last..start).unwrap_or_default());
+                *budget = budget.checked_sub(name.len()).ok_or_else(|| {
+                    CommandError::of("params.invalid", key, format!("the `$i` of a command name at most {EARLIER_BUDGET} bytes in all"))
+                })?;
+                out.push_str(&name);
+                last = end;
+            }
+            out.push_str(text.get(last..).unwrap_or_default());
+            *text = out;
+        }
+        Value::Array(list) => {
+            for value in list {
+                replace_earlier(value, key, named, index, budget)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
 
 /// The lines that the naming parameters of `params` name as nodes do (`@41`, `x -> @41.b`), each once.
 fn lines_in(params: &Value, found: &mut BTreeSet<u32>) {
@@ -822,11 +897,17 @@ fn lines_named(value: &Value, found: &mut BTreeSet<u32>) {
 
 /// Each `@N` of a text, where it starts and ends, and `N`: an `@` that no letter, digit or `_` comes before, then digits.
 fn line_tokens(text: &str) -> Vec<(usize, usize, u32)> {
+    tokens(text, '@')
+}
+
+/// Each `sigil` and the number after it (`@41`, `$0`), where it starts and ends, and the number: a `sigil` that no letter,
+/// digit or `_` comes before, then digits.
+fn tokens(text: &str, sigil: char) -> Vec<(usize, usize, u32)> {
     let mut found = Vec::new();
     let mut previous: Option<char> = None;
     for (at, letter) in text.char_indices() {
         let free = previous.is_none_or(|before| !(before.is_alphanumeric() || before == '_'));
-        if letter == '@' && free {
+        if letter == sigil && free {
             let rest = text.get(at + 1..).unwrap_or_default();
             let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
             if let Ok(line) = digits.parse::<u32>() {

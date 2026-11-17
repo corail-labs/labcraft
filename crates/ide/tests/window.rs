@@ -584,3 +584,222 @@ fn a_wire_dragged_between_two_terminals_is_written() {
     assert_eq!(text_of(&harness, "/p/main.lcf"), wired);
     shot(&mut harness, "wire");
 }
+
+/// Types `text` into the field that has the keyboard, then Enter.
+fn type_then_enter(harness: &mut Harness<'_, State>, text: &str) {
+    harness.input_mut().events.push(egui::Event::Text(text.to_owned()));
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(4);
+}
+
+fn undo(harness: &mut Harness<'_, State>) {
+    harness.state().host.session.borrow_mut().execute("history.undo", &json!({})).unwrap();
+    harness.run_steps(2);
+}
+
+/// A wire from the output of `a` dropped on the empty canvas opens quick insertion, filtered; `core.abs` chosen falls
+/// there, already wired, in one step (notation 2.6): its line, read from `a`, and its `node … at` entry (spec 11).
+#[test]
+fn a_wire_dropped_on_the_empty_canvas_inserts_a_node_already_wired() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (from, _) = canvas_element(&harness, "output result of a, f64");
+    drag_from(&mut harness, from, from + egui::vec2(40.0, 200.0));
+    assert!(harness.query_by_label("core.abs").is_some(), "the list holds what takes the wire");
+    assert!(harness.query_by_label("core.not").is_none(), "and not what refuses it");
+    shot(&mut harness, "quick-insertion");
+    type_then_enter(&mut harness, "abs");
+    let text = text_of(&harness, "/p/main.lcf");
+    let body = text.split("\nlayout {").next().unwrap_or_default();
+    assert_eq!(body, MAIN.replace("    y = core.add(a, 1.0)\n", "    abs = core.abs(a)\n    y = core.add(a, 1.0)\n"));
+    assert!(text.contains("\nlayout {\n    node abs at ("), "{text}");
+    undo(&mut harness);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN, "one step");
+}
+
+/// Space with one node selected (autopatch): the node falls to its right, its first input wired from the first output of
+/// the node selected (notation 2.6).
+#[test]
+fn space_on_a_node_selected_inserts_its_next_node_wired_to_it() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, Modifiers::NONE);
+    harness.key_press(Key::Space);
+    harness.run_steps(3);
+    type_then_enter(&mut harness, "abs");
+    let text = text_of(&harness, "/p/main.lcf");
+    assert!(text.contains("    a = core.mul(x, 2.0)\n    abs = core.abs(a)\n    y = core.add(a, 1.0)\n"), "{text}");
+}
+
+/// Space with a wire selected: the node goes into it (`node.add` with `into`), placed automatically (notation 2.6); the
+/// lines in the order of spec 5.2.
+#[test]
+fn space_on_a_wire_selected_inserts_a_node_into_it() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, Modifiers::NONE);
+    harness.state().host.session.borrow_mut().execute("view.select", &json!({ "function": "main", "wires": ["a -> y.a"] })).unwrap();
+    harness.run_steps(3);
+    harness.key_press(Key::Space);
+    harness.run_steps(3);
+    assert!(harness.query_by_label("core.lt").is_none(), "what gives no number back does not go into the wire");
+    type_then_enter(&mut harness, "abs");
+    let wired = MAIN.replace("    y = core.add(a, 1.0)\n", "    abs = core.abs(a)\n    y = core.add(abs, 1.0)\n");
+    assert_eq!(text_of(&harness, "/p/main.lcf"), wired);
+}
+
+/// Delete removes the node selected, with its wires, in one step (notation 2.6, commands.md 6.7).
+#[test]
+fn delete_removes_the_node_selected() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, Modifiers::NONE);
+    harness.key_press(Key::Delete);
+    harness.run_steps(4);
+    let text = text_of(&harness, "/p/main.lcf");
+    assert!(!text.contains("core.mul") && text.contains("    y = core.add("), "the node goes, its reader stays: {text}");
+    undo(&mut harness);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN);
+}
+
+/// Backspace removes the wire selected: the input it reached gets a hole, which keeps the place of the positional argument
+/// after it (spec 5.1, commands.md `wire.disconnect`), one step.
+#[test]
+fn backspace_removes_the_wire_selected() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, Modifiers::NONE);
+    harness.state().host.session.borrow_mut().execute("view.select", &json!({ "function": "main", "wires": ["a -> y.a"] })).unwrap();
+    harness.run_steps(3);
+    harness.key_press(Key::Backspace);
+    harness.run_steps(4);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN.replace("core.add(a, 1.0)", "core.add(?, 1.0)"));
+    undo(&mut harness);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), MAIN, "one step");
+}
+
+/// Space with nothing selected: the list holds everything, and the node falls where the pointer is, unwired (notation 2.6).
+#[test]
+fn space_on_the_empty_canvas_inserts_a_node_where_the_pointer_is() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a + egui::vec2(40.0, 200.0), Modifiers::NONE);
+    harness.key_press(Key::Space);
+    harness.run_steps(3);
+    assert!(harness.query_by_label("core.not").is_some(), "no wire filters the list");
+    type_then_enter(&mut harness, "abs");
+    let text = text_of(&harness, "/p/main.lcf");
+    let body = text
+        .split(
+            "
+layout {",
+        )
+        .next()
+        .unwrap_or_default();
+    assert_eq!(
+        body,
+        MAIN.replace(
+            "    y = core.add(a, 1.0)
+",
+            "    abs = core.abs()
+    y = core.add(a, 1.0)
+"
+        )
+    );
+    assert!(
+        text.contains(
+            "
+layout {
+    node abs at ("
+        ),
+        "{text}"
+    );
+}
+
+/// With autopatch turned off, Space on a node selected inserts the node unwired (notation 2.6).
+#[test]
+fn without_autopatch_space_on_a_node_inserts_it_unwired() {
+    let mut harness = harness_with(fake(), Prefs { autopatch: false, ..Prefs::default() });
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    click_at(&mut harness, on_a, Modifiers::NONE);
+    harness.key_press(Key::Space);
+    harness.run_steps(3);
+    type_then_enter(&mut harness, "abs");
+    let text = text_of(&harness, "/p/main.lcf");
+    assert!(
+        text.contains(
+            "    abs = core.abs()
+"
+        ),
+        "{text}"
+    );
+}
+
+/// A wire drawn back from the constant of an input, dropped on the empty canvas: text that reads as a constant is the
+/// first row, and Enter adds it as a named constant wired to the input (notation 2.6, `constant.add`): its line between
+/// `a` and `y` in the order of spec 5.2.
+#[test]
+fn a_constant_typed_in_the_list_goes_on_the_input() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (from, _) = canvas_element(&harness, "input b of y, f64, constant 1.0");
+    drag_from(&mut harness, from, from + egui::vec2(-200.0, 200.0));
+    type_then_enter(&mut harness, "2.5");
+    assert_eq!(
+        text_of(&harness, "/p/main.lcf")
+            .split(
+                "
+layout {"
+            )
+            .next()
+            .unwrap_or_default(),
+        MAIN.replace(
+            "    y = core.add(a, 1.0)
+",
+            "    constant = 2.5
+    y = core.add(a, constant)
+"
+        )
+    );
+}
+
+/// A function of the panel `Palette` dragged onto the canvas: on the empty canvas, a node fixed where it falls; onto a
+/// wire that it can take, the node goes into the wire (notation 2.5).
+#[test]
+fn a_function_dragged_from_the_palette_is_added_where_it_falls_or_into_a_wire() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    use egui_kittest::kittest::NodeT as _;
+    let (from, _) = canvas_element(&harness, "output result of a, f64");
+    let (to, _) = canvas_element(&harness, "input a of y, wired from a");
+    // `Palette` is the tab behind `Project` (ide.md 2).
+    let tab = harness.query_all_by_label("Palette").map(|node| node.rect().center()).next().unwrap();
+    click_at(&mut harness, tab, Modifiers::NONE);
+    let field =
+        harness.query_all_by_role(egui::accesskit::Role::TextInput).find(|node| node.accesskit_node().placeholder() == Some("Search a function"));
+    let Some(field) = field.map(|node| node.rect().center()) else {
+        let found: Vec<String> =
+            harness.query_all_by_role(egui::accesskit::Role::TextInput).map(|node| format!("{:?}", node.accesskit_node())).collect();
+        panic!("the palette is open: {found:#?}")
+    };
+    click_at(&mut harness, field, Modifiers::NONE);
+    harness.input_mut().events.push(egui::Event::Text("core.abs".to_owned()));
+    harness.run_steps(3);
+    let row = |harness: &Harness<'_, State>| harness.query_all_by_label("core.abs").map(|node| node.rect().center()).next().unwrap();
+    let start = row(&harness);
+    drag_from(&mut harness, start, from + (to - from) / 2.0);
+    let wired = MAIN.replace("    y = core.add(a, 1.0)\n", "    abs = core.abs(a)\n    y = core.add(abs, 1.0)\n");
+    assert_eq!(text_of(&harness, "/p/main.lcf"), wired);
+    undo(&mut harness);
+    let start = row(&harness);
+    drag_from(&mut harness, start, from + egui::vec2(40.0, 200.0));
+    let text = text_of(&harness, "/p/main.lcf");
+    assert!(text.contains("    abs = core.abs()\n") && text.contains("\nlayout {\n    node abs at ("), "{text}");
+}

@@ -1867,7 +1867,7 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `LABCRAFT_FRAMES`.
 - **As step 3a writes them.** `Intent::Wire { from, to, replace, accept_mismatch }`, `Intent::Rewire` (the wires that
   Ctrl and a drag take to another terminal: `wire.disconnect`, then `wire.connect`, in one batch),
-  `Intent::QuickInsert` (a wire dropped on the empty canvas, until step 4) and `Intent::Say` (why a drop wrote
+  `Intent::QuickInsert` (a wire dropped on the empty canvas) and `Intent::Say` (why a drop wrote
   nothing), and `Gesture::Wire`. A wire under way is the canvas's own state (`wiring.rs`): from a port, by a drag, or by
   W on the terminal in focus (`Canvas::start_wire`); the canvas judges each port once at its start
   (`diagram::wiring`), rings those that take it, snaps within 12 units, and paints it on the square route of a drag, or
@@ -1878,6 +1878,16 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   (`Canvas::port_focus`): the arrows go along a side and across, Enter on a wired one selects its wire, Escape goes
   back; Tab then goes through the terminals that take the wire, and Enter wires it. Each terminal of a node is an
   element of the tree of AccessKit.
+- **As step 4a writes them.** `Intent::QuickInsert(Quick)`: where the node falls, in units of the frame of the function
+  (none for a node that goes into a wire, placed automatically), where the list opens, and its `Source`: nothing, a
+  terminal (a wire dropped on the empty canvas, or Space on the terminal in focus or while a wire is drawn from the
+  keyboard), the one node selected (autopatch, its first output) or the wire selected (`into`). `Canvas::quick_insert`
+  works it out for Space, which is a key of the host. `Intent::Drop { call, at, into }`: a function dragged from the
+  panel `Palette` (an egui drag and drop, its payload `Dragged`), its ghost on the grid and the wire it would go into
+  shown in `select.stroke`, under the setting "inserting into a wire" (`Shown::into_wire`). `insertion.rs` is the
+  catalog of quick insertion, read from the signatures of `functions.list`: the type of each input and output, the
+  aliases followed, the type variables and `kind` parameters, the filter of a wire by the rule of fit
+  (`FitKey::fit`), and the order of notation 2.6. `Canvas::wires_of_terminal` gives what Delete removes from a terminal.
 
 ### 12.7 The window: `kit-*` and `ide` (L8)
 
@@ -1918,9 +1928,15 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   (`node.set_view`) and "Remove the fixed position" (`layout.arrange`); for several, the view and the button.
 - **As step 3a writes them.** `Intent::Wire` is `wire.connect`, `Intent::Rewire` a `commands.batch` ("Move Wire"),
   followed as a move is (`Ide::edits`): a failure says why and takes the wire back. `ide.wire` (W, scope `Diagram`, menu
-  `Edit`) starts a wire from the terminal in focus. A drop on the empty canvas says that quick insertion comes with step
-  4 (decision of the owner, 2026-11-17). The settings "replace only with Alt" and "accept it" (both off) are preferences
-  of the user, in the menu `View` and the palette, as those of step 2.
+  `Edit`) starts a wire from the terminal in focus. The settings "replace only with Alt" and "accept it" (both off) are
+  preferences of the user, in the menu `View` and the palette, as those of step 2.
+- **As step 4a writes them.** `ide.quick_insert` (Space) and `ide.delete` (Delete, Backspace), scope `Diagram`, menu
+  `Edit`. The list of quick insertion (`insert.rs`) opens where the canvas says, takes the keyboard, and gives it back
+  to the canvas when it closes; a choice is one `node.add` or `constant.add`, or a `commands.batch` ("Insert Node") of
+  it and its `wire.connect`, which names the new node `$0` (commands.md 6.7; decision of the owner, 2026-11-17). Delete
+  is a `commands.batch` ("Delete") of the `wire.disconnect` of the wires selected and of those of the terminals, then
+  `node.delete`. The catalog is read again after each check (`Callables::catalog`); the recent insertions, at most 32,
+  and the settings "autopatch from the keyboard" and "inserting into a wire" (both on) are preferences of the user.
 
 ### 12.8 `mcp` (L7)
 

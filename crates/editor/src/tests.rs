@@ -1286,7 +1286,7 @@ fn a_wire_dragged_from_a_terminal_to_one_that_takes_it_asks_to_connect_them() {
 
 /// A wire that the input would refuse writes nothing, and says why (notation 2.5): a value of another family, a cycle,
 /// an input that holds something while "replace only with Alt" is on and Alt is up; dropped on the empty canvas, it asks
-/// for quick insertion (notation 2.6), which comes with step 4.
+/// for quick insertion (notation 2.6).
 #[test]
 fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
     let ctx = context();
@@ -1323,7 +1323,10 @@ fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
     canvas.cancel_wire();
     // On the empty canvas, far from every terminal.
     let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(0.0, 160.0)), 5.0, &none);
-    assert!(matches!(intents.as_slice(), [Intent::QuickInsert { from, .. }] if from == "a"), "{intents:?}");
+    assert!(
+        matches!(intents.as_slice(), [Intent::QuickInsert(Quick { source: Source::Terminal { name, replace: false, .. }, at: Some(_), .. })] if name == "a"),
+        "{intents:?}"
+    );
 }
 
 /// Ctrl and a drag on a wired input takes the end of its wire to another input: the old wire goes, the new one comes, in
@@ -1388,8 +1391,9 @@ fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_n
     click_with(&ctx, &mut canvas, centre_of(&drawn, "b"), 0.05, egui::Modifiers::NONE, &b);
     frame_shown(&ctx, &mut canvas, 0.2, vec![key(egui::Key::Enter, egui::Modifiers::NONE)], &b);
     assert_eq!(canvas.port_focus(), Some(("b.a".to_owned(), true)));
-    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.3, vec![key(egui::Key::Space, egui::Modifiers::NONE)], &b);
-    assert!(matches!(intents.as_slice(), [Intent::QuickInsert { from, .. }] if from == "b.a"), "{intents:?}");
+    // Space is a key of the host (`ide.quick_insert`), which asks the canvas.
+    let quick = canvas.quick_insert(&b, true, None);
+    assert!(matches!(&quick, Some(Quick { source: Source::Terminal { name, .. }, .. }) if name == "b.a"), "{quick:?}");
     let a = showing(&selecting(&["a"], &[], &[]));
     frame_shown(&ctx, &mut canvas, 0.4, Vec::new(), &a);
     assert_eq!(canvas.port_focus(), None);
