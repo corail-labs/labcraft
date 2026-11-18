@@ -453,7 +453,7 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                     let named_twice = |name: &str| drawing.ports.iter().filter(|port| !port.input && port.name == name).count() > 1;
                     // Every pair of a small function; of a large one, a pair in so many, the same each run.
                     let step = pairs.len().div_ceil(400).max(1);
-                    for (from_port, to_port, verdict) in pairs.into_iter().step_by(step) {
+                    for (rank, (from_port, to_port, verdict)) in pairs.into_iter().step_by(step).enumerate() {
                         let (source, target) = (&drawing.ports[from_port], &drawing.ports[to_port]);
                         let (from, to) = (source.name.clone(), target.name.clone());
                         // A `yield` is named with its arm (commands.md 9.2).
@@ -461,8 +461,44 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                         if !target.arm.is_empty() {
                             params["arm"] = json!(target.arm);
                         }
-                        let given = session.execute("wire.connect", &params);
+                        // Out of loops, each takes the value out: a carry of its last value or a `collect`, by turns, and a
+                        // `collect` out of a `for parallel`, which takes no carry.
+                        let passages: Vec<&str> =
+                            match &verdict {
+                                labcraft_diagram::Verdict::Takes { exits, .. } => exits
+                                    .iter()
+                                    .map(|&body| {
+                                        if rank % 2 == 1 || drawing.bodies.get(body).is_some_and(|found| found.parallel) {
+                                            "collect"
+                                        } else {
+                                            "carry"
+                                        }
+                                    })
+                                    .collect(),
+                                labcraft_diagram::Verdict::Refused { .. } => Vec::new(),
+                            };
+                        let exits = passages.len();
+                        if exits > 0 {
+                            params["through"] = json!(passages);
+                        }
+                        let mut given = session.execute("wire.connect", &params);
+                        // A wire out of a loop that the canvas refuses for what comes after the passages (a cycle) is
+                        // judged with them.
+                        if exits == 0
+                            && given.as_ref().is_err_and(|error| error.code == "wire.out_of_scope" && error.message.contains("inside a loop"))
+                        {
+                            params["through"] = json!("collect");
+                            given = session.execute("wire.connect", &params);
+                        }
+                        // Out of loops, the canvas judges the type of the passages once they are chosen.
+                        let collects = passages.iter().filter(|passage| **passage == "collect").count();
                         let said = match &verdict {
+                            labcraft_diagram::Verdict::Takes { .. } if exits > 0 => {
+                                match labcraft_diagram::passage_refusal(&drawing, source, target, collects) {
+                                    Some(refusal) => refusal.code.to_owned(),
+                                    None => "takes".to_owned(),
+                                }
+                            }
                             labcraft_diagram::Verdict::Takes { .. } => "takes".to_owned(),
                             labcraft_diagram::Verdict::Refused { refusal, .. } => refusal.code.to_owned(),
                         };
@@ -471,6 +507,9 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                             Err(error) => error.code.to_owned(),
                         };
                         *counts.entry(format!("{said} / {did}")).or_insert(0) += 1;
+                        if exits > 0 && did == "takes" {
+                            *counts.entry("through".to_owned()).or_insert(0) += 1;
+                        }
                         // An input of the function to the output of its name (R-2) is left to the command, which
                         // changes nothing.
                         if to == format!("output {from}") {
@@ -481,7 +520,9 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                             continue;
                         }
                         // Without `replace`, a wire that replaces something is refused, and one that does not is written.
-                        if let (labcraft_diagram::Verdict::Takes { replaces: true }, Ok(_)) = (&verdict, &given) {
+                        if let (labcraft_diagram::Verdict::Takes { replaces: true, exits }, Ok(_)) = (&verdict, &given)
+                            && exits.is_empty()
+                        {
                             if !given.as_ref().is_ok_and(|result| result["step"].is_null()) {
                                 ok(&mut session, "history.undo", json!({}));
                             }
@@ -501,6 +542,8 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                         }
                         let left = (said == "takes" && did == "wire.type_mismatch" && target.ty.is_none())
                             || (said == "wire.out_of_scope" && named_twice(&from))
+                            // A name of several bodies names none of them out of them (9.2): the editor sends `node.output`.
+                            || (did == "edit.ambiguous" && named_twice(&from))
                             // A name of several arms is the one that the reader sees, for the command (9.2).
                             || (said == "wire.cycle" && named_twice(&from))
                             || !target.never.is_empty();
@@ -520,9 +563,13 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                 eprintln!("{counts:?}");
                 assert!(wrong.is_empty(), "{} of {}:\n{}", wrong.len(), counts.values().sum::<usize>(), wrong.join("\n"));
                 // Each verdict is met, agreed on.
-                for code in ["takes", "wire.cycle", "wire.out_of_scope", "wire.type_mismatch"] {
+                // A wire out of a loop is no longer refused (commands.md 6.7, `through`): the examples hold few other
+                // values out of scope.
+                for code in ["takes", "wire.cycle", "wire.type_mismatch"] {
                     assert!(counts.get(&format!("{code} / {code}")).is_some_and(|&count| count > 10), "{code}: {counts:?}");
                 }
+                // Most wires out of a loop of the sample are of another type than their input: a few are written.
+                assert!(counts.get("through").is_some_and(|&count| count > 5), "{counts:?}");
                 assert!(counts.get("replaces").is_some_and(|&count| count > 10), "{counts:?}");
             })
             .unwrap()

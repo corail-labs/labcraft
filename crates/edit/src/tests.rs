@@ -110,7 +110,15 @@ fn add(call: &str) -> Op {
 }
 
 pub(super) fn connect(from: &str, to: &str) -> Op {
-    Op::WireConnect { file: FILE.to_owned(), from: from.to_owned(), to: to.to_owned(), replace: false, accept_mismatch: false, arm: None }
+    Op::WireConnect {
+        file: FILE.to_owned(),
+        from: from.to_owned(),
+        to: to.to_owned(),
+        replace: false,
+        accept_mismatch: false,
+        arm: None,
+        through: None,
+    }
 }
 
 fn disconnect(wire: &str) -> Op {
@@ -388,7 +396,15 @@ fn an_occupied_input_is_replaced_only_when_asked() {
     let error = refused(full, connect("z", "s.a"), "wire.occupied");
     assert!(error.message.contains("`x`"), "{}", error.message);
     refused(full, connect("z", "s.b"), "wire.occupied");
-    let op = Op::WireConnect { file: FILE.to_owned(), from: "z".to_owned(), to: "s.a".to_owned(), replace: true, accept_mismatch: false, arm: None };
+    let op = Op::WireConnect {
+        file: FILE.to_owned(),
+        from: "z".to_owned(),
+        to: "s.a".to_owned(),
+        replace: true,
+        accept_mismatch: false,
+        arm: None,
+        through: None,
+    };
     gives(full, op, "use core\n\nfn f(x: f64, z: f64) -> (y: f64) {\n    s = core.add(z, 1)\n    y = x\n}\n");
 }
 
@@ -397,7 +413,15 @@ fn a_wire_of_the_wrong_type_is_refused_unless_accepted() {
     let before = "use core\n\nfn f(x: f64, t: string) -> (y: f64) {\n    s = core.abs()\n    y = x\n}\n";
     let error = refused(before, connect("t", "s"), "wire.type_mismatch");
     assert!(error.message.contains("accept_mismatch"), "{}", error.message);
-    let op = Op::WireConnect { file: FILE.to_owned(), from: "t".to_owned(), to: "s".to_owned(), replace: false, accept_mismatch: true, arm: None };
+    let op = Op::WireConnect {
+        file: FILE.to_owned(),
+        from: "t".to_owned(),
+        to: "s".to_owned(),
+        replace: false,
+        accept_mismatch: true,
+        arm: None,
+        through: None,
+    };
     gives(before, op, "use core\n\nfn f(x: f64, t: string) -> (y: f64) {\n    s = core.abs(t)\n    y = x\n}\n");
 }
 
@@ -454,8 +478,15 @@ fn an_output_given_already_is_replaced_only_when_asked() {
     // `y` is a node and an output: the bare name goes where the value goes, here the node, whose inputs are two.
     refused(before, connect("s", "y"), "edit.ambiguous");
     refused(before, connect("s", "output y"), "wire.occupied");
-    let op =
-        Op::WireConnect { file: FILE.to_owned(), from: "s".to_owned(), to: "output y".to_owned(), replace: true, accept_mismatch: false, arm: None };
+    let op = Op::WireConnect {
+        file: FILE.to_owned(),
+        from: "s".to_owned(),
+        to: "output y".to_owned(),
+        replace: true,
+        accept_mismatch: false,
+        arm: None,
+        through: None,
+    };
     gives(before, op, "use core\n\nfn f(x: f64) -> (y: f64) {\n    sum = core.add(x, x)\n    y = core.abs(x)\n}\n");
 }
 
@@ -553,6 +584,7 @@ fn coordinates_and_places_past_their_bounds_are_refused() {
         replace: true,
         accept_mismatch: false,
         arm: None,
+        through: None,
     };
     refused(before, op, "edit.unknown");
 }
@@ -885,6 +917,7 @@ fn reading_a_name_that_is_an_input_and_an_output_reads_the_input() {
         replace: true,
         accept_mismatch: false,
         arm: None,
+        through: None,
     };
     // `visa.open` reads the input `err`, not the line `err = e2`, which depends on `t`: no cycle; the wire is there
     // already, and nothing changes.
@@ -1190,4 +1223,5 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
 
 mod fields;
 mod fragment;
+mod parts;
 mod structures;

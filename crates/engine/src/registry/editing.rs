@@ -66,6 +66,29 @@ const WIRE_ERRORS: &[&str] = &[
     "internal",
 ];
 
+/// `structure.add_carry`, `add_clause`, `add_collect`: a new name, a value of the wrong type for a `for`, a value that the
+/// structure makes (a cycle).
+const PART_ERRORS: &[&str] = &[
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "path.outside_project",
+    "path.not_found",
+    "path.invalid",
+    "file.unreadable",
+    "file.unwritable",
+    "file.too_large",
+    "file.unparsed",
+    "file.stale",
+    "edit.unknown",
+    "edit.ambiguous",
+    "name.taken",
+    "name.invalid",
+    "wire.type_mismatch",
+    "wire.cycle",
+    "internal",
+];
+
 const CONSTANT_ERRORS: &[&str] = &[
     "params.unknown",
     "params.missing",
@@ -243,7 +266,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "wire.connect",
             "Connect Wire",
             "Wire a value to an input, or to an output of the function",
-            "Wires `from` (a value, `node.output`, or a label for an order wire) to `to` (`node`, `node.input`, `r.0`, `msg.parts.2`, `node.after`, or `output x`). An input that is wired or holds a constant is `wire.occupied` unless `replace`; a value of a type the input does not take is `wire.type_mismatch` unless `accept_mismatch`, which writes it and gives `LC3001`. A wire that closes a cycle is `wire.cycle`; a value the input cannot see is `wire.out_of_scope`. A value wired to an output of the function takes the name of the output, and `renamed` says so. `to` names a `yield` by the output of its structure, with `arm`, the patterns of its arm; a `collect` by the output of its loop, an `until` by the loop, and `next x` by `n.next.x`. A wire from inside an arm to outside adds an output to the structure: that arm yields it, the other arms a hole, and `names.output` gives it.",
+            "Wires `from` (a value, `node.output`, or a label for an order wire) to `to` (`node`, `node.input`, `r.0`, `msg.parts.2`, `node.after`, or `output x`). An input that is wired or holds a constant is `wire.occupied` unless `replace`; a value of a type the input does not take is `wire.type_mismatch` unless `accept_mismatch`, which writes it and gives `LC3001`. A wire that closes a cycle is `wire.cycle`; a value the input cannot see is `wire.out_of_scope`. A value wired to an output of the function takes the name of the output, and `renamed` says so. `to` names a `yield` by the output of its structure, with `arm`, the patterns of its arm; a `collect` by the output of its loop, an `until` by the loop, and `next x` by `n.next.x`. A wire from inside an arm to outside adds an output to the structure: that arm yields it, the other arms a hole, and `names.output` gives it. A wire from inside a loop to outside needs `through`: each loop it leaves takes the value out as a carry of its last value or as a `collect`.",
             object(
                 &[
                     ("file", string(FILE)),
@@ -252,6 +275,16 @@ pub(super) fn catalog() -> Vec<Command> {
                     ("arm", string("The arm of a `yield`, by its patterns: `true`, `_`, `1, 3..=5`.")),
                     ("replace", boolean("Replace what the input holds.", false)),
                     ("accept_mismatch", boolean("Write a wire of the wrong type anyway.", false)),
+                    (
+                        "through",
+                        json!({
+                            "description": "How each loop that the wire leaves takes the value out: `carry` (its last value) or `collect` (an array of its values), for every loop, or a list, one per loop from the inside out.",
+                            "oneOf": [
+                                { "type": "string", "enum": ["carry", "collect"] },
+                                { "type": "array", "items": { "type": "string", "enum": ["carry", "collect"] }, "minItems": 1 }
+                            ]
+                        }),
+                    ),
                     ("expected_revision", revision()),
                 ],
                 &["file", "from", "to"],
@@ -781,151 +814,130 @@ pub(super) fn catalog() -> Vec<Command> {
             WIRE_ERRORS,
             false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.add_arm",
-                "Add Arm",
-                "Add an arm to a `match` or a `handle`",
-                "Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure; in a structure that gives nothing, it has none.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The structure.")),
-                        ("patterns", string("The patterns of the arm, as the text writes them.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "patterns"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "structure.add_arm",
+            "Add Arm",
+            "Add an arm to a `match` or a `handle`",
+            "Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure; in a structure that gives nothing, it has none.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The structure.")),
+                    ("patterns", string("The patterns of the arm, as the text writes them.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "patterns"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.set_patterns",
-                "Set Patterns",
-                "Change the patterns of an arm",
-                "Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`).",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The structure.")),
-                        ("arm", string("The arm, by its patterns.")),
-                        ("patterns", string("The new patterns.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "arm", "patterns"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "structure.set_patterns",
+            "Set Patterns",
+            "Change the patterns of an arm",
+            "Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`).",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The structure.")),
+                    ("arm", string("The arm, by its patterns.")),
+                    ("patterns", string("The new patterns.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "arm", "patterns"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.add_carry",
-                "Add Carry",
-                "Add `carry name = initial` to a loop",
-                "Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The loop.")),
-                        ("name", string("The name of the carry.")),
-                        ("initial", string("Its initial value; by default, a hole.")),
-                        ("type", string("Its type; by default, that of `initial`.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "name"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "structure.add_carry",
+            "Add Carry",
+            "Add `carry name = initial` to a loop",
+            "Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The loop.")),
+                    ("name", string("The name of the carry.")),
+                    ("initial", string("Its initial value; by default, a hole.")),
+                    ("type", string("Its type; by default, that of `initial`.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "name"],
             ),
+            PART_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.add_clause",
-                "Add Clause",
-                "Add the clause `name in over` to a `for`",
-                "Adds the clause `name in over` to a `for`. `over` is an array value or a range (`0..n`).",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The `for`.")),
-                        ("name", string("The name of the element.")),
-                        ("over", string("The array value or the range: `0..n`.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "name", "over"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "structure.add_clause",
+            "Add Clause",
+            "Add the clause `name in over` to a `for`",
+            "Adds the clause `name in over` to a `for`, after its other `in` clauses. `over` is an array value or a range (`0..n`); `name`, by default, comes from the value (`readings` gives `reading`). `names.clause` gives it.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The `for`.")),
+                    ("over", string("The array value or the range: `0..n`.")),
+                    ("name", string("The name of the element; by default, from the value.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "over"],
             ),
+            PART_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.add_collect",
-                "Add Collect",
-                "Add `collect value` to a loop",
-                "Adds `collect value` to a loop, and its output.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The loop.")),
-                        ("value", string("The value to collect.")),
-                        ("name", string("The name of the output; by default, from the value.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "value"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "structure.add_collect",
+            "Add Collect",
+            "Add `collect value` to a loop",
+            "Adds `collect value` to a loop, and its output.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The loop.")),
+                    ("value", string("The value to collect.")),
+                    ("name", string("The name of the output; by default, from the value.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "value"],
             ),
+            PART_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.remove_part",
-                "Remove Part",
-                "Remove an arm, a carry, a clause or a collect of a structure",
-                "Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y`. The inputs that it fed become unwired, or get a hole. The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The structure.")),
-                        ("part", string("The part: an arm by its patterns, `carry x`, `in x` or `collect y`.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "part"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "structure.remove_part",
+            "Remove Part",
+            "Remove an arm, a carry, a clause or a collect of a structure",
+            "Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y`. The inputs that it fed become unwired, or get a hole. The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The structure.")),
+                    ("part", string("The part: an arm by its patterns, `carry x`, `in x` or `collect y`.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "part"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_5,
-            editing(
-                "structure.set_option",
-                "Set Option",
-                "Turn `continue_on_error` or `parallel` on or off",
-                "Turns `continue_on_error` of a `loop` (spec 6.3) or `parallel` of a `for` (spec 6.2) on or off.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("structure", string("The structure.")),
-                        ("option", json!({ "type": "string", "description": "The option.", "enum": ["continue_on_error", "parallel"] })),
-                        ("on", json!({ "type": "boolean", "description": "Whether the option is on." })),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "structure", "option", "on"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "structure.set_option",
+            "Set Option",
+            "Turn `continue_on_error` or `parallel` on or off",
+            "Turns `continue_on_error` of a `loop` (spec 6.3) or `parallel` of a `for` (spec 6.2) on or off.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The structure.")),
+                    ("option", json!({ "type": "string", "description": "The option.", "enum": ["continue_on_error", "parallel"] })),
+                    ("on", json!({ "type": "boolean", "description": "Whether the option is on." })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "option", "on"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -1302,7 +1314,6 @@ pub(super) fn catalog() -> Vec<Command> {
     ]
 }
 
-const STEP_5: &str = "M1 step 5 (#164)";
 const STEP_6: &str = "M1 step 6 (#165)";
 
 /// A command that a later step of M1 builds.

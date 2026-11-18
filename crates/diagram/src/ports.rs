@@ -128,6 +128,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 group: None,
                 style: style(terminal.family, node.body),
                 arm: String::new(),
+                part: String::new(),
             };
             ports.push((port, key.map(|key| (key, terminal.ty_text.clone()))));
         }
@@ -163,6 +164,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 group: None,
                 style: style(terminal.family, node.body),
                 arm: String::new(),
+                part: String::new(),
             };
             ports.push((port, Some((Key::Id(terminal.ty), terminal.ty_text.clone()))));
         }
@@ -190,6 +192,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 group: None,
                 style: style(graph::Family::ORDER, node.body),
                 arm: String::new(),
+                part: String::new(),
             };
             ports.push((port, None));
         }
@@ -231,6 +234,14 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     _ => (right, String::new()),
                 };
                 let arm = if right && terminal.edge == Edge::Yield && !name.is_empty() { of.traced.clone() } else { String::new() };
+                // The part it stands for, as `structure.remove_part` names it.
+                let caption = &terminal.terminal.name;
+                let part = match (terminal.edge, right) {
+                    (Edge::Register, false) if is_plain(caption) => format!("carry {caption}"),
+                    (Edge::In | Edge::Range, false) if is_plain(caption) => format!("in {caption}"),
+                    (Edge::Collect, true) if is_plain(caption) && !caption.contains(' ') => format!("collect {caption}"),
+                    _ => String::new(),
+                };
                 let wire =
                     of.wires.iter().find(|wire| if right { wire.to == graph::End::Right(index) } else { wire.from == graph::End::Left(index) });
                 let value = match (input, wire) {
@@ -269,6 +280,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     group: None,
                     style: style(terminal.terminal.family, body),
                     arm,
+                    part,
                 };
                 if bound_in != body {
                     notches.push((ports.len(), bound_in));
@@ -432,8 +444,10 @@ pub struct Refusal {
 /// What a terminal would do with a wire.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verdict {
-    /// It takes it; `replaces` when it holds a wire or a constant that the wire replaces (notation 2.4).
-    Takes { replaces: bool },
+    /// It takes it; `replaces` when it holds a wire or a constant that the wire replaces (notation 2.4). `exits`: the
+    /// bodies of the loops that the wire leaves, from the inside out, each of which takes the value out (commands.md 6.7,
+    /// `through`); the type is then judged by `wire.connect`, after the passages.
+    Takes { replaces: bool, exits: Vec<usize> },
     /// It refuses it. A wire of the wrong type alone is `wrong_type`: the setting "accept it" writes it anyway.
     Refused { refusal: Refusal, wrong_type: bool },
 }
@@ -473,6 +487,14 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
                         _ => lifted_cycle(drawing, &graph, &mut upstream, made_by, reader),
                     }
                 }
+                // A carry or a clause taken out of its loop (commands.md 6.7, `through`): the loop gives it, so a reader
+                // outside it that feeds the loop closes a cycle.
+                (None, Some(reader)) if source.frame && !source.input => match drawing.bodies.get(source.body).and_then(|body| body.owner) {
+                    Some(owner) if lifted(drawing, reader, drawing.placed.get(owner).map_or(source.body, |node| node.body)) != Some(owner) => {
+                        lifted_cycle(drawing, &graph, &mut upstream, owner, reader)
+                    }
+                    _ => false,
+                },
                 _ => false,
             };
             Some(judge(drawing, &values, source, target, cycle))
@@ -518,16 +540,38 @@ fn judge(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port, c
     if !target.never.is_empty() {
         return refused("params.invalid", target.never.clone());
     }
-    if let Some(refusal) = out_of_scope(drawing, values, source, target) {
-        return Verdict::Refused { refusal, wrong_type: false };
+    let exits = match out_of_scope(drawing, values, source, target) {
+        Ok(exits) => exits,
+        Err(refusal) => return Verdict::Refused { refusal, wrong_type: false },
+    };
+    // An order wire does not leave a structure (R-17).
+    if target.order && !exits.is_empty() {
+        return refused("wire.out_of_scope", format!("`{}` is inside a loop: an order wire does not leave a structure (R-17)", source.name));
     }
     if cycle {
         return refused("wire.cycle", "it would close a cycle: a value comes back only through a carry (spec 6.2)".to_owned());
     }
     let replaces = matches!(target.holds, Holds::Wire | Holds::Constant(_)) && !target.order;
+    // Out of loops, the type is that of the passages, which the editor chooses: `passage_refusal` judges it then.
+    if !exits.is_empty() {
+        return Verdict::Takes { replaces, exits };
+    }
+    if let Some(refusal) = passage_refusal(drawing, source, target, 0) {
+        return Verdict::Refused { refusal, wrong_type: true };
+    }
+    Verdict::Takes { replaces, exits }
+}
+
+/// Whether a value of `source`, put in an array `collects` times by the loops it leaves (a carry keeps its type, spec
+/// 6.2), is of a type that `target` does not take: the refusal `wire.connect` gives, `wire.type_mismatch`.
+pub fn passage_refusal(drawing: &Drawing, source: &Port, target: &Port, collects: usize) -> Option<Refusal> {
     let text = |ty: Option<usize>| ty.and_then(|ty| drawing.types.get(ty)).cloned().unwrap_or_default();
+    let found = text(source.ty);
+    let arrayed = |inner: &str| format!("{}{inner}{}", "[".repeat(collects), "]".repeat(collects));
     let wrong = match (source.ty, target.ty) {
         _ if target.order => None,
+        // In an array, a wire keeps its type (spec 6.2): an `[i32]` is no `[f64]`.
+        (Some(_), Some(expected)) if collects > 0 => (arrayed(&found) != text(Some(expected))).then(|| text(Some(expected))),
         (Some(found), Some(expected)) => {
             let fits = match (drawing.type_keys.get(found), drawing.type_keys.get(expected)) {
                 (Some(found), Some(expected)) => matches!(found.fit(expected), Fit::Same | Fit::Coerce),
@@ -536,18 +580,22 @@ fn judge(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port, c
             (!fits).then(|| text(Some(expected)))
         }
         // A parameter of a primitive takes one family, whatever its unit.
-        (_, None) if !target.family.is_empty() && !source.family.is_empty() && !family_fits(&source.family, &target.family) => {
-            Some(family_text(&target.family))
+        (_, None) if !target.family.is_empty() && !source.family.is_empty() => {
+            let family = match source.family.rsplit_once('/') {
+                Some((base, dimensions)) if collects > 0 => {
+                    format!("{base}/{}", dimensions.parse::<usize>().unwrap_or_default().saturating_add(collects))
+                }
+                _ => source.family.clone(),
+            };
+            (!family_fits(&family, &target.family)).then(|| family_text(&target.family))
         }
         _ => None,
     };
-    if let Some(expected) = wrong {
-        let found = text(source.ty);
-        let message =
-            if found.is_empty() { format!("the value does not go to `{expected}`") } else { format!("`{found}` where `{expected}` is expected") };
-        return Verdict::Refused { refusal: Refusal { code: "wire.type_mismatch", message }, wrong_type: true };
-    }
-    Verdict::Takes { replaces }
+    let expected = wrong?;
+    let found = if collects > 0 && !found.is_empty() { arrayed(&found) } else { found };
+    let message =
+        if found.is_empty() { format!("the value does not go to `{expected}`") } else { format!("`{found}` where `{expected}` is expected") };
+    Some(Refusal { code: "wire.type_mismatch", message })
 }
 
 /// What the input holds, for the refusal of a drop that would replace it without the modifier (notation 2.4).
@@ -566,8 +614,9 @@ impl Port {
     }
 }
 
-/// A value the reader cannot see: of another arm or structure, or from inside a loop to outside (commands.md 6.7).
-fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port) -> Option<Refusal> {
+/// A value the reader cannot see: of another arm or structure (commands.md 6.7). Otherwise the loops that the wire leaves,
+/// from the inside out, each of which takes the value out (`through`); none for a value that the reader sees.
+fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &Port) -> Result<Vec<usize>, Refusal> {
     let chain = |body: usize| {
         let mut bodies = vec![body];
         let mut at = body;
@@ -586,10 +635,13 @@ fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &
         // A body between the two that binds the name for itself hides the value (R-3): a carry, a clause, a pattern, a
         // line.
         let hidden = of_target.iter().take(at).any(|&body| values.hides(body, value, source));
-        return hidden.then(|| Refusal {
-            code: "wire.out_of_scope",
-            message: format!("`{value}` cannot be seen from there: a value of the same name hides it (R-3)"),
-        });
+        if hidden {
+            return Err(Refusal {
+                code: "wire.out_of_scope",
+                message: format!("`{value}` cannot be seen from there: a value of the same name hides it (R-3)"),
+            });
+        }
+        return Ok(Vec::new());
     }
     let of_source = chain(source.body);
     // Deeper than the reader, or in a structure beside the one that holds it, through arms only: each structure between
@@ -597,23 +649,25 @@ fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &
     if let Some(at) = of_source.iter().position(|body| of_target.contains(body))
         && at > 0
     {
-        let looping = of_source.iter().take(at).any(|&body| drawing.bodies.get(body).is_some_and(|found| found.looping));
-        if looping {
-            return Some(Refusal {
-                code: "wire.out_of_scope",
-                message: format!("`{value}` is inside a loop: a `collect` or a carry takes a value out of it"),
-            });
-        }
+        // Out of a loop, each loop takes the value out (decision of the owner, 2026-11-18).
+        let exits: Vec<usize> =
+            of_source.iter().take(at).copied().filter(|&body| drawing.bodies.get(body).is_some_and(|found| found.looping)).collect();
         // Out to the structure that holds it, or into one of its other arms: the structure would read its own output.
         let lifted: Vec<Option<usize>> = of_source.iter().take(at).map(|&body| drawing.bodies.get(body).and_then(|found| found.owner)).collect();
         let reads_it = |body: &usize| lifted.contains(&drawing.bodies.get(*body).and_then(|found| found.owner));
         let own = (lifted.contains(&target.placed) && !target.frame) || of_target.iter().any(reads_it);
-        return own.then(|| Refusal {
-            code: "wire.cycle",
-            message: format!("a wire from `{value}` to `{}` would close a cycle: a value comes back only through a carry (spec 6.2)", target.name),
-        });
+        if own {
+            return Err(Refusal {
+                code: "wire.cycle",
+                message: format!(
+                    "a wire from `{value}` to `{}` would close a cycle: a value comes back only through a carry (spec 6.2)",
+                    target.name
+                ),
+            });
+        }
+        return Ok(exits);
     }
-    Some(Refusal { code: "wire.out_of_scope", message: format!("`{value}` cannot be seen from there: it is a value of another arm or structure") })
+    Err(Refusal { code: "wire.out_of_scope", message: format!("`{value}` cannot be seen from there: it is a value of another arm or structure") })
 }
 
 /// Whether a wire from `made_by`, deeper than `reader`, closes a cycle once the structures around `made_by` give its value
@@ -716,17 +770,32 @@ fn walk(next: &[Vec<usize>], starts: impl IntoIterator<Item = usize>) -> HashSet
 }
 
 /// The owner of each body, whether it loops, and the patterns of an arm, for [`crate::BodyDrawn`].
-pub(crate) fn owners(graph: &Graph<'_>, placed_of: &[Option<usize>]) -> Vec<(Option<usize>, bool, String)> {
+pub(crate) fn owners(graph: &Graph<'_>, placed_of: &[Option<usize>]) -> Vec<Owner> {
     graph
         .bodies
         .iter()
         .map(|body| {
             let owner = body.owner.and_then(|owner| placed_of.get(owner).copied().flatten());
-            let looping = body.owner.and_then(|owner| graph.nodes.get(owner)).is_some_and(
-                |node| matches!(&node.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Loop | StructureKind::For)),
-            );
+            let structure = body.owner.and_then(|owner| graph.nodes.get(owner)).and_then(|node| match &node.kind {
+                Kind::Structure(structure) => Some(structure),
+                _ => None,
+            });
+            let looping = structure.is_some_and(|structure| matches!(structure.kind, StructureKind::Loop | StructureKind::For));
+            let each = structure.is_some_and(|structure| structure.kind == StructureKind::For);
+            let parallel = structure.is_some_and(|structure| structure.parallel);
+            let continue_on_error = structure.is_some_and(|structure| structure.kind == StructureKind::Loop && structure.badge.is_some());
             let arm = if body.arm.is_some() { body.traced.clone() } else { String::new() };
-            (owner, looping, arm)
+            Owner { owner, looping, each, parallel, continue_on_error, arm }
         })
         .collect()
+}
+
+/// What holds a body, for [`crate::BodyDrawn`].
+pub(crate) struct Owner {
+    pub owner: Option<usize>,
+    pub looping: bool,
+    pub each: bool,
+    pub parallel: bool,
+    pub continue_on_error: bool,
+    pub arm: String,
 }

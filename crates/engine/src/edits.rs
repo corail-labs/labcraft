@@ -11,7 +11,7 @@ use std::sync::Arc;
 use labcraft_check::primitives::{PRIMITIVES, PrimitiveLibrary, primitive};
 use labcraft_check::{Checked, DeclaredFunction, DeclaredLibrary};
 use labcraft_diagram::{DiagramLimits, Drawn, style};
-use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Point, StructureKind, Within};
+use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Passage, Point, StructureKind, StructureOption, Through, Within};
 use labcraft_types::{Diagnostic, Interner, Severity, Ty};
 use serde_json::{Map, Value, json};
 
@@ -50,6 +50,13 @@ pub const EDITING: &[&str] = &[
     "node.set_template",
     "fragment.paste",
     "structure.surround",
+    "structure.add_arm",
+    "structure.set_patterns",
+    "structure.add_carry",
+    "structure.add_clause",
+    "structure.add_collect",
+    "structure.remove_part",
+    "structure.set_option",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -169,6 +176,22 @@ fn within(params: &Params, inside: &str, arm: &str) -> Within {
     Within { inside: params.str(inside).map(str::to_owned), arm: params.str(arm).map(str::to_owned) }
 }
 
+/// `through` of `wire.connect`: `carry` or `collect` for every loop, or a list of them, one per loop (commands.md 6.7).
+fn through(params: &Params) -> Result<Option<Through>, CommandError> {
+    let Some(given) = params.get("through").filter(|value| !value.is_null()) else { return Ok(None) };
+    let invalid = || CommandError::of("params.invalid", "through", "`through` is `carry` or `collect`, or a list of them, one per loop");
+    let passage = |value: &serde_json::Value| match value.as_str() {
+        Some("carry") => Ok(Passage::Carry),
+        Some("collect") => Ok(Passage::Collect),
+        _ => Err(invalid()),
+    };
+    match given.as_array() {
+        Some(list) if !list.is_empty() => Ok(Some(Through::Each(list.iter().map(passage).collect::<Result<_, _>>()?))),
+        Some(_) => Err(invalid()),
+        None => Ok(Some(Through::All(passage(given)?))),
+    }
+}
+
 /// The operation of an editing command, from its parameters.
 fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), CommandError> {
     let target = target(session, params.text("file")?)?;
@@ -210,6 +233,7 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             replace: params.bool("replace"),
             accept_mismatch: params.bool("accept_mismatch"),
             arm: params.str("arm").map(str::to_owned),
+            through: through(params)?,
         },
         "wire.disconnect" => Op::WireDisconnect { file, wire: params.text("wire")?.to_owned(), arm: params.str("arm").map(str::to_owned) },
         "wire.route" => Op::WireRoute { file, wire: params.text("wire")?.to_owned(), via: points(params, "via")? },
@@ -253,6 +277,44 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
                 within: within(params, "inside", "inside_arm"),
                 at: point(params, "at")?,
             }
+        }
+        "structure.add_arm" => {
+            Op::StructureAddArm { file, structure: params.text("structure")?.to_owned(), patterns: params.text("patterns")?.to_owned() }
+        }
+        "structure.set_patterns" => Op::StructureSetPatterns {
+            file,
+            structure: params.text("structure")?.to_owned(),
+            arm: params.text("arm")?.to_owned(),
+            patterns: params.text("patterns")?.to_owned(),
+        },
+        "structure.add_carry" => Op::StructureAddCarry {
+            file,
+            structure: params.text("structure")?.to_owned(),
+            name: params.text("name")?.to_owned(),
+            initial: params.str("initial").map(str::to_owned),
+            ty: params.str("type").map(str::to_owned),
+        },
+        "structure.add_clause" => {
+            Op::StructureAddClause { file, structure: params.text("structure")?.to_owned(), over: params.text("over")?.to_owned(), name }
+        }
+        "structure.add_collect" => {
+            Op::StructureAddCollect { file, structure: params.text("structure")?.to_owned(), value: params.text("value")?.to_owned(), name }
+        }
+        "structure.remove_part" => {
+            Op::StructureRemovePart { file, structure: params.text("structure")?.to_owned(), part: params.text("part")?.to_owned() }
+        }
+        "structure.set_option" => {
+            let option = match params.text("option")? {
+                "continue_on_error" => StructureOption::ContinueOnError,
+                "parallel" => StructureOption::Parallel,
+                other => {
+                    return Err(CommandError::of("params.invalid", "option", format!("`{other}` is no option: `continue_on_error` or `parallel`")));
+                }
+            };
+            let Some(on) = params.get("on").and_then(serde_json::Value::as_bool) else {
+                return Err(CommandError::of("params.invalid", "on", "`on` is `true` or `false`"));
+            };
+            Op::StructureSetOption { file, structure: params.text("structure")?.to_owned(), option, on }
         }
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };

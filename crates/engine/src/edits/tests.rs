@@ -643,3 +643,25 @@ fn a_structure_surrounds_its_nodes_where_they_are() {
     assert_eq!((float.code, float.parameter.as_deref()), ("wire.type_mismatch", Some("selector")));
     assert!(float.message.contains("`f64`"), "{}", float.message);
 }
+
+/// A wire out of a loop takes the value out as a carry of its type, which the check gives (commands.md 6.7, `through`); a
+/// part of a structure is one step, undone at once.
+#[test]
+fn a_wire_out_of_a_loop_carries_its_type() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(xs: [f64]) -> (y: f64) {\n    _ = for v in xs {\n        w = core.abs(v)\n    }\n    y = 0.0\n}\n";
+    memory.put("/p/h.lcf", before);
+    let author = Author::User;
+    let out = refused(&mut session, &author, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "replace": true }));
+    assert_eq!(out.code, "wire.out_of_scope");
+    ok(&mut session, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "replace": true, "through": "carry" }));
+    let after = text(&memory, "/p/h.lcf");
+    assert!(after.contains("    y = for v in xs, carry w2: f64 = ? {\n        w = core.abs(v)\n        next w2 = w\n    }\n"), "{after}");
+    let bad = refused(&mut session, &author, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "through": "last" }));
+    assert_eq!((bad.code, bad.parameter.as_deref()), ("params.invalid", Some("through")));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    let added = ok(&mut session, "structure.add_collect", json!({ "file": "h.lcf", "structure": "@6", "value": "w" }));
+    assert_eq!(added["names"]["output"], "w2");
+    assert!(text(&memory, "/p/h.lcf").contains("    w2 = for v in xs {\n        w = core.abs(v)\n        collect w\n    }\n"));
+}

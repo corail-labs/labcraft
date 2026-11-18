@@ -1954,7 +1954,8 @@ fn code_of(verdict: &crate::Verdict) -> &'static str {
 
 /// The ports name their ends as `wire.connect` does (commands.md 9.2), and the drawing judges a wire as the command
 /// would, from the documents: a carry hides the outer value of its name inside its loop (spec R-3); `array.len` takes an
-/// array, whatever its elements (spec A.2); a value from inside a loop does not reach outside it.
+/// array, whatever its elements (spec A.2); a value from inside a loop reaches outside it through the loop, which takes
+/// it out (commands.md 6.7).
 #[test]
 fn the_drawing_judges_a_wire_by_scope_and_by_family() {
     let main = "labcraft 1\n\nuse array\nuse core\nuse time\n\nfn main(xs: [f64], k: i32, e: error = none) -> (n: i32, out: error) {\n    n = array.len(xs)\n    out = loop carry e = e {\n        d = core.add(1.0, 2.0)\n        f = time.wait(1 s, err: e)\n        next e = f\n        until true\n    }\n}\n";
@@ -1966,7 +1967,9 @@ fn the_drawing_judges_a_wire_by_scope_and_by_family() {
     // Inside the loop, `e` is the carry: the input `e` of the function is hidden there.
     let hidden = verdict_of(&drawing, "e", "f.err");
     assert!(matches!(&hidden, crate::Verdict::Refused { refusal, .. } if refusal.code == "wire.out_of_scope"), "{hidden:?}");
-    assert_eq!(code_of(&verdict_of(&drawing, "d", len)), "wire.out_of_scope");
+    // Out of the loop, the loop takes the value out (commands.md 6.7, `through`): its body is the one exit.
+    let out = verdict_of(&drawing, "d", len);
+    assert!(matches!(&out, crate::Verdict::Takes { exits, .. } if exits.len() == 1), "{out:?}");
 }
 
 /// Commands.md 6.7 and spec 5.2: a wire out of an arm gives the value as an output of its structure; to a node that

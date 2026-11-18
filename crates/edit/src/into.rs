@@ -120,7 +120,7 @@ pub(crate) fn node(
 fn attempt(path: &str, text: &str, judge: &dyn Judge, limits: &Limits, from: &str, to: &str, replace: bool, edited: &mut Edited) -> Option<String> {
     let mut edit = Edit::read(path, text, limits).ok()?;
     let mut said = Edited::default();
-    wire::connect(&mut edit, judge, from, to, None, replace, false, &mut said).ok()?;
+    wire::connect(&mut edit, judge, from, to, None, &wire::How { replace, accept_mismatch: false, through: None }, &mut said).ok()?;
     let text = edit.finish().ok()?;
     edited.renamed.extend(said.renamed);
     Some(text)

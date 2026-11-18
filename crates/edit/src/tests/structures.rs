@@ -269,6 +269,7 @@ fn connect_arm(from: &str, to: &str, arm: Option<&str>) -> Op {
         arm: arm.map(str::to_owned),
         replace: false,
         accept_mismatch: false,
+        through: None,
     }
 }
 

@@ -1151,6 +1151,11 @@ impl Ide {
                 | keys::SURROUND_HANDLE
                 | keys::SURROUND_FOR
                 | keys::SURROUND_LOOP
+                | keys::ADD_ARM
+                | keys::ADD_CARRY
+                | keys::ADD_CLAUSE
+                | keys::CONTINUE_ON_ERROR
+                | keys::PARALLEL
                 | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
                 keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
                 keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
@@ -1497,6 +1502,31 @@ impl Ide {
         self.values = Some(values::ValueList::new(function.to_owned(), file, kind, around, screen, seen, canvas));
     }
 
+    /// An editing command on the file of `function`, one step: `params` with its `file`.
+    fn send_edit(&mut self, host: &dyn Host, view: &Published, function: &str, id: &str, mut params: Value) {
+        let Some(file) = file_of(view, function) else { return };
+        if let Some(object) = params.as_object_mut() {
+            object.insert("file".to_owned(), json!(file));
+        }
+        let reply = host.send(id, params);
+        self.edits.push((function.to_owned(), reply, None));
+    }
+
+    /// "Add clause…" of a `for` (notation 2.6): the list of the values that its frame sees, as surrounding with a `for`
+    /// lists them, where the `for` is.
+    fn add_clause(&mut self, view: &Published, function: &str, structure: String) {
+        let Some(file) = file_of(view, function) else { return };
+        let Some(window) = view.window_of(function) else { return };
+        let shown = canvas_shown(window, &self.prefs);
+        let Some(drawn) = self.drawn.get(function) else { return };
+        let selection = Selection { nodes: vec![structure.clone()], ..Selection::default() };
+        let seen = drawn.canvas.values_seen(&shown, &selection, None);
+        let screen = drawn.canvas.selection_screen(&selection).unwrap_or_default();
+        let canvas = self.canvas_focus.as_ref().filter(|(focused, _)| focused == function).map(|(_, id)| *id);
+        let around = values::Around::Clause { structure };
+        self.values = Some(values::ValueList::new(function.to_owned(), file, "for", around, screen, seen, canvas));
+    }
+
     /// The list of values, while it is open: Enter makes the structure, one step (notation 2.6).
     fn show_values(&mut self, ctx: &egui::Context, host: &dyn Host) {
         let Some(mut list) = self.values.take() else { return };
@@ -1507,7 +1537,7 @@ impl Ide {
             }
             values::Chosen::Cancelled => {}
             values::Chosen::Value(value) => {
-                let reply = host.send("structure.surround", values::command(&list.file, list.kind, &list.around, Some(&value)));
+                let reply = host.send(values::command_id(&list.around), values::command(&list.file, list.kind, &list.around, Some(&value)));
                 self.edits.push((list.function.clone(), reply, None));
             }
         }
@@ -1753,6 +1783,17 @@ impl Ide {
                 let (Some(host), Some(function), Some(kind)) = (host, function, keys::surround_kind(&id)) else { return };
                 self.surround(host, view, &function, kind, None);
             }
+            // The parts of the one structure selected (notation 2.6): as its context menu gives them.
+            keys::ADD_ARM | keys::ADD_CARRY | keys::ADD_CLAUSE | keys::CONTINUE_ON_ERROR | keys::PARALLEL => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(function), Some(asked)) = (function, keys::part_asked(&id)) else { return };
+                let Some(window) = view.window_of(&function) else { return };
+                let canvas_shown = canvas_shown(window, &self.prefs);
+                let said = self.drawn.get_mut(&function).map(|drawn| drawn.canvas.ask_part(&canvas_shown, asked));
+                if let Some(Err(why)) = said {
+                    self.say(why);
+                }
+            }
             keys::COPY | keys::CUT | keys::DUPLICATE => {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function)) = (host, function) else { return };
@@ -1899,7 +1940,36 @@ fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accep
         }
         // The field shows the template between its quotes; a quote typed is one of the text (spec 14.1).
         FieldKind::Template { node } => ("node.set_template", json!({ "file": file, "node": node, "template": quoted(text) })),
+        // The parts of a structure (notation 2.6).
+        FieldKind::AddArm { structure } => ("structure.add_arm", json!({ "file": file, "structure": structure, "patterns": text })),
+        FieldKind::Patterns { structure, arm } => {
+            ("structure.set_patterns", json!({ "file": file, "structure": structure, "arm": arm, "patterns": text }))
+        }
+        FieldKind::AddCarry { structure } => ("structure.add_carry", carry_params(file, &structure, text)),
     }
+}
+
+/// `name = initial`, `name: type = initial` or `name: type` as `structure.add_carry` takes them: a hole, or nothing after
+/// `=`, starts the carry from a hole.
+fn carry_params(file: &str, structure: &str, text: &str) -> Value {
+    let (head, initial) = match text.split_once('=') {
+        Some((head, initial)) => (head.trim(), Some(initial.trim()).filter(|initial| !initial.is_empty() && *initial != "?")),
+        None => (text.trim(), None),
+    };
+    let (name, ty) = match head.split_once(':') {
+        Some((name, ty)) => (name.trim(), Some(ty.trim()).filter(|ty| !ty.is_empty())),
+        None => (head, None),
+    };
+    let mut params = json!({ "file": file, "structure": structure, "name": name });
+    if let Some(object) = params.as_object_mut() {
+        if let Some(initial) = initial {
+            object.insert("initial".to_owned(), json!(initial));
+        }
+        if let Some(ty) = ty {
+            object.insert("type".to_owned(), json!(ty));
+        }
+    }
+    params
 }
 
 /// The field of a function whose file the window no longer knows: refused at once, so that it does not wait.
@@ -2381,9 +2451,13 @@ impl Content<'_> {
                 }
                 // A wire dropped, or wired with Enter (notation 2.6): one step of undo; a branch with its junction, in one
                 // step too (notation 2.4).
-                Intent::Wire { from, to, arm, replace, accept_mismatch, route } => {
+                Intent::Wire { from, to, arm, replace, accept_mismatch, route, through } => {
                     if let Some(file) = file_of(view, function) {
-                        let params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
+                        let mut params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
+                        // Out of loops: how each takes the value out (notation 2.6).
+                        if let (false, Some(object)) = (through.is_empty(), params.as_object_mut()) {
+                            object.insert("through".to_owned(), json!(through));
+                        }
                         let params = insert::with_arm(params, arm.as_deref());
                         let reply = match route {
                             None => self.host.send("wire.connect", params),
@@ -2438,6 +2512,22 @@ impl Content<'_> {
                     }
                 }
                 Intent::Say(text) => self.ide.say(text),
+                // The parts of a structure (notation 2.6).
+                Intent::RemovePart { structure, part } => {
+                    self.ide.send_edit(self.host, view, function, "structure.remove_part", json!({ "structure": structure, "part": part }));
+                }
+                Intent::SetOption { structure, option, on } => {
+                    let params = json!({ "structure": structure, "option": option, "on": on });
+                    self.ide.send_edit(self.host, view, function, "structure.set_option", params);
+                }
+                Intent::AddClause { structure, over: None } => self.ide.add_clause(view, function, structure),
+                // A wire dropped on an edge of a loop (notation 2.6): a clause, or a `collect`, at once.
+                Intent::AddClause { structure, over: Some(over) } => {
+                    self.ide.send_edit(self.host, view, function, "structure.add_clause", json!({ "structure": structure, "over": over }));
+                }
+                Intent::AddCollect { structure, value } => {
+                    self.ide.send_edit(self.host, view, function, "structure.add_collect", json!({ "structure": structure, "value": value }));
+                }
                 // "Surround with ▸" of the context menu of a node (notation 2.6).
                 Intent::Surround { kind, nodes } => self.ide.surround(self.host, view, function, kind, Some(nodes)),
                 // A field in place written (notation 2.6).
@@ -2527,6 +2617,16 @@ mod field_tests {
         assert_eq!(clear, ("input.clear_constant", json!({ "file": "f.lcf", "to": "a.b" })));
         let template = field_command("f.lcf", FieldKind::Template { node: "text".to_owned() }, "{v} V", false);
         assert_eq!(template, ("node.set_template", json!({ "file": "f.lcf", "node": "text", "template": "\"{v} V\"" })));
+        // The parts of a structure (notation 2.6).
+        let arm = field_command("f.lcf", FieldKind::AddArm { structure: "m".to_owned() }, "1, 3..=5", false);
+        assert_eq!(arm, ("structure.add_arm", json!({ "file": "f.lcf", "structure": "m", "patterns": "1, 3..=5" })));
+        let patterns = field_command("f.lcf", FieldKind::Patterns { structure: "m".to_owned(), arm: "_".to_owned() }, "2", false);
+        assert_eq!(patterns, ("structure.set_patterns", json!({ "file": "f.lcf", "structure": "m", "arm": "_", "patterns": "2" })));
+        let carry = |text: &str| field_command("f.lcf", FieldKind::AddCarry { structure: "#l".to_owned() }, text, false).1;
+        assert_eq!(carry("acc = 0 V"), json!({ "file": "f.lcf", "structure": "#l", "name": "acc", "initial": "0 V" }));
+        assert_eq!(carry("acc: f64 = ?"), json!({ "file": "f.lcf", "structure": "#l", "name": "acc", "type": "f64" }));
+        assert_eq!(carry("n: i32 = x"), json!({ "file": "f.lcf", "structure": "#l", "name": "n", "initial": "x", "type": "i32" }));
+        assert_eq!(carry("acc"), json!({ "file": "f.lcf", "structure": "#l", "name": "acc" }));
     }
 
     #[test]

@@ -1212,7 +1212,7 @@ fn port_of(drawing: &Drawing, name: &str, input: bool) -> Pos2 {
 }
 
 fn wiring_of(from: &str, to: &str, replace: bool) -> Intent {
-    Intent::Wire { from: from.to_owned(), to: to.to_owned(), arm: None, replace, accept_mismatch: false, route: None }
+    Intent::Wire { from: from.to_owned(), to: to.to_owned(), arm: None, replace, accept_mismatch: false, route: None, through: Vec::new() }
 }
 
 /// A drag of the primary button from `from` to `to`, with `modifiers` held, over frames from `time`: what it asks for.
@@ -1321,7 +1321,15 @@ fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
     let intents = drag_with(&ctx, &mut canvas, (to, port_of(&drawn, "flag", false)), 4.0, &accept);
     assert_eq!(
         intents,
-        vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), arm: None, replace: true, accept_mismatch: true, route: None }]
+        vec![Intent::Wire {
+            from: "flag".to_owned(),
+            to: "b.b".to_owned(),
+            arm: None,
+            replace: true,
+            accept_mismatch: true,
+            route: None,
+            through: Vec::new()
+        }]
     );
     canvas.cancel_wire();
     // On the empty canvas, far from every terminal.
@@ -1411,7 +1419,15 @@ fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_n
     let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 2.0, &accept);
     assert_eq!(
         intents,
-        vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), arm: None, replace: true, accept_mismatch: true, route: None }]
+        vec![Intent::Wire {
+            from: "flag".to_owned(),
+            to: "b.b".to_owned(),
+            arm: None,
+            replace: true,
+            accept_mismatch: true,
+            route: None,
+            through: Vec::new()
+        }]
     );
 }
 
@@ -1518,6 +1534,7 @@ fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
         replace: true,
         accept_mismatch: false,
         route: Some(("a -> y.b".to_owned(), vec![(unit(jx - ox), unit(sy - oy))])),
+        through: Vec::new(),
     };
     assert_eq!(intents.last(), Some(&wired), "{intents:?}");
 }
@@ -1686,4 +1703,30 @@ fn copy_counts_from_the_corner_and_a_paste_falls_on_the_grid() {
     assert_eq!((at.0 % 8, at.1 % 8), (0, 0), "{at:?}");
     // A pointer off the canvas (on a menu) is no pointer.
     assert_eq!(canvas.paste_at(&Shown::default(), Some(Pos2::new(-5000.0, -5000.0))), Some((crate::InFrame::default(), at)));
+}
+
+/// A wire out of a loop takes the value out as the type of its input says (notation 2.6, decision of the owner,
+/// 2026-11-18): the value's type, a carry; an array of it, a `collect`; neither, the default of a `for`, a `collect`; Alt
+/// takes the other one.
+#[test]
+fn a_wire_out_of_a_loop_chooses_its_passage_by_the_type_of_its_input() {
+    let text = "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: f64, z: [f64], k: bool) {\n    _ = for v in xs {\n        w = core.abs(v)\n    }\n    y = 0.0\n    z = xs\n    k = true\n}\n";
+    let drawing = drawing(text, &ViewState::default());
+    let from = drawing.ports.iter().position(|port| !port.input && port.name == "w").unwrap();
+    let verdicts = labcraft_diagram::wiring(&drawing, from);
+    let passage = |to: &str, alt: bool| {
+        let at = drawing.ports.iter().position(|port| port.input && port.name == to).unwrap();
+        let Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) = verdicts.get(at) else { panic!("{to}: {:?}", verdicts.get(at)) };
+        wiring::passages(&drawing, &drawing.ports[from], &drawing.ports[at], exits, alt)
+    };
+    assert_eq!(passage("output y", false), vec!["carry"]);
+    assert_eq!(passage("output z", false), vec!["collect"]);
+    assert_eq!(passage("output k", false), vec!["collect"]);
+    // The type then judged is that of the passage: an `[f64]` is no `bool`, an `f64` is an `f64`.
+    let port = |name: &str| drawing.ports.iter().find(|port| port.input && port.name == name).unwrap();
+    assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output k"), 1).is_some());
+    assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output y"), 0).is_none());
+    assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output z"), 1).is_none());
+    assert_eq!(passage("output y", true), vec!["collect"]);
+    assert_eq!(wiring::passage_marks(&["carry", "collect"]), "↻ last value  ·  [•] collect");
 }

@@ -13,7 +13,7 @@ use crate::names::{fresh, of_output, rename, taken};
 use crate::places::{Slot, args, operand, operand_mut, reads, slots};
 use crate::refs::{InputName, NodeName, Part, node, split_wire};
 use crate::scope::{self, BodyPath, Bound, Frame, Loc, Value};
-use crate::{Callable, EditError, Edited, Judge, Kind, Renamed};
+use crate::{Callable, EditError, Edited, Judge, Kind, Passage, Renamed, Through};
 
 /// The errors of `check` that a wire of the wrong type makes, where it goes and downstream (cli.md 5).
 const TYPE_CODES: &[Code] = &[
@@ -80,24 +80,57 @@ enum Start {
     Label(Name),
 }
 
-#[allow(clippy::too_many_arguments)]
+/// How `wire.connect` writes a wire: over what the input holds, of the wrong type, out of the loops it leaves.
+pub(crate) struct How<'a> {
+    pub replace: bool,
+    pub accept_mismatch: bool,
+    pub through: Option<&'a Through>,
+}
+
 pub(crate) fn connect(
     edit: &mut Edit,
     judge: &dyn Judge,
     from: &str,
     to: &str,
     arm: Option<&str>,
-    replace: bool,
-    accept_mismatch: bool,
+    how: &How,
     edited: &mut Edited,
 ) -> Result<(), EditError> {
+    let (replace, accept_mismatch) = (how.replace, how.accept_mismatch);
     let function = edit.body_function()?.clone();
     let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, Some(from), arm)?;
     let reader = reader_body(&function, &end);
-    let lifted = lift(edit, from, &reader, edited)?;
+    // `node.output` (`#lbl.out`, `@41.out` too) names one value, where its node is: the structures around it take that
+    // value out, not another of its name (9.2). An output with no name gets one there.
+    let mut chosen = None;
+    let named;
+    let from = match from.split_once('.') {
+        Some((node_text, _)) if !node_text.is_empty() => {
+            let loc = node(edit, &function, &NodeName::parse(node_text), "from")?;
+            match resolve_start(edit, judge, &function, from, &loc.body, edited)? {
+                Start::Value(value) => {
+                    named = edit.text(value.name).to_owned();
+                    chosen = Some(value);
+                    named.as_str()
+                }
+                Start::Label(_) => from,
+            }
+        }
+        _ => from,
+    };
+    // An order wire does not leave a structure (R-17).
+    if matches!(end, End::After(_)) && how.through.is_some() {
+        return Err(EditError::new("wire.out_of_scope", "an order wire does not leave a structure (R-17): `through` takes no `after`").of("through"));
+    }
+    let lifted = lift(edit, judge, from, chosen.clone(), &reader, how.through, edited)?;
     let from = lifted.as_deref().unwrap_or(from);
     let function = edit.body_function()?.clone();
-    let start = resolve_start(edit, judge, &function, from, &reader, edited)?;
+    // The value that `node.output` named, when nothing lifted it: that one, not another of its name that the reader sees.
+    let start = match (&lifted, chosen) {
+        (None, Some(value)) if !scope::sees(&function, &value, &reader) => return Err(unseen(&function, from, &value, &reader)),
+        (None, Some(value)) => Start::Value(value),
+        _ => resolve_start(edit, judge, &function, from, &reader, edited)?,
+    };
     let function = edit.body_function()?.clone();
     if let (Start::Label(_), false) = (&start, matches!(end, End::After(_))) {
         return Err(EditError::invalid("from", format!("`{from}` is a label: a wire from a label is an order wire, to `node.after`")));
@@ -209,40 +242,166 @@ pub(crate) fn connect(
     judge_types(edit, judge, &format!("a wire from `{from}` to `{to}`"), accept_mismatch)
 }
 
-/// A value inside arms that the reader does not see: each `match` or `handle` around it, up to the body that holds the
-/// reader or a structure around it, gives it as a new output, the arm that holds it yielding it and the other arms a hole
-/// (commands.md 6.7, `wire.connect`), so that the reader sees it. The name
-/// that the reader then reads, or none when there is nothing to lift (a loop between them is refused later).
-fn lift(edit: &mut Edit, from: &str, reader: &[scope::Step], edited: &mut Edited) -> Result<Option<String>, EditError> {
-    if from.starts_with('#') || from.contains('.') {
-        return Ok(None);
-    }
+/// A value inside structures that the reader does not see: each structure around it, up to the body that holds the reader
+/// or a structure around it, gives it as a new output (commands.md 6.7, `wire.connect`), so that the reader sees it. A
+/// `match` or a `handle` yields it from the arm that holds it, and a hole from the other arms; a loop takes it out as
+/// `through` says, a carry that holds its last value or a `collect`. The name that the reader then reads, or none when
+/// there is nothing to lift (a loop left without `through` is refused later).
+#[allow(clippy::too_many_arguments)]
+fn lift(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    from: &str,
+    chosen: Option<Value>,
+    reader: &[scope::Step],
+    through: Option<&Through>,
+    edited: &mut Edited,
+) -> Result<Option<String>, EditError> {
+    let no_loop = || {
+        if through.is_some() {
+            Err(EditError::invalid(
+                "through",
+                format!("a wire from `{}` leaves no loop: `through` is for a value that a loop holds", crate::cut(from)),
+            ))
+        } else {
+            Ok(None)
+        }
+    };
     let function = edit.body_function()?;
-    let Some(name) = edit.names.find(from) else { return Ok(None) };
-    let values: Vec<Value> = scope::values(function).into_iter().filter(|value| value.name == name).collect();
-    if values.iter().any(|value| scope::sees(function, value, reader)) {
-        return Ok(None);
+    let values: Vec<Value> = match chosen {
+        Some(value) => vec![value],
+        None if from.starts_with('#') || from.contains('.') => return no_loop(),
+        None => {
+            let Some(name) = edit.names.find(from) else { return no_loop() };
+            scope::values(function).into_iter().filter(|value| value.name == name).collect()
+        }
+    };
+    // A value that the reader sees is wired as it is; with `through`, the one inside a loop is meant, even when an outer
+    // value of its name is seen too (R-3).
+    let seen = |value: &Value| scope::sees(function, value, reader);
+    if values.iter().any(seen) && (through.is_none() || values.len() == 1) {
+        return no_loop();
     }
     // Up to the body that both see: the reader's own, or the one around a sibling structure that holds the reader.
     let common = |seen_in: &[scope::Step]| seen_in.iter().zip(reader).take_while(|(a, b)| a == b).count();
-    let Some(value) = values.into_iter().find(|value| value.seen_in.len() > common(&value.seen_in)) else {
-        return Ok(None);
+    let deeper: Vec<Value> = values.into_iter().filter(|value| !seen(value) && value.seen_in.len() > common(&value.seen_in)).collect();
+    // A name of several bodies names none of them (9.2).
+    if deeper.len() > 1 {
+        return Err(EditError::new(
+            "edit.ambiguous",
+            format!("`{from}` names {} values in several bodies: name the output by its node (`node.output`) or give it another name", deeper.len()),
+        )
+        .of("from"));
+    }
+    let Some(value) = deeper.into_iter().next() else {
+        return no_loop();
     };
     let around = common(&value.seen_in);
+    let mut frames = Vec::new();
     for depth in around + 1..=value.seen_in.len() {
-        if scope::frame(function, value.seen_in.get(..depth).unwrap_or(&[])) != Some(Frame::Arm) {
-            return Ok(None);
+        match scope::frame(function, value.seen_in.get(..depth).unwrap_or(&[])) {
+            Some(frame) => frames.push(frame),
+            None => return Ok(None),
         }
     }
+    let loops = frames.iter().filter(|frame| **frame == Frame::Loop).count();
+    if loops == 0 && through.is_some() {
+        return no_loop();
+    }
+    let passages: Vec<Passage> = match through {
+        None if loops > 0 => return Ok(None),
+        None => Vec::new(),
+        Some(Through::All(passage)) => vec![*passage; loops],
+        Some(Through::Each(list)) if list.len() == loops => list.clone(),
+        Some(Through::Each(list)) => {
+            return Err(EditError::invalid(
+                "through",
+                format!("a wire from `{from}` leaves {loops} loop(s), and `through` lists {}: one passage per loop, from the inside out", list.len()),
+            ));
+        }
+    };
+    // Its type, for a carry, as the check saw it; a `collect` puts it in an array.
+    // Only a carry writes a type.
+    let mut ty = if passages.contains(&Passage::Carry) {
+        let found = type_now(edit, judge, &value);
+        (found.kind != crate::TypeKind::Unknown && !found.shown.is_empty()).then_some(found.shown)
+    } else {
+        None
+    };
+    let mut passages = passages.into_iter();
     let mut current = value.name;
     let mut path = value.seen_in.clone();
     while path.len() > around {
+        let depth = path.len() - around - 1;
         let Some(step) = path.pop() else { break };
-        current = give(edit, &Loc { body: path.clone(), index: step.stmt }, step.sub, current)?;
+        let loc = Loc { body: path.clone(), index: step.stmt };
+        current = match frames.get(depth) {
+            Some(Frame::Arm) => give(edit, &loc, step.sub, current)?,
+            Some(Frame::Loop) => {
+                let passage = passages.next().ok_or_else(|| EditError::internal("a loop without its passage"))?;
+                let taken_out = pass(edit, &loc, current, passage, ty.as_deref())?;
+                if passage == Passage::Collect {
+                    ty = ty.map(|inner| format!("[{inner}]"));
+                }
+                taken_out
+            }
+            None => return Err(EditError::internal("a frame that went")),
+        };
     }
     let given = edit.text(current).to_owned();
     edited.names.insert("output", given.clone());
     Ok(Some(given))
+}
+
+/// The type of a value as the check sees it: in the text before the command, or, for a value that the command named
+/// (an output that was `_`), in the text as it is now, where the value is found by its name.
+fn type_now(edit: &Edit, judge: &dyn Judge, value: &Value) -> crate::ValueType {
+    let found = crate::surround::type_of(edit, judge, value);
+    if found.kind != crate::TypeKind::Unknown {
+        return found;
+    }
+    let Ok(text) = edit.render() else { return found };
+    let Ok(again) = Edit::read(&edit.path, &text, edit.limits()) else { return found };
+    let name = edit.text(value.name);
+    let (Some(function), Some(wanted)) = (again.function(), again.names.find(name)) else { return found };
+    let line = scope::values(function).into_iter().find_map(|value| match &value.bound {
+        Bound::Line(loc, _) | Bound::Head(loc, _) if value.name == wanted => again.lines.get(loc).copied(),
+        _ => None,
+    });
+    match line {
+        Some(line) => judge.value_type(&edit.path, &text, line, name),
+        None => found,
+    }
+}
+
+/// The loop at `loc` takes `value` out: a carry of its type that holds its last value (`carry v2: T = ?`, `next v2 = v`),
+/// the carry and its output named after it (N-14), or a `collect`, its output named after it. The name of the output.
+fn pass(edit: &mut Edit, loc: &Loc, value: Name, passage: Passage, ty: Option<&str>) -> Result<Name, EditError> {
+    let output = fresh(edit.text(value), &taken(edit));
+    let output = edit.intern(&output);
+    let statement = scope::statement(edit.body_function()?, loc).ok_or_else(|| EditError::internal("a loop that went"))?;
+    let parallel = matches!(&statement.kind, StatementKind::Binding { value: Rhs::For(each), .. } if each.parallel);
+    match passage {
+        Passage::Carry => {
+            if parallel {
+                return Err(EditError::invalid("through", "a `for parallel` takes no carry (spec 6.2): it takes a value out as a `collect`"));
+            }
+            let written = ty;
+            let ty = ty.and_then(|text| crate::parts::read_type(edit, text));
+            if let (Some(text), true) = (written, ty.is_some()) {
+                crate::parts::use_library_of(edit, text);
+            }
+            let hole = Operand::Hole(edit.id());
+            crate::parts::push_carry(edit, loc, output, ty, hole)?;
+            let id = edit.id();
+            add_next(edit, loc, output, Operand::Path(Path { id, first: value, rest: Box::new([]) }))?;
+        }
+        Passage::Collect => {
+            let id = edit.id();
+            crate::parts::push_collect(edit, loc, output, Operand::Path(Path { id, first: value, rest: Box::new([]) }))?;
+        }
+    }
+    Ok(output)
 }
 
 /// The `match` or `handle` at `loc` gives `value` from its arm `arm`, as a new output named after it (N-14): the other
@@ -1223,7 +1382,10 @@ fn resolve_start(
     reader: &[scope::Step],
     edited: &mut Edited,
 ) -> Result<Start, EditError> {
-    if let Some(label) = from.strip_prefix('#') {
+    // A label alone is an order wire; `#close.out` is an output of the node of that label.
+    if let Some(label) = from.strip_prefix('#')
+        && !label.contains('.')
+    {
         let name = edit.names.find(label).filter(|name| scope::labels(function).iter().any(|(found, _)| found == name));
         return name.map(Start::Label).ok_or_else(|| EditError::new("edit.unknown", format!("no node is labelled `{from}`")).of("from"));
     }
@@ -1231,6 +1393,28 @@ fn resolve_start(
         // `node.output`: an output of a node by its name in the signature; `_` gets a name (N-14).
         let loc = node(edit, function, &NodeName::parse(node_text), "from")?;
         let statement = scope::statement(function, &loc).cloned().ok_or_else(|| EditError::internal("a node that went"))?;
+        // A node that is no call: a constant gives `value`, a structure its outputs by their names.
+        if let StatementKind::Binding { targets, value } = &statement.kind
+            && !matches!(value, Rhs::Call(_))
+        {
+            let found = targets.iter().enumerate().find_map(|(index, target)| match target {
+                Target::Name(_, name) if edit.text(*name) == output || (output == "value" && index == 0 && matches!(value, Rhs::Operand(_))) => {
+                    Some((index, *name))
+                }
+                _ => None,
+            });
+            let Some((index, name)) = found else {
+                return Err(EditError::new("edit.unknown", format!("`{node_text}` has no output `{output}`")).of("from"));
+            };
+            let value = scope::values(function)
+                .into_iter()
+                .find(|value| value.name == name && matches!(&value.bound, Bound::Line(at, i) if *at == loc && *i == index))
+                .ok_or_else(|| EditError::internal("an output that went"))?;
+            if !scope::sees(function, &value, reader) {
+                return Err(unseen(function, from, &value, reader));
+            }
+            return Ok(Start::Value(value));
+        }
         let callable = callee(edit, judge, &statement)
             .ok_or_else(|| EditError::new("edit.unknown", format!("the outputs of `{node_text}` are not known")).of("from"))?;
         let Some(index) = callable.outputs.iter().position(|name| name == output) else {
@@ -1315,9 +1499,11 @@ fn unseen(function: &Function, from: &str, value: &Value, reader: &[scope::Step]
         .flatten();
     match below {
         Some(Frame::Arm) => step_five("from", "a wire out of an arm, which adds an output to its structure,"),
-        Some(Frame::Loop) => {
-            EditError::new("wire.out_of_scope", format!("`{from}` is inside a loop: a `collect` or a carry takes a value out of it")).of("from")
-        }
+        Some(Frame::Loop) => EditError::new(
+            "wire.out_of_scope",
+            format!("`{from}` is inside a loop: pass `through`, `carry` (its last value) or `collect` (an array of its values), to take it out"),
+        )
+        .of("from"),
         _ => EditError::new("wire.out_of_scope", format!("`{from}` cannot be seen from there: it is a value of another arm or structure")).of("from"),
     }
 }

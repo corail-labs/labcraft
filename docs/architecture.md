@@ -1983,6 +1983,13 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   (`ide.surround_match`, `ide.surround_handle`, `ide.surround_for`, `ide.surround_loop`); quick insertion lists the four
   structures after the other rows; a `match`, a `handle` and a `for` first open the list of values (`ide/values.rs`),
   from `Canvas::values_seen`, filtered by the type that the kind takes.
+  Step 5b: the parts of a structure are `edit/parts.rs`, and a wire out of loops goes through `lift` in `wire.rs`, which
+  gives each structure on the way an output: an arm a `yield`, a loop a carry or a `collect` (`through`). On the canvas,
+  the verdict of a wire lists the loops it leaves (`Verdict::Takes::exits`), each body says whether it is a `for`, a
+  `for parallel` or a `loop continue_on_error`, and a terminal of a frame names the part it stands for (`Port::part`);
+  `editor/wiring.rs` chooses the passages from the types (`passages`), and `editor/parts.rs` gives the parts in the
+  context menu of a structure and to the commands of the palette (`ide.add_arm`, `ide.add_carry`, `ide.add_clause`,
+  `ide.continue_on_error`, `ide.parallel`).
 
 ### 12.8 `mcp` (L7)
 

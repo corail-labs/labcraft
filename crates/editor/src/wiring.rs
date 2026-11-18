@@ -74,7 +74,12 @@ const ACROSS: i64 = 1_600;
 /// What a drop would do, the modifiers and the settings counted (notation 2.4).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Drop {
-    Wire { replace: bool, accept_mismatch: bool },
+    /// `through`: how each loop that the wire leaves takes the value out, `carry` or `collect`, from the inside out.
+    Wire {
+        replace: bool,
+        accept_mismatch: bool,
+        through: Vec<&'static str>,
+    },
     Refused(Refusal),
 }
 
@@ -135,11 +140,16 @@ impl Wiring {
                 continue;
             }
             if let Some(slot) = verdicts.get_mut(at) {
-                *slot = Some(Verdict::Takes { replaces: true });
+                *slot = Some(Verdict::Takes { replaces: true, exits: Vec::new() });
             }
         }
         for &reader in &readers {
             for (at, verdict) in wiring(drawing, reader).into_iter().enumerate() {
+                // A reader that the new output would reach only out of a loop: Ctrl and a drag takes no value out.
+                let verdict = match verdict {
+                    Some(Verdict::Takes { exits, .. }) if !exits.is_empty() => Some(out_by_ctrl()),
+                    other => other,
+                };
                 if let (Some(Verdict::Refused { .. }), Some(slot)) = (&verdict, verdicts.get_mut(at))
                     && matches!(slot, Some(Verdict::Takes { .. }))
                 {
@@ -257,16 +267,32 @@ impl Wiring {
         // The input that the wire reaches, whichever end the gesture holds; for Ctrl and a drag on an output, its readers,
         // which it replaces.
         let input = if target.input { target } else { drawing.ports.get(self.from)? };
+        let source = if target.input { drawing.ports.get(self.from)? } else { target };
         let holds = matches!(input.holds, Holds::Wire | Holds::Constant(_)) && !input.order;
         let refused_without_alt = |replace: bool| replace && rules.replace_with_alt && !rules.alt && !matches!(self.taken, Taken::Readers(_));
         Some(match verdict {
-            Verdict::Takes { replaces } if refused_without_alt(*replaces) => Drop::Refused(occupied(input)),
-            Verdict::Takes { replaces } => Drop::Wire { replace: *replaces, accept_mismatch: false },
+            Verdict::Takes { replaces, .. } if refused_without_alt(*replaces) => Drop::Refused(occupied(input)),
+            Verdict::Takes { replaces, exits } if exits.is_empty() => Drop::Wire { replace: *replaces, accept_mismatch: false, through: Vec::new() },
+            // Ctrl and a drag moves the end of a wire: a new one takes a value out of a loop.
+            Verdict::Takes { .. } if self.taken != Taken::Nothing => Drop::Refused(match out_by_ctrl() {
+                Verdict::Refused { refusal, .. } => refusal,
+                Verdict::Takes { .. } => return None,
+            }),
+            // Out of loops, the type is that of the passages chosen: a value in an array per `collect` (spec 6.2).
+            Verdict::Takes { replaces, exits } => {
+                let through = passages(drawing, source, input, exits, rules.alt);
+                let collects = through.iter().filter(|passage| **passage == "collect").count();
+                match labcraft_diagram::passage_refusal(drawing, source, input, collects) {
+                    None => Drop::Wire { replace: *replaces, accept_mismatch: false, through },
+                    Some(_) if rules.accept_mismatch => Drop::Wire { replace: *replaces, accept_mismatch: true, through },
+                    Some(refusal) => Drop::Refused(refusal),
+                }
+            }
             Verdict::Refused { wrong_type: true, .. } if rules.accept_mismatch => {
                 if refused_without_alt(holds) {
                     Drop::Refused(occupied(input))
                 } else {
-                    Drop::Wire { replace: holds, accept_mismatch: true }
+                    Drop::Wire { replace: holds, accept_mismatch: true, through: Vec::new() }
                 }
             }
             Verdict::Refused { refusal, .. } => Drop::Refused(refusal.clone()),
@@ -298,7 +324,7 @@ impl Wiring {
     }
 
     /// The intent of a drop on `port`: the names of the command.
-    pub fn intent(&self, drawing: &Drawing, port: usize, replace: bool, accept_mismatch: bool) -> Option<crate::Intent> {
+    pub fn intent(&self, drawing: &Drawing, port: usize, replace: bool, accept_mismatch: bool, through: Vec<&'static str>) -> Option<crate::Intent> {
         let start = drawing.ports.get(self.from)?;
         let end = drawing.ports.get(port)?;
         let (source, target) = if start.input { (end, start) } else { (start, end) };
@@ -307,7 +333,7 @@ impl Wiring {
                 // A branch names its wire by its value and the input it reaches, as `wire.route` names it.
                 let route = self.branch_route(target).map(|(_, points)| (format!("{} -> {}", source.value, target.name), points));
                 let arm = (!target.arm.is_empty()).then(|| target.arm.clone());
-                crate::Intent::Wire { from: source.name.clone(), to: target.name.clone(), arm, replace, accept_mismatch, route }
+                crate::Intent::Wire { from: start_name(drawing, source), to: target.name.clone(), arm, replace, accept_mismatch, route, through }
             }
             Taken::Input(input) => {
                 let old = drawing.ports.get(*input)?;
@@ -332,6 +358,66 @@ impl Wiring {
             },
         })
     }
+}
+
+/// Ctrl and a drag out of a loop: refused, a new wire takes the value out (notation 2.6).
+fn out_by_ctrl() -> Verdict {
+    let message = "Ctrl and a drag does not take a value out of a loop: draw a new wire from it".to_owned();
+    Verdict::Refused { refusal: Refusal { code: "wire.out_of_scope", message }, wrong_type: false }
+}
+
+/// How a wire names where it starts: the name of its value, or `node.output` when that name is also a value of another
+/// body (9.2), which the command would find ambiguous out of its structure.
+fn start_name(drawing: &Drawing, source: &Port) -> String {
+    let elsewhere = drawing.ports.iter().any(|port| !port.input && !port.notch && port.name == source.name && port.body != source.body);
+    let node = source.placed.and_then(|placed| drawing.placed.get(placed)).filter(|node| !node.name.is_empty() && node.body == source.body);
+    match node {
+        Some(node) if elsewhere && !source.input && !source.frame && !source.caption.is_empty() && source.caption != "_" => {
+            format!("{}.{}", node.name, source.caption)
+        }
+        _ => source.name.clone(),
+    }
+}
+
+/// How each loop that a wire from `source` to `input` leaves takes the value out (notation 2.6, decision of the owner,
+/// 2026-11-18): the type of the input chooses, a carry of the last value for the value's type, a `collect` for that type
+/// in one array per loop; otherwise each loop its default, a `collect` for a `for` and a carry for a `loop`. Alt takes the
+/// other one; a `for parallel` always collects (spec 6.2).
+pub(crate) fn passages(drawing: &Drawing, source: &Port, input: &Port, exits: &[usize], alt: bool) -> Vec<&'static str> {
+    if exits.is_empty() {
+        return Vec::new();
+    }
+    let text = |ty: Option<usize>| ty.and_then(|ty| drawing.types.get(ty)).cloned().unwrap_or_default();
+    let (found, wanted) = (text(source.ty), text(input.ty));
+    let count = exits.len();
+    let body = |at: &usize| drawing.bodies.get(*at);
+    let chosen: Vec<&'static str> = if !found.is_empty() && wanted == found {
+        vec!["carry"; count]
+    } else if !found.is_empty() && wanted == format!("{}{found}{}", "[".repeat(count), "]".repeat(count)) {
+        vec!["collect"; count]
+    } else {
+        exits.iter().map(|at| if body(at).is_some_and(|found| found.each) { "collect" } else { "carry" }).collect()
+    };
+    chosen
+        .into_iter()
+        .zip(exits)
+        .map(|(passage, at)| {
+            let flipped = if !alt {
+                passage
+            } else if passage == "carry" {
+                "collect"
+            } else {
+                "carry"
+            };
+            if body(at).is_some_and(|found| found.parallel) { "collect" } else { flipped }
+        })
+        .collect()
+}
+
+/// What a wire out of loops shows beside the pointer (notation 2.6): the mark of what each loop makes, `↻` for a carry
+/// and `[•]` for a `collect`, from the inside out.
+pub(crate) fn passage_marks(through: &[&str]) -> String {
+    through.iter().map(|passage| if *passage == "carry" { "↻ last value" } else { "[•] collect" }).collect::<Vec<_>>().join("  ·  ")
 }
 
 /// The centre of a port, in units.

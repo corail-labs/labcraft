@@ -34,6 +34,7 @@ mod into;
 mod layout;
 mod model;
 mod names;
+mod parts;
 mod places;
 mod refs;
 mod rename;
@@ -131,6 +132,8 @@ pub enum Op {
         arm: Option<String>,
         replace: bool,
         accept_mismatch: bool,
+        /// How each loop that the wire leaves takes the value out (commands.md 6.7).
+        through: Option<Through>,
     },
     /// `wire.disconnect`.
     WireDisconnect {
@@ -231,6 +234,75 @@ pub enum Op {
         within: Within,
         at: Option<Point>,
     },
+    /// `structure.add_arm`.
+    StructureAddArm {
+        file: String,
+        structure: String,
+        patterns: String,
+    },
+    /// `structure.set_patterns`.
+    StructureSetPatterns {
+        file: String,
+        structure: String,
+        arm: String,
+        patterns: String,
+    },
+    /// `structure.add_carry`.
+    StructureAddCarry {
+        file: String,
+        structure: String,
+        name: String,
+        initial: Option<String>,
+        ty: Option<String>,
+    },
+    /// `structure.add_clause`.
+    StructureAddClause {
+        file: String,
+        structure: String,
+        over: String,
+        name: Option<String>,
+    },
+    /// `structure.add_collect`.
+    StructureAddCollect {
+        file: String,
+        structure: String,
+        value: String,
+        name: Option<String>,
+    },
+    /// `structure.remove_part`: an arm by its patterns, `carry x`, `in x` or `collect y`.
+    StructureRemovePart {
+        file: String,
+        structure: String,
+        part: String,
+    },
+    /// `structure.set_option`.
+    StructureSetOption {
+        file: String,
+        structure: String,
+        option: StructureOption,
+        on: bool,
+    },
+}
+
+/// An option of a loop (spec 6.2, 6.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StructureOption {
+    ContinueOnError,
+    Parallel,
+}
+
+/// How a loop takes a value out (commands.md 6.7, `wire.connect`): a carry that holds its last value, or a `collect`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Passage {
+    Carry,
+    Collect,
+}
+
+/// `through`: one passage for every loop that a wire leaves, or one per loop, from the inside out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Through {
+    All(Passage),
+    Each(Vec<Passage>),
 }
 
 /// The four structures of spec 6.
@@ -284,7 +356,14 @@ impl Op {
             | Op::NodeSetLabel { file, .. }
             | Op::NodeSetTemplate { file, .. }
             | Op::FragmentPaste { file, .. }
-            | Op::StructureSurround { file, .. } => file,
+            | Op::StructureSurround { file, .. }
+            | Op::StructureAddArm { file, .. }
+            | Op::StructureSetPatterns { file, .. }
+            | Op::StructureAddCarry { file, .. }
+            | Op::StructureAddClause { file, .. }
+            | Op::StructureAddCollect { file, .. }
+            | Op::StructureRemovePart { file, .. }
+            | Op::StructureSetOption { file, .. } => file,
         }
     }
 }
@@ -545,8 +624,9 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
             add::constant(&mut edit, value, *at, name.as_deref(), &body, &mut edited)?;
         }
         Op::NodeDelete { nodes, .. } => delete::nodes(&mut edit, judge, nodes)?,
-        Op::WireConnect { from, to, arm, replace, accept_mismatch, .. } => {
-            wire::connect(&mut edit, judge, from, to, arm.as_deref(), *replace, *accept_mismatch, &mut edited)?;
+        Op::WireConnect { from, to, arm, replace, accept_mismatch, through, .. } => {
+            let how = wire::How { replace: *replace, accept_mismatch: *accept_mismatch, through: through.as_ref() };
+            wire::connect(&mut edit, judge, from, to, arm.as_deref(), &how, &mut edited)?;
         }
         Op::WireDisconnect { wire, arm, .. } => wire::disconnect(&mut edit, judge, wire, arm.as_deref(), &mut edited)?,
         Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
@@ -573,6 +653,15 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
             let given = surround::Given { kind: *kind, selector: selector.as_deref(), over: over.as_deref(), arm: arm.as_deref(), at: *at };
             surround::surround(&mut edit, judge, nodes, within, &given, &mut edited)?;
         }
+        Op::StructureAddArm { structure, patterns, .. } => parts::add_arm(&mut edit, structure, patterns, &mut edited)?,
+        Op::StructureSetPatterns { structure, arm, patterns, .. } => parts::set_patterns(&mut edit, structure, arm, patterns, &mut edited)?,
+        Op::StructureAddCarry { structure, name, initial, ty, .. } => {
+            parts::add_carry(&mut edit, structure, name, initial.as_deref(), ty.as_deref(), &mut edited)?;
+        }
+        Op::StructureAddClause { structure, over, name, .. } => parts::add_clause(&mut edit, judge, structure, over, name.as_deref(), &mut edited)?,
+        Op::StructureAddCollect { structure, value, name, .. } => parts::add_collect(&mut edit, structure, value, name.as_deref(), &mut edited)?,
+        Op::StructureRemovePart { structure, part, .. } => parts::remove_part(&mut edit, judge, structure, part)?,
+        Op::StructureSetOption { structure, option, on, .. } => parts::set_option(&mut edit, structure, *option, *on)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {
