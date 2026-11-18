@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated: 2026-11-14*
+*Last updated: 2026-11-18*
 
 The language was described and tried out by a throwaway Python proof of concept, retired after M0 (2026-11-15). M0, the first
 milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
@@ -31,6 +31,8 @@ Still to write, besides what the acceptance scenarios list under "write first"
   scenarios of M1 ([acceptance-m1.md](acceptance-m1.md)), which set the threshold of the figure of stability
   (visual notation, 2.1). The size of a structure is written with the gesture of surrounding, step 5 of the Rust of
   M1 ([architecture.md](architecture.md), 12.11).
+- **after M1**: outlined. What M4, M3, M2a, M2b and M5 hold, what M1 must not block and what must be decided before
+  the milestones beyond M5 ([outline.md](outline.md)); each milestone gets its specification when its work starts.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
@@ -49,10 +51,11 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept ran (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer (done, tag `v0.3.0-m0`, which closes M0) | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; tidying a wire, a selection or a whole function again, and a wire routed by hand (`via`); the agent and the human edit the same program, through the MCP server attached to the IDE, which takes the folders an agent may read and write as the other Craft apps do (RFC-0015, [craft-ecosystem.md](craft-ecosystem.md)). Target: 60 frames/s while editing 1,000 nodes |
-| M1r | Installable release | The editor as the first version for people outside the project: installers signed for Windows and macOS, and a package or archive for Linux. Until then the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums |
-| M4 | Real instruments | Transports of the `visa` library: TCP/IP, serial, USBTMC, HiSLIP; binding to an installed VISA; more of the `scpi` library |
-| M3 | Panel | Controls and indicators, graphs, live update, properties |
-| M2 | Full language v1 | Queues and notifiers, events, `ref<T>` and its access structure, `map<K, V>` and `set<T>` (Q-28), generic functions, manifests of user libraries and their dependencies |
+| M1r | Installable release | The editor as the first version for people outside the project: installers signed for Windows and macOS, and a package or archive for Linux. Until then the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums. It also brings a command to make a subfunction from a selection |
+| M4 | Real I/O | Two transports in pure Rust, TCP and serial, under the `visa` library and as raw bytes (`net`, `serial`) for the devices without VISA; consent for every real resource; bitwise operations, integer division and the `bytes` library, so that a protocol is written in LabCraft, with Modbus TCP as the example; more of the `scpi` library. The other transports of D-17 (VXI-11, HiSLIP, USBTMC, GPIB through an adapter) and the binding to an installed VISA come after, each a library of its own |
+| M3 | Panel | Controls and indicators, graphs, live update, properties; the elements are read in loops, without events (M2a) |
+| M2a | Full language v1: communication | Queues and notifiers, the `events` structure, `ref<T>` and its access structure, leaving a `for` early (Q-22) |
+| M2b | Full language v1: types and libraries | Generic functions, with units (Q-12), `map<K, V>` and `set<T>` (Q-28), shared constants (Q-29), manifests of user libraries and their dependencies |
 | M5 | Debugger | Probes, breakpoints, single-stepping, execution animation, value history |
 | M6 | Build | Standalone executable, C ABI DLL, .NET facade |
 | M7 | Native compilation | Cranelift, equivalence tests with the interpreter |
@@ -61,14 +64,17 @@ of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 | M10 | Web | The IDE and simulation in the browser |
 | M11 | Packages | Manifest, locking, install from git, then registry (D-25) |
 
-The table is in the order of work. After the editor come real instruments and the panel, before the
-full language: a user then drives a real bench, first through the agent and the command line, then
-through a panel, with the live elements of M0. The numbers stay the names of the milestones, which the
-documents and the issues already use. What each one holds is outlined before the specifications of M1,
-so that the editor blocks none of them; a part of the events may move to the panel.
+The table is in the order of work. After the editor come real I/O and the panel, before the full
+language: a user then drives a real bench or device, first through the agent and the command line, then
+through a panel, with the live elements of M0. LabCraft is for more than SCPI benches: a serial or
+network device with a protocol of its own, a supervision, a control system, a Raspberry Pi. M4 goes on
+in parallel with M1, since it lives in `libs/visa`, the runtime and the CLI. The numbers stay the names
+of the milestones, which the documents and the issues already use; M2 is in two halves, M2a and M2b.
+What M4 to M5 hold is outlined in [outline.md](outline.md), so that the editor blocks none of them.
 
 **Horizon 2, after v1:** real-time embedded Linux targets (D-24), controller mode and fieldbuses
-(D-26), libraries generated from Craft apps and SolidCraft plugins (D-27). The package manifest
+(D-26), with timed loops and cyclic tasks (spec 6.4), libraries generated from the Craft apps, LabCraft
+as a plugin of a Craft app (D-27), variables shared between programs (D-04). The package manifest
 (D-25) is designed from M2, when user libraries appear (the libraries shipped with LabCraft declare
 their categories, `always` functions, resources and dependencies from M0), even if the registry
 comes later. The WASM build (D-22) is maintained from M0, even if the whole IDE reaches the browser
