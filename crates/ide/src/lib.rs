@@ -2516,6 +2516,10 @@ impl Content<'_> {
                 Intent::RemovePart { structure, part } => {
                     self.ide.send_edit(self.host, view, function, "structure.remove_part", json!({ "structure": structure, "part": part }));
                 }
+                Intent::SetPassage { structure, part, to } => {
+                    let params = json!({ "structure": structure, "part": part, "to": to });
+                    self.ide.send_edit(self.host, view, function, "structure.set_passage", params);
+                }
                 Intent::SetOption { structure, option, on } => {
                     let params = json!({ "structure": structure, "option": option, "on": on });
                     self.ide.send_edit(self.host, view, function, "structure.set_option", params);

@@ -574,6 +574,11 @@ structure selected:
   "Drawing a wire" above).
 - **Removing a part.** "Remove carry `x`", "Remove clause `x`", "Remove collect `y`", "Remove last `y`", in the context menu of its
   terminal: `structure.remove_part`. Delete on the terminal still removes only what it holds (its wires, its constant).
+- **Changing how a loop takes a value out.** The context menu of the terminal of a carry, a `collect` or a `last` (`↻`,
+  `[•]`, `•]`) offers the other two: "Make it a carry", "Make it a collect", "Make it a last" (`structure.set_passage`).
+  The output keeps its wires. "Make it a collect" and "Make it a last" are disabled while the body reads the carry, and
+  their tooltip says why; a `for parallel` has no "Make it a carry" (spec 6.2). For an `error` in a `loop` without
+  `continue_on_error`, the tooltip says that the loop no longer stops, or now stops, on the first error (spec 6.3).
 - **Options.** "Continue on error" for a `loop`, "Parallel" for a `for`, checked when on, in the context menu of the
   structure: `structure.set_option`. "Parallel" is disabled while the `for` has a carry, and its tooltip says why
   (spec 6.2).

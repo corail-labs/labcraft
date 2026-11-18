@@ -13,6 +13,10 @@ pub(crate) struct PartsMenu {
     shape: Shape,
     /// The part that the terminal right-clicked stands for (`carry x`, `in x`, `collect y`).
     part: Option<String>,
+    /// Whether the body reads the value of that terminal: a carry that it reads becomes no `collect` or `last`.
+    read_inside: bool,
+    /// Whether that terminal carries an `error`: a carry of one stops a `loop` on the first error (spec 6.3).
+    error: bool,
 }
 
 enum Shape {
@@ -38,10 +42,13 @@ impl PartsMenu {
         if node.name.is_empty() {
             return None;
         }
-        let part = port
-            .and_then(|at| drawing.ports.get(at))
-            .filter(|found| found.placed == Some(placed) && !found.part.is_empty())
-            .map(|found| found.part.clone());
+        let terminal = port.and_then(|at| drawing.ports.get(at)).filter(|found| found.placed == Some(placed) && !found.part.is_empty());
+        let part = terminal.map(|found| found.part.clone());
+        let read_inside = terminal.is_some_and(|found| found.read);
+        let error = terminal
+            .and_then(|found| found.ty)
+            .and_then(|ty| drawing.types.get(ty))
+            .is_some_and(|text| text.trim_start_matches('[').trim_end_matches(']') == "error");
         let shape = if first.looping {
             let carries = node.holds.iter().any(|&body| drawing.ports.iter().any(|port| port.body == body && port.part.starts_with("carry ")));
             Shape::Loop { each: first.each, parallel: first.parallel, continue_on_error: first.continue_on_error, carries }
@@ -53,7 +60,7 @@ impl PartsMenu {
             let arm = rank.and_then(|rank| node.holds.get(rank)).and_then(|&body| drawing.bodies.get(body)).map(|body| body.arm.clone());
             Shape::Arms { arm: arm.filter(|arm| !arm.is_empty()), count: node.holds.len() }
         };
-        Some(PartsMenu { structure: node.name.clone(), shape, part })
+        Some(PartsMenu { structure: node.name.clone(), shape, part, read_inside, error })
     }
 
     /// Its entries, after those of any node; what one chose.
@@ -87,6 +94,11 @@ impl PartsMenu {
                 {
                     chosen = Some(Chosen::Intent(crate::Intent::RemovePart { structure: structure.clone(), part: part.clone() }));
                 }
+                if let Some(part) = &self.part
+                    && let Some(to) = passage_menu(ui, part, *parallel, self.read_inside, self.error && !each && !continue_on_error)
+                {
+                    chosen = Some(Chosen::Intent(crate::Intent::SetPassage { structure: structure.clone(), part: part.clone(), to }));
+                }
                 if *each {
                     let mut on = *parallel;
                     let entry = ui.add_enabled(!carries || *parallel, egui::Checkbox::new(&mut on, "Parallel"));
@@ -106,6 +118,50 @@ impl PartsMenu {
             ui.close();
         }
         chosen
+    }
+}
+
+/// "Make it a carry", "Make it a collect", "Make it a last" for the terminal of a part of a loop (notation 2.6): the other
+/// two kinds, none for an `in` clause. A `for parallel` takes no carry (spec 6.2); a carry that the body reads becomes
+/// neither of the others, and the tooltip says why. `stops`: the part carries an `error` in a `loop` that stops on one
+/// (spec 6.3), and the tooltip says what the change does to that. What one chose, as `structure.set_passage` takes `to`.
+fn passage_menu(ui: &mut Ui, part: &str, parallel: bool, read_inside: bool, stops: bool) -> Option<&'static str> {
+    let (kind, name) = part.split_once(' ').unwrap_or(("", ""));
+    let mut chosen = None;
+    for (to, enabled) in passages_offered(part, parallel, read_inside) {
+        let entry = ui.add_enabled(enabled, egui::Button::new(format!("Make it a {to}")));
+        let entry = entry.on_disabled_hover_text(format!("The body reads the carry `{name}`: a `{to}` has no value of the iteration before"));
+        let entry = match passage_warning(kind, to, stops) {
+            Some(warning) => entry.on_hover_text(warning),
+            None => entry,
+        };
+        if entry.clicked() {
+            chosen = Some(to);
+        }
+    }
+    chosen
+}
+
+/// The entries of [`passage_menu`] for a part: each kind it can become, and whether its entry is enabled.
+pub(crate) fn passages_offered(part: &str, parallel: bool, read_inside: bool) -> Vec<(&'static str, bool)> {
+    let Some((kind, _)) = part.split_once(' ') else { return Vec::new() };
+    if !matches!(kind, "carry" | "collect" | "last") {
+        return Vec::new();
+    }
+    ["carry", "collect", "last"]
+        .into_iter()
+        .filter(|to| *to != kind && !(*to == "carry" && parallel))
+        .map(|to| (to, !(kind == "carry" && read_inside)))
+        .collect()
+}
+
+/// What changing a part of kind `kind` into `to` does to a `loop` that stops on the first error that a carry holds
+/// (spec 6.3, decision of the owner, 2026-11-18): said, not refused.
+pub(crate) fn passage_warning(kind: &str, to: &str, stops: bool) -> Option<&'static str> {
+    match (stops, kind == "carry", to == "carry") {
+        (true, true, false) => Some("This loop no longer stops on the first error: only a carry of an `error` stops it (spec 6.3)"),
+        (true, false, true) => Some("This loop will stop on the first error that the carry holds (spec 6.3)"),
+        _ => None,
     }
 }
 

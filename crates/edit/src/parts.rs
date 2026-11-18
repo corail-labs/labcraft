@@ -552,21 +552,7 @@ pub(crate) fn remove_part(edit: &mut Edit, judge: &dyn Judge, structure: &str, p
             put_back(edit, &loc, now)?;
         }
         Part::Carry(text) => {
-            let mut held = statement.clone();
-            let (clauses, _, _) = clauses_of(&mut held, structure)?;
-            let carries: Vec<Name> = clauses
-                .iter()
-                .filter_map(|clause| match &clause.kind {
-                    ClauseKind::Carry(carry) => Some(carry.name),
-                    ClauseKind::In(_) => None,
-                })
-                .collect();
-            let Some(rank) = edit.names.find(&text).and_then(|name| carries.iter().position(|carry| *carry == name)) else {
-                return Err(EditError::new("edit.unknown", format!("`{}` has no carry `{}`", shown(structure), crate::cut(&text)))
-                    .of("part")
-                    .expecting(carries.iter().map(|carry| format!("carry {}", edit.text(*carry))).collect()));
-            };
-            let carry = carries.get(rank).copied().ok_or_else(|| EditError::internal("a carry that went"))?;
+            let (rank, carry) = carry_named(edit, &statement, structure, &text)?;
             let body_path = loc.sub(0);
             // The carry, read in the body, and its output, read outside.
             let inner: Vec<Value> =
@@ -635,38 +621,8 @@ pub(crate) fn remove_part(edit: &mut Edit, judge: &dyn Judge, structure: &str, p
             put_back(edit, &loc, now)?;
         }
         Part::Gather(gather, text) => {
-            let mut held = statement.clone();
-            clauses_of(&mut held, structure)?;
+            let (index, output) = gather_named(edit, &statement, structure, gather, &text)?;
             let (carries, _) = loop_outputs(&statement);
-            let StatementKind::Binding { targets, .. } = &statement.kind else { return Err(EditError::internal("a loop that is not one")) };
-            let kinds: Vec<Gather> = loop_body(&statement)
-                .map(|body| {
-                    body.statements
-                        .iter()
-                        .filter_map(|line| match line.kind {
-                            StatementKind::Gather(kind, _) => Some(kind),
-                            _ => None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            let gathered: Vec<(usize, Gather, Name)> = targets
-                .iter()
-                .enumerate()
-                .skip(carries)
-                .zip(&kinds)
-                .filter_map(|((index, target), kind)| match target {
-                    Target::Name(_, name) => Some((index, *kind, *name)),
-                    Target::Skip(_) | Target::Next(..) => None,
-                })
-                .collect();
-            let found = edit.names.find(&text).and_then(|name| gathered.iter().find(|(_, kind, found)| *kind == gather && *found == name));
-            let Some(&(index, _, output)) = found else {
-                let word = gather.word();
-                return Err(EditError::new("edit.unknown", format!("`{}` has no `{word}` of output `{}`", shown(structure), crate::cut(&text)))
-                    .of("part")
-                    .expecting(gathered.iter().map(|(_, kind, name)| format!("{} {}", kind.word(), edit.text(*name))).collect()));
-            };
             let rank = index - carries;
             let outer: Vec<Value> =
                 values.iter().filter(|value| matches!(&value.bound, Bound::Line(at, i) if *at == loc && *i == index)).cloned().collect();
@@ -695,6 +651,377 @@ pub(crate) fn remove_part(edit: &mut Edit, judge: &dyn Judge, structure: &str, p
         gone.remove(&name);
     }
     forget_in_layout(edit, &gone)
+}
+
+/// The carry of the loop that `text` names, by its rank among the carries, and its name.
+fn carry_named(edit: &Edit, statement: &Statement, structure: &str, text: &str) -> Result<(usize, Name), EditError> {
+    let mut held = statement.clone();
+    let (clauses, _, _) = clauses_of(&mut held, structure)?;
+    let carries: Vec<Name> = clauses
+        .iter()
+        .filter_map(|clause| match &clause.kind {
+            ClauseKind::Carry(carry) => Some(carry.name),
+            ClauseKind::In(_) => None,
+        })
+        .collect();
+    let found = edit.names.find(text).and_then(|name| carries.iter().position(|carry| *carry == name));
+    let Some((rank, &carry)) = found.and_then(|rank| carries.get(rank).map(|carry| (rank, carry))) else {
+        return Err(EditError::new("edit.unknown", format!("`{}` has no carry `{}`", shown(structure), crate::cut(text)))
+            .of("part")
+            .expecting(carries.iter().map(|carry| format!("carry {}", edit.text(*carry))).collect()));
+    };
+    Ok((rank, carry))
+}
+
+/// The `collect` or `last` of the loop whose output `text` names: the index of its output among those of the loop, and
+/// its name.
+fn gather_named(edit: &Edit, statement: &Statement, structure: &str, gather: Gather, text: &str) -> Result<(usize, Name), EditError> {
+    let mut held = statement.clone();
+    clauses_of(&mut held, structure)?;
+    let (carries, _) = loop_outputs(statement);
+    let StatementKind::Binding { targets, .. } = &statement.kind else { return Err(EditError::internal("a loop that is not one")) };
+    let kinds: Vec<Gather> = loop_body(statement)
+        .map(|body| {
+            body.statements
+                .iter()
+                .filter_map(|line| match line.kind {
+                    StatementKind::Gather(kind, _) => Some(kind),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let gathered: Vec<(usize, Gather, Name)> = targets
+        .iter()
+        .enumerate()
+        .skip(carries)
+        .zip(&kinds)
+        .filter_map(|((index, target), kind)| match target {
+            Target::Name(_, name) => Some((index, *kind, *name)),
+            Target::Skip(_) | Target::Next(..) => None,
+        })
+        .collect();
+    let found = edit.names.find(text).and_then(|name| gathered.iter().find(|(_, kind, found)| *kind == gather && *found == name));
+    let Some(&(index, _, output)) = found else {
+        let word = gather.word();
+        return Err(EditError::new("edit.unknown", format!("`{}` has no `{word}` of output `{}`", shown(structure), crate::cut(text)))
+            .of("part")
+            .expecting(gathered.iter().map(|(_, kind, name)| format!("{} {}", kind.word(), edit.text(*name))).collect()));
+    };
+    Ok((index, output))
+}
+
+/// Moves the output at `from` to `to` among the outputs of the structure, keeping its target.
+fn move_target(statement: &mut Statement, from: usize, to: usize) -> Result<(), EditError> {
+    let StatementKind::Binding { targets, .. } = &mut statement.kind else { return Err(EditError::internal("a structure that is not one")) };
+    let mut list = std::mem::take(targets).into_vec();
+    if from < list.len() {
+        let target = list.remove(from);
+        let to = to.min(list.len());
+        list.insert(to, target);
+    }
+    *targets = list.into_boxed_slice();
+    Ok(())
+}
+
+/// Forgets the entries of `layout` of the wires that end at `node`: those to its input `terminal`, or, with `from`, those
+/// from that value to an input without a name. The routes of an input that goes.
+fn forget_routes(edit: &mut Edit, node: Option<(Name, bool)>, terminal: Option<Name>, from: Option<Name>) {
+    let (Some((node, is_label)), Some(layout)) = (node, &mut edit.file.layout) else { return };
+    layout.items.retain(|item| match &item.kind {
+        LayoutKind::Wire { from: start, to, .. } if to.node.name == node && to.node.is_label == is_label => match (terminal, from) {
+            (Some(terminal), _) => to.terminal != Some(terminal),
+            (None, Some(value)) => !(to.terminal.is_none() && !start.node.is_label && start.node.name == value),
+            (None, None) => true,
+        },
+        _ => true,
+    });
+}
+
+/// `structure.set_passage`: a carry, a `collect` or a `last` of a loop becomes another of the three, its output kept
+/// (decision of the owner, 2026-11-18).
+pub(crate) fn set_passage(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    structure: &str,
+    part: &str,
+    to: crate::Passage,
+    edited: &mut Edited,
+) -> Result<(), EditError> {
+    let (loc, statement) = structure_at(edit, structure)?;
+    let mut held = statement.clone();
+    let (_, _, parallel) = clauses_of(&mut held, structure)?;
+    let before = line_name_at(edit, &loc);
+    let holder = crate::wire::statement_node(&statement);
+    let wanted = match to {
+        crate::Passage::Carry => None,
+        crate::Passage::Collect => Some(Gather::Collect),
+        crate::Passage::Last => Some(Gather::Last),
+    };
+    let output = match (part_of(part), wanted) {
+        // The part is found first: one that the loop does not have is `edit.unknown`, whatever `to` says.
+        (Part::Carry(text), None) => {
+            carry_named(edit, &statement, structure, &text)?;
+            return Err(EditError::invalid("to", format!("`carry {}` is a carry already", crate::cut(&text))));
+        }
+        (Part::Gather(gather, text), Some(kind)) if gather == kind => {
+            gather_named(edit, &statement, structure, gather, &text)?;
+            return Err(EditError::invalid("to", format!("`{} {}` is a `{}` already", gather.word(), crate::cut(&text), gather.word())));
+        }
+        (Part::Carry(text), Some(gather)) => carry_into_gather(edit, judge, &loc, structure, &text, gather, holder)?,
+        (Part::Gather(gather, text), Some(kind)) => {
+            let (index, output) = gather_named(edit, &statement, structure, gather, &text)?;
+            let (carries, _) = loop_outputs(&statement);
+            let mut now = statement.clone();
+            let line = loop_body_mut(&mut now)
+                .and_then(|body| body.statements.iter_mut().filter(|line| matches!(line.kind, StatementKind::Gather(_, _))).nth(index - carries));
+            let Some(Statement { kind: StatementKind::Gather(found, _), .. }) = line else {
+                return Err(EditError::internal("a `collect` that went"));
+            };
+            *found = kind;
+            put_back(edit, &loc, now)?;
+            Some(output)
+        }
+        (Part::Gather(gather, text), None) => {
+            gather_named(edit, &statement, structure, gather, &text)?;
+            if parallel {
+                return Err(EditError::invalid("to", format!("`{}` is a `for parallel`, which takes no carry (spec 6.2)", shown(structure))));
+            }
+            Some(gather_into_carry(edit, judge, &loc, &statement, structure, gather, &text, holder)?)
+        }
+        (Part::Arm(_) | Part::In(_), _) => {
+            return Err(EditError::invalid(
+                "part",
+                "only a carry, a `collect` or a `last` changes how the loop takes it out: `carry x`, `collect y`, `last y`",
+            ));
+        }
+    };
+    follow_name(edit, &loc, before)?;
+    if let Some(output) = output {
+        edited.names.insert("output", edit.text(output).to_owned());
+    }
+    Ok(())
+}
+
+/// A carry into a `collect` or a `last`: its `next x = v` becomes `collect v` in its place, a node that binds `next x`
+/// binds a value named after the carry, which a new line after it reads. The name of the output, none for `_`: a carry
+/// and its output may have two names (`total = for …, carry acc = 0 { … }`, spec 6.2).
+fn carry_into_gather(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    loc: &Loc,
+    structure: &str,
+    text: &str,
+    gather: Gather,
+    holder: Option<(Name, bool)>,
+) -> Result<Option<Name>, EditError> {
+    let statement = scope::statement(edit.body_function()?, loc).cloned().ok_or_else(|| EditError::internal("a loop that went"))?;
+    let (rank, carry) = carry_named(edit, &statement, structure, text)?;
+    let output = match &statement.kind {
+        StatementKind::Binding { targets, .. } => match targets.get(rank) {
+            Some(Target::Name(_, name)) => Some(*name),
+            _ => None,
+        },
+        _ => None,
+    };
+    let function = edit.body_function()?.clone();
+    let read_inside = scope::values(&function)
+        .into_iter()
+        .filter(|value| value.name == carry && matches!(&value.bound, Bound::Head(at, _) if at == loc))
+        .any(|value| !readers(&function, &value, &[]).is_empty());
+    if read_inside {
+        let name = crate::cut(edit.text(carry));
+        return Err(EditError::invalid(
+            "part",
+            format!("the body of `{}` reads the carry `{name}`: a `{}` has no value of the iteration before", shown(structure), gather.word()),
+        ));
+    }
+    let next_lines = |statement: &Statement| -> Vec<(usize, bool, Option<Name>)> {
+        loop_body(statement)
+            .map(|body| {
+                body.statements
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, line)| match &line.kind {
+                        StatementKind::Binding { targets, value }
+                            if targets.iter().any(|target| matches!(target, Target::Next(_, name) if *name == carry)) =>
+                        {
+                            Some((index, targets.len() == 1 && matches!(value, Rhs::Operand(_)), line.label.map(|label| label.name)))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // A line `#n: next x = v` that becomes `collect v` loses its label, which a `collect` takes not (spec 5.1): the
+    // `after:` that name it lose it too, and so does `layout`.
+    if let Some(&(_, true, Some(label))) = next_lines(&statement).first() {
+        let now = edit.body_function()?.clone();
+        let found = label_readers(&now, label);
+        take_out(edit, judge, label, true, &found)?;
+        forget_in_layout(edit, &HashSet::from([label]))?;
+    }
+    let statement = scope::statement(edit.body_function()?, loc).cloned().ok_or_else(|| EditError::internal("a loop that went"))?;
+    let statement = &statement;
+    // The places of the `next` of the carry: a line of its own, or a node that binds it among its outputs.
+    let lines: Vec<(usize, bool)> = next_lines(statement).into_iter().map(|(index, alone, _)| (index, alone)).collect();
+    if lines.len() > 1 {
+        let name = crate::cut(edit.text(carry));
+        return Err(EditError::invalid(
+            "part",
+            format!("the carry `{name}` has {} `next` lines, which `check` refuses (R-6): keep one first", lines.len()),
+        ));
+    }
+    let named = match lines.first() {
+        Some(&(_, false)) => Some(edit.intern(&fresh(edit.text(carry), &taken(edit)))),
+        _ => None,
+    };
+    let (line_id, path_id, hole_id) = (edit.id(), edit.id(), edit.id());
+    let mut now = statement.clone();
+    let body = loop_body_mut(&mut now).ok_or_else(|| EditError::internal("a carry of what is not a loop"))?;
+    let gathered = |value: Operand| Statement { id: line_id, comments: Attached::default(), label: None, kind: StatementKind::Gather(gather, value) };
+    let at = match (lines.first(), named) {
+        (Some(&(index, true)), _) => {
+            let line = body.statements.get_mut(index).ok_or_else(|| EditError::internal("a `next` that went"))?;
+            let StatementKind::Binding { value: Rhs::Operand(value), .. } = &line.kind else {
+                return Err(EditError::internal("a `next` that is not one"));
+            };
+            line.kind = StatementKind::Gather(gather, value.clone());
+            line.label = None;
+            index
+        }
+        (Some(&(index, false)), Some(named)) => {
+            if let Some(StatementKind::Binding { targets, .. }) = body.statements.get_mut(index).map(|line| &mut line.kind) {
+                for target in targets.iter_mut() {
+                    if let Target::Next(id, name) = target
+                        && *name == carry
+                    {
+                        *target = Target::Name(*id, named);
+                    }
+                }
+            }
+            let at = (index + 1).min(body.statements.len());
+            body.statements.insert(at, gathered(Operand::Path(Path { id: path_id, first: named, rest: Box::new([]) })));
+            at
+        }
+        _ => {
+            body.statements.push(gathered(Operand::Hole(hole_id)));
+            body.statements.len() - 1
+        }
+    };
+    let before_it = body.statements.iter().take(at).filter(|line| matches!(line.kind, StatementKind::Gather(_, _))).count();
+    let (clauses, _, _) = clauses_of(&mut now, structure)?;
+    clauses.retain(|clause| !matches!(&clause.kind, ClauseKind::Carry(found) if found.name == carry));
+    let (carries, _) = loop_outputs(statement);
+    move_target(&mut now, rank, carries.saturating_sub(1) + before_it)?;
+    put_back(edit, loc, now)?;
+    // Its input goes, outside (its initial value) and inside (its `next`): so do their routes.
+    forget_routes(edit, holder, Some(carry), None);
+    Ok(output)
+}
+
+/// A `collect` or a `last` into a carry: `carry y: T = ?` (`carry y = none` for an `error`), after the other carries, as
+/// `wire.connect` writes it with `through`, and the line becomes `next y = v` in its place. The name of the output.
+#[allow(clippy::too_many_arguments)]
+fn gather_into_carry(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    loc: &Loc,
+    statement: &Statement,
+    structure: &str,
+    gather: Gather,
+    text: &str,
+    holder: Option<(Name, bool)>,
+) -> Result<Name, EditError> {
+    let (index, output) = gather_named(edit, statement, structure, gather, text)?;
+    let (carries, _) = loop_outputs(statement);
+    let function = edit.body_function()?.clone();
+    // The carry takes the name of the output (R-3): a value of the body, or a clause, of that name would be defined
+    // twice in the body.
+    let body_path = loc.sub(0);
+    let own = |value: &Value| match &value.bound {
+        Bound::Head(at, _) => at == loc,
+        Bound::Line(at, _) => at.body == body_path,
+        Bound::Input => false,
+    };
+    if scope::values(&function).iter().any(|value| value.name == output && own(value)) {
+        let name = crate::cut(edit.text(output));
+        return Err(EditError::invalid(
+            "part",
+            format!("the body of `{}` has a value `{name}` already: a carry `{name}` would define it twice; rename one first", shown(structure)),
+        ));
+    }
+    // Its type, as the check saw the output: that of the value, in an array for a `collect`.
+    let found = scope::values(&function)
+        .into_iter()
+        .find(|value| matches!(&value.bound, Bound::Line(at, i) if at == loc && *i == index))
+        .map(|value| crate::surround::type_of(edit, judge, &value))
+        .filter(|found| found.kind != crate::TypeKind::Unknown && !found.shown.is_empty())
+        .map(|found| found.shown);
+    let shown_type = match (gather, found) {
+        (Gather::Collect, Some(text)) => text.strip_prefix('[').and_then(|inner| inner.strip_suffix(']')).map(str::to_owned),
+        (_, found) => found,
+    };
+    let (ty, initial) = if shown_type.as_deref() == Some("error") {
+        (None, Operand::None(edit.id()))
+    } else {
+        let ty = shown_type.as_deref().and_then(|text| read_type(edit, text));
+        if let (Some(text), true) = (shown_type.as_deref(), ty.is_some()) {
+            use_library_of(edit, text);
+        }
+        (ty, Operand::Hole(edit.id()))
+    };
+    let (carry_id, next_id) = (edit.id(), edit.id());
+    let mut now = statement.clone();
+    let body = loop_body_mut(&mut now).ok_or_else(|| EditError::internal("a `collect` of what is not a loop"))?;
+    let line = body
+        .statements
+        .iter_mut()
+        .filter(|line| matches!(line.kind, StatementKind::Gather(_, _)))
+        .nth(index - carries)
+        .ok_or_else(|| EditError::internal("a `collect` that went"))?;
+    let StatementKind::Gather(_, value) = &line.kind else { return Err(EditError::internal("a `collect` that is not one")) };
+    let value = value.clone();
+    let read = match &value {
+        Operand::Path(path) if path.rest.is_empty() => Some(path.first),
+        _ => None,
+    };
+    line.kind = StatementKind::Binding { targets: Box::new([Target::Next(next_id, output)]), value: Rhs::Operand(value) };
+    let (clauses, _, _) = clauses_of(&mut now, structure)?;
+    clauses.push(Clause { comments: Attached::default(), kind: ClauseKind::Carry(Carry { id: carry_id, name: output, ty, value: initial }) });
+    move_target(&mut now, index, carries)?;
+    put_back(edit, loc, now)?;
+    // The route of the wire to the `collect`, which ends at the carry now: that of a value of the loop, made in its body
+    // or given by its head (an `in` clause), whose entry names that wire; a value from outside keeps its route to the
+    // edge, which it still crosses.
+    let made_inside = read.is_some_and(|name| {
+        scope::values(&function).iter().any(|value| {
+            value.name == name
+                && match &value.bound {
+                    Bound::Line(at, _) => at.body.starts_with(&body_path),
+                    Bound::Head(at, _) => at == loc,
+                    Bound::Input => false,
+                }
+        })
+    });
+    // An entry without a terminal names the wire to an input without a name (spec 11): when the value reaches another
+    // one (a `last`, an `until`), the entry may be its route, and stays.
+    let unnamed = read.map_or(0, |name| {
+        loop_body(statement).map_or(0, |body| {
+            body.statements
+                .iter()
+                .filter(|line| match &line.kind {
+                    StatementKind::Gather(_, operand) | StatementKind::Until(operand) => crate::places::reads(operand, name),
+                    _ => false,
+                })
+                .count()
+        })
+    });
+    if made_inside && unnamed == 1 {
+        forget_routes(edit, holder, None, read);
+    }
+    Ok(output)
 }
 
 /// `structure.set_option`.

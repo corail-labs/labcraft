@@ -30,9 +30,17 @@ impl Judge for Typed {
 
 fn judge() -> Typed {
     Typed(
-        [("w", (TypeKind::Other, "f64")), ("codes", (TypeKind::Array, "[i32]")), ("xs", (TypeKind::Array, "[f64]")), ("x", (TypeKind::Other, "f64"))]
-            .into_iter()
-            .collect(),
+        [
+            ("w", (TypeKind::Other, "f64")),
+            ("codes", (TypeKind::Array, "[i32]")),
+            ("xs", (TypeKind::Array, "[f64]")),
+            ("x", (TypeKind::Other, "f64")),
+            ("peak", (TypeKind::Other, "f64")),
+            ("peaks", (TypeKind::Array, "[f64]")),
+            ("fault", (TypeKind::Other, "error")),
+        ]
+        .into_iter()
+        .collect(),
     )
 }
 
@@ -414,4 +422,167 @@ fn node_output_names_a_structure_or_a_constant_and_the_value_it_names() {
     refused(before, through("n.nothing", "s.a", None), "edit.unknown", "from");
     // Inside the loop, without `through`: out of scope, never another value of its name.
     refused(before, through("#r.result", "s.a", None), "wire.out_of_scope", "from");
+}
+
+// `structure.set_passage` (#215, decision of the owner of 2026-11-18): each expected text is written by hand from
+// commands.md 6.7 (the part keeps its output and its place: `next x = v` becomes `collect v` where it was, and back),
+// spec 6.2 (outputs: the carries, then the `collect` and `last` lines in their written order) and 5.2 (canonical form:
+// ordinary lines by name, then `next`, then `collect` and `last`, then `until`). The types come from the judge above:
+// `peak` is an `f64`, `peaks` an `[f64]`, `fault` an `error`.
+
+fn set_passage(structure: &str, part: &str, to: Passage) -> Op {
+    Op::StructureSetPassage { file: FILE.to_owned(), structure: owned(structure), part: owned(part), to }
+}
+
+#[test]
+fn a_carry_becomes_a_collect_or_a_last_in_the_place_of_its_next() {
+    let before = "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a, b = for v in xs, carry a = 0.0 {\n        s = core.abs(v)\n        next a = s\n        collect v\n    }\n    y = a\n}\n";
+    let edited = gives(
+        before,
+        set_passage("#l", "carry a", Passage::Collect),
+        "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a, b = for v in xs {\n        s = core.abs(v)\n        collect s\n        collect v\n    }\n    y = a\n}\n",
+    );
+    assert_eq!(edited.names.get("output").map(String::as_str), Some("a"));
+    gives(
+        before,
+        set_passage("#l", "carry a", Passage::Last),
+        "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a, b = for v in xs {\n        s = core.abs(v)\n        last s\n        collect v\n    }\n    y = a\n}\n",
+    );
+    // A node that binds `next a`: its value is named after the carry (N-14), and the new line reads it.
+    gives(
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs, carry a = 0.0 {\n        next a = core.abs(v)\n        collect v\n    }\n}\n",
+        set_passage("#l", "carry a", Passage::Last),
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs {\n        a2 = core.abs(v)\n        last a2\n        collect v\n    }\n}\n",
+    );
+    // No `next` yet: a hole, before the `until`.
+    gives(
+        "fn f(x: f64) -> () {\n    #l: a = loop carry a = 0.0 {\n        until ?\n    }\n}\n",
+        set_passage("#l", "carry a", Passage::Collect),
+        "fn f(x: f64) -> () {\n    #l: a = loop {\n        collect ?\n        until ?\n    }\n}\n",
+    );
+}
+
+#[test]
+fn a_carry_that_its_body_reads_stays_a_carry() {
+    let before = "use core\n\nfn f(xs: [f64]) -> () {\n    #l: a = for v in xs, carry a = 0.0 {\n        next a = core.add(a, v)\n    }\n}\n";
+    let error = refused(before, set_passage("#l", "carry a", Passage::Collect), "params.invalid", "part");
+    assert!(error.message.contains("`a`"), "{error:?}");
+    let until = "fn f(x: f64) -> () {\n    #l: a = loop carry a = false {\n        next a = true\n        until a\n    }\n}\n";
+    refused(until, set_passage("#l", "carry a", Passage::Last), "params.invalid", "part");
+}
+
+#[test]
+fn a_collect_and_a_last_change_their_word() {
+    let before = "fn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs, carry a = 0 {\n        collect v\n    }\n}\n";
+    let after = "fn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs, carry a = 0 {\n        last v\n    }\n}\n";
+    gives(before, set_passage("#l", "collect b", Passage::Last), after);
+    gives(after, set_passage("#l", "last b", Passage::Collect), before);
+    // In a `for parallel` too.
+    let parallel = "fn f(xs: [f64]) -> () {\n    #l: b = for parallel v in xs {\n        collect v\n    }\n}\n";
+    gives(
+        parallel,
+        set_passage("#l", "collect b", Passage::Last),
+        "fn f(xs: [f64]) -> () {\n    #l: b = for parallel v in xs {\n        last v\n    }\n}\n",
+    );
+}
+
+#[test]
+fn a_collect_or_a_last_becomes_a_carry_of_the_type_of_its_value() {
+    // A `last` of an `f64`: `carry peak: f64 = ?`, its line `next peak = v`.
+    gives(
+        "fn f(xs: [f64]) -> (y: f64) {\n    #l: peak = for v in xs {\n        last v\n    }\n    y = peak\n}\n",
+        set_passage("#l", "last peak", Passage::Carry),
+        "fn f(xs: [f64]) -> (y: f64) {\n    #l: peak = for v in xs, carry peak: f64 = ? {\n        next peak = v\n    }\n    y = peak\n}\n",
+    );
+    // A `collect` gives an `[f64]`: the carry holds one `f64`.
+    gives(
+        "fn f(xs: [f64]) -> () {\n    #l: a, peaks = for v in xs, carry a = 0 {\n        collect v\n    }\n}\n",
+        set_passage("#l", "collect peaks", Passage::Carry),
+        "fn f(xs: [f64]) -> () {\n    #l: a, peaks = for v in xs, carry a = 0, carry peaks: f64 = ? {\n        next peaks = v\n    }\n}\n",
+    );
+    // An `error` starts from `none`.
+    gives(
+        "fn f(e: error) -> () {\n    #l: fault = loop {\n        last e\n        until ?\n    }\n}\n",
+        set_passage("#l", "last fault", Passage::Carry),
+        "fn f(e: error) -> () {\n    #l: fault = loop carry fault = none {\n        next fault = e\n        until ?\n    }\n}\n",
+    );
+    // A type that the check does not know: none on the line. The output moves after the other carries, before the
+    // `collect` lines (spec 6.2).
+    gives(
+        "fn f(xs: [f64]) -> () {\n    #l: a, b, c = for v in xs, carry a = 0 {\n        collect v\n        last v\n    }\n}\n",
+        set_passage("#l", "last c", Passage::Carry),
+        "fn f(xs: [f64]) -> () {\n    #l: a, c, b = for v in xs, carry a = 0, carry c = ? {\n        next c = v\n        collect v\n    }\n}\n",
+    );
+}
+
+#[test]
+fn set_passage_refuses_what_it_cannot_change() {
+    let parallel = "fn f(xs: [f64]) -> () {\n    #l: b = for parallel v in xs {\n        collect v\n    }\n}\n";
+    refused(parallel, set_passage("#l", "collect b", Passage::Carry), "params.invalid", "to");
+    let before = "fn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs, carry a = 0 {\n        collect v\n    }\n}\n";
+    refused(before, set_passage("#l", "collect b", Passage::Collect), "params.invalid", "to");
+    refused(before, set_passage("#l", "carry a", Passage::Carry), "params.invalid", "to");
+    refused(before, set_passage("#l", "in v", Passage::Collect), "params.invalid", "part");
+    refused(before, set_passage("#l", "carry b", Passage::Collect), "edit.unknown", "part");
+    refused(before, set_passage("#l", "last b", Passage::Carry), "edit.unknown", "part");
+}
+
+#[test]
+fn set_passage_forgets_the_route_of_the_input_that_goes() {
+    // `wire s -> #l.a` is the wire to `next a` (spec 11): it goes with the carry; the node keeps its place.
+    let before = "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a = for v in xs, carry a = 0.0 {\n        s = core.abs(v)\n        next a = s\n    }\n    y = a\n}\n\nlayout {\n    node #l at (40, 80)\n    wire s -> #l.a via (60, 10)\n}\n";
+    let after = "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a = for v in xs {\n        s = core.abs(v)\n        collect s\n    }\n    y = a\n}\n\nlayout {\n    node #l at (40, 80)\n}\n";
+    gives(before, set_passage("#l", "carry a", Passage::Collect), after);
+    // And back: `wire s -> #l`, to the `collect`, goes; the carry starts from a hole, without a type here.
+    let collected = "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a = for v in xs {\n        s = core.abs(v)\n        collect s\n    }\n    y = a\n}\n\nlayout {\n    node #l at (40, 80)\n    wire s -> #l via (60, 10)\n}\n";
+    gives(
+        collected,
+        set_passage("#l", "collect a", Passage::Carry),
+        "use core\n\nfn f(xs: [f64]) -> (y: [f64]) {\n    #l: a = for v in xs, carry a = ? {\n        s = core.abs(v)\n        next a = s\n    }\n    y = a\n}\n\nlayout {\n    node #l at (40, 80)\n}\n",
+    );
+}
+
+#[test]
+fn set_passage_after_the_review() {
+    // A labelled `next` line: a `collect` takes no label (spec 5.1), so the label goes, from `layout` too.
+    gives(
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: a = for v in xs, carry a = 0.0 {\n        s = core.abs(v)\n        #n: next a = s\n    }\n}\n\nlayout {\n    node #n at (10, 10)\n}\n",
+        set_passage("#l", "carry a", Passage::Collect),
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: a = for v in xs {\n        s = core.abs(v)\n        collect s\n    }\n}\n",
+    );
+    // A carry named as a value of the body, or as a clause, would be defined twice there.
+    let twice = "use core\n\nfn f(xs: [f64]) -> () {\n    #l: w = for v in xs {\n        w = core.abs(v)\n        last w\n    }\n}\n";
+    refused(twice, set_passage("#l", "last w", Passage::Carry), "params.invalid", "part");
+    let clause = "fn f(xs: [f64]) -> () {\n    #l: v = for v in xs {\n        last v\n    }\n}\n";
+    refused(clause, set_passage("#l", "last v", Passage::Carry), "params.invalid", "part");
+    // The route of the wire from an `in` clause to the `collect` goes too.
+    gives(
+        "fn f(xs: [f64]) -> () {\n    #l: b = for v in xs {\n        collect v\n    }\n}\n\nlayout {\n    node #l at (40, 80)\n    wire v -> #l via (61, 11)\n}\n",
+        set_passage("#l", "collect b", Passage::Carry),
+        "fn f(xs: [f64]) -> () {\n    #l: b = for v in xs, carry b = ? {\n        next b = v\n    }\n}\n\nlayout {\n    node #l at (40, 80)\n}\n",
+    );
+    // The part is found before `to` is judged.
+    let parallel = "fn f(xs: [f64]) -> () {\n    #l: b = for parallel v in xs {\n        collect v\n    }\n}\n";
+    refused(parallel, set_passage("#l", "collect zzz", Passage::Carry), "edit.unknown", "part");
+    refused(parallel, set_passage("#l", "carry zzz", Passage::Carry), "edit.unknown", "part");
+}
+
+#[test]
+fn set_passage_after_the_code_review() {
+    // A carry and its output may have two names (spec 6.2): the output keeps its own, and `names.output` gives it.
+    let edited = gives(
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: t = for v in xs, carry a = 0.0 {\n        next a = core.abs(v)\n    }\n}\n",
+        set_passage("#l", "carry a", Passage::Collect),
+        "use core\n\nfn f(xs: [f64]) -> () {\n    #l: t = for v in xs {\n        a2 = core.abs(v)\n        collect a2\n    }\n}\n",
+    );
+    assert_eq!(edited.names.get("output").map(String::as_str), Some("t"));
+    // Two `next` lines for one carry, which `check` refuses (R-6): one first.
+    let twice = "fn f(xs: [f64]) -> () {\n    #l: a = for v in xs, carry a = 0.0 {\n        next a = v\n        next a = 1.0\n    }\n}\n";
+    refused(twice, set_passage("#l", "carry a", Passage::Collect), "params.invalid", "part");
+    // `v` reaches the loop by a `last` too: the entry without a terminal may be its route, and stays.
+    gives(
+        "fn f(xs: [f64]) -> () {\n    #l: b, c = for v in xs {\n        collect v\n        last v\n    }\n}\n\nlayout {\n    node #l at (40, 80)\n    wire v -> #l via (61, 11)\n}\n",
+        set_passage("#l", "collect b", Passage::Carry),
+        "fn f(xs: [f64]) -> () {\n    #l: b, c = for v in xs, carry b = ? {\n        next b = v\n        last v\n    }\n}\n\nlayout {\n    node #l at (40, 80)\n    wire v -> #l via (61, 11)\n}\n",
+    );
 }
