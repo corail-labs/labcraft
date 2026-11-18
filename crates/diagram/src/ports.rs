@@ -212,7 +212,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     (Edge::Input | Edge::Register | Edge::In | Edge::Range | Edge::Bound | Edge::Notch, false) => {
                         (false, terminal.terminal.name.clone())
                     }
-                    // What a body gives its structure: `next x` of a carry, a `collect` and a `yield` by the output they
+                    // What a body gives its structure: `next x` of a carry, a `collect`, a `last` and a `yield` by the output they
                     // give, the `until` by the loop alone (commands.md 9.2).
                     (Edge::Register, true) if !owner_name.is_empty() => {
                         let carry = terminal.terminal.name.strip_prefix("next ").unwrap_or(&terminal.terminal.name);
@@ -224,7 +224,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     (Edge::Yield, true) if is_plain(&terminal.terminal.name) && !terminal.terminal.name.contains(' ') => {
                         (true, terminal.terminal.name.clone())
                     }
-                    (Edge::Collect, true)
+                    (Edge::Collect | Edge::Last, true)
                         if is_plain(&terminal.terminal.name)
                             && !terminal.terminal.name.contains(' ')
                             && !outputs.contains(&terminal.terminal.name.as_str()) =>
@@ -240,6 +240,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     (Edge::Register, false) if is_plain(caption) => format!("carry {caption}"),
                     (Edge::In | Edge::Range, false) if is_plain(caption) => format!("in {caption}"),
                     (Edge::Collect, true) if is_plain(caption) && !caption.contains(' ') => format!("collect {caption}"),
+                    (Edge::Last, true) if is_plain(caption) && !caption.contains(' ') => format!("last {caption}"),
                     _ => String::new(),
                 };
                 let wire =

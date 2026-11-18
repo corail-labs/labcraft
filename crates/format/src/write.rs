@@ -765,7 +765,7 @@ impl<'a> Writer<'a> {
         self.label_and_targets(statement);
         match &statement.kind {
             StatementKind::Binding { value, .. } => self.rhs(value, depth),
-            StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => self.simple_kind(&statement.kind),
+            StatementKind::Call(_) | StatementKind::Gather(_, _) | StatementKind::Until(_) => self.simple_kind(&statement.kind),
         }
         self.end_line(statement.comments.line.as_deref());
     }
@@ -793,8 +793,9 @@ impl<'a> Writer<'a> {
     fn simple_kind(&mut self, kind: &StatementKind) {
         match kind {
             StatementKind::Call(call) => self.call(call),
-            StatementKind::Collect(operand) => {
-                self.push("collect ");
+            StatementKind::Gather(gather, operand) => {
+                self.push(gather.word());
+                self.push(" ");
                 self.operand(operand);
             }
             StatementKind::Until(operand) => {

@@ -1,0 +1,22 @@
+labcraft 1
+
+use core
+use scpi
+use visa
+
+/// A session opened inside a loop and taken out by `last`, which needs no initial value, then used and closed outside.
+fn last_session(
+    resource: string = "SIM::DMM0",
+    err: error = none,
+) -> (voltage: f64, tries: i32, err: error) {
+    tries, dmm, e1 = loop carry n = 0 {
+        session, e = visa.open(resource, timeout: 2 s, err: err)
+        next n = core.add(n, 1)
+        last session
+        last e
+        until true
+    }
+    voltage, dmm2, e2 = scpi.query_f64(dmm, "MEAS:VOLT:DC?", err: e1)
+    #close: e3 = visa.close(dmm2, err: e2)
+    err = e3
+}

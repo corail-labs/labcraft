@@ -1,0 +1,22 @@
+labcraft 1
+
+use core
+
+/// The last value of a `for`, beside a `collect`; of a `for parallel`; and of a `for` that runs no iteration.
+fn last_of_for(
+    xs: [f64] = [1.5, -2.0, 4.0],
+    empty: [f64] = [],
+) -> (largest: f64, all: [f64], any: f64, nothing: f64) {
+    any = for parallel y in xs {
+        last y
+    }
+    largest, all = for x in xs {
+        a = core.abs(x)
+        last a
+        collect a
+    }
+    nothing = for z in empty {
+        b = core.mul(z, 2.0)
+        last b
+    }
+}

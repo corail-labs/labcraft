@@ -15,10 +15,10 @@
 
 use labcraft_graph::{
     Arg, Arm, ArrayType, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType,
-    Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout,
-    LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path,
-    Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr,
-    UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
+    Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather, Generic, Icon, IconItem, IconShape, Id, IntBound, Label,
+    Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem,
+    Param, Path, Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr,
+    UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
 };
 use labcraft_types::{Code, Diagnostic, Fix, Interner, Limits, Name, Position, Report, Span};
 
@@ -1238,14 +1238,12 @@ impl<'a> Parser<'a, '_> {
             T::Underscore | T::Keyword(K::Next) => self.binding(None, place, &mut before)?,
             T::Name(_) => {
                 let path_start = token.span.start;
-                let path = self.path("a statement")?;
-                if path.rest.is_empty() && matches!(self.peek_kind()?, Some(T::Equals | T::Comma)) {
-                    let (id, name) = (path.id, path.first);
-                    self.binding(Some(Target::Name(id, name)), place, &mut before)?
-                } else if matches!(self.peek_kind()?, Some(T::LeftParen | T::Less)) {
-                    StatementKind::Call(Box::new(self.call(path, path_start)?))
+                let (first, _) = self.name("a statement")?;
+                if self.resolve(first) == "last" && self.at_operand()? {
+                    self.last_statement(token.span, place, label.is_some())?
                 } else {
-                    return Err(self.unexpected(if path.rest.is_empty() { "`=`, `,` or `(`" } else { "`(`" }));
+                    let path = self.path_from(first, path_start)?;
+                    self.name_statement(path, path_start, place, &mut before)?
                 }
             }
             _ => return Err(self.unexpected_name("a statement")),
@@ -1253,6 +1251,46 @@ impl<'a> Parser<'a, '_> {
         let id = self.place(start);
         let comments = self.end_item(before)?;
         Ok(Statement { id, comments, label, kind })
+    }
+
+    /// Whether the next token starts a value (`operand`).
+    fn at_operand(&mut self) -> Parse<bool> {
+        Ok(matches!(
+            self.peek_kind()?,
+            Some(
+                T::Name(_)
+                    | T::Minus
+                    | T::Int(_)
+                    | T::Float(_)
+                    | T::String(_)
+                    | T::LeftBracket
+                    | T::Question
+                    | T::Keyword(K::Inf | K::Nan | K::True | K::False | K::None)
+            )
+        ))
+    }
+
+    /// `last value`, after its contextual word (spec 6.2, 14.1).
+    fn last_statement(&mut self, span: Span, place: Place, labelled: bool) -> Parse<StatementKind> {
+        if labelled {
+            return Err(failure(Code::Lc1001, "this statement creates no node, so it takes no label".to_owned(), span));
+        }
+        if !matches!(place, Place::For | Place::Loop) {
+            return Err(failure(Code::Lc1001, "`last` appears only directly in a loop body (R-6)".to_owned(), span));
+        }
+        Ok(StatementKind::Gather(Gather::Last, self.operand()?))
+    }
+
+    /// A statement that starts with a name: a binding or a call.
+    fn name_statement(&mut self, path: Path, path_start: Position, place: Place, before: &mut Vec<Comment>) -> Parse<StatementKind> {
+        if path.rest.is_empty() && matches!(self.peek_kind()?, Some(T::Equals | T::Comma)) {
+            let (id, name) = (path.id, path.first);
+            self.binding(Some(Target::Name(id, name)), place, before)
+        } else if matches!(self.peek_kind()?, Some(T::LeftParen | T::Less)) {
+            Ok(StatementKind::Call(Box::new(self.call(path, path_start)?)))
+        } else {
+            Err(self.unexpected(if path.rest.is_empty() { "`=`, `,` or `(`" } else { "`(`" }))
+        }
     }
 
     /// `#name:`
@@ -1270,7 +1308,7 @@ impl<'a> Parser<'a, '_> {
         match keyword {
             K::Yield => refuse("`yield` ends an arm of a `match` or a `handle`"),
             K::Collect if !matches!(place, Place::For | Place::Loop) => refuse("`collect` appears only directly in a loop body (R-6)"),
-            K::Collect => Ok(StatementKind::Collect(self.operand()?)),
+            K::Collect => Ok(StatementKind::Gather(Gather::Collect, self.operand()?)),
             K::Until if place == Place::For => refuse("a `for` has no `until` (R-6)"),
             K::Until if place != Place::Loop => refuse("`until` appears only directly in a `loop` body (R-6)"),
             K::Until if *until_seen => refuse("a `loop` has exactly one `until` (R-6)"),

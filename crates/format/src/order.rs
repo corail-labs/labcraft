@@ -279,7 +279,7 @@ impl Analysis<'_> {
         match &statement.kind {
             StatementKind::Binding { value, .. } => self.rhs(value),
             StatementKind::Call(call) => self.call(call),
-            StatementKind::Collect(operand) | StatementKind::Until(operand) => self.operand(operand),
+            StatementKind::Gather(_, operand) | StatementKind::Until(operand) => self.operand(operand),
         }
     }
 
@@ -431,7 +431,7 @@ fn rank<'a>(statement: &Statement, written: usize, terminals: Option<&Terminals>
     let label = statement.label.map(|label| label.name);
     match &statement.kind {
         StatementKind::Call(_) => ordinary(label),
-        StatementKind::Collect(_) => Rank { category: 2, name: "", output: 0, written },
+        StatementKind::Gather(_, _) => Rank { category: 2, name: "", output: 0, written },
         StatementKind::Until(_) => Rank { category: 3, name: "", output: 0, written },
         StatementKind::Binding { targets, value } => {
             if let (Some(terminals), Rhs::Operand(_), [Target::Name(_, name)]) = (terminals, value, &**targets)

@@ -379,10 +379,11 @@ fn start_name(drawing: &Drawing, source: &Port) -> String {
     }
 }
 
-/// How each loop that a wire from `source` to `input` leaves takes the value out (notation 2.6, decision of the owner,
-/// 2026-11-18): the type of the input chooses, a carry of the last value for the value's type, a `collect` for that type
-/// in one array per loop; otherwise each loop its default, a `collect` for a `for` and a carry for a `loop`. Alt takes the
-/// other one; a `for parallel` always collects (spec 6.2).
+/// How each loop that a wire from `source` to `input` leaves takes the value out (notation 2.5, "Out of a loop";
+/// decisions of the owner, 2026-11-18): the type of the input chooses, a `last` for the value's type, a `collect` for
+/// that type in one array per loop; otherwise each loop its default, a `collect` for a `for` and a `last` for a `loop`.
+/// Alt takes the other one. An `error` that a loop gives as a value of its type is a carry instead, from `none`, so that
+/// a `loop` stops on it (spec 6.3, Q-7), and Alt takes a `last`; a `for parallel` has no carry (spec 6.2).
 pub(crate) fn passages(drawing: &Drawing, source: &Port, input: &Port, exits: &[usize], alt: bool) -> Vec<&'static str> {
     if exits.is_empty() {
         return Vec::new();
@@ -392,32 +393,41 @@ pub(crate) fn passages(drawing: &Drawing, source: &Port, input: &Port, exits: &[
     let count = exits.len();
     let body = |at: &usize| drawing.bodies.get(*at);
     let chosen: Vec<&'static str> = if !found.is_empty() && wanted == found {
-        vec!["carry"; count]
+        vec!["last"; count]
     } else if !found.is_empty() && wanted == format!("{}{found}{}", "[".repeat(count), "]".repeat(count)) {
         vec!["collect"; count]
     } else {
-        exits.iter().map(|at| if body(at).is_some_and(|found| found.each) { "collect" } else { "carry" }).collect()
+        exits.iter().map(|at| if body(at).is_some_and(|found| found.each) { "collect" } else { "last" }).collect()
     };
+    let error = found == "error";
     chosen
         .into_iter()
         .zip(exits)
         .map(|(passage, at)| {
-            let flipped = if !alt {
-                passage
-            } else if passage == "carry" {
-                "collect"
-            } else {
-                "carry"
-            };
-            if body(at).is_some_and(|found| found.parallel) { "collect" } else { flipped }
+            let carried = error && passage == "last" && !body(at).is_some_and(|found| found.parallel);
+            match (alt, passage) {
+                (false, _) if carried => "carry",
+                (false, _) => passage,
+                (true, _) if carried => "last",
+                (true, "last") => "collect",
+                (true, _) => "last",
+            }
         })
         .collect()
 }
 
-/// What a wire out of loops shows beside the pointer (notation 2.6): the mark of what each loop makes, `↻` for a carry
-/// and `[•]` for a `collect`, from the inside out.
+/// What a wire out of loops shows beside the pointer (notation 2.5): the mark of what each loop makes, `•]` for a `last`,
+/// `[•]` for a `collect` and `↻` for a carry, from the inside out.
 pub(crate) fn passage_marks(through: &[&str]) -> String {
-    through.iter().map(|passage| if *passage == "carry" { "↻ last value" } else { "[•] collect" }).collect::<Vec<_>>().join("  ·  ")
+    through
+        .iter()
+        .map(|passage| match *passage {
+            "collect" => "[•] collect",
+            "carry" => "↻ carry",
+            _ => "•] last value",
+        })
+        .collect::<Vec<_>>()
+        .join("  ·  ")
 }
 
 /// The centre of a port, in units.

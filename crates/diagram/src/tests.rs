@@ -1730,6 +1730,12 @@ fn the_terminals_of_a_for_show_what_crosses_the_edge() {
     let shapes = crate::edge_terminal(collect, 0, 0);
     assert_eq!(shapes.len(), 3);
     assert!(matches!(&shapes[2], Shape::Circle { x: 0, y: 0, radius: 300, .. }), "{shapes:?}");
+    // `•]`, a `last`: the circle 3 inside, one bracket 2.5 to 5 outside, as `]▸` mirrored (notation 5.1).
+    let mut last = collect.clone();
+    last.edge = crate::graph::Edge::Last;
+    let shapes = crate::edge_terminal(&last, 0, 0);
+    assert!(matches!(&shapes[0], Shape::Poly { points, closed: false, .. } if *points == [(250, -600), (500, -600), (500, 600), (250, 600)]));
+    assert!(matches!(&shapes[1], Shape::Circle { x: -300, y: 0, radius: 300, .. }), "{shapes:?}");
     // The box of the range reaches 7 inside, as a register's, and grows outside.
     let shapes = crate::edge_terminal(&body.left[1], 0, 0);
     assert!(matches!(&shapes[0], Shape::Rect { x, width, radius: 300, .. } if x + width == 700 && *x < -700));

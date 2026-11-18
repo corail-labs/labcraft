@@ -125,7 +125,7 @@ What it shows, rule by rule:
 | A named constant | `limit = 2.5 A`, read like any wire |
 | Choosing | `match` on a `bool`, an integer, a `string` or an enumeration; every value has an arm, `_` for the rest |
 | Errors | `handle e { ok => … io.timeout(err) => … _ => … }`; `errors.merge(e1, e2)`; `errors.raise_if(c, my.category)` |
-| Loops | `for x in values, carry acc = 0 V { … next acc = … collect y }`; `loop carry n = 0 { … until done }` |
+| Loops | `for x in values, carry acc = 0 V { … next acc = … collect y }`; `loop carry n = 0 { … last s … until done }` |
 | Order with no data | `after: e2`, `after: #close` on any call |
 | Text | `string.format("VOLT {v:.3}", v: volts)`, `string.concat(a, "-", b)` |
 | A panel | `panel { control stop: switch }`, then `stop_now = ui.get(stop, after: e)` in a loop |

@@ -455,7 +455,7 @@ impl<'f> Shape<'f> {
             for statement in &body.statements {
                 match &statement.kind {
                     StatementKind::Call(call) => self.read_call(index, statement.id, &call.args, file, &mut seen)?,
-                    StatementKind::Collect(value) | StatementKind::Until(value) => self.read_operand(index, value, file, &mut seen)?,
+                    StatementKind::Gather(_, value) | StatementKind::Until(value) => self.read_operand(index, value, file, &mut seen)?,
                     StatementKind::Binding { targets, value } => match value {
                         Rhs::Call(call) => self.read_call(index, statement.id, &call.args, file, &mut seen)?,
                         Rhs::Struct(literal) => {

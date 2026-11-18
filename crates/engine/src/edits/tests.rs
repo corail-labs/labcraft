@@ -644,8 +644,8 @@ fn a_structure_surrounds_its_nodes_where_they_are() {
     assert!(float.message.contains("`f64`"), "{}", float.message);
 }
 
-/// A wire out of a loop takes the value out as a carry of its type, which the check gives (commands.md 6.7, `through`); a
-/// part of a structure is one step, undone at once.
+/// A wire out of a loop takes the value out as a carry of its type, which the check gives, or as a `last` (commands.md
+/// 6.7, `through`); a part of a structure is one step, undone at once.
 #[test]
 fn a_wire_out_of_a_loop_carries_its_type() {
     let (mut session, memory) = session();
@@ -657,8 +657,32 @@ fn a_wire_out_of_a_loop_carries_its_type() {
     ok(&mut session, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "replace": true, "through": "carry" }));
     let after = text(&memory, "/p/h.lcf");
     assert!(after.contains("    y = for v in xs, carry w2: f64 = ? {\n        w = core.abs(v)\n        next w2 = w\n    }\n"), "{after}");
-    let bad = refused(&mut session, &author, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "through": "last" }));
+    let bad = refused(&mut session, &author, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "through": "first" }));
     assert_eq!((bad.code, bad.parameter.as_deref()), ("params.invalid", Some("through")));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    // A carry of an `error` starts from `none`, not from a hole (decision of the owner, 2026-11-18).
+    let errors = "labcraft 1\n\nuse time\n\nfn w(err: error = none) -> (out: error) {\n    _ = loop {\n        e = time.wait(1 s, err: err)\n        until true\n    }\n    out = err\n}\n";
+    memory.put("/p/w.lcf", errors);
+    ok(&mut session, "wire.connect", json!({ "file": "w.lcf", "from": "e", "to": "output out", "replace": true, "through": "carry" }));
+    let after = text(&memory, "/p/w.lcf");
+    assert!(
+        after.contains("    out = loop carry e2 = none {\n        e = time.wait(1 s, err: err)\n        next e2 = e\n        until true\n    }\n"),
+        "{after}"
+    );
+    // A `last` takes no initial value (spec 6.2, #211).
+    ok(&mut session, "wire.connect", json!({ "file": "h.lcf", "from": "w", "to": "output y", "replace": true, "through": "last" }));
+    let after = text(&memory, "/p/h.lcf");
+    assert!(
+        after.contains(
+            "    y = for v in xs {
+        w = core.abs(v)
+        last w
+    }
+"
+        ),
+        "{after}"
+    );
     ok(&mut session, "history.undo", json!({}));
     assert_eq!(text(&memory, "/p/h.lcf"), before);
     let added = ok(&mut session, "structure.add_collect", json!({ "file": "h.lcf", "structure": "@6", "value": "w" }));

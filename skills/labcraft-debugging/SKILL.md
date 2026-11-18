@@ -35,7 +35,7 @@ never on the text of a message.
   language writes them.
 - **A terminal** is `node.port`: `power.a` is the input `a` of the node `power`, `current.result` the output
   `result` of the node `current`. `fn.voltage` is an input or an output of the function itself; `next.n` the carry `n`;
-  `until`, `collect.0`, `yield.1` the parts of a loop or an arm; `limit.value` a named constant; `@12.err` a
+  `until`, `collect.0`, `last.0`, `yield.1` the parts of a loop or an arm; `limit.value` a named constant; `@12.err` a
   node with no name on line 12; `panel.gain` a panel element.
 - **`fixes`** give a title and, when the fix is mechanical, the exact `edits` (a span and its new text): apply
   them as they are. A fix that adds `core.with_unit` asserts something only you know: judge it.

@@ -57,7 +57,7 @@ pub fn terminals<'f>(function: &'f Function, resolved: &Resolved, declared: &[De
                 }
                 Rhs::Operand(_) | Rhs::Struct(_) => (None, 0),
             },
-            StatementKind::Collect(_) | StatementKind::Until(_) => (None, 0),
+            StatementKind::Gather(_, _) | StatementKind::Until(_) => (None, 0),
         };
         let Some(call) = call else { continue };
         let Some(weight) = weight(call, statement, targets, resolved, declared, names) else { continue };

@@ -229,12 +229,13 @@ pub(crate) fn plus_tabs(
 }
 
 /// Where a wire from `source` dropped at `at`, on no terminal, adds a part (notation 2.6): on the inner right edge of a
-/// loop that holds the value, a `collect`; on the left edge of a `for` that the value comes into from outside, a clause.
+/// loop that holds the value, a `collect`, or a `last` with `alt`; on the left edge of a `for` that the value comes into from outside, a clause.
 pub(crate) fn edge_drop(
     drawing: &Drawing,
     source: &labcraft_diagram::Port,
     at: Pos2,
     reach: f32,
+    alt: bool,
     visible: &dyn Fn(Option<usize>) -> bool,
 ) -> Option<crate::Intent> {
     if source.input || source.name.is_empty() {
@@ -268,7 +269,7 @@ pub(crate) fn edge_drop(
         }
         // A `collect` reads a value of the loop body itself: one from an arm or an inner loop is taken out by a wire.
         let candidate = if (at.x - right).abs() <= reach && source.body == index {
-            Some(((at.x - right).abs(), crate::Intent::AddCollect { structure: node.name.clone(), value: source.name.clone() }))
+            Some(((at.x - right).abs(), crate::Intent::AddCollect { structure: node.name.clone(), value: source.name.clone(), last: alt }))
         } else if body.each && (at.x - left).abs() <= reach && !inside(source.body, index) {
             Some(((at.x - left).abs(), crate::Intent::AddClause { structure: node.name.clone(), over: Some(source.name.clone()) }))
         } else {

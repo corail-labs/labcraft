@@ -1,0 +1,24 @@
+{
+  "how": "`last = core.mul(k, k)` keeps `last` a name, and `last last` is the `last` line, since a value follows the word on the line (spec 14.1, contextual words). The carry `k` is an `i32`, from its initial value 1 (spec 6.2, type of a carry). The body runs at least once and `until` is judged at each iteration (spec 6.3): k = 1, done false, `last` 1, next k 2; k = 2, done false, `last` 4, next k 3; k = 3, done true (`core.ge`, A.1), `last` 9, next k 4, and the loop ends. The outputs are the carry first, its final value, the last `next`, 4, then the `last` value, that of the iteration whose `until` ended the loop, 9 (spec 6.2, outputs and `last`; 6.3). So `count` is 4 and `squared` 9, integers written exactly (commands.md 5), in the order of the signature (commands.md 7). Three iterations, no wait: the clock stays at 0 ms (spec 8), no resource, no simulation, so no `instruments`.",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "count",
+      "type": "i32",
+      "value": 4
+    },
+    {
+      "name": "squared",
+      "type": "i32",
+      "value": 9
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

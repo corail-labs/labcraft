@@ -1,0 +1,14 @@
+labcraft 1
+
+use core
+
+/// The last value of a `loop`: the value at the iteration whose `until` ended it. `last` is also a name here.
+fn last_of_loop() -> (count: i32, squared: i32) {
+    count, squared = loop carry k = 1 {
+        done = core.ge(k, 3)
+        last = core.mul(k, k)
+        next k = core.add(k, 1)
+        last last
+        until done
+    }
+}

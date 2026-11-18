@@ -321,7 +321,7 @@ the signatures:
 | `dmm.session`, `#close.err` | Output or input of a node, designated by the name of its line |
 | `@12.err` | Output or input of a node with no name, on line 12: a call statement without a label, or a line whose outputs are all `_` or `next x` |
 | `fn.power` | Input or output of the function: `fn` is reserved, so no node has that name |
-| `next.n`, `until`, `collect.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect` and a value of a `yield`, by position from 0 |
+| `next.n`, `until`, `collect.0`, `last.0`, `yield.1` | Carry `n`; the condition of the loop; a `collect`, a `last` and a value of a `yield`, by position from 0 among those of its kind |
 | `p.x`, `r.0` | A field of a node that builds a struct or a `waveform`; a value of a node that builds a variant, by position from 0 |
 | `limit.value` | The output of a named constant (spec 5.1) |
 | `panel.gain` | A panel element, for its `default:`: a `panel` is a section, and no node has that name |

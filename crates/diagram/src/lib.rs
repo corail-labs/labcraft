@@ -991,6 +991,19 @@ fn edge_terminal(terminal: &graph::FrameTerminal, x: i64, y: i64) -> Vec<Shape> 
             };
             vec![bracket(-1), bracket(1)].into_iter().chain(size::terminal(family, x, y, 100, false)).collect()
         }
+        // `last`: each value enters, the last one leaves: the shape of its family inside, one bracket outside (5.1), as
+        // `in` mirrored.
+        graph::Edge::Last => {
+            let token = size::wire_token(family);
+            vec![Shape::Poly {
+                points: vec![(x + 250, y - 600), (x + 500, y - 600), (x + 500, y + 600), (x + 250, y + 600)],
+                closed: false,
+                paint: Paint::stroke(token, 150),
+            }]
+            .into_iter()
+            .chain(size::terminal(family, x - 300, y, 100, false))
+            .collect()
+        }
         // `i in 0..n`: a box across the edge with the start of the range, which the end enters (5.1); rounded and thinner
         // than the box of a register, which it must not look like. It reaches inside as far as a register, and grows
         // outside with its text, so that the name inside keeps its place.
@@ -1325,8 +1338,8 @@ fn wire_groups(
             }
         }
     }
-    // The number of each `collect` and each `yield` on the right, among those of its kind.
-    let mut counted = (0usize, 0usize);
+    // The number of each `collect`, `last` and `yield` on the right, among those of its kind.
+    let mut counted = (0usize, 0usize, 0usize);
     let ordinals: Vec<usize> = of
         .right
         .iter()
@@ -1338,6 +1351,10 @@ fn wire_groups(
             graph::Edge::Yield => {
                 counted.1 += 1;
                 counted.1 - 1
+            }
+            graph::Edge::Last => {
+                counted.2 += 1;
+                counted.2 - 1
             }
             _ => 0,
         })
@@ -1628,20 +1645,20 @@ fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph
             let terminal = of.right.get(index).filter(|terminal| terminal.edge == graph::Edge::Output)?;
             terminal.terminal.name.clone()
         }
-        // What a body gives its structure: `n.next.x`, the `until` of `n`, a `collect` or a `yield` by its output.
+        // What a body gives its structure: `n.next.x`, the `until` of `n`, a `collect`, a `last` or a `yield` by its output.
         graph::End::Right(index) => {
             let name = names.get(of.owner?)?.as_deref()?;
             let terminal = of.right.get(index)?;
             match terminal.edge {
                 graph::Edge::Register => format!("{name}.next.{}", terminal.terminal.name.strip_prefix("next ")?),
                 graph::Edge::Until => format!("{name}.until"),
-                graph::Edge::Collect | graph::Edge::Yield => {
+                graph::Edge::Collect | graph::Edge::Last | graph::Edge::Yield => {
                     let output = &terminal.terminal.name;
                     let function_output = graph.bodies.first().is_some_and(|function| {
                         function.right.iter().any(|found| found.edge == graph::Edge::Output && &found.terminal.name == output)
                     });
                     let named = !output.is_empty() && output != "_" && !output.contains(['.', ' ', '[']);
-                    (named && !(function_output && terminal.edge == graph::Edge::Collect)).then(|| output.clone())?
+                    (named && !(function_output && terminal.edge != graph::Edge::Yield)).then(|| output.clone())?
                 }
                 _ => return None,
             }
@@ -1707,6 +1724,7 @@ fn terminal_form(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, end: &graph
                 graph::Edge::Register => Some(format!("next.{}", terminal.terminal.name.trim_start_matches("next "))),
                 graph::Edge::Until => Some("until".to_owned()),
                 graph::Edge::Collect => Some(format!("collect.{}", ordinals.get(index)?)),
+                graph::Edge::Last => Some(format!("last.{}", ordinals.get(index)?)),
                 graph::Edge::Yield => Some(format!("yield.{}", ordinals.get(index)?)),
                 _ => None,
             }

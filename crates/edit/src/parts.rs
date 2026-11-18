@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use labcraft_format::{is_name, read};
-use labcraft_graph::{Arm, Attached, Carry, Clause, ClauseKind, LayoutKind, Operand, Path, Rhs, Statement, StatementKind, Target, TypeExpr};
+use labcraft_graph::{Arm, Attached, Carry, Clause, ClauseKind, Gather, LayoutKind, Operand, Path, Rhs, Statement, StatementKind, Target, TypeExpr};
 use labcraft_types::Name;
 
 use crate::delete::{Reader, forget_in_layout, label_readers, readers, take_out};
@@ -187,7 +187,7 @@ fn loop_body_mut(statement: &mut Statement) -> Option<&mut labcraft_graph::Body>
     }
 }
 
-/// How many outputs a loop gives: its carries, then its `collect` lines (spec 6.2).
+/// How many outputs a loop gives: its carries, then its `collect` and `last` lines (spec 6.2).
 pub(crate) fn loop_outputs(statement: &Statement) -> (usize, usize) {
     let carries = match &statement.kind {
         StatementKind::Binding { value: Rhs::For(each), .. } => &each.clauses,
@@ -196,7 +196,7 @@ pub(crate) fn loop_outputs(statement: &Statement) -> (usize, usize) {
     };
     let carries = carries.iter().filter(|clause| matches!(clause.kind, ClauseKind::Carry(_))).count();
     let collects =
-        loop_body(statement).map_or(0, |body| body.statements.iter().filter(|line| matches!(line.kind, StatementKind::Collect(_))).count());
+        loop_body(statement).map_or(0, |body| body.statements.iter().filter(|line| matches!(line.kind, StatementKind::Gather(_, _))).count());
     (carries, collects)
 }
 
@@ -383,15 +383,16 @@ pub(crate) fn push_carry(edit: &mut Edit, loc: &Loc, carry: Name, ty: Option<Typ
     follow_name(edit, loc, before)
 }
 
-/// Adds `collect value` at the end of the body of the loop at `loc`, and its output `output`, after the others (spec
-/// 6.2); the entries of `layout` follow the name of its line. What `structure.add_collect` and a wire out of a loop share.
-pub(crate) fn push_collect(edit: &mut Edit, loc: &Loc, output: Name, value: Operand) -> Result<(), EditError> {
+/// Adds `collect value` or `last value` at the end of the body of the loop at `loc`, and its output `output`, after the
+/// others (spec 6.2); the entries of `layout` follow the name of its line. What `structure.add_collect`,
+/// `structure.add_last` and a wire out of a loop share.
+pub(crate) fn push_gather(edit: &mut Edit, loc: &Loc, gather: Gather, output: Name, value: Operand) -> Result<(), EditError> {
     let mut statement = scope::statement(edit.body_function()?, loc).cloned().ok_or_else(|| EditError::internal("a loop that went"))?;
     let before = line_name_at(edit, loc);
     let (carries, collects) = loop_outputs(&statement);
     let (line_id, target_id) = (edit.id(), edit.id());
-    let body = loop_body_mut(&mut statement).ok_or_else(|| EditError::internal("a `collect` for what is not a loop"))?;
-    body.statements.push(Statement { id: line_id, comments: Attached::default(), label: None, kind: StatementKind::Collect(value) });
+    let body = loop_body_mut(&mut statement).ok_or_else(|| EditError::internal("a `collect` or a `last` for what is not a loop"))?;
+    body.statements.push(Statement { id: line_id, comments: Attached::default(), label: None, kind: StatementKind::Gather(gather, value) });
     insert_target(&mut statement, carries + collects, carries + collects, Target::Name(target_id, output))?;
     put_back(edit, loc, statement)?;
     follow_name(edit, loc, before)
@@ -441,8 +442,15 @@ pub(crate) fn add_clause(
     Ok(())
 }
 
-/// `structure.add_collect`.
-pub(crate) fn add_collect(edit: &mut Edit, structure: &str, value: &str, name: Option<&str>, edited: &mut Edited) -> Result<(), EditError> {
+/// `structure.add_collect` and `structure.add_last`.
+pub(crate) fn add_gather(
+    edit: &mut Edit,
+    gather: Gather,
+    structure: &str,
+    value: &str,
+    name: Option<&str>,
+    edited: &mut Edited,
+) -> Result<(), EditError> {
     let (loc, mut statement) = structure_at(edit, structure)?;
     clauses_of(&mut statement, structure)?;
     let collected = operand_of(edit, value, &loc.sub(0), &loc, "value")?;
@@ -455,7 +463,7 @@ pub(crate) fn add_collect(edit: &mut Edit, structure: &str, value: &str, name: O
         }
     };
     let output = edit.intern(&name);
-    push_collect(edit, &loc, output, collected)?;
+    push_gather(edit, &loc, gather, output, collected)?;
     edited.names.insert("output", name);
     Ok(())
 }
@@ -465,7 +473,7 @@ enum Part {
     Arm(String),
     Carry(String),
     In(String),
-    Collect(String),
+    Gather(Gather, String),
 }
 
 fn part_of(text: &str) -> Part {
@@ -476,8 +484,10 @@ fn part_of(text: &str) -> Part {
     if let Some(name) = text.strip_prefix("in ") {
         return Part::In(name.trim().to_owned());
     }
-    if let Some(name) = text.strip_prefix("collect ") {
-        return Part::Collect(name.trim().to_owned());
+    for gather in [Gather::Collect, Gather::Last] {
+        if let Some(name) = text.strip_prefix(gather.word()).and_then(|rest| rest.strip_prefix(' ')) {
+            return Part::Gather(gather, name.trim().to_owned());
+        }
     }
     Part::Arm(text.to_owned())
 }
@@ -624,24 +634,38 @@ pub(crate) fn remove_part(edit: &mut Edit, judge: &dyn Judge, structure: &str, p
             clauses.retain(|clause| !matches!(&clause.kind, ClauseKind::In(found) if found.name == name));
             put_back(edit, &loc, now)?;
         }
-        Part::Collect(text) => {
+        Part::Gather(gather, text) => {
             let mut held = statement.clone();
             clauses_of(&mut held, structure)?;
             let (carries, _) = loop_outputs(&statement);
             let StatementKind::Binding { targets, .. } = &statement.kind else { return Err(EditError::internal("a loop that is not one")) };
-            let collects: Vec<(usize, Name)> = targets
+            let kinds: Vec<Gather> = loop_body(&statement)
+                .map(|body| {
+                    body.statements
+                        .iter()
+                        .filter_map(|line| match line.kind {
+                            StatementKind::Gather(kind, _) => Some(kind),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let gathered: Vec<(usize, Gather, Name)> = targets
                 .iter()
                 .enumerate()
                 .skip(carries)
-                .filter_map(|(index, target)| match target {
-                    Target::Name(_, name) => Some((index, *name)),
+                .zip(&kinds)
+                .filter_map(|((index, target), kind)| match target {
+                    Target::Name(_, name) => Some((index, *kind, *name)),
                     Target::Skip(_) | Target::Next(..) => None,
                 })
                 .collect();
-            let Some((index, output)) = edit.names.find(&text).and_then(|name| collects.iter().find(|(_, found)| *found == name).copied()) else {
-                return Err(EditError::new("edit.unknown", format!("`{}` has no `collect` of output `{}`", shown(structure), crate::cut(&text)))
+            let found = edit.names.find(&text).and_then(|name| gathered.iter().find(|(_, kind, found)| *kind == gather && *found == name));
+            let Some(&(index, _, output)) = found else {
+                let word = gather.word();
+                return Err(EditError::new("edit.unknown", format!("`{}` has no `{word}` of output `{}`", shown(structure), crate::cut(&text)))
                     .of("part")
-                    .expecting(collects.iter().map(|(_, name)| format!("collect {}", edit.text(*name))).collect()));
+                    .expecting(gathered.iter().map(|(_, kind, name)| format!("{} {}", kind.word(), edit.text(*name))).collect()));
             };
             let rank = index - carries;
             let outer: Vec<Value> =
@@ -650,8 +674,13 @@ pub(crate) fn remove_part(edit: &mut Edit, judge: &dyn Judge, structure: &str, p
             gone.insert(output);
             let mut now = scope::statement(edit.body_function()?, &loc).cloned().ok_or_else(|| EditError::internal("a structure that went"))?;
             if let Some(body) = loop_body_mut(&mut now) {
-                let at =
-                    body.statements.iter().enumerate().filter(|(_, line)| matches!(line.kind, StatementKind::Collect(_))).nth(rank).map(|(at, _)| at);
+                let at = body
+                    .statements
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, line)| matches!(line.kind, StatementKind::Gather(_, _)))
+                    .nth(rank)
+                    .map(|(at, _)| at);
                 if let Some(at) = at {
                     body.statements.remove(at);
                 }

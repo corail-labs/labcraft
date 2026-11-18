@@ -261,6 +261,25 @@ pub enum Order {
     Node(u32),
 }
 
+/// What a `collect` or a `last` line of a loop body gives, an output after the carries (spec 6.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gather {
+    /// An array of the values of each iteration.
+    Collect,
+    /// The value at the last iteration that ran, or `default`, the default value of its type, when none ran.
+    Last { default: ConstId },
+}
+
+impl Gather {
+    /// The word that starts its line.
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Collect => "collect",
+            Self::Last { .. } => "last",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum NodeKind {
     /// A named constant (`limit = 240 V`): its input is the literal in its own type.
@@ -288,17 +307,18 @@ pub enum NodeKind {
         variant: Option<u32>,
     },
     BuildArray,
+    /// `gathers`: the `collect` and `last` lines of the body, in order, each an output after the carries (spec 6.2).
     Loop {
         continue_on_error: bool,
         carries: u32,
-        collects: u32,
+        gathers: Vec<Gather>,
         region: Region,
     },
     For {
         parallel: bool,
         clauses: Vec<Clause>,
         carries: u32,
-        collects: u32,
+        gathers: Vec<Gather>,
         region: Region,
     },
     /// The arms in the order they are tried, `_` last.

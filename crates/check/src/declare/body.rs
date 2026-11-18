@@ -774,7 +774,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         match &statement.kind {
             StatementKind::Binding { targets, value } => self.walk_rhs(targets.len(), value, statement.id),
             StatementKind::Call(call) => self.walk_call(call, None),
-            StatementKind::Collect(value) | StatementKind::Until(value) => self.value_operand(value),
+            StatementKind::Gather(_, value) | StatementKind::Until(value) => self.value_operand(value),
         }
         (self.statement, self.node) = saved;
     }
@@ -929,7 +929,7 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         self.declare_lines(body);
         self.walk_statements(body);
         self.leave(mark);
-        let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count();
+        let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Gather(_, _))).count();
         // A loop that gives nothing still needs a target, and `_` binds nothing (6.2).
         let gives_nothing = carries + collects == 0 && matches!(self.statement.map(targets_of), Some([Line::Skip(_)]));
         if !gives_nothing {

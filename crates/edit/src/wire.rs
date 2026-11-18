@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use labcraft_graph::{Arg, Function, Label, LayoutKind, Operand, OrderRef, Path, Rhs, Statement, StatementKind, Target};
+use labcraft_graph::{Arg, Function, Gather, Label, LayoutKind, Operand, OrderRef, Path, Rhs, Statement, StatementKind, Target};
 use labcraft_types::{Code, Diagnostic, Name};
 
 use crate::delete::{Reader, callee, take_out};
@@ -245,8 +245,8 @@ pub(crate) fn connect(
 /// A value inside structures that the reader does not see: each structure around it, up to the body that holds the reader
 /// or a structure around it, gives it as a new output (commands.md 6.7, `wire.connect`), so that the reader sees it. A
 /// `match` or a `handle` yields it from the arm that holds it, and a hole from the other arms; a loop takes it out as
-/// `through` says, a carry that holds its last value or a `collect`. The name that the reader then reads, or none when
-/// there is nothing to lift (a loop left without `through` is refused later).
+/// `through` says, a `last`, a `collect` or a carry that holds its last value. The name that the reader then reads, or
+/// none when there is nothing to lift (a loop left without `through` is refused later).
 #[allow(clippy::too_many_arguments)]
 fn lift(
     edit: &mut Edit,
@@ -374,8 +374,9 @@ fn type_now(edit: &Edit, judge: &dyn Judge, value: &Value) -> crate::ValueType {
     }
 }
 
-/// The loop at `loc` takes `value` out: a carry of its type that holds its last value (`carry v2: T = ?`, `next v2 = v`),
-/// the carry and its output named after it (N-14), or a `collect`, its output named after it. The name of the output.
+/// The loop at `loc` takes `value` out: a carry of its type that holds its last value (`carry v2: T = ?`, `next v2 = v`,
+/// or `carry e2 = none` for an `error`), the carry and its output named after it (N-14), or a `collect` or a `last`, its
+/// output named after it. The name of the output.
 fn pass(edit: &mut Edit, loc: &Loc, value: Name, passage: Passage, ty: Option<&str>) -> Result<Name, EditError> {
     let output = fresh(edit.text(value), &taken(edit));
     let output = edit.intern(&output);
@@ -384,21 +385,31 @@ fn pass(edit: &mut Edit, loc: &Loc, value: Name, passage: Passage, ty: Option<&s
     match passage {
         Passage::Carry => {
             if parallel {
-                return Err(EditError::invalid("through", "a `for parallel` takes no carry (spec 6.2): it takes a value out as a `collect`"));
+                return Err(EditError::invalid(
+                    "through",
+                    "a `for parallel` takes no carry (spec 6.2): it takes a value out as a `last` or a `collect`",
+                ));
             }
-            let written = ty;
-            let ty = ty.and_then(|text| crate::parts::read_type(edit, text));
-            if let (Some(text), true) = (written, ty.is_some()) {
-                crate::parts::use_library_of(edit, text);
-            }
-            let hole = Operand::Hole(edit.id());
-            crate::parts::push_carry(edit, loc, output, ty, hole)?;
+            // An `error` starts from `none`, its type then on its value; any other type from a hole (decision of the
+            // owner, 2026-11-18).
+            let (ty, initial) = if ty == Some("error") {
+                (None, Operand::None(edit.id()))
+            } else {
+                let written = ty;
+                let ty = ty.and_then(|text| crate::parts::read_type(edit, text));
+                if let (Some(text), true) = (written, ty.is_some()) {
+                    crate::parts::use_library_of(edit, text);
+                }
+                (ty, Operand::Hole(edit.id()))
+            };
+            crate::parts::push_carry(edit, loc, output, ty, initial)?;
             let id = edit.id();
             add_next(edit, loc, output, Operand::Path(Path { id, first: value, rest: Box::new([]) }))?;
         }
-        Passage::Collect => {
+        Passage::Collect | Passage::Last => {
+            let gather = if passage == Passage::Last { Gather::Last } else { Gather::Collect };
             let id = edit.id();
-            crate::parts::push_collect(edit, loc, output, Operand::Path(Path { id, first: value, rest: Box::new([]) }))?;
+            crate::parts::push_gather(edit, loc, gather, output, Operand::Path(Path { id, first: value, rest: Box::new([]) }))?;
         }
     }
     Ok(output)
@@ -1130,8 +1141,8 @@ pub(crate) fn resolve_end(
                 .ok_or_else(|| unknown("of that name", Vec::new()))
         }
         StatementKind::Binding { value: Rhs::Operand(_), .. } => Err(unknown("a wire can reach: it names a value or a constant", Vec::new())),
-        StatementKind::Collect(_) | StatementKind::Until(_) => {
-            Err(unknown("of that name: a `collect` is named by the output of its loop, an `until` by the loop", Vec::new()))
+        StatementKind::Gather(_, _) | StatementKind::Until(_) => {
+            Err(unknown("of that name: a `collect` or a `last` is named by the output of its loop, an `until` by the loop", Vec::new()))
         }
     }
 }
@@ -1209,7 +1220,7 @@ fn collect_end(edit: &Edit, function: &Function, name: &str) -> Result<Option<En
         // The outputs of a loop: its carries, then its `collect`, in order (spec 6.2).
         let carries = clauses.iter().filter(|clause| matches!(clause.kind, labcraft_graph::ClauseKind::Carry(_))).count();
         let Some(rank) = index.checked_sub(carries) else { continue };
-        let at = body.statements.iter().enumerate().filter(|(_, line)| matches!(line.kind, StatementKind::Collect(_))).nth(rank);
+        let at = body.statements.iter().enumerate().filter(|(_, line)| matches!(line.kind, StatementKind::Gather(_, _))).nth(rank);
         if let Some((at, _)) = at {
             found.push(End::Slot(Loc { body: loc.sub(0), index: at }, Slot::Collect));
         }
@@ -1501,7 +1512,7 @@ fn unseen(function: &Function, from: &str, value: &Value, reader: &[scope::Step]
         Some(Frame::Arm) => step_five("from", "a wire out of an arm, which adds an output to its structure,"),
         Some(Frame::Loop) => EditError::new(
             "wire.out_of_scope",
-            format!("`{from}` is inside a loop: pass `through`, `carry` (its last value) or `collect` (an array of its values), to take it out"),
+            format!("`{from}` is inside a loop: pass `through`, `last` (its value at the last iteration), `collect` (an array of its values) or `carry`, to take it out"),
         )
         .of("from"),
         _ => EditError::new("wire.out_of_scope", format!("`{from}` cannot be seen from there: it is a value of another arm or structure")).of("from"),

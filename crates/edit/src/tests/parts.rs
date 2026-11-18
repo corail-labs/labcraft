@@ -238,6 +238,30 @@ fn a_collect_goes_last_with_its_output() {
     refused(before, add("nothing", None), "edit.unknown", "value");
 }
 
+#[test]
+fn a_last_goes_last_with_its_output() {
+    let add = |value: &str, name: Option<&str>| Op::StructureAddLast {
+        file: FILE.to_owned(),
+        structure: owned("#l"),
+        value: owned(value),
+        name: name.map(owned),
+    };
+    let before = "fn f(xs: [f64]) -> () {\n    #l: a, b = for v in xs, carry a = 0 {\n        collect v\n    }\n}\n";
+    let edited = gives(
+        before,
+        add("v", None),
+        "fn f(xs: [f64]) -> () {\n    #l: a, b, v2 = for v in xs, carry a = 0 {\n        collect v\n        last v\n    }\n}\n",
+    );
+    assert_eq!(edited.names.get("output").map(String::as_str), Some("v2"));
+    let after = "fn f(xs: [f64]) -> () {\n    #l: a, b, v2 = for v in xs, carry a = 0 {\n        collect v\n        last v\n    }\n}\n";
+    // `remove_part` names it by its kind and its output: a `collect` is not a `last`.
+    gives(after, remove("#l", "last v2"), before);
+    gives(after, remove("#l", "collect b"), "fn f(xs: [f64]) -> () {\n    #l: a, v2 = for v in xs, carry a = 0 {\n        last v\n    }\n}\n");
+    refused(after, remove("#l", "last b"), "edit.unknown", "part");
+    refused(after, remove("#l", "collect v2"), "edit.unknown", "part");
+    refused(before, add("nothing", None), "edit.unknown", "value");
+}
+
 fn remove(structure: &str, part: &str) -> Op {
     Op::StructureRemovePart { file: FILE.to_owned(), structure: owned(structure), part: owned(part) }
 }

@@ -42,7 +42,7 @@ pub(crate) fn slots(statement: &Statement, loc: &Loc) -> Vec<(Slot, BodyPath)> {
     let mut found = Vec::new();
     match &statement.kind {
         StatementKind::Call(call) => found.extend((0..call.args.len()).map(|index| (Slot::Arg(index), here()))),
-        StatementKind::Collect(_) => found.push((Slot::Collect, here())),
+        StatementKind::Gather(_, _) => found.push((Slot::Collect, here())),
         StatementKind::Until(_) => found.push((Slot::Until, here())),
         StatementKind::Binding { value, .. } => match value {
             Rhs::Call(call) => found.extend((0..call.args.len()).map(|index| (Slot::Arg(index), here()))),
@@ -105,7 +105,7 @@ pub(crate) fn operand(statement: &Statement, slot: Slot) -> Option<&Operand> {
             ClauseKind::Carry(carry) => Some(&carry.value),
             ClauseKind::In(_) => None,
         },
-        (StatementKind::Collect(operand), Slot::Collect) | (StatementKind::Until(operand), Slot::Until) => Some(operand),
+        (StatementKind::Gather(_, operand), Slot::Collect) | (StatementKind::Until(operand), Slot::Until) => Some(operand),
         _ => None,
     }
 }
@@ -145,7 +145,7 @@ pub(crate) fn operand_mut(statement: &mut Statement, slot: Slot) -> Option<&mut 
             ClauseKind::Carry(carry) => Some(&mut carry.value),
             ClauseKind::In(_) => None,
         },
-        (StatementKind::Collect(operand), Slot::Collect) | (StatementKind::Until(operand), Slot::Until) => Some(operand),
+        (StatementKind::Gather(_, operand), Slot::Collect) | (StatementKind::Until(operand), Slot::Until) => Some(operand),
         _ => None,
     }
 }

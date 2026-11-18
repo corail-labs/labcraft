@@ -487,6 +487,34 @@ fn a_for_gives_its_carries_and_collects_in_the_order_of_its_iterations() {
 }
 
 #[test]
+fn a_last_gives_the_value_of_the_last_iteration_or_the_default_of_its_type() {
+    // Spec 6.2: `collect` and `last` give their outputs after the carries, in the order of their lines.
+    let source = "labcraft 1\n\nuse core\n\nfn f(xs: [f64]) -> (total: f64, top: f64, doubled: [f64]) {\n    total, top, doubled = for x in xs, carry acc = 0.0 {\n        d = core.mul(x, 2.0)\n        next acc = core.add(acc, x)\n        last d\n        collect d\n    }\n}\n";
+    let three = ran(source, vec![Value::array(vec![Value::F64(1.0), Value::F64(2.5), Value::F64(4.0)])]);
+    assert_eq!(three.outputs(), ["7.5", "8.0", "[2.0, 5.0, 8.0]"]);
+    // No iteration: the default value of the type (spec 7.2), `0.0` for an `f64`, `0` for an `i32`.
+    assert_eq!(ran(source, vec![Value::array(Vec::new())]).outputs(), ["0.0", "0.0", "[]"]);
+    let none = "labcraft 1\n\nfn f(n: i32) -> (k: i32) {\n    k = for i in 0..n {\n        last i\n    }\n}\n";
+    assert_eq!(ran(none, vec![Value::I32(0)]).outputs(), ["0"]);
+    assert_eq!(ran(none, vec![Value::I32(4)]).outputs(), ["3"]);
+}
+
+#[test]
+fn a_last_of_a_loop_is_the_value_of_the_iteration_that_ended_it() {
+    // Spec 6.3: `until` reads the current `k`; the iteration with `k` = 3 ends the loop, its square is 9, its `next` 4.
+    let source = "labcraft 1\n\nuse core\n\nfn f() -> (count: i32, squared: i32) {\n    count, squared = loop carry k = 1 {\n        sq = core.mul(k, k)\n        done = core.ge(k, 3)\n        next k = core.add(k, 1)\n        last sq\n        until done\n    }\n}\n";
+    assert_eq!(ran(source, Vec::new()).outputs(), ["4", "9"]);
+}
+
+#[test]
+fn a_last_of_a_parallel_for_is_the_last_by_index() {
+    // The second iteration ends first and the first last: the output is that of the third, the last by index (spec 6.2).
+    let source = "labcraft 1\n\nuse time\n\nfn f(waits: [duration]) -> (at_last: duration) {\n    at_last = for parallel w in waits {\n        e = time.wait(w)\n        last w\n    }\n}\n";
+    let waits = vec![Value::Duration(300 * MS), Value::Duration(100 * MS), Value::Duration(200 * MS)];
+    assert_eq!(ran(source, vec![Value::array(waits)]).outputs(), ["0.2 s"]);
+}
+
+#[test]
 fn the_iterations_of_a_parallel_for_wait_side_by_side() {
     let source = "labcraft 1\n\nuse time\n\nfn f(waits: [duration]) -> (errs: [error]) {\n    errs = for parallel w in waits {\n        e = time.wait(w)\n        collect e\n    }\n}\n";
     let waits = vec![Value::Duration(300 * MS), Value::Duration(100 * MS), Value::Duration(200 * MS)];

@@ -1,0 +1,9 @@
+labcraft 1
+
+use core
+
+/// `last` gives a value out of a loop: in a function body it is out of place.
+fn misplaced(x: f64) -> (y: f64) {
+    y = core.abs(x)
+    last x
+}

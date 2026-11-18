@@ -351,7 +351,7 @@ impl<'f> Count<'f, '_> {
         };
         match &statement.kind {
             StatementKind::Call(call) => args(&call.args).for_each(|value| self.read(region, value)),
-            StatementKind::Collect(value) | StatementKind::Until(value) => self.read(region, value),
+            StatementKind::Gather(_, value) | StatementKind::Until(value) => self.read(region, value),
             StatementKind::Binding { targets, value } => match value {
                 Rhs::Call(call) => args(&call.args).for_each(|value| self.read(region, value)),
                 Rhs::Struct(literal) => literal.fields.iter().for_each(|field| self.read(region, &field.value)),

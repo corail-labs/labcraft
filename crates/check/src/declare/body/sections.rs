@@ -790,7 +790,7 @@ impl<'a> Builder<'_, '_, 'a> {
     fn designation(&self, statement: &Statement) -> Option<(Name, bool)> {
         let draws = match &statement.kind {
             StatementKind::Call(_) => true,
-            StatementKind::Collect(_) | StatementKind::Until(_) => false,
+            StatementKind::Gather(_, _) | StatementKind::Until(_) => false,
             StatementKind::Binding { targets, value: Rhs::Operand(operand) } => match operand {
                 // `x = y` gives a value a second name, and `k = step.low` reads a field: neither draws a node.
                 Operand::Path(path) if path.rest.is_empty() => false,
@@ -814,7 +814,7 @@ impl<'a> Builder<'_, '_, 'a> {
         let node = End::Node(statement.id);
         match &statement.kind {
             StatementKind::Call(call) => self.call(call, node, frame),
-            StatementKind::Collect(value) | StatementKind::Until(value) => {
+            StatementKind::Gather(_, value) | StatementKind::Until(value) => {
                 if let Some(structure) = self.structure_of(frame) {
                     self.read(value, End::Inside(structure), Input::Unnamed, frame);
                 }

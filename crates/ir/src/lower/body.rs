@@ -7,15 +7,17 @@ use std::sync::Arc;
 use labcraft_check::primitives::{ParamKind, PrimitiveDefault, PrimitiveTy, primitive};
 use labcraft_check::{CheckedFile, Meaning, PrimitiveLibrary, ResolvedCall, Terminal, read_escapes, template_fields, unit_of};
 use labcraft_graph::{
-    Arg, Arm as WrittenArm, Body as WrittenBody, Branching, Call, ClauseKind, Function as WrittenFunction, Id, Operand, Path,
-    Pattern as WrittenPattern, Rhs, Statement, StatementKind, StructLit, Target,
+    Arg, Arm as WrittenArm, Body as WrittenBody, Branching, Call, ClauseKind, Function as WrittenFunction, Gather as WrittenGather, Id, Operand,
+    Path, Pattern as WrittenPattern, Rhs, Statement, StatementKind, StructLit, Target,
 };
 use labcraft_types::{Name, NumberKind, Ty, TyId};
 
 use super::shape::{Base, Holder, Shape, Wait};
 use super::{Literals, LowerError, Lowering, index_u32};
 use crate::constant::conversion;
-use crate::{Arm, Clause, ConstValue, Element, ElementId, Node, NodeKind, Order, Pattern, Port, Region, Skip, Source, Static, Use, Value, Variadic};
+use crate::{
+    Arm, Clause, ConstValue, Element, ElementId, Gather, Node, NodeKind, Order, Pattern, Port, Region, Skip, Source, Static, Use, Value, Variadic,
+};
 
 /// The function's regions, from the shape of its bodies.
 pub(super) fn lower_function<'f>(
@@ -249,9 +251,26 @@ impl<'f> Walk<'_, '_, 'f> {
         Ok(())
     }
 
+    /// The `collect` and `last` lines of a loop body, in their order: its outputs after the carries (6.2). A `last`
+    /// holds the default value of its type, for a `for` that runs no iteration.
+    fn gathers_of(&mut self, body: &'f WrittenBody) -> Result<Vec<Gather>, LowerError> {
+        let mut gathers = Vec::new();
+        for statement in &body.statements {
+            match statement.kind {
+                StatementKind::Gather(WrittenGather::Collect, _) => gathers.push(Gather::Collect),
+                StatementKind::Gather(WrittenGather::Last, _) => {
+                    let default = self.lowering.default_of(self.file.resolved.ty(statement.id), self.file)?;
+                    gathers.push(Gather::Last { default });
+                }
+                _ => {}
+            }
+        }
+        Ok(gathers)
+    }
+
     fn collect_results(&mut self, body: &'f WrittenBody, scope: &Scope, results: &mut Vec<Use>) -> Result<(), LowerError> {
         for statement in &body.statements {
-            if let StatementKind::Collect(value) = &statement.kind {
+            if let StatementKind::Gather(_, value) = &statement.kind {
                 results.push(self.use_of(value, scope)?);
             }
         }
@@ -404,7 +423,7 @@ impl<'f> Walk<'_, '_, 'f> {
         let targets = targets_of(statement);
         let first_target = targets.first().map(target_id);
         let built = match &statement.kind {
-            StatementKind::Collect(_) | StatementKind::Until(_) => return Ok(None),
+            StatementKind::Gather(_, _) | StatementKind::Until(_) => return Ok(None),
             StatementKind::Call(call) => self.call(call, statement, scope)?,
             StatementKind::Binding { value, .. } => match value {
                 Rhs::Call(call) => self.call(call, statement, scope)?,
@@ -431,9 +450,9 @@ impl<'f> Walk<'_, '_, 'f> {
                     }
                     self.context_inputs(statement, scope, &mut inputs)?;
                     let region = self.inner_region(statement.id, 0)?;
-                    let collects = count_collects(&structure.body);
-                    let outputs = gives_nothing(carries, collects);
-                    let kind = NodeKind::Loop { continue_on_error: structure.continue_on_error, carries, collects, region };
+                    let gathers = self.gathers_of(&structure.body)?;
+                    let outputs = gives_nothing(carries, &gathers);
+                    let kind = NodeKind::Loop { continue_on_error: structure.continue_on_error, carries, gathers, region };
                     Built { kind, inputs, skip: Skip::Never, outputs }
                 }
                 Rhs::For(structure) => {
@@ -460,9 +479,9 @@ impl<'f> Walk<'_, '_, 'f> {
                     }
                     self.context_inputs(statement, scope, &mut inputs)?;
                     let region = self.inner_region(statement.id, 0)?;
-                    let collects = count_collects(&structure.body);
-                    let outputs = gives_nothing(carries, collects);
-                    let kind = NodeKind::For { parallel: structure.parallel, clauses, carries, collects, region };
+                    let gathers = self.gathers_of(&structure.body)?;
+                    let outputs = gives_nothing(carries, &gathers);
+                    let kind = NodeKind::For { parallel: structure.parallel, clauses, carries, gathers, region };
                     Built { kind, inputs, skip: Skip::Never, outputs }
                 }
             },
@@ -910,13 +929,9 @@ fn first_wired<'c>(call: &'c Call, bound: &ResolvedCall, position: usize) -> Opt
     })
 }
 
-/// A loop with neither a carry nor a `collect` gives nothing, and its line binds it to `_` (6.2).
-fn gives_nothing(carries: u32, collects: u32) -> Option<Vec<Value>> {
-    (carries == 0 && collects == 0).then(Vec::new)
-}
-
-fn count_collects(body: &WrittenBody) -> u32 {
-    index_u32(body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count())
+/// A loop with neither a carry, a `collect` nor a `last` gives nothing, and its line binds it to `_` (6.2).
+fn gives_nothing(carries: u32, gathers: &[Gather]) -> Option<Vec<Value>> {
+    (carries == 0 && gathers.is_empty()).then(Vec::new)
 }
 
 fn targets_of(statement: &Statement) -> &[Target] {

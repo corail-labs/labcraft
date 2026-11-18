@@ -66,7 +66,7 @@ const WIRE_ERRORS: &[&str] = &[
     "internal",
 ];
 
-/// `structure.add_carry`, `add_clause`, `add_collect`: a new name, a value of the wrong type for a `for`, a value that the
+/// `structure.add_carry`, `add_clause`, `add_collect`, `add_last`: a new name, a value of the wrong type for a `for`, a value that the
 /// structure makes (a cycle).
 const PART_ERRORS: &[&str] = &[
     "params.unknown",
@@ -266,7 +266,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "wire.connect",
             "Connect Wire",
             "Wire a value to an input, or to an output of the function",
-            "Wires `from` (a value, `node.output`, or a label for an order wire) to `to` (`node`, `node.input`, `r.0`, `msg.parts.2`, `node.after`, or `output x`). An input that is wired or holds a constant is `wire.occupied` unless `replace`; a value of a type the input does not take is `wire.type_mismatch` unless `accept_mismatch`, which writes it and gives `LC3001`. A wire that closes a cycle is `wire.cycle`; a value the input cannot see is `wire.out_of_scope`. A value wired to an output of the function takes the name of the output, and `renamed` says so. `to` names a `yield` by the output of its structure, with `arm`, the patterns of its arm; a `collect` by the output of its loop, an `until` by the loop, and `next x` by `n.next.x`. A wire from inside an arm to outside adds an output to the structure: that arm yields it, the other arms a hole, and `names.output` gives it. A wire from inside a loop to outside needs `through`: each loop it leaves takes the value out as a carry of its last value or as a `collect`.",
+            "Wires `from` (a value, `node.output`, or a label for an order wire) to `to` (`node`, `node.input`, `r.0`, `msg.parts.2`, `node.after`, or `output x`). An input that is wired or holds a constant is `wire.occupied` unless `replace`; a value of a type the input does not take is `wire.type_mismatch` unless `accept_mismatch`, which writes it and gives `LC3001`. A wire that closes a cycle is `wire.cycle`; a value the input cannot see is `wire.out_of_scope`. A value wired to an output of the function takes the name of the output, and `renamed` says so. `to` names a `yield` by the output of its structure, with `arm`, the patterns of its arm; a `collect` by the output of its loop, an `until` by the loop, and `next x` by `n.next.x`. A wire from inside an arm to outside adds an output to the structure: that arm yields it, the other arms a hole, and `names.output` gives it. A wire from inside a loop to outside needs `through`: each loop it leaves takes the value out as a `last`, a `collect` or a carry of its last value.",
             object(
                 &[
                     ("file", string(FILE)),
@@ -278,10 +278,10 @@ pub(super) fn catalog() -> Vec<Command> {
                     (
                         "through",
                         json!({
-                            "description": "How each loop that the wire leaves takes the value out: `carry` (its last value) or `collect` (an array of its values), for every loop, or a list, one per loop from the inside out.",
+                            "description": "How each loop that the wire leaves takes the value out: `last` (its value at the last iteration), `collect` (an array of its values) or `carry` (a carry that holds its last value, from a hole, or from `none` for an `error`), for every loop, or a list, one per loop from the inside out.",
                             "oneOf": [
-                                { "type": "string", "enum": ["carry", "collect"] },
-                                { "type": "array", "items": { "type": "string", "enum": ["carry", "collect"] }, "minItems": 1 }
+                                { "type": "string", "enum": ["last", "collect", "carry"] },
+                                { "type": "array", "items": { "type": "string", "enum": ["last", "collect", "carry"] }, "minItems": 1 }
                             ]
                         }),
                     ),
@@ -905,15 +905,33 @@ pub(super) fn catalog() -> Vec<Command> {
             false,
         ),
         editing(
+            "structure.add_last",
+            "Add Last",
+            "Add `last value` to a loop",
+            "Adds `last value` to a loop, and its output: the value at the last iteration, which needs no initial value.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The loop.")),
+                    ("value", string("The value whose last one the loop gives.")),
+                    ("name", string("The name of the output; by default, from the value.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "value"],
+            ),
+            PART_ERRORS,
+            false,
+        ),
+        editing(
             "structure.remove_part",
             "Remove Part",
-            "Remove an arm, a carry, a clause or a collect of a structure",
-            "Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x` or `collect y`. The inputs that it fed become unwired, or get a hole. The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure.",
+            "Remove an arm, a carry, a clause, a collect or a last of a structure",
+            "Removes one part of a structure, with what it holds. `part` is an arm (by its patterns), `carry x`, `in x`, `collect y` or `last y`. The inputs that it fed become unwired, or get a hole. The last arm of a `match` or `handle` and the last clause of a `for` are `params.invalid`: delete the structure.",
             object(
                 &[
                     ("file", string(FILE)),
                     ("structure", string("The structure.")),
-                    ("part", string("The part: an arm by its patterns, `carry x`, `in x` or `collect y`.")),
+                    ("part", string("The part: an arm by its patterns, `carry x`, `in x`, `collect y` or `last y`.")),
                     ("expected_revision", revision()),
                 ],
                 &["file", "structure", "part"],

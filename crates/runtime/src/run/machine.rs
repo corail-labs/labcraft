@@ -8,7 +8,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use labcraft_ir::{FunctionId, Node, Program, Region, Skip};
+use labcraft_ir::{ConstId, FunctionId, Gather, Node, Program, Region, Skip};
 use labcraft_types::{Interner, Name, Ty};
 
 use super::memory::{Memory, NODE_COST};
@@ -244,8 +244,49 @@ pub(super) struct LoopState<'p> {
     pub(super) carries: usize,
     /// The values passed in, which each iteration reads.
     pub(super) passed: Vec<Value>,
-    pub(super) collects: Vec<Vec<Value>>,
+    pub(super) gathered: Vec<Gathered>,
     pub(super) continue_on_error: bool,
+}
+
+/// What a `collect` or a `last` line of a loop holds between its iterations (spec 6.2).
+pub(super) enum Gathered {
+    /// By iteration: a parallel `for` ends its iterations in any order.
+    Each(Vec<Option<Value>>),
+    /// The value of the iteration of the highest index so far, with that index; `default` when none ran.
+    Last { kept: Option<(u64, Value)>, default: ConstId },
+}
+
+impl Gathered {
+    pub(super) fn of(gathers: &[Gather]) -> Vec<Self> {
+        gathers
+            .iter()
+            .map(|gather| match gather {
+                Gather::Collect => Self::Each(Vec::new()),
+                Gather::Last { default } => Self::Last { kept: None, default: *default },
+            })
+            .collect()
+    }
+
+    /// Keeps the value of iteration `at`, and gives back the value that it holds no more, to release: the one a later
+    /// iteration of a `last` replaces, or this one, when a parallel `for` ended a later iteration first.
+    pub(super) fn keep(&mut self, at: u64, value: Value) -> Option<Value> {
+        match self {
+            Self::Each(values) => {
+                let at = usize::try_from(at).unwrap_or(usize::MAX);
+                if values.len() <= at {
+                    values.resize(at.saturating_add(1), None);
+                }
+                if let Some(place) = values.get_mut(at) {
+                    *place = Some(value);
+                }
+                None
+            }
+            Self::Last { kept, .. } => match kept {
+                Some((index, _)) if *index > at => Some(value),
+                _ => kept.replace((at, value)).map(|(_, old)| old),
+            },
+        }
+    }
 }
 
 pub(super) enum Clause {
@@ -266,8 +307,8 @@ pub(super) struct ForState<'p> {
     pub(super) carries: Vec<Value>,
     pub(super) carry_count: usize,
     pub(super) passed: Vec<Value>,
-    /// By collect, by iteration: a parallel loop ends its iterations in any order.
-    pub(super) collects: Vec<Vec<Option<Value>>>,
+    /// By `collect` or `last`, in their order.
+    pub(super) gathered: Vec<Gathered>,
 }
 
 pub(super) struct NativeSlot {

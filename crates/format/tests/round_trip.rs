@@ -192,7 +192,7 @@ fn reverse_lines(file: &mut File) {
 
 /// Every line in the reverse of its order, but `collect`, whose written order means something.
 fn reverse_body(body: &mut labcraft_graph::Body) {
-    let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count();
+    let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Gather(_, _))).count();
     if collects < 2 {
         body.statements.reverse();
     }

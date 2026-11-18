@@ -1705,9 +1705,41 @@ fn copy_counts_from_the_corner_and_a_paste_falls_on_the_grid() {
     assert_eq!(canvas.paste_at(&Shown::default(), Some(Pos2::new(-5000.0, -5000.0))), Some((crate::InFrame::default(), at)));
 }
 
-/// A wire out of a loop takes the value out as the type of its input says (notation 2.6, decision of the owner,
-/// 2026-11-18): the value's type, a carry; an array of it, a `collect`; neither, the default of a `for`, a `collect`; Alt
-/// takes the other one.
+/// An `error` out of a loop is a carry by default, so that a `loop` stops on it (spec 6.3), Alt a `last`; a `for
+/// parallel` has no carry, so a `last` (decision of the owner, 2026-11-18).
+#[test]
+fn an_error_out_of_a_loop_is_a_carry_by_default() {
+    for (head, default, other) in [("loop {", "carry", "last"), ("for x in xs {", "carry", "last"), ("for parallel x in xs {", "last", "collect")] {
+        let text = format!(
+            "labcraft 1\n\nuse time\n\nfn main(xs: [f64], err: error = none) -> (out: error) {{\n    _ = {head}\n        e = time.wait(1 s, err: err)\n{}    }}\n    out = err\n}}\n",
+            if head.starts_with("loop") { "        until true\n" } else { "" }
+        );
+        let shown = self::drawing(&text, &ViewState::default());
+        let from = shown.ports.iter().position(|port| !port.input && port.name == "e").unwrap();
+        let verdicts = labcraft_diagram::wiring(&shown, from);
+        let at = shown.ports.iter().position(|port| port.input && port.name == "output out").unwrap();
+        let Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) = verdicts.get(at) else { panic!("{head}: {:?}", verdicts.get(at)) };
+        assert_eq!(wiring::passages(&shown, &shown.ports[from], &shown.ports[at], exits, false), vec![default], "{head}");
+        assert_eq!(wiring::passages(&shown, &shown.ports[from], &shown.ports[at], exits, true), vec![other], "{head}");
+    }
+    assert_eq!(wiring::passage_marks(&["carry"]), "↻ carry");
+}
+
+/// A `last` is a terminal of its own on the inner right edge, `•]` (notation 5.1): the part it stands for is `last y`, as
+/// `structure.remove_part` names it, and the wire to it ends at the output it gives (commands.md 9.2).
+#[test]
+fn a_last_is_a_part_of_its_loop() {
+    let text = "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: [f64], z: f64) {\n    all, top = for v in xs {\n        w = core.abs(v)\n        collect w\n        last w\n    }\n    y = all\n    z = top\n}\n";
+    let drawing = drawing(text, &ViewState::default());
+    let parts: Vec<(&str, &str)> =
+        drawing.ports.iter().filter(|port| port.frame && !port.part.is_empty()).map(|port| (port.part.as_str(), port.name.as_str())).collect();
+    assert!(parts.contains(&("collect all", "all")), "{parts:?}");
+    assert!(parts.contains(&("last top", "top")), "{parts:?}");
+}
+
+/// A wire out of a loop takes the value out as the type of its input says (notation 2.5, decisions of the owner,
+/// 2026-11-18): the value's type, a `last`; an array of it, a `collect`; neither, the default of the loop, a `collect`
+/// for a `for` and a `last` for a `loop`; Alt takes the other one, in a `for parallel` too.
 #[test]
 fn a_wire_out_of_a_loop_chooses_its_passage_by_the_type_of_its_input() {
     let text = "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: f64, z: [f64], k: bool) {\n    _ = for v in xs {\n        w = core.abs(v)\n    }\n    y = 0.0\n    z = xs\n    k = true\n}\n";
@@ -1719,7 +1751,7 @@ fn a_wire_out_of_a_loop_chooses_its_passage_by_the_type_of_its_input() {
         let Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) = verdicts.get(at) else { panic!("{to}: {:?}", verdicts.get(at)) };
         wiring::passages(&drawing, &drawing.ports[from], &drawing.ports[at], exits, alt)
     };
-    assert_eq!(passage("output y", false), vec!["carry"]);
+    assert_eq!(passage("output y", false), vec!["last"]);
     assert_eq!(passage("output z", false), vec!["collect"]);
     assert_eq!(passage("output k", false), vec!["collect"]);
     // The type then judged is that of the passage: an `[f64]` is no `bool`, an `f64` is an `f64`.
@@ -1727,6 +1759,22 @@ fn a_wire_out_of_a_loop_chooses_its_passage_by_the_type_of_its_input() {
     assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output k"), 1).is_some());
     assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output y"), 0).is_none());
     assert!(labcraft_diagram::passage_refusal(&drawing, &drawing.ports[from], port("output z"), 1).is_none());
+    // Alt takes the other one; the gesture makes no carry (decision of the owner, 2026-11-18).
     assert_eq!(passage("output y", true), vec!["collect"]);
-    assert_eq!(wiring::passage_marks(&["carry", "collect"]), "↻ last value  ·  [•] collect");
+    assert_eq!(passage("output z", true), vec!["last"]);
+    assert_eq!(wiring::passage_marks(&["last", "collect"]), "•] last value  ·  [•] collect");
+    // The default of a `loop` is a `last`, and of a `for parallel` as of any `for`, a `collect`, Alt the other one.
+    for (head, default, other) in [("loop {", "last", "collect"), ("for parallel v in xs {", "collect", "last")] {
+        let text = format!(
+            "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (k: bool) {{\n    _ = {head}\n        w = core.abs(1.0)\n{}    }}\n    k = true\n}}\n",
+            if head.starts_with("loop") { "        until true\n" } else { "" }
+        );
+        let shown = self::drawing(&text, &ViewState::default());
+        let from = shown.ports.iter().position(|port| !port.input && port.name == "w").unwrap();
+        let verdicts = labcraft_diagram::wiring(&shown, from);
+        let at = shown.ports.iter().position(|port| port.input && port.name == "output k").unwrap();
+        let Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) = verdicts.get(at) else { panic!("{head}: {:?}", verdicts.get(at)) };
+        assert_eq!(wiring::passages(&shown, &shown.ports[from], &shown.ports[at], exits, false), vec![default], "{head}");
+        assert_eq!(wiring::passages(&shown, &shown.ports[from], &shown.ports[at], exits, true), vec![other], "{head}");
+    }
 }

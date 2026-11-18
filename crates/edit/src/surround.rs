@@ -7,7 +7,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use labcraft_format::{is_name, read};
 use labcraft_graph::{
-    Attached, Carry, Clause, ClauseKind, LayoutItem, LayoutKind, NodeRef, Operand, Path, Rhs, Statement, StatementKind, Target, View,
+    Attached, Carry, Clause, ClauseKind, Gather, LayoutItem, LayoutKind, NodeRef, Operand, Path, Rhs, Statement, StatementKind, Target, View,
 };
 use labcraft_types::Name;
 
@@ -95,10 +95,10 @@ pub(crate) fn surround(
         return Err(EditError::invalid("nodes", "the nodes surrounded are in one frame: the body of the function, of a loop, or an arm"));
     }
     let statements: Vec<Statement> = locs.iter().filter_map(|loc| scope::statement(&function, loc).cloned()).collect();
-    if statements.iter().any(|statement| matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_)))
+    if statements.iter().any(|statement| matches!(statement.kind, StatementKind::Gather(_, _) | StatementKind::Until(_)))
         || statements.iter().any(|statement| matches!(&statement.kind, StatementKind::Binding { targets, .. } if targets.iter().any(|target| matches!(target, Target::Next(..)))))
     {
-        return Err(EditError::invalid("nodes", "a `next`, a `collect` or an `until` stays in its loop body (R-6): surround the nodes without it"));
+        return Err(EditError::invalid("nodes", "a `next`, a `collect`, a `last` or an `until` stays in its loop body (R-6): surround the nodes without it"));
     }
     // A label waited for outside: an `after:` does not see into a structure (R-17).
     for statement in &statements {
@@ -133,7 +133,7 @@ pub(crate) fn surround(
             nodes_named.entry((label.name, true)).or_default().push(loc.clone());
         }
         if let Some(name) = scope::line_name(statement)
-            && !matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_))
+            && !matches!(statement.kind, StatementKind::Gather(_, _) | StatementKind::Until(_))
         {
             nodes_named.entry((name, false)).or_default().push(loc.clone());
         }
@@ -796,7 +796,12 @@ fn fill(
                 } else {
                     targets.push(Target::Name(edit.id(), output.name));
                     let value = path(edit, output.name);
-                    lines.push(Statement { id: edit.id(), comments: Attached::default(), label: None, kind: StatementKind::Collect(value) });
+                    lines.push(Statement {
+                        id: edit.id(),
+                        comments: Attached::default(),
+                        label: None,
+                        kind: StatementKind::Gather(Gather::Collect, value),
+                    });
                 }
             }
             let StatementKind::Binding { value, .. } = &mut structure.kind else { return Err(EditError::internal("a loop that went")) };
