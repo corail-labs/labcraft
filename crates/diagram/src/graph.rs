@@ -294,6 +294,9 @@ pub struct Node<'a> {
     pub at: Option<(i64, i64)>,
     /// The entry of the `layout` section that puts it there, for `LC7005`.
     pub placed_by: Option<labcraft_types::Span>,
+    /// The size of the frame of a structure that its `frame … size` entry sets (spec 11), in hundredths, from the corner
+    /// of its frame; none for another node, or a structure of automatic size.
+    pub size: Option<(i64, i64)>,
     /// `#close`, drawn above the node.
     pub label: Option<String>,
     pub always: bool,
@@ -350,6 +353,8 @@ pub struct Graph<'a> {
     /// The waypoints that a `wire` entry of the `layout` section gives (spec 11), by body and wire, in hundredths, from the
     /// top-left corner of the frame of the body.
     pub vias: HashMap<(usize, usize), Vec<(i64, i64)>>,
+    /// The size of the frame of the function that `frame size` sets (spec 11), in hundredths, from its origin.
+    pub frame_size: Option<(i64, i64)>,
 }
 
 /// The wires of each value to each reader, by body and index.
@@ -511,7 +516,8 @@ impl<'a> Builder<'a> {
         let function = self.qualified(name);
         let mut body = self.function_frame(function.clone(), signature);
         flow::finish_frame(&mut body, None);
-        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new() }
+        let frame_size = self.frame_entries(&self.file.file).0;
+        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new(), frame_size }
     }
 
     /// From the root, as `run` names it.
@@ -525,9 +531,17 @@ impl<'a> Builder<'a> {
 
     /// The graph, unless its terminals pass `max_terminals`: then what was counted when building stopped.
     pub fn graph(&mut self, function: &'a Function, orders: &BodyOrders, max_terminals: u64) -> Result<Graph<'a>, TooLarge> {
-        let mut graph =
-            Graph { function: self.qualified(function.name), bodies: Vec::new(), nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new() };
+        let mut graph = Graph {
+            function: self.qualified(function.name),
+            bodies: Vec::new(),
+            nodes: Vec::new(),
+            pills: HashMap::new(),
+            vias: HashMap::new(),
+            frame_size: None,
+        };
         let entries = self.layout_entries(&self.file.file);
+        let (frame_size, sizes) = self.frame_entries(&self.file.file);
+        graph.frame_size = frame_size;
         let mut counts = Counts::default();
         let mut flow = flow::Flow::default();
         let walked = bodies(function, orders);
@@ -591,6 +605,13 @@ impl<'a> Builder<'a> {
                 node.placed_by = at.and(span);
                 node.standard = view == Some(View::Standard);
                 node.view = view;
+            }
+        }
+        // A `frame … size` entry sizes a structure only (`LC5004` otherwise).
+        for ((is_label, name), size) in sizes {
+            let Some(&[node]) = flow.designations.get(&(is_label, name)).map(Vec::as_slice) else { continue };
+            if let Some(node) = graph.nodes.get_mut(node).filter(|node| matches!(node.kind, Kind::Structure(_))) {
+                node.size = Some(size);
             }
         }
         self.wires(&mut graph, &walked, &mut flow, &mut counts, max_terminals)?;
@@ -786,6 +807,28 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
+    /// The `frame size` entry of the function and the `frame … size` entries of its structures (spec 11), in hundredths;
+    /// a second entry for one frame is `LC5007`, and the first one counts.
+    fn frame_entries(&self, file: &File) -> FrameEntries {
+        let Some(layout) = &file.layout else { return (None, Vec::new()) };
+        let coordinate = |numeral: &Numeral| -> Option<i64> {
+            let NumeralKind::Int(text) = numeral.kind else { return None };
+            let value = i64::from(labcraft_format::coordinate_value(self.names.resolve(text))?);
+            Some(if numeral.negative { -value } else { value } * 100)
+        };
+        let (mut function, mut seen, mut structures) = (None, HashSet::new(), Vec::new());
+        for item in &layout.items {
+            let LayoutKind::Frame { node, size } = &item.kind else { continue };
+            let Some(size) = coordinate(&size.x).zip(coordinate(&size.y)) else { continue };
+            match node {
+                None => function = function.or(Some(size)),
+                Some(node) if seen.insert((node.is_label, node.name)) => structures.push(((node.is_label, node.name), size)),
+                Some(_) => {}
+            }
+        }
+        (function, structures)
+    }
+
     /// `docs/cli.md`, 4.3: the name of its line, its label, or `@12`.
     fn key(&self, statement: &Statement) -> String {
         match (first_name(statement), statement.label) {
@@ -841,6 +884,7 @@ impl<'a> Builder<'a> {
             bodies: Vec::new(),
             at: None,
             placed_by: None,
+            size: None,
             label: statement.label.map(|label| format!("#{}", self.text(label.name))),
             always,
             after,
@@ -1357,6 +1401,10 @@ fn primitive_family(ty: PrimitiveTy) -> Family {
 type Designation = (bool, Name);
 /// What a `node` entry gives: a position, and whether the node is in standard view.
 type Entry = (Option<(i64, i64)>, Option<View>, Option<labcraft_types::Span>);
+/// A width and a height, in hundredths.
+type Size = (i64, i64);
+/// The size of the frame of the function, and those of the structures by their designation.
+type FrameEntries = (Option<Size>, Vec<(Designation, Size)>);
 
 /// How the `layout` section designates the node of a line (spec 11): by its label, or by the name of its line.
 fn designation_of(statement: &Statement) -> Option<(bool, Name)> {

@@ -38,6 +38,7 @@ pub const EDITING: &[&str] = &[
     "wire.connect",
     "wire.disconnect",
     "node.move",
+    "frame.resize",
     "node.place",
     "node.set_view",
     "layout.arrange",
@@ -216,6 +217,8 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         }
         "node.delete" => Op::NodeDelete { file, nodes: texts(params, "nodes")?.unwrap_or_default() },
         "node.move" => Op::NodeMove { file, nodes: texts(params, "nodes")?.unwrap_or_default(), by: required_point(params, "by")? },
+        // `size` is required (the schema), and `null` removes the entry (notation 2.4).
+        "frame.resize" => Op::FrameResize { file, inside: params.str("inside").map(str::to_owned), size: point(params, "size")? },
         "node.place" => Op::NodePlace { file, node: params.text("node")?.to_owned(), at: required_point(params, "at")? },
         "node.set_view" => {
             let view = match params.text("view")? {
@@ -549,6 +552,21 @@ impl Judge for SessionJudge<'_> {
                 Some(labcraft_edit::Place { line: placed.line, name: placed.name.clone(), at: Point { x: unit(x), y: unit(y) }, absolute })
             })
             .collect()
+    }
+
+    fn frames(&self, file: &str, text: &str) -> Vec<labcraft_edit::FrameDrawn> {
+        let Some(drawing) = self.drawing(file, text) else { return Vec::new() };
+        // In units, rounded up: a size of fewer would be under what the frame holds.
+        let unit = |hundredths: i64| (hundredths + 99).div_euclid(100);
+        let size = |(width, height): (i64, i64)| Point { x: unit(width), y: unit(height) };
+        let mut found = Vec::new();
+        if let Some(least) = drawing.bodies.first().and_then(|body| body.least) {
+            found.push(labcraft_edit::FrameDrawn { structure: None, line: 0, least: size(least) });
+        }
+        for placed in drawing.placed.iter().filter(|placed| !placed.holds.is_empty() && !placed.name.is_empty()) {
+            found.push(labcraft_edit::FrameDrawn { structure: Some(placed.name.clone()), line: placed.line, least: size(placed.least) });
+        }
+        found
     }
 
     fn value_type(&self, file: &str, text: &str, line: u32, name: &str) -> labcraft_edit::ValueType {

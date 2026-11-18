@@ -344,6 +344,12 @@ impl Ids {
         for LayoutItem { id, kind, .. } in &mut layout.items {
             self.next(id);
             match kind {
+                LayoutKind::Frame { node, size } => {
+                    if let Some(node) = node {
+                        self.node_ref(node);
+                    }
+                    self.point(size);
+                }
                 LayoutKind::Node { node, at, .. } => {
                     self.node_ref(node);
                     if let Some(at) = at {

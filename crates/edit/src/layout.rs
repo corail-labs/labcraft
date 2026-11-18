@@ -122,6 +122,16 @@ pub(crate) fn entry_of(edit: &Edit, function: &Function, loc: &Loc) -> Option<us
     })
 }
 
+/// The index of the `frame … size` entry of the structure at `loc`, by its label or the name of its line.
+pub(crate) fn frame_entry_of(edit: &Edit, function: &Function, loc: &Loc) -> Option<usize> {
+    let layout = edit.file.layout.as_ref()?;
+    layout.items.iter().position(|item| {
+        let LayoutKind::Frame { node: Some(node), .. } = &item.kind else { return false };
+        let parsed = NodeName { text: edit.text(node.name).to_owned(), is_label: node.is_label, line: None };
+        refs::find_nodes(edit, function, &parsed).as_slice() == [loc.clone()]
+    })
+}
+
 /// Where the `node` entry of the node at `loc` fixes it, in its frame; none for a free node.
 pub(crate) fn fixed_at(edit: &Edit, function: &Function, loc: &Loc) -> Option<Point> {
     let index = entry_of(edit, function, loc)?;
@@ -245,6 +255,106 @@ pub(crate) fn move_nodes(edit: &mut Edit, judge: &dyn Judge, nodes: &[String], b
     Ok(())
 }
 
+/// `frame.resize`: the size of the frame of the function, or of the structure `inside`, from its origin (spec 11): its
+/// `frame … size` entry, made or changed. A size under what the frame holds is refused, with the least size, when the
+/// function is drawn. No size removes the entry: the size is automatic again (notation 2.4).
+pub(crate) fn resize(edit: &mut Edit, judge: &dyn Judge, inside: Option<&str>, size: Option<Point>, edited: &mut Edited) -> Result<(), EditError> {
+    if let Some(size) = size {
+        crate::add::in_range(size, "size")?;
+        if size.x < 1 || size.y < 1 {
+            return Err(EditError::invalid("size", format!("[{}, {}] is no size: a width and a height are at least 1", size.x, size.y)));
+        }
+    }
+    // The structure, and the index of the entry that sizes it now, found by the structure it names, whatever its spelling.
+    let loc = match inside {
+        None => None,
+        Some(inside) => {
+            let locs = locs(edit, &[inside.to_owned()], "inside")?;
+            let Some(loc) = locs.first().cloned() else { return Err(EditError::invalid("inside", "`inside` names a structure")) };
+            let function = edit.body_function()?;
+            let structure = scope::statement(function, &loc).is_some_and(|statement| {
+                matches!(&statement.kind, StatementKind::Binding { value: Rhs::Loop(_) | Rhs::For(_) | Rhs::Match(_) | Rhs::Handle(_), .. })
+            });
+            if !structure {
+                return Err(EditError::invalid("inside", format!("`{inside}` is no structure: only a structure has a frame of its own")));
+            }
+            Some(loc)
+        }
+    };
+    let at = match &loc {
+        None => edit
+            .file
+            .layout
+            .as_ref()
+            .and_then(|layout| layout.items.iter().position(|item| matches!(item.kind, LayoutKind::Frame { node: None, .. }))),
+        Some(loc) => frame_entry_of(edit, edit.body_function()?, loc),
+    };
+    // No size: its entry goes, and nothing else changes (notation 2.4).
+    let Some(size) = size else {
+        if let (Some(at), Some(layout)) = (at, &mut edit.file.layout) {
+            layout.items.remove(at);
+            if layout.items.is_empty() && layout.end.is_empty() {
+                edit.file.layout = None;
+            }
+        }
+        return Ok(());
+    };
+    // The least size, from the drawing of the text before.
+    let frames = judge.frames(&edit.path, &edit.original);
+    let least = match &loc {
+        None => frames.iter().find(|frame| frame.structure.is_none()).map(|frame| frame.least),
+        Some(loc) => least_of(edit, &frames, loc)?,
+    };
+    if let Some(least) = least
+        && (size.x < least.x || size.y < least.y)
+    {
+        return Err(EditError::invalid(
+            "size",
+            format!("[{}, {}] is smaller than what the frame holds: its least size is [{}, {}]", size.x, size.y, least.x, least.y),
+        ));
+    }
+    let node = match &loc {
+        None => None,
+        Some(loc) => {
+            let mut labelled = Vec::new();
+            let designation = designate(edit, loc, &mut labelled)?;
+            let names = report(edit, std::slice::from_ref(loc), &labelled, edited)?;
+            edited.lists.insert("nodes", names);
+            Some(NodeRef { id: edit.id(), is_label: designation.is_label, name: designation.name })
+        }
+    };
+    // The new entry takes the place of the one it replaces.
+    let point = labcraft_graph::Point { id: edit.id(), x: coordinate(edit, size.x), y: coordinate(edit, size.y) };
+    let (layout_id, item_id) = (edit.id(), edit.id());
+    let layout = edit.file.layout.get_or_insert_with(|| Layout { id: layout_id, comments: Attached::default(), items: Vec::new(), end: Vec::new() });
+    let item = LayoutItem { id: item_id, comments: Attached::default(), kind: LayoutKind::Frame { node, size: point } };
+    match at.filter(|&at| at < layout.items.len()) {
+        Some(at) => {
+            if let Some(slot) = layout.items.get_mut(at) {
+                *slot = item;
+            }
+        }
+        None => layout.items.push(item),
+    }
+    Ok(())
+}
+
+/// The least size of the structure at `loc` among the frames drawn: the one that starts on its line, or among several
+/// there the one of its name as the drawing names it (the name of its line, `@N`) or as a command does (its label).
+fn least_of(edit: &Edit, frames: &[crate::FrameDrawn], loc: &Loc) -> Result<Option<Point>, EditError> {
+    let function = edit.body_function()?;
+    let line = edit.lines.get(loc).copied();
+    let on_line: Vec<&crate::FrameDrawn> = frames.iter().filter(|frame| frame.structure.is_some() && Some(frame.line) == line).collect();
+    if let [one] = on_line.as_slice() {
+        return Ok(Some(one.least));
+    }
+    let mut names: Vec<String> = Vec::new();
+    names.extend(designation(edit, function, loc).map(|found| shown(edit, found)));
+    names.extend(scope::statement(function, loc).and_then(scope::line_name).map(|name| edit.text(name).to_owned()));
+    names.extend(line.map(|line| format!("@{line}")));
+    Ok(on_line.iter().find(|frame| frame.structure.as_ref().is_some_and(|name| names.contains(name))).map(|frame| frame.least))
+}
+
 /// `node.place`: one node at `at` in its frame, fixed.
 pub(crate) fn place_node(edit: &mut Edit, node: &str, at: Point, edited: &mut Edited) -> Result<(), EditError> {
     let locs = locs(edit, &[node.to_owned()], "node")?;
@@ -339,7 +449,7 @@ pub(crate) fn arrange(
         refs::split_wire(name).map_err(|error| error.of("wires"))?;
         let names = |item: &LayoutItem| match &item.kind {
             LayoutKind::Wire { from, to, .. } => crate::route::entry_names(edit, &of_value, from, to, name, None),
-            LayoutKind::Node { .. } => false,
+            LayoutKind::Node { .. } | LayoutKind::Frame { .. } => false,
         };
         let routed = drawn.is_some() || edit.file.layout.as_ref().is_some_and(|layout| layout.items.iter().any(names));
         if !routed {
@@ -370,6 +480,7 @@ pub(crate) fn arrange(
             named.extend(scope::targets(statement));
         }
         entries.extend(entry_of(edit, function, loc));
+        entries.extend(frame_entry_of(edit, function, loc));
     }
     let Some(mut layout) = edit.file.layout.take() else { return Ok(()) };
     let mut items = std::mem::take(&mut layout.items);
@@ -380,11 +491,18 @@ pub(crate) fn arrange(
                     *at = None;
                 }
             }
-            LayoutKind::Wire { .. } => {}
+            LayoutKind::Wire { .. } | LayoutKind::Frame { .. } => {}
         }
     }
+    // A structure arranged takes its automatic size again, and the frame of the function with the whole function.
+    let mut index = 0;
+    items.retain(|item| {
+        let keep = !matches!(item.kind, LayoutKind::Frame { .. }) || !(whole || entries.contains(&index));
+        index += 1;
+        keep
+    });
     items.retain(|item| match &item.kind {
-        LayoutKind::Node { .. } => true,
+        LayoutKind::Node { .. } | LayoutKind::Frame { .. } => true,
         LayoutKind::Wire { from, to, .. } => {
             let between = named.contains(&from.node.name) && named.contains(&to.node.name);
             let routed = resolved.iter().any(|(wire, drawn)| crate::route::entry_names(edit, &of_value, from, to, wire, drawn.as_deref()));

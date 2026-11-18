@@ -201,7 +201,8 @@ pub(crate) fn forget_in_layout(edit: &mut Edit, gone: &HashSet<Name>) -> Result<
     let missing = |name: &Name| gone.contains(name) && !still.contains(name);
     if let Some(layout) = &mut edit.file.layout {
         layout.items.retain(|item| match &item.kind {
-            LayoutKind::Node { node, .. } => !missing(&node.name),
+            LayoutKind::Frame { node: None, .. } => true,
+            LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => !missing(&node.name),
             LayoutKind::Wire { from, to, .. } => !missing(&from.node.name) && !(missing(&to.node.name) && !outputs.contains(&to.node.name)),
         });
     }

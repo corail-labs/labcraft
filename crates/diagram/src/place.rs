@@ -82,6 +82,10 @@ pub struct FrameAt {
     /// The origin of the coordinates of `layout` in it (spec 11): the top-left corner of the frame that the automatic
     /// placement draws, which stays when the frame grows up or to the left.
     pub origin: (i64, i64),
+    /// For the frame of the function, the size its content needs from its origin, whatever `frame size` (spec 11).
+    pub least: Option<(i64, i64)>,
+    /// For the frame of the function, the size that `frame size` fixes (spec 11).
+    pub size: Option<(i64, i64)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -234,7 +238,7 @@ fn place_with(
             if let Some(found) = graph.nodes.get(node)
                 && let Kind::Structure(_) = found.kind
             {
-                size_structure(graph, node, &bodies, &mut offsets, sized, titles);
+                size_structure(graph, node, &mut bodies, &mut offsets, sized, titles);
             }
         }
         let header = match body.owner.and_then(|owner| Some((owner, graph.nodes.get(owner)?))) {
@@ -249,6 +253,12 @@ fn place_with(
             let slots = slots.and_then(|slots| slots.get(index)).map_or(&body.slots[..], Vec::as_slice);
             *slot = layout_body(graph, index, sized, header, title, slots);
         }
+    }
+    let least = bodies.first().map(|placed| (offsets.first().map_or(0, |offset| offset.2).max(placed.width), placed.height));
+    // `frame size (w, h)`: the frame of the function at least that large, from its origin (spec 11).
+    if let (Some((width, height)), Some(placed), Some(offset)) = (graph.frame_size, bodies.first_mut(), offsets.first_mut()) {
+        placed.height = placed.height.max(height);
+        offset.2 = offset.2.max(width);
     }
     // From the function inwards: each frame at its place, then its nodes.
     let mut placement = Placement { nodes: vec![None; graph.nodes.len()], frames: vec![FrameAt::default(); count], routes: vec![Vec::new(); count] };
@@ -273,6 +283,8 @@ fn place_with(
                 axis: placed.axis.map(|axis| y + axis),
                 from_file: placed.from_file,
                 origin: (x, y),
+                least: if index == 0 { least } else { None },
+                size: if index == 0 { graph.frame_size } else { None },
             };
         }
         if let Some(slot) = placement.routes.get_mut(index) {
@@ -301,30 +313,38 @@ fn place_with(
 }
 
 /// The size of a structure from its bodies, and where they are in it: a loop is the frame of its body; a `match` or a
-/// `handle` unfolded stacks its arms, the last at the bottom, on the axis (notation 5.2).
-fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets: &mut [(i64, i64, i64)], sized: &mut [Sized], titles: &Titles) {
+/// `handle` unfolded stacks its arms, the last at the bottom, on the axis (notation 5.2). A `frame … size` entry makes it
+/// at least that large (spec 11): a loop its body, a `match` unfolded every arm as wide and its last arm higher, a
+/// `match` in tabs every arm the whole box.
+fn size_structure(graph: &Graph<'_>, node: usize, bodies: &mut [BodyPlace], offsets: &mut [(i64, i64, i64)], sized: &mut [Sized], titles: &Titles) {
     let Some(found) = graph.nodes.get(node) else { return };
     let Kind::Structure(structure) = &found.kind else { return };
     let block = match structure.kind {
         StructureKind::Loop | StructureKind::For => {
-            let Some((&body, placed)) = found.bodies.first().and_then(|&body| Some((found.bodies.first()?, bodies.get(body)?))) else { return };
+            let Some(&body) = found.bodies.first() else { return };
+            let least = bodies.get(body).map_or((0, 0), |placed| (placed.width, placed.height));
+            if let (Some((_, height)), Some(placed)) = (found.size, bodies.get_mut(body)) {
+                placed.height = placed.height.max(height);
+            }
+            let Some(placed) = bodies.get(body) else { return };
+            let width = found.size.map_or(placed.width, |(width, _)| placed.width.max(width));
             // What the frame grows upward stands above the block, as a label does: the block starts at the origin of
             // the coordinates of `layout` in its frame, which so stays where its structure is (spec 11).
             let rise = placed.rise;
-            let mut block = Sized::new(placed.width, placed.height, Vec::new());
+            let mut block = Sized::new(width, placed.height, Vec::new());
             block.over = rise;
+            block.least = least;
             block.inputs = (0..found.inputs.len())
                 .map(|input| {
                     let left = structure.inputs_at.get(input).and_then(|at| at.first()).map(|&(_, left)| left);
                     (0, left.and_then(|left| placed.left.get(left).copied()).unwrap_or(placed.height / 2))
                 })
                 .collect();
-            block.outputs =
-                (0..found.outputs.len()).map(|output| (placed.width, placed.right.get(output).copied().unwrap_or(placed.height / 2))).collect();
+            block.outputs = (0..found.outputs.len()).map(|output| (width, placed.right.get(output).copied().unwrap_or(placed.height / 2))).collect();
             // The first value of a register given as a constant: its pill outside, left of the box (notation 5.1).
             block.left = found.inputs.iter().filter_map(|input| input.constant.as_ref()).map(|constant| constant_reach(constant)).max().unwrap_or(0);
             if let Some(offset) = offsets.get_mut(body) {
-                *offset = (0, 0, placed.width);
+                *offset = (0, 0, width);
             }
             block
         }
@@ -333,6 +353,18 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let header_width = titles.structures.get(&node).copied().unwrap_or(0);
             let widest = found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| placed.width).max().unwrap_or(0);
             let width = size::up(widest.max(header_width));
+            // A height asked for: what the arms lack goes to the last one.
+            let mut y = style::frame_header() + style::frame_pad();
+            for &body in &found.bodies {
+                let Some(placed) = bodies.get(body) else { continue };
+                y += placed.rise + placed.height + style::arm_gap();
+            }
+            let natural = (y - style::arm_gap() + style::frame_pad()).max(style::frame_header() + 2 * style::frame_pad());
+            if let Some((_, asked)) = found.size
+                && let Some(last) = found.bodies.last().and_then(|&body| bodies.get_mut(body))
+            {
+                last.height += (asked - natural).max(0);
+            }
             let mut y = style::frame_header() + style::frame_pad();
             let mut arms = Vec::new();
             let mut corners = Vec::new();
@@ -373,6 +405,8 @@ fn size_structure(graph: &Graph<'_>, node: usize, bodies: &[BodyPlace], offsets:
             let (left_slots, left_gap) = gap_slots(&entering, |index| index);
             // On the right, the later outputs stand further left: their wires from the upper arms cross fewer verticals.
             let (right_slots, right_gap) = gap_slots(&leaving, |index| leaving.len() - 1 - index);
+            block.least = (left_gap + width + right_gap, natural);
+            let width = found.size.map_or(width, |(asked, _)| width.max(asked - left_gap - right_gap));
             for (body, corner) in corners {
                 if let Some(offset) = offsets.get_mut(body) {
                     *offset = (left_gap, corner, width);
@@ -410,7 +444,7 @@ fn tabs_block(
     structure: &crate::graph::Structure,
     found: &Node<'_>,
     node: usize,
-    bodies: &[BodyPlace],
+    bodies: &mut [BodyPlace],
     offsets: &mut [(i64, i64, i64)],
     titles: &Titles,
 ) -> Sized {
@@ -422,6 +456,22 @@ fn tabs_block(
     // upward does not count: it goes above, over the header if need be, which then stands higher (`Sized::over`), so that
     // the corner of each arm stays where it is (spec 11).
     let reach = found.bodies.iter().filter_map(|&body| bodies.get(body)).filter_map(|placed| placed.axis).max();
+    let corner_of = |placed: &BodyPlace| match (reach, placed.axis) {
+        (Some(reach), Some(axis)) => top + reach - axis,
+        _ => top,
+    };
+    let natural = (found.bodies.iter().filter_map(|&body| bodies.get(body)).map(|placed| corner_of(placed) + placed.height).max().unwrap_or(top)
+        + style::frame_pad())
+    .max(top + style::frame_pad());
+    // A height asked for: every arm down to the bottom of the box.
+    if let Some((_, asked)) = found.size {
+        for &body in &found.bodies {
+            let Some(placed) = bodies.get_mut(body) else { continue };
+            let corner = corner_of(placed);
+            placed.height = placed.height.max(asked - style::frame_pad() - corner);
+        }
+    }
+    let bodies: &[BodyPlace] = bodies;
     let mut arms = Vec::new();
     let mut over = 0;
     for &body in &found.bodies {
@@ -477,6 +527,8 @@ fn tabs_block(
     let right: Vec<(Vec<Option<u32>>, i64)> = leaving.iter().map(|lists| gap_slots(lists, |index| lists.len() - 1 - index)).collect();
     let left_gap = left.iter().map(|(_, gap)| *gap).max().unwrap_or(style::frame_pad());
     let right_gap = right.iter().map(|(_, gap)| *gap).max().unwrap_or(style::frame_pad());
+    block.least = (left_gap + width + right_gap, natural);
+    let width = found.size.map_or(width, |(asked, _)| width.max(asked - left_gap - right_gap));
     for &(body, corner, _) in &arms {
         if let Some(offset) = offsets.get_mut(body) {
             *offset = (left_gap, corner, width);

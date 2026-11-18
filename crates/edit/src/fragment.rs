@@ -80,6 +80,13 @@ fn node_item(edit: &mut Edit, named: Designation, at: Point, view: Option<View>)
     LayoutItem { id: edit.id(), comments: Attached::default(), kind: LayoutKind::Node { node, at: Some(point), view } }
 }
 
+/// The `frame … size` entry of a structure of the fragment.
+fn frame_item(edit: &mut Edit, named: Designation, size: Point) -> LayoutItem {
+    let node = NodeRef { id: edit.id(), is_label: named.is_label, name: named.name };
+    let size = labcraft_graph::Point { id: edit.id(), x: coordinate(edit, size.x), y: coordinate(edit, size.y) };
+    LayoutItem { id: edit.id(), comments: Attached::default(), kind: LayoutKind::Frame { node: Some(node), size } }
+}
+
 /// A point of `layout` moved by `[dx, dy]`, within the bounds of a coordinate or `params.invalid` of `parameter`; one that
 /// is not an integer stays as written (`LC5005`).
 fn shifted(edit: &mut Edit, point: &mut labcraft_graph::Point, by: Point, parameter: &'static str) -> Result<(), EditError> {
@@ -246,9 +253,17 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
     // between the nodes selected or inside what they hold (an order wire from a label too), with whether it is in the
     // frame of the selection.
     let mut entries: HashMap<Loc, (Option<Point>, Option<View>)> = HashMap::new();
+    let mut sizes: HashMap<Loc, Point> = HashMap::new();
     let mut wires: Vec<(LayoutItem, bool)> = Vec::new();
     for item in edit.file.layout.iter().flat_map(|layout| &layout.items) {
         match &item.kind {
+            LayoutKind::Frame { node: None, .. } => {}
+            LayoutKind::Frame { node: Some(node), size } => {
+                let Some(loc) = named_by(&nodes_of, node).filter(|loc| held.contains(*loc)) else { continue };
+                if let (Some(x), Some(y)) = (value_of(edit, &size.x), value_of(edit, &size.y)) {
+                    sizes.insert(loc.clone(), Point { x, y });
+                }
+            }
             LayoutKind::Node { node, at, view } => {
                 let Some(loc) = named_by(&nodes_of, node).filter(|loc| held.contains(*loc)) else { continue };
                 let at = at.as_ref().and_then(|point| Some(Point { x: value_of(edit, &point.x)?, y: value_of(edit, &point.y)? }));
@@ -358,6 +373,9 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
             ));
         }
         items.push(node_item(&mut clip, named, point, view));
+        if let Some(size) = sizes.get(&loc).copied() {
+            items.push(frame_item(&mut clip, named, size));
+        }
     }
     for (mut item, of_selection) in wires {
         if of_selection && let LayoutKind::Wire { via, .. } = &mut item.kind {
@@ -499,7 +517,8 @@ fn rename_all(edit: &mut Edit, values: &HashMap<Name, Name>, labels: &HashMap<Na
     };
     for item in edit.file.layout.iter_mut().flat_map(|layout| layout.items.iter_mut()) {
         match &mut item.kind {
-            LayoutKind::Node { node, .. } => of(node),
+            LayoutKind::Frame { node: None, .. } => {}
+            LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => of(node),
             LayoutKind::Wire { from, to, .. } => {
                 of(&mut from.node);
                 of(&mut to.node);
@@ -562,7 +581,8 @@ fn prepare(
     let mut kept: Vec<(LayoutItem, bool)> = Vec::new();
     for item in edit.file.layout.take().map(|layout| layout.items).unwrap_or_default() {
         let (node, from) = match &item.kind {
-            LayoutKind::Node { node, .. } => (*node, None),
+            LayoutKind::Frame { node: None, .. } => continue,
+            LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => (*node, None),
             LayoutKind::Wire { from, to, .. } => (to.node, Some(from.node)),
         };
         let Some(loc) = named_by(&nodes_of, &node) else { continue };
@@ -588,7 +608,7 @@ fn prepare(
         if outer {
             match &mut item.kind {
                 LayoutKind::Node { at: Some(point), .. } => shifted(edit, point, by, "at")?,
-                LayoutKind::Node { at: None, .. } => {}
+                LayoutKind::Node { at: None, .. } | LayoutKind::Frame { .. } => {}
                 LayoutKind::Wire { via, .. } => {
                     for point in via.iter_mut() {
                         shifted(edit, point, by, "at")?;

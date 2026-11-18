@@ -1223,5 +1223,6 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
 
 mod fields;
 mod fragment;
+mod frames;
 mod parts;
 mod structures;

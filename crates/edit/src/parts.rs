@@ -298,7 +298,8 @@ pub(crate) fn follow_name(edit: &mut Edit, loc: &Loc, before: Option<(Name, bool
         None => {
             let named = edit.file.layout.as_ref().is_some_and(|layout| {
                 layout.items.iter().any(|item| match &item.kind {
-                    LayoutKind::Node { node, .. } => !node.is_label && node.name == old,
+                    LayoutKind::Frame { node: None, .. } => false,
+                    LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => !node.is_label && node.name == old,
                     LayoutKind::Wire { to, .. } => !to.node.is_label && to.node.name == old,
                 })
             });
@@ -314,7 +315,7 @@ pub(crate) fn follow_name(edit: &mut Edit, loc: &Loc, before: Option<(Name, bool
     // stays.
     for item in &mut layout.items {
         match &mut item.kind {
-            LayoutKind::Node { node, .. } if !node.is_label && node.name == old => {
+            LayoutKind::Node { node, .. } | LayoutKind::Frame { node: Some(node), .. } if !node.is_label && node.name == old => {
                 node.name = now.0;
                 node.is_label = now.1;
             }

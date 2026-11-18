@@ -148,6 +148,13 @@ pub enum Op {
         nodes: Vec<String>,
         by: Point,
     },
+    /// `frame.resize`: `frame size (w, h)`, or `frame ys size (w, h)` for the structure `inside`; with no size, its
+    /// entry goes.
+    FrameResize {
+        file: String,
+        inside: Option<String>,
+        size: Option<Point>,
+    },
     /// `node.place`: one node at `at` in its frame, fixed.
     NodePlace {
         file: String,
@@ -361,6 +368,7 @@ impl Op {
             | Op::WireConnect { file, .. }
             | Op::WireDisconnect { file, .. }
             | Op::NodeMove { file, .. }
+            | Op::FrameResize { file, .. }
             | Op::NodePlace { file, .. }
             | Op::NodeSetView { file, .. }
             | Op::LayoutArrange { file, .. }
@@ -501,6 +509,13 @@ pub trait Judge {
         Vec::new()
     }
 
+    /// The least size of each frame of the function of `file` as the drawing of `text` draws it, from its origin: what
+    /// its content needs, whatever its `frame … size` entry (spec 11). Empty when it is not drawn.
+    fn frames(&self, file: &str, text: &str) -> Vec<FrameDrawn> {
+        let _ = (file, text);
+        Vec::new()
+    }
+
     /// The type of a value of `file` when its text is `text`, as the check sees it: the value `name` bound on `line`, from
     /// 1, by a line, a pattern, a clause or a carry, or the input of the function of that name when `line` is 0. What a
     /// structure needs to know of its selector and of what crosses it (commands.md 9.6).
@@ -562,6 +577,19 @@ pub struct WireDrawn {
     pub value: String,
     pub body: usize,
     pub path: Vec<(i64, i64)>,
+}
+
+/// A frame of a drawing and its size (spec 11).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrameDrawn {
+    /// The structure, as the drawing names it (the name of its line, else its label, else `@N`); none for the frame of
+    /// the function.
+    pub structure: Option<String>,
+    /// The line where the structure starts, from 1; 0 for the frame of the function.
+    pub line: u32,
+    /// The width and the height that its content needs from its origin, in units, rounded up: the least `frame.resize`
+    /// writes.
+    pub least: Point,
 }
 
 /// A node of a drawing, where it is in its frame, in units (spec 11).
@@ -649,6 +677,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::WireDisconnect { wire, arm, .. } => wire::disconnect(&mut edit, judge, wire, arm.as_deref(), &mut edited)?,
         Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
         Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
+        Op::FrameResize { inside, size, .. } => layout::resize(&mut edit, judge, inside.as_deref(), size.as_ref().copied(), &mut edited)?,
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
         Op::LayoutArrange { nodes, wires, terminals, within, .. } => {
             let branch = if *within == Within::default() { None } else { Some(frame::target(&edit, within, "inside", "arm")?) };

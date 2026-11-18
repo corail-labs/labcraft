@@ -563,9 +563,10 @@ has one text:
 - **Items of `panel`**: the `control` items, then the `indicator` items. In each group, the
   elements that have the name of an input (for `control`) or of an output (for `indicator`), in
   signature order, then the others by name in code point order. Arguments keep their written order.
-- **Items of `layout`**: the `frame size` item, the `input` items, then the `output` items, each in
-  signature order (an entry that names no terminal after those of its kind), then the `node` items by name, then the `wire` items by source and destination,
-  the last two in code point order on the text of the reference (so `#close` comes before `dmm`). Ties keep
+- **Items of `layout`**: the `frame size` item, the `frame … size` items of the structures by name, the `input` items,
+  then the `output` items, each in signature order (an entry that names no terminal after those of its kind), then the
+  `node` items by name, then the `wire` items by source and destination, the `frame`, `node` and `wire` items in code
+  point order on the text of the reference (so `#close` comes before `dmm`). Ties keep
   the written order, and so do the points after `via`. A coordinate that is an integer literal in
   the range (section 11) is written in plain decimal: `1_000` becomes `1000`, `-0` becomes `0`.
   Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
@@ -1307,13 +1308,17 @@ layout {
   from the file alone, and a small change of the file moves few of them (visual notation 2.1). Moving a node by hand
   writes the entry of that node alone. A node that an agent adds without a position is placed near its
   neighbours, without moving the others, and gets no entry until someone moves it.
-- **`frame size (w, h)`** is the size of the frame of the function, set by hand (its right edge, its bottom
-  edge or its corner, never its top or left edge, which would move the origin). `w` and `h` are measured from the
-  origin: the frame spans from the origin to `(w, h)`, and further wherever its content needs, negative
-  coordinates included, so a node moved above it leaves `frame size` as it is. The frame always holds what
-  it holds: a size too small for its content is drawn as large as the content needs, and the editor never
-  writes one. Without this entry, the size is automatic. The size of a structure comes later (M1, with the
-  gesture that surrounds nodes).
+- **`frame size (w, h)`** is the size of the frame of the function, and **`frame ys size (w, h)`** the size of
+  the frame of a structure, which the entry designates as a `node` entry does (`frame #scan size (320, 200)`), set by
+  hand (its right edge, its bottom edge or its corner, never its top or left edge, which would move the origin). `w`
+  and `h` are measured from the origin of the frame, for a structure the corner that its `node … at` entry places:
+  the frame spans from the origin to `(w, h)`, and further wherever its content needs, negative coordinates
+  included, so a node moved above it leaves `frame size` as it is. The frame always holds what it holds: a size too
+  small for its content is drawn as large as the content needs, and the editor never writes one. Without this
+  entry, the size is automatic; surrounding nodes with a structure writes none. A `match` or a `handle` unfolded
+  gives the width to every arm and the height that its arms lack to its last one; in tabs, every arm takes the whole
+  box. A `frame … size` entry on a node that is no structure names nothing (`LC5004`). The editor marks a frame of
+  fixed size by its corner, and "Remove the fixed size" deletes the entry (visual notation 2.4).
 - **`input x at y`** and **`output x at y`** set the height of a terminal of the frame of the function, moved
   by hand along its edge: an input on the left edge, an output on the right one. `y` is where its wire
   meets the edge, in the coordinates of the frame. `input err` and `output err` name the two terminals of a
@@ -2082,7 +2087,8 @@ panel_section  = "panel" "{" { panel_item } "}" ;
 panel_item     = ( "control" | "indicator" ) IDENT ":" IDENT [ "(" [ arg { "," arg } ] ")" ] ;
 
 layout_section = "layout" "{" { layout_item } "}" ;
-layout_item    = "frame" "size" point                    (* the frame of the function (11) *)
+layout_item    = "frame" [ node_ref ] "size" point       (* the frame of the function, or of a structure (11);
+                                                             a structure named `size`: frame size size (…) *)
                | ( "input" | "output" ) IDENT "at" number  (* a terminal, its height on its edge *)
                | "node" node_ref ( "at" point [ view ] | view )
                | "wire" terminal_ref "->" terminal_ref [ "via" point { point } ] ;

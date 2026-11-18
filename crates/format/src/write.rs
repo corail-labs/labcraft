@@ -1070,6 +1070,15 @@ impl<'a> Writer<'a> {
         self.comment_lines(&item.comments.before, 1);
         self.indent(1);
         match &item.kind {
+            LayoutKind::Frame { node, size } => {
+                self.push("frame ");
+                if let Some(node) = node {
+                    self.node_ref(*node);
+                    self.push(" ");
+                }
+                self.push("size ");
+                self.point(*size);
+            }
             LayoutKind::Node { node, at, view } => {
                 self.push("node ");
                 self.node_ref(*node);

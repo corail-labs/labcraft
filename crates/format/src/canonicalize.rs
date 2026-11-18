@@ -201,6 +201,7 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
     }
     for item in &mut layout.items {
         match &mut item.kind {
+            LayoutKind::Frame { size, .. } => plain_point(size, names),
             LayoutKind::Node { at, .. } => {
                 if let Some(point) = at {
                     plain_point(point, names);
@@ -214,9 +215,12 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
         }
     }
     let names: &Interner = names;
+    // The frame of the function, those of the structures by name, the nodes, the wires (spec 5.2).
     layout.items.sort_by_cached_key(|item| match &item.kind {
-        LayoutKind::Node { node, .. } => (0_u8, reference_text(*node, None, names), String::new()),
-        LayoutKind::Wire { from, to, .. } => (1_u8, reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names)),
+        LayoutKind::Frame { node: None, .. } => (0_u8, String::new(), String::new()),
+        LayoutKind::Frame { node: Some(node), .. } => (1_u8, reference_text(*node, None, names), String::new()),
+        LayoutKind::Node { node, .. } => (2_u8, reference_text(*node, None, names), String::new()),
+        LayoutKind::Wire { from, to, .. } => (3_u8, reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names)),
     });
     if layout.items.is_empty() && layout.end.is_empty() && nothing_attached(&layout.comments) {
         file.layout = None;
@@ -225,6 +229,8 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
 
 fn report_stale_entry(item: &LayoutItem, map: &SourceMap, names: &Interner, report: &mut Report) {
     let what = match &item.kind {
+        LayoutKind::Frame { node: None, .. } => "frame size".to_owned(),
+        LayoutKind::Frame { node: Some(node), .. } => format!("frame {} size", reference_text(*node, None, names)),
         LayoutKind::Node { node, .. } => format!("node {}", reference_text(*node, None, names)),
         LayoutKind::Wire { from, to, .. } => {
             format!("wire {} -> {}", reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names))
@@ -250,7 +256,8 @@ struct Known {
 fn names_what_is_known(item: &LayoutItem, known: &Known) -> bool {
     let is = |set: &HashSet<(Name, bool)>, node: &NodeRef| set.contains(&(node.name, node.is_label));
     match &item.kind {
-        LayoutKind::Node { node, .. } => is(&known.nodes, node),
+        LayoutKind::Frame { node: None, .. } => true,
+        LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => is(&known.nodes, node),
         // A wire starts at the value it carries, never at a terminal (`raw.session`): one file is enough to see it.
         LayoutKind::Wire { from, to, .. } => from.terminal.is_none() && is(&known.starts, &from.node) && is(&known.nodes, &to.node),
     }

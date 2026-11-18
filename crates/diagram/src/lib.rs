@@ -471,6 +471,8 @@ fn shapes(
                 None => String::new(),
             },
             over,
+            least: sized.least,
+            size: node.size,
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
@@ -596,6 +598,9 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
             axis: frame.axis.map(|axis| axis + dy),
             from_file: frame.from_file,
             frame: (frame.x + dx, frame.y + dy, frame.width, frame.height),
+            header: frame.header,
+            least: frame.least,
+            size: frame.size,
             origin: (frame.origin.0 + dx, frame.origin.1 + dy),
             owner: None,
             looping: false,
