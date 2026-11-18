@@ -96,6 +96,25 @@ pub fn surround_kind(id: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+/// The parts of the one structure selected (notation 2.6).
+pub const ADD_ARM: &str = "ide.add_arm";
+pub const ADD_CARRY: &str = "ide.add_carry";
+pub const ADD_CLAUSE: &str = "ide.add_clause";
+pub const CONTINUE_ON_ERROR: &str = "ide.continue_on_error";
+pub const PARALLEL: &str = "ide.parallel";
+
+/// The part of a structure that a command of the palette asks for.
+pub fn part_asked(id: &str) -> Option<labcraft_editor::PartAsked> {
+    use labcraft_editor::PartAsked;
+    match id {
+        ADD_ARM => Some(PartAsked::AddArm),
+        ADD_CARRY => Some(PartAsked::AddCarry),
+        ADD_CLAUSE => Some(PartAsked::AddClause),
+        CONTINUE_ON_ERROR => Some(PartAsked::ContinueOnError),
+        PARALLEL => Some(PartAsked::Parallel),
+        _ => None,
+    }
+}
 pub const INTO_WIRE: &str = "ide.into_wire";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
@@ -139,6 +158,11 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (SURROUND_HANDLE, "Surround with handle"),
     (SURROUND_FOR, "Surround with for"),
     (SURROUND_LOOP, "Surround with loop"),
+    (ADD_ARM, "Add an arm to the structure selected"),
+    (ADD_CARRY, "Add a carry to the loop selected"),
+    (ADD_CLAUSE, "Add a clause to the for selected"),
+    (CONTINUE_ON_ERROR, "Continue on error: the loop selected"),
+    (PARALLEL, "Parallel: the for selected"),
     (AUTOPATCH, "Autopatch from the keyboard"),
     (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
@@ -248,6 +272,11 @@ pub fn menus() -> MenuBar {
             item(SURROUND_HANDLE, "Surround with handle…"),
             item(SURROUND_FOR, "Surround with for…"),
             item(SURROUND_LOOP, "Surround with loop"),
+            item(ADD_ARM, "Add arm…"),
+            item(ADD_CARRY, "Add carry…"),
+            item(ADD_CLAUSE, "Add clause…"),
+            item(CONTINUE_ON_ERROR, "Continue on error"),
+            item(PARALLEL, "Parallel"),
             Node::Separator,
             item(PALETTE, "Command palette…"),
         ],

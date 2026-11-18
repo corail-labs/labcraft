@@ -31,6 +31,7 @@ mod frames;
 pub mod insertion;
 pub(crate) mod moving;
 pub(crate) mod paint;
+mod parts;
 mod pins;
 mod quick;
 pub(crate) mod rerouting;
@@ -42,6 +43,7 @@ pub(crate) mod wiring;
 pub use fields::FieldKind;
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use frames::{InFrame, STRUCTURES, Seen};
+pub use parts::PartAsked;
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
@@ -119,7 +121,17 @@ pub enum Intent {
     /// `route`: a branch drawn from a wire, with `wire.route` after it in one `commands.batch`, its junction first
     /// (notation 2.4): the wire as `wire.route` names it and its points in units of its frame.
     /// `arm`: the arm of a `yield`, by its patterns (commands.md 9.2).
-    Wire { from: String, to: String, arm: Option<String>, replace: bool, accept_mismatch: bool, route: Option<(String, Vec<(i64, i64)>)> },
+    /// `through`: how each loop that the wire leaves takes the value out (`carry`, `collect`), from the inside out, as
+    /// `wire.connect` takes it; empty when it leaves none.
+    Wire {
+        from: String,
+        to: String,
+        arm: Option<String>,
+        replace: bool,
+        accept_mismatch: bool,
+        route: Option<(String, Vec<(i64, i64)>)>,
+        through: Vec<&'static str>,
+    },
     /// `wire.route` for each of these wires, in one `commands.batch`: a segment moved by hand (notation 2.4).
     Route(Vec<(String, Vec<(i64, i64)>)>),
     /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
@@ -142,6 +154,15 @@ pub enum Intent {
     /// A field in place written (notation 2.6): the host sends its command, and calls [`Canvas::close_field`] when it is
     /// done or [`Canvas::field_refused`] with the message of a refusal.
     Field { kind: FieldKind, text: String },
+    /// `structure.remove_part` (notation 2.6): an arm by its patterns, `carry x`, `in x` or `collect y`.
+    RemovePart { structure: String, part: String },
+    /// `structure.set_option`: `continue_on_error` of a `loop`, `parallel` of a `for`.
+    SetOption { structure: String, option: &'static str, on: bool },
+    /// "Add clause…" of a `for`: the host opens the list of the values it can go over (notation 2.6); with `over`, a
+    /// wire of an array dropped on its left edge, `structure.add_clause` at once.
+    AddClause { structure: String, over: Option<String> },
+    /// `structure.add_collect`: a wire from inside a loop dropped on its inner right edge (notation 2.6).
+    AddCollect { structure: String, value: String },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -248,6 +269,16 @@ pub struct Canvas {
     field: Option<fields::Field>,
     /// A field closed: the canvas takes the keyboard back at its next frame.
     refocus: bool,
+    /// The arm whose tab a right-click was on, by its rank, and the terminal it was on: the parts of a structure in its
+    /// menu (notation 2.6).
+    context_arm: Option<usize>,
+    context_port: Option<usize>,
+    /// A wire out of a loop asked for that makes a carry: the body of that loop, whose structure is found there in the
+    /// new drawing (its name may change with its outputs), and the initial value of its carry opens in its field
+    /// (notation 2.6).
+    initial_after: Option<usize>,
+    /// What the command palette asked of the canvas, for the next frame to give back.
+    queued: Vec<Intent>,
 }
 
 /// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
@@ -355,6 +386,12 @@ impl Frame {
         within.is_none_or(|arm| self.arms.get(arm).copied().unwrap_or(false))
     }
 
+    /// Whether a tab shows: its structure is shown, and a part of a selector with the arm it stands for.
+    fn tab_shown(&self, tab: &labcraft_diagram::Tab) -> bool {
+        self.drawing.arms.get(tab.arm).is_some_and(|arm| self.visible(arm.within))
+            && tab.when.is_none_or(|when| self.arms.get(when).copied().unwrap_or(false))
+    }
+
     fn offset_of(&self, placed: Option<usize>) -> Vec2 {
         match (&self.offsets, placed) {
             (Some(offsets), Some(placed)) => offsets.get(placed).copied().unwrap_or(Vec2::ZERO),
@@ -414,6 +451,10 @@ impl Canvas {
             rect: Rect::NOTHING,
             field: None,
             refocus: false,
+            context_arm: None,
+            context_port: None,
+            initial_after: None,
+            queued: Vec::new(),
         }
     }
 
@@ -444,6 +485,8 @@ impl Canvas {
     pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool) {
         // The nodes of a move asked for are where it put them: they do not glide there (architecture 12.4).
         // A move under way goes on over the new drawing, its nodes found again by their keys; one asked for ends.
+        // A wire asked for: this drawing answers it, and the field of the carry it made may open on it.
+        let answered = self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked);
         let (moved, going) = match self.moving.take() {
             Some(moving) if moving.state == moving::State::Asked => {
                 (Some((moving.preview.carried.into_iter().collect::<Vec<usize>>(), moving.by)), None)
@@ -515,6 +558,10 @@ impl Canvas {
         self.drawing = Some(drawing);
         self.set_values(None, None);
         self.moving = going;
+        // A carry that a wire out of a loop made: its initial value, a hole, in its field (notation 2.6).
+        if answered && let Some(body) = self.initial_after.take() {
+            self.edit_initial(body);
+        }
     }
 
     pub fn drawing(&self) -> Option<&Arc<Drawing>> {
@@ -569,6 +616,7 @@ impl Canvas {
 
     /// The wire asked for failed: it goes, and the old wire it would have replaced stays.
     pub fn cancel_wire(&mut self) {
+        self.initial_after = None;
         if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked) {
             self.wiring = None;
         }
@@ -844,6 +892,7 @@ impl Canvas {
 
     /// The input of a frame: the tabs, the selectors and their fields, the selection by the pointer and the keys.
     fn input(&mut self, ui: &mut Ui, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
+        input.intents.append(&mut self.queued);
         let (ctx, drawing, rect) = (&frame.ctx, &frame.drawing, frame.rect);
         let zoom = self.viewport.zoom;
         let origin = self.viewport.origin;
@@ -855,8 +904,11 @@ impl Canvas {
         let clicked_unit = pointer.map(unit_of);
         self.end_run_when_due(frame, input);
         self.fixed_menu(response, frame, shown, input);
-        // A click on a tab shows its arm; on the title of a selector, opens the list of its arms.
+        // A click on a tab shows its arm; on the title of a selector, opens the list of its arms. A double-click on a tab
+        // opens the field of its patterns (notation 2.6).
         let mut opened = false;
+        let double = response.interact_pointer_pos().filter(|_| response.double_clicked()).map(unit_of);
+        let mut patterns = None;
         for found in &drawing.tabs {
             let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible(arm.within));
             let with_its_arm = found.when.is_none_or(|when| frame.arms.get(when).copied().unwrap_or(false));
@@ -867,6 +919,15 @@ impl Canvas {
                 Pos2::new(found.x as f32 / 100.0, found.y as f32 / 100.0) + frame.offset_of(Some(found.structure)),
                 Vec2::new(found.width as f32, found.height as f32) / 100.0,
             );
+            if found.kind == TabKind::Tab
+                && double.is_some_and(|at| unit.contains(at))
+                && let Some(arm) = drawing.arms.get(found.arm)
+                && let Some(node) = drawing.placed.get(found.structure)
+                && let Some(body) = node.holds.get(arm.arm).and_then(|&body| drawing.bodies.get(body))
+                && !node.name.is_empty()
+            {
+                patterns = Some((found.structure, FieldKind::Patterns { structure: node.name.clone(), arm: body.arm.clone() }, body.arm.clone()));
+            }
             if clicked_unit.is_some_and(|at| unit.contains(at))
                 && let Some(arm) = drawing.arms.get(found.arm)
             {
@@ -934,6 +995,19 @@ impl Canvas {
                 let hint = (shown + 1).to_string();
                 self.typing = Some(Typing { key: selector.key.clone(), count: selector.count, text: String::new(), hint, at, focused: false });
             }
+        }
+        if let Some((placed, kind, text)) = patterns {
+            consumed |= self.edit_part(placed, kind, text);
+        }
+        // A click on the `+` after the tabs of a structure: "Add arm…" (notation 2.6).
+        let tab_shown = |tab: &labcraft_diagram::Tab| frame.tab_shown(tab);
+        let plus = clicked_unit.filter(|_| !consumed).and_then(|at| {
+            parts::plus_tabs(drawing, &|placed| frame.offset_of(Some(placed)), &tab_shown).into_iter().find(|(_, area)| area.contains(at))
+        });
+        if let Some((placed, _)) = plus
+            && let Some(node) = drawing.placed.get(placed)
+        {
+            consumed |= self.edit_part(placed, FieldKind::AddArm { structure: node.name.clone() }, String::new());
         }
         // A double-click on what a field in place edits opens it (notation 2.6).
         if response.double_clicked()
@@ -1064,6 +1138,16 @@ impl Canvas {
                 select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
             });
             self.context = frame.hovered.filter(|_| self.wire_context.is_none());
+            // The tab and the terminal under the pointer, for the parts of a structure (notation 2.6).
+            let at = frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of);
+            self.context_arm = at.and_then(|at| {
+                frame.drawing.tabs.iter().find_map(|tab| {
+                    let corner = Pos2::new(tab.x as f32, tab.y as f32) / 100.0 + frame.offset_of(Some(tab.structure));
+                    let area = Rect::from_min_size(corner, Vec2::new(tab.width as f32, tab.height as f32) / 100.0);
+                    (tab.kind == TabKind::Tab && area.contains(at)).then(|| frame.drawing.arms.get(tab.arm).map(|arm| arm.arm)).flatten()
+                })
+            });
+            self.context_port = at.and_then(|at| port_at(&frame.drawing, at, (6.0 / self.viewport.zoom).max(5.0), &visible));
         }
         if let Some(group) = self.wire_context {
             let wires = routed(&frame.drawing, group);
@@ -1084,6 +1168,9 @@ impl Canvas {
         let (name, fixed) =
             frame.drawing.placed.get(placed).map(|found| (found.name.clone(), found.at.is_some() && !found.name.is_empty())).unwrap_or_default();
         let (mut arrange, mut label, mut surround) = (false, false, None);
+        let shown_arm = |index: usize| frame.arms.get(index).copied().unwrap_or(false);
+        let (context_arm, context_port) = (self.context_arm, self.context_port);
+        let mut part = None;
         response.context_menu(|ui| {
             if ui.button("Label…").clicked() {
                 label = true;
@@ -1101,7 +1188,22 @@ impl Canvas {
                     }
                 }
             });
+            // Built while the menu shows, not on each frame of the canvas.
+            if let Some(parts) = parts::PartsMenu::of(&frame.drawing, placed, context_arm, context_port, &shown_arm) {
+                part = parts.ui(ui);
+            }
         });
+        match part {
+            Some(parts::Chosen::Field(kind, text)) => {
+                self.edit_part(placed, kind, text);
+                self.context = None;
+            }
+            Some(parts::Chosen::Intent(intent)) => {
+                input.intents.push(intent);
+                self.context = None;
+            }
+            None => {}
+        }
         if let Some(kind) = surround {
             // The node right-clicked, or the selection when it holds that node.
             let nodes = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
@@ -1281,6 +1383,16 @@ impl Canvas {
     fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input, visible: &dyn Fn(Option<usize>) -> bool) {
         let Some(mut wiring) = self.wiring.take() else { return };
         let Some(over) = wiring.over else {
+            // On the edge of a loop: a `collect`, or a clause of a `for` (notation 2.6).
+            let reach = (6.0 / self.viewport.zoom).max(4.0);
+            if wiring.taken == wiring::Taken::Nothing
+                && wiring.branch.is_none()
+                && let Some(port) = drawing.ports.get(wiring.from)
+                && let Some(intent) = parts::edge_drop(drawing, port, wiring.at, reach, visible)
+            {
+                input.intents.push(intent);
+                return;
+            }
             // Ctrl and a drag that ends nowhere leaves the wire as it was.
             if wiring.taken == wiring::Taken::Nothing
                 && let Some(port) = drawing.ports.get(wiring.from)
@@ -1296,8 +1408,15 @@ impl Canvas {
             return;
         };
         match wiring.drop_on(drawing, over, rules) {
-            Some(wiring::Drop::Wire { replace, accept_mismatch }) => {
-                let Some(intent) = wiring.intent(drawing, over, replace, accept_mismatch) else { return };
+            Some(wiring::Drop::Wire { replace, accept_mismatch, through }) => {
+                // The innermost loop that makes a carry: its initial value opens in its field with the new drawing.
+                let exits = match wiring.verdicts.get(over) {
+                    Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) => exits.clone(),
+                    _ => Vec::new(),
+                };
+                let carried = exits.iter().zip(&through).find(|(_, passage)| **passage == "carry").map(|(&body, _)| body);
+                let Some(intent) = wiring.intent(drawing, over, replace, accept_mismatch, through) else { return };
+                self.initial_after = carried;
                 // The old wire retracts, visibly (notation 2.4).
                 let target = if drawing.ports.get(over).is_some_and(|port| port.input) { Some(over) } else { Some(wiring.from) };
                 self.retract = target.filter(|_| replace && !self.reduced_motion).and_then(|target| {
@@ -1736,6 +1855,20 @@ impl Canvas {
                 put(&painted, offset);
             }
         }
+        // The `+` after the tabs, in the editor only (notation 2.6): outlined as a tab not shown, its mark muted.
+        if !coarse {
+            let tab_shown = |tab: &labcraft_diagram::Tab| frame.tab_shown(tab);
+            for (_, unit) in parts::plus_tabs(drawing, &|placed| frame.offset_of(Some(placed)), &tab_shown) {
+                if !unit.intersects(seen) {
+                    continue;
+                }
+                let area = Rect::from_min_max(to_screen(unit.min.to_vec2()), to_screen(unit.max.to_vec2()));
+                let stroke = egui::Stroke::new(1.0, theme.color("frame.divider"));
+                painter.rect_stroke(area, 3.0 * zoom, stroke, egui::StrokeKind::Inside);
+                let font = egui::FontId::proportional((area.height() * 0.7).max(6.0));
+                painter.text(area.center(), egui::Align2::CENTER_CENTER, "+", font, theme.color("ink.muted"));
+            }
+        }
         // The values of the run, but while nodes glide (notation 6.1): the veils, hatching, outlines and counters under the
         // marks, the banner and the bubbles over everything; the bubbles from `zoom.values` on, and on hover down to
         // `zoom.coarse` (notation 7).
@@ -1936,10 +2069,16 @@ impl Canvas {
                 painter.circle_stroke(screen(wiring::centre(port)), 5.0 * zoom, ring);
             }
         }
-        let refused = wiring.over.and_then(|over| match wiring.drop_on(drawing, over, rules) {
+        let dropped = wiring.over.and_then(|over| wiring.drop_on(drawing, over, rules));
+        // Out of loops, the mark of what each makes, beside the pointer (notation 2.6).
+        let passing = match &dropped {
+            Some(wiring::Drop::Wire { through, .. }) if !through.is_empty() => Some(wiring::passage_marks(through)),
+            _ => None,
+        };
+        let refused = match dropped {
             Some(wiring::Drop::Refused(refusal)) => Some(refusal),
             _ => None,
-        });
+        };
         let Some(start) = drawing.ports.get(wiring.from) else { return };
         let width = (start.style.width as f32 / 100.0 * zoom).max(1.5);
         for path in wiring.paths(drawing) {
@@ -1957,6 +2096,14 @@ impl Canvas {
             let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
             painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, theme.color("mark.invalid")), egui::StrokeKind::Inside);
             painter.galley(corner, galley, theme.color("mark.invalid"));
+        }
+        if let Some(marks) = passing {
+            let corner = screen(wiring::reason_at(wiring.at));
+            let ink = theme.color(start.style.token);
+            let galley = painter.layout(marks, egui::FontId::proportional(13.0), ink, 360.0);
+            let area = Rect::from_min_size(corner, galley.size()).expand(4.0);
+            painter.rect(area, 3.0, theme.color("canvas.fill"), egui::Stroke::new(1.0, ink), egui::StrokeKind::Inside);
+            painter.galley(corner, galley, ink);
         }
         if wiring.state == wiring::State::Dragging {
             frame.ctx.request_repaint();

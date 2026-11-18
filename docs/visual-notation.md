@@ -391,6 +391,16 @@ Nothing is greyed out during a gesture, and nothing moves: a mark stays inside t
   sits where it would be dropped: the message of the refusal (`wire.type_mismatch`, `wire.cycle`, `wire.out_of_scope`,
   or `wire.occupied` when Alt is needed to replace). Releasing it writes nothing. With the setting "accept it" (2.4), a
   wire of the wrong type is written and drawn broken.
+- **Out of a loop**: a wire from a value inside a loop to an input outside it is not refused; it takes the value out
+  through each loop that it leaves (`wire.connect` with `through`; decision of the owner, 2026-11-18). The type of the
+  input chooses: an array of the value's type, a `collect`; the value's type, a carry that holds its last value; neither
+  (a generic input, a value with no type yet), a carry for a `loop` and a `collect` for a `for`. Through several loops,
+  the type chooses for all only when it is the value's type (carries) or that type with one level of array per loop
+  (`collect`s); otherwise each loop takes its own default. Alt held at the drop takes the other one for each loop; a
+  `for parallel` has no carry (spec 6.2) and always collects. The snapped wire shows beside the pointer the mark of
+  what it will make (`↻`, `[•]`, 5.1). With the setting "replace only with Alt", Alt on an occupied input both
+  replaces and takes the other one. A carry made so starts from a hole, whose field in place opens at once: Enter
+  writes its initial value (`input.set_constant`), Escape leaves the hole, which `check` shows.
 
 **What `check` says.** A mark sits on what the diagnostic names (the hole, the wire, the node); each has its tooltip,
 the message of the diagnostic (or, for a required input that a call leaves out, the one below), and its line in the
@@ -539,6 +549,30 @@ an array for a `for`, which also takes a range typed as the text writes it, `0..
 first, then in the order of the text. Enter surrounds, Escape cancels and writes nothing. The arms come complete
 (`true` and `false`, each variant), and the nodes go into the first. A `loop` surrounds at once (decision of the owner,
 2026-11-18).
+
+**The parts of a structure.** Each gesture is one step of undo ([commands.md](commands.md), 6.7). "Add arm…", "Add
+carry…", "Add clause…", "Continue on error" and "Parallel" are also in the menu `Edit` and the command palette, on the one
+structure selected:
+
+- **An arm.** "Add arm…", in the context menu of a `match` or a `handle`, or the `+` after its last tab (after the `›` of
+  its selector when the tabs do not hold; the canvas draws it, an image does not), opens a field in place, where the
+  patterns are typed as the text writes them (`1, 3..=5`, `io.timeout(err)`). Enter writes `structure.add_arm`, Escape
+  writes nothing. A double-click on a tab, or "Edit patterns of …" in the context menu of the structure, opens the same
+  field on the patterns of that arm (the one right-clicked, else the one shown): `structure.set_patterns`. "Remove arm"
+  in the same menu removes it with its nodes (`structure.remove_part`); the last arm has no such entry.
+- **A carry.** "Add carry…", in the context menu of a `loop` or a `for`, opens a field in place at its left edge,
+  `name = initial` (`acc = 0 V`), or `name: type = ?` for a carry that starts from a hole: `structure.add_carry`. Its
+  `next` is wired as any input.
+- **A clause.** "Add clause…", in the context menu of a `for`, opens the list of values of surrounding (above), its
+  arrays, and a range typed as the text writes it: `structure.add_clause`, its name from the value (N-14). A wire of an
+  array from outside dropped on the left edge of a `for` adds it at once.
+- **A `collect`.** A wire from inside a loop dropped on its inner right edge: `structure.add_collect`. A wire to an input
+  outside the loop takes the value out too ("Out of a loop", in "Drawing a wire" above).
+- **Removing a part.** "Remove carry `x`", "Remove clause `x`", "Remove collect `y`", in the context menu of its
+  terminal: `structure.remove_part`. Delete on the terminal still removes only what it holds (its wires, its constant).
+- **Options.** "Continue on error" for a `loop`, "Parallel" for a `for`, checked when on, in the context menu of the
+  structure: `structure.set_option`. "Parallel" is disabled while the `for` has a carry, and its tooltip says why
+  (spec 6.2).
 
 **`string.format`** arrives with an empty template, `string.format("")`, and its template field already open. The
 template has no terminal (spec 5.4): Enter writes it with `node.set_template` ([commands.md](commands.md), 9.4), which

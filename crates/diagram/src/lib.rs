@@ -41,7 +41,7 @@ pub mod values;
 pub use labcraft_check::{PathSegment, path_segments};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
-pub use ports::{Refusal, Verdict, occupied, wiring};
+pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
 pub use preview::{Preview, preview, square};
 pub use route::{on_segment, prefix_to, simplify};
 pub use shape::{
@@ -269,9 +269,10 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<
     drawing.warnings = overlapping(graph, &sized, &placement);
     let owners = shapes(graph, &titles, &placement, sized, types, &mut drawing);
     extent_and_margin(&placement, &mut drawing);
-    for (body, (owner, looping, arm)) in drawing.bodies.iter_mut().zip(owners) {
-        body.arm = arm;
-        (body.owner, body.looping) = (owner, looping);
+    for (body, owner) in drawing.bodies.iter_mut().zip(owners) {
+        body.arm = owner.arm;
+        (body.owner, body.looping, body.each, body.parallel) = (owner.owner, owner.looping, owner.each, owner.parallel);
+        body.continue_on_error = owner.continue_on_error;
     }
     drawing
 }
@@ -319,7 +320,7 @@ fn shapes(
     sized: Vec<size::Sized>,
     types: Option<&labcraft_types::TypeTable>,
     drawing: &mut Drawing,
-) -> Vec<(Option<usize>, bool, String)> {
+) -> Vec<ports::Owner> {
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -598,6 +599,9 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
             origin: (frame.origin.0 + dx, frame.origin.1 + dy),
             owner: None,
             looping: false,
+            each: false,
+            parallel: false,
+            continue_on_error: false,
             arm: String::new(),
         })
         .collect();

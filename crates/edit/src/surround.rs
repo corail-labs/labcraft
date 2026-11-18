@@ -192,13 +192,7 @@ pub(crate) fn surround(
             outputs.push(Output { name: *name, rank, target, inner, chain: false });
         }
     }
-    let type_of = |value: &Value| -> ValueType {
-        let line = match &value.bound {
-            Bound::Input => 0,
-            Bound::Line(loc, _) | Bound::Head(loc, _) => edit.lines.get(loc).copied().unwrap_or(0),
-        };
-        judge.value_type(&edit.path, &edit.original, line, edit.text(value.name))
-    };
+    let type_of = |value: &Value| type_of(edit, judge, value);
     // The error chain: exactly one error comes in, and exactly one goes out.
     let leaving: Vec<usize> = outputs
         .iter()
@@ -516,13 +510,7 @@ fn empty(edit: &mut Edit, judge: &dyn Judge, within: &Within, given: &Given, edi
     let function = edit.body_function()?.clone();
     let selector_value = given.selector.map(|text| visible(edit, &function, text, &frame, "selector")).transpose()?;
     let over = given.over.map(|text| over_of(edit, &function, text, &frame)).transpose()?;
-    let type_of = |value: &Value| -> ValueType {
-        let line = match &value.bound {
-            Bound::Input => 0,
-            Bound::Line(loc, _) | Bound::Head(loc, _) => edit.lines.get(loc).copied().unwrap_or(0),
-        };
-        judge.value_type(&edit.path, &edit.original, line, edit.text(value.name))
-    };
+    let type_of = |value: &Value| type_of(edit, judge, value);
     let chosen = taken(edit);
     let selector_type = selector_value.as_ref().map(&type_of);
     let over_type = over.as_ref().map(|over| over.array.as_ref().map(&type_of).unwrap_or_default());
@@ -544,7 +532,13 @@ fn empty(edit: &mut Edit, judge: &dyn Judge, within: &Within, given: &Given, edi
 }
 
 /// A value that the frame sees, by its name.
-fn visible(edit: &Edit, function: &labcraft_graph::Function, text: &str, frame: &[scope::Step], parameter: &'static str) -> Result<Value, EditError> {
+pub(crate) fn visible(
+    edit: &Edit,
+    function: &labcraft_graph::Function,
+    text: &str,
+    frame: &[scope::Step],
+    parameter: &'static str,
+) -> Result<Value, EditError> {
     let text = text.trim();
     if !is_name(text) {
         return Err(EditError::invalid(parameter, format!("`{}` is not a value: a structure looks at a value, by its name", crate::cut(text))));
@@ -565,16 +559,16 @@ fn visible(edit: &Edit, function: &labcraft_graph::Function, text: &str, frame: 
 }
 
 /// What a `for` goes over: an array value, or a range whose bounds are integers or values.
-struct Over {
+pub(crate) struct Over {
     /// The text of the clause after `in`.
-    text: String,
+    pub text: String,
     /// The values it reads.
-    names: Vec<Name>,
+    pub names: Vec<Name>,
     /// The value of an array, for the name of its element; none for a range.
-    array: Option<Value>,
+    pub array: Option<Value>,
 }
 
-fn over_of(edit: &Edit, function: &labcraft_graph::Function, text: &str, frame: &[scope::Step]) -> Result<Over, EditError> {
+pub(crate) fn over_of(edit: &Edit, function: &labcraft_graph::Function, text: &str, frame: &[scope::Step]) -> Result<Over, EditError> {
     let text = text.trim();
     match text.split_once("..") {
         Some((low, high)) => {
@@ -603,6 +597,35 @@ fn over_of(edit: &Edit, function: &labcraft_graph::Function, text: &str, frame: 
             Ok(Over { text: text.to_owned(), names: vec![value.name], array: Some(value) })
         }
     }
+}
+
+/// The type of a value as the check sees it in the text before the command.
+pub(crate) fn type_of(edit: &Edit, judge: &dyn Judge, value: &Value) -> ValueType {
+    let line = match &value.bound {
+        Bound::Input => 0,
+        Bound::Line(loc, _) | Bound::Head(loc, _) => edit.lines.get(loc).copied().unwrap_or(0),
+    };
+    judge.value_type(&edit.path, &edit.original, line, edit.text(value.name))
+}
+
+/// The base of the name of the element of a clause `in over` (9.6): `readings` gives `reading`, another array `item`, a
+/// range `i`. A value that is not an array is `wire.type_mismatch`.
+pub(crate) fn element_base(edit: &Edit, over: &Over, found: Option<&ValueType>) -> Result<String, EditError> {
+    let Some(array) = &over.array else { return Ok("i".to_owned()) };
+    let name = edit.text(array.name).to_owned();
+    if let Some(found) = found
+        && !matches!(found.kind, TypeKind::Array | TypeKind::Unknown)
+    {
+        return Err(EditError::new(
+            "wire.type_mismatch",
+            format!("`{name}` is a `{}`: a `for` goes over an array or a range (spec 6.2)", found.shown),
+        )
+        .of("over"));
+    }
+    Ok(match name.strip_suffix('s') {
+        Some(single) if !single.is_empty() && is_name(single) => single.to_owned(),
+        _ => "item".to_owned(),
+    })
 }
 
 /// The structure with its head and its arms, empty, read from its text (`_ = match x { … }`): what the grammar reads is
@@ -677,23 +700,7 @@ fn head(
         }
         StructureKind::For => {
             let Some((over, found)) = over else { return Err(EditError::internal("a `for` without `over`")) };
-            let base = match &over.array {
-                Some(array) => {
-                    let name = edit.text(array.name).to_owned();
-                    if !matches!(found.kind, TypeKind::Array | TypeKind::Unknown) {
-                        return Err(EditError::new(
-                            "wire.type_mismatch",
-                            format!("`{name}` is a `{}`: a `for` goes over an array or a range (spec 6.2)", found.shown),
-                        )
-                        .of("over"));
-                    }
-                    match name.strip_suffix('s') {
-                        Some(single) if !single.is_empty() && is_name(single) => single.to_owned(),
-                        _ => "item".to_owned(),
-                    }
-                }
-                None => "i".to_owned(),
-            };
+            let base = element_base(edit, over, Some(&found))?;
             let element = fresh(&base, &chosen);
             format!("_ = for {element} in {} {{\n}}\n", over.text)
         }

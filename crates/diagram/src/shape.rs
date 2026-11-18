@@ -567,6 +567,10 @@ pub struct Port {
     pub group: Option<usize>,
     /// How a wire from it is drawn, in the style of its family (notation 4.1).
     pub style: WireStyle,
+    /// The part of a structure that this terminal of its frame stands for, as `structure.remove_part` names it
+    /// (`carry x`, `in x`, `collect y`); empty for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub part: String,
 }
 
 /// What a terminal holds (notation 2.5): an input is wired, given a constant, left to its default, a hole, or a required
@@ -671,6 +675,15 @@ pub struct BodyDrawn {
     /// Whether it is the body of a `loop` or a `for`, out of which a value goes only by a `collect` or a carry.
     #[cfg_attr(feature = "serde", serde(default))]
     pub looping: bool,
+    /// Whether it is the body of a `for`, whose default way out is a `collect` (notation 2.6).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub each: bool,
+    /// Whether it is the body of a `for parallel`, which takes no carry (spec 6.2).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub parallel: bool,
+    /// Whether it is the body of a `loop continue_on_error` (spec 6.3).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub continue_on_error: bool,
     /// For an arm, its patterns as the text writes them and a command names the arm (`true`, `_`, `1, 3..=5`); empty for
     /// another body.
     #[cfg_attr(feature = "serde", serde(default))]

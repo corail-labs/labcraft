@@ -11,7 +11,14 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Around {
     Nodes(Vec<String>),
-    Empty { at: (i64, i64), within: InFrame },
+    Empty {
+        at: (i64, i64),
+        within: InFrame,
+    },
+    /// "Add clause…" of a `for`, as a command names it: the value goes over in a new `in` clause (notation 2.6).
+    Clause {
+        structure: String,
+    },
 }
 
 /// The list of values, open on a function.
@@ -185,6 +192,9 @@ fn nothing(kind: &str) -> &'static str {
 
 /// `structure.surround` with the value chosen, as `selector` or `over`.
 pub fn command(file: &str, kind: &str, around: &Around, value: Option<&str>) -> Value {
+    if let Around::Clause { structure } = around {
+        return json!({ "file": file, "structure": structure, "over": value.unwrap_or_default() });
+    }
     let mut params = json!({ "file": file, "kind": kind });
     let Some(object) = params.as_object_mut() else { return params };
     if let Some(value) = value {
@@ -203,8 +213,17 @@ pub fn command(file: &str, kind: &str, around: &Around, value: Option<&str>) -> 
                 }
             }
         }
+        Around::Clause { .. } => {}
     }
     params
+}
+
+/// The command that a value chosen in the list sends: `structure.surround`, or `structure.add_clause` for a clause.
+pub fn command_id(around: &Around) -> &'static str {
+    match around {
+        Around::Clause { .. } => "structure.add_clause",
+        Around::Nodes(_) | Around::Empty { .. } => "structure.surround",
+    }
 }
 
 #[cfg(test)]

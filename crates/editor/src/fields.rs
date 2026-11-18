@@ -20,6 +20,12 @@ pub enum FieldKind {
     Constant { to: String, held: bool },
     /// `node.set_template` on a `string.format`.
     Template { node: String },
+    /// `structure.add_arm`: the patterns of a new arm (notation 2.6).
+    AddArm { structure: String },
+    /// `structure.set_patterns` of the arm `arm`, by its patterns.
+    Patterns { structure: String, arm: String },
+    /// `structure.add_carry`: `name = initial`, or `name: type = initial`.
+    AddCarry { structure: String },
 }
 
 /// A field open on the canvas.
@@ -208,6 +214,42 @@ impl Canvas {
             }
             None => return false,
         }
+        true
+    }
+
+    /// A field of a part of the structure `placed` (notation 2.6): what Enter writes is new, even when it is the text it
+    /// opened with.
+    pub(crate) fn edit_part(&mut self, placed: usize, kind: FieldKind, text: String) -> bool {
+        if self.waiting() {
+            return false;
+        }
+        let Some(drawing) = self.drawing.clone() else { return false };
+        let at = crate::parts::field_at(&drawing, placed, &kind);
+        let adds = matches!(kind, FieldKind::AddArm { .. } | FieldKind::AddCarry { .. });
+        let mut field = Field::new(kind, text, at, Some(placed));
+        if adds {
+            field.original = String::new();
+        }
+        self.field = Some(field);
+        true
+    }
+
+    /// The field of the initial value of the carry that a wire out of a loop made (notation 2.6): on the last hole of
+    /// the structure that holds the body `body` in the new drawing.
+    pub(crate) fn edit_initial(&mut self, body: usize) -> bool {
+        if self.waiting() {
+            return false;
+        }
+        let Some(drawing) = self.drawing.clone() else { return false };
+        let Some(placed) = drawing.bodies.get(body).and_then(|found| found.owner) else { return false };
+        let hole = drawing
+            .ports
+            .iter()
+            .rev()
+            .find(|port| port.placed == Some(placed) && port.input && !port.frame && !port.name.is_empty() && port.holds == Holds::Hole);
+        let Some(port) = hole else { return false };
+        let at = Pos2::new(port.x as f32, port.y as f32) / 100.0 - Vec2::new(24.0, 6.0);
+        self.field = Some(Field::new(FieldKind::Constant { to: port.name.clone(), held: false }, String::new(), at, Some(placed)));
         true
     }
 
