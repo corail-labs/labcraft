@@ -1,6 +1,6 @@
 # Decisions
 
-*Last updated: 2026-11-08*
+*Last updated: 2026-11-18*
 
 Each decision has a status. D-01 to D-28 are all accepted; the other two statuses are for future
 entries:
@@ -132,6 +132,10 @@ Rust is accepted for the engine, the compiler, the runtime and the IDE.
     time, the function stops and the error is reported (never a dialog box).
   - Several simultaneous errors (parallel branches): a merge node, `errors.merge`; the first error
     is the main one and the others are kept (spec 7.4).
+
+**Staging (2026-11-14, owner's decision):** within a program, the "typed shared variables" above are `ref<T>` and
+its access structure (spec 8.1, Q-19), in M2a with queues and notifiers ([outline.md](outline.md)). Variables
+shared between programs wait for a tag engine, in horizon 2. A precision of what and when, not a change.
 
 ## D-05 — Type system
 

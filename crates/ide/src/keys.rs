@@ -323,7 +323,7 @@ pub fn menus() -> MenuBar {
             item(PLANNED_BREAKPOINT, "Toggle a breakpoint  ·  Planned, M5"),
             item(PLANNED_WATCH, "Watch a value  ·  Planned, M5"),
             Node::Separator,
-            item(PLANNED_INSTRUMENTS, "Target: real instruments  ·  Planned, M4"),
+            item(PLANNED_INSTRUMENTS, "Real hardware  ·  Planned, M4"),
             item(PLANNED_BUILD, "Build  ·  Planned, M6"),
         ],
     );

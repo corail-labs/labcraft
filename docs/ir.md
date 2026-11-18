@@ -329,7 +329,7 @@ that changes them is read with them.
 
 ## 9. Changing it
 
-The IR will grow: generic functions (M2), queues, events and timed loops (M2 and later), `ref<T>`, probes (M5),
+The IR will grow: generic functions (M2b), queues and events (M2a), timed loops (horizon 2), `ref<T>`, probes (M5),
 the linear IR beside it (M7). A change to it is one pull request that changes together:
 
 - this document;

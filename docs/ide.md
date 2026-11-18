@@ -151,7 +151,9 @@ it does and, when it is planned, a link:
 | `Debug` | Planned (M5) | Probes, breakpoints, step by step on the diagram |
 | `Build` | Planned (M6) | A standalone executable, a library with a C ABI, a .NET facade |
 
-Planned entries are also where they will be: `Run > Target: real instruments` (M4), `Run > Build` (M6), `Pause`,
+Planned entries are also where they will be: `Run > Real hardware` (M4: real instruments and devices instead of
+the simulator; they are resources that a program touches, not a target: "target" is kept for `Build` and
+deployment), `Run > Build` (M6), `Pause`,
 `Breakpoint` and `Watch` in the toolbar of a tab and the `Run` menu (M5), the `Panel` view of a tab (M3), the icon drawn
 by hand in `Block`. A planned entry can never be chosen: a click opens a short card that says what it will
 be and links to its milestone or its issue, in the browser. The entries are **data**, a list shipped with the IDE

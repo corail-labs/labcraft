@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-15. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-18. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -864,11 +864,11 @@ itself.
 
 | Structure | Role | Milestone |
 |---|---|---|
-| `events` | event structure (panel, user, timeouts) | M2 |
-| queues, notifiers | communication between loops | M2 |
-| `map<K, V>`, `set<T>` | dictionary and set, with their primitives (Q-28) | M2 |
-| `timed loop` | real-time timed loop | D-24 |
-| `cyclic task` | PLC-style cyclic execution | D-26 |
+| `events` | event structure (panel, user, timeouts) | M2a |
+| queues, notifiers | communication between loops | M2a |
+| `map<K, V>`, `set<T>` | dictionary and set, with their primitives (Q-28) | M2b |
+| `timed loop` | real-time timed loop | Horizon 2 (D-24) |
+| `cyclic task` | PLC-style cyclic execution | Horizon 2 (D-26) |
 
 ## 7. Errors (D-04)
 
@@ -1108,12 +1108,14 @@ to it.
 
 | Part | Milestone |
 |---|---|
-| Generic functions and types written by the user (3.5); the built-in primitives are generic from M0 | M2 |
+| Generic functions and types written by the user (3.5); the built-in primitives are generic from M0 | M2b |
 | Running external functions (4.1), except `extern rust`, which runs from M0; they are all read and checked from M0 | M8 |
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
-| `ref<T>` and its access structure (8.1, Q-19) | M2 |
-| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
-| Structures planned outside v0: events, queues, notifiers, maps and sets, timed loops, cyclic tasks (6.4) | M2 and later |
+| `ref<T>` and its access structure (8.1, Q-19) | M2a |
+| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2b |
+| Structures planned outside v0 (6.4): events, queues, notifiers | M2a |
+| Maps and sets (6.4) | M2b |
+| Timed loops, cyclic tasks (6.4) | Horizon 2 |
 | The `frame size`, `input` and `output` entries of `layout` (11), which the editor writes | M1 |
 
 **Libraries.**
@@ -1269,8 +1271,9 @@ exactly the press of Stop at 5 s (command syntax: Q-20).
 **Concurrency.** Reading an element is always safe; writing it from two unordered nodes gives a
 warning (8.1).
 
-**Events (M2).** The `events` structure will react to changes of the same elements, without
-polling in a loop.
+**Events (M2a).** The `events` structure will react to changes of the same elements, without
+polling in a loop. The panel of M3 has none: its elements are read in a loop, as in M0
+([outline.md](outline.md)).
 
 ## 11. Layout (`layout` section)
 
@@ -2169,15 +2172,15 @@ What the grammar alone does not say:
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
 | Q-20 | Setting a panel element from the CLI or MCP | **Settled (2026-11-08): `--set ELEMENT=VALUE@TIME`** on the clock of the run, simulated in deterministic mode, for the elements of the function that is run; `set` in `run.start` and, in real time, `run.set_element` in MCP ([cli.md](cli.md), section 6.4; [commands.md](commands.md), section 6.4) |
 | Q-21 | Default values not covered by 7.2 | **Settled for `timestamp` and function references (2026-11-10, 7.2)**: 1970-01-01T00:00:00Z, the origin of the clock of a deterministic run; a reference that designates no function and fails when called (`core.invalid_function`). Open: `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?), with M2 |
-| Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? |
+| Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? **For M2a** (2026-11-14, [outline.md](outline.md)): the form is chosen with its specification |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
-| Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? |
+| Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? **Direction chosen (2026-11-14), for M3:** the element is passed, as a parameter of kind element (for example `stop: element bool`) that the caller wires with its own element, and the subfunction reads it with `ui.get`; its syntax comes with the specification of M3 |
 | Q-25 | Fault or error at run time | **Settled (2026-11-09): a fault** (8.2, `LC8008`) for an integer that overflows, `core.to_i32` and `core.round_to_i32` of `nan` or out of range, and a `duration` that is not finite or does not fit; and the empty separator of `string.split`. An `error` on `err` would add a terminal to every arithmetic node; a default or a value that wraps would look measured |
 | Q-26 | Name of a function and name of its file | **Settled (2026-11-08): the file bears the name of what it declares (R-22).** Option A of this question: the declaration keeps its name in the file and the format does not change; a renamed copy has one error, `LC2023`, with two fixes, since only the user knows which name was meant. Option B, the name of the file alone, was set aside: an excerpt or a diff would no longer say its name, and a file renamed outside the editor would silently break every call. A type is named exactly as a function is (`Verdict.lct`): no rule turns `StepResult` into `step_result`. Names that file systems would confuse or refuse are errors on every system (`LC2024`, `LC2025`) |
 | Q-27 | From `[[f64]]` to `[f64; 2]` | Settled: `array.from_rows` and `array.to_rows` (appendix A). A constant takes the type expected if its rows have one length; an array of wires never does, so nothing fails at run time without an `err` (3.1). |
 | Q-28 | Dictionary and set | Names settled (2026-11-08): `map<K, V>` and `set<T>`, refused to types until M2 (3.2), the names of LabVIEW, Rust, Java, Go and C++ rather than `dict`. To write for M2, with the generics: the types a key can have (an `f64`? a unit?); an order of iteration that is deterministic (order of insertion, or sorted keys); `get` of a missing key, with an error category as for `array.get`; the cost of a copy on a wire (D-11); how a map is drawn and how a literal is written |
 | Q-29 | Constants shared outside a function | Nothing declares a constant outside a function today: `limit = 240 V` lives in one body (5.1), so neither `math.pi` nor a limit common to several functions of a project can be written. **Option A (preferred):** a declaration of its own, one per file as for a type (R-22), named by a path (`math.pi`) and drawn as a constant, with no node; its values are those of R-21, with their units; it needs a file kind or a contextual word at the head of its file (14.1, new words). **Option B:** a function with no input (`math.pi()`), with no change to the grammar, but a node on the diagram for a fixed value. To settle with how the viewer of M0v draws a named constant that feeds several nodes |
-| Q-30 | Modes of a `button` | In M0 a `button` is latching: a press stays true until its first read (10). Other modes are likely (true while held, a press seen on release…), and with them what setting a button to `false` from a command does; until then a command can only press it ([cli.md](cli.md), section 6.4) |
+| Q-30 | Modes of a `button` | In M0 a `button` is latching: a press stays true until its first read (10). Other modes are likely (true while held, a press seen on release…), and with them what setting a button to `false` from a command does; until then a command can only press it ([cli.md](cli.md), section 6.4). **For M3** (2026-11-14): three modes, latching until read (M0), true while held, and a press seen on release |
 | Q-31 | A third kind of input: recommended | Two kinds today: an input without a default is required (`LC2101` when it is not wired), one with a default is optional (visual notation 2.5). A recommended input would have a default and give a warning when it is not wired, with a mark of its own on its terminal. **Not in M1 (2026-11-15):** no case needs it yet beyond `err`, and each kind doubles the cases to test. To reopen on a real case |
 
 ## Appendix A. Library signatures (v0)

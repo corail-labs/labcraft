@@ -72,8 +72,8 @@ pub fn planned(id: &str) -> Option<Planned> {
     };
     match id {
         keys::PLANNED_INSTRUMENTS => Some(card(
-            "Target: real instruments",
-            "Running a function on the instruments of the bench, not on the simulator",
+            "Real hardware",
+            "Running a function on real instruments and devices (TCP, serial), not on the simulator",
             "M4",
             ROADMAP.to_owned(),
         )),
