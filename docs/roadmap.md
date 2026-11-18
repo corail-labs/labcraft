@@ -4,8 +4,8 @@
 
 The language was described and tried out by a throwaway Python proof of concept, retired after M0 (2026-11-15). M0, the first
 milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
-with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. This page says where the project stands, what the milestones
-are, and how the Rust code is organized.
+with the tags `v0.1.0-m0a`, `v0.2.0-m0b` and `v0.3.0-m0`, the first release with binaries. This page says where the project stands, what the themes and the
+releases are, and how the Rust code is organized.
 
 ## Where we are: M0 done
 
@@ -31,12 +31,35 @@ Still to write, besides what the acceptance scenarios list under "write first"
   scenarios of M1 ([acceptance-m1.md](acceptance-m1.md)), which set the threshold of the figure of stability
   (visual notation, 2.1). The size of a structure is written with the gesture of surrounding, step 5 of the Rust of
   M1 ([architecture.md](architecture.md), 12.11).
-- **after M1**: outlined. What M4, M3, M2a, M2b and M5 hold, what M1 must not block and what must be decided before
-  the milestones beyond M5 ([outline.md](outline.md)); each milestone gets its specification when its work starts.
+- **after M1**: outlined. What the themes M4, M3, M2 and M5 hold, what M1 must not block and what must be
+  decided before the themes beyond M5 ([outline.md](outline.md)); a theme gets its specification when its work starts.
 
 Feedback on the language matters most at this stage: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-## Milestones
+## Themes and releases
+
+The roadmap has two kinds of entries (owner's decision, 2026-11-18):
+
+- a **theme** is an area of LabCraft that keeps growing: M1 the editor, M4 real I/O, M3 the panel… The numbers stay
+  the names of the themes, which the documents and the issues already use; the documents written before this page
+  call them milestones. A theme has no end: what is not needed now stays in it, often as an issue for a contributor;
+- a **release** is what a user can do once it ships: a number `0.x.0` (the tag `v0.x.0`, the milestone on GitHub and the
+  note of [releases/](releases/)), an **exit criterion** said in what the user does, and a slice of one theme or of
+  several. A fix is `0.x.1`. The tags before `v0.4.0` carry the name of a theme (`v0.3.0-m0`); the next ones do not.
+
+An issue has the label of its theme; it gets the milestone of a release only when it is planned in it. The issues with
+a theme and no release are the backlog.
+
+A library shipped with LabCraft (in `libs/`) belongs to the theme that gives it its capability: `visa`, `scpi`, `net`,
+`serial`, `file` and `bytes` to M4, which brings real I/O; one that needs no new capability
+(`math`, `stats`, `csv`, `log`…) to the theme Libraries. A package (D-25), distributed by the package manager and not
+shipped with LabCraft, has no theme and no release here: until the package manager of M11, its idea is an issue labelled
+`package`, and what it needs from LabCraft (calling C, publishing a package) is an issue of the theme concerned.
+
+**Former names.** M0a, M0b and M0v, done, keep their rows as history; they built the theme Core; M1r is release 0.4.0; M2a and M2b are the theme M2; M7, native compilation, is part of M6. Dated
+texts, such as the staging of a decision in [decisions.md](decisions.md), keep the names of their date.
+
+### Themes
 
 M0 crosses all layers, as in SolidCraft: M0a and M0b are a thin vertical slice, and M0v adds the
 viewer. M0 comes in three parts so that the diagram can be seen early, before the interpreter
@@ -45,32 +68,48 @@ no editing choice; editing waits for M1. It also completes the agent loop: the a
 text, the human watches the diagram change. M0a comes first, since drawing a diagram needs the types
 of its wires and the signatures of its nodes; M0b and M0v then run in parallel.
 
-| # | Milestone | Content |
+| # | Theme | Content |
 |---|---|---|
 | **M0a** | Read, check, write (done, tag `v0.1.0-m0a`) | The whole v0 syntax read into the model (graph, layout, icon, comments) and written back in canonical form; names resolved, the signatures of the built-in libraries, type and unit checking with diagnostics, for the v0 language as listed in [spec section 9](language-spec-v0.md#9-what-m0-implements). The declarations of the libraries shipped with LabCraft (`libs/visa`, `libs/scpi`, below) and of the libraries of the examples. Crates `types`, `graph`, `format`, `check`; `labcraft-cli fmt` and `check`. **Criterion:** every canonical file is written back byte for byte, a type error names its node and its wire, and no hostile file crashes the tool |
 | **M0b** | Run, agents (done, tag `v0.2.0-m0b`) | The interpreter with its scheduler: what the proof of concept ran (units, structs and enums, arrays, `loop` and `for` with carries, `match`, `handle`), plus function references and live panel elements. The native functions of `libs/visa` and its simulator, so that `scpi`, written in LabCraft, runs. Crates `runtime`, `engine`, `mcp`; `labcraft-cli run` and `mcp`. **Criterion:** an agent writes, runs and fixes the PASS/FAIL multimeter program on its own |
 | **M0v** | Viewer (done, tag `v0.3.0-m0`, which closes M0) | A read-only egui canvas that draws a function following the [visual notation](visual-notation.md), compact view by default, with automatic placement when the file has no `layout` section, and redraws when the file changes: the agent writes the text, the human watches the diagram. `labcraft-cli diagram --svg` gives the same drawing as SVG, for tests and agents: the canvas paints only the shapes that `diagram` computes. The same viewer in the browser (WASM). Once M0b is there, the values of a run on the wires, read from the trace that `labcraft-cli run` writes, through the crate `trace` of M0b. Crates `diagram`, `editor` (read-only); apps `labcraft` and `labcraft-web`. `check` judges the text of an icon by its box (`LC5009`, spec 11.1), with the metrics of the font. Target: 1,000 nodes and 2,000 wires, panned and zoomed at 60 frames/s |
+| — | Core | Reading, checking, writing, running and drawing a program, which M0a, M0b and M0v built: the parser, `fmt`, `check`, the interpreter and its scheduler, the trace, `diagram`, the command line and the MCP server |
 | M1 | Diagram editor | Editing on the `editor` canvas of M0v: placement, wiring, selection, undo, quick insertion of a node by name; tidying a wire, a selection or a whole function again, and a wire routed by hand (`via`); the agent and the human edit the same program, through the MCP server attached to the IDE, which takes the folders an agent may read and write as the other Craft apps do (RFC-0015, [craft-ecosystem.md](craft-ecosystem.md)). Target: 60 frames/s while editing 1,000 nodes |
-| M1r | Installable release | The editor as the first version for people outside the project: installers signed for Windows and macOS, and a package or archive for Linux. Until then the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums. It also brings a command to make a subfunction from a selection |
-| M4 | Real I/O | Two transports in pure Rust, TCP and serial, under the `visa` library and as raw bytes (`net`, `serial`) for the devices without VISA; consent for every real resource; bitwise operations, integer division and the `bytes` library, so that a protocol is written in LabCraft, with Modbus TCP as the example; more of the `scpi` library. The other transports of D-17 (VXI-11, HiSLIP, USBTMC, GPIB through an adapter) and the binding to an installed VISA come after, each a library of its own |
-| M3 | Panel | Controls and indicators, graphs, live update, properties; the elements are read in loops, without events (M2a) |
-| M2a | Full language v1: communication | Queues and notifiers, the `events` structure, `ref<T>` and its access structure, leaving a `for` early (Q-22) |
-| M2b | Full language v1: types and libraries | Generic functions, with units (Q-12), `map<K, V>` and `set<T>` (Q-28), shared constants (Q-29), manifests of user libraries and their dependencies |
+| M4 | Real I/O | Two transports in pure Rust, TCP and serial, under the `visa` library and as raw bytes (`net`, `serial`) for the devices without VISA; the `file` library (text and bytes); consent for every real resource; bitwise operations, integer division and the `bytes` library, so that a protocol is written in LabCraft, with Modbus TCP as the example; more of the `scpi` library. The other transports of D-17 (VXI-11, HiSLIP, USBTMC, GPIB through an adapter), the binding to an installed VISA and the other buses come after, each a library of its own |
+| M3 | Panel | Controls and indicators, graphs, live update, properties; the elements are read in loops, without events (M2) |
+| M2 | Full language v1 | Communication: queues and notifiers, the `events` structure, `ref<T>` and its access structure, leaving a `for` early (Q-22). Types and libraries: generic functions, with units (Q-12), `map<K, V>` and `set<T>` (Q-28), shared constants (Q-29), manifests of user libraries and their dependencies |
 | M5 | Debugger | Probes, breakpoints, single-stepping, execution animation, value history |
-| M6 | Build | Standalone executable, C ABI DLL, .NET facade |
-| M7 | Native compilation | Cranelift, equivalence tests with the interpreter |
+| M6 | Build and targets | What the program becomes and where it runs: a standalone executable (the interpreter shipped with the program), a C ABI DLL, a .NET facade; native compilation by Cranelift, with equivalence tests with the interpreter, when speed needs it, and for the 64-bit embedded Linux targets of D-24; those and the other targets of D-24 come after v1 (horizon 2) |
 | M8 | Inbound interop | Calling C DLLs, .NET, Python (`extern` functions) |
 | M9 | Plugins | WASM, manifest, permissions |
 | M10 | Web | The IDE and simulation in the browser |
 | M11 | Packages | Manifest, locking, install from git, then registry (D-25) |
+| — | Libraries | The libraries shipped with LabCraft that need no new capability of the runtime: computing, analysis, files read into a type, logging, tests (`math`, `stats`, `signal`, `fit`, `csv`, `json`, `log`, `test`…); many wait for the generics and the units in the signatures of M2 |
+| — | Distribution | An installer signed for Windows, an archive or a package for Linux; the macOS archives built and tried by the CI, signed and notarized later (an issue open to contributors). Until the first signed installer, the archives of a release are not signed for the platforms, and a release after `v0.3.0-m0` is planned to add a signed provenance to their checksums |
+| — | Tooling | What the project is built and checked with: the CI, `xtask`, the fuzzing, the hooks for agents, the welcome of contributors |
 
 The table is in the order of work. After the editor come real I/O and the panel, before the full
 language: a user then drives a real bench or device, first through the agent and the command line, then
 through a panel, with the live elements of M0. LabCraft is for more than SCPI benches: a serial or
 network device with a protocol of its own, a supervision, a control system, a Raspberry Pi. M4 goes on
-in parallel with M1, since it lives in `libs/visa`, the runtime and the CLI. The numbers stay the names
-of the milestones, which the documents and the issues already use; M2 is in two halves, M2a and M2b.
+in parallel with M1, since it lives in `libs/visa`, the runtime and the CLI.
 What M4 to M5 hold is outlined in [outline.md](outline.md), so that the editor blocks none of them.
+
+### Releases
+
+The next two releases are cut in detail; the later ones are one line each, proposed, and their order and numbers may change.
+
+| Release | Exit criterion | Slice |
+|---|---|---|
+| **0.4.0**, the editor | The scenarios of [acceptance-m1.md](acceptance-m1.md); and someone outside the project installs LabCraft from an installer signed on Windows, which the system does not refuse as coming from an unidentified developer, or from the Linux archive, opens an example, changes it in the diagram and runs it on the simulator | M1 ([acceptance-m1.md](acceptance-m1.md)) and #218, which adds its scenario there; Distribution: the signed installer for Windows, the archives for Linux and macOS. The first release for people outside the project |
+| **0.5.0**, the first real bench | A program drawn in the IDE talks to a real device over TCP (Modbus TCP, for example) and to another over a serial port; the same program runs on a `--sim` file without changing a line; an attached agent touches the hardware only after the human has said yes | M4: TCP and serial, `net`, `serial`, `file`, `bytes`, the bitwise operations, consent, `visa` on both transports, the extended `scpi`, Modbus TCP, #138. Its work goes on in parallel with M1; it is released after 0.4.0 |
+| 0.6.0, the bench has its panel | An operator starts a test from a front panel: buttons, values, graphs, Stop | M3 |
+| 0.7.0, several loops | Acquisition, HMI and log in loops that talk to each other | M2: communication |
+| 0.8.0, libraries and generics | A generic function and a user library with its manifest | M2: types and libraries |
+| 0.9.0, the debugger | See the program run and stop it where one wants, the human as well as the agent | M5 |
+
+What a release does not need stays in its theme: for M4, USB and USBTMC, the other buses and transports, Modbus RTU
+([outline.md](outline.md), M4, "Later in the theme").
 
 **Horizon 2, after v1:** real-time embedded Linux targets (D-24), controller mode and fieldbuses
 (D-26), with timed loops and cyclic tasks (spec 6.4), libraries generated from the Craft apps, LabCraft
@@ -149,7 +188,7 @@ The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui
 
 ## Repository layout
 
-Modeled on SolidCraft and GridCraft; folders appear with the milestones that need them:
+Modeled on SolidCraft and GridCraft; folders appear with the themes that need them:
 
 ```text
 LabCraft/

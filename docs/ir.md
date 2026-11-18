@@ -5,7 +5,7 @@
 The `ir` crate (L4, [roadmap](roadmap.md)) holds a program as a dataflow graph, after `check` has resolved and
 typed it and before anything runs it: the second of the three levels of D-09. It is the form that the
 interpreter of M0b runs, that the trace and the viewer refer to, that the debugger of M5 puts its probes on, and
-that the linear IR of M7 is lowered from, before Cranelift. It will outlive most of the code around it. This
+that the linear IR of native compilation (M6) is lowered from, before Cranelift. It will outlive most of the code around it. This
 document defines it, for whoever writes or reads the crate. [architecture.md](architecture.md), section 10, says
 how it fits with the other crates.
 
@@ -20,7 +20,7 @@ since a user debugs the diagram, not the IR.
 - **Versioned and documented** (D-09): this document is its definition, and `ir::VERSION` its version, which section 9
   says when to raise. Tools and agents will read it through its text form (section 8): a command that prints
   it is left for later (section 10).
-- **Run directly in M0.** D-10 has the interpreter run the linear IR, which comes with Cranelift in M7. Until then
+- **Run directly in M0.** D-10 has the interpreter run the linear IR, which comes with Cranelift (M6). Until then
   the interpreter runs this IR, where the trace and the debugger speak in nodes and wires; the corpus of runs
   checks that a later interpreter gives the same results ([decisions](decisions.md), D-10).
 - **Not a file format.** Nothing writes it to disk to read it back: a program is lowered again from its files.
@@ -329,8 +329,8 @@ that changes them is read with them.
 
 ## 9. Changing it
 
-The IR will grow: generic functions (M2b), queues and events (M2a), timed loops (horizon 2), `ref<T>`, probes (M5),
-the linear IR beside it (M7). A change to it is one pull request that changes together:
+The IR will grow: generic functions, queues and events (M2), timed loops (horizon 2), `ref<T>`, probes (M5),
+the linear IR beside it (M6). A change to it is one pull request that changes together:
 
 - this document;
 - the verifier, so that every new rule is checked;
@@ -340,7 +340,7 @@ the linear IR beside it (M7). A change to it is one pull request that changes to
   does changes.
 
 `ir::VERSION` stays 1 until the IR is written or sent outside the process that made it (a cache on disk, a WASM
-worker or a remote bench, a compiled program kept, M7); from then on, every change raises it. Until then only `verify`
+worker or a remote bench, a compiled program kept, M6); from then on, every change raises it. Until then only `verify`
 compares it, in memory (decision of the owner, 2026-11-10).
 
 What this document defines (the nodes of the diagram, regions that read only their arguments, origins, positions,
@@ -349,7 +349,7 @@ section 5) does not change without the owner's agreement, since the trace, the v
 ## 10. Left for later
 
 - **Generic functions** (M2): lowered once per instantiation, or with type parameters kept. To decide with them.
-- **The linear IR** (M7): a fixed order of execution, regions flattened into blocks, values in slots, which `codegen`
+- **The linear IR** (M6): a fixed order of execution, regions flattened into blocks, values in slots, which `codegen`
   turns into Cranelift's own IR and the interpreter may then run (D-10). It is lowered from this one.
 - **Analyses** (D-09: buffers, operations in place, blocks to schedule; dead branches, constant folding): none in
   M0, where the interpreter runs the program as written.

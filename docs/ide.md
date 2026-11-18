@@ -20,8 +20,8 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
 - **One project, one session, one history**, however many windows show it (section 9).
 - **Nothing hidden.** Every gesture has its entry in a menu with its key (notation 2.6), every panel its entry in
   `View`, every command its line in the command palette.
-- **What is planned is visible.** The milestones to come appear where they will be, greyed, marked Planned, each
-  leading to its milestone or its issue on GitHub, with no date promised (section 6).
+- **What is planned is visible.** The themes to come appear where they will be, greyed, marked Planned, each
+  leading to its theme in the roadmap or its issue on GitHub, with no date promised (section 6).
 - **Readable at a glance.** The diagram keeps its colours (notation 8): whatever draws the panels, the canvas takes
   its colours from the table of tokens of the notation.
 
@@ -156,9 +156,9 @@ the simulator; they are resources that a program touches, not a target: "target"
 deployment), `Run > Build` (M6), `Pause`,
 `Breakpoint` and `Watch` in the toolbar of a tab and the `Run` menu (M5), the `Panel` view of a tab (M3), the icon drawn
 by hand in `Block`. A planned entry can never be chosen: a click opens a short card that says what it will
-be and links to its milestone or its issue, in the browser. The entries are **data**, a list shipped with the IDE
-(id, label, line, state, milestone, link), not code per entry; an entry becomes Available in the release that tags
-its milestone.
+be and links to its theme in the roadmap or its issue, in the browser. The entries are **data**, a list shipped with
+the IDE (id, label, line, state, milestone: its theme, link), not code per entry; an entry becomes Available in the release that
+ships it.
 
 ## 7. The text of a function
 

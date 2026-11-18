@@ -28,7 +28,8 @@ runs programs against simulated instruments (`fmt`, `check`, `run`), an AI agent
 run on the wires (`labcraft`, `labcraft-web`, `labcraft-cli diagram`).**
 The language and its text format are described (spec v0), with example programs. Editing the diagram comes
 next (M1). The throwaway Python proof of concept that ran the examples before Rust was retired after M0
-(2026-11-15). The milestones are described in [docs/roadmap.md](docs/roadmap.md).
+(2026-11-15). The themes and the releases are described in [docs/roadmap.md](docs/roadmap.md): the next release,
+0.4.0, is the editor, with installers.
 
 ## One program, two views
 
@@ -145,8 +146,8 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | Document | Content |
 |---|---|
 | [docs/vision.md](docs/vision.md) | Why LabCraft, for whom, principles, differentiators, non-goals |
-| [docs/roadmap.md](docs/roadmap.md) | Where the project stands, milestones from a first vertical slice in Rust (M0), planned code layout |
-| [docs/outline.md](docs/outline.md) | Outline of the milestones after M1 (M4, M3, M2a, M2b, M5), what M1 must not block, and what must be decided before the milestones beyond M5; not a specification |
+| [docs/roadmap.md](docs/roadmap.md) | Where the project stands, its themes from a first vertical slice in Rust (M0), its releases, planned code layout |
+| [docs/outline.md](docs/outline.md) | Outline of the themes after M1 (M4, M3, M2, M5), what M1 must not block, and what must be decided before the themes beyond M5; not a specification |
 | [docs/acceptance-m0.md](docs/acceptance-m0.md) | The scenarios that say when each part of M0 is done (M0a, M0b, M0v), and what they need written first |
 | [docs/acceptance-m1.md](docs/acceptance-m1.md) | The scenarios that say when M1, the diagram editor, is done |
 | [docs/architecture.md](docs/architecture.md) | How the Rust code is arranged, and the order of work: M0a, M0b and M0v (implemented) |
