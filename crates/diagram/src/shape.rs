@@ -571,6 +571,10 @@ pub struct Port {
     /// (`carry x`, `in x`, `collect y`); empty for another terminal.
     #[cfg_attr(feature = "serde", serde(default))]
     pub part: String,
+    /// For a value that a frame gives its body (a carry, an `in` clause, an input of the function): whether a wire
+    /// leaves it, that is, whether the body reads it. False for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub read: bool,
 }
 
 /// What a terminal holds (notation 2.5): an input is wired, given a constant, left to its default, a hole, or a required

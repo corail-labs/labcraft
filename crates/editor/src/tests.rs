@@ -1778,3 +1778,39 @@ fn a_wire_out_of_a_loop_chooses_its_passage_by_the_type_of_its_input() {
         assert_eq!(wiring::passages(&shown, &shown.ports[from], &shown.ports[at], exits, true), vec![other], "{head}");
     }
 }
+
+/// The terminal of a part offers the other two kinds (notation 2.6, #215): no carry in a `for parallel`, and neither a
+/// `collect` nor a `last` for a carry that the body reads, which the terminal inside knows by the wire that leaves it.
+#[test]
+fn a_part_offers_the_other_kinds_of_passage() {
+    use crate::parts::passages_offered;
+    assert_eq!(passages_offered("carry a", false, false), vec![("collect", true), ("last", true)]);
+    assert_eq!(passages_offered("carry a", false, true), vec![("collect", false), ("last", false)]);
+    assert_eq!(passages_offered("collect b", false, false), vec![("carry", true), ("last", true)]);
+    assert_eq!(passages_offered("last b", true, false), vec![("collect", true)]);
+    assert!(passages_offered("in v", false, false).is_empty());
+    let read = |text: &str| {
+        let drawing = drawing(text, &ViewState::default());
+        let port = drawing.ports.iter().find(|port| port.frame && !port.input && port.part == "carry a").unwrap();
+        port.read
+    };
+    let reads = "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: f64) {\n    a = for v in xs, carry a = 0.0 {\n        next a = core.add(a, v)\n    }\n    y = a\n}\n";
+    let ignores = "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: f64) {\n    a = for v in xs, carry a = 0.0 {\n        next a = core.abs(v)\n    }\n    y = a\n}\n";
+    assert!(read(reads));
+    assert!(!read(ignores));
+}
+
+/// A carry of an `error` stops a `loop` on the first error (spec 6.3): the entry that removes or adds that stop says so
+/// (decision of the owner, 2026-11-18), and the terminal of such a carry has the type `error`.
+#[test]
+fn a_part_that_changes_the_stop_on_error_says_so() {
+    use crate::parts::passage_warning;
+    assert!(passage_warning("carry", "last", true).is_some_and(|text| text.contains("no longer stops")));
+    assert!(passage_warning("last", "carry", true).is_some_and(|text| text.contains("will stop")));
+    assert_eq!(passage_warning("collect", "last", true), None);
+    assert_eq!(passage_warning("carry", "collect", false), None);
+    let text = "labcraft 1\n\nfn main(e: error) -> (y: error) {\n    err = loop carry err = none {\n        next err = e\n        until true\n    }\n    y = err\n}\n";
+    let drawing = drawing(text, &ViewState::default());
+    let port = drawing.ports.iter().find(|port| port.frame && !port.input && port.part == "carry err").unwrap();
+    assert_eq!(port.ty.and_then(|ty| drawing.types.get(ty)).map(String::as_str), Some("error"));
+}

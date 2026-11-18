@@ -57,6 +57,7 @@ pub const EDITING: &[&str] = &[
     "structure.add_collect",
     "structure.add_last",
     "structure.remove_part",
+    "structure.set_passage",
     "structure.set_option",
 ];
 
@@ -182,16 +183,21 @@ fn within(params: &Params, inside: &str, arm: &str) -> Within {
 fn through(params: &Params) -> Result<Option<Through>, CommandError> {
     let Some(given) = params.get("through").filter(|value| !value.is_null()) else { return Ok(None) };
     let invalid = || CommandError::of("params.invalid", "through", "`through` is `last`, `collect` or `carry`, or a list of them, one per loop");
-    let passage = |value: &serde_json::Value| match value.as_str() {
-        Some("carry") => Ok(Passage::Carry),
-        Some("collect") => Ok(Passage::Collect),
-        Some("last") => Ok(Passage::Last),
-        _ => Err(invalid()),
-    };
+    let passage = |value: &serde_json::Value| value.as_str().and_then(passage_of).ok_or_else(invalid);
     match given.as_array() {
         Some(list) if !list.is_empty() => Ok(Some(Through::Each(list.iter().map(passage).collect::<Result<_, _>>()?))),
         Some(_) => Err(invalid()),
         None => Ok(Some(Through::All(passage(given)?))),
+    }
+}
+
+/// A passage out of a loop as `through` and `structure.set_passage` write it.
+fn passage_of(text: &str) -> Option<Passage> {
+    match text {
+        "carry" => Some(Passage::Carry),
+        "collect" => Some(Passage::Collect),
+        "last" => Some(Passage::Last),
+        _ => None,
     }
 }
 
@@ -308,6 +314,13 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         }
         "structure.remove_part" => {
             Op::StructureRemovePart { file, structure: params.text("structure")?.to_owned(), part: params.text("part")?.to_owned() }
+        }
+        "structure.set_passage" => {
+            let text = params.text("to")?;
+            let Some(to) = passage_of(text) else {
+                return Err(CommandError::of("params.invalid", "to", format!("`{text}` is no passage: `carry`, `collect` or `last`")));
+            };
+            Op::StructureSetPassage { file, structure: params.text("structure")?.to_owned(), part: params.text("part")?.to_owned(), to }
         }
         "structure.set_option" => {
             let option = match params.text("option")? {

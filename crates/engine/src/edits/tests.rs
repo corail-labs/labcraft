@@ -689,3 +689,21 @@ fn a_wire_out_of_a_loop_carries_its_type() {
     assert_eq!(added["names"]["output"], "w2");
     assert!(text(&memory, "/p/h.lcf").contains("    w2 = for v in xs {\n        w = core.abs(v)\n        collect w\n    }\n"));
 }
+
+/// A part of a loop changes kind in one step (commands.md 6.7, `structure.set_passage`, #215): a `last` becomes a carry of
+/// the type that the check gives its value, written by hand from that row; undo restores the text.
+#[test]
+fn a_part_of_a_loop_changes_kind_in_one_step() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(xs: [f64]) -> (y: f64) {\n    m = for v in xs {\n        w = core.abs(v)\n        last w\n    }\n    y = m\n}\n";
+    memory.put("/p/h.lcf", before);
+    let changed = ok(&mut session, "structure.set_passage", json!({ "file": "h.lcf", "structure": "m", "part": "last m", "to": "carry" }));
+    assert_eq!(changed["names"]["output"], "m");
+    let after = text(&memory, "/p/h.lcf");
+    assert!(after.contains("    m = for v in xs, carry m: f64 = ? {\n        w = core.abs(v)\n        next m = w\n    }\n    y = m\n"), "{after}");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    let author = Author::User;
+    let bad = refused(&mut session, &author, "structure.set_passage", json!({ "file": "h.lcf", "structure": "m", "part": "last m", "to": "first" }));
+    assert_eq!((bad.code, bad.parameter.as_deref()), ("params.invalid", Some("to")));
+}

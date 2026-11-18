@@ -940,6 +940,24 @@ pub(super) fn catalog() -> Vec<Command> {
             false,
         ),
         editing(
+            "structure.set_passage",
+            "Set Passage",
+            "Make a carry, a collect or a last of a loop another of the three",
+            "Changes how a loop takes one value out: `part` (`carry x`, `collect y` or `last y`) becomes a `carry`, a `collect` or a `last`, its output and what reads it kept. A carry that the body reads becomes neither; a `for parallel` takes no carry.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("structure", string("The loop.")),
+                    ("part", string("The part: `carry x`, `collect y` or `last y`.")),
+                    ("to", json!({ "type": "string", "description": "What it becomes.", "enum": ["carry", "collect", "last"] })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "structure", "part", "to"],
+            ),
+            EDIT_ERRORS,
+            false,
+        ),
+        editing(
             "structure.set_option",
             "Set Option",
             "Turn `continue_on_error` or `parallel` on or off",

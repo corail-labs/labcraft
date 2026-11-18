@@ -129,6 +129,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 style: style(terminal.family, node.body),
                 arm: String::new(),
                 part: String::new(),
+                read: false,
             };
             ports.push((port, key.map(|key| (key, terminal.ty_text.clone()))));
         }
@@ -165,6 +166,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 style: style(terminal.family, node.body),
                 arm: String::new(),
                 part: String::new(),
+                read: false,
             };
             ports.push((port, Some((Key::Id(terminal.ty), terminal.ty_text.clone()))));
         }
@@ -193,6 +195,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 style: style(graph::Family::ORDER, node.body),
                 arm: String::new(),
                 part: String::new(),
+                read: false,
             };
             ports.push((port, None));
         }
@@ -282,6 +285,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     style: style(terminal.terminal.family, body),
                     arm,
                     part,
+                    read: !input && wire.is_some(),
                 };
                 if bound_in != body {
                     notches.push((ports.len(), bound_in));

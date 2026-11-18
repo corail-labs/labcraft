@@ -282,6 +282,13 @@ pub enum Op {
         structure: String,
         part: String,
     },
+    /// `structure.set_passage`: a part `carry x`, `collect y` or `last y` of a loop becomes another of the three.
+    StructureSetPassage {
+        file: String,
+        structure: String,
+        part: String,
+        to: Passage,
+    },
     /// `structure.set_option`.
     StructureSetOption {
         file: String,
@@ -373,6 +380,7 @@ impl Op {
             | Op::StructureAddCollect { file, .. }
             | Op::StructureAddLast { file, .. }
             | Op::StructureRemovePart { file, .. }
+            | Op::StructureSetPassage { file, .. }
             | Op::StructureSetOption { file, .. } => file,
         }
     }
@@ -676,6 +684,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
             parts::add_gather(&mut edit, labcraft_graph::Gather::Last, structure, value, name.as_deref(), &mut edited)?;
         }
         Op::StructureRemovePart { structure, part, .. } => parts::remove_part(&mut edit, judge, structure, part)?,
+        Op::StructureSetPassage { structure, part, to, .. } => parts::set_passage(&mut edit, judge, structure, part, *to, &mut edited)?,
         Op::StructureSetOption { structure, option, on, .. } => parts::set_option(&mut edit, structure, *option, *on)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;

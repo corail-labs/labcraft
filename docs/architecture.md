@@ -1996,6 +1996,9 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   loop its `gathers`, a `last` with the constant of the default value of its type; the run keeps, for a `last`, the value
   of the iteration of the highest index so far (`Gathered`). The diagram draws it as `Edge::Last`; `through` and
   `structure.add_last` write it, and the gesture out of a loop makes a `last` or a `collect`, never a carry.
+  `structure.set_passage` (#215) turns one part into another in `edit/parts.rs`, in place: `next x = v` and `collect v`
+  are the same line of the body, and the output moves among the targets so that the carries stay first. The menu of a
+  terminal knows whether the body reads a carry by `Port::read`, the wire that leaves the terminal inside.
 
 ### 12.8 `mcp` (L7)
 

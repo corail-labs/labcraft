@@ -156,6 +156,9 @@ pub enum Intent {
     Field { kind: FieldKind, text: String },
     /// `structure.remove_part` (notation 2.6): an arm by its patterns, `carry x`, `in x` or `collect y`.
     RemovePart { structure: String, part: String },
+    /// `structure.set_passage` (notation 2.6): a part `carry x`, `collect y` or `last y` of a loop becomes a `to`, `carry`,
+    /// `collect` or `last`, from the context menu of its terminal.
+    SetPassage { structure: String, part: String, to: &'static str },
     /// `structure.set_option`: `continue_on_error` of a `loop`, `parallel` of a `for`.
     SetOption { structure: String, option: &'static str, on: bool },
     /// "Add clause…" of a `for`: the host opens the list of the values it can go over (notation 2.6); with `over`, a
