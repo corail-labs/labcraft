@@ -48,6 +48,7 @@ pub const EDITING: &[&str] = &[
     "value.rename",
     "node.set_label",
     "node.set_template",
+    "fragment.paste",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -247,6 +248,11 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             Op::NodeSetLabel { file, line, label: params.text("label")?.to_owned() }
         }
         "node.set_template" => Op::NodeSetTemplate { file, node: params.text("node")?.to_owned(), template: params.text("template")?.to_owned() },
+        "fragment.paste" => {
+            not_yet(params, "inside", "5")?;
+            not_yet(params, "arm", "5")?;
+            Op::FragmentPaste { file, text: params.text("text")?.to_owned(), at: required_point(params, "at")? }
+        }
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
     Ok((op, target))
@@ -594,6 +600,16 @@ pub(crate) fn selectable(
     let Some(file) = file else {
         return Err(CommandError::of("params.invalid", "function", "the function shown has no file, so nothing of it can be selected"));
     };
+    reading(session, file, |files, shown, judge, limits| labcraft_edit::selectable(files, shown, nodes, wires, terminals, judge, limits))
+}
+
+/// What reads the file `file` of the project with the judge of the kept check of the root, writing nothing: `view.select`
+/// and `fragment.copy`. `read` takes the file as `edit` reads it, its name as shown, the judge and the limits.
+fn reading<T>(
+    session: &mut Session,
+    file: &str,
+    read: impl FnOnce(&Files, &str, &SessionJudge, &labcraft_types::Limits) -> Result<T, EditError>,
+) -> Result<T, CommandError> {
     let target = target(session, file)?;
     let text = read_text(session, &target)?;
     let root = session.root.clone();
@@ -603,7 +619,15 @@ pub(crate) fn selectable(
     let judge = SessionJudge { session, kept: &kept.checked, memory: &memory };
     let mut files = Files::new();
     files.insert(&target.shown, &text);
-    labcraft_edit::selectable(&files, &target.shown, nodes, wires, terminals, &judge, &session.config.limits).map_err(command_error)
+    read(&files, &target.shown, &judge, &session.config.limits).map_err(command_error)
+}
+
+/// `fragment.copy`: the nodes as the text of a function `clipboard` (commands.md 6.7). It writes nothing, and is not a
+/// step of history.
+pub(crate) fn copy(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
+    let nodes = texts(params, "nodes")?.unwrap_or_default();
+    let copied = reading(session, params.text("file")?, |files, shown, judge, limits| labcraft_edit::copy(files, shown, &nodes, judge, limits))?;
+    Ok(json!({ "text": copied }))
 }
 
 /// One editing command on the texts in memory: what it named and renamed.
@@ -823,8 +847,9 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
         let edited = apply_one(session, id, &judged, &mut texts).map_err(at)?;
         let (names, mut renamed) = names_json(&edited);
         // A node named earlier and renamed now (folded into an output, given a label) keeps its `$i`: the name it had
-        // may be taken by another node later in the batch.
-        for earlier in named.iter_mut().flatten() {
+        // may be taken by another node later in the batch. What a paste renames is of its fragment, not a node already
+        // there.
+        for earlier in named.iter_mut().flatten().filter(|_| id != "fragment.paste") {
             // In their order: a node given a label then folded is renamed twice by one command.
             for change in &edited.renamed {
                 if change.from == *earlier {

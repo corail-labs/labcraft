@@ -201,12 +201,18 @@ pub(crate) fn coordinate(edit: &mut Edit, value: i64) -> Numeral {
     Numeral { negative: value < 0, kind: NumeralKind::Int(edit.intern(&value.unsigned_abs().to_string())) }
 }
 
-/// Fixes a node where it is given: its `node … at` entry (spec 11).
-pub(crate) fn place(edit: &mut Edit, named: &str, at: Point) -> Result<(), EditError> {
+/// A point of `layout` within the bounds of a coordinate (spec 11), or `params.invalid` of `parameter`.
+pub(crate) fn in_range(at: Point, parameter: &'static str) -> Result<(), EditError> {
     let range = -MAX_COORDINATE..=MAX_COORDINATE;
     if !range.contains(&at.x) || !range.contains(&at.y) {
-        return Err(EditError::invalid("at", format!("a coordinate is between -{MAX_COORDINATE} and {MAX_COORDINATE}")));
+        return Err(EditError::invalid(parameter, format!("a coordinate is between -{MAX_COORDINATE} and {MAX_COORDINATE}")));
     }
+    Ok(())
+}
+
+/// Fixes a node where it is given: its `node … at` entry (spec 11).
+pub(crate) fn place(edit: &mut Edit, named: &str, at: Point) -> Result<(), EditError> {
+    in_range(at, "at")?;
     let (is_label, text) = match named.strip_prefix('#') {
         Some(label) => (true, label),
         None => (false, named),

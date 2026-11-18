@@ -65,6 +65,20 @@ impl Edit {
         Ok(Edit { path: path.to_owned(), original: text.to_owned(), names, file, lines, ids: SourceMap::default(), limits })
     }
 
+    /// Another file of the same path, made of the names of this one: the text that `fragment.copy` gives. It has no text
+    /// as given, so no line names a node in it.
+    pub fn derived(&self, file: File) -> Edit {
+        Edit {
+            path: self.path.clone(),
+            original: String::new(),
+            names: self.names.clone(),
+            file,
+            lines: HashMap::new(),
+            ids: SourceMap::default(),
+            limits: self.limits.clone(),
+        }
+    }
+
     pub fn function(&self) -> Option<&Function> {
         match &self.file.decl {
             Decl::Function(function) => Some(function),

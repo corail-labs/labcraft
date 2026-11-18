@@ -47,6 +47,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 pub mod catalog;
+mod clipboard;
 pub mod host;
 mod insert;
 pub mod keys;
@@ -308,6 +309,13 @@ pub struct Ide {
     loaders: bool,
     /// How the last run the window started of each function ended, for the `Run` panel.
     outcomes: HashMap<String, running::Outcome>,
+    /// The copies sent, until their text comes (notation 2.6).
+    copying: Vec<clipboard::Copying>,
+    /// The pastes sent, by function: the nodes pasted are selected once done.
+    pasting: Vec<(String, Reply)>,
+    /// A paste asked by a menu or the palette, by function, until egui gives the text of the clipboard: whether egui is
+    /// still to be asked for it, at the end of the frame, and when it was asked.
+    paste_asked: Option<(String, bool, f64)>,
 }
 
 /// The id of the dock area, which names its windows of the system.
@@ -329,7 +337,9 @@ impl Ide {
             workspace,
             platform,
             keymap: keys::keymap(platform),
-            dispatcher: craft_keymap::egui::Dispatcher::new(),
+            // Ctrl+C, Ctrl+X and Ctrl+V reach the keymap, which runs them on the canvas alone (notation 2.6); a text field
+            // keeps them.
+            dispatcher: craft_keymap::egui::Dispatcher::new().with_clipboard_events(true),
             palette: Palette::default(),
             palette_in: None,
             card: Card::default(),
@@ -356,6 +366,9 @@ impl Ide {
             pending: Vec::new(),
             edits: Vec::new(),
             field_edits: Vec::new(),
+            copying: Vec::new(),
+            pasting: Vec::new(),
+            paste_asked: None,
             templates: Vec::new(),
             failures: Vec::new(),
             canvas_rect: None,
@@ -431,8 +444,16 @@ impl Ide {
         }
         let typing = ctx.egui_wants_keyboard_input() && self.canvas_focus.is_none();
         let panel = self.canvas_focus.as_ref().map(|_| keys::DIAGRAM_SCOPE);
+        let asked = self
+            .asked_paste(ctx)
+            .map(|(function, text)| CommandRef::with_params(keys::PASTE, json!({ "function": function, "text": text, "menu": true })));
         let hits = ctx.input_mut(|input| self.dispatcher.dispatch(input, &self.keymap, &Active { panel, contexts: &[], typing }));
-        hits.into_iter().map(|hit| hit.command).collect()
+        // Ctrl+V brings the text of the clipboard with it.
+        let commands = hits.into_iter().map(|hit| match hit.pasted {
+            Some(text) if hit.command.id == keys::PASTE => CommandRef::with_params(keys::PASTE, json!({ "text": text })),
+            _ => hit.command,
+        });
+        asked.into_iter().chain(commands).collect()
     }
 
     /// The permissions of each pane where it is now (`pane::permissions_in`).
@@ -469,6 +490,7 @@ impl Ide {
         self.follow_focus(ui.ctx());
         if let Some(host) = host {
             self.take_replies(host, &view);
+            self.take_clips(ui.ctx(), host);
             self.follow_run(host, ui.ctx());
             self.sync_tabs(ui.ctx(), &view);
             self.take_drawing(&view);
@@ -485,6 +507,11 @@ impl Ide {
         }
         for command in hits {
             self.run(command, host, &view, &mut outward);
+        }
+        if let Some((_, ask, _)) = &mut self.paste_asked
+            && std::mem::take(ask)
+        {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         let menus = self.menus(&view, host.is_some());
         let entries = if self.palette.is_open() { catalog::palette_entries(&self.keymap, host.is_some()) } else { Vec::new() };
@@ -1106,6 +1133,10 @@ impl Ide {
                 | keys::WIRE
                 | keys::QUICK_INSERT
                 | keys::DELETE
+                | keys::COPY
+                | keys::CUT
+                | keys::PASTE
+                | keys::DUPLICATE
                 | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
                 keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
                 keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
@@ -1638,6 +1669,31 @@ impl Ide {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function)) = (host, function) else { return };
                 self.delete(host, view, &function);
+            }
+            // Copy, cut and duplicate (notation 2.6): the nodes selected on the canvas that has the keyboard.
+            keys::COPY | keys::CUT | keys::DUPLICATE => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(host), Some(function)) = (host, function) else { return };
+                let clip = match id.as_str() {
+                    keys::CUT => clipboard::Clip::Cut,
+                    keys::DUPLICATE => clipboard::Clip::Duplicate,
+                    _ => clipboard::Clip::Copy,
+                };
+                self.copy(host, view, &function, clip);
+            }
+            // Paste (notation 2.6): Ctrl+V brings its text; a menu asks egui for the text of the clipboard first.
+            keys::PASTE => {
+                let function = params.get("function").and_then(Value::as_str).map(str::to_owned);
+                let function = function.or_else(|| self.canvas_focus.as_ref().map(|(function, _)| function.clone())).or(shown);
+                let (Some(host), Some(function)) = (host, function) else { return };
+                match params.get("text").and_then(Value::as_str) {
+                    // From a menu, the pointer is on the menu: the paste falls in the middle of the view.
+                    Some(text) => {
+                        let pointer = if params.get("menu").and_then(Value::as_bool) == Some(true) { None } else { self.pointer };
+                        self.paste(host, view, &function, text, pointer);
+                    }
+                    None => self.paste_asked = Some((function, true, self.now)),
+                }
             }
             // F2 (notation 2.6): the name of the node selected, or its label, in a field in place.
             keys::RENAME => {

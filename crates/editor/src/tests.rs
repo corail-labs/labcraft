@@ -1656,3 +1656,24 @@ fn a_pill_double_clicked_edits_its_own_input() {
     assert_eq!(canvas.constant_in_focus().as_deref(), Some("sum.b"));
     assert_eq!(fields::unquoted("\"{v} V\""), "{v} V");
 }
+
+/// Copy counts from the top-left corner of the nodes selected, as their `node … at` entries write it (spec 11), so that
+/// Duplicate falls 16 to the right and 16 below; a paste without the pointer on the canvas falls in the view, on the grid
+/// of 8 (notation 2.6; decision of the owner, 2026-11-17).
+#[test]
+fn copy_counts_from_the_corner_and_a_paste_falls_on_the_grid() {
+    let fixed = format!("{WIRED}\nlayout {{\n    node a at (40, 80)\n    node b at (200, 120)\n}}\n");
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawing(&fixed, &ViewState::default()), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let both = showing(&selecting(&["b", "a"], &[], &[]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &both);
+    assert_eq!(canvas.selection_corner(&both.selection), Some((40, 80)));
+    assert_eq!(canvas.selection_corner(&Selection::default()), None);
+    let at = canvas.paste_at(None).unwrap();
+    assert_eq!((at.0 % 8, at.1 % 8), (0, 0), "{at:?}");
+    // A pointer off the canvas (on a menu) is no pointer.
+    assert_eq!(canvas.paste_at(Some(Pos2::new(-5000.0, -5000.0))), Some(at));
+}

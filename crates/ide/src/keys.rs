@@ -69,6 +69,13 @@ pub const QUICK_INSERT: &str = "ide.quick_insert";
 pub const DELETE: &str = "ide.delete";
 /// F2 (notation 2.6): the name of the node selected in a field in place, or its label.
 pub const RENAME: &str = "ide.rename";
+/// Copy, cut, paste and duplicate (notation 2.6): the selection as the text of a function `clipboard` on the clipboard of
+/// the system (`fragment.copy`), then `node.delete` for cut; the text of the clipboard into the frame (`fragment.paste`);
+/// copy and paste 16 to the right and 16 below, without the clipboard, for duplicate.
+pub const COPY: &str = "ide.copy";
+pub const CUT: &str = "ide.cut";
+pub const PASTE: &str = "ide.paste";
+pub const DUPLICATE: &str = "ide.duplicate";
 /// The settings "autopatch from the keyboard" and "inserting into a wire" of notation 2.6, on by default: preferences of
 /// the user until the card `Settings` of step 6, as those of steps 2 and 3.
 pub const AUTOPATCH: &str = "ide.autopatch";
@@ -107,6 +114,10 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (QUICK_INSERT, "Quick insertion"),
     (DELETE, "Delete the selection"),
     (RENAME, "Rename the node selected"),
+    (COPY, "Copy the selection"),
+    (CUT, "Cut the selection"),
+    (PASTE, "Paste into the frame"),
+    (DUPLICATE, "Duplicate the selection"),
     (AUTOPATCH, "Autopatch from the keyboard"),
     (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
@@ -151,6 +162,10 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(QUICK_INSERT, "Quick insertion", &["Space"]),
         on_canvas(DELETE, "Delete", &["Delete", "Backspace"]),
         on_canvas(RENAME, "Rename", &["F2"]),
+        on_canvas(COPY, "Copy", &["Cmd+C"]),
+        on_canvas(CUT, "Cut", &["Cmd+X"]),
+        on_canvas(PASTE, "Paste", &["Cmd+V"]),
+        on_canvas(DUPLICATE, "Duplicate", &["Cmd+D"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
     // A key of the canvas never acts when the canvas does not have the focus.
@@ -201,6 +216,10 @@ pub fn menus() -> MenuBar {
             item(ARRANGE, "Arrange"),
             item(WIRE, "Start a wire from the terminal"),
             item(QUICK_INSERT, "Quick insertion…"),
+            item(CUT, "Cut"),
+            item(COPY, "Copy"),
+            item(PASTE, "Paste"),
+            item(DUPLICATE, "Duplicate"),
             item(DELETE, "Delete"),
             item(RENAME, "Rename…"),
             Node::Separator,
@@ -275,6 +294,7 @@ mod tests {
             &["Cmd+A"],
             &["Alt+Left", "Alt+Right", "Shift+Alt+Left", "Shift+Alt+Right"],
             &["W", "Space", "Delete", "Backspace", "Shift+Alt+F"],
+            &["Cmd+C", "Cmd+X", "Cmd+V", "Cmd+D"],
         ] {
             for key in keys {
                 assert!(binding(key).is_some(), "{key}");

@@ -166,7 +166,7 @@ pub(crate) fn args_mut(statement: &mut Statement) -> Option<&mut Box<[Arg]>> {
 }
 
 /// The name that a `[x]` reads, whether it is a unit or an array (spec 5.2).
-fn bracket_name(unit: &labcraft_graph::UnitExpr) -> Option<Name> {
+pub(crate) fn bracket_name(unit: &labcraft_graph::UnitExpr) -> Option<Name> {
     match (&unit.first, unit.rest.is_empty()) {
         (UnitTerm::Named { name, exponent: None }, true) => Some(*name),
         _ => None,

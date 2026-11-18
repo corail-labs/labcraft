@@ -24,6 +24,7 @@ use egui::{Color32, PointerButton, Pos2, Rect, Response, Sense, Ui, Vec2};
 use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
+mod clip;
 mod fields;
 mod fonts;
 pub mod insertion;

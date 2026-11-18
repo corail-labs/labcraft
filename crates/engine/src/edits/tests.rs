@@ -558,3 +558,47 @@ fn the_fields_in_place_are_steps_of_history() {
     }
     assert_eq!(text(&memory, "/p/h.lcf"), before);
 }
+
+/// Copy and paste of M1 step 4c through the session: a copy writes nothing and is no step, a paste is one step that undo
+/// reverses (commands.md 6.7). The texts are worked out by hand from commands.md 9.1, notation 2.6 and spec 5.2.
+#[test]
+fn a_copy_writes_nothing_and_a_paste_is_one_step() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    b = core.add(a, 1.0)\n    y = b\n}\n\nlayout {\n    node a at (40, 40)\n    node b at (140, 60)\n}\n";
+    memory.put("/p/h.lcf", before);
+    let copied = ok(&mut session, "fragment.copy", json!({ "file": "h.lcf", "nodes": ["a", "b"] }));
+    let fragment = "labcraft 1\n\nuse core\n\nfn clipboard() -> () {\n    a = core.mul(?, 2.0)\n    b = core.add(a, 1.0)\n}\n\nlayout {\n    node a at (0, 0)\n    node b at (100, 20)\n}\n";
+    assert_eq!(copied, json!({ "text": fragment }));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    assert_eq!(ok(&mut session, "history.list", json!({}))["steps"], json!([]));
+    let author = Author::User;
+    let batch = json!({ "commands": [{ "id": "fragment.copy", "params": { "file": "h.lcf", "nodes": ["a"] } }] });
+    assert_eq!(refused(&mut session, &author, "commands.batch", batch).code, "params.invalid");
+
+    let pasted = ok(&mut session, "fragment.paste", json!({ "file": "h.lcf", "text": fragment, "at": [200, 0] }));
+    assert_eq!(pasted["names"], json!({ "nodes": ["a2", "b2"] }));
+    assert_eq!(pasted["renamed"], json!([{ "file": "h.lcf", "from": "a", "to": "a2" }, { "file": "h.lcf", "from": "b", "to": "b2" }]));
+    let after = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    a2 = core.mul(?, 2.0)\n    b = core.add(a, 1.0)\n    b2 = core.add(a2, 1.0)\n    y = b\n}\n\nlayout {\n    node a at (40, 40)\n    node a2 at (200, 0)\n    node b at (140, 60)\n    node b2 at (300, 20)\n}\n";
+    assert_eq!(text(&memory, "/p/h.lcf"), after);
+    let inside = refused(&mut session, &author, "fragment.paste", json!({ "file": "h.lcf", "text": fragment, "at": [0, 0], "inside": "m" }));
+    assert_eq!((inside.code, inside.parameter.as_deref()), ("params.invalid", Some("inside")));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+}
+
+/// What a paste renames is of its fragment: a `$i` of a batch keeps naming the node that command `i` added
+/// (commands.md 6.7, `commands.batch` and `fragment.paste`).
+#[test]
+fn a_paste_in_a_batch_leaves_the_names_of_the_earlier_commands() {
+    let (mut session, memory) = session();
+    memory.put("/p/h.lcf", "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    y = x\n}\n");
+    let fragment = "labcraft 1\n\nuse core\n\nfn g() -> () {\n    sum = core.add(1.0, 2.0)\n}\n";
+    let commands = json!([
+        { "id": "node.add", "params": { "file": "h.lcf", "call": "core.add" } },
+        { "id": "fragment.paste", "params": { "file": "h.lcf", "text": fragment, "at": [0, 0] } },
+        { "id": "wire.connect", "params": { "file": "h.lcf", "from": "x", "to": "$0.a" } },
+    ]);
+    ok(&mut session, "commands.batch", json!({ "commands": commands }));
+    let after = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    sum = core.add(x)\n    sum2 = core.add(1.0, 2.0)\n    y = x\n}\n";
+    assert_eq!(text(&memory, "/p/h.lcf"), after);
+}
