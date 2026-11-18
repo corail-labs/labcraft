@@ -936,17 +936,22 @@ impl<'a> Writer<'a> {
             self.pattern(pattern);
         }
         self.push(" => ");
-        let yields_only = is_empty(arm.open.as_ref(), &arm.body) && arm.yields.comments.before.is_empty() && arm.yields.comments.line.is_none();
+        // An arm with no `yield`, of a structure that gives nothing, keeps its braces, even empty (spec 6.1).
+        let gives = !arm.yields.values.is_empty();
+        let yields_only =
+            gives && is_empty(arm.open.as_ref(), &arm.body) && arm.yields.comments.before.is_empty() && arm.yields.comments.line.is_none();
         if yields_only {
             self.yield_values(&arm.yields.values);
         } else {
             self.push("{");
             self.end_line(arm.open.as_ref());
             self.statements(&arm.body, depth + 1);
-            self.comment_lines(&arm.yields.comments.before, depth + 1);
-            self.indent(depth + 1);
-            self.yield_values(&arm.yields.values);
-            self.end_line(arm.yields.comments.line.as_deref());
+            if gives {
+                self.comment_lines(&arm.yields.comments.before, depth + 1);
+                self.indent(depth + 1);
+                self.yield_values(&arm.yields.values);
+                self.end_line(arm.yields.comments.line.as_deref());
+            }
             self.comment_lines(&arm.body.end, depth + 1);
             self.indent(depth);
             self.push("}");

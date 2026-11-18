@@ -543,9 +543,13 @@ pub struct Port {
     #[cfg_attr(feature = "serde", serde(default))]
     pub never: String,
     /// As `wire.connect` names it (commands.md 9.2): its `to` for an input (`sq.b`, `msg.parts.2`, `n.after`,
-    /// `output y`), its `from` for an output (a value, `dmm`, or `node.output`). Empty for what no command wires yet
-    /// (the inputs of a structure and its `next`, `until`, `collect` or `yield`, step 5 of M1).
+    /// `output y`, the selector `m`, the carry `total.sum`, `n.next.x`, the `until` of `n`, a `collect` or a `yield` by
+    /// the output it gives), its `from` for an output (a value, `dmm`, or `node.output`). Empty for what no command wires.
     pub name: String,
+    /// The arm of a `yield`, by its patterns as the text writes them (`true`, `_`): what `wire.connect` takes as `arm`.
+    /// Empty for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub arm: String,
     /// Its name in its node (`high`), or in the signature for a terminal of the frame (`limit`); empty for an input
     /// without a name.
     pub caption: String,
@@ -667,6 +671,10 @@ pub struct BodyDrawn {
     /// Whether it is the body of a `loop` or a `for`, out of which a value goes only by a `collect` or a carry.
     #[cfg_attr(feature = "serde", serde(default))]
     pub looping: bool,
+    /// For an arm, its patterns as the text writes them and a command names the arm (`true`, `_`, `1, 3..=5`); empty for
+    /// another body.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub arm: String,
 }
 
 /// A node placed: the top-left corner of its block, its size, and its place in the columns of its body.

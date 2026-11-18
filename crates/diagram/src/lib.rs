@@ -269,7 +269,8 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<
     drawing.warnings = overlapping(graph, &sized, &placement);
     let owners = shapes(graph, &titles, &placement, sized, types, &mut drawing);
     extent_and_margin(&placement, &mut drawing);
-    for (body, (owner, looping)) in drawing.bodies.iter_mut().zip(owners) {
+    for (body, (owner, looping, arm)) in drawing.bodies.iter_mut().zip(owners) {
+        body.arm = arm;
         (body.owner, body.looping) = (owner, looping);
     }
     drawing
@@ -318,7 +319,7 @@ fn shapes(
     sized: Vec<size::Sized>,
     types: Option<&labcraft_types::TypeTable>,
     drawing: &mut Drawing,
-) -> Vec<(Option<usize>, bool)> {
+) -> Vec<(Option<usize>, bool, String)> {
     // The arms in tabs, outermost first, and the innermost arm in tabs that holds each body.
     let mut inside: Vec<Option<usize>> = vec![None; graph.bodies.len()];
     // The rank of each body among the arms of its structure.
@@ -597,6 +598,7 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
             origin: (frame.origin.0 + dx, frame.origin.1 + dy),
             owner: None,
             looping: false,
+            arm: String::new(),
         })
         .collect();
     drawing.width = right + dx + style::margin();
@@ -1589,16 +1591,25 @@ fn wire_names(
 }
 
 /// A wire as an editing command names it (commands.md 9.2): `value -> node.input`, `#label -> node.after` for an order,
-/// `value -> output` for an output of the function, the node by its name of `command_names`. None for what no command
-/// names yet: a value with no name (`_`), the inputs of a structure and its `next`, `until`, `collect` or `yield` (step 5
-/// of M1).
+/// `value -> output` for an output of the function, the node by its name of `command_names`, and the parts of a
+/// structure (commands.md 9.2). None for what no command names: a value with no name (`_`), an outer value that crosses
+/// the edge of a structure.
 fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph::Wire, names: &[Option<String>]) -> Option<String> {
     let value = wire.name.split('.').next().filter(|value| !value.is_empty() && *value != "_" && !value.starts_with('@'))?;
     let end = match wire.to {
-        // The inputs of a structure (its selector, its carries, the values that cross its edge) come with step 5.
         graph::End::Node { node, terminal } => {
-            let found = graph.nodes.get(node).filter(|found| !matches!(found.kind, Kind::Structure(_)))?;
+            let found = graph.nodes.get(node)?;
             let name = names.get(node)?.as_deref()?;
+            // A structure: its selector by the node alone, a carry or an `in` by its name; an outer value that crosses its
+            // edge is no wire that a command names.
+            if let Kind::Structure(structure) = &found.kind {
+                let output = graph
+                    .bodies
+                    .first()
+                    .is_some_and(|function| function.right.iter().any(|found| found.edge == graph::Edge::Output && found.terminal.name == name));
+                let end = structure.input_name(name, terminal, &found.inputs.get(terminal)?.name, output)?;
+                return Some(format!("{value} -> {end}"));
+            }
             match found.inputs.get(terminal) {
                 Some(input) if input.name.is_empty() => name.to_owned(),
                 Some(input) => match input.place {
@@ -1613,6 +1624,24 @@ fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph
             let terminal = of.right.get(index).filter(|terminal| terminal.edge == graph::Edge::Output)?;
             terminal.terminal.name.clone()
         }
+        // What a body gives its structure: `n.next.x`, the `until` of `n`, a `collect` or a `yield` by its output.
+        graph::End::Right(index) => {
+            let name = names.get(of.owner?)?.as_deref()?;
+            let terminal = of.right.get(index)?;
+            match terminal.edge {
+                graph::Edge::Register => format!("{name}.next.{}", terminal.terminal.name.strip_prefix("next ")?),
+                graph::Edge::Until => format!("{name}.until"),
+                graph::Edge::Collect | graph::Edge::Yield => {
+                    let output = &terminal.terminal.name;
+                    let function_output = graph.bodies.first().is_some_and(|function| {
+                        function.right.iter().any(|found| found.edge == graph::Edge::Output && &found.terminal.name == output)
+                    });
+                    let named = !output.is_empty() && output != "_" && !output.contains(['.', ' ', '[']);
+                    (named && !(function_output && terminal.edge == graph::Edge::Collect)).then(|| output.clone())?
+                }
+                _ => return None,
+            }
+        }
         _ => return None,
     };
     Some(format!("{value} -> {end}"))
@@ -1623,7 +1652,9 @@ fn command_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph
 /// its edge (`k -> total.k`), or by the selector (`c -> m`); from inside, to `next x` (`grown -> total.acc`), or to
 /// `until`, `collect` or `yield` (`stop -> n`).
 fn entry_wire(graph: &Graph<'_>, of: &graph::BodyOf, body: usize, wire: &graph::Wire, names: &[Option<String>]) -> Option<String> {
-    if let Some(found) = command_wire(graph, of, body, wire, names) {
+    // To a part of a structure, the entry names the structure (`stop -> n`), which `layout` reads (spec 11, 14.6).
+    let to_a_part = matches!(wire.to, graph::End::Right(_)) && body != 0;
+    if !to_a_part && let Some(found) = command_wire(graph, of, body, wire, names) {
         return Some(found);
     }
     let value = wire.name.split('.').next().filter(|value| !value.is_empty() && *value != "_" && !value.starts_with('@'))?;

@@ -10,6 +10,7 @@ use labcraft_types::Name;
 
 use crate::model::Edit;
 use crate::names::{fresh, given, of_output, taken};
+use crate::scope::{self, Step};
 use crate::wire::FORMAT;
 use crate::{EditError, Edited, Judge, Kind, Lookup, MAX_COORDINATE, Point};
 
@@ -19,6 +20,7 @@ pub(crate) fn node(
     call: &str,
     at: Option<Point>,
     name: Option<&str>,
+    body: &[Step],
     edited: &mut Edited,
 ) -> Result<(), EditError> {
     let segments: Vec<&str> = call.split('.').collect();
@@ -106,7 +108,7 @@ pub(crate) fn node(
     if let Some(library) = &callable.library {
         add_use(edit, library);
     }
-    edit.body_function_mut()?.body.statements.push(statement);
+    push(edit, body, statement)?;
     if let Some(at) = at {
         place(edit, &named, at)?;
     }
@@ -114,7 +116,14 @@ pub(crate) fn node(
     Ok(())
 }
 
-pub(crate) fn constant(edit: &mut Edit, value: &str, at: Option<Point>, name: Option<&str>, edited: &mut Edited) -> Result<(), EditError> {
+pub(crate) fn constant(
+    edit: &mut Edit,
+    value: &str,
+    at: Option<Point>,
+    name: Option<&str>,
+    body: &[Step],
+    edited: &mut Edited,
+) -> Result<(), EditError> {
     let operand = read_constant(edit, value)?;
     let taken = taken(edit);
     let named = match name {
@@ -129,11 +138,19 @@ pub(crate) fn constant(edit: &mut Edit, value: &str, at: Option<Point>, name: Op
         label: None,
         kind: StatementKind::Binding { targets: Box::new([Target::Name(edit.id(), target)]), value: Rhs::Operand(operand) },
     };
-    edit.body_function_mut()?.body.statements.push(statement);
+    push(edit, body, statement)?;
     if let Some(at) = at {
         place(edit, &named, at)?;
     }
     edited.names.insert("node", named);
+    Ok(())
+}
+
+/// Adds a statement at the end of the body at `body`, before its `yield` when it is an arm.
+pub(crate) fn push(edit: &mut Edit, body: &[Step], statement: Statement) -> Result<(), EditError> {
+    let function = edit.body_function_mut()?;
+    let found = scope::body_mut(function, body).ok_or_else(|| EditError::internal("a frame that went"))?;
+    found.statements.push(statement);
     Ok(())
 }
 
@@ -186,7 +203,7 @@ fn path_of(edit: &mut Edit, segments: &[&str]) -> Path {
 }
 
 /// The `use` line that a call of another library needs.
-fn add_use(edit: &mut Edit, library: &str) {
+pub(crate) fn add_use(edit: &mut Edit, library: &str) {
     let name = edit.intern(library);
     if edit.file.uses.iter().any(|used| used.path.first == name && used.path.rest.is_empty()) {
         return;

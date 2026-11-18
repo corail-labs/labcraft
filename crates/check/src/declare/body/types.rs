@@ -1951,7 +1951,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         for wanted in 0..=2 {
             for arm in &branching.arms {
                 let Some(value) = arm.yields.values.get(position) else { continue };
-                if self.rank(value) != wanted {
+                // A hole never gives a type: the arms take it from those that yield a value (spec 5.1, R-7).
+                if matches!(value, Operand::Hole(_)) || self.rank(value) != wanted {
                     continue;
                 }
                 // A literal takes the type of the target, or of the arm that decides. A wire keeps its type (R-7).

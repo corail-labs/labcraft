@@ -1968,3 +1968,12 @@ fn the_drawing_judges_a_wire_by_scope_and_by_family() {
     assert!(matches!(&hidden, crate::Verdict::Refused { refusal, .. } if refusal.code == "wire.out_of_scope"), "{hidden:?}");
     assert_eq!(code_of(&verdict_of(&drawing, "d", len)), "wire.out_of_scope");
 }
+
+/// Commands.md 6.7 and spec 5.2: a wire out of an arm gives the value as an output of its structure; to a node that
+/// feeds the selector of that structure, it closes a cycle, as `wire.connect` says after taking the value out.
+#[test]
+fn a_wire_out_of_an_arm_to_what_feeds_its_structure_is_a_cycle() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    s = core.add(x, 1.0)\n    c = core.gt(s, 0.0)\n    y = match c {\n        true => {\n            d = core.abs(x)\n            yield d\n        }\n        false => yield x\n    }\n}\n";
+    let drawing = drawing_of(main);
+    assert_eq!(code_of(&verdict_of(&drawing, "d", "s.b")), "wire.cycle");
+}

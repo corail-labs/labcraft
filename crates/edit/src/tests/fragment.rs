@@ -15,7 +15,7 @@ fn copy(before: &str, nodes: &[&str]) -> Result<String, EditError> {
 }
 
 fn paste(fragment: &str, x: i64, y: i64) -> Op {
-    Op::FragmentPaste { file: FILE.to_owned(), text: fragment.to_owned(), at: Point { x, y } }
+    Op::FragmentPaste { file: FILE.to_owned(), text: fragment.to_owned(), at: Point { x, y }, within: Default::default() }
 }
 
 fn renamed(pairs: &[(&str, &str)]) -> Vec<Renamed> {

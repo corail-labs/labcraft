@@ -491,7 +491,7 @@ fn wires_of(session: &mut Session, file: &str, text: &str) -> Vec<labcraft_edit:
     session.checked(&root).unwrap();
     let kept = session.kept_root().unwrap();
     let memory = std::collections::BTreeMap::new();
-    let judge = super::SessionJudge { session, kept: &kept.checked, memory: &memory };
+    let judge = super::SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
     judge.wires(file, text)
 }
 
@@ -581,7 +581,8 @@ fn a_copy_writes_nothing_and_a_paste_is_one_step() {
     let after = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    a2 = core.mul(?, 2.0)\n    b = core.add(a, 1.0)\n    b2 = core.add(a2, 1.0)\n    y = b\n}\n\nlayout {\n    node a at (40, 40)\n    node a2 at (200, 0)\n    node b at (140, 60)\n    node b2 at (300, 20)\n}\n";
     assert_eq!(text(&memory, "/p/h.lcf"), after);
     let inside = refused(&mut session, &author, "fragment.paste", json!({ "file": "h.lcf", "text": fragment, "at": [0, 0], "inside": "m" }));
-    assert_eq!((inside.code, inside.parameter.as_deref()), ("params.invalid", Some("inside")));
+    // `m` names no structure of the function.
+    assert_eq!((inside.code, inside.parameter.as_deref()), ("edit.unknown", Some("inside")));
     ok(&mut session, "history.undo", json!({}));
     assert_eq!(text(&memory, "/p/h.lcf"), before);
 }
@@ -601,4 +602,44 @@ fn a_paste_in_a_batch_leaves_the_names_of_the_earlier_commands() {
     ok(&mut session, "commands.batch", json!({ "commands": commands }));
     let after = "labcraft 1\n\nuse core\n\nfn h(x: f64) -> (y: f64) {\n    sum = core.add(x)\n    sum2 = core.add(1.0, 2.0)\n    y = x\n}\n";
     assert_eq!(text(&memory, "/p/h.lcf"), after);
+}
+
+/// Where each node of `file` with `text` is in the frame of the function, by its name, as the window would draw it; `b` is
+/// a node of that frame.
+fn absolute_of(session: &mut Session, file: &str, text: &str) -> std::collections::BTreeMap<String, (i64, i64)> {
+    use labcraft_edit::Judge;
+    let root = session.root.clone();
+    session.checked(&root).unwrap();
+    let kept = session.kept_root().unwrap();
+    let memory = std::collections::BTreeMap::new();
+    let judge = super::SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
+    let places = judge.places(file, text);
+    // In the frame of the function: the place of a node of the body, less where it is on the canvas.
+    let origin =
+        places.iter().find(|place| place.name == "b").map(|place| (place.absolute.x - place.at.x, place.absolute.y - place.at.y)).unwrap_or_default();
+    places.into_iter().map(|place| (place.name, (place.absolute.x - origin.0, place.absolute.y - origin.1))).collect()
+}
+
+/// Surrounding moves nothing on the screen: each node keeps where the drawing had it, counted in its new frame, whatever
+/// the frame of the arm takes for its header and tabs (commands.md 9.6). A selector of the wrong type is refused, as the
+/// type that the check gives it says.
+#[test]
+fn a_structure_surrounds_its_nodes_where_they_are() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nuse core\n\nfn h(x: f64, ok: bool) -> (y: f64) {\n    a = core.neg(x)\n    b = core.abs(a)\n    y = core.abs(b)\n}\n\nlayout {\n    node a at (40, 80)\n    node b at (200, 120)\n}\n";
+    memory.put("/p/h.lcf", before);
+    let was = std::collections::BTreeMap::from([("a".to_owned(), (40, 80)), ("b".to_owned(), (200, 120))]);
+    let result = ok(&mut session, "structure.surround", json!({ "file": "h.lcf", "kind": "match", "selector": "ok", "nodes": ["a", "b"] }));
+    assert_eq!(result["names"]["structure"], "b");
+    let after = text(&memory, "/p/h.lcf");
+    assert!(after.contains("b = match ok {\n        true => {\n            a = core.neg(x)\n            b2 = core.abs(a)\n            yield b2\n        }\n        false => yield ?\n    }"), "{after}");
+    assert!(after.contains("    node a at (0, 0)\n") && after.contains("    node b2 at (160, 40)\n"), "{after}");
+    let now = absolute_of(&mut session, "h.lcf", &after);
+    assert_eq!((now.get("a"), now.get("b2")), (was.get("a"), was.get("b")), "{after}");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    let author = Author::User;
+    let float = refused(&mut session, &author, "structure.surround", json!({ "file": "h.lcf", "kind": "match", "selector": "x", "nodes": ["a"] }));
+    assert_eq!((float.code, float.parameter.as_deref()), ("wire.type_mismatch", Some("selector")));
+    assert!(float.message.contains("`f64`"), "{}", float.message);
 }

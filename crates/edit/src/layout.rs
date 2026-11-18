@@ -23,7 +23,7 @@ pub(crate) struct Designation {
 }
 
 /// The nodes that a command names, each once, in the order given.
-fn locs(edit: &Edit, nodes: &[String], parameter: &'static str) -> Result<Vec<Loc>, EditError> {
+pub(crate) fn locs(edit: &Edit, nodes: &[String], parameter: &'static str) -> Result<Vec<Loc>, EditError> {
     let function = edit.body_function()?;
     let mut found: Vec<Loc> = Vec::with_capacity(nodes.len());
     for name in nodes {
@@ -40,7 +40,7 @@ fn locs(edit: &Edit, nodes: &[String], parameter: &'static str) -> Result<Vec<Lo
 }
 
 /// The designation of the node at `loc`, if the section can name it as it is.
-fn designation(edit: &Edit, function: &Function, loc: &Loc) -> Option<Designation> {
+pub(crate) fn designation(edit: &Edit, function: &Function, loc: &Loc) -> Option<Designation> {
     let statement = scope::statement(function, loc)?;
     if let Some(label) = statement.label {
         return Some(Designation { is_label: true, name: label.name });
@@ -113,7 +113,7 @@ pub(crate) fn value_of(edit: &Edit, numeral: &Numeral) -> Option<i64> {
 }
 
 /// The index of the `node` entry that designates the node at `loc`, by its label or the name of its line.
-fn entry_of(edit: &Edit, function: &Function, loc: &Loc) -> Option<usize> {
+pub(crate) fn entry_of(edit: &Edit, function: &Function, loc: &Loc) -> Option<usize> {
     let layout = edit.file.layout.as_ref()?;
     layout.items.iter().position(|item| {
         let LayoutKind::Node { node, .. } = &item.kind else { return false };
@@ -123,7 +123,7 @@ fn entry_of(edit: &Edit, function: &Function, loc: &Loc) -> Option<usize> {
 }
 
 /// Where the `node` entry of the node at `loc` fixes it, in its frame; none for a free node.
-fn fixed_at(edit: &Edit, function: &Function, loc: &Loc) -> Option<Point> {
+pub(crate) fn fixed_at(edit: &Edit, function: &Function, loc: &Loc) -> Option<Point> {
     let index = entry_of(edit, function, loc)?;
     let item = edit.file.layout.as_ref()?.items.get(index)?;
     let LayoutKind::Node { at: Some(at), .. } = &item.kind else { return None };
@@ -131,7 +131,13 @@ fn fixed_at(edit: &Edit, function: &Function, loc: &Loc) -> Option<Point> {
 }
 
 /// Where a free node is, in its frame, as the drawing of the text before the operation places it (architecture 12.3).
-fn drawn_at(edit: &Edit, judge: &dyn Judge, places: &mut Option<Vec<crate::Place>>, loc: &Loc, parameter: &'static str) -> Result<Point, EditError> {
+pub(crate) fn drawn_at(
+    edit: &Edit,
+    judge: &dyn Judge,
+    places: &mut Option<Vec<crate::Place>>,
+    loc: &Loc,
+    parameter: &'static str,
+) -> Result<Point, EditError> {
     let function = edit.body_function()?;
     let all = places.get_or_insert_with(|| judge.places(&edit.path, &edit.original));
     let line = edit.lines.get(loc).copied();
@@ -139,12 +145,7 @@ fn drawn_at(edit: &Edit, judge: &dyn Judge, places: &mut Option<Vec<crate::Place
     // By its line and its name: a structure and a node it holds can start on one line; by its line alone when it is
     // the one node there; by its name otherwise.
     let on_line: Vec<&crate::Place> = all.iter().filter(|place| line.is_some_and(|line| place.line == line)).collect();
-    let named = |place: &&crate::Place| name.as_ref().is_some_and(|name| place.name == *name);
-    let alone = match on_line.as_slice() {
-        [one] => Some(*one),
-        _ => None,
-    };
-    let found = on_line.iter().copied().find(named).or(alone).or_else(|| all.iter().find(named));
+    let found = pick_place(&on_line, name.as_deref(), |name| all.iter().find(|place| place.name == name));
     match found {
         Some(place) => Ok(place.at),
         None => Err(EditError::invalid(
@@ -152,6 +153,22 @@ fn drawn_at(edit: &Edit, judge: &dyn Judge, places: &mut Option<Vec<crate::Place
             "the function is not drawn now, so a node placed automatically has no place to move from: `node.place` gives one",
         )),
     }
+}
+
+/// Where the drawing has a node, among the places drawn on its line, `here`: by its line and its name, by its line alone
+/// when it is the one node there, by its name otherwise (`elsewhere`), since a structure and a node it holds can start on
+/// one line.
+pub(crate) fn pick_place<'p>(
+    here: &[&'p crate::Place],
+    name: Option<&str>,
+    elsewhere: impl Fn(&str) -> Option<&'p crate::Place>,
+) -> Option<&'p crate::Place> {
+    let named = |place: &&&crate::Place| name.is_some_and(|name| place.name == name);
+    let alone = match here {
+        [one] => Some(*one),
+        _ => None,
+    };
+    here.iter().find(named).copied().or(alone).or_else(|| elsewhere(name?))
 }
 
 /// Fixes the node of this designation at `at`: its `node … at` entry, made or changed, its view kept (spec 11).
@@ -300,8 +317,15 @@ pub(crate) fn drop_empty(edit: &mut Edit) {
 /// again around the rest. The nodes and the routes of the wires between them, the routes of `wires`, the terminals; with
 /// none of these, the whole function. A `node` entry keeps its view (spec 11): arranging places, it does not change a
 /// view.
-pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String]>, wires: &[String], terminals: &[String]) -> Result<(), EditError> {
-    let whole = nodes.is_none() && wires.is_empty() && terminals.is_empty();
+pub(crate) fn arrange(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    nodes: Option<&[String]>,
+    wires: &[String],
+    terminals: &[String],
+    branch: Option<&[scope::Step]>,
+) -> Result<(), EditError> {
+    let whole = nodes.is_none() && wires.is_empty() && terminals.is_empty() && branch.is_none();
     let function = edit.body_function()?;
     for name in terminals {
         crate::select::terminal(edit, function, name)?;
@@ -325,10 +349,16 @@ pub(crate) fn arrange(edit: &mut Edit, judge: &dyn Judge, nodes: Option<&[String
             })?;
         }
     }
-    let locs = match nodes {
+    let mut locs = match nodes {
         Some(nodes) => locs(edit, nodes, "nodes")?,
         None => Vec::new(),
     };
+    // A branch: every node of that body, and of the bodies inside it (`inside`, `arm`).
+    if let Some(branch) = branch {
+        let function = edit.body_function()?;
+        let inside: Vec<Loc> = scope::all(function).into_iter().filter(|loc| loc.body.starts_with(branch) && !locs.contains(loc)).collect();
+        locs.extend(inside);
+    }
     let function = edit.body_function()?;
     // What names the nodes arranged: their labels, the names of their lines and the values they bind, for the wires
     // between them.

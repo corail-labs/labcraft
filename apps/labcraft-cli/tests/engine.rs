@@ -456,7 +456,12 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                     for (from_port, to_port, verdict) in pairs.into_iter().step_by(step) {
                         let (source, target) = (&drawing.ports[from_port], &drawing.ports[to_port]);
                         let (from, to) = (source.name.clone(), target.name.clone());
-                        let given = session.execute("wire.connect", &json!({ "file": file, "from": from, "to": to, "replace": true }));
+                        // A `yield` is named with its arm (commands.md 9.2).
+                        let mut params = json!({ "file": file, "from": from, "to": to, "replace": true });
+                        if !target.arm.is_empty() {
+                            params["arm"] = json!(target.arm);
+                        }
+                        let given = session.execute("wire.connect", &params);
                         let said = match &verdict {
                             labcraft_diagram::Verdict::Takes { .. } => "takes".to_owned(),
                             labcraft_diagram::Verdict::Refused { refusal, .. } => refusal.code.to_owned(),
@@ -480,7 +485,11 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                             if !given.as_ref().is_ok_and(|result| result["step"].is_null()) {
                                 ok(&mut session, "history.undo", json!({}));
                             }
-                            let plain = session.execute("wire.connect", &json!({ "file": file, "from": from, "to": to }));
+                            let mut params = json!({ "file": file, "from": from, "to": to });
+                            if !target.arm.is_empty() {
+                                params["arm"] = json!(target.arm);
+                            }
+                            let plain = session.execute("wire.connect", &params);
                             assert_eq!(
                                 plain.as_ref().err().map(|error| error.code),
                                 Some("wire.occupied"),
@@ -492,6 +501,8 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                         }
                         let left = (said == "takes" && did == "wire.type_mismatch" && target.ty.is_none())
                             || (said == "wire.out_of_scope" && named_twice(&from))
+                            // A name of several arms is the one that the reader sees, for the command (9.2).
+                            || (said == "wire.cycle" && named_twice(&from))
                             || !target.never.is_empty();
                         if left {
                             *counts.entry("left to the command".to_owned()).or_insert(0) += 1;

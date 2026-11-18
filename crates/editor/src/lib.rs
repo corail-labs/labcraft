@@ -27,6 +27,7 @@ use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, Tab
 mod clip;
 mod fields;
 mod fonts;
+mod frames;
 pub mod insertion;
 pub(crate) mod moving;
 pub(crate) mod paint;
@@ -40,6 +41,7 @@ pub(crate) mod wiring;
 
 pub use fields::FieldKind;
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
+pub use frames::{InFrame, STRUCTURES, Seen};
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
@@ -116,20 +118,27 @@ pub enum Intent {
     /// with Enter (notation 2.6). `replace` when the input holds something that it replaces (notation 2.4).
     /// `route`: a branch drawn from a wire, with `wire.route` after it in one `commands.batch`, its junction first
     /// (notation 2.4): the wire as `wire.route` names it and its points in units of its frame.
-    Wire { from: String, to: String, replace: bool, accept_mismatch: bool, route: Option<(String, Vec<(i64, i64)>)> },
+    /// `arm`: the arm of a `yield`, by its patterns (commands.md 9.2).
+    Wire { from: String, to: String, arm: Option<String>, replace: bool, accept_mismatch: bool, route: Option<(String, Vec<(i64, i64)>)> },
     /// `wire.route` for each of these wires, in one `commands.batch`: a segment moved by hand (notation 2.4).
     Route(Vec<(String, Vec<(i64, i64)>)>),
     /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
-    /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`.
-    Rewire { disconnect: Vec<String>, connect: Vec<(String, String, bool, bool)> },
+    /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`; each with the arm of a
+    /// `yield` that it reaches.
+    Rewire { disconnect: Vec<(String, Option<String>)>, connect: Vec<(String, String, bool, bool, Option<String>)> },
     /// Quick insertion (notation 2.6): a wire dropped on the empty canvas; the host opens the list where it says, and
     /// Space opens it too ([`Canvas::quick_insert`]).
     QuickInsert(Quick),
     /// A function of the panel `Palette` dropped on the canvas (notation 2.5): `node.add` with `at`, in units of the frame
     /// of the function, or `into` the wire it was dropped on.
-    Drop { call: String, at: (i64, i64), into: Option<String> },
+    /// `within`: the frame under the drop, an arm or a loop body (commands.md 6.7).
+    Drop { call: String, at: (i64, i64), within: InFrame, into: Option<String> },
     /// What the status bar says, and a screen reader announces (notation 2.6): why a drop wrote nothing.
     Say(String),
+    /// "Surround with ▸" of the context menu of a node (notation 2.6): the host surrounds `nodes` (the node right-clicked,
+    /// or the selection that holds it) with a structure of this kind (`match`, `handle`, `for`, `loop`), and first asks for
+    /// its value where it needs one.
+    Surround { kind: &'static str, nodes: Vec<String> },
     /// A field in place written (notation 2.6): the host sends its command, and calls [`Canvas::close_field`] when it is
     /// done or [`Canvas::field_refused`] with the message of a refusal.
     Field { kind: FieldKind, text: String },
@@ -845,7 +854,7 @@ impl Canvas {
         let pointer = response.interact_pointer_pos().filter(|_| response.clicked());
         let clicked_unit = pointer.map(unit_of);
         self.end_run_when_due(frame, input);
-        self.fixed_menu(response, frame, input);
+        self.fixed_menu(response, frame, shown, input);
         // A click on a tab shows its arm; on the title of a selector, opens the list of its arms.
         let mut opened = false;
         for found in &drawing.tabs {
@@ -992,10 +1001,11 @@ impl Canvas {
         let visible = |within: Option<usize>| frame.visible(within);
         let wire_under = select::wire_at(&frame.drawing, &frame.groups, unit, reach, &visible);
         let into = self.dragged_over(&dragged, unit, wire_under, shown.into_wire);
-        let at = quick::frame_point(&frame.drawing, unit);
+        // The frame under the pointer, where the ghost is drawn and the node falls.
+        let (within, at) = self.frame_under(&frame.drawing, &visible, unit);
         if response.dnd_release_payload::<Dragged>().is_some() {
             let call = dragged.catalog.entries.get(dragged.entry).map(|entry| entry.call.clone()).unwrap_or_default();
-            input.intents.push(Intent::Drop { call, at, into: into.map(|(_, name)| name) });
+            input.intents.push(Intent::Drop { call, at, within, into: into.map(|(_, name)| name) });
             return;
         }
         let to_screen = |unit: Vec2| rect.min + (unit - origin) * zoom;
@@ -1044,7 +1054,7 @@ impl Canvas {
 
     /// A right-click on a fixed node opens its menu: "Remove the fixed position"; on a wire routed by hand, "Arrange this
     /// wire" (notation 2.4).
-    fn fixed_menu(&mut self, response: &Response, frame: &Frame, input: &mut Input) {
+    fn fixed_menu(&mut self, response: &Response, frame: &Frame, shown: &Shown, input: &mut Input) {
         if response.secondary_clicked() {
             let unit_of = |at: Pos2| (self.viewport.origin + (at - frame.rect.min) / self.viewport.zoom).to_pos2();
             let visible = |within: Option<usize>| frame.visible(within);
@@ -1073,7 +1083,7 @@ impl Canvas {
         let Some(placed) = self.context else { return };
         let (name, fixed) =
             frame.drawing.placed.get(placed).map(|found| (found.name.clone(), found.at.is_some() && !found.name.is_empty())).unwrap_or_default();
-        let (mut arrange, mut label) = (false, false);
+        let (mut arrange, mut label, mut surround) = (false, false, None);
         response.context_menu(|ui| {
             if ui.button("Label…").clicked() {
                 label = true;
@@ -1083,7 +1093,21 @@ impl Canvas {
                 arrange = true;
                 ui.close();
             }
+            ui.menu_button("Surround with", |ui| {
+                for kind in STRUCTURES {
+                    if ui.button(kind).clicked() {
+                        surround = Some(kind);
+                        ui.close();
+                    }
+                }
+            });
         });
+        if let Some(kind) = surround {
+            // The node right-clicked, or the selection when it holds that node.
+            let nodes = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
+            input.intents.push(Intent::Surround { kind, nodes });
+            self.context = None;
+        }
         if arrange {
             input.intents.push(Intent::Arrange(Selection { nodes: vec![name], ..Selection::default() }));
             self.context = None;
@@ -1178,7 +1202,7 @@ impl Canvas {
             ctx.request_repaint();
         }
         if response.drag_stopped_by(PointerButton::Primary) && self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Dragging) {
-            self.drop_wire(drawing, rules, input);
+            self.drop_wire(drawing, rules, input, &visible);
             self.drag = None;
             return;
         }
@@ -1254,7 +1278,7 @@ impl Canvas {
 
     /// The drop of the wire being drawn: on a terminal that takes it, the wire; on one that refuses it, nothing, and why;
     /// on the empty canvas, quick insertion (notation 2.6).
-    fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input) {
+    fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input, visible: &dyn Fn(Option<usize>) -> bool) {
         let Some(mut wiring) = self.wiring.take() else { return };
         let Some(over) = wiring.over else {
             // Ctrl and a drag that ends nowhere leaves the wire as it was.
@@ -1263,9 +1287,11 @@ impl Canvas {
                 && let Some(wanted) = insertion::Wanted::of_port(drawing, wiring.from)
             {
                 let replace = port.input && matches!(port.holds, labcraft_diagram::Holds::Wire | labcraft_diagram::Holds::Constant(_));
-                let source = Source::Terminal { name: port.name.clone(), wanted, replace };
+                let arm = (!port.arm.is_empty()).then(|| port.arm.clone());
+                let source = Source::Terminal { name: port.name.clone(), arm, wanted, replace };
                 let screen = self.rect.min + (wiring.at.to_vec2() - self.viewport.origin) * self.viewport.zoom;
-                input.intents.push(Intent::QuickInsert(Quick { at: Some(quick::frame_point(drawing, wiring.at)), screen, source }));
+                let (within, at) = self.frame_under(drawing, visible, wiring.at);
+                input.intents.push(Intent::QuickInsert(Quick { at: Some(at), within, screen, source }));
             }
             return;
         };
@@ -1482,7 +1508,7 @@ impl Canvas {
             if self.wiring.as_ref().is_some_and(|wiring| wiring.over.is_none()) {
                 input.intents.push(Intent::Say("No terminal takes this wire".to_owned()));
             } else {
-                self.drop_wire(drawing, rules, input);
+                self.drop_wire(drawing, rules, input, visible);
             }
             return true;
         }
@@ -2058,7 +2084,7 @@ fn is_arrow(key: egui::Key) -> bool {
     matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown)
 }
 
-fn arms_shown(drawing: &Drawing, shown: &Shown) -> Vec<bool> {
+pub(crate) fn arms_shown(drawing: &Drawing, shown: &Shown) -> Vec<bool> {
     let counts: HashMap<&str, usize> = drawing.arms.iter().fold(HashMap::new(), |mut counts, arm| {
         *counts.entry(arm.structure.as_str()).or_insert(0) += 1;
         counts

@@ -106,15 +106,15 @@ pub(super) fn refused(before: &str, op: Op, code: &str) -> EditError {
 }
 
 fn add(call: &str) -> Op {
-    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: None }
+    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: None, within: Default::default() }
 }
 
 pub(super) fn connect(from: &str, to: &str) -> Op {
-    Op::WireConnect { file: FILE.to_owned(), from: from.to_owned(), to: to.to_owned(), replace: false, accept_mismatch: false }
+    Op::WireConnect { file: FILE.to_owned(), from: from.to_owned(), to: to.to_owned(), replace: false, accept_mismatch: false, arm: None }
 }
 
 fn disconnect(wire: &str) -> Op {
-    Op::WireDisconnect { file: FILE.to_owned(), wire: wire.to_owned() }
+    Op::WireDisconnect { file: FILE.to_owned(), wire: wire.to_owned(), arm: None }
 }
 
 fn delete(nodes: &[&str]) -> Op {
@@ -174,20 +174,35 @@ fn a_node_given_a_place_is_fixed_there() {
         at: Some(Point { x: 40, y: -80 }),
         name: Some("total".to_owned()),
         into: None,
+        within: Default::default(),
     };
     gives(EMPTY, op, "use core\n\nfn f(x: f64) -> (y: f64) {\n    total = core.add()\n    y = x\n}\n\nlayout {\n    node total at (40, -80)\n}\n");
 }
 
 #[test]
 fn node_add_refuses_what_it_cannot_name() {
-    let named = |name: &str| Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: None, name: Some(name.to_owned()), into: None };
+    let named = |name: &str| Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.add".to_owned(),
+        at: None,
+        name: Some(name.to_owned()),
+        into: None,
+        within: Default::default(),
+    };
     refused(EMPTY, named("x"), "name.taken");
     refused(EMPTY, named("match"), "name.invalid");
     refused(EMPTY, named("2x"), "name.invalid");
     let error = refused(EMPTY, add("core.ad"), "edit.unknown");
     assert_eq!(error.expected, ["core.add"]);
     refused(EMPTY, add("core..add"), "params.invalid");
-    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: 1_000_001, y: 0 }), name: None, into: None };
+    let far = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.add".to_owned(),
+        at: Some(Point { x: 1_000_001, y: 0 }),
+        name: None,
+        into: None,
+        within: Default::default(),
+    };
     refused(EMPTY, far, "params.invalid");
 }
 
@@ -210,7 +225,7 @@ fn a_text_that_was_not_canonical_comes_out_canonical() {
 // constant.add
 
 fn constant(value: &str) -> Op {
-    Op::ConstantAdd { file: FILE.to_owned(), value: value.to_owned(), at: None, name: None }
+    Op::ConstantAdd { file: FILE.to_owned(), value: value.to_owned(), at: None, name: None, within: Default::default() }
 }
 
 #[test]
@@ -218,7 +233,13 @@ fn a_constant_is_a_named_line() {
     gives(EMPTY, constant("240 V"), "fn f(x: f64) -> (y: f64) {\n    constant = 240 V\n    y = x\n}\n");
     gives(EMPTY, constant("Verdict.Pass"), "fn f(x: f64) -> (y: f64) {\n    constant = Verdict.Pass\n    y = x\n}\n");
     gives(EMPTY, constant("[1, 2]"), "fn f(x: f64) -> (y: f64) {\n    constant = [1, 2]\n    y = x\n}\n");
-    let named = Op::ConstantAdd { file: FILE.to_owned(), value: "\"MEAS?\"".to_owned(), at: None, name: Some("query".to_owned()) };
+    let named = Op::ConstantAdd {
+        file: FILE.to_owned(),
+        value: "\"MEAS?\"".to_owned(),
+        at: None,
+        name: Some("query".to_owned()),
+        within: Default::default(),
+    };
     gives(EMPTY, named, "fn f(x: f64) -> (y: f64) {\n    query = \"MEAS?\"\n    y = x\n}\n");
 }
 
@@ -235,7 +256,7 @@ fn a_constant_is_one_constant_of_the_language() {
 // it, and the first output that the reader takes goes where the wire went; the lines in the order of spec 5.2.
 
 fn into(call: &str, wire: &str) -> Op {
-    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: Some(wire.to_owned()) }
+    Op::NodeAdd { file: FILE.to_owned(), call: call.to_owned(), at: None, name: None, into: Some(wire.to_owned()), within: Default::default() }
 }
 
 #[test]
@@ -367,7 +388,7 @@ fn an_occupied_input_is_replaced_only_when_asked() {
     let error = refused(full, connect("z", "s.a"), "wire.occupied");
     assert!(error.message.contains("`x`"), "{}", error.message);
     refused(full, connect("z", "s.b"), "wire.occupied");
-    let op = Op::WireConnect { file: FILE.to_owned(), from: "z".to_owned(), to: "s.a".to_owned(), replace: true, accept_mismatch: false };
+    let op = Op::WireConnect { file: FILE.to_owned(), from: "z".to_owned(), to: "s.a".to_owned(), replace: true, accept_mismatch: false, arm: None };
     gives(full, op, "use core\n\nfn f(x: f64, z: f64) -> (y: f64) {\n    s = core.add(z, 1)\n    y = x\n}\n");
 }
 
@@ -376,7 +397,7 @@ fn a_wire_of_the_wrong_type_is_refused_unless_accepted() {
     let before = "use core\n\nfn f(x: f64, t: string) -> (y: f64) {\n    s = core.abs()\n    y = x\n}\n";
     let error = refused(before, connect("t", "s"), "wire.type_mismatch");
     assert!(error.message.contains("accept_mismatch"), "{}", error.message);
-    let op = Op::WireConnect { file: FILE.to_owned(), from: "t".to_owned(), to: "s".to_owned(), replace: false, accept_mismatch: true };
+    let op = Op::WireConnect { file: FILE.to_owned(), from: "t".to_owned(), to: "s".to_owned(), replace: false, accept_mismatch: true, arm: None };
     gives(before, op, "use core\n\nfn f(x: f64, t: string) -> (y: f64) {\n    s = core.abs(t)\n    y = x\n}\n");
 }
 
@@ -391,9 +412,14 @@ fn a_wire_that_closes_a_cycle_is_refused() {
 fn a_wire_reaches_only_what_its_input_sees() {
     let before = "use core\n\nfn f(x: f64, c: bool) -> (y: f64) {\n    m = match c {\n        true => {\n            d = core.add(x, 1)\n            yield d\n        }\n        false => yield x\n    }\n    n = for v in [1.0, 2.0] {\n        w = core.abs(v)\n        collect w\n    }\n    s = core.add()\n    y = m\n}\n";
     refused(before, connect("w", "s.a"), "wire.out_of_scope");
-    // Out of an arm, a wire adds an output to the structure: step 5.
-    refused(before, connect("d", "s.a"), "params.invalid");
     refused(before, connect("nothing", "s.a"), "edit.unknown");
+    // Out of an arm, a wire adds an output to the structure: that arm yields it, the other a hole (commands.md 6.7).
+    let edited = gives(
+        before,
+        connect("d", "s.a"),
+        "use core\n\nfn f(x: f64, c: bool) -> (y: f64) {\n    m, d2 = match c {\n        true => {\n            d = core.add(x, 1)\n            yield (d, d)\n        }\n        false => yield (x, ?)\n    }\n    n = for v in [1.0, 2.0] {\n        w = core.abs(v)\n        collect w\n    }\n    s = core.add(d2)\n    y = m\n}\n",
+    );
+    assert_eq!(edited.names.get("output").map(String::as_str), Some("d2"));
 }
 
 #[test]
@@ -428,7 +454,8 @@ fn an_output_given_already_is_replaced_only_when_asked() {
     // `y` is a node and an output: the bare name goes where the value goes, here the node, whose inputs are two.
     refused(before, connect("s", "y"), "edit.ambiguous");
     refused(before, connect("s", "output y"), "wire.occupied");
-    let op = Op::WireConnect { file: FILE.to_owned(), from: "s".to_owned(), to: "output y".to_owned(), replace: true, accept_mismatch: false };
+    let op =
+        Op::WireConnect { file: FILE.to_owned(), from: "s".to_owned(), to: "output y".to_owned(), replace: true, accept_mismatch: false, arm: None };
     gives(before, op, "use core\n\nfn f(x: f64) -> (y: f64) {\n    sum = core.add(x, x)\n    y = core.abs(x)\n}\n");
 }
 
@@ -509,11 +536,24 @@ fn a_value_is_not_folded_into_an_output_that_a_body_inside_binds() {
 
 #[test]
 fn coordinates_and_places_past_their_bounds_are_refused() {
-    let far = Op::NodeAdd { file: FILE.to_owned(), call: "core.add".to_owned(), at: Some(Point { x: i64::MIN, y: 0 }), name: None, into: None };
+    let far = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.add".to_owned(),
+        at: Some(Point { x: i64::MIN, y: 0 }),
+        name: None,
+        into: None,
+        within: Default::default(),
+    };
     refused(EMPTY, far, "params.invalid");
     let before = "use string\n\nfn f(a: string, b: string) -> (y: string) {\n    t = string.concat(a, b)\n    y = t\n}\n";
-    let op =
-        Op::WireConnect { file: FILE.to_owned(), from: "b".to_owned(), to: format!("t.parts.{}", usize::MAX), replace: true, accept_mismatch: false };
+    let op = Op::WireConnect {
+        file: FILE.to_owned(),
+        from: "b".to_owned(),
+        to: format!("t.parts.{}", usize::MAX),
+        replace: true,
+        accept_mismatch: false,
+        arm: None,
+    };
     refused(before, op, "edit.unknown");
 }
 
@@ -645,7 +685,7 @@ impl Judge for Placing {
 }
 
 fn place_of(line: u32, name: &str, x: i64, y: i64) -> crate::Place {
-    crate::Place { line, name: name.to_owned(), at: Point { x, y } }
+    crate::Place { line, name: name.to_owned(), at: Point { x, y }, absolute: Point { x, y } }
 }
 
 fn run_with(before: &str, op: Op, places: Vec<crate::Place>) -> Result<Edited, EditError> {
@@ -680,6 +720,7 @@ fn arranging(nodes: Option<&[&str]>, wires: &[&str]) -> Op {
         nodes: nodes.map(|nodes| nodes.iter().map(|node| (*node).to_owned()).collect()),
         wires: wires.iter().map(|wire| (*wire).to_owned()).collect(),
         terminals: Vec::new(),
+        within: Default::default(),
     }
 }
 
@@ -843,6 +884,7 @@ fn reading_a_name_that_is_an_input_and_an_output_reads_the_input() {
         to: to.to_owned(),
         replace: true,
         accept_mismatch: false,
+        arm: None,
     };
     // `visa.open` reads the input `err`, not the line `err = e2`, which depends on `t`: no cycle; the wire is there
     // already, and nothing changes.
@@ -1005,7 +1047,13 @@ fn a_wire_to_a_node_with_a_label_is_routed_again_in_place() {
     let arranged = run_judged(
         &judge,
         &once,
-        Op::LayoutArrange { file: FILE.to_owned(), nodes: None, wires: vec!["a -> t.x".to_owned()], terminals: Vec::new() },
+        Op::LayoutArrange {
+            file: FILE.to_owned(),
+            nodes: None,
+            wires: vec!["a -> t.x".to_owned()],
+            terminals: Vec::new(),
+            within: Default::default(),
+        },
     )
     .unwrap();
     assert_eq!(arranged.texts.get(FILE).map(String::as_str), Some(text(LABELLED).as_str()));
@@ -1031,7 +1079,14 @@ fn a_junction_follows_its_trunk_whatever_names_a_command_adds() {
     let trunk_before = drawn("a -> y.x", &[(100, 40), (200, 40)]);
     let trunk_after = drawn("a -> y.x", &[(100, 56), (200, 56)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
+    let add = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.abs".to_owned(),
+        at: None,
+        name: Some("aa".to_owned()),
+        into: None,
+        within: Default::default(),
+    };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 56)\n"), "{written}");
@@ -1073,7 +1128,14 @@ fn a_junction_that_goes_takes_only_its_own_entry() {
     // After, the trunk has another number of segments, and no longer goes through the junction.
     let trunk_after = drawn("a -> y.x", &[(100, 40), (120, 40), (120, 80), (200, 80)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
+    let add = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.abs".to_owned(),
+        at: None,
+        name: Some("aa".to_owned()),
+        into: None,
+        within: Default::default(),
+    };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(!written.contains("a -> z") && written.contains("    wire a -> y\n"), "{written}");
@@ -1088,7 +1150,14 @@ fn a_junction_off_the_grid_of_units_goes() {
     let mut trunk_after = drawn("a -> y.x", &[(100, 40), (200, 40)]);
     trunk_after.path = vec![(10_000, 5_650), (20_000, 5_650)];
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![trunk_after, branch.clone()]), ("fn f", vec![trunk_before, branch])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
+    let add = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.abs".to_owned(),
+        at: None,
+        name: Some("aa".to_owned()),
+        into: None,
+        within: Default::default(),
+    };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (160, 120)\n"), "{written}");
@@ -1106,7 +1175,14 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
     let trunk_before = drawn("a -> b.x", &[(100, 40), (240, 40)]);
     let trunk_after = drawn("a -> b.x", &[(100, 48), (240, 48)]);
     let judge = Drawn { by_text: vec![("aa = core.abs()", vec![y_after, z.clone(), trunk_after]), ("fn f", vec![y_before, z, trunk_before])] };
-    let add = Op::NodeAdd { file: FILE.to_owned(), call: "core.abs".to_owned(), at: None, name: Some("aa".to_owned()), into: None };
+    let add = Op::NodeAdd {
+        file: FILE.to_owned(),
+        call: "core.abs".to_owned(),
+        at: None,
+        name: Some("aa".to_owned()),
+        into: None,
+        within: Default::default(),
+    };
     let edited = run_judged(&judge, &before, add).unwrap();
     let written = edited.texts.get(FILE).unwrap();
     assert!(written.contains("    wire a -> z via (140, 48)\n"), "{written}");
@@ -1114,3 +1190,4 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
 
 mod fields;
 mod fragment;
+mod structures;

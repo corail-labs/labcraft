@@ -619,7 +619,7 @@ fn a_selector_steps_its_iterations_and_a_click_asks_for_a_selection_that_the_hos
     // it selected: a curve from 1 to 3, by hand.
     let m = drawn.groups.iter().position(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "m")).unwrap();
     let wire = drawn.groups[m].wire.as_ref().unwrap();
-    assert_eq!(wire.named, ["m -> done.a"], "`m` also reaches `next i`, which no command names yet");
+    assert_eq!(wire.named, ["m -> done.a", "m -> n.next.i"], "`m` also reaches `next i`, named `n.next.i` (commands.md 9.2)");
     let path = &wire.readers[0].1;
     let ((x0, y0), (x1, y1)) = (path[0], path[1]);
     let on_wire = Pos2::new((x0 + x1) as f32 / 200.0, (y0 + y1) as f32 / 200.0);
@@ -1212,7 +1212,7 @@ fn port_of(drawing: &Drawing, name: &str, input: bool) -> Pos2 {
 }
 
 fn wiring_of(from: &str, to: &str, replace: bool) -> Intent {
-    Intent::Wire { from: from.to_owned(), to: to.to_owned(), replace, accept_mismatch: false, route: None }
+    Intent::Wire { from: from.to_owned(), to: to.to_owned(), arm: None, replace, accept_mismatch: false, route: None }
 }
 
 /// A drag of the primary button from `from` to `to`, with `modifiers` held, over frames from `time`: what it asks for.
@@ -1319,7 +1319,10 @@ fn a_wire_that_the_input_refuses_writes_nothing_and_says_why() {
     // With "accept it", a wire of the wrong type is written.
     let accept = Shown { accept_mismatch: true, ..Shown::default() };
     let intents = drag_with(&ctx, &mut canvas, (to, port_of(&drawn, "flag", false)), 4.0, &accept);
-    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true, route: None }]);
+    assert_eq!(
+        intents,
+        vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), arm: None, replace: true, accept_mismatch: true, route: None }]
+    );
     canvas.cancel_wire();
     // On the empty canvas, far from every terminal.
     let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(0.0, 160.0)), 5.0, &none);
@@ -1345,7 +1348,10 @@ fn ctrl_and_a_drag_on_a_wired_input_takes_its_wire_to_another_input() {
     let intents = drag_holding(&ctx, &mut canvas, ends, 0.2, egui::Modifiers::COMMAND, &none);
     assert_eq!(
         intents,
-        vec![Intent::Rewire { disconnect: vec!["a -> b.a".to_owned()], connect: vec![("a".to_owned(), "b.b".to_owned(), true, false)] }]
+        vec![Intent::Rewire {
+            disconnect: vec![("a -> b.a".to_owned(), None)],
+            connect: vec![("a".to_owned(), "b.b".to_owned(), true, false, None)]
+        }]
     );
 }
 
@@ -1403,7 +1409,10 @@ fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_n
     // From the input `b.b`, which holds `2.0`, back to `flag`, a bool, with "accept it": written, replacing the constant.
     let accept = Shown { accept_mismatch: true, ..Shown::default() };
     let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 2.0, &accept);
-    assert_eq!(intents, vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), replace: true, accept_mismatch: true, route: None }]);
+    assert_eq!(
+        intents,
+        vec![Intent::Wire { from: "flag".to_owned(), to: "b.b".to_owned(), arm: None, replace: true, accept_mismatch: true, route: None }]
+    );
 }
 
 /// A drawing that comes while a wire is drawn keeps it, from its terminal found again (as a drag of nodes); Enter on a
@@ -1505,6 +1514,7 @@ fn a_drag_on_a_wire_draws_a_branch_from_a_junction() {
     let wired = Intent::Wire {
         from: "a".to_owned(),
         to: "y.b".to_owned(),
+        arm: None,
         replace: true,
         accept_mismatch: false,
         route: Some(("a -> y.b".to_owned(), vec![(unit(jx - ox), unit(sy - oy))])),
@@ -1672,8 +1682,8 @@ fn copy_counts_from_the_corner_and_a_paste_falls_on_the_grid() {
     frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &both);
     assert_eq!(canvas.selection_corner(&both.selection), Some((40, 80)));
     assert_eq!(canvas.selection_corner(&Selection::default()), None);
-    let at = canvas.paste_at(None).unwrap();
+    let (_, at) = canvas.paste_at(&Shown::default(), None).unwrap();
     assert_eq!((at.0 % 8, at.1 % 8), (0, 0), "{at:?}");
     // A pointer off the canvas (on a menu) is no pointer.
-    assert_eq!(canvas.paste_at(Some(Pos2::new(-5000.0, -5000.0))), Some(at));
+    assert_eq!(canvas.paste_at(&Shown::default(), Some(Pos2::new(-5000.0, -5000.0))), Some((crate::InFrame::default(), at)));
 }

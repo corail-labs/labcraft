@@ -400,8 +400,6 @@ fn a_misplaced_statement_is_a_syntax_error() {
         "x = match a {\n_ => {\nuntil a\nyield 1\n}\n}",
         "x = match a {\n_ => {\nnext a = 1\nyield 1\n}\n}",
         "x = match a {\n_ => {\ncollect a\nyield 1\n}\n}",
-        "x = match a {\n_ => {\n}\n}",
-        "x = match a {\n_ => {\nb = 1\n}\n}",
         "x = match a {\n_ => {\nyield 1\nb = 2\n}\n}",
         "x = match a {\n_ => {\nyield 1\nyield 2\n}\n}",
         "#a: yield b",
@@ -409,6 +407,13 @@ fn a_misplaced_statement_is_a_syntax_error() {
         "x = for i in a {\n#a: collect b\n}",
     ] {
         assert_code(&in_body(statement), Code::Lc1001);
+    }
+    // An arm with no `yield` reads: its structure gives nothing (spec 6.1), and `check` judges the target (`LC2103`).
+    for statement in ["x = match a {\n_ => {\n}\n}", "x = match a {\n_ => {\nb = 1\n}\n}", "_ = match a {\n_ => {\n}\n}"] {
+        let text = in_body(statement);
+        let mut names = Interner::new();
+        let read = read(text.as_bytes(), &mut names, &Limits::default());
+        assert!(read.file.is_some() && read.report.diagnostics().is_empty(), "{statement}: {:?}", read.report.diagnostics());
     }
 }
 

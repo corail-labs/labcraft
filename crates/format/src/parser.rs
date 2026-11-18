@@ -1474,7 +1474,11 @@ impl<'a> Parser<'a, '_> {
                     self.end_line("a `yield`")?;
                     break yields;
                 }
-                Some(T::RightBrace) => return Err(self.unexpected("`yield`: an arm ends with exactly one (R-6)")),
+                // An arm with no `yield`: its structure gives nothing (spec 6.1), which `check` judges (`LC3006`).
+                Some(T::RightBrace) => {
+                    let id = self.place(start);
+                    break Yield { id, comments: Attached::default(), values: Vec::new() };
+                }
                 None => return Err(self.unexpected("a statement or `yield`")),
                 _ => {}
             }
@@ -1487,7 +1491,7 @@ impl<'a> Parser<'a, '_> {
         }
         let mut end = self.take_pending();
         self.bump();
-        if statements.is_empty() {
+        if statements.is_empty() && !yields.values.is_empty() {
             // Only a `yield`: the arm goes on one line, so all its comments go before it (5.2).
             before.extend(open.take());
             let Attached { before: inner, line } = std::mem::take(&mut yields.comments);

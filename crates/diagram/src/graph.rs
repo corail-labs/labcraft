@@ -156,9 +156,27 @@ pub struct Structure {
     /// Each input of a range whose two bounds are wires, with the read of its end: the end enters a place below the start
     /// (notation 5.1).
     pub range_ends: Vec<(usize, Id)>,
+    /// How many of its inputs are its own: the selector, the first value of each carry, what each `in` walks. The
+    /// outer values read inside come after them.
+    pub own_inputs: usize,
 }
 
 impl Structure {
+    /// How a command names its input `terminal`, the structure named `name` (commands.md 9.2): the selector by the node
+    /// alone, or by its place when the node bears the name of an output of the function, which a bare name names; a carry
+    /// or an `in` by its name; none for an outer value read inside, no place to wire.
+    pub fn input_name(&self, name: &str, terminal: usize, terminal_name: &str, is_output: bool) -> Option<String> {
+        if name.is_empty() || terminal >= self.own_inputs {
+            return None;
+        }
+        let selects = matches!(self.kind, StructureKind::Match | StructureKind::Handle);
+        Some(match (selects && terminal == 0, is_output) {
+            (true, false) => name.to_owned(),
+            (true, true) => format!("{name}.0"),
+            (false, _) => format!("{name}.{terminal_name}"),
+        })
+    }
+
     /// Whether `read`, into the input `input`, is the end of a range whose two bounds are wires: `range_ends` is in the
     /// order of the inputs, one entry each at most, so that a header of many clauses costs a search, not a scan.
     pub fn is_range_end(&self, input: usize, read: Id) -> bool {

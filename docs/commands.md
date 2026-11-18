@@ -473,8 +473,8 @@ parse: `file.unparsed`, which names it. The commands that a later step of M1 bui
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `wire.connect` | `file`, `from`, `to`, *`arm`*, *`replace`* (`false`), *`accept_mismatch`* (`false`), *`expected_revision`* | Wires `from` to `to` (9.2); `arm` names the arm of a `yield`. **Occupied input:** an input that is already wired, or that holds a constant, is `wire.occupied`, and the message says what is there. With `replace`, the old wire and its `wire` entry go. The IDE passes `replace` for a drop on such an input, unless its setting "replace only with Alt" is on and Alt is up (notation 2.4); an agent passes it only when it means it (9.5). **Wrong type:** a value of a type that the input does not take is `wire.type_mismatch`, and the message gives both types. With `accept_mismatch`, the wire is written and `check` gives `LC3001`; the IDE passes it when its setting "accept it" is on. **Refused wires:** a wire that would close a cycle is `wire.cycle`. A wire from a value that the input cannot see is `wire.out_of_scope`: a value of another arm, or one from inside a loop to outside it (a `collect` or a carry takes it out: `structure.add_collect`, `structure.add_carry`). **Out of an arm:** a wire from inside an arm of a `match` or `handle` to outside adds an output to the structure. That arm yields it, and the other arms yield a hole for it (9.1). **Names:** wiring a value to an output of the function names the value as notation 2.4 says, and `renamed` lists what that renamed |
-| `wire.disconnect` | `file`, `wire`, *`expected_revision`* | Removes the wire and its entry. Its input goes back to its default, is unwired, or gets a hole (9.1). A value unwired from an output of the function takes back the name of its node (notation 2.4) |
+| `wire.connect` | `file`, `from`, `to`, *`arm`*, *`replace`* (`false`), *`accept_mismatch`* (`false`), *`expected_revision`* | Wires `from` to `to` (9.2); `arm` names the arm of a `yield`. **Occupied input:** an input that is already wired, or that holds a constant, is `wire.occupied`, and the message says what is there. With `replace`, the old wire and its `wire` entry go. The IDE passes `replace` for a drop on such an input, unless its setting "replace only with Alt" is on and Alt is up (notation 2.4); an agent passes it only when it means it (9.5). **Wrong type:** a value of a type that the input does not take is `wire.type_mismatch`, and the message gives both types. With `accept_mismatch`, the wire is written and `check` gives `LC3001`; the IDE passes it when its setting "accept it" is on. **Refused wires:** a wire that would close a cycle is `wire.cycle`. A wire from a value that the input cannot see is `wire.out_of_scope`: one from inside a loop to outside it (a `collect` or a carry takes it out: `structure.add_collect`, `structure.add_carry`), or of a value that a name of the input's own frame hides (R-3). **Out of an arm:** a wire from inside an arm of a `match` or `handle` to outside, into the frame around or into a structure beside it, adds an output to each structure that it leaves, up to the frame that both see: that arm yields it, the other arms yield a hole for it (9.1), and `names.output` gives the output that the input reads. Into another arm of the same structure, the structure would read its own output: `wire.cycle`. **Names:** wiring a value to an output of the function names the value as notation 2.4 says, and `renamed` lists what that renamed |
+| `wire.disconnect` | `file`, `wire`, *`arm`*, *`expected_revision`* | Removes the wire and its entry. Its input goes back to its default, is unwired, or gets a hole (9.1). A value unwired from an output of the function takes back the name of its node (notation 2.4). `wire` ends where `wire.connect` names an input: a `yield` by the output of its structure, with `arm`, which can be left out when one arm alone yields that value and the selector does not read it; a `collect`, an `until` or `n.next.x`; the line `next x = …` of a carry goes |
 | `wire.route` | `file`, `wire`, `via`, *`expected_revision`* | Writes `wire … via` with the points of `via` (one at least, 256 at most), in the frame of the wire (spec 11), in place of the entry that named that wire. `wire` names a wire as `wire.disconnect` does, the input left out when one wire joins them, and also a wire into a structure (`k -> total.k`) or, from inside, to its `next`, `until`, `collect` or `yield` (`stop -> n`); the entry names the input only when the value reaches that node by several wires. A wire that the function does not draw is `edit.unknown`, and a function that is not drawn `params.invalid`. A branch starts at its first point when that point lies on a wire of the same value, its junction (notation 2.4). `names.wire`: the wire |
 | `layout.arrange` | `file`, *`nodes`*, *`wires`*, *`terminals`*, *`inside`*, *`arm`*, *`expected_revision`* | Arrange (9.1). It removes the entries of what it arranges, and the automatic placement places that again around the rest, which stays fixed. It arranges the `nodes` and the routes of the wires between them, the routes of the `wires`, and the `terminals` (`input x`, `output x`; until step 6 of M1 writes their entries, a terminal has none to remove). With `inside` (and `arm`), it arranges that branch. With none of these, it arranges the whole function, and `frame size` goes too. "Remove the fixed position" of a node or a terminal calls it with that node or terminal. An agent calls it only when asked to (9.1) |
 | `frame.resize` | `file`, `size`, *`expected_revision`* | Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size. The size of a structure comes with step 5 of the specifications |
@@ -499,7 +499,7 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `structure.surround` | `file`, `nodes`, `kind`, *`selector`*, *`over`*, *`arm`* (the first arm), *`expected_revision`* | Puts the nodes in a new `match`, `handle`, `for` or `loop`; see 9.6 |
+| `structure.surround` | `file`, `kind`, *`nodes`* (none: an empty structure), *`selector`*, *`over`*, *`arm`* (the first arm), *`inside`* (the body of the function), *`inside_arm`* (the first arm), *`at`* (placed automatically), *`expected_revision`* | Puts the nodes in a new `match`, `handle`, `for` or `loop`, or makes an empty one; see 9.6 |
 | `structure.add_arm` | `file`, `structure`, `patterns`, *`expected_revision`* | Adds an arm to a `match` or a `handle`, with its patterns as the text writes them (`1, 3..=5`, `io.timeout(err)`). Its `yield` gives a hole for each output of the structure (9.1); in a structure that gives nothing, it has none |
 | `structure.set_patterns` | `file`, `structure`, `arm`, `patterns`, *`expected_revision`* | Changes the patterns of an arm. `arm` names the arm by its patterns as the text writes them (`_`, not `other`) |
 | `structure.add_carry` | `file`, `structure`, `name`, *`initial`* (a hole), *`type`* (that of `initial`), *`expected_revision`* | Adds `carry name = initial` to a loop (spec 6.2), and its output. Without `initial`, the carry starts from a hole, and then needs `type`. Its `next` has no line until it is wired: `check` says so |
@@ -778,7 +778,7 @@ file and calls a command uses one vocabulary.
 - **An input**, which a command wires or sets (`to`), is named as the end of a wire in spec 11: `verdict`,
   `sq.b`, `total.sum` (the initial value of the carry `sum`), `n.stop`. A node alone names its only input, or its
   only input without a name, such as the selector of a `match`; with `arm`, the structure names the `yield` of
-  that arm. There are four additions:
+  that arm. There are five additions:
   - `next x` of a loop `n`, by `n.next.x`, since `n.x` names the initial value of `x`, and an outer value can
     reach both;
   - an input without a name, by its position among those of its node, from 0: `r.0` for the value of
@@ -786,7 +786,11 @@ file and calls a command uses one vocabulary.
   - a value of a variadic parameter, by its position in it, from 0 (`msg.parts.2`, its third value); the position
     just after the last one adds a value;
   - a `yield` or a `collect`, by the output of the structure that it gives: `verdict`, for `verdict = match …`.
-    For a `yield`, the command also takes `arm`, the patterns of its arm as the text writes them.
+    For a `yield`, the command also takes `arm`, the patterns of its arm as the text writes them. A `collect` whose
+    output is also an output of the function is named by it no more: that name names the output;
+  - the `until` of a loop `n`, by `n` alone or by `n.until`, which stays one name when `n` is also an output of the
+    function (`until` is a keyword, so no carry bears that name); the selector of a `match` or a `handle` likewise by
+    `m` or by `m.0`.
 
   An order wire ends at `node.after` (spec 5.3).
 - **An output**, where a wire starts (`from`), is named as one of two things:
@@ -864,19 +868,31 @@ saying so (decision of the owner, 2026-11-15).
 
 - **Where.** The `nodes` are in one frame: the body of the function, of a loop, or an arm. Nodes of several frames
   are `params.invalid`. The structure goes in that frame, around them. Their entries in `layout` are rewritten in its
-  frame, and the structure gets a `node … at` entry where it stands, so that nothing moves on the screen. Its own size
-  comes with step 5 of the specifications.
+  frame, and the structure gets a `node … at` entry where it stands, so that the nodes surrounded do not move on the
+  screen: a node that was free gets an entry where it was drawn, and a wire between two of them keeps its route, in the
+  new frame; the route of a wire that now crosses the edge of the frame goes, and the automatic routing draws it. The
+  nodes around that are placed automatically are placed again, as after any change of the file (notation 2.1). Its size
+  is automatic (spec 11).
+- **An empty structure.** With no `nodes`, the structure is empty. It goes in the frame that `inside` and
+  `inside_arm` name, as `inside` and `arm` do for `node.add` (the body of the function by default), at `at`, or placed
+  automatically without it. It gives nothing (spec 6.1, 6.2): its target is `_`, each arm of a `match` or a `handle`
+  has empty braces, a `for` has an empty body, and a `loop` has `until ?`. With `nodes`, `inside`, `inside_arm` and
+  `at` are `params.invalid`: the frame and the place are those of the nodes (decision of the owner, 2026-11-18).
 - **The head of each kind:**
   - `match` needs `selector`, a value. Its arms are those that make it complete: `true` and `false` for a boolean,
     each variant of an enumeration, and `_` alone for an integer or a string. A variant that holds values binds
-    each of them under a name from its type, as N-14 names a value (spec 6.1).
+    each of them under a name from its type, as N-14 names a value (spec 6.1): the name of a value of its type
+    (`step` for `Step`), `value` for a type of 3.1, numbered when taken.
     A selector of a type that a `match` does not take (spec 6.1: a float, a struct) is `wire.type_mismatch`; a value
     with no type yet gets the single arm `_`.
   - `handle` needs `selector`, an error value. Its arms are `ok` and `_`.
-  - `for` needs `over`, an array value or a range (`0..n`). Its clause takes a name from the value (N-14).
+  - `for` needs `over`, an array value or a range (`0..n`, each bound an integer or a value). Its clause takes a name
+    from the value (N-14): `readings` gives `reading`, a value whose name does not end in `s` gives `item`, and a range
+    gives `i`, each numbered when taken.
   - `loop` needs neither. Its `until` is a hole until it is wired (9.1).
   - `arm` names the arm that receives the nodes, by its patterns; by default, the first, in the order above. A
-    `selector` or an `over` that a kind does not take is `params.invalid`.
+    `selector` or an `over` that a kind does not take is `params.invalid`, and so is a `selector` or an `over` that the
+    frame cannot see.
 - **What crosses the frame.** A value that the nodes read from outside is passed in (spec 6), and nothing is written
   for it. A value that the nodes define and that is read outside becomes an output:
   - in a `match` or a `handle`, the arm that holds the nodes yields it, and the other arms yield a hole for it
@@ -884,11 +900,17 @@ saying so (decision of the owner, 2026-11-15).
     `yield` (spec 6.1);
   - in a loop, it becomes a `collect` output, an array of its values. A reader that does not take an array shows
     `LC3001`.
+
+  The output keeps the name of the value, so that what reads it outside, an output of the function included, does not
+  change; inside, the value takes a suffix (N-14: `b2`, `e2_2` for a name that ends in a digit, and `e2_3` for `e2_2`), and its readers there follow, which `renamed` lists. A value that was
+  bound to an output of the function takes inside the name that inserting its node gives it (notation 2.4).
 - **The error chain.** Sometimes exactly one value of type `error` enters the nodes and exactly one leaves them. In a
   `match` or a `handle`, that output is then given by the other arms from the error that entered (`yield e1`). In a
-  loop, it becomes a carry of type `error` (`carry err = e1`, `next err = e4`). That carry stops a `loop` on an error
-  (spec 6.3); a `for` runs to its end.
-- `names` gives the name of the structure and of each output that it made.
+  loop, it becomes a carry of type `error` (`carry err = e1`, `next err = e4`), named `err`, numbered when taken: the
+  nodes that read the error that entered read the carry, and what read the error that left outside reads the output of
+  the carry. That carry stops a `loop` on an error (spec 6.3); a `for` runs to its end.
+- `names.structure` gives the name of the structure as a command names it (a label when it gives nothing: `#match_node`,
+  spec 11), and `names.outputs` its outputs, in order.
 
 ## 10. Left for later
 

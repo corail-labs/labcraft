@@ -306,16 +306,18 @@ impl Wiring {
             Taken::Nothing => {
                 // A branch names its wire by its value and the input it reaches, as `wire.route` names it.
                 let route = self.branch_route(target).map(|(_, points)| (format!("{} -> {}", source.value, target.name), points));
-                crate::Intent::Wire { from: source.name.clone(), to: target.name.clone(), replace, accept_mismatch, route }
+                let arm = (!target.arm.is_empty()).then(|| target.arm.clone());
+                crate::Intent::Wire { from: source.name.clone(), to: target.name.clone(), arm, replace, accept_mismatch, route }
             }
             Taken::Input(input) => {
                 let old = drawing.ports.get(*input)?;
                 if *input == port {
                     return None;
                 }
+                let arm = |port: &Port| (!port.arm.is_empty()).then(|| port.arm.clone());
                 crate::Intent::Rewire {
-                    disconnect: vec![format!("{} -> {}", old.value, wire_end(old))],
-                    connect: vec![(source.name.clone(), target.name.clone(), replace, accept_mismatch)],
+                    disconnect: vec![(format!("{} -> {}", old.value, wire_end(old)), arm(old))],
+                    connect: vec![(source.name.clone(), target.name.clone(), replace, accept_mismatch, arm(target))],
                 }
             }
             Taken::Readers(readers) => crate::Intent::Rewire {
@@ -323,7 +325,9 @@ impl Wiring {
                 connect: readers
                     .iter()
                     .filter_map(|&reader| drawing.ports.get(reader))
-                    .map(|reader| (end.name.clone(), reader.name.clone(), true, accept_mismatch))
+                    .map(|reader| {
+                        (end.name.clone(), reader.name.clone(), true, accept_mismatch, (!reader.arm.is_empty()).then(|| reader.arm.clone()))
+                    })
                     .collect(),
             },
         })

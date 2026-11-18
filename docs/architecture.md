@@ -1967,6 +1967,22 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   every name of the fragment (N-14), in one pass, moves its `node` and `wire` entries so that the top-left corner of its
   nodes is at `at`, and adds the `use` lines whose library the text names. Both find the nodes through one index of how
   `layout` names them, so that each stays near linear in the size of the function.
+- **As step 5a writes them.** In `edit`, `frame.rs` turns `inside` and `arm` into the body that they name (an arm by its
+  patterns, spaces aside), for `node.add`, `constant.add`, `fragment.paste` and `layout.arrange`; `surround.rs` makes
+  `structure.surround`: its head is read from its text (`_ = match ok { … }`), so that what the grammar reads is what it
+  writes, the nodes move into it, the values read outside become outputs that keep their names, the nodes are fixed in
+  the new frame, and the structure is placed from a drawing of the text, asked again until the first node is where it
+  was (`Place::absolute`). The type of a selector, of what a `for` goes over and of the values that cross comes from
+  `Judge::value_type`, which the session reads from the kept check (`edits/value_type.rs`). In `wire.rs`, a `yield` is an
+  end with `arm`, a `collect` by its output, an `until` by its loop (`n` or `n.until`), a `next` by `n.next.x`, written as
+  a line `next x = v`; a wire out of arms gives each structure between a new output (`lift`). The window: each port has
+  its `arm`, the inputs of a structure and the parts of its frames have their names (`diagram/ports.rs`), and the wire
+  out of an arm is judged on the canvas as the command judges it. `editor/frames.rs` finds the frame under a point
+  (`InFrame`), where quick insertion, a drop from the panel `Palette` and a paste put what they make; Duplicate pastes
+  into the frame of its nodes. "Surround with ▸" is in the context menu of a node and in the menu `Edit`
+  (`ide.surround_match`, `ide.surround_handle`, `ide.surround_for`, `ide.surround_loop`); quick insertion lists the four
+  structures after the other rows; a `match`, a `handle` and a `for` first open the list of values (`ide/values.rs`),
+  from `Canvas::values_seen`, filtered by the type that the kind takes.
 
 ### 12.8 `mcp` (L7)
 

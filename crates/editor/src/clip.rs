@@ -3,10 +3,10 @@
 
 use egui::{Pos2, Rect};
 
-use crate::Canvas;
 use crate::quick::frame_point;
 use crate::rerouting::unit;
 use crate::select::Selection;
+use crate::{Canvas, InFrame, Shown};
 
 impl Canvas {
     /// The top-left corner of the nodes selected, in units of their frame (spec 11): the corner that `fragment.copy`
@@ -21,28 +21,37 @@ impl Canvas {
         Some((unit(x), unit(y)))
     }
 
-    /// Whether every node selected is in the body of the function, outside any structure: a paste goes there until
-    /// step 5 brings the frames of structures (`inside`, `arm`).
-    pub fn selection_in_function_body(&self, selection: &Selection) -> bool {
-        let Some(drawing) = self.drawing.as_ref() else { return false };
+    /// The frame of the nodes selected, as `inside` and `arm` name it (commands.md 6.7): where Duplicate pastes. None
+    /// when they are in several frames, or in a structure that a command cannot name.
+    pub fn selection_frame(&self, selection: &Selection) -> Option<InFrame> {
+        let drawing = self.drawing.as_ref()?;
         let found = self.index.find(selection);
-        found
-            .nodes
-            .iter()
-            .all(|placed| drawing.placed.get(*placed).and_then(|node| drawing.bodies.get(node.body)).is_some_and(|body| body.owner.is_none()))
+        let mut bodies = found.nodes.iter().filter_map(|placed| drawing.placed.get(*placed).map(|node| node.body));
+        let body = bodies.next()?;
+        if bodies.any(|other| other != body) {
+            return None;
+        }
+        let drawn = drawing.bodies.get(body)?;
+        let Some(owner) = drawn.owner else { return Some(InFrame::default()) };
+        let structure = drawing.placed.get(owner)?;
+        if structure.name.is_empty() {
+            return None;
+        }
+        Some(InFrame { inside: Some(structure.name.clone()), arm: (!drawn.arm.is_empty()).then(|| drawn.arm.clone()) })
     }
 
-    /// Where a paste puts the top-left corner of its fragment, in units of the frame of the function, on the grid:
-    /// under `pointer` when it is on the canvas, else in the middle of the part of the frame that the view shows, or of
-    /// the view when it shows none of it (decision of the owner, 2026-11-17). None without a drawing.
-    pub fn paste_at(&self, pointer: Option<Pos2>) -> Option<(i64, i64)> {
+    /// Where a paste puts the top-left corner of its fragment, on the grid: under `pointer` when it is on the canvas, in
+    /// the frame there (an arm shown, a loop body, the body of the function), else in the middle of the part of the frame
+    /// of the function that the view shows, or of the view when it shows none of it (decision of the owner, 2026-11-17).
+    /// None without a drawing.
+    pub fn paste_at(&self, shown: &Shown, pointer: Option<Pos2>) -> Option<(InFrame, (i64, i64))> {
         let drawing = self.drawing.as_ref()?;
         let rect = self.rect;
         let unit_of = |at: Pos2| (self.viewport.origin + (at - rect.min) / self.viewport.zoom).to_pos2();
         if let Some(under) = pointer.filter(|at| rect.contains(*at)) {
-            return Some(frame_point(drawing, unit_of(under)));
+            return self.frame_at(shown, under);
         }
-        let shown = Rect::from_min_max(unit_of(rect.min), unit_of(rect.max));
+        let view = Rect::from_min_max(unit_of(rect.min), unit_of(rect.max));
         let middle = drawing
             .bodies
             .first()
@@ -51,9 +60,9 @@ impl Canvas {
                 let hundredth = |value: i64| value as f32 / 100.0;
                 Rect::from_min_size(Pos2::new(hundredth(x), hundredth(y)), egui::vec2(hundredth(width), hundredth(height)))
             })
-            .map(|frame| frame.intersect(shown))
+            .map(|frame| frame.intersect(view))
             .filter(|visible| visible.is_positive())
-            .map_or(shown.center(), |visible| visible.center());
-        Some(frame_point(drawing, middle))
+            .map_or(view.center(), |visible| visible.center());
+        Some((InFrame::default(), frame_point(drawing, middle)))
     }
 }
