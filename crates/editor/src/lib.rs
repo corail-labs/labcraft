@@ -161,8 +161,9 @@ pub enum Intent {
     /// "Add clause…" of a `for`: the host opens the list of the values it can go over (notation 2.6); with `over`, a
     /// wire of an array dropped on its left edge, `structure.add_clause` at once.
     AddClause { structure: String, over: Option<String> },
-    /// `structure.add_collect`: a wire from inside a loop dropped on its inner right edge (notation 2.6).
-    AddCollect { structure: String, value: String },
+    /// `structure.add_collect`, or `structure.add_last` with `last`: a wire from inside a loop dropped on its inner right
+    /// edge, Alt held for a `last` (notation 2.6).
+    AddCollect { structure: String, value: String, last: bool },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -273,10 +274,6 @@ pub struct Canvas {
     /// menu (notation 2.6).
     context_arm: Option<usize>,
     context_port: Option<usize>,
-    /// A wire out of a loop asked for that makes a carry: the body of that loop, whose structure is found there in the
-    /// new drawing (its name may change with its outputs), and the initial value of its carry opens in its field
-    /// (notation 2.6).
-    initial_after: Option<usize>,
     /// What the command palette asked of the canvas, for the next frame to give back.
     queued: Vec<Intent>,
 }
@@ -453,7 +450,6 @@ impl Canvas {
             refocus: false,
             context_arm: None,
             context_port: None,
-            initial_after: None,
             queued: Vec::new(),
         }
     }
@@ -485,8 +481,6 @@ impl Canvas {
     pub fn set_drawing(&mut self, drawing: Arc<Drawing>, glide: bool) {
         // The nodes of a move asked for are where it put them: they do not glide there (architecture 12.4).
         // A move under way goes on over the new drawing, its nodes found again by their keys; one asked for ends.
-        // A wire asked for: this drawing answers it, and the field of the carry it made may open on it.
-        let answered = self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked);
         let (moved, going) = match self.moving.take() {
             Some(moving) if moving.state == moving::State::Asked => {
                 (Some((moving.preview.carried.into_iter().collect::<Vec<usize>>(), moving.by)), None)
@@ -558,10 +552,6 @@ impl Canvas {
         self.drawing = Some(drawing);
         self.set_values(None, None);
         self.moving = going;
-        // A carry that a wire out of a loop made: its initial value, a hole, in its field (notation 2.6).
-        if answered && let Some(body) = self.initial_after.take() {
-            self.edit_initial(body);
-        }
     }
 
     pub fn drawing(&self) -> Option<&Arc<Drawing>> {
@@ -616,7 +606,6 @@ impl Canvas {
 
     /// The wire asked for failed: it goes, and the old wire it would have replaced stays.
     pub fn cancel_wire(&mut self) {
-        self.initial_after = None;
         if self.wiring.as_ref().is_some_and(|wiring| wiring.state == wiring::State::Asked) {
             self.wiring = None;
         }
@@ -1383,12 +1372,12 @@ impl Canvas {
     fn drop_wire(&mut self, drawing: &Drawing, rules: Rules, input: &mut Input, visible: &dyn Fn(Option<usize>) -> bool) {
         let Some(mut wiring) = self.wiring.take() else { return };
         let Some(over) = wiring.over else {
-            // On the edge of a loop: a `collect`, or a clause of a `for` (notation 2.6).
+            // On the edge of a loop: a `collect` (a `last` with Alt), or a clause of a `for` (notation 2.6).
             let reach = (6.0 / self.viewport.zoom).max(4.0);
             if wiring.taken == wiring::Taken::Nothing
                 && wiring.branch.is_none()
                 && let Some(port) = drawing.ports.get(wiring.from)
-                && let Some(intent) = parts::edge_drop(drawing, port, wiring.at, reach, visible)
+                && let Some(intent) = parts::edge_drop(drawing, port, wiring.at, reach, rules.alt, visible)
             {
                 input.intents.push(intent);
                 return;
@@ -1409,14 +1398,7 @@ impl Canvas {
         };
         match wiring.drop_on(drawing, over, rules) {
             Some(wiring::Drop::Wire { replace, accept_mismatch, through }) => {
-                // The innermost loop that makes a carry: its initial value opens in its field with the new drawing.
-                let exits = match wiring.verdicts.get(over) {
-                    Some(Some(labcraft_diagram::Verdict::Takes { exits, .. })) => exits.clone(),
-                    _ => Vec::new(),
-                };
-                let carried = exits.iter().zip(&through).find(|(_, passage)| **passage == "carry").map(|(&body, _)| body);
                 let Some(intent) = wiring.intent(drawing, over, replace, accept_mismatch, through) else { return };
-                self.initial_after = carried;
                 // The old wire retracts, visibly (notation 2.4).
                 let target = if drawing.ports.get(over).is_some_and(|port| port.input) { Some(over) } else { Some(wiring.from) };
                 self.retract = target.filter(|_| replace && !self.reduced_motion).and_then(|target| {

@@ -9,7 +9,7 @@ use labcraft_check::primitives::primitive;
 use labcraft_ir::{Body, ConstId, ConstValue, FunctionId, Node, NodeKind, Pattern, Region, Skip};
 use labcraft_types::{Ty, TyId};
 
-use super::machine::{Clause, ForState, Halt, InstanceId, LoopLink, LoopState, Machine, Parent, State, Task, memory_fault};
+use super::machine::{Clause, ForState, Gathered, Halt, InstanceId, LoopLink, LoopState, Machine, Parent, State, Task, memory_fault};
 use super::position::{Pos, child};
 use super::{Caller, SetBy};
 use crate::convert::{Env, constant, grid, integer};
@@ -173,7 +173,7 @@ fn run_node<'p>(
         }
         NodeKind::Native { function, variadic } => native(machine, instance, index, pos, *function, inputs, *variadic, &node.skip),
         NodeKind::Call { function, variadic } => located(call_function(machine, instance, index, pos, *function, gathered(inputs, *variadic)?)),
-        NodeKind::Loop { continue_on_error, carries, region, .. } => {
+        NodeKind::Loop { continue_on_error, carries, region, gathers } => {
             let carries = *carries as usize;
             if inputs.len() < carries {
                 return Err(Fault::bug("a loop without its carries"));
@@ -181,11 +181,12 @@ fn run_node<'p>(
             let mut inputs = inputs;
             let passed = inputs.split_off(carries);
             hold_all(machine, &passed)?;
-            let state = LoopState { region, iteration: 0, carries, passed, collects: Vec::new(), continue_on_error: *continue_on_error };
+            let gathered = Gathered::of(gathers);
+            let state = LoopState { region, iteration: 0, carries, passed, gathered, continue_on_error: *continue_on_error };
             let task = machine.new_task(Task { instance, node: index, pos, state: State::Loop(state) });
             located(start_iteration(machine, task, inputs))
         }
-        NodeKind::For { parallel, clauses, carries, region, collects } => {
+        NodeKind::For { parallel, clauses, carries, region, gathers } => {
             let mut values = inputs.into_iter();
             let mut read = Vec::with_capacity(clauses.len());
             let mut count = u64::MAX;
@@ -226,7 +227,7 @@ fn run_node<'p>(
                 }
             }
             hold_all(machine, &passed)?;
-            let collects = vec![Vec::new(); *collects as usize];
+            let gathered = Gathered::of(gathers);
             let state = ForState {
                 region,
                 parallel: *parallel,
@@ -237,7 +238,7 @@ fn run_node<'p>(
                 carry_count: carried.len(),
                 carries: carried,
                 passed,
-                collects,
+                gathered,
             };
             let task = machine.new_task(Task { instance, node: index, pos, state: State::For(state) });
             located(start_for(machine, task))
@@ -738,7 +739,8 @@ fn start_for(machine: &mut Machine<'_, '_>, task: usize) -> Result<(), Halt> {
     Ok(())
 }
 
-/// A `for` ends: its carries, then an array of each `collect`, in the order of the iterations.
+/// A `for` ends: its carries, then an array of each `collect`, in the order of the iterations, and the value of each
+/// `last`, in their order.
 fn end_for(machine: &mut Machine<'_, '_>, task: usize) -> Result<(), Halt> {
     let Some(Task { instance, node, state: State::For(state), .. }) = machine.take_task(task) else { return Ok(()) };
     for clause in &state.clauses {
@@ -748,12 +750,50 @@ fn end_for(machine: &mut Machine<'_, '_>, task: usize) -> Result<(), Halt> {
     }
     release_all(machine, &state.passed);
     let mut outputs = state.carries;
-    for collect in state.collects {
-        let items: Vec<Value> = collect.into_iter().flatten().collect();
-        release_all(machine, &items);
-        outputs.push(Value::array(items));
-    }
+    gathered_outputs(machine, state.gathered, &mut outputs).map_err(|fault| machine.halt(instance, node, fault))?;
     machine.finish(instance, node, outputs, false)
+}
+
+/// What a loop gives after its carries (spec 6.2): an array of the values of each `collect`, and the value of the last
+/// iteration of each `last`, or the default value of its type when none ran.
+fn gathered_outputs(machine: &mut Machine<'_, '_>, gathered: Vec<Gathered>, outputs: &mut Vec<Value>) -> Result<(), Fault> {
+    // Each value held is released first, even when a default fails after it.
+    let mut failed = None;
+    for gathered in gathered {
+        match gathered {
+            Gathered::Each(values) => {
+                let items: Vec<Value> = values.into_iter().flatten().collect();
+                release_all(machine, &items);
+                outputs.push(Value::array(items));
+            }
+            Gathered::Last { kept: Some((_, value)), .. } => {
+                machine.memory.release(&value);
+                outputs.push(value);
+            }
+            Gathered::Last { kept: None, default } => match constant(machine.env(), default) {
+                Ok(value) => outputs.push(value),
+                Err(fault) => failed = failed.or(Some(fault)),
+            },
+        }
+    }
+    failed.map_or(Ok(()), Err)
+}
+
+/// Keeps the values of iteration `at` in what its loop gathers, and releases what a `last` holds no more.
+fn keep_gathered(machine: &mut Machine<'_, '_>, task: usize, at: u64, values: Vec<Value>) {
+    if values.is_empty() {
+        return;
+    }
+    let mut dropped = Vec::new();
+    let gathered = match machine.task_mut(task) {
+        Some(Task { state: State::For(state), .. }) => &mut state.gathered,
+        Some(Task { state: State::Loop(state), .. }) => &mut state.gathered,
+        _ => return,
+    };
+    for (gathered, value) in gathered.iter_mut().zip(values) {
+        dropped.extend(gathered.keep(at, value));
+    }
+    release_all(machine, &dropped);
 }
 
 /// An instance whose nodes have all ended gives its results to what started it.
@@ -797,7 +837,8 @@ pub(super) fn complete(machine: &mut Machine<'_, '_>, id: InstanceId) -> Result<
     }
 }
 
-/// An iteration of a `for` ended: its results are the next carries, then its collects, kept by iteration.
+/// An iteration of a `for` ended: its results are the next carries, then its `collect` and `last` values, kept by
+/// iteration.
 fn end_for_iteration(
     machine: &mut Machine<'_, '_>,
     task: usize,
@@ -814,18 +855,10 @@ fn end_for_iteration(
     let mut next = results;
     let collected = next.split_off(carries);
     hold_all(machine, &collected).map_err(|fault| machine.halt(instance, node, fault))?;
-    let at = usize::try_from(iteration).unwrap_or(usize::MAX);
+    keep_gathered(machine, task, iteration, collected);
     let (more, parallel) = match machine.task_mut(task) {
         Some(Task { state: State::For(state), .. }) => {
             state.ended = state.ended.saturating_add(1);
-            for (collect, value) in state.collects.iter_mut().zip(collected) {
-                if collect.len() <= at {
-                    collect.resize(at.saturating_add(1), None);
-                }
-                if let Some(place) = collect.get_mut(at) {
-                    *place = Some(value);
-                }
-            }
             if !state.parallel {
                 state.carries = next;
             }
@@ -849,7 +882,8 @@ fn end_for_iteration(
     iteration_instance(machine, task, instance, index, &pos, region, iteration, args)
 }
 
-/// An iteration of a `loop` ended: its results are the next carries, the condition of its `until`, then its collects. It
+/// An iteration of a `loop` ended: its results are the next carries, the condition of its `until`, then its `collect` and
+/// `last` values. It
 /// ends on the condition, or on an error in a carry of type `error` unless `continue_on_error` (Q-7).
 fn end_iteration(machine: &mut Machine<'_, '_>, task: usize, instance: InstanceId, node: u32, results: Vec<Value>) -> Result<(), Halt> {
     let Some(Task { state: State::Loop(state), .. }) = machine.task(task) else { return Ok(()) };
@@ -863,26 +897,20 @@ fn end_iteration(machine: &mut Machine<'_, '_>, task: usize, instance: InstanceI
     let Value::Bool(until) = until else { return Err(machine.halt(instance, node, Fault::bug("the condition of an `until` that is no boolean"))) };
     let failed = !continue_on_error && next.iter().zip(&region.args).any(|(value, arg)| machine.is_error_type(arg.ty) && value.as_error().is_some());
     hold_all(machine, &rest).map_err(|fault| machine.halt(instance, node, fault))?;
-    if let Some(Task { state: State::Loop(state), .. }) = machine.task_mut(task) {
-        if state.collects.len() < rest.len() {
-            state.collects.resize(rest.len(), Vec::new());
+    let iteration = match machine.task_mut(task) {
+        Some(Task { state: State::Loop(state), .. }) => {
+            let iteration = state.iteration;
+            state.iteration = iteration.saturating_add(1);
+            iteration
         }
-        for (collect, value) in state.collects.iter_mut().zip(rest) {
-            collect.push(value);
-        }
-        state.iteration = state.iteration.saturating_add(1);
-    }
+        _ => return Ok(()),
+    };
+    keep_gathered(machine, task, iteration, rest);
     if until || failed {
         let Some(Task { state: State::Loop(state), .. }) = machine.take_task(task) else { return Ok(()) };
         release_all(machine, &state.passed);
         let mut outputs = next;
-        let expected = machine.output_types(instance, node).len();
-        let mut collects = state.collects;
-        collects.resize(expected.saturating_sub(outputs.len()), Vec::new());
-        for collect in collects {
-            release_all(machine, &collect);
-            outputs.push(Value::array(collect));
-        }
+        gathered_outputs(machine, state.gathered, &mut outputs).map_err(|fault| machine.halt(instance, node, fault))?;
         return machine.finish(instance, node, outputs, false);
     }
     start_iteration(machine, task, next)

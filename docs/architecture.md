@@ -1984,12 +1984,18 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   structures after the other rows; a `match`, a `handle` and a `for` first open the list of values (`ide/values.rs`),
   from `Canvas::values_seen`, filtered by the type that the kind takes.
   Step 5b: the parts of a structure are `edit/parts.rs`, and a wire out of loops goes through `lift` in `wire.rs`, which
-  gives each structure on the way an output: an arm a `yield`, a loop a carry or a `collect` (`through`). On the canvas,
+  gives each structure on the way an output: an arm a `yield`, a loop a carry or a `collect` (`through`; a `last` too
+  since #211). On the canvas,
   the verdict of a wire lists the loops it leaves (`Verdict::Takes::exits`), each body says whether it is a `for`, a
   `for parallel` or a `loop continue_on_error`, and a terminal of a frame names the part it stands for (`Port::part`);
   `editor/wiring.rs` chooses the passages from the types (`passages`), and `editor/parts.rs` gives the parts in the
   context menu of a structure and to the commands of the palette (`ide.add_arm`, `ide.add_carry`, `ide.add_clause`,
   `ide.continue_on_error`, `ide.parallel`).
+  `last` (#211): a `collect` and a `last` are one statement of the graph, `StatementKind::Gather`, whose `Gather` says
+  which, so that every place that counts the outputs of a loop counts both, in the order of their lines. The IR gives a
+  loop its `gathers`, a `last` with the constant of the default value of its type; the run keeps, for a `last`, the value
+  of the iteration of the highest index so far (`Gathered`). The diagram draws it as `Edge::Last`; `through` and
+  `structure.add_last` write it, and the gesture out of a loop makes a `last` or a `collect`, never a carry.
 
 ### 12.8 `mcp` (L7)
 

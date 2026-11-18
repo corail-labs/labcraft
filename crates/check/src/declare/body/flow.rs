@@ -203,7 +203,7 @@ impl<'a, 'r> Graph<'a, 'r> {
         }
         match &statement.kind {
             StatementKind::Call(call) => self.call(call, first),
-            StatementKind::Collect(value) | StatementKind::Until(value) => self.read(value, first),
+            StatementKind::Gather(_, value) | StatementKind::Until(value) => self.read(value, first),
             StatementKind::Binding { targets, value } => match value {
                 Rhs::Call(call) => self.call(call, first),
                 Rhs::Struct(literal) => {
@@ -1127,7 +1127,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
             .collect();
         resources.cut_short |= cut_short;
         let collects = body.statements.iter().filter_map(|line| match &line.kind {
-            StatementKind::Collect(value) => Some(value),
+            StatementKind::Gather(_, value) => Some(value),
             _ => None,
         });
         let mut outputs = carry_refs;
@@ -1178,7 +1178,7 @@ impl<'a> Flow<'_, '_, '_, 'a, '_> {
                         }
                     }
                 },
-                StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => {}
+                StatementKind::Call(_) | StatementKind::Gather(_, _) | StatementKind::Until(_) => {}
             }
         }
         self.pass.cut_short |= resources.cut_short;

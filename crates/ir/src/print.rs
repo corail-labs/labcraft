@@ -8,8 +8,8 @@ use std::fmt::Write as _;
 use labcraft_types::{Interner, LibraryId, Ty, TyId};
 
 use crate::{
-    Arm, Body, Clause, ConstId, ConstValue, Conversion, Function, FunctionId, Node, NodeKind, Order, Pattern, PortOf, Program, Region, Skip, Source,
-    Static, Use,
+    Arm, Body, Clause, ConstId, ConstValue, Conversion, Function, FunctionId, Gather, Node, NodeKind, Order, Pattern, PortOf, Program, Region, Skip,
+    Source, Static, Use,
 };
 
 /// The program as text, one function after another, `functions[0]` first.
@@ -225,14 +225,14 @@ impl<'p> Printer<'p> {
                 None => format!("construct {} {{{inputs}}}", self.ty(*ty)),
             },
             NodeKind::BuildArray => format!("array [{inputs}]"),
-            NodeKind::Loop { continue_on_error, carries, collects, .. } => {
+            NodeKind::Loop { continue_on_error, carries, gathers, .. } => {
                 let mode = if *continue_on_error { " continue_on_error" } else { "" };
-                format!("loop{mode} (carries {carries}, collects {collects}) ({inputs})")
+                format!("loop{mode} (carries {carries}, {}) ({inputs})", gathered(gathers))
             }
-            NodeKind::For { parallel, clauses, carries, collects, .. } => {
+            NodeKind::For { parallel, clauses, carries, gathers, .. } => {
                 let mode = if *parallel { " parallel" } else { "" };
                 let clauses: Vec<&str> = clauses.iter().map(|clause| if *clause == Clause::Range { "range" } else { "each" }).collect();
-                format!("for{mode} [{}] (carries {carries}, collects {collects}) ({inputs})", clauses.join(", "))
+                format!("for{mode} [{}] (carries {carries}, {}) ({inputs})", clauses.join(", "), gathered(gathers))
             }
             NodeKind::Match { .. } => format!("match ({inputs})"),
             NodeKind::Handle { .. } => format!("handle ({inputs})"),
@@ -508,4 +508,14 @@ impl Bounded {
         self.text.push_str(&quoted);
         self.cut = !whole;
     }
+}
+
+/// The outputs of a loop after its carries: `collects k` with only `collect` lines, as before `last` (spec 6.2), or
+/// each kind in its order.
+fn gathered(gathers: &[Gather]) -> String {
+    if gathers.iter().all(|gather| *gather == Gather::Collect) {
+        return format!("collects {}", gathers.len());
+    }
+    let words: Vec<&str> = gathers.iter().map(|gather| gather.word()).collect();
+    format!("gathers [{}]", words.join(", "))
 }

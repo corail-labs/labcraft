@@ -269,7 +269,14 @@ pub enum Op {
         value: String,
         name: Option<String>,
     },
-    /// `structure.remove_part`: an arm by its patterns, `carry x`, `in x` or `collect y`.
+    /// `structure.add_last`.
+    StructureAddLast {
+        file: String,
+        structure: String,
+        value: String,
+        name: Option<String>,
+    },
+    /// `structure.remove_part`: an arm by its patterns, `carry x`, `in x`, `collect y` or `last y`.
     StructureRemovePart {
         file: String,
         structure: String,
@@ -291,11 +298,13 @@ pub enum StructureOption {
     Parallel,
 }
 
-/// How a loop takes a value out (commands.md 6.7, `wire.connect`): a carry that holds its last value, or a `collect`.
+/// How a loop takes a value out (commands.md 6.7, `wire.connect`): a carry that holds its last value, a `collect`, or a
+/// `last`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Passage {
     Carry,
     Collect,
+    Last,
 }
 
 /// `through`: one passage for every loop that a wire leaves, or one per loop, from the inside out.
@@ -362,6 +371,7 @@ impl Op {
             | Op::StructureAddCarry { file, .. }
             | Op::StructureAddClause { file, .. }
             | Op::StructureAddCollect { file, .. }
+            | Op::StructureAddLast { file, .. }
             | Op::StructureRemovePart { file, .. }
             | Op::StructureSetOption { file, .. } => file,
         }
@@ -659,7 +669,12 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
             parts::add_carry(&mut edit, structure, name, initial.as_deref(), ty.as_deref(), &mut edited)?;
         }
         Op::StructureAddClause { structure, over, name, .. } => parts::add_clause(&mut edit, judge, structure, over, name.as_deref(), &mut edited)?,
-        Op::StructureAddCollect { structure, value, name, .. } => parts::add_collect(&mut edit, structure, value, name.as_deref(), &mut edited)?,
+        Op::StructureAddCollect { structure, value, name, .. } => {
+            parts::add_gather(&mut edit, labcraft_graph::Gather::Collect, structure, value, name.as_deref(), &mut edited)?;
+        }
+        Op::StructureAddLast { structure, value, name, .. } => {
+            parts::add_gather(&mut edit, labcraft_graph::Gather::Last, structure, value, name.as_deref(), &mut edited)?;
+        }
         Op::StructureRemovePart { structure, part, .. } => parts::remove_part(&mut edit, judge, structure, part)?,
         Op::StructureSetOption { structure, option, on, .. } => parts::set_option(&mut edit, structure, *option, *on)?,
     }

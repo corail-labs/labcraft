@@ -114,7 +114,7 @@ pub enum Order { Value(Use), Node(u32) }   // a value of this region, or a node 
   (a named constant, `limit = 240 V`, drawn as a small node): visual notation, 3. A call
   written alone (`time.wait(50 ms)`) is a node whose outputs no target names. **A line makes no node** when it only
   names what exists (R-4, notation 3.3): a new name for a wire (`e = d`), a field read (`k = step.low`), the binding
-  of an output (`err = e3`) or of a carry (`next n = m`), `collect` and `until`. Such a line adds a name to a
+  of an output (`err = e3`) or of a carry (`next n = m`), `collect`, `last` and `until`. Such a line adds a name to a
   value, or a use with its fields, or a result of the region (section 4). Its line keeps its canonical position,
   so the positions of the nodes of a region increase but may skip.
 - **A value is defined once** (spec 5.1): by an argument of its region or by an output of a node of that region.
@@ -178,8 +178,8 @@ function it calls.
 | `Call { function: FunctionId, variadic }` | as above, for a function written in LabCraft | its outputs | |
 | `Construct { ty, variant }` | the fields of a struct or a `waveform` (`t0`, `dt`, `samples`), in declaration order, or the values of a variant | one | |
 | `BuildArray` | one per item, in order | one | |
-| `Loop { continue_on_error, carries, collects, region }` | *c* initial carries, then *k* values from outside | *c* final carries, then one array per `collect` | one |
-| `For { parallel, clauses, carries, collects, region }` | one array per `in` clause (`Each`), or two bounds for a range (`Range`); then *c* initial carries; then *k* values from outside | as a `Loop` | one |
+| `Loop { continue_on_error, carries, gathers, region }` | *c* initial carries, then *k* values from outside | *c* final carries, then one output per `collect` or `last`, in the order of their lines | one |
+| `For { parallel, clauses, carries, gathers, region }` | one array per `in` clause (`Each`), or two bounds for a range (`Range`); then *c* initial carries; then *k* values from outside | as a `Loop` | one |
 | `Match { arms }` | the selector, then *k* values from outside | the values of the `yield`, in order | one per arm |
 | `Handle { arms }` | the error, then *k* values from outside | as a `Match` | one per arm |
 
@@ -191,10 +191,15 @@ function it calls.
   a `Constant` node; a variant without values on its own line (`s = State.Init`) is a `Construct`.
 - **The region of a `Loop`** has *c* + *k* arguments: the current value of each carry, then the values passed in.
   Its results are the next value of each carry (what its one `next x = …` names: spec 6.2), the condition of its
-  one `until`, then each `collect`. The node runs its region until the
+  one `until`, then the value of each `collect` and `last` line, in their order. The node runs its region until the
   condition is true, or a carry of type `error` holds an error (Q-7) unless `continue_on_error`.
+- **`gathers`** lists the `collect` and `last` lines of the body, in their order (spec 6.2): `Collect`, whose output is an
+  array of the values of each iteration, in the order of the iterations; `Last { default }`, whose output is the value
+  of the last iteration that ran, by index in a `for parallel`, or the constant `default`, the default value of its
+  type (spec 7.2), when a `for` runs none.
 - **The region of a `For`** has one argument per `in` clause (its element, or the index of a range), then *c*
-  carries, then *k* values passed in; its results are the next carries, then the collects. `parallel` means each
+  carries, then *k* values passed in; its results are the next carries, then the values of the `collect` and `last`
+  lines. `parallel` means each
   iteration may run at its own pace (spec 6.2, 8); a parallel `for` has no carry.
 - **An arm** has its patterns, as data: a literal (a constant in the type of the selector), a range, a variant by
   its index with the number of values it binds, a category (`visa.*` with `wildcard`) or a code (`handle`), `ok`, or
@@ -276,7 +281,7 @@ lowering, and so is what `ir::lower` returns as a `LowerError`: what `check` sho
    only cycles of a program go through the carries of a loop, from the results of its region back to its arguments.
 4. A node has the inputs, outputs, regions, arguments and results that section 4 gives its kind, with the same *c*,
    *k* and *b* on its two sides: a `Loop` of *c* carries and *k* values passed in has *c* + *k* inputs, *c* + *k*
-   arguments, and *c* + 1 + (number of `collect`) results; a `For` has as many inputs per clause as its clause takes;
+   arguments, and *c* + 1 + (number of `collect` and `last`) results; a `For` has as many inputs per clause as its clause takes;
    an arm has *b* + *k* arguments, *b* being what its pattern binds.
 5. The type of each use equals the type of the input it reaches; the type of each result of a region equals what the
    structure or the function expects there. No type is `Ty::Error`. The inputs of a primitive have the types its call

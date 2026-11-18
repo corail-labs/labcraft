@@ -5,7 +5,7 @@ mod deep;
 use deep::{DEEP, deep_array_type, deep_loop, in_body, nested};
 use labcraft_format::{Read, STACK_SIZE, read};
 use labcraft_graph::{
-    Arg, Constant, Decl, File, Function, LayoutKind, Numeral, NumeralKind, Operand, OrderRef, Pattern, Rhs, Statement, StatementKind, Target,
+    Arg, Constant, Decl, File, Function, Gather, LayoutKind, Numeral, NumeralKind, Operand, OrderRef, Pattern, Rhs, Statement, StatementKind, Target,
     TypeExpr, UnitOp, UnitTerm,
 };
 use labcraft_types::{Code, Interner, Limits, Position, Span};
@@ -405,6 +405,9 @@ fn a_misplaced_statement_is_a_syntax_error() {
         "#a: yield b",
         "x = loop {\n#a: until b\n}",
         "x = for i in a {\n#a: collect b\n}",
+        "last a",
+        "x = match a {\n_ => {\nlast a\nyield 1\n}\n}",
+        "x = for i in a {\n#a: last b\n}",
     ] {
         assert_code(&in_body(statement), Code::Lc1001);
     }
@@ -415,6 +418,34 @@ fn a_misplaced_statement_is_a_syntax_error() {
         let read = read(text.as_bytes(), &mut names, &Limits::default());
         assert!(read.file.is_some() && read.report.diagnostics().is_empty(), "{statement}: {:?}", read.report.diagnostics());
     }
+}
+
+/// `last` is a contextual word (spec 14.1): the start of a line of a loop body when a value follows it, a name anywhere
+/// else.
+#[test]
+fn last_starts_a_line_only_when_a_value_follows_it() {
+    for statement in [
+        "x = loop {\nlast a\nuntil c\n}",
+        "x = for i in a {\nlast 0 V\nlast -1\nlast \"s\"\nlast [a, b]\nlast ?\nlast true\nlast p.x\n}",
+        "last = f()\nx = for i in a {\nlast last\n}",
+        "x = for i in a {\nlast, b = f()\nlast.f(b)\nlast(b)\n}",
+    ] {
+        assert_reads(&in_body(statement));
+    }
+    let reading = Reading::of(&in_body("x = for i in a {\nlast b\ncollect b\n}"));
+    let Rhs::For(each) = value_of(&reading) else { panic!("a `for`") };
+    let kinds: Vec<Option<Gather>> = each
+        .body
+        .statements
+        .iter()
+        .map(|line| match line.kind {
+            StatementKind::Gather(gather, _) => Some(gather),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, [Some(Gather::Last), Some(Gather::Collect)]);
+    // A call in its place is a nested call (R-9), as for `collect`.
+    assert_code(&in_body("x = for i in a {\nlast f(i)\n}"), Code::Lc1004);
 }
 
 #[test]

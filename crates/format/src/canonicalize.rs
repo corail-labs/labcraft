@@ -319,7 +319,7 @@ fn add_node(statement: &Statement, outputs: &HashSet<Name>, nodes: &mut HashSet<
     let (first, value) = match &statement.kind {
         StatementKind::Binding { targets, value } => (first_name(targets), Some(value)),
         StatementKind::Call(_) => (None, None),
-        StatementKind::Collect(_) | StatementKind::Until(_) => return,
+        StatementKind::Gather(_, _) | StatementKind::Until(_) => return,
     };
     // A line that binds an output, a carry or nothing is a terminal, whatever its value (R-4).
     let no_node = match value {

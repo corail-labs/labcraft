@@ -217,7 +217,7 @@ impl Ids {
                 self.rhs(value);
             }
             StatementKind::Call(call) => self.call(call),
-            StatementKind::Collect(operand) | StatementKind::Until(operand) => self.operand(operand),
+            StatementKind::Gather(_, operand) | StatementKind::Until(operand) => self.operand(operand),
         }
     }
 

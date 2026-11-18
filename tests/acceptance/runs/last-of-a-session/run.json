@@ -1,0 +1,5 @@
+{
+  "function": "last_session",
+  "folder": "tests/acceptance/runs/last-of-a-session",
+  "sim": "<labcraft>/visa/sim/two-dmm.toml"
+}

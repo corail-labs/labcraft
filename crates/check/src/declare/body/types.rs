@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use labcraft_graph::{
-    Arg, Body, Branching, Call, Clause, ClauseKind, Function, Id, Numeral, NumeralKind, Operand, Path, Pattern, Rhs, Signature, Statement,
+    Arg, Body, Branching, Call, Clause, ClauseKind, Function, Gather, Id, Numeral, NumeralKind, Operand, Path, Pattern, Rhs, Signature, Statement,
     StatementKind, Target as Line, UnitExpr, UnitTerm,
 };
 use labcraft_types::{
@@ -159,7 +159,7 @@ impl<'a> Plan<'a> {
         }
         match &statement.kind {
             StatementKind::Call(call) => self.call(call, first, resolved),
-            StatementKind::Collect(value) | StatementKind::Until(value) => self.read(value, first, resolved),
+            StatementKind::Gather(_, value) | StatementKind::Until(value) => self.read(value, first, resolved),
             StatementKind::Binding { value, .. } => match value {
                 Rhs::Call(call) => self.call(call, first, resolved),
                 Rhs::Struct(literal) => {
@@ -195,10 +195,10 @@ impl<'a> Plan<'a> {
         }
     }
 
-    /// Outputs, in order: the carries, then the `collect` values (6.2). Targets that do not match have their `LC2103`.
+    /// Outputs, in order: the carries, then the `collect` and `last` values (6.2). Targets that do not match have their `LC2103`.
     fn note_collects(&mut self, clauses: &'a [Clause], body: &'a Body, targets: &'a [Line]) {
         let carries = clauses.iter().filter(|clause| matches!(clause.kind, ClauseKind::Carry(_))).count();
-        let collects = body.statements.iter().filter(|line| matches!(line.kind, StatementKind::Collect(_)));
+        let collects = body.statements.iter().filter(|line| matches!(line.kind, StatementKind::Gather(_, _)));
         if carries + collects.clone().count() != targets.len() {
             return;
         }
@@ -595,8 +595,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                     self.resolved.set_outputs(statement.id, types);
                 }
             }
-            (Phase::Whole, StatementKind::Collect(value)) => {
-                let hint = self.collect_hint(statement.id);
+            (Phase::Whole, StatementKind::Gather(gather, value)) => {
+                let hint = self.collect_hint(statement.id, *gather);
                 let ty = self.value_of(value, hint);
                 self.resolved.set_type(statement.id, ty);
             }
@@ -684,11 +684,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         }
     }
 
-    /// What a `collect` is expected to give, from the array that its loop gives to a target with a type. A constant takes it (3.4).
-    fn collect_hint(&mut self, id: Id) -> Option<TyId> {
+    /// What a `collect` expects of each value, the element of the array that its output goes to, or a `last` of its
+    /// one value, the type that its output goes to (6.2, 3.4).
+    fn collect_hint(&mut self, id: Id, gather: Gather) -> Option<TyId> {
         let target = self.collect_targets.get(&id).copied()?;
         let array = self.target_hint(Some(target))?;
-        if array == TyId::ERROR {
+        if array == TyId::ERROR || gather == Gather::Last {
             return Some(array);
         }
         self.element_of(array)
@@ -2080,7 +2081,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         self.number(kind, Unit::ONE)
     }
 
-    /// Outputs, in order: the carries, then the `collect` values (6.2).
+    /// Outputs, in order: the carries, then the `collect` and `last` values (6.2).
     fn close_loop(&mut self, statement: &'a Statement, targets: &'a [Line], clauses: &'a [Clause], body: &'a Body) {
         let mut outs = Vec::new();
         for clause in clauses {
@@ -2093,9 +2094,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             }
         }
         for line in &body.statements {
-            if matches!(line.kind, StatementKind::Collect(_)) {
+            if let StatementKind::Gather(gather, _) = line.kind {
                 let element = self.resolved.ty(line.id);
-                let ty = self.array_of(element, line.id);
+                let ty = match gather {
+                    Gather::Collect => self.array_of(element, line.id),
+                    Gather::Last => element,
+                };
                 outs.push(Out { ty, label: Label::Position(u32::try_from(outs.len()).unwrap_or(u32::MAX)), operand: None });
             }
         }

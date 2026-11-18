@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use labcraft_check::Meaning;
 use labcraft_format::{write_operand, write_pattern};
-use labcraft_graph::{Body, ClauseKind, Constant, Id, Operand, OrderRef, Pattern, Rhs, Signature, Statement, StatementKind, Target};
+use labcraft_graph::{Body, ClauseKind, Constant, Gather, Id, Operand, OrderRef, Pattern, Rhs, Signature, Statement, StatementKind, Target};
 use labcraft_types::{Name, TyId, cut_text};
 
 use super::{
@@ -215,9 +215,13 @@ impl<'a> Builder<'a> {
                 let mut collects = 0;
                 for line in &body.statements {
                     match &line.kind {
-                        StatementKind::Collect(operand) => {
-                            let name = targets.get(carries + collects).map_or_else(|| "[ ]".to_owned(), |target| self.target_text(target));
-                            frame.right.push(self.frame_terminal(name, self.resolved().ty(operand.id()), Edge::Collect));
+                        StatementKind::Gather(gather, operand) => {
+                            let (edge, missing) = match gather {
+                                Gather::Collect => (Edge::Collect, "[ ]"),
+                                Gather::Last => (Edge::Last, "]"),
+                            };
+                            let name = targets.get(carries + collects).map_or_else(|| missing.to_owned(), |target| self.target_text(target));
+                            frame.right.push(self.frame_terminal(name, self.resolved().ty(operand.id()), edge));
                             collects += 1;
                         }
                         StatementKind::Until(_) => {}
@@ -368,7 +372,7 @@ impl<'a> Builder<'a> {
             let collect_of: HashMap<Id, usize> = body
                 .statements
                 .iter()
-                .filter(|line| matches!(line.kind, StatementKind::Collect(_)))
+                .filter(|line| matches!(line.kind, StatementKind::Gather(_, _)))
                 .map(|line| {
                     collects += 1;
                     (line.id, collects - 1)
@@ -377,7 +381,7 @@ impl<'a> Builder<'a> {
             for &line in order {
                 let Some(statement) = body.statements.get(line) else { continue };
                 match &statement.kind {
-                    StatementKind::Collect(operand) | StatementKind::Until(operand) => {
+                    StatementKind::Gather(_, operand) | StatementKind::Until(operand) => {
                         let right = match statement.kind {
                             StatementKind::Until(_) => until,
                             _ => collect_of.get(&statement.id).copied(),
@@ -643,7 +647,7 @@ pub(super) fn finish_frame(body: &mut BodyOf, owner: Option<StructureKind>) {
                 body.right
                     .iter()
                     .enumerate()
-                    .filter(|(_, terminal)| terminal.edge == Edge::Collect)
+                    .filter(|(_, terminal)| matches!(terminal.edge, Edge::Collect | Edge::Last))
                     .map(|(index, _)| Slot { left: None, right: Some(index) }),
             );
             slots.extend(

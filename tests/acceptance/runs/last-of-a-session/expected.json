@@ -1,0 +1,41 @@
+{
+  "how": "The loop runs once (`until true`, spec 6.3). In it `visa.open` of SIM::DMM0, which two-dmm.toml defines, opens a session with no error; an open takes no time (libs/visa/simulation.md 2, no `latency_ms`). The outputs of the loop are the carry `n`, 1 after its one `next`, then `last session` and `last e` in their written order (spec 6.2, outputs and `last`, which takes out a session with no initial value; 5.2, point 3), so `tries` is 1, `dmm` the open session and `e1` `none`. `scpi.query_f64` sends `MEAS:VOLT:DC?` at 0 ms; the first read of the quantity (seed 1, value 230.0, noise 0.05) has g = 1.4243480905156507 and reads 230.07121740452578, answered `230.071217` (simulation.md 3 and 4, point 4; computed with a SplitMix64 script of my own and checked with `python tests/acceptance/runs/noise.py 1 230 0.05 1`). `string.to_f64` reads it as the f64 230.071217 (spec A.2), the output `voltage`, an `f64` without a unit (commands.md 5). `visa.close` closes the one session and gives `none` (spec 7.2), so `err` is `none` (null) and the status `ok` (spec 8.2). Outputs in the order of the signature (commands.md 7). Only SIM::DMM0 received a command; SIM::DMM1 received none, so it is not listed (commands.md 7, `instruments`). No latency, no wait: the run ends at 0 ms.",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "voltage",
+      "type": "f64",
+      "value": 230.071217
+    },
+    {
+      "name": "tries",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": null
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 1,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": "230.071217"
+        }
+      ]
+    }
+  ]
+}

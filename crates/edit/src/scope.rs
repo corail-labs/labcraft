@@ -49,7 +49,7 @@ pub(crate) fn subs(statement: &Statement) -> Vec<(&Body, Frame)> {
             Rhs::Loop(repeat) => vec![(&repeat.body, Frame::Loop)],
             Rhs::Call(_) | Rhs::Struct(_) | Rhs::Operand(_) => Vec::new(),
         },
-        StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => Vec::new(),
+        StatementKind::Call(_) | StatementKind::Gather(_, _) | StatementKind::Until(_) => Vec::new(),
     }
 }
 
@@ -61,7 +61,7 @@ pub(crate) fn sub_mut(statement: &mut Statement, sub: usize) -> Option<&mut Body
             Rhs::Loop(repeat) if sub == 0 => Some(&mut repeat.body),
             _ => None,
         },
-        StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => None,
+        StatementKind::Call(_) | StatementKind::Gather(_, _) | StatementKind::Until(_) => None,
     }
 }
 
@@ -126,7 +126,7 @@ pub(crate) fn targets(statement: &Statement) -> Vec<Name> {
                 Target::Skip(_) | Target::Next(..) => None,
             })
             .collect(),
-        StatementKind::Call(_) | StatementKind::Collect(_) | StatementKind::Until(_) => Vec::new(),
+        StatementKind::Call(_) | StatementKind::Gather(_, _) | StatementKind::Until(_) => Vec::new(),
     }
 }
 

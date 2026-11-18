@@ -3,7 +3,8 @@
 use labcraft_types::{Ty, TyId};
 
 use crate::{
-    Body, Clause, ConstValue, Conversion, Function, Node, NodeKind, Order, Pattern, PortOf, Program, Region, Skip, Source, Static, Use, VERSION,
+    Body, Clause, ConstValue, Conversion, Function, Gather, Node, NodeKind, Order, Pattern, PortOf, Program, Region, Skip, Source, Static, Use,
+    VERSION,
 };
 
 /// One invariant that a program breaks, in one of its functions.
@@ -143,10 +144,10 @@ impl Checker<'_> {
         matches!(self.program.types.get(ty), Ty::Bool)
     }
 
-    /// The results of a loop or a `for`: the next carries, the condition of a loop, then the element of each collect.
-    fn loop_results(&mut self, node: &Node, region: &Region, carries: &[TyId], until: bool, what: &str) {
-        let collects = node.outputs.len().saturating_sub(carries.len());
-        let expected = carries.len() + usize::from(until) + collects;
+    /// The results of a loop or a `for`: the next carries, the condition of a loop, then the element of each `collect`
+    /// and the value of each `last`.
+    fn loop_results(&mut self, node: &Node, region: &Region, carries: &[TyId], gathers: &[Gather], until: bool, what: &str) {
+        let expected = carries.len() + usize::from(until) + gathers.len();
         if region.results.len() != expected {
             self.say(format!("{what} gives {} results where {expected} are expected", region.results.len()));
             return;
@@ -161,9 +162,18 @@ impl Checker<'_> {
         if until && !results.next().is_some_and(|condition| self.is_bool(condition.ty)) {
             self.say(format!("the condition of {what} is no `bool`"));
         }
-        for (result, output) in results.zip(node.outputs.iter().skip(carries.len())) {
-            if !self.is_element(output.ty, result.ty) {
-                self.say(format!("a collect of {what} whose array does not hold its type"));
+        for ((result, output), gather) in results.zip(node.outputs.iter().skip(carries.len())).zip(gathers) {
+            match gather {
+                Gather::Collect if !self.is_element(output.ty, result.ty) => {
+                    self.say(format!("a collect of {what} whose array does not hold its type"));
+                }
+                Gather::Last { .. } if !self.same(output.ty, result.ty) => {
+                    self.say(format!("a `last` of {what} whose output has another type than its value"));
+                }
+                Gather::Collect | Gather::Last { .. } => {}
+            }
+            if let Gather::Last { default } = gather {
+                self.constant(*default, what);
             }
         }
     }
@@ -446,21 +456,21 @@ impl Checker<'_> {
                     }
                 }
             }
-            NodeKind::Loop { carries, collects, region, .. } => {
-                let (c, collects) = (*carries as usize, *collects as usize);
+            NodeKind::Loop { carries, gathers, region, .. } => {
+                let (c, collects) = (*carries as usize, gathers.len());
                 let k = inputs.checked_sub(c);
                 self.structure_args(node, region, 0, 0, "a loop");
                 if k.is_none() || region.args.len() != inputs {
                     self.say(format!("a loop of {c} carries with {inputs} inputs and {} arguments", region.args.len()));
                 }
                 let carries: Vec<TyId> = region.args.iter().take(c).map(|arg| arg.ty).collect();
-                self.loop_results(node, region, &carries, true, "a loop");
+                self.loop_results(node, region, &carries, gathers, true, "a loop");
                 if outputs != c + collects {
                     self.say(format!("a loop of {c} carries and {collects} collects with {outputs} outputs"));
                 }
             }
-            NodeKind::For { parallel, clauses, carries, collects, region } => {
-                let (c, collects) = (*carries as usize, *collects as usize);
+            NodeKind::For { parallel, clauses, carries, gathers, region } => {
+                let (c, collects) = (*carries as usize, gathers.len());
                 if *parallel && c > 0 {
                     self.say("a parallel `for` with a carry".to_owned());
                 }
@@ -484,7 +494,7 @@ impl Checker<'_> {
                 }
                 self.structure_args(node, region, clause_inputs, clauses.len(), "a `for`");
                 let carries: Vec<TyId> = region.args.iter().skip(clauses.len()).take(c).map(|arg| arg.ty).collect();
-                self.loop_results(node, region, &carries, false, "a `for`");
+                self.loop_results(node, region, &carries, gathers, false, "a `for`");
                 if outputs != c + collects {
                     self.say(format!("a `for` of {c} carries and {collects} collects with {outputs} outputs"));
                 }

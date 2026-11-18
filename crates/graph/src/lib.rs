@@ -339,10 +339,34 @@ pub struct Label {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StatementKind {
-    Binding { targets: Box<[Target]>, value: Rhs },
+    Binding {
+        targets: Box<[Target]>,
+        value: Rhs,
+    },
     Call(Box<Call>),
-    Collect(Operand),
+    /// `collect value` or `last value`: an output of the loop around, after its carries (spec 6.2).
+    Gather(Gather, Operand),
     Until(Operand),
+}
+
+/// What a line of a loop body gives out of the loop (spec 6.2): its outputs follow the carries, in the order of these
+/// lines, whatever their kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Gather {
+    /// `collect value`: an array of the values of each iteration.
+    Collect,
+    /// `last value`: the value at the last iteration that ran, or the default value of its type with none.
+    Last,
+}
+
+impl Gather {
+    /// The word that starts the line.
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Collect => "collect",
+            Self::Last => "last",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

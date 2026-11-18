@@ -2521,12 +2521,13 @@ impl Content<'_> {
                     self.ide.send_edit(self.host, view, function, "structure.set_option", params);
                 }
                 Intent::AddClause { structure, over: None } => self.ide.add_clause(view, function, structure),
-                // A wire dropped on an edge of a loop (notation 2.6): a clause, or a `collect`, at once.
+                // A wire dropped on an edge of a loop (notation 2.6): a clause, a `collect` or a `last`, at once.
                 Intent::AddClause { structure, over: Some(over) } => {
                     self.ide.send_edit(self.host, view, function, "structure.add_clause", json!({ "structure": structure, "over": over }));
                 }
-                Intent::AddCollect { structure, value } => {
-                    self.ide.send_edit(self.host, view, function, "structure.add_collect", json!({ "structure": structure, "value": value }));
+                Intent::AddCollect { structure, value, last } => {
+                    let command = if last { "structure.add_last" } else { "structure.add_collect" };
+                    self.ide.send_edit(self.host, view, function, command, json!({ "structure": structure, "value": value }));
                 }
                 // "Surround with ▸" of the context menu of a node (notation 2.6).
                 Intent::Surround { kind, nodes } => self.ide.surround(self.host, view, function, kind, Some(nodes)),

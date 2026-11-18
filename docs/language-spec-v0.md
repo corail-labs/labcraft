@@ -219,7 +219,7 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   An array of constants alone takes the type expected.
 - **Literals**: a literal takes the number type expected where it goes: an input, an output, a carry, a field, a
   value of a variant, a default value, an element of an array, a value of an arm (R-7), a `collect` whose loop gives
-  its array to an output or a carry (6.2). A named constant (5.1) does the same at each terminal it reaches, and an
+  its array to an output or a carry, a `last` whose loop gives its value to one (6.2). A named constant (5.1) does the same at each terminal it reaches, and an
   error is on that terminal: an array constant that does not fit is refused there as the array it is on its own line.
   On its own line nothing is expected, so `k = []`, `k = 3000000000` and `k = core.abs` are refused there, which
   differs from the same constant written on a terminal. Judging constants again has a budget proportional to their
@@ -472,7 +472,7 @@ The order applies to each body on its own: the function body, each arm, each loo
   1. ordinary lines, by name in code point order. A node that produces a function output is an
      ordinary line (`voltage = core.with_unit(raw, [V])` in section 12);
   2. `next` lines (whose first output that is not `_` is `next x`), by carry name;
-  3. `collect` lines, in their written order (it is the order of the outputs, R-6);
+  3. `collect` and `last` lines, in their written order (it is the order of the outputs, R-6);
   4. the `until` line;
   5. in the function body only, the lines that only bind a function output to a value
      (`err = e3`), in signature order.
@@ -819,12 +819,18 @@ total, scaled = for x in readings, carry acc = 0 V {
 - `collect value`: builds an array of the values of each iteration, as output. A constant takes the element type of the
   output or the carry that the array goes to (3.4); a wire keeps its type, so an `i32` wire is an `[i32]`, which an output
   `[f64]` rejects.
-- **Where they go**: `next`, `collect` and `until` appear only directly in a loop body, not in a
+- `last value`: gives, as output, the value at the last iteration that ran, whatever ends the loop. It takes no
+  initial value, unlike a carry, so it also takes out a value that no constant can start, such as one of an opaque
+  type (3.2). A loop that runs no iteration (a `for` over an empty array or over `0..0`) gives the default value of
+  the type (7.2), as a skipped node does. In a `for parallel`, the last iteration is the last by index, whatever order
+  the iterations end in. The output has the type of the value; a constant takes the type of the output or the carry that
+  it goes to (3.4). `last` is a word of this line only, an ordinary name elsewhere (14).
+- **Where they go**: `next`, `collect`, `last` and `until` appear only directly in a loop body, not in a
   function body and not inside an arm of a `match` or `handle` of the body (R-6). Each carry has
   exactly one `next`. A `loop` has exactly one `until`; a `for` has none.
-- Outputs, in order: the `carry` values, then the `collect` values. Several `collect` give their
-  outputs in their written order, which the canonical form keeps (5.2).
-- **A loop that gives nothing**, with neither a carry nor a `collect`, is written with `_` as its only
+- Outputs, in order: the `carry` values, then the `collect` and `last` values, in their written order, which the
+  canonical form keeps (5.2).
+- **A loop that gives nothing**, with neither a carry, a `collect` nor a `last`, is written with `_` as its only
   target: `_ = for x in values { … }`. A structure always has a target (14.1).
 - A node output can be bound directly to a carry: `next state, next index = match …` avoids one
   `next x = …` line per carry.
@@ -843,8 +849,8 @@ count, e = loop carry n = 0, carry err = e0 {
 }
 ```
 
-The body runs at least once; `until` is evaluated at each iteration. Same `carry`, `next` and
-`collect` as `for`.
+The body runs at least once; `until` is evaluated at each iteration. Same `carry`, `next`,
+`collect` and `last` as `for`; `last` gives the value of the iteration whose `until`, or error, ended the loop.
 
 **Stop on error, by default (Q-7).** The loop also stops when a carry of type `error` holds an
 error. The test is made after the complete iteration, at the same time as `until`; carries keep
@@ -1332,7 +1338,7 @@ layout {
   `total = for v in values, carry sum = k { … }` with `k` read inside. These names never meet, since a
   carry or a clause with the name of an outer value hides it (R-3). Some inputs have no name: the
   selector of a `match` or a `handle`, a value of a variant, an element of an array, and inside,
-  `until`, `collect` and `yield`. With several wires, an entry without a terminal designates the one
+  `until`, `collect`, `last` and `yield`. With several wires, an entry without a terminal designates the one
   that reaches an input without a name.
 - **An input without a name is numbered** (M1), from 0, as the editing commands name it
   ([commands.md](commands.md), 9.2): after the node, by its place among the inputs without a name of that node, for
@@ -1352,7 +1358,7 @@ layout {
   the value to the structure that holds its reader (`wire k -> flight_time` in `projectile`), and
   inside, from the notch on the edge to the node that reads it (`wire k -> ks`). Inside, the value
   keeps its name. Several readers inside share the outer part. From inside, a wire to `next`, `until`,
-  `collect` or `yield` ends at the structure itself, `next x` at its input `x`.
+  `collect`, `last` or `yield` ends at the structure itself, `next x` at its input `x`.
 - An input or an output of the function is a terminal of its frame, not a node (visual notation,
   section 2). An input is a value, so a `wire` entry can start there, and it can end at an output:
   `wire e3 -> err`. A name that is both a node and an output designates the one that the value goes
@@ -1900,7 +1906,7 @@ continue_on_error carry next collect until yield handle events panel layout icon
 `panel`, `layout` and `icon` only start a section, but stay reserved.
 
 A reserved word where a name is expected is `LC1005`, including as a target (`next = 1`) or the name of
-an argument (`f(true: 1)`). A `yield`, `next`, `collect` or `until` out of place, or a structure without a
+an argument (`f(true: 1)`). A `yield`, `next`, `collect`, `last` or `until` out of place, or a structure without a
 target (`for i in a {}` alone), is a syntax error, `LC1001`.
 
 Contextual words, reserved only where the syntax expects them and ordinary identifiers elsewhere
@@ -1908,6 +1914,9 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 
 - `ok`, `code`: a `handle` pattern;
 - `in`: a `for` clause;
+- `last`: the first word of a line of a body, when a value follows it on the line (`last v`, `last 0 V`, 6.2); so
+  `last = core.add(a, b)`, `last, e = …` and `last.x` keep it a name. It came after the first release (M1), so it
+  is contextual, as `terminals` below;
 - `after`: an argument list (`after:` is the order input, R-15);
 - `opaque`: the whole type of a `type` declaration (3.2);
 - `control`, `indicator`: a `panel` item;
@@ -2046,10 +2055,11 @@ loop_expr     = "loop" [ "continue_on_error" ] [ carry { "," carry } ] loop_body
 carry         = "carry" IDENT [ ":" type_expr ] "=" operand ;
 for_body      = "{" { loop_stmt } "}" ;
 loop_body     = "{" { loop_stmt } until_stmt { loop_stmt } "}" ;      (* exactly one until *)
-loop_stmt     = loop_binding | call_stmt | collect_stmt ;
+loop_stmt     = loop_binding | call_stmt | collect_stmt | last_stmt ;
 loop_binding  = [ label ] loop_target { "," loop_target } "=" rhs ;
 loop_target   = target | "next" IDENT ;
 collect_stmt  = "collect" operand ;
+last_stmt     = "last" operand ;                        (* contextual word, 14.1 *)
 until_stmt    = "until" operand ;
 
 handle_expr   = "handle" operand "{" { handle_arm } "}" ;
@@ -2114,12 +2124,12 @@ What the grammar alone does not say:
 | R-1 | **A path is resolved by names**: library (`visa.open`), variant (`State.Init`), field (`step.low`), error category (`io.timeout` in `errors.raise_if`) or panel element (`stop_button` in `ui.get`: a parameter of kind *element* names a panel element, even if an input or an output has the same name; section 10). Unit names are resolved only inside `[ ]` and right after a number (R-5). In a function, a value cannot have the name of a library that its file imports (`a` for `use a.b`), of a type of its library (except an opaque type or an alias of one, 3.2; the base types of 3.1 do not count, as in `time.wait(duration: duration)`), or of a panel element that is neither an input nor an output. A function or a type cannot have the name of a library that any file of its library imports (`a` for `use a.b` here too), since a type is visible in all of them: otherwise `core.Pass` in one file would depend on another file. A value can have the name of a function: as an operand the name designates the value, and in a call the function. In a path, the longest library imported comes first: with `use a.T`, `a.T.V` is `V` in that library, even if `a` has a type `T`. |
 | R-2 | **An output is bound exactly once and can be read back** (`voltage` in section 12), with the type of its signature. **Exception, a name that is both input and output** (`err`): reading it designates the input; the binding `err = …` designates the output. |
 | R-3 | **A sub-body can hide an outer name**: a carry (`carry err = err`), an `in` clause, a pattern or a line of an arm or a loop body. In that body, the name designates what it binds there, and outside it the outer name. None of these can take a name that R-1 refuses. In the body of the function nothing is hidden: a line with the name of an output binds that output (R-2), and a line with the name of an input alone is a value defined twice. |
-| R-4 | **Binding an output, `next x = …` or `collect` does not create a node**: they are terminals (function output, carry, output array). |
+| R-4 | **Binding an output, `next x = …`, `collect` or `last` does not create a node**: they are terminals (function output, carry, output array, last value). |
 | R-5 | **Units**: a name right after a number is always read as a unit (`230 V`, `50 ms`); elsewhere unit names are ordinary identifiers. A unit passed as an argument is written in brackets (`core.with_unit(x, [V])`, `core.unitless(v, [mV])`, `core.with_unit(x, [m/s])`); `[x]` is read as a unit for a parameter of kind *unit*, as an array of one value otherwise; so is `[1]`, since `1` is also a unit term. In that array, `x` can name a function of the library when no value has that name, as in `[f, f]`. Elsewhere than as an argument, `[x]` and `[1]` are arrays. |
-| R-6 | **`next`, `collect` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); several `collect` give the outputs in their order. An arm ends with exactly one `yield`, or none in a structure that gives nothing (6.1, grammar). The place of `next`, `collect` and `until` in the body is free; the canonical form puts them last (5.2). |
+| R-6 | **`next`, `collect`, `last` and `until` appear only directly in a loop body**, never in a function body or in an arm (grammar). Each carry has exactly one `next`; a `loop` has exactly one `until` and a `for` none (grammar); `collect` and `last` lines give the outputs after the carries, in their order. An arm ends with exactly one `yield`, or none in a structure that gives nothing (6.1, grammar). The place of `next`, `collect`, `last` and `until` in the body is free; the canonical form puts them last (5.2). |
 | R-7 | **The type of the branches** of a `match` or a `handle`: same number of values, and the first branch decides the type of each. The other branches are converted to it as on any wire (3.3, 3.4): to its unit, or widened; what cannot be converted is rejected, so the order of branches can matter. A literal takes the number type of its target, an output or a carry, as on a line of its own (3.4): `gain: f32` with `gain = match c { … yield 0.5 … yield 1.5 }`. After a branch that decides, it takes the type of that branch. A literal that does not decide (an integer without a unit, `[]`, an array of only those) comes after the values that do, so it takes the type of the first branch that gives one; if none does, it takes the type of its target (`x: u8` with `x = match c { … yield 1 … yield 2 }`); without such a target, an integer is an `i32` and `[]` is an error. A wire keeps its type against the target, and so does an array that holds one (3.4), and the wire to the target is then judged as any other. |
 | R-8 | **A `match` has a branch for every value.** Without `_`, an enumeration names all its variants and a boolean both `true` and `false`. An integer or a string always has `_`, even when ranges cover the whole type. `_` can share a branch with other patterns (6.1). A `_` that can catch nothing, with every variant named or both `true` and `false`, gives a warning. |
-| R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, a selector, a `carry`, an array element, a field) is `LC1004`. |
+| R-9 | **No nesting of calls** (Q-5): an argument is a name, a path, a literal or a unit in brackets, never a call. A call anywhere a value is expected (an argument, `yield`, `until`, `collect`, `last`, a selector, a `carry`, an array element, a field) is `LC1004`. |
 | R-10 | **A `handle` always has a `_` branch** (7.3). |
 | R-11 | **One variadic parameter** per function; it follows all required parameters and precedes all parameters with a default value, which are wired by name only (5.4). Without a variadic parameter, a positional argument can wire a parameter with a default value. A variadic parameter takes positional arguments only. |
 | R-12 | **The `string.format` template is a literal**, written on the node; its fields and the named arguments match exactly, and a field is `{name}` or `{name:format}` (5.4). |

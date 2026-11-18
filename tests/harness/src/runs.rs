@@ -44,7 +44,7 @@ fn reversed(bytes: &[u8]) -> Vec<u8> {
 
 fn reverse_body(body: &mut labcraft_graph::Body) {
     use labcraft_graph::{Rhs, StatementKind};
-    let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Collect(_))).count();
+    let collects = body.statements.iter().filter(|statement| matches!(statement.kind, StatementKind::Gather(_, _))).count();
     if collects < 2 {
         body.statements.reverse();
     }

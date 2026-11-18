@@ -208,7 +208,7 @@ are the nodes that a `layout` section does not place (spec 11).
 - The waypoints that a `via` gives (spec 11) are kept, and the routing joins them: across, then down to each, and
   from the last down to the height of the reader *(proposed)*. A `wire` entry keeps its waypoints when it names one
   wire by its value and the node it reaches, an output of the function or an input named after it, and from inside
-  a structure, the wire to its `next`, `until`, `collect` or `yield` (`wire stop -> n`). A wire whose first waypoint
+  a structure, the wire to its `next`, `until`, `collect`, `last` or `yield` (`wire stop -> n`). A wire whose first waypoint
   lies on another wire of its value is a branch of it (2.4): it runs along that wire to that point, its junction,
   and on from there; the others run from their source. The wires of one value are one net all the same, its trunk
   drawn once, with a junction point where each leaves the others. Past 64 wires with waypoints in one body, each runs
@@ -393,14 +393,17 @@ Nothing is greyed out during a gesture, and nothing moves: a mark stays inside t
   wire of the wrong type is written and drawn broken.
 - **Out of a loop**: a wire from a value inside a loop to an input outside it is not refused; it takes the value out
   through each loop that it leaves (`wire.connect` with `through`; decision of the owner, 2026-11-18). The type of the
-  input chooses: an array of the value's type, a `collect`; the value's type, a carry that holds its last value; neither
-  (a generic input, a value with no type yet), a carry for a `loop` and a `collect` for a `for`. Through several loops,
-  the type chooses for all only when it is the value's type (carries) or that type with one level of array per loop
-  (`collect`s); otherwise each loop takes its own default. Alt held at the drop takes the other one for each loop; a
-  `for parallel` has no carry (spec 6.2) and always collects. The snapped wire shows beside the pointer the mark of
-  what it will make (`↻`, `[•]`, 5.1). With the setting "replace only with Alt", Alt on an occupied input both
-  replaces and takes the other one. A carry made so starts from a hole, whose field in place opens at once: Enter
-  writes its initial value (`input.set_constant`), Escape leaves the hole, which `check` shows.
+  input chooses: an array of the value's type, a `collect`; the value's type, a `last`, its value at the last
+  iteration (spec 6.2), which needs no initial value; neither (a generic input, a value with no type yet), a `last`
+  for a `loop` and a `collect` for a `for`. Through several loops, the type chooses for all only when it is the
+  value's type (`last`s) or that type with one level of array per loop (`collect`s); otherwise each loop takes its
+  own default. Alt held at the drop takes the other one for each loop. **An `error`** that a loop would give as a
+  `last` is a carry instead, `carry e2 = none` and `next e2 = e`, so that a `loop` stops on it (spec 6.3, Q-7); Alt
+  takes a `last`, and a `for parallel`, which has no carry (spec 6.2), a `last` too. The snapped wire shows beside the
+  pointer the mark of what it will make (`•]`, `[•]`, `↻`, 5.1). With the setting "replace only with Alt", Alt on an
+  occupied input both replaces and takes the other one. Otherwise the gesture makes no carry: "Add carry…" (2.6, "The
+  parts of a structure") does. These are defaults: Alt, the commands of the parts and the text change them
+  (decisions of the owner, 2026-11-18).
 
 **What `check` says.** A mark sits on what the diagnostic names (the hole, the wire, the node); each has its tooltip,
 the message of the diagnostic (or, for a required input that a call leaves out, the one below), and its line in the
@@ -566,9 +569,10 @@ structure selected:
 - **A clause.** "Add clause…", in the context menu of a `for`, opens the list of values of surrounding (above), its
   arrays, and a range typed as the text writes it: `structure.add_clause`, its name from the value (N-14). A wire of an
   array from outside dropped on the left edge of a `for` adds it at once.
-- **A `collect`.** A wire from inside a loop dropped on its inner right edge: `structure.add_collect`. A wire to an input
-  outside the loop takes the value out too ("Out of a loop", in "Drawing a wire" above).
-- **Removing a part.** "Remove carry `x`", "Remove clause `x`", "Remove collect `y`", in the context menu of its
+- **A `collect` or a `last`.** A wire from inside a loop dropped on its inner right edge: `structure.add_collect`, or
+  `structure.add_last` with Alt held. A wire to an input outside the loop takes the value out too ("Out of a loop", in
+  "Drawing a wire" above).
+- **Removing a part.** "Remove carry `x`", "Remove clause `x`", "Remove collect `y`", "Remove last `y`", in the context menu of its
   terminal: `structure.remove_part`. Delete on the terminal still removes only what it holds (its wires, its constant).
 - **Options.** "Continue on error" for a `loop`, "Parallel" for a `for`, checked when on, in the context menu of the
   structure: `structure.set_option`. "Parallel" is disabled while the `for` has a carry, and its tooltip says why
@@ -1094,6 +1098,8 @@ chain crosses the frame in a straight line (2.1).
   (D-23).
 - **`collect`**: `[•]` terminal across the right edge, two brackets around the shape of the element's family (4.1): the
   element enters, the array leaves.
+- **`last`**: `•]` terminal across the right edge, the shape of the value's family (4.1) inside, one bracket outside:
+  each value enters, the last one leaves. No register box: it has no initial value and no `next`.
 - **`for x in array`**: `]▸` terminal on the left edge: the bracket outside, where the array enters, a triangle inside,
   where the element leaves, in the shape of its family (4.1). `for i in a..b`: a box across the left edge, rounded and
   thinner than the box of a register, which writes each bound that is a constant in its place and `·` for one that a

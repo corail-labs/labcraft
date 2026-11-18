@@ -1,0 +1,38 @@
+{
+  "how": "Every input takes its default (xs = [1.5, -2.0, 4.0], empty = []). `any`: a `for parallel` whose last iteration is the last by index, whatever order the iterations end in, so the third element, 4.0 (spec 6.2, `last`). `largest, all`: the outputs of a `for` are the carries (none), then the `collect` and `last` values in their written order (spec 6.2, outputs; 5.2, point 3; R-6), so `last a` gives `largest` and `collect a` gives `all`; `core.abs` of each element gives 1.5, 2.0 and 4.0 (spec A.1), so `all` is [1.5, 2.0, 4.0] and `largest`, the value of the last iteration, 4.0. `nothing`: a `for` over an empty array runs no iteration, so `last` gives the default value of `f64`, 0 (spec 6.2, `last`; 7.2, default value of a type), written 0.0 (commands.md 5). Outputs in the order of the signature (commands.md 7), each float keeping `.0` (commands.md 5). Nothing waits, so the simulated clock stays at 0 ms (spec 8), and nothing opens a resource; no simulation, so no `instruments` (commands.md 7).",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "largest",
+      "type": "f64",
+      "value": 4.0
+    },
+    {
+      "name": "all",
+      "type": "[f64]",
+      "value": [
+        1.5,
+        2.0,
+        4.0
+      ]
+    },
+    {
+      "name": "any",
+      "type": "f64",
+      "value": 4.0
+    },
+    {
+      "name": "nothing",
+      "type": "f64",
+      "value": 0.0
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

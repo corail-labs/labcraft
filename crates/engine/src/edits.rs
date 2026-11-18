@@ -55,6 +55,7 @@ pub const EDITING: &[&str] = &[
     "structure.add_carry",
     "structure.add_clause",
     "structure.add_collect",
+    "structure.add_last",
     "structure.remove_part",
     "structure.set_option",
 ];
@@ -176,13 +177,15 @@ fn within(params: &Params, inside: &str, arm: &str) -> Within {
     Within { inside: params.str(inside).map(str::to_owned), arm: params.str(arm).map(str::to_owned) }
 }
 
-/// `through` of `wire.connect`: `carry` or `collect` for every loop, or a list of them, one per loop (commands.md 6.7).
+/// `through` of `wire.connect`: `last`, `collect` or `carry` for every loop, or a list of them, one per loop (commands.md
+/// 6.7).
 fn through(params: &Params) -> Result<Option<Through>, CommandError> {
     let Some(given) = params.get("through").filter(|value| !value.is_null()) else { return Ok(None) };
-    let invalid = || CommandError::of("params.invalid", "through", "`through` is `carry` or `collect`, or a list of them, one per loop");
+    let invalid = || CommandError::of("params.invalid", "through", "`through` is `last`, `collect` or `carry`, or a list of them, one per loop");
     let passage = |value: &serde_json::Value| match value.as_str() {
         Some("carry") => Ok(Passage::Carry),
         Some("collect") => Ok(Passage::Collect),
+        Some("last") => Ok(Passage::Last),
         _ => Err(invalid()),
     };
     match given.as_array() {
@@ -299,6 +302,9 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         }
         "structure.add_collect" => {
             Op::StructureAddCollect { file, structure: params.text("structure")?.to_owned(), value: params.text("value")?.to_owned(), name }
+        }
+        "structure.add_last" => {
+            Op::StructureAddLast { file, structure: params.text("structure")?.to_owned(), value: params.text("value")?.to_owned(), name }
         }
         "structure.remove_part" => {
             Op::StructureRemovePart { file, structure: params.text("structure")?.to_owned(), part: params.text("part")?.to_owned() }

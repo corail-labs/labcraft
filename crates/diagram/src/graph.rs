@@ -200,7 +200,10 @@ pub enum Edge {
     Notch,
     /// A value that the pattern of an arm binds.
     Bound,
+    /// `collect value`: `[•]`.
     Collect,
+    /// `last value`: `•]` (notation 5.1).
+    Last,
     Until,
     Yield,
 }
@@ -453,7 +456,7 @@ fn draws_a_node(statement: &Statement, resolved: &Resolved) -> bool {
     match &statement.kind {
         StatementKind::Binding { value: Rhs::Operand(operand), .. } => is_constant(operand, resolved),
         StatementKind::Binding { .. } | StatementKind::Call(_) => true,
-        StatementKind::Collect(_) | StatementKind::Until(_) => false,
+        StatementKind::Gather(_, _) | StatementKind::Until(_) => false,
     }
 }
 
@@ -826,7 +829,7 @@ impl<'a> Builder<'a> {
                 let call = self.call(call, statement, &[]);
                 (call.0, call.1, call.2, call.3, call.4)
             }
-            StatementKind::Collect(_) | StatementKind::Until(_) => return None,
+            StatementKind::Gather(_, _) | StatementKind::Until(_) => return None,
         };
         Some(Node {
             kind,

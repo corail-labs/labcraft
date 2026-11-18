@@ -205,6 +205,16 @@ fn a_read_in_a_deeper_body_counts_at_the_level_that_defines_it() {
     );
 }
 
+/// `collect` and `last` lines are one group, in their written order: the order of the outputs (spec 5.2, 6.2).
+#[test]
+fn collect_and_last_lines_keep_their_written_order() {
+    assert_body(
+        &["x, y, z = for i in a {", "    last i", "    collect i", "    last b", "    b = f(i)", "}"],
+        &["x, y, z = for i in a {", "    b = f(i)", "    last i", "    collect i", "    last b", "}"],
+    );
+    assert_body_stays(&["last = g()", "x = loop {", "    last last", "    until last", "}"]);
+}
+
 #[test]
 fn next_collect_and_until_come_after_the_ordinary_lines() {
     assert_body(

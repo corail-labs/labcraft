@@ -114,7 +114,7 @@ pub(crate) fn find_nodes(edit: &Edit, function: &Function, name: &NodeName) -> V
             .map(|(loc, _)| loc.clone())
             .filter(|loc| {
                 scope::statement(function, loc)
-                    .is_some_and(|statement| !matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_)))
+                    .is_some_and(|statement| !matches!(statement.kind, StatementKind::Gather(_, _) | StatementKind::Until(_)))
             })
             .collect();
         found.sort();
@@ -128,7 +128,7 @@ pub(crate) fn find_nodes(edit: &Edit, function: &Function, name: &NodeName) -> V
             if name.is_label {
                 statement.label.is_some_and(|label| label.name == wanted)
             } else {
-                !matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_)) && scope::line_name(statement) == Some(wanted)
+                !matches!(statement.kind, StatementKind::Gather(_, _) | StatementKind::Until(_)) && scope::line_name(statement) == Some(wanted)
             }
         })
         .collect()

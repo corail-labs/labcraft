@@ -114,7 +114,7 @@ One statement per line, each one node at most.
   value: `next` in a loop is the one way to feed a value back (section 7).
 - **The order of the lines has no meaning.** A node runs when its inputs are available. `file_format` writes
   the canonical order: a line comes after the lines it reads, and among those that are ready, by name, then the
-  `next`, `collect` and `until` lines, then the lines that bind an output.
+  `next`, `collect`, `last` and `until` lines, then the lines that bind an output.
 - **`after:` orders two nodes with no data between them**: `t0 = time.now(after: #close)`,
   `after: (e2, #beep)`. When the node has an `err` input, prefer the error wire: it orders and carries the
   error.
@@ -208,9 +208,12 @@ fn sweep_current(
   per carry. The type of a carry is that of its line: `carry n = 0` is an `i32`, and `carry x: f64 = 0`
   says otherwise.
 - **`collect value`** builds an array, one element per iteration.
-- **The outputs of the loop**: the carries in their order, then the collects in theirs (`last`, `e4`,
+- **`last value`** gives the value at the last iteration, with no initial value: the way to take a value out of a loop
+  when no constant can start a carry, such as a session. The values of the other iterations are dropped. A `for` that runs no iteration gives the default value of the type. Elsewhere `last` is a name, as
+  in the examples here.
+- **The outputs of the loop**: the carries in their order, then the `collect` and `last` lines in theirs (`last`, `e4`,
   `currents` above). A loop that gives nothing is written `_ = for x in values { … }`.
-- `next`, `collect` and `until` stand directly in the loop body, never inside an arm.
+- `next`, `collect`, `last` and `until` stand directly in the loop body, never inside an arm.
 - **A session and an error are carried** through a loop like any value: the next iteration takes what the
   last one gave.
 - `for parallel x in …` runs its iterations in parallel, and takes no carry.

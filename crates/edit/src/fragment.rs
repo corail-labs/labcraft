@@ -46,7 +46,7 @@ pub(crate) fn index(function: &Function) -> Index {
         if let Some(label) = statement.label {
             found.entry((true, label.name)).or_default().push(loc.clone());
         }
-        if !matches!(statement.kind, StatementKind::Collect(_) | StatementKind::Until(_))
+        if !matches!(statement.kind, StatementKind::Gather(_, _) | StatementKind::Until(_))
             && let Some(name) = scope::line_name(statement)
         {
             found.entry((false, name)).or_default().push(loc);
@@ -194,7 +194,7 @@ fn resolve(edit: &Edit, nodes_of: &Index, nodes: &[String]) -> Result<Vec<Loc>, 
 /// Whether a line belongs only in the body of a loop: `next x = …`, `collect`, `until`.
 fn loop_only(statement: &labcraft_graph::Statement) -> bool {
     match &statement.kind {
-        StatementKind::Collect(_) | StatementKind::Until(_) => true,
+        StatementKind::Gather(_, _) | StatementKind::Until(_) => true,
         StatementKind::Binding { targets, .. } => targets.iter().any(|target| matches!(target, Target::Next(..))),
         StatementKind::Call(_) => false,
     }

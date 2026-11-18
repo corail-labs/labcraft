@@ -287,6 +287,33 @@ fn the_type_of_a_carry_is_on_its_line() {
     assert_eq!(judged(inputs, "x: i32, y2: f64", "x, y2 = match true {\n_ => yield (1, 2)\n}"), NOTHING);
 }
 
+/// A `last` gives the type of its value, with no array (spec 6.2); its outputs follow the carries with the collects, in
+/// the order of the lines; a constant takes the type of the output it goes to (3.4).
+#[test]
+fn a_last_gives_the_type_of_its_value() {
+    let inputs = "xs: [f64[V]], e: error";
+    assert_eq!(
+        judged(
+            inputs,
+            "t: f64[V], y: f64[V], ys: [f64[V]]",
+            "t, y, ys = for x in xs, carry a = 0 V {\nnext a = core.add(a, x)\nlast x\ncollect x\n}"
+        ),
+        NOTHING
+    );
+    assert_eq!(
+        judged(
+            inputs,
+            "t: f64[V], ys: [f64[V]], y: f64[V]",
+            "t, ys, y = for x in xs, carry a = 0 V {\nnext a = core.add(a, x)\nlast x\ncollect x\n}"
+        ),
+        ["LC3003", "LC3003"]
+    );
+    assert_eq!(judged(inputs, "y: [f64[V]]", "y = for x in xs {\nlast x\n}"), ["LC3003"]);
+    assert_eq!(judged(inputs, "y: u8", "y = for x in xs {\nlast 3\n}"), NOTHING);
+    assert_eq!(judged(inputs, "y: f64", "y = for x in xs {\nlast x\nlast x\n}"), ["LC2103"]);
+    assert_eq!(judged(inputs, "d: error", "d = loop {\nlast e\nuntil true\n}"), NOTHING);
+}
+
 #[test]
 fn a_structure_gives_its_carries_then_its_collects() {
     let inputs = "xs: [f64[V]], m: [f64; 2]";
