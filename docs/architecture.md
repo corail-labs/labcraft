@@ -366,7 +366,7 @@ such as a file that cannot be written (the versions the Craft apps use). `serde`
 for the desktop viewer (section 11), `craft-keymap` for editing, `craft-i18n` for a translated interface. Messages of the tool stay in
 English (D-21). The reusable workflows of
 [`craft-common-actions`](https://github.com/storytold/craft-common-actions) (`gate`, `supply-chain`,
-`release`) are not used. Signed installers come with the installable release after M1 (M1r in
+`release`) are not used. A signed installer for Windows comes with release 0.4.0 (the theme Distribution in
 [roadmap.md](roadmap.md)). The first release, `v0.3.0-m0`, goes through a workflow of our own,
 `release` (section 8). `gate` was evaluated when the Rust CI started, and not adopted for now: it
 follows the `main` branch of another organization, and its job name would replace `checks`, the
@@ -446,10 +446,10 @@ the crates built in for that target, those that the apps reach through normal de
 each ships. A copy of the archive is tried as the note says: `check` of the examples, the run of `check_voltage`, its
 trace, `labcraft --version`. The web viewer is built and tried as in the job `web`, and zipped with the same
 notices. The last job, for a tag pushed only, makes a draft release with the archives and their `SHA256SUMS`, marked
-pre-release when the version has a suffix, and stops when a release of the tag exists already; the owner reads the
+pre-release when the version has a suffix (the tags up to `v0.3.0-m0`; from `v0.4.0` on, a release is a full one), and stops when a release of the tag exists already; the owner reads the
 draft and publishes it (decision of the owner, 2026-11-14). A pull request that changes the workflow or a note runs
 it without the release, and so does a run by hand; GitHub does not require it, and a red one stops the merge, as a
-red `windows` does. The binaries are not signed for the platforms: that comes with the installable release after M1 (M1r in
+red `windows` does. The binaries are not signed for the platforms: an installer signed for Windows comes with release 0.4.0, macOS later (the theme Distribution in
 [roadmap.md](roadmap.md)).
 
 To release: the version in `Cargo.toml` (and both `Cargo.lock`), the note `docs/releases/v<version>.md`, merged
@@ -562,7 +562,7 @@ pub struct Reach { functions: Vec<u32>, types: Vec<u32>, unresolved: Vec<Unresol
 
 *Status: implemented (step 2).* [ir.md](ir.md) defines it: a program as regions of nodes, the nodes of the diagram, each
 region reading only its arguments, every node with its origin and its canonical position, every value typed. It is
-written to last: the interpreter, the trace, the debugger (M5) and the linear IR (M7) build on it.
+written to last: the interpreter, the trace, the debugger (M5) and the linear IR (M6) build on it.
 
 ```rust
 pub fn lower(checked: &Checked, start: usize, names: &mut Interner) -> Result<Program, LowerError>;  // LowerError: LC8004

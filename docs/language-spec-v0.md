@@ -864,9 +864,9 @@ itself.
 
 | Structure | Role | Milestone |
 |---|---|---|
-| `events` | event structure (panel, user, timeouts) | M2a |
-| queues, notifiers | communication between loops | M2a |
-| `map<K, V>`, `set<T>` | dictionary and set, with their primitives (Q-28) | M2b |
+| `events` | event structure (panel, user, timeouts) | M2 |
+| queues, notifiers | communication between loops | M2 |
+| `map<K, V>`, `set<T>` | dictionary and set, with their primitives (Q-28) | M2 |
 | `timed loop` | real-time timed loop | Horizon 2 (D-24) |
 | `cyclic task` | PLC-style cyclic execution | Horizon 2 (D-26) |
 
@@ -1108,13 +1108,13 @@ to it.
 
 | Part | Milestone |
 |---|---|
-| Generic functions and types written by the user (3.5); the built-in primitives are generic from M0 | M2b |
+| Generic functions and types written by the user (3.5); the built-in primitives are generic from M0 | M2 |
 | Running external functions (4.1), except `extern rust`, which runs from M0; they are all read and checked from M0 | M8 |
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
-| `ref<T>` and its access structure (8.1, Q-19) | M2a |
-| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2b |
-| Structures planned outside v0 (6.4): events, queues, notifiers | M2a |
-| Maps and sets (6.4) | M2b |
+| `ref<T>` and its access structure (8.1, Q-19) | M2 |
+| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
+| Structures planned outside v0 (6.4): events, queues, notifiers | M2 |
+| Maps and sets (6.4) | M2 |
 | Timed loops, cyclic tasks (6.4) | Horizon 2 |
 | The `frame size`, `input` and `output` entries of `layout` (11), which the editor writes | M1 |
 
@@ -1130,7 +1130,7 @@ to it.
 | `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`). Written in LabCraft over `visa`, shipped in `libs/scpi` | M0 |
 | `time` | `now`, `wait`, `elapsed` | M0 |
 | `ui` | `get`, `set`: panel elements read and written live (section 10) | M0 |
-| `config` | reading a configuration file into a declared type (Q-15) | M2 |
+| `config` | reading a configuration file into a declared type (Q-15) | Libraries, with the generics of M2 |
 
 `visa` and `scpi` are not part of the language (section 1): they are libraries shipped with
 LabCraft, outside the crates of the tool ([roadmap](roadmap.md)). The signatures of the functions
@@ -1271,7 +1271,7 @@ exactly the press of Stop at 5 s (command syntax: Q-20).
 **Concurrency.** Reading an element is always safe; writing it from two unordered nodes gives a
 warning (8.1).
 
-**Events (M2a).** The `events` structure will react to changes of the same elements, without
+**Events (M2).** The `events` structure will react to changes of the same elements, without
 polling in a loop. The panel of M3 has none: its elements are read in a loop, as in M0
 ([outline.md](outline.md)).
 
@@ -2172,7 +2172,7 @@ What the grammar alone does not say:
 | Q-19 | Locked access to `ref<T>` | Structure that locks the reference during its body (8.1); syntax for M2, with Q-11 |
 | Q-20 | Setting a panel element from the CLI or MCP | **Settled (2026-11-08): `--set ELEMENT=VALUE@TIME`** on the clock of the run, simulated in deterministic mode, for the elements of the function that is run; `set` in `run.start` and, in real time, `run.set_element` in MCP ([cli.md](cli.md), section 6.4; [commands.md](commands.md), section 6.4) |
 | Q-21 | Default values not covered by 7.2 | **Settled for `timestamp` and function references (2026-11-10, 7.2)**: 1970-01-01T00:00:00Z, the origin of the clock of a deterministic run; a reference that designates no function and fails when called (`core.invalid_function`). Open: `ref<T>` and `queue<T>` (an invalid reference, like an opaque type?), with M2 |
-| Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? **For M2a** (2026-11-14, [outline.md](outline.md)): the form is chosen with its specification |
+| Q-22 | Leaving a `for` early | A `for` has no `until` (R-6), so it cannot end on Stop or on a condition; a `loop` with an index carry does it today (8.2). An `until` in `for`, or a `break`? **For M2** (2026-11-14, [outline.md](outline.md)): the form is chosen with its specification |
 | Q-23 | Unicode normalization | **Settled (2026-11-04): one spelling (R-20).** NFC alone does not unify `µ` (U+00B5, U+03BC), hence the explicit rule; NFKC would go too far by rewriting compatibility characters |
 | Q-24 | Stopping the loops of a subfunction | Panel elements belong to their call (8.2, 10): a loop in a subfunction (`wait_dut`, `settle`) does not see the caller's Stop. Pass a reference to the element, a stop token, or let a subfunction read its caller's panel? **Direction chosen (2026-11-14), for M3:** the element is passed, as a parameter of kind element (for example `stop: element bool`) that the caller wires with its own element, and the subfunction reads it with `ui.get`; its syntax comes with the specification of M3 |
 | Q-25 | Fault or error at run time | **Settled (2026-11-09): a fault** (8.2, `LC8008`) for an integer that overflows, `core.to_i32` and `core.round_to_i32` of `nan` or out of range, and a `duration` that is not finite or does not fit; and the empty separator of `string.split`. An `error` on `err` would add a terminal to every arithmetic node; a default or a value that wraps would look measured |

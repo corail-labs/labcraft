@@ -46,7 +46,8 @@ The terms LabCraft uses, with their meaning. Keywords of the language are in `co
 | **library**, **package** | A set of functions under one name (`visa`); a package is a library distributed with a version. |
 | **simulated instrument** | An instrument described in TOML that answers like the real one, so a program can be tested without hardware: the simulator of the `visa` library answers for its `SIM::` resources. Their format belongs to `visa` ([libs/visa/simulation.md](../libs/visa/simulation.md)), and the files it ships are in `libs/visa/sim/`; another transport simulates in its own section of the same file. |
 | **test bench**, **test executive** | The hardware that tests a product; the software that sequences tests and records results (TestStand and others). LabCraft is called by an executive, it is not one. |
-| **milestone** | A step of the roadmap (M0, M1…). |
+| **theme** | An area of the roadmap that keeps growing (M1 the editor, M4 real I/O…); the documents written before 2026-11-18 call it a milestone; former names (M0a, M0b, M0v, M1r, M2a, M2b, M7) in [roadmap.md](roadmap.md), "Former names". |
+| **release** | A numbered version (`0.4.0`) with an exit criterion, which takes a slice of one theme or of several; on GitHub, a **milestone** gathers its issues. |
 | **Accepted**, **Proposed**, **Open** | Status of a decision in [decisions.md](decisions.md). |
 | **project lead** | The person who accepts decisions. |
 | **proof of concept (PoC)**, **throwaway tool** | Python tools used during the specification, retired after M0 (2026-11-15); they did not become the product. |
