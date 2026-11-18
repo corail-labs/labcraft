@@ -28,6 +28,7 @@ use labcraft_types::{Diagnostic, Limits};
 mod add;
 mod constant;
 mod delete;
+mod fragment;
 mod into;
 mod layout;
 mod model;
@@ -40,6 +41,7 @@ mod scope;
 mod select;
 mod wire;
 
+pub use fragment::MAX_FRAGMENT;
 pub use route::MAX_VIA;
 pub use select::selectable;
 
@@ -193,6 +195,12 @@ pub enum Op {
         node: String,
         template: String,
     },
+    /// `fragment.paste`: `text` holds a function, whose body goes into the frame, its top-left corner at `at`.
+    FragmentPaste {
+        file: String,
+        text: String,
+        at: Point,
+    },
 }
 
 impl Op {
@@ -214,7 +222,8 @@ impl Op {
             | Op::InputRemoveValue { file, .. }
             | Op::ValueRename { file, .. }
             | Op::NodeSetLabel { file, .. }
-            | Op::NodeSetTemplate { file, .. } => file,
+            | Op::NodeSetTemplate { file, .. }
+            | Op::FragmentPaste { file, .. } => file,
         }
     }
 }
@@ -384,6 +393,17 @@ pub fn label_lines(files: &Files, path: &str, lines: &[u32], limits: &Limits) ->
     Ok(edited)
 }
 
+/// `fragment.copy` (commands.md 6.7): the nodes of `path` that `nodes` names, in one frame, as the text of a function
+/// `clipboard` in canonical form, with the `use` lines they need and their `layout` entries counted from the top-left
+/// corner of the selection (notation 2.6). It writes nothing.
+pub fn copy(files: &Files, path: &str, nodes: &[String], judge: &dyn Judge, limits: &Limits) -> Result<String, EditError> {
+    let Some(text) = files.get(path) else {
+        return Err(EditError::new("path.not_found", format!("`{path}` is not a file of the project")).of("file"));
+    };
+    let edit = model::Edit::read(path, text, limits)?;
+    fragment::copy(&edit, judge, nodes)
+}
+
 /// Applies one operation to the texts, under the limits of the session (`--max-file-size`, `--max-nesting`). It never
 /// writes a text that does not parse (commands.md 9.1).
 pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Result<Edited, EditError> {
@@ -422,6 +442,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::ValueRename { value, name, .. } => rename::value(&mut edit, value, name, &mut edited)?,
         Op::NodeSetLabel { line, label, .. } => rename::set_label(&mut edit, *line, label, &mut edited)?,
         Op::NodeSetTemplate { node, template, .. } => rename::set_template(&mut edit, judge, node, template)?,
+        Op::FragmentPaste { text, at, .. } => fragment::paste(&mut edit, judge, text, *at, &mut edited)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {

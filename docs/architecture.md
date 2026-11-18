@@ -1948,6 +1948,25 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   that a template refused has the message of `check`; a field of the template is an input by its name (`text.u`). A
   field opens on `Port::literal`, the constant as the file writes it, escapes kept, which `diagram` gives up to 4 KiB
   *(proposed)*: a longer one is edited in the view `Text`. When a field closes, the canvas takes the keyboard back.
+- **As step 4c writes them.** `ide.copy`, `ide.cut`, `ide.paste` and `ide.duplicate` (Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+D,
+  scope `Diagram`, menu `Edit`); the dispatcher of `craft-keymap` takes the clipboard events of egui
+  (`with_clipboard_events`), and a text field keeps them. Copy is `fragment.copy`, whose text the window puts on the
+  clipboard of the system (`copy_text`); cut is that, then a `commands.batch` ("Cut") of `node.delete`; duplicate is
+  `fragment.copy`, then a `commands.batch` ("Duplicate") of `fragment.paste` at the corner of the selection
+  (`Canvas::selection_corner`) plus 16 and 16, the clipboard untouched; of nodes inside a structure, it waits for step
+  5, since a paste goes into the body of the function. Ctrl+V brings its text (`Hit::pasted`); the menu asks egui for it
+  (`ViewportCommand::RequestPaste`) and takes the Paste event that comes back, or gives up after a second, egui sending
+  none for a clipboard without text. A paste falls under the
+  pointer on the canvas, else in the middle of what the view shows of the frame, on the grid of 8 (`Canvas::paste_at`;
+  decision of the owner, 2026-11-17), and what it names becomes the selection. In `edit`, `fragment.rs`: the copy is
+  the function `clipboard` made of the statements selected, the values and labels read from outside taken out as
+  `node.delete` takes them (9.1), a `node … at` entry for each node that has a name (its entry, or where the drawing
+  places it), the `wire` entries between them (an order wire from a label too), and the `use` lines whose library the
+  text names; the paste reads the text into the names of the file, takes out what the fragment reads without binding it
+  where it reads it (R-3), gives a suffix to each name of a line and each label already taken in the function, free of
+  every name of the fragment (N-14), in one pass, moves its `node` and `wire` entries so that the top-left corner of its
+  nodes is at `at`, and adds the `use` lines whose library the text names. Both find the nodes through one index of how
+  `layout` names them, so that each stays near linear in the size of the function.
 
 ### 12.8 `mcp` (L7)
 

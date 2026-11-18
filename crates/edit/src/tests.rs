@@ -22,7 +22,7 @@ fn input(name: &str, required: bool) -> Input {
 
 /// Signatures from a table, as the documents give them (spec A.1, 5.4), and the errors of the real check, which knows
 /// `core` without a library.
-struct Table;
+pub(super) struct Table;
 
 impl Judge for Table {
     fn callable(&self, _: &str, call: &str) -> Lookup {
@@ -77,7 +77,7 @@ impl Judge for Table {
 pub(super) const FILE: &str = "f.lcf";
 
 /// `labcraft 1`, then the rest.
-fn text(rest: &str) -> String {
+pub(super) fn text(rest: &str) -> String {
     format!("labcraft 1\n\n{rest}")
 }
 
@@ -1113,3 +1113,4 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
 }
 
 mod fields;
+mod fragment;

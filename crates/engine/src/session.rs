@@ -372,6 +372,7 @@ impl Session {
         match command.id {
             id if crate::edits::EDITING.contains(&id) => crate::edits::edit(self, author, command, params),
             "commands.batch" => crate::edits::batch(self, author, params),
+            "fragment.copy" => crate::edits::copy(self, params),
             "commands.execute" => crate::edits::execute(self, author, params),
             "history.undo" => crate::edits::undo(self, author),
             "history.redo" => crate::edits::redo(self, author),

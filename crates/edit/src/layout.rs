@@ -12,7 +12,7 @@ use crate::model::Edit;
 use crate::names::fresh;
 use crate::refs::{self, NodeName};
 use crate::scope::{self, Loc};
-use crate::{EditError, Edited, Judge, MAX_COORDINATE, Point};
+use crate::{EditError, Edited, Judge, Point};
 
 /// How the `layout` section names a node (spec 11): by its label, or by the name of its line when no other node of the
 /// function bears it.
@@ -100,7 +100,7 @@ pub(crate) fn designate(edit: &mut Edit, loc: &Loc, labelled: &mut Vec<(Loc, Str
 }
 
 /// The name of a node as a command names it now.
-fn shown(edit: &Edit, designation: Designation) -> String {
+pub(crate) fn shown(edit: &Edit, designation: Designation) -> String {
     if designation.is_label { format!("#{}", edit.text(designation.name)) } else { edit.text(designation.name).to_owned() }
 }
 
@@ -156,10 +156,7 @@ fn drawn_at(edit: &Edit, judge: &dyn Judge, places: &mut Option<Vec<crate::Place
 
 /// Fixes the node of this designation at `at`: its `node … at` entry, made or changed, its view kept (spec 11).
 fn fix(edit: &mut Edit, loc: &Loc, designation: Designation, at: Point, parameter: &'static str) -> Result<(), EditError> {
-    let range = -MAX_COORDINATE..=MAX_COORDINATE;
-    if !range.contains(&at.x) || !range.contains(&at.y) {
-        return Err(EditError::invalid(parameter, format!("a coordinate is between -{MAX_COORDINATE} and {MAX_COORDINATE}")));
-    }
+    crate::add::in_range(at, parameter)?;
     let point = labcraft_graph::Point { id: edit.id(), x: coordinate(edit, at.x), y: coordinate(edit, at.y) };
     let node = NodeRef { id: edit.id(), is_label: designation.is_label, name: designation.name };
     let index = entry_of(edit, edit.body_function()?, loc);

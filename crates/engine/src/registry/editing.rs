@@ -1107,42 +1107,36 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_4,
-            Command {
-                result: "`{ \"text\": … }`, the nodes as the text of a function `clipboard`",
-                ..plain(
-                    "fragment.copy",
-                    "Copy Fragment",
-                    "Return nodes as text, in canonical form; writes nothing",
-                    "Returns `{ \"text\": … }`, the nodes as the text of a function `clipboard`, in canonical form, with the `use` they need, the wires between them and their `layout` entries counted from the top-left corner of the selection. An input wired from outside is left out, or gets a hole. Writes nothing, and is not a step of history. Nodes of several frames are `params.invalid`. A text above 4 MiB is `file.too_large`, never cut.",
-                    object(&[("file", string(FILE)), ("nodes", names("The nodes to copy."))], &["file", "nodes"]),
-                    EDIT_ERRORS,
-                    &[],
-                )
-            },
-        ),
-        planned(
-            STEP_4,
-            editing(
-                "fragment.paste",
-                "Paste Fragment",
-                "Put the body of a function text into the frame",
-                "Puts the body of the function that `text` holds into the frame, its top-left corner at `at`, each node that has a `node … at` entry fixed. Of its `layout` section, only the `node` and `wire` entries are taken. It adds the `use` that the file then needs. A name already taken in the function gets a suffix, and `renamed` lists them. A `text` that does not parse, or holds no function, is `params.invalid`; above 4 MiB, `file.too_large`. `names.nodes` gives the names of the nodes pasted.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("text", string("The text of a function, as `fragment.copy` returns it.")),
-                        ("at", position("Where the top-left corner goes, `[x, y]` in canvas units.")),
-                        ("inside", string("A structure, for a paste inside it (M1 step 5).")),
-                        ("arm", string("The arm of that structure, by its patterns (M1 step 5).")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "text", "at"],
-                ),
+        Command {
+            result: "`{ \"text\": … }`, the nodes as the text of a function `clipboard`",
+            ..plain(
+                "fragment.copy",
+                "Copy Fragment",
+                "Return nodes as text, in canonical form; writes nothing",
+                "Returns `{ \"text\": … }`, the nodes as the text of a function `clipboard`, in canonical form, with the `use` they need, the wires between them and their `layout` entries counted from the top-left corner of the selection. An input wired from outside is left out, or gets a hole. Writes nothing, and is not a step of history. Nodes of several frames are `params.invalid`. A text above 4 MiB is `file.too_large`, never cut.",
+                object(&[("file", string(FILE)), ("nodes", names("The nodes to copy."))], &["file", "nodes"]),
                 EDIT_ERRORS,
-                false,
+                &[],
+            )
+        },
+        editing(
+            "fragment.paste",
+            "Paste Fragment",
+            "Put the body of a function text into the frame",
+            "Puts the body of the function that `text` holds into the frame, its top-left corner at `at`, each node that has a `node … at` entry fixed. Of its `layout` section, only the `node` and `wire` entries are taken. It adds the `use` that the file then needs. A name already taken in the function gets a suffix, and `renamed` lists them. A `text` that does not parse, or holds no function, is `params.invalid`; above 4 MiB, `file.too_large`. `names.nodes` gives the names of the nodes pasted.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("text", string("The text of a function, as `fragment.copy` returns it.")),
+                    ("at", position("Where the top-left corner goes, `[x, y]` in canvas units.")),
+                    ("inside", string("A structure, for a paste inside it (M1 step 5).")),
+                    ("arm", string("The arm of that structure, by its patterns (M1 step 5).")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "text", "at"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -1303,7 +1297,6 @@ pub(super) fn catalog() -> Vec<Command> {
     ]
 }
 
-const STEP_4: &str = "M1 step 4 (#163)";
 const STEP_5: &str = "M1 step 5 (#164)";
 const STEP_6: &str = "M1 step 6 (#165)";
 
