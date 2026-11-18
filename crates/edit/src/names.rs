@@ -35,12 +35,22 @@ pub(crate) fn taken(edit: &Edit) -> BTreeSet<String> {
     taken
 }
 
-/// `base`, or `base2`, `base3`… the first that is free (N-14).
+/// `base`, or `base2`, `base3`… the first that is free (N-14); a base that ends in a digit takes `_` before its number,
+/// `e2_2`, so that the number reads apart, and a base already numbered so goes on with its number, `e2_2` gives `e2_3`
+/// (decisions of the owner, 2026-11-18).
 pub(crate) fn fresh(base: &str, taken: &BTreeSet<String>) -> String {
     if !taken.contains(base) {
         return base.to_owned();
     }
-    (2u64..).map(|n| format!("{base}{n}")).find(|name| !taken.contains(name)).unwrap_or_else(|| base.to_owned())
+    // `e2_2`: the stem `e2`, numbered from 3.
+    let numbered = base.rsplit_once('_').and_then(|(stem, number)| {
+        let digits = !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) && !number.starts_with('0');
+        let n = number.parse::<u64>().ok().filter(|n| digits && *n >= 2)?;
+        stem.ends_with(|c: char| c.is_ascii_digit()).then_some((stem, n + 1))
+    });
+    let (stem, first) = numbered.unwrap_or((base, 2));
+    let gap = if stem.ends_with(|c: char| c.is_ascii_digit()) { "_" } else { "" };
+    (first..).map(|n| format!("{stem}{gap}{n}")).find(|name| !taken.contains(name)).unwrap_or_else(|| base.to_owned())
 }
 
 /// A name that the caller gives: one name of the language, free in the function.
@@ -59,7 +69,7 @@ pub(crate) fn given(text: &str, taken: &BTreeSet<String>, parameter: &'static st
 }
 
 /// `StepResult` gives `step_result`: the name of a value of a type.
-pub(crate) fn of_type(type_name: &str) -> String {
+pub fn of_type(type_name: &str) -> String {
     let mut name = String::with_capacity(type_name.len() + 4);
     for (index, c) in type_name.chars().enumerate() {
         if c.is_uppercase() {
@@ -169,5 +179,23 @@ pub(crate) fn rename_in_layout(edit: &mut Edit, from: Name, to: Name, is_label: 
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::fresh;
+
+    /// N-14, written by hand: `b` gives `b2`, `e2` gives `e2_2`, and `e2_2` goes on to `e2_3`.
+    #[test]
+    fn a_name_numbered_after_a_digit_goes_on_with_its_number() {
+        let taken: BTreeSet<String> = ["b", "b2", "e2", "e2_2", "x_2"].iter().map(|name| (*name).to_owned()).collect();
+        assert_eq!(fresh("b", &taken), "b3");
+        assert_eq!(fresh("e2", &taken), "e2_3");
+        assert_eq!(fresh("e2_2", &taken), "e2_3");
+        assert_eq!(fresh("x_2", &taken), "x_2_2");
+        assert_eq!(fresh("free", &taken), "free");
     }
 }

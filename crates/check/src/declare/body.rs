@@ -830,8 +830,11 @@ impl<'p, 'w, 'a> Walker<'p, 'w, 'a> {
         }
         // Arms that disagree have their `LC3006` (pass 4).
         let mut counts = branching.arms.iter().map(|arm| arm.yields.values.len());
+        // A `match` or a `handle` that gives nothing has `_` alone as its target, and no `yield` (6.1).
+        let gives_nothing = matches!(self.statement.map(targets_of), Some([Line::Skip(_)]));
         if let Some(first) = counts.next()
             && counts.all(|count| count == first)
+            && !(first == 0 && gives_nothing)
         {
             self.judge_targets(id, targets, first, "this structure");
         }

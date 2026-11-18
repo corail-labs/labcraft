@@ -42,15 +42,27 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
         let depth = context.placement.frames.get(body).map_or(0, |frame| frame.depth);
         size::wire_style(family, crate::frame_fill(depth))
     };
+    // The outputs of the function, which a bare name names (commands.md 9.2).
+    let function_outputs: Vec<&str> = graph
+        .bodies
+        .first()
+        .map(|function| {
+            function.right.iter().filter(|terminal| terminal.edge == Edge::Output).map(|terminal| terminal.terminal.name.as_str()).collect()
+        })
+        .unwrap_or_default();
+    let outputs = &function_outputs;
     for (index, node) in graph.nodes.iter().enumerate() {
         let (Some(Some(at)), Some(&Some(placed))) = (context.terminals.get(index), context.placed_of.get(index)) else { continue };
         let structure = matches!(node.kind, Kind::Structure(_));
         let name = context.command_names.get(index).cloned().flatten().unwrap_or_default();
         let unnamed = node.inputs.iter().filter(|input| input.name.is_empty()).count();
         let mut rank = 0;
-        for (terminal, &(x, y)) in node.inputs.iter().zip(&at.inputs) {
-            // The inputs of a structure come with step 5 of M1.
-            let to = if structure || name.is_empty() {
+        for (input, (terminal, &(x, y))) in node.inputs.iter().zip(&at.inputs).enumerate() {
+            // A structure: its selector by the node alone, a carry or an `in` by its name (commands.md 9.2); an outer value
+            // read inside is no place to wire.
+            let to = if let Kind::Structure(found) = &node.kind {
+                found.input_name(&name, input, &terminal.name, function_outputs.contains(&name.as_str())).unwrap_or_default()
+            } else if name.is_empty() {
                 String::new()
             } else if terminal.name.is_empty() {
                 rank += 1;
@@ -115,6 +127,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 value,
                 group: None,
                 style: style(terminal.family, node.body),
+                arm: String::new(),
             };
             ports.push((port, key.map(|key| (key, terminal.ty_text.clone()))));
         }
@@ -149,6 +162,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 value: bound.unwrap_or_default(),
                 group: None,
                 style: style(terminal.family, node.body),
+                arm: String::new(),
             };
             ports.push((port, Some((Key::Id(terminal.ty), terminal.ty_text.clone()))));
         }
@@ -175,6 +189,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                 value: String::new(),
                 group: None,
                 style: style(graph::Family::ORDER, node.body),
+                arm: String::new(),
             };
             ports.push((port, None));
         }
@@ -182,6 +197,8 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
     for (body, of) in graph.bodies.iter().enumerate() {
         let Some(frame) = context.placement.frames.get(body) else { continue };
         let placed = of.owner.and_then(|owner| context.placed_of.get(owner).copied().flatten());
+        // The structure that holds the body, as a command names it.
+        let owner_name = of.owner.and_then(|owner| context.command_names.get(owner).cloned().flatten()).unwrap_or_default();
         for (right, terminals, heights) in [(false, &of.left, &frame.left), (true, &of.right, &frame.right)] {
             let x = if right { frame.x + frame.width } else { frame.x };
             for (index, (terminal, &height)) in terminals.iter().zip(heights).enumerate() {
@@ -192,9 +209,28 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     (Edge::Input | Edge::Register | Edge::In | Edge::Range | Edge::Bound | Edge::Notch, false) => {
                         (false, terminal.terminal.name.clone())
                     }
-                    // The `next`, `collect`, `until` and `yield` of a structure come with step 5 of M1.
+                    // What a body gives its structure: `next x` of a carry, a `collect` and a `yield` by the output they
+                    // give, the `until` by the loop alone (commands.md 9.2).
+                    (Edge::Register, true) if !owner_name.is_empty() => {
+                        let carry = terminal.terminal.name.strip_prefix("next ").unwrap_or(&terminal.terminal.name);
+                        (true, format!("{owner_name}.next.{carry}"))
+                    }
+                    (Edge::Until, true) if !owner_name.is_empty() => (true, format!("{owner_name}.until")),
+                    // A name that is also an output of the function names that output (commands.md 9.2), and a `next x` that
+                    // a structure binds is no value to name it by: the `yield` keeps its `arm`, the `collect` has no name.
+                    (Edge::Yield, true) if is_plain(&terminal.terminal.name) && !terminal.terminal.name.contains(' ') => {
+                        (true, terminal.terminal.name.clone())
+                    }
+                    (Edge::Collect, true)
+                        if is_plain(&terminal.terminal.name)
+                            && !terminal.terminal.name.contains(' ')
+                            && !outputs.contains(&terminal.terminal.name.as_str()) =>
+                    {
+                        (true, terminal.terminal.name.clone())
+                    }
                     _ => (right, String::new()),
                 };
+                let arm = if right && terminal.edge == Edge::Yield && !name.is_empty() { of.traced.clone() } else { String::new() };
                 let wire =
                     of.wires.iter().find(|wire| if right { wire.to == graph::End::Right(index) } else { wire.from == graph::End::Left(index) });
                 let value = match (input, wire) {
@@ -232,6 +268,7 @@ pub(crate) fn build(context: &Context<'_, '_>, drawing: &mut Drawing) {
                     value,
                     group: None,
                     style: style(terminal.terminal.family, body),
+                    arm,
                 };
                 if bound_in != body {
                     notches.push((ports.len(), bound_in));
@@ -411,6 +448,8 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
     let made_by = |source: &Port| values.made_by(source);
     let ahead = if start.input { None } else { made_by(start).map(|placed| graph.reaching(placed)) };
     let behind = if start.input { start.placed.map(|placed| graph.reached(drawing, placed)) } else { None };
+    // What each structure reads, deep, once each.
+    let mut upstream: HashMap<usize, HashSet<usize>> = HashMap::new();
     drawing
         .ports
         .iter()
@@ -427,7 +466,11 @@ pub fn wiring(drawing: &Drawing, from: usize) -> Vec<Option<Verdict>> {
                         (_, _, Some(holder)) if holder == made_by => true,
                         (Some(reaching), _, Some(holder)) => reaching.contains(&holder),
                         (_, Some(reached), Some(_)) => reached.contains(&made_by),
-                        _ => false,
+                        // A part inside a structure (`next`, `until`, `collect`, `yield`) is no reader outside.
+                        _ if target.frame => false,
+                        // A value taken out of an arm (commands.md 6.7): the structures around it give it, in the body
+                        // that both see, so the reader there must not feed the outermost of them.
+                        _ => lifted_cycle(drawing, &graph, &mut upstream, made_by, reader),
                     }
                 }
                 _ => false,
@@ -549,21 +592,47 @@ fn out_of_scope(drawing: &Drawing, values: &Values<'_>, source: &Port, target: &
         });
     }
     let of_source = chain(source.body);
-    // Deeper than the reader: the body just below the reader's on the way out.
-    if let Some(at) = of_source.iter().position(|&body| body == target.body)
-        && let Some(&below) = at.checked_sub(1).and_then(|below| of_source.get(below))
+    // Deeper than the reader, or in a structure beside the one that holds it, through arms only: each structure between
+    // the value and the body that both see gives it as a new output (commands.md 6.7).
+    if let Some(at) = of_source.iter().position(|body| of_target.contains(body))
+        && at > 0
     {
-        let looping = drawing.bodies.get(below).is_some_and(|found| found.looping);
-        return Some(if looping {
-            Refusal { code: "wire.out_of_scope", message: format!("`{value}` is inside a loop: a `collect` or a carry takes a value out of it") }
-        } else {
-            Refusal {
-                code: "params.invalid",
-                message: "a wire out of an arm, which adds an output to its structure, is edited from M1 step 5 (structures)".to_owned(),
-            }
+        let looping = of_source.iter().take(at).any(|&body| drawing.bodies.get(body).is_some_and(|found| found.looping));
+        if looping {
+            return Some(Refusal {
+                code: "wire.out_of_scope",
+                message: format!("`{value}` is inside a loop: a `collect` or a carry takes a value out of it"),
+            });
+        }
+        // Out to the structure that holds it, or into one of its other arms: the structure would read its own output.
+        let lifted: Vec<Option<usize>> = of_source.iter().take(at).map(|&body| drawing.bodies.get(body).and_then(|found| found.owner)).collect();
+        let reads_it = |body: &usize| lifted.contains(&drawing.bodies.get(*body).and_then(|found| found.owner));
+        let own = (lifted.contains(&target.placed) && !target.frame) || of_target.iter().any(reads_it);
+        return own.then(|| Refusal {
+            code: "wire.cycle",
+            message: format!("a wire from `{value}` to `{}` would close a cycle: a value comes back only through a carry (spec 6.2)", target.name),
         });
     }
     Some(Refusal { code: "wire.out_of_scope", message: format!("`{value}` cannot be seen from there: it is a value of another arm or structure") })
+}
+
+/// Whether a wire from `made_by`, deeper than `reader`, closes a cycle once the structures around `made_by` give its value
+/// in the body where `reader`, or the structure that holds it, is: that structure reads, deep, what `reader` makes.
+fn lifted_cycle(drawing: &Drawing, graph: &Dependencies, upstream: &mut HashMap<usize, HashSet<usize>>, made_by: usize, reader: usize) -> bool {
+    let mut body = drawing.placed.get(reader).map(|node| node.body);
+    let mut seen = 0;
+    while let Some(at) = body {
+        if let Some(outer) = lifted(drawing, made_by, at) {
+            let Some(holder) = lifted(drawing, reader, at) else { return false };
+            return holder == outer || upstream.entry(outer).or_insert_with(|| graph.reaching(outer)).contains(&holder);
+        }
+        body = drawing.bodies.get(at).and_then(|found| found.owner).and_then(|owner| drawing.placed.get(owner)).map(|node| node.body);
+        seen += 1;
+        if seen > drawing.bodies.len() {
+            return false;
+        }
+    }
+    false
 }
 
 /// The node of the body `body` that holds `placed`: itself, or the structure around it there.
@@ -646,8 +715,8 @@ fn walk(next: &[Vec<usize>], starts: impl IntoIterator<Item = usize>) -> HashSet
     seen
 }
 
-/// The owner of each body and whether it loops, for [`crate::BodyDrawn`].
-pub(crate) fn owners(graph: &Graph<'_>, placed_of: &[Option<usize>]) -> Vec<(Option<usize>, bool)> {
+/// The owner of each body, whether it loops, and the patterns of an arm, for [`crate::BodyDrawn`].
+pub(crate) fn owners(graph: &Graph<'_>, placed_of: &[Option<usize>]) -> Vec<(Option<usize>, bool, String)> {
     graph
         .bodies
         .iter()
@@ -656,7 +725,8 @@ pub(crate) fn owners(graph: &Graph<'_>, placed_of: &[Option<usize>]) -> Vec<(Opt
             let looping = body.owner.and_then(|owner| graph.nodes.get(owner)).is_some_and(
                 |node| matches!(&node.kind, Kind::Structure(structure) if matches!(structure.kind, StructureKind::Loop | StructureKind::For)),
             );
-            (owner, looping)
+            let arm = if body.arm.is_some() { body.traced.clone() } else { String::new() };
+            (owner, looping, arm)
         })
         .collect()
 }

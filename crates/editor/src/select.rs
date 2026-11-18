@@ -201,7 +201,7 @@ impl Index {
     }
 
     /// Whether a body shows: the function's, or one that its structure shows, the arm shown of one in tabs.
-    fn body_shown(&self, body: usize, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
+    pub(crate) fn body_shown(&self, body: usize, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
         match self.owners.get(&body) {
             None => body == 0,
             Some(&(structure, arm)) => self.node_shown(structure, visible) && arm.is_none_or(|arm| visible(Some(arm))),
@@ -215,7 +215,7 @@ pub(crate) fn node_rect(drawing: &Drawing, placed: usize) -> Option<Rect> {
     Some(Rect::from_min_size(Pos2::new(placed.x as f32, placed.y as f32) / 100.0, Vec2::new(placed.width as f32, placed.height as f32) / 100.0))
 }
 
-fn body_rect(drawing: &Drawing, body: usize) -> Option<Rect> {
+pub(crate) fn body_rect(drawing: &Drawing, body: usize) -> Option<Rect> {
     let (x, y, width, height) = drawing.bodies.get(body)?.frame;
     Some(Rect::from_min_size(Pos2::new(x as f32, y as f32) / 100.0, Vec2::new(width as f32, height as f32) / 100.0))
 }

@@ -606,7 +606,9 @@ impl<'f> Walk<'_, '_, 'f> {
             });
         }
         let kind = if handle { NodeKind::Handle { arms } } else { NodeKind::Match { arms } };
-        Ok(Built { kind, inputs, skip: Skip::Never, outputs: None })
+        // A structure that gives nothing has `_` alone as its target, and no `yield` (spec 6.1).
+        let outputs = branching.gives_nothing().then(Vec::new);
+        Ok(Built { kind, inputs, skip: Skip::Never, outputs })
     }
 
     fn patterns(&mut self, arm: &'f WrittenArm, selector: TyId) -> Result<Vec<crate::Pattern>, LowerError> {

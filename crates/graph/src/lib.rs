@@ -460,6 +460,13 @@ pub struct Branching {
     pub end: Vec<Comment>,
 }
 
+impl Branching {
+    /// Whether it gives nothing: none of its arms has a `yield`, and its target is `_` (spec 6.1).
+    pub fn gives_nothing(&self) -> bool {
+        self.arms.iter().all(|arm| arm.yields.values.is_empty())
+    }
+}
+
 /// An arm whose body is only a `yield` keeps its comments in `comments` (5.2): it goes on one line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Arm {

@@ -6,8 +6,11 @@
 
 use labcraft_types::Limits;
 
+use crate::delete::Reader;
 use crate::model::Edit;
+use crate::places::{Slot, slots};
 use crate::refs::split_wire;
+use crate::scope;
 use crate::wire::FORMAT;
 use crate::wire::{self, Found};
 use crate::{EditError, Edited, Judge, Kind, Lookup, Point, add};
@@ -35,10 +38,23 @@ pub(crate) fn node(
     let found = wire::find(&before, judge, &function, into).map_err(|error| error.of("into"))?;
     let (from, to) = split_wire(into).map_err(|error| error.of("into"))?;
     // Both ends named as the text before the node names them: an `@N` would name another line once the node is added.
+    // The node goes in the frame where the wire is read: an arm, for a wire to its `yield`.
+    let frame = match &found {
+        Found::Reader { reader: Reader::Slot(loc, slot), .. } => scope::statement(&function, loc)
+            .and_then(|statement| slots(statement, loc).into_iter().find(|(found, _)| found == slot).map(|(_, seen_in)| seen_in))
+            .unwrap_or_else(|| loc.body.clone()),
+        Found::Reader { reader: Reader::After(loc), .. } => loc.body.clone(),
+        Found::Alias(_) | Found::Bound { .. } => Vec::new(),
+        Found::NextLine(_) | Found::NextBound { .. } => {
+            return Err(EditError::invalid("into", format!("`{into}` sets the `next` of a carry: wire the node to it instead")));
+        }
+    };
     let (from, reader) = match found {
         Found::Reader { label: true, .. } => {
             return Err(EditError::invalid("into", format!("`{into}` is an order wire: it carries no value for a node to take")));
         }
+        // A `collect` or an `until` is named as the wire names it.
+        Found::Reader { name, reader: Reader::Slot(_, Slot::Collect | Slot::Until), .. } => (before.text(name).to_owned(), to),
         Found::Reader { name, input, node, .. } => {
             let reader = match node {
                 Some((node, is_label)) => {
@@ -50,10 +66,11 @@ pub(crate) fn node(
             (before.text(name).to_owned(), reader)
         }
         Found::Alias(_) | Found::Bound { .. } => (from, format!("output {}", output_of(&to))),
+        Found::NextLine(_) | Found::NextBound { .. } => return Err(EditError::internal("a `next` refused above")),
     };
     // `add::node` refuses a call that names nothing, with the nearest names.
     let mut edit = before;
-    add::node(&mut edit, judge, call, at, name, edited)?;
+    add::node(&mut edit, judge, call, at, name, &frame, edited)?;
     let Lookup::Found(callable) = judge.callable(path, call) else {
         return Err(EditError::internal(format!("`{call}` was found once and not again")));
     };
@@ -103,7 +120,7 @@ pub(crate) fn node(
 fn attempt(path: &str, text: &str, judge: &dyn Judge, limits: &Limits, from: &str, to: &str, replace: bool, edited: &mut Edited) -> Option<String> {
     let mut edit = Edit::read(path, text, limits).ok()?;
     let mut said = Edited::default();
-    wire::connect(&mut edit, judge, from, to, replace, false, &mut said).ok()?;
+    wire::connect(&mut edit, judge, from, to, None, replace, false, &mut said).ok()?;
     let text = edit.finish().ok()?;
     edited.renamed.extend(said.renamed);
     Some(text)

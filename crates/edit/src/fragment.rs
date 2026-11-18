@@ -37,9 +37,9 @@ fn too_large(parameter: &'static str) -> EditError {
 
 /// The statements of a function by how the `layout` section names a node (spec 11): by its label, or by the name of
 /// its line, each with every statement that bears it. A `collect` or an `until` is no node.
-type Index = HashMap<(bool, Name), Vec<Loc>>;
+pub(crate) type Index = HashMap<(bool, Name), Vec<Loc>>;
 
-fn index(function: &Function) -> Index {
+pub(crate) fn index(function: &Function) -> Index {
     let mut found: Index = HashMap::new();
     for loc in scope::all(function) {
         let Some(statement) = scope::statement(function, &loc) else { continue };
@@ -56,7 +56,7 @@ fn index(function: &Function) -> Index {
 }
 
 /// The one statement that a node of `layout` names, if it names one.
-fn named_by<'i>(index: &'i Index, node: &NodeRef) -> Option<&'i Loc> {
+pub(crate) fn named_by<'i>(index: &'i Index, node: &NodeRef) -> Option<&'i Loc> {
     match index.get(&(node.is_label, node.name)).map(Vec::as_slice) {
         Some([one]) => Some(one),
         _ => None,
@@ -64,7 +64,7 @@ fn named_by<'i>(index: &'i Index, node: &NodeRef) -> Option<&'i Loc> {
 }
 
 /// How the `layout` section names the node at `loc`, as `layout::designation` does, through the index.
-fn designated(index: &Index, function: &Function, loc: &Loc) -> Option<Designation> {
+pub(crate) fn designated(index: &Index, function: &Function, loc: &Loc) -> Option<Designation> {
     let statement = scope::statement(function, loc)?;
     if let Some(label) = statement.label {
         return Some(Designation { is_label: true, name: label.name });
@@ -216,7 +216,7 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
     if outer.iter().filter_map(|loc| scope::statement(function, loc)).any(loop_only) {
         return Err(EditError::invalid(
             "nodes",
-            "a `next`, a `collect` or an `until` is copied with its loop: a paste goes into the body of the function",
+            "a `next`, a `collect` or an `until` is copied with its loop: the text of a copy is the body of a function, which holds none (R-6)",
         ));
     }
     // Each selected statement by its index in its body, with its place in the function `clipboard`.
@@ -279,16 +279,10 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
     for loc in order {
         let (fixed, view) = entries.get(loc).copied().unwrap_or_default();
         let point = fixed.or_else(|| {
-            // As `layout::drawn_at` finds it: by its line and its name, by its line alone when it is the one node there,
-            // by its name otherwise.
+            // As `layout::drawn_at` finds it.
             let name = designated(&nodes_of, function, loc).map(|named| shown(edit, named));
             let here = edit.lines.get(loc).and_then(|line| on_line.get(line)).map(Vec::as_slice).unwrap_or_default();
-            let named = |place: &&&crate::Place| name.as_deref().is_some_and(|name| place.name == name);
-            let alone = match here {
-                [one] => Some(*one),
-                _ => None,
-            };
-            here.iter().find(named).copied().or(alone).or_else(|| by_name.get(name.as_deref()?).copied()).map(|place| place.at)
+            crate::layout::pick_place(here, name.as_deref(), |name| by_name.get(name).copied()).map(|place| place.at)
         });
         let Some(point) = point else { continue };
         at.push((loc.clone(), point, view));
@@ -608,8 +602,8 @@ fn prepare(
     Ok((items, uses))
 }
 
-/// `fragment.paste`: the body of the function that `text` holds, at the end of the body of the function of `edit`.
-pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, edited: &mut Edited) -> Result<(), EditError> {
+/// `fragment.paste`: the body of the function that `text` holds, at the end of the body `frame` of the function of `edit`.
+pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, frame: &[Step], edited: &mut Edited) -> Result<(), EditError> {
     if text.len() > MAX_FRAGMENT {
         return Err(too_large("text"));
     }
@@ -628,7 +622,7 @@ pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, e
     if function.body.statements.iter().any(loop_only) {
         return Err(EditError::invalid(
             "text",
-            "a `next`, a `collect` or an `until` goes into a loop: pasting into a structure comes with M1 step 5",
+            "a `next`, a `collect` or an `until` stands only in a loop body, so the body of a function holds none (R-6)",
         ));
     }
     let taken = taken(edit);
@@ -648,7 +642,7 @@ pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, e
             edit.file.uses.push(Use { line: None, ..used });
         }
     }
-    let body = &mut edit.body_function_mut()?.body;
+    let body = scope::body_mut(edit.body_function_mut()?, frame).ok_or_else(|| EditError::internal("a frame that went"))?;
     let start = body.statements.len();
     body.statements.extend(pasted.body.statements);
     let end = body.statements.len();
@@ -658,8 +652,9 @@ pub(crate) fn paste(edit: &mut Edit, judge: &dyn Judge, text: &str, at: Point, e
     }
     let function = edit.body_function()?;
     let nodes_of = index(function);
-    let names: Vec<String> =
-        (start..end).filter_map(|index| designated(&nodes_of, function, &Loc { body: Vec::new(), index }).map(|named| shown(edit, named))).collect();
+    let names: Vec<String> = (start..end)
+        .filter_map(|index| designated(&nodes_of, function, &Loc { body: frame.to_vec(), index }).map(|named| shown(edit, named)))
+        .collect();
     edited.lists.insert("nodes", names);
     Ok(())
 }

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use labcraft_check::primitives::{PRIMITIVES, PrimitiveLibrary, primitive};
 use labcraft_check::{Checked, DeclaredFunction, DeclaredLibrary};
 use labcraft_diagram::{DiagramLimits, Drawn, style};
-use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Point};
+use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Point, StructureKind, Within};
 use labcraft_types::{Diagnostic, Interner, Severity, Ty};
 use serde_json::{Map, Value, json};
 
@@ -49,6 +49,7 @@ pub const EDITING: &[&str] = &[
     "node.set_label",
     "node.set_template",
     "fragment.paste",
+    "structure.surround",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -163,12 +164,9 @@ fn texts(params: &Params, name: &str) -> Result<Option<Vec<String>>, CommandErro
     Ok(Some(found))
 }
 
-/// A parameter that a later step builds (decision of the owner, 2026-11-15).
-fn not_yet(params: &Params, name: &str, step: &str) -> Result<(), CommandError> {
-    match params.get(name) {
-        Some(value) if !value.is_null() => Err(CommandError::of("params.invalid", name, format!("`{name}` comes with M1 step {step}"))),
-        _ => Ok(()),
-    }
+/// Where a command puts what it adds: `inside` a structure, in its `arm` (commands.md 6.7).
+fn within(params: &Params, inside: &str, arm: &str) -> Within {
+    Within { inside: params.str(inside).map(str::to_owned), arm: params.str(arm).map(str::to_owned) }
 }
 
 /// The operation of an editing command, from its parameters.
@@ -178,15 +176,11 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
     let name = params.str("name").map(str::to_owned);
     let op = match id {
         "node.add" => {
-            not_yet(params, "inside", "5")?;
-            not_yet(params, "arm", "5")?;
             let into = params.str("into").map(str::to_owned);
-            Op::NodeAdd { file, call: params.text("call")?.to_owned(), at: point(params, "at")?, name, into }
+            Op::NodeAdd { file, call: params.text("call")?.to_owned(), at: point(params, "at")?, name, into, within: within(params, "inside", "arm") }
         }
         "constant.add" => {
-            not_yet(params, "inside", "5")?;
-            not_yet(params, "arm", "5")?;
-            Op::ConstantAdd { file, value: params.text("value")?.to_owned(), at: point(params, "at")?, name }
+            Op::ConstantAdd { file, value: params.text("value")?.to_owned(), at: point(params, "at")?, name, within: within(params, "inside", "arm") }
         }
         "node.delete" => Op::NodeDelete { file, nodes: texts(params, "nodes")?.unwrap_or_default() },
         "node.move" => Op::NodeMove { file, nodes: texts(params, "nodes")?.unwrap_or_default(), by: required_point(params, "by")? },
@@ -202,42 +196,32 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             };
             Op::NodeSetView { file, nodes: texts(params, "nodes")?.unwrap_or_default(), view }
         }
-        "layout.arrange" => {
-            not_yet(params, "inside", "5")?;
-            not_yet(params, "arm", "5")?;
-            Op::LayoutArrange {
-                file,
-                nodes: texts(params, "nodes")?,
-                wires: texts(params, "wires")?.unwrap_or_default(),
-                terminals: texts(params, "terminals")?.unwrap_or_default(),
-            }
-        }
-        "wire.connect" => {
-            not_yet(params, "arm", "5")?;
-            Op::WireConnect {
-                file,
-                from: params.text("from")?.to_owned(),
-                to: params.text("to")?.to_owned(),
-                replace: params.bool("replace"),
-                accept_mismatch: params.bool("accept_mismatch"),
-            }
-        }
-        "wire.disconnect" => Op::WireDisconnect { file, wire: params.text("wire")?.to_owned() },
+        "layout.arrange" => Op::LayoutArrange {
+            file,
+            nodes: texts(params, "nodes")?,
+            wires: texts(params, "wires")?.unwrap_or_default(),
+            terminals: texts(params, "terminals")?.unwrap_or_default(),
+            within: within(params, "inside", "arm"),
+        },
+        "wire.connect" => Op::WireConnect {
+            file,
+            from: params.text("from")?.to_owned(),
+            to: params.text("to")?.to_owned(),
+            replace: params.bool("replace"),
+            accept_mismatch: params.bool("accept_mismatch"),
+            arm: params.str("arm").map(str::to_owned),
+        },
+        "wire.disconnect" => Op::WireDisconnect { file, wire: params.text("wire")?.to_owned(), arm: params.str("arm").map(str::to_owned) },
         "wire.route" => Op::WireRoute { file, wire: params.text("wire")?.to_owned(), via: points(params, "via")? },
-        "input.set_constant" => {
-            not_yet(params, "arm", "5")?;
-            Op::InputSetConstant {
-                file,
-                to: params.text("to")?.to_owned(),
-                value: params.text("value")?.to_owned(),
-                replace: params.bool("replace"),
-                accept_mismatch: params.bool("accept_mismatch"),
-            }
-        }
-        "input.clear_constant" => {
-            not_yet(params, "arm", "5")?;
-            Op::InputClearConstant { file, to: params.text("to")?.to_owned() }
-        }
+        "input.set_constant" => Op::InputSetConstant {
+            file,
+            to: params.text("to")?.to_owned(),
+            value: params.text("value")?.to_owned(),
+            replace: params.bool("replace"),
+            accept_mismatch: params.bool("accept_mismatch"),
+            arm: params.str("arm").map(str::to_owned),
+        },
+        "input.clear_constant" => Op::InputClearConstant { file, to: params.text("to")?.to_owned(), arm: params.str("arm").map(str::to_owned) },
         "input.remove_value" => Op::InputRemoveValue { file, to: params.text("to")?.to_owned() },
         "value.rename" => Op::ValueRename { file, value: params.text("value")?.to_owned(), name: params.text("name")?.to_owned() },
         "node.set_label" => {
@@ -248,10 +232,27 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             Op::NodeSetLabel { file, line, label: params.text("label")?.to_owned() }
         }
         "node.set_template" => Op::NodeSetTemplate { file, node: params.text("node")?.to_owned(), template: params.text("template")?.to_owned() },
-        "fragment.paste" => {
-            not_yet(params, "inside", "5")?;
-            not_yet(params, "arm", "5")?;
-            Op::FragmentPaste { file, text: params.text("text")?.to_owned(), at: required_point(params, "at")? }
+        "fragment.paste" => Op::FragmentPaste {
+            file,
+            text: params.text("text")?.to_owned(),
+            at: required_point(params, "at")?,
+            within: within(params, "inside", "arm"),
+        },
+        "structure.surround" => {
+            let kind = params.text("kind")?;
+            let Some(kind) = StructureKind::parse(kind) else {
+                return Err(CommandError::of("params.invalid", "kind", format!("`{kind}` is no structure: `match`, `handle`, `for` or `loop`")));
+            };
+            Op::StructureSurround {
+                file,
+                kind,
+                nodes: texts(params, "nodes")?.unwrap_or_default(),
+                selector: params.str("selector").map(str::to_owned),
+                over: params.str("over").map(str::to_owned),
+                arm: params.str("arm").map(str::to_owned),
+                within: within(params, "inside", "inside_arm"),
+                at: point(params, "at")?,
+            }
         }
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
@@ -314,6 +315,10 @@ impl Workspace for Overlay<'_> {
     }
 }
 
+/// The last text typed by [`SessionJudge::value_type`]: its file, its text, and its check, none when every text in memory
+/// is the one on the disk.
+type Typed = (String, String, Option<Arc<FoldersChecked>>);
+
 /// What `edit` asks of the program, from the check of the session (architecture 12.3).
 struct SessionJudge<'a> {
     session: &'a Session,
@@ -321,6 +326,9 @@ struct SessionJudge<'a> {
     kept: &'a FoldersChecked,
     /// The texts of a batch not written yet.
     memory: &'a BTreeMap<PathBuf, Vec<u8>>,
+    /// The last check that `value_type` made of a text that is not the one on the disk, with that file and text: a
+    /// structure asks the type of several values of one text (commands.md 9.6).
+    typed: std::cell::RefCell<Option<Typed>>,
 }
 
 impl SessionJudge<'_> {
@@ -456,9 +464,38 @@ impl Judge for SessionJudge<'_> {
                 let (x, y) = drawing.in_frame(at)?;
                 // In units, as `layout` writes them: hundredths rounded to the nearest unit.
                 let unit = |hundredths: i64| (hundredths + 50).div_euclid(100);
-                Some(labcraft_edit::Place { line: placed.line, name: placed.name.clone(), at: Point { x: unit(x), y: unit(y) } })
+                let absolute = Point { x: unit(placed.x), y: unit(placed.y + placed.over) };
+                Some(labcraft_edit::Place { line: placed.line, name: placed.name.clone(), at: Point { x: unit(x), y: unit(y) }, absolute })
             })
             .collect()
+    }
+
+    fn value_type(&self, file: &str, text: &str, line: u32, name: &str) -> labcraft_edit::ValueType {
+        // Once per text: whether every text in memory is the one on the disk (the kept check says it), else a check of
+        // them; the files are read again only for a new text.
+        let mut typed = self.typed.borrow_mut();
+        let known =
+            typed.as_ref().filter(|(known_file, known_text, _)| known_file == file && known_text == text).map(|(_, _, checked)| checked.clone());
+        let checked = match known {
+            Some(checked) => checked,
+            None => {
+                let session = self.session;
+                let mut files = self.memory.clone();
+                files.insert(session.root.join(file), text.as_bytes().to_vec());
+                let as_on_disk = files.iter().all(|(path, bytes)| bytes_now(session, path).ok().flatten().as_deref() == Some(bytes.as_slice()));
+                let checked = (!as_on_disk).then(|| Arc::new(self.check_with(&files)));
+                *typed = Some((file.to_owned(), text.to_owned(), checked.clone()));
+                checked
+            }
+        };
+        drop(typed);
+        let kept = match &checked {
+            Some(fresh) => &**fresh,
+            None => self.kept,
+        };
+        let Some((checked, names)) = kept.checked.first() else { return labcraft_edit::ValueType::default() };
+        let Some(index) = checked.files.iter().position(|found| found.shown == file) else { return labcraft_edit::ValueType::default() };
+        value_type::of(checked, names, index, line, name)
     }
 
     fn wires(&self, file: &str, text: &str) -> Vec<labcraft_edit::WireDrawn> {
@@ -616,7 +653,7 @@ fn reading<T>(
     session.checked(&root)?;
     let kept = session.kept_root().ok_or_else(|| CommandError::internal("the check of the root is not kept"))?;
     let memory = BTreeMap::new();
-    let judge = SessionJudge { session, kept: &kept.checked, memory: &memory };
+    let judge = SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
     let mut files = Files::new();
     files.insert(&target.shown, &text);
     read(&files, &target.shown, &judge, &session.config.limits).map_err(command_error)
@@ -643,7 +680,7 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
     session.checked(&root)?;
     let edited = {
         let kept = session.kept_root().ok_or_else(|| CommandError::internal("the check of the root is not kept"))?;
-        let judge = SessionJudge { session, kept: &kept.checked, memory: &memory };
+        let judge = SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
         let mut files = Files::new();
         for (shown, _, text) in texts.files.values() {
             files.insert(shown, text);
@@ -1159,3 +1196,4 @@ pub(crate) fn list(session: &Session, params: &Params) -> Value {
 
 #[cfg(test)]
 mod tests;
+mod value_type;

@@ -18,7 +18,8 @@ pub enum Source {
     /// A wire from this terminal, as a command names it: dropped on the empty canvas, or Space on the terminal in focus
     /// or while it is drawn from the keyboard. From an output, the node takes it at an input; drawn back from an input,
     /// the node gives it at an output, which replaces what the input holds.
-    Terminal { name: String, wanted: Wanted, replace: bool },
+    /// `arm`: the arm of a `yield`, by its patterns, which `wire.connect` takes with its name (commands.md 9.2).
+    Terminal { name: String, arm: Option<String>, wanted: Wanted, replace: bool },
     /// Space with one node selected (autopatch): its first output, which the first input of the new node that takes it
     /// is wired to.
     Node { name: String, wanted: Wanted },
@@ -29,9 +30,11 @@ pub enum Source {
 /// Quick insertion, as the canvas opens it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Quick {
-    /// Where the node falls, in units of the frame of the function (its `node … at`), on the grid of 8; none to place it
-    /// automatically, as a node inserted into a wire is.
+    /// Where the node falls, in units of its frame (its `node … at`), on the grid of 8; none to place it automatically, as
+    /// a node inserted into a wire is.
     pub at: Option<(i64, i64)>,
+    /// The frame it falls in, under the point where the list opens: an arm or a loop body, or the body of the function.
+    pub within: crate::InFrame,
     /// Where the list opens, on the screen.
     pub screen: Pos2,
     pub source: Source,
@@ -64,6 +67,8 @@ impl Canvas {
     pub fn quick_insert(&mut self, shown: &Shown, autopatch: bool, pointer: Option<Pos2>) -> Option<Quick> {
         let drawing = self.drawing.clone()?;
         let rect = self.rect;
+        let arms = crate::arms_shown(&drawing, shown);
+        let visible = |within: Option<usize>| within.is_none_or(|arm| arms.get(arm).copied().unwrap_or(false));
         let to_screen = |unit: Pos2| rect.min + (unit.to_vec2() - self.viewport.origin) * self.viewport.zoom;
         let unit_of = |at: Pos2| (self.viewport.origin + (at - rect.min) / self.viewport.zoom).to_pos2();
         // A wire drawn from the keyboard, or the terminal in focus.
@@ -76,8 +81,10 @@ impl Canvas {
             let centre = wiring::centre(port);
             let unit = if port.input { centre - egui::vec2(BESIDE * 3.0, 0.0) } else { centre + egui::vec2(BESIDE, 0.0) };
             let replace = port.input && matches!(port.holds, Holds::Wire | Holds::Constant(_));
-            let source = Source::Terminal { name: port.name.clone(), wanted, replace };
-            return Some(Quick { at: Some(frame_point(&drawing, unit)), screen: to_screen(unit), source });
+            let arm = (!port.arm.is_empty()).then(|| port.arm.clone());
+            let source = Source::Terminal { name: port.name.clone(), arm, wanted, replace };
+            let (within, at) = self.frame_under(&drawing, &visible, unit);
+            return Some(Quick { at: Some(at), within, screen: to_screen(unit), source });
         }
         let found = self.index.find(&shown.selection);
         let under = pointer.filter(|at| rect.contains(*at)).map(unit_of);
@@ -89,7 +96,7 @@ impl Canvas {
             let name = nearest_entry(wire, near)?;
             let wanted = Wanted::of_wire(&drawing, group)?;
             let screen = near.map_or(rect.center(), to_screen);
-            return Some(Quick { at: None, screen, source: Source::Wire { name, wanted } });
+            return Some(Quick { at: None, within: crate::InFrame::default(), screen, source: Source::Wire { name, wanted } });
         }
         // One node selected: autopatch from its first output, the node to its right.
         if autopatch
@@ -99,17 +106,19 @@ impl Canvas {
             && let Some(node) = drawing.placed.get(*placed)
         {
             let unit = Pos2::new((node.x + node.width) as f32 / 100.0 + BESIDE, node.y as f32 / 100.0);
-            let at = Some(frame_point(&drawing, unit));
+            let (within, at) = self.frame_under(&drawing, &visible, unit);
+            let at = Some(at);
             let output = drawing.ports.iter().position(|port| port.placed == Some(*placed) && !port.input && !port.order && !port.name.is_empty());
             let source = output
                 .and_then(|output| Some(Source::Node { name: drawing.ports.get(output)?.name.clone(), wanted: Wanted::of_port(&drawing, output)? }))
                 .unwrap_or(Source::Nothing);
-            return Some(Quick { at, screen: to_screen(unit), source });
+            return Some(Quick { at, within, screen: to_screen(unit), source });
         }
         // The whole list, under the pointer, else at the focus, else in the middle of the view.
         let focus = select::focus_rect(&drawing, &found).map(|area| area.center());
         let unit = under.or(focus).unwrap_or_else(|| unit_of(rect.center()));
-        Some(Quick { at: Some(frame_point(&drawing, unit)), screen: to_screen(unit), source: Source::Nothing })
+        let (within, at) = self.frame_under(&drawing, &visible, unit);
+        Some(Quick { at: Some(at), within, screen: to_screen(unit), source: Source::Nothing })
     }
 
     /// The wires that Delete on a terminal removes (notation 2.6): of a terminal of the frame (`input x`, `output y`) or

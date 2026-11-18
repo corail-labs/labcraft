@@ -55,6 +55,7 @@ pub mod pane;
 pub mod panels;
 mod running;
 pub mod text;
+mod values;
 
 pub use host::{Host, Reply, Snapshot};
 pub use pane::Pane;
@@ -301,6 +302,8 @@ pub struct Ide {
     pointer: Option<egui::Pos2>,
     /// The list of quick insertion, while it is open (notation 2.6).
     quick: Option<insert::QuickList>,
+    /// The value that a structure being made needs, asked for (notation 2.6).
+    values: Option<values::ValueList>,
     /// The run the window started, followed to its end (decisions of the owner, 2026-11-16).
     running: Option<running::Running>,
     /// The time of the frame, on the clock of egui.
@@ -375,6 +378,7 @@ impl Ide {
             canvas_focus: None,
             pointer: None,
             quick: None,
+            values: None,
             selecting: Vec::new(),
             running: None,
             now: 0.0,
@@ -616,6 +620,12 @@ impl Ide {
             && !quick_elsewhere
         {
             self.show_quick(ui.ctx(), host);
+        }
+        let values_elsewhere = self.values.as_ref().is_some_and(|list| self.native.contains(&list.function));
+        if let Some(host) = host
+            && !values_elsewhere
+        {
+            self.show_values(ui.ctx(), host);
         }
         // The palette opened in a window of the system is drawn there (`Content::window_drawn`).
         let elsewhere = self.palette_in.as_ref().is_some_and(|function| self.native.contains(function));
@@ -1137,6 +1147,10 @@ impl Ide {
                 | keys::CUT
                 | keys::PASTE
                 | keys::DUPLICATE
+                | keys::SURROUND_MATCH
+                | keys::SURROUND_HANDLE
+                | keys::SURROUND_FOR
+                | keys::SURROUND_LOOP
                 | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
                 keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
                 keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
@@ -1444,7 +1458,62 @@ impl Ide {
     fn open_quick(&mut self, view: &Published, function: &str, quick: labcraft_editor::Quick) {
         let Some(file) = file_of(view, function) else { return };
         let canvas = self.canvas_focus.as_ref().filter(|(focused, _)| focused == function).map(|(_, id)| *id);
-        self.quick = Some(insert::QuickList::new(function.to_owned(), file, quick, canvas));
+        let shown = view.window_of(function).map(|window| canvas_shown(window, &self.prefs)).unwrap_or_default();
+        // The values a structure could look at: only quick insertion on the empty canvas lists the structures.
+        let seen = match quick.source {
+            labcraft_editor::Source::Nothing => {
+                self.drawn.get(function).map(|drawn| drawn.canvas.values_seen(&shown, &Selection::default(), Some(quick.screen))).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
+        self.quick = Some(insert::QuickList::new(function.to_owned(), file, quick, canvas, seen));
+    }
+
+    /// "Surround with ▸" a structure of `kind` the nodes selected on the canvas of `function` (notation 2.6): at once for
+    /// a `loop`, after the list of values for the others.
+    /// `nodes`: those of the context menu; none, the selection.
+    fn surround(&mut self, host: &dyn Host, view: &Published, function: &str, kind: &'static str, nodes: Option<Vec<String>>) {
+        let Some(file) = file_of(view, function) else { return };
+        let Some(window) = view.window_of(function) else { return };
+        let shown = canvas_shown(window, &self.prefs);
+        let selection = match nodes {
+            Some(nodes) => Selection { nodes, ..Selection::default() },
+            None => shown.selection.clone(),
+        };
+        if selection.nodes.is_empty() {
+            self.say("Surround with: select the nodes to put in the structure");
+            return;
+        }
+        let around = values::Around::Nodes(selection.nodes.clone());
+        if kind == "loop" {
+            let reply = host.send("structure.surround", values::command(&file, kind, &around, None));
+            self.edits.push((function.to_owned(), reply, None));
+            return;
+        }
+        let Some(drawn) = self.drawn.get(function) else { return };
+        let seen = drawn.canvas.values_seen(&shown, &selection, None);
+        let screen = drawn.canvas.selection_screen(&selection).unwrap_or_default();
+        let canvas = self.canvas_focus.as_ref().filter(|(focused, _)| focused == function).map(|(_, id)| *id);
+        self.values = Some(values::ValueList::new(function.to_owned(), file, kind, around, screen, seen, canvas));
+    }
+
+    /// The list of values, while it is open: Enter makes the structure, one step (notation 2.6).
+    fn show_values(&mut self, ctx: &egui::Context, host: &dyn Host) {
+        let Some(mut list) = self.values.take() else { return };
+        match list.show(ctx) {
+            values::Chosen::Open => {
+                self.values = Some(list);
+                return;
+            }
+            values::Chosen::Cancelled => {}
+            values::Chosen::Value(value) => {
+                let reply = host.send("structure.surround", values::command(&list.file, list.kind, &list.around, Some(&value)));
+                self.edits.push((list.function.clone(), reply, None));
+            }
+        }
+        if let Some(canvas) = list.canvas {
+            ctx.memory_mut(|memory| memory.request_focus(canvas));
+        }
     }
 
     /// The list of quick insertion, while it is open: a choice is one step, the node and its wire (notation 2.6).
@@ -1457,12 +1526,20 @@ impl Ide {
                 return;
             }
             insert::Closed::Cancelled => {}
+            // A structure that needs a value asks for it first, where the list was.
+            insert::Closed::Picked(insert::Picked::Structure(kind)) if kind != "loop" => {
+                let around = values::Around::Empty { at: list.quick.at.unwrap_or_default(), within: list.quick.within.clone() };
+                let seen = std::mem::take(&mut list.seen);
+                self.values =
+                    Some(values::ValueList::new(list.function.clone(), list.file.clone(), kind, around, list.quick.screen, seen, list.canvas));
+                return;
+            }
             insert::Closed::Picked(picked) => {
                 let (id, params) = insert::command(&list.file, &list.quick, &picked, &catalog);
                 let reply = host.send(&id, params);
                 let call = match &picked {
                     insert::Picked::Entry(entry) => Some(entry.call.clone()),
-                    insert::Picked::Constant(_) => None,
+                    insert::Picked::Constant(_) | insert::Picked::Structure(_) => None,
                 };
                 self.edits.push((list.function.clone(), reply, call));
             }
@@ -1671,6 +1748,11 @@ impl Ide {
                 self.delete(host, view, &function);
             }
             // Copy, cut and duplicate (notation 2.6): the nodes selected on the canvas that has the keyboard.
+            keys::SURROUND_MATCH | keys::SURROUND_HANDLE | keys::SURROUND_FOR | keys::SURROUND_LOOP => {
+                let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
+                let (Some(host), Some(function), Some(kind)) = (host, function, keys::surround_kind(&id)) else { return };
+                self.surround(host, view, &function, kind, None);
+            }
             keys::COPY | keys::CUT | keys::DUPLICATE => {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function)) = (host, function) else { return };
@@ -2018,6 +2100,9 @@ impl DockContent<Pane> for Content<'_> {
         if self.ide.quick.as_ref().is_some_and(|list| list.function == function) {
             self.ide.show_quick(&ctx, self.host);
         }
+        if self.ide.values.as_ref().is_some_and(|list| list.function == function) {
+            self.ide.show_values(&ctx, self.host);
+        }
         if self.ide.palette_in.as_deref() == Some(function.as_str())
             && let Some(chosen) = self.ide.palette.show(&ctx, self.entries)
         {
@@ -2296,9 +2381,10 @@ impl Content<'_> {
                 }
                 // A wire dropped, or wired with Enter (notation 2.6): one step of undo; a branch with its junction, in one
                 // step too (notation 2.4).
-                Intent::Wire { from, to, replace, accept_mismatch, route } => {
+                Intent::Wire { from, to, arm, replace, accept_mismatch, route } => {
                     if let Some(file) = file_of(view, function) {
                         let params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
+                        let params = insert::with_arm(params, arm.as_deref());
                         let reply = match route {
                             None => self.host.send("wire.connect", params),
                             Some((wire, via)) => {
@@ -2328,9 +2414,10 @@ impl Content<'_> {
                     if let Some(file) = file_of(view, function) {
                         let commands: Vec<Value> = disconnect
                             .into_iter()
-                            .map(|wire| json!({ "id": "wire.disconnect", "params": { "file": file, "wire": wire } }))
-                            .chain(connect.into_iter().map(|(from, to, replace, accept_mismatch)| {
-                                json!({ "id": "wire.connect", "params": { "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch } })
+                            .map(|(wire, arm)| json!({ "id": "wire.disconnect", "params": insert::with_arm(json!({ "file": file, "wire": wire }), arm.as_deref()) }))
+                            .chain(connect.into_iter().map(|(from, to, replace, accept_mismatch, arm)| {
+                                let params = json!({ "file": file, "from": from, "to": to, "replace": replace, "accept_mismatch": accept_mismatch });
+                                json!({ "id": "wire.connect", "params": insert::with_arm(params, arm.as_deref()) })
                             }))
                             .collect();
                         let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": "Move Wire" }));
@@ -2340,17 +2427,19 @@ impl Content<'_> {
                 // Quick insertion (notation 2.6): the list opens where the wire was dropped.
                 Intent::QuickInsert(quick) => self.ide.open_quick(view, function, quick),
                 // A function of the panel `Palette` dropped on the canvas (notation 2.5).
-                Intent::Drop { call, at, into } => {
+                Intent::Drop { call, at, within, into } => {
                     if let Some(file) = file_of(view, function) {
                         let params = match into {
                             Some(wire) => json!({ "file": file, "call": call, "into": wire }),
-                            None => json!({ "file": file, "call": call, "at": [at.0, at.1] }),
+                            None => insert::within(json!({ "file": file, "call": call, "at": [at.0, at.1] }), &within),
                         };
                         let reply = self.host.send("node.add", params);
                         self.ide.edits.push((function.to_owned(), reply, Some(call)));
                     }
                 }
                 Intent::Say(text) => self.ide.say(text),
+                // "Surround with ▸" of the context menu of a node (notation 2.6).
+                Intent::Surround { kind, nodes } => self.ide.surround(self.host, view, function, kind, Some(nodes)),
                 // A field in place written (notation 2.6).
                 Intent::Field { kind, text } => match file_of(view, function) {
                     Some(file) => {

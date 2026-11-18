@@ -27,6 +27,8 @@ pub(crate) struct Copying {
     file: String,
     nodes: Vec<String>,
     corner: (i64, i64),
+    /// The frame of the nodes, where a duplicate goes.
+    within: labcraft_editor::InFrame,
     reply: Reply,
 }
 
@@ -47,13 +49,13 @@ impl Ide {
             self.say("Copy, cut and duplicate take the nodes selected: select one or more nodes");
             return;
         }
-        // Duplicate counts from the corner of the selection, as the copy does, and pastes into the body of the function.
+        // Duplicate counts from the corner of the selection, as the copy does, and pastes into the frame of the nodes.
         let canvas = self.drawn.get(function).map(|drawn| &drawn.canvas);
         let corner = canvas.and_then(|canvas| canvas.selection_corner(&selection));
-        let in_body = canvas.is_some_and(|canvas| canvas.selection_in_function_body(&selection));
+        let frame = canvas.and_then(|canvas| canvas.selection_frame(&selection));
         let corner = match (clip, corner) {
-            (Clip::Duplicate, _) if !in_body => {
-                self.say("Duplicate inside a structure comes with M1 step 5: copy, then paste into the function");
+            (Clip::Duplicate, _) if frame.is_none() => {
+                self.say("Duplicate takes nodes of one frame: select nodes of one arm, one loop or the function");
                 return;
             }
             (Clip::Duplicate, None) => {
@@ -63,17 +65,20 @@ impl Ide {
             (_, corner) => corner.unwrap_or_default(),
         };
         let reply = host.send("fragment.copy", json!({ "file": file, "nodes": selection.nodes }));
-        self.copying.push(Copying { clip, function: function.to_owned(), file, nodes: selection.nodes, corner, reply });
+        let within = frame.unwrap_or_default();
+        self.copying.push(Copying { clip, function: function.to_owned(), file, nodes: selection.nodes, corner, within, reply });
     }
 
     /// Paste `text` into the frame of `function`, its top-left corner where `Canvas::paste_at` says for `pointer`.
     pub(crate) fn paste(&mut self, host: &dyn Host, view: &Published, function: &str, text: &str, pointer: Option<egui::Pos2>) {
         let Some(file) = file_of(view, function) else { return };
-        let Some((x, y)) = self.drawn.get(function).and_then(|drawn| drawn.canvas.paste_at(pointer)) else {
+        let Some(window) = view.window_of(function) else { return };
+        let shown = canvas_shown(window, &self.prefs);
+        let Some((within, (x, y))) = self.drawn.get(function).and_then(|drawn| drawn.canvas.paste_at(&shown, pointer)) else {
             self.say("Paste: the function is not drawn yet");
             return;
         };
-        let reply = host.send("fragment.paste", json!({ "file": file, "text": text, "at": [x, y] }));
+        let reply = host.send("fragment.paste", crate::insert::within(json!({ "file": file, "text": text, "at": [x, y] }), &within));
         self.pasting.push((function.to_owned(), reply));
     }
 
@@ -85,7 +90,7 @@ impl Ide {
                 self.copying.push(copying);
                 continue;
             };
-            let Copying { clip, function, file, nodes, corner: (x, y), .. } = copying;
+            let Copying { clip, function, file, nodes, corner: (x, y), within, .. } = copying;
             let text = match answer.map(|result| result.get("text").and_then(Value::as_str).map(str::to_owned)) {
                 Ok(Some(text)) => text,
                 // Nothing goes on the clipboard, and nothing is cut, without the text of the copy.
@@ -108,7 +113,8 @@ impl Ide {
                 }
                 Clip::Duplicate => {
                     let at = [x.saturating_add(DUPLICATE_OFFSET), y.saturating_add(DUPLICATE_OFFSET)];
-                    let commands = json!([{ "id": "fragment.paste", "params": { "file": file, "text": text, "at": at } }]);
+                    let params = crate::insert::within(json!({ "file": file, "text": text, "at": at }), &within);
+                    let commands = json!([{ "id": "fragment.paste", "params": params }]);
                     let reply = host.send("commands.batch", json!({ "commands": commands, "label": "Duplicate" }));
                     self.pasting.push((function, reply));
                 }

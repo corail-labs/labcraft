@@ -79,6 +79,23 @@ pub const DUPLICATE: &str = "ide.duplicate";
 /// The settings "autopatch from the keyboard" and "inserting into a wire" of notation 2.6, on by default: preferences of
 /// the user until the card `Settings` of step 6, as those of steps 2 and 3.
 pub const AUTOPATCH: &str = "ide.autopatch";
+/// "Surround with ▸" (notation 2.6): the nodes selected in a new structure, after the list of values for a `match`, a
+/// `handle` or a `for` (`structure.surround`; decision of the owner, 2026-11-18).
+pub const SURROUND_MATCH: &str = "ide.surround_match";
+pub const SURROUND_HANDLE: &str = "ide.surround_handle";
+pub const SURROUND_FOR: &str = "ide.surround_for";
+pub const SURROUND_LOOP: &str = "ide.surround_loop";
+
+/// The kind of structure of a command "Surround with ▸".
+pub fn surround_kind(id: &str) -> Option<&'static str> {
+    match id {
+        SURROUND_MATCH => Some("match"),
+        SURROUND_HANDLE => Some("handle"),
+        SURROUND_FOR => Some("for"),
+        SURROUND_LOOP => Some("loop"),
+        _ => None,
+    }
+}
 pub const INTO_WIRE: &str = "ide.into_wire";
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
@@ -118,6 +135,10 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (CUT, "Cut the selection"),
     (PASTE, "Paste into the frame"),
     (DUPLICATE, "Duplicate the selection"),
+    (SURROUND_MATCH, "Surround with match"),
+    (SURROUND_HANDLE, "Surround with handle"),
+    (SURROUND_FOR, "Surround with for"),
+    (SURROUND_LOOP, "Surround with loop"),
     (AUTOPATCH, "Autopatch from the keyboard"),
     (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
@@ -222,6 +243,11 @@ pub fn menus() -> MenuBar {
             item(DUPLICATE, "Duplicate"),
             item(DELETE, "Delete"),
             item(RENAME, "Rename…"),
+            Node::Separator,
+            item(SURROUND_MATCH, "Surround with match…"),
+            item(SURROUND_HANDLE, "Surround with handle…"),
+            item(SURROUND_FOR, "Surround with for…"),
+            item(SURROUND_LOOP, "Surround with loop"),
             Node::Separator,
             item(PALETTE, "Command palette…"),
         ],

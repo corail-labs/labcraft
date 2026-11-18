@@ -156,7 +156,9 @@ impl<'a> Builder<'a> {
         let outputs = (0..targets.len())
             .map(|index| self.output_of(targets, index, &targets.get(index).map(|target| self.target_text(target)).unwrap_or_default()))
             .collect();
-        let structure = Structure { kind, header: cut_text(&header).into_owned(), badge, parallel, inputs_at: Vec::new(), pair: None, range_ends };
+        let own_inputs = inputs.len();
+        let structure =
+            Structure { kind, header: cut_text(&header).into_owned(), badge, parallel, inputs_at: Vec::new(), pair: None, range_ends, own_inputs };
         (Kind::Structure(structure), inputs, outputs)
     }
 

@@ -22,6 +22,7 @@ const TYPE_CODES: &[Code] = &[
     Code::Lc3003,
     Code::Lc3004,
     Code::Lc3005,
+    Code::Lc3006,
     Code::Lc3007,
     Code::Lc3008,
     Code::Lc3013,
@@ -43,15 +44,32 @@ pub(crate) enum End {
     Field { loc: Loc, field: String },
     /// An output of the function, a terminal of its frame.
     Output(Name),
+    /// The `next` of the carry `carry` of the loop at `loc`, which no line of its body sets yet: a line `next x = …` comes
+    /// (spec 6.2).
+    Next { loc: Loc, carry: Name },
+    /// The `next` of the carry `carry`, which a node of the loop body at `loc` binds as one of its outputs.
+    NextBound { loc: Loc, carry: Name },
 }
 
 impl End {
     fn loc(&self) -> Option<&Loc> {
         match self {
-            End::Slot(loc, _) | End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } => Some(loc),
-            End::Output(_) => None,
+            End::Slot(loc, _) | End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } | End::Next { loc, .. } => Some(loc),
+            End::NextBound { .. } | End::Output(_) => None,
         }
     }
+}
+
+/// The line `next carry = value`, at the end of the body of the loop at `loc`.
+pub(crate) fn add_next(edit: &mut Edit, loc: &Loc, carry: Name, value: Operand) -> Result<(), EditError> {
+    let (id, target) = (edit.id(), edit.id());
+    let statement = Statement {
+        id,
+        comments: labcraft_graph::Attached::default(),
+        label: None,
+        kind: StatementKind::Binding { targets: Box::new([Target::Next(target, carry)]), value: Rhs::Operand(value) },
+    };
+    crate::add::push(edit, &loc.sub(0), statement)
 }
 
 /// Where a wire starts.
@@ -62,18 +80,23 @@ enum Start {
     Label(Name),
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn connect(
     edit: &mut Edit,
     judge: &dyn Judge,
     from: &str,
     to: &str,
+    arm: Option<&str>,
     replace: bool,
     accept_mismatch: bool,
     edited: &mut Edited,
 ) -> Result<(), EditError> {
     let function = edit.body_function()?.clone();
-    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, Some(from))?;
+    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, Some(from), arm)?;
     let reader = reader_body(&function, &end);
+    let lifted = lift(edit, from, &reader, edited)?;
+    let from = lifted.as_deref().unwrap_or(from);
+    let function = edit.body_function()?.clone();
     let start = resolve_start(edit, judge, &function, from, &reader, edited)?;
     let function = edit.body_function()?.clone();
     if let (Start::Label(_), false) = (&start, matches!(end, End::After(_))) {
@@ -87,7 +110,13 @@ pub(crate) fn connect(
         },
         Start::Label(label) => scope::labels(&function).into_iter().find(|(found, _)| found == label).map(|(_, loc)| loc),
     };
-    if let (Some(made_by), Some(loc)) = (&made_by, end.loc())
+    // A `next` is read by its loop: a value that the loop makes, or that depends on it, would close a cycle; one of its body
+    // comes back through the carry (spec 6.2).
+    let reader_loc = match &end {
+        End::NextBound { loc, .. } => loop_of(loc).ok(),
+        _ => end.loc().cloned(),
+    };
+    if let (Some(made_by), Some(loc)) = (&made_by, reader_loc.as_ref())
         && closes_a_cycle(&function, made_by, loc)
     {
         return Err(EditError::new(
@@ -158,13 +187,154 @@ pub(crate) fn connect(
             let id = edit.id();
             add_field(edit, loc, field, Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
         }
+        End::Next { loc, carry } => {
+            let Start::Value(value) = &start else { return Err(EditError::internal("a label to a carry")) };
+            let id = edit.id();
+            add_next(edit, loc, *carry, Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
+        }
+        End::NextBound { loc, carry } => {
+            let Start::Value(value) = &start else { return Err(EditError::internal("a label to a carry")) };
+            if !replace {
+                return Err(EditError::new(
+                    "wire.occupied",
+                    format!("`{to}` is set by the node on line {}: pass `replace` to replace it", edit.lines.get(loc).copied().unwrap_or(0)),
+                )
+                .of("to"));
+            }
+            unbind_next(edit, loc, *carry)?;
+            let id = edit.id();
+            add_next(edit, &loop_of(loc)?, *carry, Operand::Path(Path { id, first: value.name, rest: Box::new([]) }))?;
+        }
     }
     judge_types(edit, judge, &format!("a wire from `{from}` to `{to}`"), accept_mismatch)
 }
 
-pub(crate) fn disconnect(edit: &mut Edit, judge: &dyn Judge, wire: &str, edited: &mut Edited) -> Result<(), EditError> {
+/// A value inside arms that the reader does not see: each `match` or `handle` around it, up to the body that holds the
+/// reader or a structure around it, gives it as a new output, the arm that holds it yielding it and the other arms a hole
+/// (commands.md 6.7, `wire.connect`), so that the reader sees it. The name
+/// that the reader then reads, or none when there is nothing to lift (a loop between them is refused later).
+fn lift(edit: &mut Edit, from: &str, reader: &[scope::Step], edited: &mut Edited) -> Result<Option<String>, EditError> {
+    if from.starts_with('#') || from.contains('.') {
+        return Ok(None);
+    }
+    let function = edit.body_function()?;
+    let Some(name) = edit.names.find(from) else { return Ok(None) };
+    let values: Vec<Value> = scope::values(function).into_iter().filter(|value| value.name == name).collect();
+    if values.iter().any(|value| scope::sees(function, value, reader)) {
+        return Ok(None);
+    }
+    // Up to the body that both see: the reader's own, or the one around a sibling structure that holds the reader.
+    let common = |seen_in: &[scope::Step]| seen_in.iter().zip(reader).take_while(|(a, b)| a == b).count();
+    let Some(value) = values.into_iter().find(|value| value.seen_in.len() > common(&value.seen_in)) else {
+        return Ok(None);
+    };
+    let around = common(&value.seen_in);
+    for depth in around + 1..=value.seen_in.len() {
+        if scope::frame(function, value.seen_in.get(..depth).unwrap_or(&[])) != Some(Frame::Arm) {
+            return Ok(None);
+        }
+    }
+    let mut current = value.name;
+    let mut path = value.seen_in.clone();
+    while path.len() > around {
+        let Some(step) = path.pop() else { break };
+        current = give(edit, &Loc { body: path.clone(), index: step.stmt }, step.sub, current)?;
+    }
+    let given = edit.text(current).to_owned();
+    edited.names.insert("output", given.clone());
+    Ok(Some(given))
+}
+
+/// The `match` or `handle` at `loc` gives `value` from its arm `arm`, as a new output named after it (N-14): the other
+/// arms yield a hole for it (9.1). The name of the output.
+pub(crate) fn give(edit: &mut Edit, loc: &Loc, arm: usize, value: Name) -> Result<Name, EditError> {
+    let output = fresh(edit.text(value), &taken(edit));
+    let output = edit.intern(&output);
+    let target_id = edit.id();
+    let mut holes = Vec::new();
+    let function = edit.body_function()?;
+    let arms = match scope::statement(function, loc).map(|statement| &statement.kind) {
+        Some(StatementKind::Binding { value: Rhs::Match(branching) | Rhs::Handle(branching), .. }) => branching.arms.len(),
+        _ => return Err(EditError::internal("a value lifted out of what is not an arm")),
+    };
+    for _ in 0..arms {
+        holes.push(edit.id());
+    }
+    let value_id = edit.id();
+    let function = edit.body_function_mut()?;
+    let Some(StatementKind::Binding { targets, value: Rhs::Match(branching) | Rhs::Handle(branching) }) =
+        scope::statement_mut(function, loc).map(|statement| &mut statement.kind)
+    else {
+        return Err(EditError::internal("a structure that went"));
+    };
+    // A structure that gives nothing has `_` alone as its target, and no `yield` (spec 6.1).
+    let gives_nothing = branching.gives_nothing();
+    let mut list = if gives_nothing { Vec::new() } else { std::mem::take(targets).into_vec() };
+    list.push(Target::Name(target_id, output));
+    *targets = list.into_boxed_slice();
+    for (rank, (each, hole)) in branching.arms.iter_mut().zip(holes).enumerate() {
+        let given = if rank == arm { Operand::Path(Path { id: value_id, first: value, rest: Box::new([]) }) } else { Operand::Hole(hole) };
+        each.yields.values.push(given);
+    }
+    Ok(output)
+}
+
+/// The loop whose body holds the statement at `loc`.
+pub(crate) fn loop_of(loc: &Loc) -> Result<Loc, EditError> {
+    let (last, outer) = loc.body.split_last().ok_or_else(|| EditError::internal("a `next` outside a loop"))?;
+    Ok(Loc { body: outer.to_vec(), index: last.stmt })
+}
+
+/// The node at `loc` no longer binds `next carry`: that output becomes `_`.
+pub(crate) fn unbind_next(edit: &mut Edit, loc: &Loc, carry: Name) -> Result<(), EditError> {
+    let id = edit.id();
+    let function = edit.body_function_mut()?;
+    let Some(StatementKind::Binding { targets, .. }) = scope::statement_mut(function, loc).map(|statement| &mut statement.kind) else {
+        return Err(EditError::internal("a node that went"));
+    };
+    for target in targets.iter_mut() {
+        if matches!(target, Target::Next(_, found) if *found == carry) {
+            *target = Target::Skip(id);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn disconnect(edit: &mut Edit, judge: &dyn Judge, wire: &str, arm: Option<&str>, edited: &mut Edited) -> Result<(), EditError> {
     let function = edit.body_function()?.clone();
-    match find(edit, judge, &function, wire)? {
+    // The entry of a wire to a `next`, named after the loop and its carry (spec 11).
+    let forget_next = |edit: &mut Edit, loc: &Loc, carry: Name| {
+        let from = split_wire(wire).ok().and_then(|(from, _)| edit.names.find(&from));
+        let holder = loop_of(loc).ok().and_then(|outer| scope::statement(&function, &outer)).and_then(statement_node);
+        if let Some(from) = from {
+            let carry = edit.text(carry).to_owned();
+            forget_wire(edit, from, holder, Some(&carry));
+        }
+    };
+    match find_in_arm(edit, judge, &function, wire, arm)? {
+        // `next x = v`: the line goes, and the carry has no `next` until it is wired (commands.md 6.7).
+        Found::NextLine(loc) => {
+            let carry = scope::statement(&function, &loc).and_then(|statement| match &statement.kind {
+                StatementKind::Binding { targets, .. } => targets.iter().find_map(|target| match target {
+                    Target::Next(_, carry) => Some(*carry),
+                    _ => None,
+                }),
+                _ => None,
+            });
+            let body = scope::body_mut(edit.body_function_mut()?, &loc.body).ok_or_else(|| EditError::internal("a loop that went"))?;
+            if loc.index < body.statements.len() {
+                body.statements.remove(loc.index);
+            }
+            if let Some(carry) = carry {
+                forget_next(edit, &loc, carry);
+            }
+            Ok(())
+        }
+        Found::NextBound { loc, carry } => {
+            unbind_next(edit, &loc, carry)?;
+            forget_next(edit, &loc, carry);
+            Ok(())
+        }
         Found::Alias(index) => {
             edit.body_function_mut()?.body.statements.remove(index);
             Ok(())
@@ -193,10 +363,19 @@ pub(crate) enum Found {
     Bound { output: String, value: Value },
     /// The place of a node that reads the value (or the label) `name`, by its input `input` (empty when it has no name).
     Reader { name: Name, label: bool, reader: Reader, input: String, node: Option<(Name, bool)> },
+    /// The line `next x = v` of a loop, at `loc`.
+    NextLine(Loc),
+    /// The node at `loc` of a loop body, which binds `next carry` as one of its outputs.
+    NextBound { loc: Loc, carry: Name },
 }
 
 /// Finds the wire that a name names, changing nothing: what `wire.disconnect` takes out, or why it would refuse it.
 pub(crate) fn find(edit: &Edit, judge: &dyn Judge, function: &Function, wire: &str) -> Result<Found, EditError> {
+    find_in_arm(edit, judge, function, wire, None)
+}
+
+/// [`find`], with the arm of a `yield` (`arm`).
+pub(crate) fn find_in_arm(edit: &Edit, judge: &dyn Judge, function: &Function, wire: &str, arm: Option<&str>) -> Result<Found, EditError> {
     let (from, to) = split_wire(wire)?;
     let end_name = InputName::parse(&to, "wire")?;
     // An output: the wire of `o = v`, or of a value that bears the name of the output.
@@ -210,6 +389,9 @@ pub(crate) fn find(edit: &Edit, judge: &dyn Judge, function: &Function, wire: &s
     };
     if let Some(output) = output {
         return from_output(edit, function, &from, &output);
+    }
+    if let Some(found) = structure_wire(edit, judge, function, &from, &to, arm)? {
+        return Ok(found);
     }
     let InputName::Node(node_name, part) = end_name else { return Err(EditError::internal("an output")) };
     let loc = node(edit, function, &node_name, "wire")?;
@@ -238,16 +420,122 @@ pub(crate) fn find(edit: &Edit, judge: &dyn Judge, function: &Function, wire: &s
     let chosen: Vec<(Reader, String)> = match &part {
         Part::Alone => found,
         Part::Name(input) => found.into_iter().filter(|(_, named)| named == input).collect(),
-        Part::Index(index) => found.into_iter().filter(|(_, named)| *named == index.to_string()).collect(),
+        // The selector of a `match` or a `handle` is its input without a name, at place 0 (9.2).
+        Part::Index(index) => found
+            .into_iter()
+            .filter(|(reader, named)| *named == index.to_string() || (*index == 0 && matches!(reader, Reader::Slot(_, Slot::Selector))))
+            .collect(),
         Part::Variadic(param, index) => found.into_iter().filter(|(_, named)| *named == format!("{param}.{index}")).collect(),
         Part::Next(_) => return Err(step_five("wire", "the `next` of a loop")),
     };
     match chosen.as_slice() {
         [] => Err(no_wire()),
         [(reader, input)] => Ok(Found::Reader { name, label, reader: reader.clone(), input: input.clone(), node: statement_node(&statement) }),
+        // The `yield` of several arms: named by `arm` (9.2).
+        several if several.iter().all(|(reader, _)| matches!(reader, Reader::Slot(_, Slot::Yield { .. }))) => {
+            let arms = match &statement.kind {
+                StatementKind::Binding { value: Rhs::Match(branching) | Rhs::Handle(branching), .. } => crate::frame::arm_names(edit, branching),
+                _ => Vec::new(),
+            };
+            let named: Vec<String> = several
+                .iter()
+                .filter_map(|(reader, _)| match reader {
+                    Reader::Slot(_, Slot::Yield { arm, .. }) => arms.get(*arm).cloned(),
+                    _ => None,
+                })
+                .collect();
+            Err(EditError::new(
+                "edit.ambiguous",
+                format!("`{from}` reaches the `yield` of several arms of `{}`: name the arm with `arm`", node_name.shown()),
+            )
+            .of("arm")
+            .expecting(named))
+        }
         several => Err(EditError::new("edit.ambiguous", format!("`{from}` reaches `{}` by several inputs: name the input", node_name.shown()))
             .of("wire")
             .expecting(several.iter().map(|(_, input)| format!("{from} -> {}.{input}", node_name.shown())).collect())),
+    }
+}
+
+/// A wire to a part of a structure: a `yield` (with `arm`), a `collect`, the `until` of a loop or the `next` of a carry,
+/// as `wire.connect` names them (commands.md 9.2); none for a wire to anything else.
+fn structure_wire(edit: &Edit, judge: &dyn Judge, function: &Function, from: &str, to: &str, arm: Option<&str>) -> Result<Option<Found>, EditError> {
+    let name = InputName::parse(to, "wire")?;
+    let InputName::Node(node_name, part) = &name else { return Ok(None) };
+    // A `yield` named without its arm: the one arm whose `yield` reads the value, when the selector does not (9.2).
+    let inferred: Option<String> = match (arm, part) {
+        (None, Part::Alone) if !node_name.is_label && node_name.line.is_none() => {
+            let value = edit.names.find(from);
+            structures_giving(edit, function, &node_name.text).into_iter().find_map(|(loc, index)| {
+                let statement = scope::statement(function, &loc)?;
+                let StatementKind::Binding { value: Rhs::Match(branching) | Rhs::Handle(branching), .. } = &statement.kind else { return None };
+                let value = value?;
+                if reads(&branching.selector, value) {
+                    return None;
+                }
+                let reading: Vec<usize> = branching
+                    .arms
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, each)| each.yields.values.get(index).is_some_and(|operand| reads(operand, value)))
+                    .map(|(rank, _)| rank)
+                    .collect();
+                match reading.as_slice() {
+                    [one] => crate::frame::arm_names(edit, branching).get(*one).cloned(),
+                    _ => None,
+                }
+            })
+        }
+        _ => None,
+    };
+    let arm = arm.or(inferred.as_deref());
+    let is_loop = || {
+        crate::refs::find_nodes(edit, function, node_name).iter().any(|loc| {
+            scope::statement(function, loc).is_some_and(|statement| matches!(statement.kind, StatementKind::Binding { value: Rhs::Loop(_), .. }))
+        })
+    };
+    let alone_collect = *part == Part::Alone
+        && !node_name.is_label
+        && node_name.line.is_none()
+        && collect_end(edit, function, &node_name.text).ok().flatten().is_some();
+    let until = *part == Part::Alone || *part == Part::Name("until".to_owned());
+    let structural = arm.is_some() || matches!(part, Part::Next(_)) || alone_collect || (until && is_loop());
+    if !structural {
+        return Ok(None);
+    }
+    let end = resolve_end(edit, judge, function, &name, None, arm).map_err(|error| match error.parameter {
+        Some("to") => error.of("wire"),
+        _ => error,
+    })?;
+    let no_wire = || EditError::new("edit.unknown", format!("no wire `{from} -> {to}` in this function")).of("wire");
+    let Some(value) = edit.names.find(from) else { return Err(no_wire()) };
+    match end {
+        End::Slot(loc, slot) => {
+            let statement = scope::statement(function, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
+            if !operand(statement, slot).is_some_and(|operand| reads(operand, value)) {
+                return Err(no_wire());
+            }
+            if slot == Slot::Value {
+                return Ok(Some(Found::NextLine(loc)));
+            }
+            // The layout names the wire after the structure: the node that holds the `collect` or the `until`.
+            let holder = match slot {
+                Slot::Collect | Slot::Until => loop_of(&loc).ok().and_then(|outer| scope::statement(function, &outer)).and_then(statement_node),
+                _ => statement_node(statement),
+            };
+            Ok(Some(Found::Reader { name: value, label: false, reader: Reader::Slot(loc, slot), input: String::new(), node: holder }))
+        }
+        End::NextBound { loc, carry } => {
+            // The node binds `next x` itself: the drawing names that wire after the carry (`t -> n.next.t`), or after the
+            // node.
+            let statement = scope::statement(function, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
+            let named = statement_node(statement).map(|(name, _)| name);
+            if value != carry && named != Some(value) {
+                return Err(no_wire());
+            }
+            Ok(Some(Found::NextBound { loc, carry }))
+        }
+        _ => Err(no_wire()),
     }
 }
 
@@ -360,7 +648,7 @@ fn bound_by_name(edit: &Edit, function: &Function, output: &str) -> Option<Value
 }
 
 /// The name that a node would have had, had it not been bound to an output (N-14).
-fn node_name_of(edit: &Edit, judge: &dyn Judge, function: &Function, value: &Value) -> String {
+pub(crate) fn node_name_of(edit: &Edit, judge: &dyn Judge, function: &Function, value: &Value) -> String {
     let taken = taken(edit);
     let Bound::Line(loc, index) = &value.bound else { return fresh("value", &taken) };
     let base = scope::statement(function, loc)
@@ -555,13 +843,27 @@ fn reader_body(function: &Function, end: &End) -> BodyPath {
         End::Slot(loc, slot) => scope::statement(function, loc)
             .and_then(|statement| slots(statement, loc).into_iter().find(|(found, _)| found == slot).map(|(_, seen_in)| seen_in))
             .unwrap_or_else(|| loc.body.clone()),
-        End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } => loc.body.clone(),
+        End::NewArg { loc, .. } | End::After(loc) | End::Field { loc, .. } | End::NextBound { loc, .. } => loc.body.clone(),
+        End::Next { loc, .. } => loc.sub(0),
         End::Output(_) => Vec::new(),
     }
 }
 
-/// What the end of a wire names.
-pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, name: &InputName, from: Option<&str>) -> Result<End, EditError> {
+/// What the end of a wire names; `arm`, the arm of a `yield`.
+pub(crate) fn resolve_end(
+    edit: &Edit,
+    judge: &dyn Judge,
+    function: &Function,
+    name: &InputName,
+    from: Option<&str>,
+    arm: Option<&str>,
+) -> Result<End, EditError> {
+    if let (Some(arm), InputName::Node(node_name, part)) = (arm, name) {
+        return yield_end(edit, function, node_name, part, arm);
+    }
+    if arm.is_some() {
+        return Err(EditError::invalid("arm", "`arm` names the arm of a `yield`: `to` names then the output of its structure"));
+    }
     let (node_name, part) = match name {
         InputName::Output(text) => {
             let output = function.signature.outputs.iter().find(|output| edit.text(output.name) == text.as_str());
@@ -582,13 +884,21 @@ pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, n
             }
         }
     }
+    // A `collect`, by the output of the loop that it gives (9.2).
+    if !node_name.is_label
+        && node_name.line.is_none()
+        && *part == Part::Alone
+        && let Some(end) = collect_end(edit, function, &node_name.text)?
+    {
+        return Ok(end);
+    }
     let loc = node(edit, function, node_name, "to")?;
     let statement = scope::statement(function, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
     let unknown = |what: &str, known: Vec<String>| {
         EditError::new("edit.unknown", format!("`{}` has no input {what}", node_name.shown())).of("to").expecting(known)
     };
-    if let Part::Next(_) = part {
-        return Err(step_five("to", "the `next` of a loop"));
+    if let Part::Next(carry) = part {
+        return next_end(edit, function, &loc, carry).ok_or_else(|| unknown(&format!("`next.{carry}`: it has no carry `{carry}`"), Vec::new()));
     }
     if let Part::Name(input) = part
         && input == "after"
@@ -626,7 +936,7 @@ pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, n
         },
         StatementKind::Binding { value: Rhs::Match(_) | Rhs::Handle(_), .. } => match part {
             Part::Alone | Part::Index(0) => Ok(End::Slot(loc.clone(), Slot::Selector)),
-            _ => Err(step_five("to", "a `yield` of an arm")),
+            _ => Err(unknown("of that name: a `yield` is named by the output of its structure, with `arm`", Vec::new())),
         },
         StatementKind::Binding { value: Rhs::For(each), .. } => {
             let Part::Name(input) = part else { return Err(unknown("of that name", Vec::new())) };
@@ -641,6 +951,14 @@ pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, n
                 .ok_or_else(|| unknown("of that name", Vec::new()))
         }
         StatementKind::Binding { value: Rhs::Loop(repeat), .. } => {
+            // `n.until` names it too: `until` is a keyword, so no carry bears that name.
+            if *part == Part::Alone || *part == Part::Name("until".to_owned()) {
+                // The loop alone names its only input without a name: its `until`.
+                let until = repeat.body.statements.iter().position(|line| matches!(line.kind, StatementKind::Until(_)));
+                return until
+                    .map(|index| End::Slot(Loc { body: loc.sub(0), index }, Slot::Until))
+                    .ok_or_else(|| unknown("`until`: its body has none", Vec::new()));
+            }
             let Part::Name(input) = part else { return Err(unknown("of that name", Vec::new())) };
             repeat
                 .clauses
@@ -653,7 +971,122 @@ pub(crate) fn resolve_end(edit: &Edit, judge: &dyn Judge, function: &Function, n
                 .ok_or_else(|| unknown("of that name", Vec::new()))
         }
         StatementKind::Binding { value: Rhs::Operand(_), .. } => Err(unknown("a wire can reach: it names a value or a constant", Vec::new())),
-        StatementKind::Collect(_) | StatementKind::Until(_) => Err(step_five("to", "`collect` and `until`")),
+        StatementKind::Collect(_) | StatementKind::Until(_) => {
+            Err(unknown("of that name: a `collect` is named by the output of its loop, an `until` by the loop", Vec::new()))
+        }
+    }
+}
+
+/// The structures of the function that bind `name` among their outputs, with its place there.
+fn structures_giving(edit: &Edit, function: &Function, name: &str) -> Vec<(Loc, usize)> {
+    let Some(wanted) = edit.names.find(name) else { return Vec::new() };
+    let mut found = Vec::new();
+    for loc in scope::all(function) {
+        let Some(statement) = scope::statement(function, &loc) else { continue };
+        let StatementKind::Binding { targets, value: Rhs::Match(_) | Rhs::Handle(_) | Rhs::For(_) | Rhs::Loop(_) } = &statement.kind else {
+            continue;
+        };
+        if let Some(index) = targets.iter().position(|target| matches!(target, Target::Name(_, found) if *found == wanted)) {
+            found.push((loc, index));
+        }
+    }
+    found
+}
+
+/// The `yield` of `arm` that gives the output named of a `match` or a `handle`: `verdict` with `arm` `true` (9.2).
+fn yield_end(edit: &Edit, function: &Function, node_name: &NodeName, part: &Part, arm: &str) -> Result<End, EditError> {
+    if *part != Part::Alone {
+        return Err(EditError::invalid("to", "a `yield` is named by the output of its structure (`verdict`), with `arm`"));
+    }
+    let giving = if node_name.is_label || node_name.line.is_some() {
+        Vec::new()
+    } else {
+        structures_giving(edit, function, &node_name.text)
+            .into_iter()
+            .filter(|(loc, _)| {
+                scope::statement(function, loc)
+                    .is_some_and(|statement| matches!(statement.kind, StatementKind::Binding { value: Rhs::Match(_) | Rhs::Handle(_), .. }))
+            })
+            .collect()
+    };
+    let (loc, index) = match giving.as_slice() {
+        [one] => one.clone(),
+        [] => (node(edit, function, node_name, "to")?, 0),
+        _ => {
+            return Err(EditError::new("edit.ambiguous", format!("`{}` is an output of several structures", node_name.shown())).of("to"));
+        }
+    };
+    let statement = scope::statement(function, &loc).ok_or_else(|| EditError::internal("a node that went"))?;
+    let StatementKind::Binding { value: Rhs::Match(branching) | Rhs::Handle(branching), .. } = &statement.kind else {
+        return Err(EditError::invalid("arm", format!("`{}` is not a `match` nor a `handle`: it has no arm", node_name.shown())));
+    };
+    let Some(rank) = crate::frame::arm_index(edit, branching, arm) else {
+        return Err(EditError::new("edit.unknown", format!("`{}` has no arm `{}`", node_name.shown(), crate::cut(arm)))
+            .of("arm")
+            .expecting(crate::frame::arm_names(edit, branching)));
+    };
+    let gives = branching.arms.get(rank).is_some_and(|found| found.yields.values.len() > index);
+    if !gives {
+        return Err(EditError::invalid(
+            "to",
+            format!("`{}` gives nothing: a wire from inside one of its arms to outside adds an output", node_name.shown()),
+        ));
+    }
+    Ok(End::Slot(loc, Slot::Yield { arm: rank, index }))
+}
+
+/// The `collect` that gives the output `name` of a loop, when one does.
+fn collect_end(edit: &Edit, function: &Function, name: &str) -> Result<Option<End>, EditError> {
+    let mut found = Vec::new();
+    for (loc, index) in structures_giving(edit, function, name) {
+        let Some(statement) = scope::statement(function, &loc) else { continue };
+        let (clauses, body) = match &statement.kind {
+            StatementKind::Binding { value: Rhs::For(each), .. } => (&each.clauses, &each.body),
+            // `n` alone names the `until` of `n = loop …` (9.2), even when `n` is also the output of a `collect`.
+            StatementKind::Binding { value: Rhs::Loop(_), .. } if scope::line_name(statement).is_some_and(|line| edit.text(line) == name) => continue,
+            StatementKind::Binding { value: Rhs::Loop(repeat), .. } => (&repeat.clauses, &repeat.body),
+            _ => continue,
+        };
+        // The outputs of a loop: its carries, then its `collect`, in order (spec 6.2).
+        let carries = clauses.iter().filter(|clause| matches!(clause.kind, labcraft_graph::ClauseKind::Carry(_))).count();
+        let Some(rank) = index.checked_sub(carries) else { continue };
+        let at = body.statements.iter().enumerate().filter(|(_, line)| matches!(line.kind, StatementKind::Collect(_))).nth(rank);
+        if let Some((at, _)) = at {
+            found.push(End::Slot(Loc { body: loc.sub(0), index: at }, Slot::Collect));
+        }
+    }
+    match found.len() {
+        0 | 1 => Ok(found.pop()),
+        _ => Err(EditError::new("edit.ambiguous", format!("`{name}` is an output of several loops")).of("to")),
+    }
+}
+
+/// The `next` of the carry `carry` of the loop at `loc`: the line `next carry = value` that sets it, or the place for one.
+fn next_end(edit: &Edit, function: &Function, loc: &Loc, carry: &str) -> Option<End> {
+    let statement = scope::statement(function, loc)?;
+    let (clauses, body) = match &statement.kind {
+        StatementKind::Binding { value: Rhs::For(each), .. } => (&each.clauses, &each.body),
+        StatementKind::Binding { value: Rhs::Loop(repeat), .. } => (&repeat.clauses, &repeat.body),
+        _ => return None,
+    };
+    let name = edit.names.find(carry)?;
+    clauses.iter().find(|clause| matches!(&clause.kind, labcraft_graph::ClauseKind::Carry(found) if found.name == name))?;
+    let sets = |line: &Statement| match &line.kind {
+        StatementKind::Binding { targets, .. } => targets.iter().any(|target| matches!(target, Target::Next(_, found) if *found == name)),
+        _ => false,
+    };
+    match body.statements.iter().position(sets) {
+        Some(index) => {
+            let at = Loc { body: loc.sub(0), index };
+            let line = body.statements.get(index)?;
+            match &line.kind {
+                // `next x = v`: its operand is the place.
+                StatementKind::Binding { targets, value: Rhs::Operand(_) } if targets.len() == 1 => Some(End::Slot(at, Slot::Value)),
+                // A node binds it: the wire is there, and `replace` takes it.
+                _ => Some(End::NextBound { loc: at, carry: name }),
+            }
+        }
+        None => Some(End::Next { loc: loc.clone(), carry: name }),
     }
 }
 
@@ -891,7 +1324,7 @@ fn unseen(function: &Function, from: &str, value: &Value, reader: &[scope::Step]
 
 /// Whether wiring what the statement `made_by` makes into the statement at `reader` closes a cycle (spec 5.2): that
 /// statement holds the reader, or depends on it, in its body.
-fn closes_a_cycle(function: &Function, made_by: &Loc, reader: &Loc) -> bool {
+pub(crate) fn closes_a_cycle(function: &Function, made_by: &Loc, reader: &Loc) -> bool {
     let body_path = &made_by.body;
     let holder = if &reader.body == body_path {
         reader.index
@@ -904,6 +1337,33 @@ fn closes_a_cycle(function: &Function, made_by: &Loc, reader: &Loc) -> bool {
     if holder == made_by.index {
         return true;
     }
+    reaches(function, body_path, vec![made_by.index], holder)
+}
+
+/// Whether the statement at `at` reads, deep, what depends on itself in its body (spec 5.2): a structure made around
+/// nodes that are not next to each other can read a value that reads one of its outputs.
+pub(crate) fn depends_on_itself(function: &Function, at: &Loc) -> bool {
+    let Some(body) = scope::body(function, &at.body) else { return false };
+    let Some(statement) = body.statements.get(at.index) else { return false };
+    let inputs: HashSet<Name> = if at.body.is_empty() { function.signature.params.iter().map(|param| param.name).collect() } else { HashSet::new() };
+    let reads: HashSet<Name> = deep_reads(statement).into_iter().filter(|name| !inputs.contains(name)).collect();
+    let starts: Vec<usize> = body
+        .statements
+        .iter()
+        .enumerate()
+        .filter(|(index, other)| {
+            *index != at.index
+                && (scope::targets(other).into_iter().any(|name| reads.contains(&name))
+                    || other.label.is_some_and(|label| reads.contains(&label.name)))
+        })
+        .map(|(index, _)| index)
+        .collect();
+    reaches(function, &at.body, starts, at.index)
+}
+
+/// Whether a walk from the lines `starts` of a body, through what each reads of the others, deep, reaches the line
+/// `holder`.
+fn reaches(function: &Function, body_path: &[scope::Step], starts: Vec<usize>, holder: usize) -> bool {
     let Some(body) = scope::body(function, body_path) else { return false };
     // What each line of the body reads of the others, deep. In the body of the function, reading a name that is an input
     // and an output reads the input: the line `err = …` binds the output (R-2), and no line reads it.
@@ -919,7 +1379,7 @@ fn closes_a_cycle(function: &Function, made_by: &Loc, reader: &Loc) -> bool {
         }
     }
     let mut seen = HashSet::new();
-    let mut pending = vec![made_by.index];
+    let mut pending = starts;
     while let Some(index) = pending.pop() {
         if index == holder {
             return true;
@@ -966,7 +1426,7 @@ fn deep_reads(statement: &Statement) -> Vec<Name> {
     found
 }
 
-fn names_in(operand: &Operand, found: &mut Vec<Name>) {
+pub(crate) fn names_in(operand: &Operand, found: &mut Vec<Name>) {
     match operand {
         Operand::Path(path) => found.push(path.first),
         Operand::Array(_, values) => values.iter().for_each(|value| names_in(value, found)),

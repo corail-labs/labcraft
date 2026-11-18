@@ -29,6 +29,7 @@ mod add;
 mod constant;
 mod delete;
 mod fragment;
+mod frame;
 mod into;
 mod layout;
 mod model;
@@ -39,9 +40,12 @@ mod rename;
 mod route;
 mod scope;
 mod select;
+mod surround;
 mod wire;
 
 pub use fragment::MAX_FRAGMENT;
+pub use frame::Within;
+pub use names::of_type;
 pub use route::MAX_VIA;
 pub use select::selectable;
 
@@ -103,6 +107,7 @@ pub enum Op {
         name: Option<String>,
         /// A wire to insert the node into.
         into: Option<String>,
+        within: Within,
     },
     /// `constant.add`: `value` is a constant written as in a file (`240 V`).
     ConstantAdd {
@@ -110,6 +115,7 @@ pub enum Op {
         value: String,
         at: Option<Point>,
         name: Option<String>,
+        within: Within,
     },
     /// `node.delete`.
     NodeDelete {
@@ -121,6 +127,8 @@ pub enum Op {
         file: String,
         from: String,
         to: String,
+        /// The arm of a `yield` that `to` names.
+        arm: Option<String>,
         replace: bool,
         accept_mismatch: bool,
     },
@@ -128,6 +136,8 @@ pub enum Op {
     WireDisconnect {
         file: String,
         wire: String,
+        /// The arm of a `yield` that the wire reaches.
+        arm: Option<String>,
     },
     /// `node.move`: the nodes of one frame by `by`, each fixed.
     NodeMove {
@@ -153,6 +163,8 @@ pub enum Op {
         nodes: Option<Vec<String>>,
         wires: Vec<String>,
         terminals: Vec<String>,
+        /// A branch to arrange.
+        within: Within,
     },
     WireRoute {
         file: String,
@@ -163,6 +175,8 @@ pub enum Op {
     InputSetConstant {
         file: String,
         to: String,
+        /// The arm of a `yield` that `to` names.
+        arm: Option<String>,
         value: String,
         replace: bool,
         accept_mismatch: bool,
@@ -171,6 +185,8 @@ pub enum Op {
     InputClearConstant {
         file: String,
         to: String,
+        /// The arm of a `yield` that `to` names.
+        arm: Option<String>,
     },
     /// `input.remove_value`: a value of a variadic parameter or an element of an array.
     InputRemoveValue {
@@ -200,7 +216,51 @@ pub enum Op {
         file: String,
         text: String,
         at: Point,
+        within: Within,
     },
+    /// `structure.surround`: the nodes of one frame in a new structure, or an empty one in the frame of `within` when
+    /// `nodes` is empty (commands.md 9.6).
+    StructureSurround {
+        file: String,
+        kind: StructureKind,
+        nodes: Vec<String>,
+        selector: Option<String>,
+        over: Option<String>,
+        /// The arm that takes the nodes.
+        arm: Option<String>,
+        within: Within,
+        at: Option<Point>,
+    },
+}
+
+/// The four structures of spec 6.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StructureKind {
+    Match,
+    Handle,
+    For,
+    Loop,
+}
+
+impl StructureKind {
+    pub fn parse(text: &str) -> Option<StructureKind> {
+        match text {
+            "match" => Some(StructureKind::Match),
+            "handle" => Some(StructureKind::Handle),
+            "for" => Some(StructureKind::For),
+            "loop" => Some(StructureKind::Loop),
+            _ => None,
+        }
+    }
+
+    pub fn keyword(self) -> &'static str {
+        match self {
+            StructureKind::Match => "match",
+            StructureKind::Handle => "handle",
+            StructureKind::For => "for",
+            StructureKind::Loop => "loop",
+        }
+    }
 }
 
 impl Op {
@@ -223,7 +283,8 @@ impl Op {
             | Op::ValueRename { file, .. }
             | Op::NodeSetLabel { file, .. }
             | Op::NodeSetTemplate { file, .. }
-            | Op::FragmentPaste { file, .. } => file,
+            | Op::FragmentPaste { file, .. }
+            | Op::StructureSurround { file, .. } => file,
         }
     }
 }
@@ -343,12 +404,56 @@ pub trait Judge {
         Vec::new()
     }
 
+    /// The type of a value of `file` when its text is `text`, as the check sees it: the value `name` bound on `line`, from
+    /// 1, by a line, a pattern, a clause or a carry, or the input of the function of that name when `line` is 0. What a
+    /// structure needs to know of its selector and of what crosses it (commands.md 9.6).
+    fn value_type(&self, file: &str, text: &str, line: u32, name: &str) -> ValueType {
+        let _ = (file, text, line, name);
+        ValueType::default()
+    }
+
     /// The fields of a `string.format` template, `literal` as the text writes it between its quotes, each once in the
     /// order they first appear (spec 5.4); or the message of `check` for a template whose fields do not read (R-12).
     fn template(&self, literal: &str) -> Result<Vec<String>, String> {
         let _ = literal;
         Err("this judge reads no template".to_owned())
     }
+}
+
+/// The type of a value, as far as a structure needs it (commands.md 9.6), and as the check writes it (`f64[V]`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ValueType {
+    pub kind: TypeKind,
+    pub shown: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum TypeKind {
+    /// No type yet: an error upstream, or a value that the check could not find.
+    #[default]
+    Unknown,
+    Bool,
+    /// An integer without a unit.
+    Integer,
+    Text,
+    /// `error`.
+    Error,
+    Array,
+    /// An enumeration: the library that the file must `use` for its variants, when it is another one, and its variants.
+    Enum {
+        library: Option<String>,
+        variants: Vec<VariantShape>,
+    },
+    /// Any other type: a float, a number with a unit, a struct.
+    Other,
+}
+
+/// A variant of an enumeration, as a pattern writes it from the file (`Verdict.Pass`, `stations.State.Init`), and the
+/// base of the name of each value it holds (N-14): `step` for a `Step`, `value` for a type of spec 3.1.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariantShape {
+    pub path: String,
+    pub values: Vec<String>,
 }
 
 /// A wire drawn, to one reader: its name as `wire.route` takes it (`reading -> verdict.a`), its value, the body that holds
@@ -370,6 +475,9 @@ pub struct Place {
     /// As a command names it, `#close` or `dmm`; empty for a node that has no such name.
     pub name: String,
     pub at: Point,
+    /// Where it is on the canvas, from the origin of the frame of the function: what tells where a frame starts inside
+    /// another (`structure.surround`).
+    pub absolute: Point,
 }
 
 /// Gives a label to each node of `path` that `lines` names by its line and that the `layout` section cannot name, in one
@@ -412,7 +520,13 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         return Err(EditError::new("path.not_found", format!("`{path}` is not a file of the project")).of("file"));
     };
     let mut edited = Edited::default();
-    if let Op::NodeAdd { call, at, name, into: Some(into), .. } = op {
+    if let Op::NodeAdd { call, at, name, into: Some(into), within, .. } = op {
+        if within.inside.is_some() || within.arm.is_some() {
+            return Err(EditError::invalid(
+                "inside",
+                "a node added `into` a wire goes in the frame of that wire: `inside` and `arm` do not go with it",
+            ));
+        }
         let inserted = into::node(path, text, judge, limits, call, *at, name.as_deref(), into, &mut edited)?;
         let new_text = route::follow(path, text, inserted, judge, limits)?;
         if new_text != text {
@@ -422,27 +536,43 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
     }
     let mut edit = model::Edit::read(path, text, limits)?;
     match op {
-        Op::NodeAdd { call, at, name, .. } => add::node(&mut edit, judge, call, *at, name.as_deref(), &mut edited)?,
-        Op::ConstantAdd { value, at, name, .. } => add::constant(&mut edit, value, *at, name.as_deref(), &mut edited)?,
-        Op::NodeDelete { nodes, .. } => delete::nodes(&mut edit, judge, nodes)?,
-        Op::WireConnect { from, to, replace, accept_mismatch, .. } => {
-            wire::connect(&mut edit, judge, from, to, *replace, *accept_mismatch, &mut edited)?;
+        Op::NodeAdd { call, at, name, within, .. } => {
+            let body = frame::target(&edit, within, "inside", "arm")?;
+            add::node(&mut edit, judge, call, *at, name.as_deref(), &body, &mut edited)?;
         }
-        Op::WireDisconnect { wire, .. } => wire::disconnect(&mut edit, judge, wire, &mut edited)?,
+        Op::ConstantAdd { value, at, name, within, .. } => {
+            let body = frame::target(&edit, within, "inside", "arm")?;
+            add::constant(&mut edit, value, *at, name.as_deref(), &body, &mut edited)?;
+        }
+        Op::NodeDelete { nodes, .. } => delete::nodes(&mut edit, judge, nodes)?,
+        Op::WireConnect { from, to, arm, replace, accept_mismatch, .. } => {
+            wire::connect(&mut edit, judge, from, to, arm.as_deref(), *replace, *accept_mismatch, &mut edited)?;
+        }
+        Op::WireDisconnect { wire, arm, .. } => wire::disconnect(&mut edit, judge, wire, arm.as_deref(), &mut edited)?,
         Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
         Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
-        Op::LayoutArrange { nodes, wires, terminals, .. } => layout::arrange(&mut edit, judge, nodes.as_deref(), wires, terminals)?,
-        Op::WireRoute { wire, via, .. } => route::route(&mut edit, judge, wire, via, &mut edited)?,
-        Op::InputSetConstant { to, value, replace, accept_mismatch, .. } => {
-            constant::set(&mut edit, judge, to, value, *replace, *accept_mismatch)?;
+        Op::LayoutArrange { nodes, wires, terminals, within, .. } => {
+            let branch = if *within == Within::default() { None } else { Some(frame::target(&edit, within, "inside", "arm")?) };
+            layout::arrange(&mut edit, judge, nodes.as_deref(), wires, terminals, branch.as_deref())?;
         }
-        Op::InputClearConstant { to, .. } => constant::clear(&mut edit, judge, to)?,
+        Op::WireRoute { wire, via, .. } => route::route(&mut edit, judge, wire, via, &mut edited)?,
+        Op::InputSetConstant { to, arm, value, replace, accept_mismatch, .. } => {
+            constant::set(&mut edit, judge, to, arm.as_deref(), value, *replace, *accept_mismatch)?;
+        }
+        Op::InputClearConstant { to, arm, .. } => constant::clear(&mut edit, judge, to, arm.as_deref())?,
         Op::InputRemoveValue { to, .. } => constant::remove_value(&mut edit, judge, to)?,
         Op::ValueRename { value, name, .. } => rename::value(&mut edit, value, name, &mut edited)?,
         Op::NodeSetLabel { line, label, .. } => rename::set_label(&mut edit, *line, label, &mut edited)?,
         Op::NodeSetTemplate { node, template, .. } => rename::set_template(&mut edit, judge, node, template)?,
-        Op::FragmentPaste { text, at, .. } => fragment::paste(&mut edit, judge, text, *at, &mut edited)?,
+        Op::FragmentPaste { text, at, within, .. } => {
+            let body = frame::target(&edit, within, "inside", "arm")?;
+            fragment::paste(&mut edit, judge, text, *at, &body, &mut edited)?;
+        }
+        Op::StructureSurround { kind, nodes, selector, over, arm, within, at, .. } => {
+            let given = surround::Given { kind: *kind, selector: selector.as_deref(), over: over.as_deref(), arm: arm.as_deref(), at: *at };
+            surround::surround(&mut edit, judge, nodes, within, &given, &mut edited)?;
+        }
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {

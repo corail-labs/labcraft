@@ -36,13 +36,21 @@ fn forget_read(edit: &mut Edit, judge: &dyn Judge, statement: &labcraft_graph::S
 }
 
 /// `input.set_constant`.
-pub(crate) fn set(edit: &mut Edit, judge: &dyn Judge, to: &str, value: &str, replace: bool, accept_mismatch: bool) -> Result<(), EditError> {
+pub(crate) fn set(
+    edit: &mut Edit,
+    judge: &dyn Judge,
+    to: &str,
+    arm: Option<&str>,
+    value: &str,
+    replace: bool,
+    accept_mismatch: bool,
+) -> Result<(), EditError> {
     if value.trim() == "?" {
         return Err(EditError::invalid("value", "a constant is never `?`: `input.clear_constant` is what leaves a hole"));
     }
     let constant = read_constant(edit, value)?;
     let function = edit.body_function()?.clone();
-    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None)?;
+    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None, arm)?;
     refuse_template(edit, &function, &end)?;
     match &end {
         End::Output(_) => {
@@ -75,6 +83,14 @@ pub(crate) fn set(edit: &mut Edit, judge: &dyn Judge, to: &str, value: &str, rep
             add_arg(edit, loc, &callable, *param, variadic.is_some(), constant)?;
         }
         End::Field { loc, field } => add_field(edit, loc, field, constant)?,
+        End::Next { loc, carry } => crate::wire::add_next(edit, loc, *carry, constant)?,
+        End::NextBound { loc, carry } => {
+            if !replace {
+                return Err(EditError::new("wire.occupied", format!("`{}` is set by a node: pass `replace` to replace it", cut(to))).of("to"));
+            }
+            crate::wire::unbind_next(edit, loc, *carry)?;
+            crate::wire::add_next(edit, &crate::wire::loop_of(loc)?, *carry, constant)?;
+        }
     }
     judge_types(edit, judge, &format!("the constant `{}` on `{}`", cut(value.trim()), cut(to)), accept_mismatch)
 }
@@ -104,9 +120,9 @@ fn is_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> b
 }
 
 /// `input.clear_constant`.
-pub(crate) fn clear(edit: &mut Edit, judge: &dyn Judge, to: &str) -> Result<(), EditError> {
+pub(crate) fn clear(edit: &mut Edit, judge: &dyn Judge, to: &str, arm: Option<&str>) -> Result<(), EditError> {
     let function = edit.body_function()?.clone();
-    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None)?;
+    let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, None, arm)?;
     let no_constant = || EditError::invalid("to", format!("`{}` holds no constant", cut(to)));
     refuse_template(edit, &function, &end)?;
     let End::Slot(loc, slot) = end else { return Err(no_constant()) };
@@ -141,7 +157,7 @@ pub(crate) fn remove_value(edit: &mut Edit, judge: &dyn Judge, to: &str) -> Resu
         }
     };
     let function = edit.body_function()?.clone();
-    let end = resolve_end(edit, judge, &function, &name, None)?;
+    let end = resolve_end(edit, judge, &function, &name, None, None)?;
     let End::Slot(loc, slot) = end else {
         return Err(EditError::new("edit.unknown", format!("`{}` holds no value to remove", cut(to))).of("to"));
     };

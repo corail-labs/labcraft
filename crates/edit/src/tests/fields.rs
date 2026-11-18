@@ -6,15 +6,15 @@ use super::{OPEN, TWO, connect, gives, refused};
 use crate::Op;
 
 fn set(to: &str, value: &str) -> Op {
-    Op::InputSetConstant { file: FILE.to_owned(), to: to.to_owned(), value: value.to_owned(), replace: false, accept_mismatch: false }
+    Op::InputSetConstant { file: FILE.to_owned(), to: to.to_owned(), value: value.to_owned(), replace: false, accept_mismatch: false, arm: None }
 }
 
 fn replace(to: &str, value: &str) -> Op {
-    Op::InputSetConstant { file: FILE.to_owned(), to: to.to_owned(), value: value.to_owned(), replace: true, accept_mismatch: false }
+    Op::InputSetConstant { file: FILE.to_owned(), to: to.to_owned(), value: value.to_owned(), replace: true, accept_mismatch: false, arm: None }
 }
 
 fn clear(to: &str) -> Op {
-    Op::InputClearConstant { file: FILE.to_owned(), to: to.to_owned() }
+    Op::InputClearConstant { file: FILE.to_owned(), to: to.to_owned(), arm: None }
 }
 
 fn remove(to: &str) -> Op {
@@ -57,8 +57,14 @@ fn an_input_that_holds_something_is_replaced_only_when_asked() {
 fn a_constant_of_the_wrong_type_is_refused_unless_accepted() {
     let error = refused(TWO, replace("a.b", "\"volts\""), "wire.type_mismatch");
     assert!(error.message.contains("the constant `\"volts\"` on `a.b`"), "{error:?}");
-    let op =
-        Op::InputSetConstant { file: FILE.to_owned(), to: "a.b".to_owned(), value: "\"volts\"".to_owned(), replace: true, accept_mismatch: true };
+    let op = Op::InputSetConstant {
+        file: FILE.to_owned(),
+        to: "a.b".to_owned(),
+        value: "\"volts\"".to_owned(),
+        replace: true,
+        accept_mismatch: true,
+        arm: None,
+    };
     gives(TWO, op, "use core\n\nfn f(x: f64) -> (y: f64) {\n    a = core.add(x, \"volts\")\n    b = core.mul(a, 2)\n    y = b\n}\n");
 }
 

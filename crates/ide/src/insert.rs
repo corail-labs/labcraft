@@ -4,7 +4,7 @@
 
 use egui::RichText;
 use labcraft_editor::insertion::{Catalog, Entry, EntryKind, Row};
-use labcraft_editor::{Quick, Source};
+use labcraft_editor::{Quick, STRUCTURES, Seen, Source};
 use serde_json::{Map, Value, json};
 
 /// The list of quick insertion, open on a function.
@@ -17,6 +17,8 @@ pub struct QuickList {
     pub chosen: usize,
     /// The canvas that had the keyboard, which gets it back when the list closes.
     pub canvas: Option<egui::Id>,
+    /// The values that the frame under the list sees, for a structure that needs one (notation 2.6).
+    pub seen: Vec<Seen>,
     focused: bool,
 }
 
@@ -26,6 +28,8 @@ pub enum Picked {
     /// A constant: typed text that reads as one, or a variant without values (`constant.add`).
     Constant(String),
     Entry(Entry),
+    /// An empty structure (`structure.surround` with no nodes): `match`, `handle`, `for` or `loop`.
+    Structure(&'static str),
 }
 
 /// What the list says after a frame.
@@ -39,8 +43,17 @@ pub enum Closed {
 const SHOWN: usize = 200;
 
 impl QuickList {
-    pub fn new(function: String, file: String, quick: Quick, canvas: Option<egui::Id>) -> QuickList {
-        QuickList { function, file, quick, query: String::new(), chosen: 0, canvas, focused: false }
+    pub fn new(function: String, file: String, quick: Quick, canvas: Option<egui::Id>, seen: Vec<Seen>) -> QuickList {
+        QuickList { function, file, quick, query: String::new(), chosen: 0, canvas, seen, focused: false }
+    }
+
+    /// The structures that the search names, after the other rows: on the empty canvas only (notation 2.6).
+    fn structures(&self) -> Vec<&'static str> {
+        let query = self.query.trim();
+        match self.quick.source {
+            Source::Nothing => STRUCTURES.into_iter().filter(|kind| kind.starts_with(query)).collect(),
+            _ => Vec::new(),
+        }
     }
 
     /// The rows for the search, in their order: for a wire to go into, only what goes into it.
@@ -62,7 +75,9 @@ impl QuickList {
     /// Draws the list where quick insertion opened: a search field, then the rows, each with its signature and its
     /// library. The arrows move in the list, Enter inserts, Escape or a click elsewhere closes it.
     pub fn show(&mut self, ctx: &egui::Context, catalog: &Catalog, recent: &[String]) -> Closed {
-        let rows = self.rows(catalog, recent);
+        let mut rows = self.rows(catalog, recent);
+        rows.truncate(SHOWN);
+        let structures = self.structures();
         let (down, up, enter, escape) = ctx.input_mut(|input| {
             (
                 input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
@@ -74,7 +89,7 @@ impl QuickList {
         if escape {
             return Closed::Cancelled;
         }
-        let count = rows.len().min(SHOWN);
+        let count = rows.len() + structures.len();
         if down && count > 0 {
             self.chosen = (self.chosen + 1) % count;
         }
@@ -98,7 +113,7 @@ impl QuickList {
                         self.chosen = 0;
                     }
                     egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-                        if rows.is_empty() {
+                        if rows.is_empty() && structures.is_empty() {
                             ui.label(RichText::new(nothing(&self.quick.source)).weak());
                         }
                         for (at, row) in rows.iter().take(SHOWN).enumerate() {
@@ -118,11 +133,25 @@ impl QuickList {
                                 clicked = Some(at);
                             }
                         }
+                        for (rank, kind) in structures.iter().enumerate() {
+                            let at = rows.len() + rank;
+                            let response = ui.selectable_label(at == self.chosen, RichText::new(*kind).monospace());
+                            let response = response.on_hover_text(format!("an empty `{kind}`"));
+                            if at == self.chosen && (down || up) {
+                                response.scroll_to_me(None);
+                            }
+                            if response.clicked() {
+                                clicked = Some(at);
+                            }
+                        }
                     });
                 });
             },
         );
         let picked = clicked.or(enter.then_some(self.chosen));
+        if let Some(kind) = picked.and_then(|at| at.checked_sub(rows.len())).and_then(|rank| structures.get(rank)) {
+            return Closed::Picked(Picked::Structure(kind));
+        }
         if let Some(row) = picked.and_then(|at| rows.get(at)) {
             return match row {
                 Row::Typed(text) => Closed::Picked(Picked::Constant(text.clone())),
@@ -167,6 +196,10 @@ pub fn command(file: &str, quick: &Quick, picked: &Picked, catalog: &Catalog) ->
     let mut add = Map::new();
     add.insert("file".to_owned(), json!(file));
     let (id, entry) = match picked {
+        Picked::Structure(kind) => {
+            let around = crate::values::Around::Empty { at: quick.at.unwrap_or_default(), within: quick.within.clone() };
+            return ("structure.surround".to_owned(), crate::values::command(file, kind, &around, None));
+        }
         Picked::Constant(value) => {
             add.insert("value".to_owned(), json!(value));
             ("constant.add", None)
@@ -179,6 +212,16 @@ pub fn command(file: &str, quick: &Quick, picked: &Picked, catalog: &Catalog) ->
     if let Some((x, y)) = quick.at {
         add.insert("at".to_owned(), json!([x, y]));
     }
+    // In the frame under the point: an arm or a loop body (commands.md 6.7). A node into a wire goes in the frame of the
+    // wire.
+    if !matches!(quick.source, Source::Wire { .. })
+        && let Some(inside) = &quick.within.inside
+    {
+        add.insert("inside".to_owned(), json!(inside));
+        if let Some(arm) = &quick.within.arm {
+            add.insert("arm".to_owned(), json!(arm));
+        }
+    }
     let wire = match (&quick.source, entry) {
         (Source::Wire { name, .. }, Some(_)) => {
             add.insert("into".to_owned(), json!(name));
@@ -187,12 +230,12 @@ pub fn command(file: &str, quick: &Quick, picked: &Picked, catalog: &Catalog) ->
         (Source::Terminal { name, wanted, .. } | Source::Node { name, wanted }, Some(entry)) if wanted.from_output => {
             catalog.fits(entry, wanted).map(|at| json!({ "file": file, "from": name, "to": input_of(entry, at) }))
         }
-        (Source::Terminal { name, wanted, replace }, Some(entry)) => {
-            catalog.fits(entry, wanted).map(|at| json!({ "file": file, "from": output_of(entry, at), "to": name, "replace": replace }))
-        }
+        (Source::Terminal { name, arm, wanted, replace }, Some(entry)) => catalog
+            .fits(entry, wanted)
+            .map(|at| with_arm(json!({ "file": file, "from": output_of(entry, at), "to": name, "replace": replace }), arm.as_deref())),
         // A constant drawn back from an input.
-        (Source::Terminal { name, wanted, replace }, None) if !wanted.from_output => {
-            Some(json!({ "file": file, "from": "$0", "to": name, "replace": replace }))
+        (Source::Terminal { name, arm, wanted, replace }, None) if !wanted.from_output => {
+            Some(with_arm(json!({ "file": file, "from": "$0", "to": name, "replace": replace }), arm.as_deref()))
         }
         _ => None,
     };
@@ -203,6 +246,25 @@ pub fn command(file: &str, quick: &Quick, picked: &Picked, catalog: &Catalog) ->
             ("commands.batch".to_owned(), json!({ "commands": commands, "label": "Insert Node" }))
         }
     }
+}
+
+/// The parameters with `arm`, the arm of a `yield`, when there is one: a parameter is never `null`.
+pub(crate) fn with_arm(mut params: Value, arm: Option<&str>) -> Value {
+    if let (Some(arm), Some(object)) = (arm, params.as_object_mut()) {
+        object.insert("arm".to_owned(), json!(arm));
+    }
+    params
+}
+
+/// The parameters with `inside` and `arm`, the frame of `within`, for what goes into a structure.
+pub(crate) fn within(mut params: Value, within: &labcraft_editor::InFrame) -> Value {
+    if let (Some(inside), Some(object)) = (&within.inside, params.as_object_mut()) {
+        object.insert("inside".to_owned(), json!(inside));
+        if let Some(arm) = &within.arm {
+            object.insert("arm".to_owned(), json!(arm));
+        }
+    }
+    params
 }
 
 /// The input `at` of the new node, as `wire.connect` names it through `$0`: `$0.a`, or for a value of a variant, which
