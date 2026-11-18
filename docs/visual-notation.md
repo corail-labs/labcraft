@@ -314,6 +314,19 @@ below.
   node: below the size of its content, it stops. A node moved within 24 of an edge grows the frame on that side,
   up and to the left as well, with negative coordinates; it grows only then, so a node can come that close to the edge, nearer than the
   margins that the automatic placement keeps (2.1). The terminals keep their height when the frame grows: nothing else moves.
+- **A structure** is moved by its header and its left edge (`node.move`), and resized by its right edge, its bottom
+  edge or its corner, as the frame of the function is: `frame ys size (w, h)` (spec 11), by whole steps of the grid of
+  8; below the size of its content, it stops. Its edges take the pointer 6 units inside its box, wider than its
+  outline; inside that, its body is canvas. On a structure whose header or edge is under the pointer, or selected, a
+  grip of two columns of three dots shows at the start of its header and a corner of three short diagonals at its
+  bottom right, in `ink.muted`, and the edge under the pointer is lit in `select.stroke`; the pointer says what a
+  press takes (a hand to move, an arrow to resize). The corner of the frame of the function shows when its edge is
+  under the pointer (decisions of the owner, 2026-11-18). Arrange on a structure removes its size.
+- **A fixed size shows it**, as a fixed node shows its pin: the corner of a frame whose size `layout` fixes, that of a
+  structure or of the function, stays drawn, in `ink.muted`, and on hover: "Size fixed (`frame ys size (…)` in
+  `layout`). Right-click › Remove the fixed size". Under the same setting, "mark the fixed nodes" (decision of the
+  owner, 2026-11-19). Removing the fixed size, in the context menu of the structure or of the edge of the frame of the
+  function, deletes the entry (`frame.resize` with no size): the size is automatic again, and the position stays.
 - **The terminals of the frame** are moved by hand along their edge, an input on the left, an output on the right:
   they stay on the edge, on the grid of 8, at least 24 apart, and their order can change. Only the terminals moved
   are written, one `input x at y` or `output x at y` each (spec 11). A terminal moved up or down past the frame grows
@@ -484,7 +497,8 @@ in progress writes nothing (2.4).
 | Ctrl+drag | a wired terminal | Takes the end of its wire to another terminal: `wire.disconnect` and `wire.connect` in one `commands.batch`, one step. On an input, its wire, dropped as any wire is (2.4); on an output, every wire of that value, so that its readers read another output |
 | Drag | a wire | Starts a branch at a junction (2.5) |
 | Alt+drag | a segment of a wire | `wire.route` (2.4). The modifier is a setting, Shift+Alt, for a desktop that keeps Alt+drag to move windows |
-| Drag | the right edge, the bottom edge or the corner of the frame | `frame.resize` |
+| Drag | the header or the left edge of a structure | `node.move`, as for a node |
+| Drag | the right edge, the bottom edge or the corner of the frame, or of a structure | `frame.resize`, with `inside` for a structure (2.4). Escape during the drag puts it back |
 | Drag | a terminal of the frame | `terminal.move` |
 | Alt+drag | a terminal of a block | `block.set_terminal` on the function called, to the place where it is dropped (2.4); the same setting as for a wire |
 | Double-click, or F2 | the name of a node, its label | A field in place: `value.rename` on Enter, nothing on Escape. F2 on a node with no name opens the field of its label above it (`node.set_label`), as "Label…" of its context menu does for any node (decision of the owner, 2026-11-17) |
@@ -614,8 +628,8 @@ layout {
 - **Paste** (`fragment.paste`) puts the body of the text in the frame under the pointer, or in the frame of the focus.
   The nodes keep their places relative to one another, from the top-left corner of the selection at the pointer, and
   each one that has an entry is fixed: what the diagram showed, the file keeps (2.4); a node without a name has none,
-  and is placed automatically. Of the `layout` section, only the `node` and `wire` entries come; the signature, the
-  `frame size`, the terminals, `panel` and `icon` do not. A name already taken in the function, a label or the name
+  and is placed automatically. Of the `layout` section, only the `node` and `wire` entries come, and the `frame … size`
+  of a structure copied; the signature, the `frame size` of the function, the terminals, `panel` and `icon` do not. A name already taken in the function, a label or the name
   of an output of the function included, gets a suffix (N-14), and its readers in the fragment follow. The result
   lists the names in `renamed`, and a name that the fragment reads without binding it is left out. A call to a
   library that the project lacks is pasted as written, and `check` says so. One step. Any text that holds a function

@@ -2000,7 +2000,7 @@ fn quoted(text: &str) -> String {
 }
 
 /// The editing commands whose results the window follows (`Ide::edits`).
-const EDITS: &[&str] = &["node.move", "node.place", "node.set_view", "layout.arrange"];
+const EDITS: &[&str] = &["node.move", "node.place", "node.set_view", "layout.arrange", "frame.resize"];
 
 /// The file of a function, as the session lists it.
 fn file_of(view: &Published, function: &str) -> Option<String> {
@@ -2515,6 +2515,14 @@ impl Content<'_> {
                 // The parts of a structure (notation 2.6).
                 Intent::RemovePart { structure, part } => {
                     self.ide.send_edit(self.host, view, function, "structure.remove_part", json!({ "structure": structure, "part": part }));
+                }
+                // An edge of a frame dragged (notation 2.6): its size, from its origin; "Remove the fixed size" (2.4): none.
+                Intent::Resize { structure, size } => {
+                    let mut params = json!({ "size": size.map(|(width, height)| [width, height]) });
+                    if let (Some(structure), Some(object)) = (structure, params.as_object_mut()) {
+                        object.insert("inside".to_owned(), json!(structure));
+                    }
+                    self.ide.send_edit(self.host, view, function, "frame.resize", params);
                 }
                 Intent::SetPassage { structure, part, to } => {
                     let params = json!({ "structure": structure, "part": part, "to": to });

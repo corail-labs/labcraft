@@ -1106,3 +1106,31 @@ fn a_hole_is_no_pattern() {
     assert!(result.text.is_none());
     assert_eq!(result.report.diagnostics().first().map(|diagnostic| diagnostic.code()), Some(Code::Lc1001));
 }
+
+fn with_frames(section: &str) -> String {
+    format!(
+        "labcraft 1\n\nfn f(v: [f64]) -> (a: f64) {{\n    #scan: a = for x in v {{\n        collect x\n    }}\n    size = for x in v {{\n        collect x\n    }}\n    ys = for x in v {{\n        collect x\n    }}\n}}\n\n{section}"
+    )
+}
+
+#[test]
+fn the_four_spellings_of_a_frame_size_stay() {
+    // Written by hand from spec 5.2 and 14.6: a structure named `size` is `frame size size`.
+    assert_stays(&with_frames("layout {\n    frame size (600, 300)\n}\n"));
+    assert_stays(&with_frames("layout {\n    frame ys size (320, 200)\n}\n"));
+    assert_stays(&with_frames("layout {\n    frame #scan size (320, 200)\n}\n"));
+    assert_stays(&with_frames("layout {\n    frame size size (64, 64)\n}\n"));
+}
+
+#[test]
+fn the_frames_of_a_layout_go_first_the_function_then_the_structures_by_name() {
+    // 5.2: the function's frame, the structures' frames by name in code point order (`#scan` sorts by `scan`, before `size`), nodes, wires.
+    assert_canonical(
+        &with_frames(
+            "layout {\nwire ys -> a\nnode ys at (1,2)\nframe ys size (3,4)\nframe size size (5,6)\nframe #scan size (7,8)\nframe size (9,10)\n}\n",
+        ),
+        &with_frames(
+            "layout {\n    frame size (9, 10)\n    frame #scan size (7, 8)\n    frame size size (5, 6)\n    frame ys size (3, 4)\n    node ys at (1, 2)\n    wire ys -> a\n}\n",
+        ),
+    );
+}

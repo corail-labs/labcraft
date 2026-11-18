@@ -37,6 +37,7 @@ mod quick;
 pub(crate) mod rerouting;
 pub(crate) mod select;
 pub(crate) mod series;
+mod sizing;
 pub(crate) mod view;
 pub(crate) mod wiring;
 
@@ -52,6 +53,7 @@ use moving::Moving;
 use paint::{Over, Painted, Painter};
 use rerouting::Rerouting;
 use select::{Found, Hit, Index};
+use sizing::{Grip, Resizing};
 use view::{Glide, Grid, Viewport};
 use wiring::{Retract, Rules, Wiring};
 
@@ -134,6 +136,10 @@ pub enum Intent {
     },
     /// `wire.route` for each of these wires, in one `commands.batch`: a segment moved by hand (notation 2.4).
     Route(Vec<(String, Vec<(i64, i64)>)>),
+    /// `frame.resize`: the frame of the structure named, or of the function with none, to `[w, h]` in units from its
+    /// origin, by its right edge, its bottom edge or its corner (notation 2.6, spec 11); with no size, "Remove the fixed
+    /// size": its entry goes, and its size is automatic again (notation 2.4).
+    Resize { structure: Option<String>, size: Option<(i64, i64)> },
     /// Ctrl and a drag took the end of a wire to another terminal (notation 2.6): these `wire.disconnect`, then these
     /// `wire.connect` (`from`, `to`, `replace`, `accept_mismatch`), in one `commands.batch`; each with the arm of a
     /// `yield` that it reaches.
@@ -180,6 +186,8 @@ pub enum Gesture {
     Wire,
     /// A segment of a wire is being moved (notation 2.4).
     Route,
+    /// A frame is being resized by its edge (notation 2.6).
+    Resize,
 }
 
 /// What a frame of the canvas gives back to the host.
@@ -265,6 +273,8 @@ pub struct Canvas {
     retract: Option<Retract>,
     /// A segment of a wire being moved, or asked of the host and not drawn yet.
     rerouting: Option<rerouting::Rerouting>,
+    /// A frame resized by its edge (notation 2.6).
+    resizing: Option<Resizing>,
     /// The wire routed by hand that a right-click was on, by its group, for its menu (notation 2.4).
     wire_context: Option<usize>,
     /// The room of the last frame, on the screen: where quick insertion opens.
@@ -277,6 +287,8 @@ pub struct Canvas {
     /// menu (notation 2.6).
     context_arm: Option<usize>,
     context_port: Option<usize>,
+    /// The frame of the function right-clicked by its edge, when `layout` fixes its size: its menu (notation 2.4).
+    frame_context: bool,
     /// What the command palette asked of the canvas, for the next frame to give back.
     queued: Vec<Intent>,
 }
@@ -303,6 +315,24 @@ const WHEEL_STEP: f32 = 40.0;
 /// A wire is hit within this many units of its route *(proposed)*, or 5 points on the screen when that is more
 /// (architecture 12.4).
 const WIRE_REACH: f32 = 4.0;
+/// How high the header of a structure is, in units, as a press reads it (`select::inner_rect`): that of its first body,
+/// from the top of its box.
+fn header_of(drawing: &Drawing, placed: usize) -> f32 {
+    let Some(found) = drawing.placed.get(placed) else { return 0.0 };
+    let body = found.holds.first().and_then(|&body| Some((select::body_rect(drawing, body)?, drawing.bodies.get(body)?.header)));
+    body.map_or(0.0, |(area, header)| area.min.y - found.y as f32 / 100.0 + header as f32 / 100.0)
+}
+
+/// The corner of a frame that resizes it (notation 2.6): three short diagonals inside its bottom-right corner.
+fn paint_corner(painter: &egui::Painter, corner: Pos2, zoom: f32, color: Color32) {
+    let stroke = egui::Stroke::new((zoom).clamp(0.75, 1.5), color);
+    for reach in [3.0, 6.0, 9.0] {
+        let reach = reach * zoom;
+        let inset = 2.0 * zoom;
+        painter.line_segment([corner + Vec2::new(-reach - inset, -inset), corner + Vec2::new(-inset, -reach - inset)], stroke);
+    }
+}
+
 /// A plain drag that starts within this many units of a wire grabs it for a branch (notation 2.5), or 5 points on the
 /// screen when that is more.
 const BRANCH_REACH: f32 = 4.0;
@@ -379,6 +409,8 @@ struct Frame {
     at: Option<Pos2>,
     hovered: Option<usize>,
     wire_under: Option<usize>,
+    /// The edge or the header of a frame under the pointer, and what a press there takes (notation 2.6).
+    grip: Option<(sizing::Target, Grip)>,
 }
 
 impl Frame {
@@ -447,12 +479,14 @@ impl Canvas {
             rules: Rules::default(),
             retract: None,
             rerouting: None,
+            resizing: None,
             wire_context: None,
             rect: Rect::NOTHING,
             field: None,
             refocus: false,
             context_arm: None,
             context_port: None,
+            frame_context: false,
             queued: Vec::new(),
         }
     }
@@ -506,6 +540,8 @@ impl Canvas {
         }
         self.context = None;
         self.wire_context = None;
+        // A size asked for is in the new drawing; a resize under way ends, its frame drawn anew.
+        self.resizing = None;
         // A route asked for is in the new drawing. A segment being moved goes on over the new drawing when its wire is
         // drawn there as it was; otherwise it ends.
         self.rerouting = match (self.rerouting.take(), &self.drawing) {
@@ -604,6 +640,9 @@ impl Canvas {
     pub fn cancel_move(&mut self) {
         if self.moving.as_ref().is_some_and(|moving| moving.state == moving::State::Asked) {
             self.moving = None;
+        }
+        if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Asked) {
+            self.resizing = None;
         }
     }
 
@@ -742,6 +781,8 @@ impl Canvas {
             Some(Gesture::Wire)
         } else if self.rerouting.as_ref().is_some_and(|rerouting| rerouting.state == rerouting::State::Dragging) {
             Some(Gesture::Route)
+        } else if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Dragging) {
+            Some(Gesture::Resize)
         } else {
             None
         };
@@ -879,7 +920,8 @@ impl Canvas {
             groups.dedup();
         }
         let mark_fixed = shown.mark_fixed;
-        Frame { rect, drawing, theme, ctx, now, arms, values, offsets, moving, mark_fixed, groups, at, hovered, wire_under }
+        let grip = at.filter(|_| offsets.is_none()).and_then(|unit| grip_under(&drawing, &self.index, &groups, unit, zoom, &visible_arm));
+        Frame { rect, drawing, theme, ctx, now, arms, values, offsets, moving, mark_fixed, groups, at, hovered, wire_under, grip }
     }
 
     /// The input of a frame: the tabs, the selectors and their fields, the selection by the pointer and the keys.
@@ -1052,6 +1094,11 @@ impl Canvas {
         if input.hint.is_none() && shown.mark_fixed && !coarse {
             input.hint = frame.at.and_then(|unit| pins::under(drawing, frame, &self.grid, unit)).map(|placed| pins::tooltip(drawing, placed));
         }
+        // And the corner of a frame of fixed size.
+        if input.hint.is_none() && shown.mark_fixed && !coarse && frame.offsets.is_none() {
+            let fixed = sizing::fixed(drawing, &|placed| self.grid.shown(placed, &|within| frame.visible(within)));
+            input.hint = frame.at.and_then(|unit| sizing::corner_under(&fixed, unit)).map(|target| sizing::tooltip(drawing, target));
+        }
     }
 
     /// A function dragged from the panel `Palette` (notation 2.5): its ghost follows the pointer, outlined dashed in
@@ -1130,6 +1177,10 @@ impl Canvas {
                 select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
             });
             self.context = frame.hovered.filter(|_| self.wire_context.is_none());
+            self.frame_context = self.wire_context.is_none()
+                && self.context.is_none()
+                && matches!(frame.grip, Some((None, _)))
+                && frame.drawing.bodies.first().is_some_and(|body| body.size.is_some());
             // The tab and the terminal under the pointer, for the parts of a structure (notation 2.6).
             let at = frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of);
             self.context_arm = at.and_then(|at| {
@@ -1156,9 +1207,25 @@ impl Canvas {
             }
             return;
         }
+        if self.frame_context {
+            let mut asked = false;
+            response.context_menu(|ui| {
+                if ui.button("Remove the fixed size").clicked() {
+                    asked = true;
+                    ui.close();
+                }
+            });
+            if asked {
+                input.intents.push(Intent::Resize { structure: None, size: None });
+                self.frame_context = false;
+            }
+            return;
+        }
         let Some(placed) = self.context else { return };
         let (name, fixed) =
             frame.drawing.placed.get(placed).map(|found| (found.name.clone(), found.at.is_some() && !found.name.is_empty())).unwrap_or_default();
+        let sized = frame.drawing.placed.get(placed).is_some_and(|found| found.size.is_some() && !found.name.is_empty());
+        let mut unsize = false;
         let (mut arrange, mut label, mut surround) = (false, false, None);
         let shown_arm = |index: usize| frame.arms.get(index).copied().unwrap_or(false);
         let (context_arm, context_port) = (self.context_arm, self.context_port);
@@ -1170,6 +1237,10 @@ impl Canvas {
             }
             if fixed && ui.button("Remove the fixed position").clicked() {
                 arrange = true;
+                ui.close();
+            }
+            if sized && ui.button("Remove the fixed size").clicked() {
+                unsize = true;
                 ui.close();
             }
             ui.menu_button("Surround with", |ui| {
@@ -1200,6 +1271,10 @@ impl Canvas {
             // The node right-clicked, or the selection when it holds that node.
             let nodes = if name.is_empty() || shown.selection.nodes.contains(&name) { shown.selection.nodes.clone() } else { vec![name.clone()] };
             input.intents.push(Intent::Surround { kind, nodes });
+            self.context = None;
+        }
+        if unsize {
+            input.intents.push(Intent::Resize { structure: Some(name.clone()), size: None });
             self.context = None;
         }
         if arrange {
@@ -1250,6 +1325,41 @@ impl Canvas {
                     self.drag = Some(Drag::Held);
                 }
             }
+        }
+        // A drag on the right edge, the bottom edge or the corner of a structure or of the frame of the function resizes it
+        // (notation 2.6).
+        if response.drag_started_by(PointerButton::Primary)
+            && frame.offsets.is_none()
+            && self.wiring.is_none()
+            && self.drag.is_none()
+            && let Some(from) = ctx.input(|input| input.pointer.press_origin()).map(unit_of)
+            && let Some((target, grip)) = grip_under(drawing, &self.index, &frame.groups, from, zoom, &visible)
+            && let Some(resizing) = Resizing::new(drawing, target, grip, from)
+        {
+            self.resizing = Some(resizing);
+            self.port_focus = None;
+            self.drag = Some(Drag::Held);
+        }
+        if let Some(resizing) = self.resizing.as_mut().filter(|resizing| resizing.state == sizing::State::Dragging) {
+            if let Some(at) = response.interact_pointer_pos() {
+                resizing.set_at(unit_of(at));
+                ctx.request_repaint();
+            }
+            if response.drag_stopped_by(PointerButton::Primary) {
+                let structure = match resizing.target {
+                    None => Some(None),
+                    Some(placed) => drawing.placed.get(placed).map(|found| found.name.clone()).filter(|name| !name.is_empty()).map(Some),
+                };
+                match structure.filter(|_| resizing.changed()) {
+                    Some(structure) => {
+                        resizing.state = sizing::State::Asked;
+                        input.intents.push(Intent::Resize { structure, size: Some(resizing.size) });
+                    }
+                    None => self.resizing = None,
+                }
+                self.drag = None;
+            }
+            return;
         }
         // A drag on a wire: with the modifier of the setting, its segment moves (`wire.route`); without, a branch starts at
         // a junction on it (notation 2.6).
@@ -1515,6 +1625,9 @@ impl Canvas {
                 self.drag = Some(Drag::Held);
             } else if self.moving.as_ref().is_some_and(|moving| matches!(moving.state, moving::State::Dragging { .. })) {
                 self.moving = None;
+                self.drag = Some(Drag::Held);
+            } else if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Dragging) {
+                self.resizing = None;
                 self.drag = Some(Drag::Held);
             } else if matches!(self.drag, Some(Drag::Rectangle { .. })) {
                 self.drag = Some(Drag::Held);
@@ -1819,6 +1932,12 @@ impl Canvas {
                     pins::paint(&painter, Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2())), theme, zoom);
                 }
             }
+            // The corner of each frame of fixed size, as the pin of a fixed node (notation 2.4); not while nodes move.
+            if frame.offsets.is_none() {
+                for (_, area) in sizing::fixed(drawing, &|placed| self.grid.shown(placed, &visible)) {
+                    paint_corner(&painter, to_screen(area.max.to_vec2()), zoom, theme.color("ink.muted"));
+                }
+            }
         }
         for (index, found) in drawing.tabs.iter().enumerate() {
             let structure_shown = drawing.arms.get(found.arm).is_some_and(|arm| visible(arm.within));
@@ -1971,6 +2090,9 @@ impl Canvas {
                 put(&painted, Vec2::ZERO);
             }
         }
+        if frame.offsets.is_none() {
+            self.paint_grips(&painter, frame, &selected_nodes, theme, &to_screen);
+        }
         self.paint_wiring(&painter, frame, theme, &to_screen);
         // The rectangle of selection under way, in `select.stroke`.
         if let Some(Drag::Rectangle { from, to, .. }) = self.drag {
@@ -2015,6 +2137,77 @@ impl Canvas {
             }
             (None, None) => response,
         }
+    }
+
+    /// Where a frame is taken (notation 2.6, decision of the owner, 2026-11-18): on a structure hovered by its header or its
+    /// edges, or selected, a grip at the start of its header and a corner at the bottom right; the edge under the
+    /// pointer lit, 6 units wide. The box where a resize goes, while it goes.
+    fn paint_grips(&self, painter: &egui::Painter, frame: &Frame, selected: &[usize], theme: Theme, to_screen: &dyn Fn(Vec2) -> Pos2) {
+        let (drawing, zoom) = (&frame.drawing, self.viewport.zoom);
+        let screen = |area: Rect| Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2()));
+        let select = theme.color("select.stroke");
+        let muted = theme.color("ink.muted");
+        if let Some(resizing) = &self.resizing {
+            let area = screen(resizing.area());
+            painter.rect(
+                area,
+                style::radius() as f32 / 100.0 * zoom,
+                select.gamma_multiply(0.06),
+                egui::Stroke::new(1.5, select),
+                egui::StrokeKind::Inside,
+            );
+            frame.ctx.set_cursor_icon(resizing.grip.cursor(true));
+            return;
+        }
+        let hovered = frame.grip.and_then(|(target, _)| target);
+        let mut shown: Vec<usize> =
+            selected.iter().copied().filter(|&placed| drawing.placed.get(placed).is_some_and(|found| !found.holds.is_empty())).collect();
+        shown.extend(hovered.filter(|placed| !shown.contains(placed)));
+        let dot = (0.8 * zoom).max(0.75);
+        for placed in shown {
+            let Some(area) = select::node_rect(drawing, placed) else { continue };
+            // Two columns of three dots, in the header before its mark.
+            let middle = area.min.y + header_of(drawing, placed) / 2.0;
+            for column in [2.5, 5.5] {
+                for row in [-3.0, 0.0, 3.0] {
+                    painter.circle_filled(to_screen(Vec2::new(area.min.x + column, middle + row)), dot, muted);
+                }
+            }
+            paint_corner(painter, to_screen(area.max.to_vec2()), zoom, muted);
+        }
+        let Some((target, grip)) = frame.grip.filter(|_| self.drag.is_none()) else { return };
+        let area = match target {
+            Some(placed) => select::node_rect(drawing, placed),
+            None => select::body_rect(drawing, 0),
+        };
+        let Some(area) = area else { return };
+        let lit = select.gamma_multiply(0.18);
+        let band = sizing::EDGE_BAND;
+        let right = Rect::from_min_max(Pos2::new(area.max.x - band, area.min.y), area.max);
+        let bottom = Rect::from_min_max(Pos2::new(area.min.x, area.max.y - band), area.max);
+        match grip {
+            Grip::Move => {
+                let left = Rect::from_min_max(area.min, Pos2::new(area.min.x + band, area.max.y));
+                let header = target.map_or(0.0, |placed| header_of(drawing, placed)).max(sizing::EDGE_BAND);
+                let top = Rect::from_min_max(area.min, Pos2::new(area.max.x, area.min.y + header));
+                painter.rect_filled(screen(left), 0.0, lit);
+                painter.rect_filled(screen(top), 0.0, lit);
+            }
+            Grip::Right => {
+                painter.rect_filled(screen(right), 0.0, lit);
+            }
+            Grip::Bottom => {
+                painter.rect_filled(screen(bottom), 0.0, lit);
+            }
+            Grip::Corner => {
+                painter.rect_filled(screen(right), 0.0, lit);
+                painter.rect_filled(screen(bottom), 0.0, lit);
+            }
+        }
+        if target.is_none() {
+            paint_corner(painter, to_screen(area.max.to_vec2()), zoom, muted);
+        }
+        frame.ctx.set_cursor_icon(grip.cursor(false));
     }
 
     /// The wire being drawn (notation 2.5): a ring on each terminal that would take it, the wire in the style of its
@@ -2188,6 +2381,24 @@ fn describe_port(drawing: &Drawing, port: &labcraft_diagram::Port, node: &str) -
 /// The settings of `shown` that a drop reads, with Alt.
 fn rules_of(shown: &Shown, alt: bool) -> Rules {
     Rules { replace_with_alt: shown.replace_with_alt, accept_mismatch: shown.accept_mismatch, alt }
+}
+
+/// The edge or the header of a frame under `at`, in units, at `zoom` (notation 2.6): none where a press takes a terminal or
+/// a wire instead, so that the pointer shows what the press does.
+fn grip_under(
+    drawing: &Drawing,
+    index: &Index,
+    groups: &[usize],
+    at: Pos2,
+    zoom: f32,
+    visible: &dyn Fn(Option<usize>) -> bool,
+) -> Option<(sizing::Target, Grip)> {
+    if port_at(drawing, at, (6.0 / zoom).max(5.0), visible).is_some()
+        || select::wire_at(drawing, groups, at, (5.0 / zoom).max(WIRE_REACH), visible).is_some()
+    {
+        return None;
+    }
+    sizing::grip_at(drawing, index, at, (6.0 / zoom).max(4.0), visible)
 }
 
 /// The terminal nearest `at` within `reach` units, shown, that a command wires.

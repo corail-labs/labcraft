@@ -225,6 +225,18 @@ fn hint_rect(drawing: &Drawing, hint: usize) -> Option<Rect> {
     Some(Rect::from_min_size(Pos2::new(hint.x as f32, hint.y as f32) / 100.0, Vec2::new(hint.width as f32, hint.height as f32) / 100.0))
 }
 
+/// How far inside its frame the edge of a structure takes the pointer, in units *(proposed)*: wider than its outline, so
+/// that it can be grabbed (notation 2.6).
+pub(crate) const EDGE_GRAB: f32 = 6.0;
+
+/// The canvas of a body inside its frame: the frame without its header and its edges, which are the structure.
+pub(crate) fn inner_rect(drawing: &Drawing, body: usize) -> Option<Rect> {
+    let frame = body_rect(drawing, body)?;
+    let header = drawing.bodies.get(body)?.header as f32 / 100.0;
+    let inner = Rect::from_min_max(Pos2::new(frame.min.x + EDGE_GRAB, frame.min.y + header.max(EDGE_GRAB)), frame.max - Vec2::splat(EDGE_GRAB));
+    Some(inner)
+}
+
 /// Whether a point is on a node: in its box, and for a structure not inside one of its frames shown, which is canvas of
 /// its own (its header and its edges are the structure).
 fn on_node(drawing: &Drawing, index: &Index, placed: usize, at: Pos2, visible: &dyn Fn(Option<usize>) -> bool) -> bool {
@@ -232,7 +244,7 @@ fn on_node(drawing: &Drawing, index: &Index, placed: usize, at: Pos2, visible: &
     if !index.node_shown(placed, visible) || !node_rect(drawing, placed).is_some_and(|area| area.contains(at)) {
         return false;
     }
-    !found.holds.iter().any(|&body| index.body_shown(body, visible) && body_rect(drawing, body).is_some_and(|area| area.contains(at)))
+    !found.holds.iter().any(|&body| index.body_shown(body, visible) && inner_rect(drawing, body).is_some_and(|area| area.contains(at)))
 }
 
 /// Whether `at`, in units, is within `reach` of the orthogonal segment from `a` to `b`, in hundredths.

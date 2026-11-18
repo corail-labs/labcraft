@@ -163,6 +163,7 @@ impl<'a> Sections<'_, 'a> {
     fn coordinates(&mut self, layout: &'a Layout) {
         for item in &layout.items {
             let points = match &item.kind {
+                LayoutKind::Frame { size, .. } => std::slice::from_ref(size),
                 LayoutKind::Node { at, .. } => at.as_slice(),
                 LayoutKind::Wire { via, .. } => via.as_slice(),
             };
@@ -200,12 +201,15 @@ impl<'a> Sections<'_, 'a> {
         let mut work = items.saturating_mul(WORK_PER_ITEM).max(MIN_WORK);
         for item in &layout.items {
             let found = match &item.kind {
+                LayoutKind::Frame { node: None, .. } => Some(Designated::Frame(None)),
+                LayoutKind::Frame { node: Some(node), .. } => self.frame_entry(item, node, wires),
                 LayoutKind::Node { node, .. } => self.node_entry(item, node, wires),
                 LayoutKind::Wire { from, to, .. } => self.wire_entry(item, from, to, wires, &mut work),
             };
             let Some(found) = found else { continue };
             if let Some(first) = designated.get(&found).copied() {
                 let what = match found {
+                    Designated::Frame(_) => "frame",
                     Designated::Node(_) => "node",
                     Designated::Wire(_) => "wire",
                 };
@@ -246,6 +250,32 @@ impl<'a> Sections<'_, 'a> {
                     }
                     None => format!("`node {shown}` names no node: a node is designated by its label, or by the name of its line (11)"),
                 };
+                self.say(Code::Lc5004, message, item.id, Vec::new());
+                None
+            }
+        }
+    }
+
+    /// `frame ys size (w, h)`: the size of a structure, which its label or the name of its line designates, as a node.
+    fn frame_entry(&mut self, item: &'a LayoutItem, node: &NodeRef, wires: &Wires) -> Option<Designated> {
+        let shown = self.reference(*node);
+        match wires.nodes.get(&(node.name, node.is_label)).map(Vec::as_slice) {
+            Some([only]) if wires.structures.contains(only) => Some(Designated::Frame(Some(*only))),
+            Some([_]) => {
+                let message =
+                    format!("`frame {shown} size` names nothing: `{shown}` is a node, not a structure, and only a structure has a frame (11)");
+                self.say(Code::Lc5004, message, item.id, Vec::new());
+                None
+            }
+            Some([_, _, ..]) => {
+                let message =
+                    format!("`frame {shown} size` is ambiguous: `{shown}` names a node in several bodies, and a label tells them apart (11)");
+                self.say(Code::Lc5006, message, item.id, Vec::new());
+                None
+            }
+            _ => {
+                let message =
+                    format!("`frame {shown} size` names no structure: a structure is designated by its label, or by the name of its line (11)");
                 self.say(Code::Lc5004, message, item.id, Vec::new());
                 None
             }
@@ -389,6 +419,8 @@ fn numeral_text(numeral: Numeral, names: &Interner) -> String {
 /// What a layout entry designates, for `LC5007`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Designated {
+    /// The frame of the function, or of a structure.
+    Frame(Option<Id>),
     Node(Id),
     Wire(usize),
 }
@@ -518,6 +550,8 @@ struct Wires {
     /// What a wire can end at, and what a `node` entry names.
     ends: HashMap<(Name, bool), Vec<End>>,
     nodes: HashMap<(Name, bool), Vec<Id>>,
+    /// The nodes that are structures, which have a frame of their own.
+    structures: HashSet<Id>,
     /// The inputs that a node has: those its wires reach, the parameters of a call, the fields of a construction, the clauses of a loop.
     inputs: HashMap<End, HashSet<Input>>,
     /// The parameters of a call, shared by the calls of one function: a function can have a million of them.
@@ -738,7 +772,7 @@ impl<'a> Builder<'_, '_, 'a> {
         for param in &signature.params {
             frame.insert(param.name, "an input");
         }
-        Wires { list, between, crossings, overflow, starts, calls, frame, ends, nodes, inputs, params, names }
+        Wires { list, between, crossings, overflow, starts, calls, frame, ends, nodes, structures, inputs, params, names }
     }
 
     fn new_frame(&mut self, parent: u32, structure: Id) -> u32 {

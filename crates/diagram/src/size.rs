@@ -269,6 +269,9 @@ pub struct Sized {
     /// its origin): the placement of its body does not count it, so the structure stays where it is, and the frame of
     /// its body grows upward to hold it.
     pub over: i64,
+    /// For a structure, the size its content needs, from its corner, whatever its `frame … size` entry (spec 11): the
+    /// least that a resize writes.
+    pub least: (i64, i64),
     pub left: i64,
     pub right: i64,
     pub shapes: Vec<Shape>,
@@ -293,6 +296,7 @@ impl Sized {
             height,
             above: 0,
             over: 0,
+            least: (0, 0),
             left: 0,
             right: 0,
             shapes,

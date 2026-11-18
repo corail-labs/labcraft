@@ -235,6 +235,8 @@ fn the_glide_eases_from_the_old_place() {
             at: None,
             view: String::new(),
             over: 0,
+            least: (0, 0),
+            size: None,
         }],
         ..Drawing::default()
     };
@@ -1813,4 +1815,136 @@ fn a_part_that_changes_the_stop_on_error_says_so() {
     let drawing = drawing(text, &ViewState::default());
     let port = drawing.ports.iter().find(|port| port.frame && !port.input && port.part == "carry err").unwrap();
     assert_eq!(port.ty.and_then(|ty| drawing.types.get(ty)).map(String::as_str), Some("error"));
+}
+
+/// Points of a structure, in units: on its header (just under its top edge, in its middle), on its left edge (just above
+/// its bottom edge, where no terminal is), on its right edge (in its middle) and on its bottom-right corner.
+fn edges_of(drawing: &Drawing, name: &str) -> [Pos2; 4] {
+    let placed = drawing.placed.iter().find(|placed| placed.name == name).unwrap();
+    let (x, y, width, height) = (placed.x as f32 / 100.0, placed.y as f32 / 100.0, placed.width as f32 / 100.0, placed.height as f32 / 100.0);
+    [
+        Pos2::new(x + width / 2.0, y + 3.0),
+        Pos2::new(x + 2.0, y + height - 10.0),
+        Pos2::new(x + width - 2.0, y + height / 2.0),
+        Pos2::new(x + width - 2.0, y + height - 2.0),
+    ]
+}
+
+/// A named `for` with a terminal on each edge, and an unnamed `loop` with none (issue #214).
+const STRUCTURES: [&str; 2] = [
+    "labcraft 1\n\nuse core\n\nfn main(xs: [f64]) -> (y: [f64]) {\n    ys = for v in xs {\n        w = core.abs(v)\n        collect w\n    }\n    y = ys\n}\n",
+    "labcraft 1\n\nfn main() -> (y: f64) {\n    _ = loop {\n        until true\n    }\n    y = 0.0\n}\n",
+];
+
+#[test]
+fn a_structure_moves_when_dragged_by_its_header_or_its_left_edge() {
+    for text in STRUCTURES {
+        let ctx = context();
+        install_fonts(&ctx);
+        let mut canvas = Canvas::new();
+        let drawn = drawing(text, &ViewState::default());
+        let name = drawn.placed.iter().find(|placed| !placed.holds.is_empty()).map(|placed| placed.name.clone()).unwrap();
+        canvas.set_drawing(drawn.clone(), false);
+        canvas.set_viewport(1.0, Vec2::ZERO);
+        let none = Shown::default();
+        frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+        let [header, left, ..] = edges_of(&drawn, &name);
+        for (rank, from) in [header, left].into_iter().enumerate() {
+            let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(40.0, 24.0)), 1.0 + rank as f64, &none);
+            assert!(intents.contains(&moving_of(&[name.as_str()], (40, 24))), "{name} from {from:?}: {intents:?}");
+            canvas.cancel_move();
+        }
+    }
+}
+
+#[test]
+fn the_right_edge_the_bottom_edge_or_the_corner_resizes_a_structure_on_the_grid() {
+    for text in STRUCTURES {
+        let ctx = context();
+        install_fonts(&ctx);
+        let mut canvas = Canvas::new();
+        let drawn = drawing(text, &ViewState::default());
+        let placed = drawn.placed.iter().find(|placed| !placed.holds.is_empty()).unwrap();
+        let name = placed.name.clone();
+        // Its size from the corner that its entry places, in units, as the drawing gives it; an edge moves by whole steps
+        // of the grid of 8, as a node does (30 is 32, 41 is 40).
+        let (width, height) = (placed.width / 100, (placed.height - placed.over) / 100);
+        let on_grid = |from: i64, by: i64| from + (by as f32 / 8.0).round() as i64 * 8;
+        canvas.set_drawing(drawn.clone(), false);
+        canvas.set_viewport(1.0, Vec2::ZERO);
+        let none = Shown::default();
+        frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+        let [_, _, right, corner] = edges_of(&drawn, &name);
+        let resize = |size| Intent::Resize { structure: Some(name.clone()), size: Some(size) };
+        let intents = drag_with(&ctx, &mut canvas, (right, right + Vec2::new(30.0, 50.0)), 1.0, &none);
+        assert_eq!(intents, vec![resize((on_grid(width, 30), height))], "{name}");
+        canvas.cancel_move();
+        let intents = drag_with(&ctx, &mut canvas, (corner, corner + Vec2::new(30.0, 41.0)), 2.0, &none);
+        assert_eq!(intents, vec![resize((on_grid(width, 30), on_grid(height, 41)))], "{name}");
+        canvas.cancel_move();
+        // Never under what it holds: pulled far in, it stops at its least size.
+        let least = (placed.least.0 + 99) / 100;
+        let intents = drag_with(&ctx, &mut canvas, (right, right - Vec2::new(500.0, 0.0)), 3.0, &none);
+        let expected = if least == width { Vec::new() } else { vec![resize((least, height))] };
+        assert_eq!(intents, expected, "{name}");
+    }
+}
+
+#[test]
+fn the_corner_of_the_frame_of_the_function_resizes_it() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(STRUCTURES[0], &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    let body = drawn.bodies.first().unwrap();
+    let (x, y, width, height) = body.frame;
+    let corner = Pos2::new((x + width) as f32 / 100.0 + 2.0, (y + height) as f32 / 100.0 + 2.0);
+    let size = ((x + width - body.origin.0) / 100, (y + height - body.origin.1) / 100);
+    let on_grid = |from: i64, by: i64| from + (by as f32 / 8.0).round() as i64 * 8;
+    let intents = drag_with(&ctx, &mut canvas, (corner, corner + Vec2::new(64.0, 40.0)), 1.0, &none);
+    assert_eq!(intents, vec![Intent::Resize { structure: None, size: Some((on_grid(size.0, 64), on_grid(size.1, 40))) }]);
+}
+
+#[test]
+fn a_terminal_on_the_edge_of_a_structure_draws_a_wire_and_never_resizes() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(STRUCTURES[0], &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let none = Shown::default();
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &none);
+    // The output `ys` of the `for` straddles its right edge, in the band that resizes it: the terminal is what a press
+    // takes (notation 2.6).
+    let from = port_of(&drawn, "ys", false);
+    let intents = drag_with(&ctx, &mut canvas, (from, from + Vec2::new(0.0, 120.0)), 1.0, &none);
+    assert!(!intents.iter().any(|intent| matches!(intent, Intent::Resize { .. })), "{intents:?}");
+}
+
+#[test]
+fn a_frame_of_fixed_size_shows_its_corner_under_the_setting() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    // The `for` of [`STRUCTURES`] and the function, each with a size larger than their content.
+    let text = format!("{}\nlayout {{\n    frame size (640, 400)\n    frame ys size (320, 200)\n}}\n", STRUCTURES[0]);
+    let drawn = drawing(&text, &ViewState::default());
+    let ys = drawn.placed.iter().position(|placed| placed.name == "ys").unwrap();
+    assert_eq!(drawn.placed.get(ys).and_then(|placed| placed.size), Some((32_000, 20_000)));
+    assert_eq!(drawn.bodies.first().and_then(|body| body.size), Some((64_000, 40_000)));
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    // Three diagonals for each corner, as segments: those of the two frames with the setting only.
+    let segments = |shapes: &[ClippedShape]| shapes.iter().filter(|shape| matches!(shape.shape, egui::Shape::LineSegment { .. })).count();
+    let marked = Shown { mark_fixed: true, ..Shown::default() };
+    let (with, _, _) = frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &marked);
+    let (without, _, _) = frame_shown(&ctx, &mut canvas, 0.1, Vec::new(), &Shown::default());
+    assert_eq!(segments(&with), segments(&without) + 6);
+    assert_eq!(crate::sizing::tooltip(&drawn, Some(ys)), "Size fixed (`frame ys size (320, 200)` in `layout`). Right-click › Remove the fixed size");
+    assert_eq!(crate::sizing::tooltip(&drawn, None), "Size fixed (`frame size (640, 400)` in `layout`). Right-click › Remove the fixed size");
 }

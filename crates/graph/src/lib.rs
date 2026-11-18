@@ -676,8 +676,21 @@ pub struct LayoutItem {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LayoutKind {
-    Node { node: NodeRef, at: Option<Point>, view: Option<View> },
-    Wire { from: TerminalRef, to: TerminalRef, via: Vec<Point> },
+    /// `frame size (w, h)`, the size of the frame of the function, or `frame ys size (w, h)`, of a structure (spec 11).
+    Frame {
+        node: Option<NodeRef>,
+        size: Point,
+    },
+    Node {
+        node: NodeRef,
+        at: Option<Point>,
+        view: Option<View>,
+    },
+    Wire {
+        from: TerminalRef,
+        to: TerminalRef,
+        via: Vec<Point>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

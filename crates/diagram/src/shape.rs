@@ -670,6 +670,18 @@ pub struct BodyDrawn {
     pub axis: Option<i64>,
     pub from_file: bool,
     pub frame: (i64, i64, i64, i64),
+    /// The height of the header at the top of its frame, in hundredths: the title of a loop or a `for`, the patterns of
+    /// an arm, which belong to the structure and not to its body (notation 2.6).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub header: i64,
+    /// For the frame of the function, the size its content needs from its origin, whatever `frame size` (spec 11): the
+    /// least that a resize writes; in hundredths, none for another frame.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub least: Option<(i64, i64)>,
+    /// For the frame of the function, the size that `frame size` fixes (spec 11), in hundredths: what the editor marks
+    /// (notation 2.4); none otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub size: Option<(i64, i64)>,
     /// The origin of the coordinates of `layout` in its frame (spec 11), in the coordinates of the drawing.
     #[cfg_attr(feature = "serde", serde(default))]
     pub origin: (i64, i64),
@@ -727,6 +739,14 @@ pub struct Placed {
     /// a loop, or a `match` or a `handle` in tabs, whose body grows upward (`Sized::over`); in hundredths, 0 otherwise.
     #[cfg_attr(feature = "serde", serde(default))]
     pub over: i64,
+    /// For a structure, the size its content needs from the corner its entry places (its box less `over`), whatever its
+    /// `frame … size` entry (spec 11): the least that a resize writes; in hundredths, (0, 0) for another node.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub least: (i64, i64),
+    /// For a structure, the size that its `frame … size` entry fixes (spec 11), in hundredths: what the editor marks
+    /// (notation 2.4); none for a structure of automatic size and for another node.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub size: Option<(i64, i64)>,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

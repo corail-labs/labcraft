@@ -29,8 +29,8 @@ Still to write, besides what the acceptance scenarios list under "write first"
   what editing shows and the gestures ([visual-notation.md](visual-notation.md), 2.4 and 2.6), the window
   ([ide.md](ide.md)), the architecture of editing ([architecture.md](architecture.md), 12) and the acceptance
   scenarios of M1 ([acceptance-m1.md](acceptance-m1.md)), which set the threshold of the figure of stability
-  (visual notation, 2.1). The size of a structure is written with the gesture of surrounding, step 5 of the Rust of
-  M1 ([architecture.md](architecture.md), 12.11).
+  (visual notation, 2.1). The size of a structure is written by dragging its edge (`frame.resize`), step 5 of the
+  Rust of M1 ([architecture.md](architecture.md), 12.11).
 - **after M1**: outlined. What the themes M4, M3, M2 and M5 hold, what M1 must not block and what must be
   decided before the themes beyond M5 ([outline.md](outline.md)); a theme gets its specification when its work starts.
 

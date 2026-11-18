@@ -1986,3 +1986,82 @@ fn a_wire_out_of_an_arm_to_what_feeds_its_structure_is_a_cycle() {
     let drawing = drawing_of(main);
     assert_eq!(code_of(&verdict_of(&drawing, "d", "s.b")), "wire.cycle");
 }
+
+// The size of a frame (`frame size`, `frame NAME size`, spec 11): a frame is drawn as large as its entry says, never
+// under what its content needs. Expected sizes are those of the same text without the entry, and the entry itself.
+
+const SIZED_FOR: &str = "labcraft 1\n\nfn main(v: [f64]) -> (ys: [f64]) {\n    ys = for x in v {\n        collect x\n    }\n}\n";
+
+fn drawing_with_layout(text: &str, layout: &str) -> crate::Drawing {
+    let text = if layout.is_empty() { text.to_owned() } else { format!("{text}\nlayout {{\n    {layout}\n}}\n") };
+    let (checked, names) = checked(&[("main.lcf", text.as_str())]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    drawing
+}
+
+fn placed_named<'a>(drawing: &'a crate::Drawing, name: &str) -> &'a crate::Placed {
+    drawing.placed.iter().find(|placed| placed.name == name).unwrap()
+}
+
+#[test]
+fn a_structure_larger_than_its_content_is_drawn_as_its_entry_says() {
+    let automatic = drawing_with_layout(SIZED_FOR, "");
+    let auto = placed_named(&automatic, "ys");
+    let auto_size = (auto.width, auto.height - auto.over);
+    // Larger by a whole unit each way, whatever the automatic size rounds to.
+    let (w, h) = (auto_size.0 / 100 + 100, auto_size.1 / 100 + 100);
+    let sized = drawing_with_layout(SIZED_FOR, &format!("frame ys size ({w}, {h})"));
+    let placed = placed_named(&sized, "ys");
+    assert_eq!((placed.width, placed.height - placed.over), (w * 100, h * 100));
+    // The least is the automatic size, with or without the entry.
+    assert_eq!(auto.least, auto_size);
+    assert_eq!(placed.least, auto_size);
+}
+
+#[test]
+fn a_structure_smaller_than_its_content_is_drawn_as_without_the_entry() {
+    let automatic = drawing_with_layout(SIZED_FOR, "");
+    let small = drawing_with_layout(SIZED_FOR, "frame ys size (1, 1)");
+    let (a, s) = (placed_named(&automatic, "ys"), placed_named(&small, "ys"));
+    assert_eq!((a.width, a.height, a.over, a.least), (s.width, s.height, s.over, s.least));
+    assert_eq!((automatic.width, automatic.height), (small.width, small.height));
+}
+
+#[test]
+fn the_frame_of_the_function_is_as_large_as_its_entry_says() {
+    let size = |drawing: &crate::Drawing| {
+        let body = &drawing.bodies[0];
+        // From the origin of `layout`: the frame starts there and its top is the origin.
+        (body.frame.0 + body.frame.2 - body.origin.0, body.frame.1 + body.frame.3 - body.origin.1)
+    };
+    let automatic = drawing_with_layout(SIZED_FOR, "");
+    let auto = size(&automatic);
+    assert_eq!(automatic.bodies[0].least, Some(auto));
+    let (w, h) = (auto.0 / 100 + 100, auto.1 / 100 + 100);
+    let sized = drawing_with_layout(SIZED_FOR, &format!("frame size ({w}, {h})"));
+    assert_eq!(size(&sized), (w * 100, h * 100));
+    assert_eq!(sized.bodies[0].least, Some(auto));
+    // Smaller: nothing changes.
+    let small = drawing_with_layout(SIZED_FOR, "frame size (1, 1)");
+    assert_eq!(size(&small), auto);
+    assert_eq!(small.bodies[0].least, Some(auto));
+}
+
+#[test]
+fn a_stacked_match_taller_has_its_last_arm_taller() {
+    let automatic = drawing_with_layout(ARMS, "");
+    let auto = placed_named(&automatic, "y");
+    let auto_height = auto.height - auto.over;
+    let h = auto_height / 100 + 100;
+    let sized = drawing_with_layout(ARMS, &format!("frame y size ({}, {h})", auto.width / 100 + 100));
+    let placed = placed_named(&sized, "y");
+    assert_eq!(placed.height - placed.over, h * 100);
+    let extra = h * 100 - auto_height;
+    let arm_height = |drawing: &crate::Drawing, placed: &crate::Placed, arm: usize| drawing.bodies[placed.holds[arm]].frame.3;
+    let last = placed.holds.len() - 1;
+    assert_eq!(arm_height(&sized, placed, last), arm_height(&automatic, auto, last) + extra);
+    assert_eq!(arm_height(&sized, placed, 0), arm_height(&automatic, auto, 0));
+}

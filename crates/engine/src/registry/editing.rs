@@ -625,20 +625,25 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "frame.resize",
-                "Resize Frame",
-                "Write `frame size (w, h)`",
-                "Writes `frame size (w, h)` from `[w, h]` (spec 11). A size too small for the content is `params.invalid`, and the message gives the smallest size.",
-                object(
-                    &[("file", string(FILE)), ("size", position("The size `[w, h]`, in canvas units.")), ("expected_revision", revision())],
-                    &["file", "size"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "frame.resize",
+            "Resize Frame",
+            "Write `frame size (w, h)`, of the function or of a structure",
+            "Writes `frame size (w, h)` from `[w, h]`, or with `inside` `frame ys size (w, h)` for that structure (spec 11), measured from the origin of the frame. A size too small for the content is `params.invalid`, and the message gives the smallest size. `size` `null` removes the entry: the size is automatic again (\"Remove the fixed size\"). A structure that the `layout` section cannot name gets a label first, as for `node.move`; `names.nodes` gives its name.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    (
+                        "size",
+                        json!({ "type": ["array", "null"], "items": { "type": "integer" }, "minItems": 2, "maxItems": 2, "description": "The size `[w, h]`, in canvas units; `null` removes the entry." }),
+                    ),
+                    ("inside", string("The structure whose frame it sizes; the frame of the function without it.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "size"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,

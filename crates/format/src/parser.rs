@@ -1837,7 +1837,11 @@ impl<'a> Parser<'a, '_> {
     fn layout_item(&mut self) -> Parse<LayoutItem> {
         let before = self.begin_item();
         let start = self.start()?;
-        let kind = if self.eat_word("node")? {
+        let kind = if self.eat_word("frame")? {
+            let node = self.frame_ref()?;
+            let size = self.point()?;
+            LayoutKind::Frame { node, size }
+        } else if self.eat_word("node")? {
             let node = self.node_ref()?;
             if self.eat_word("at")? {
                 let at = Some(self.point()?);
@@ -1859,11 +1863,27 @@ impl<'a> Parser<'a, '_> {
             }
             LayoutKind::Wire { from, to, via }
         } else {
-            return Err(self.unexpected("`node` or `wire`"));
+            return Err(self.unexpected("`frame`, `node` or `wire`"));
         };
         let id = self.place(start);
         let comments = self.end_item(before)?;
         Ok(LayoutItem { id, comments, kind })
+    }
+
+    /// After `frame`: `size`, the frame of the function, or the structure it sizes then `size` (`frame ys size`, and
+    /// `frame size size` for a structure named `size`).
+    fn frame_ref(&mut self) -> Parse<Option<NodeRef>> {
+        let start = self.start()?;
+        let is_label = self.eat(T::Hash)?;
+        let (name, _) = self.name("`size` or the name of a structure")?;
+        if !is_label && self.resolve(name) == "size" && self.at(T::LeftParen)? {
+            return Ok(None);
+        }
+        let node = NodeRef { id: self.place(start), is_label, name };
+        if !self.eat_word("size")? {
+            return Err(self.unexpected("`size`"));
+        }
+        Ok(Some(node))
     }
 
     fn node_ref(&mut self) -> Parse<NodeRef> {

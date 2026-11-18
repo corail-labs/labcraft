@@ -707,3 +707,40 @@ fn a_part_of_a_loop_changes_kind_in_one_step() {
     let bad = refused(&mut session, &author, "structure.set_passage", json!({ "file": "h.lcf", "structure": "m", "part": "last m", "to": "first" }));
     assert_eq!((bad.code, bad.parameter.as_deref()), ("params.invalid", Some("to")));
 }
+
+/// `frame.resize` through the session: it writes the entry of the structure, a size under what the drawing says the
+/// frame holds is refused with that least size in the message, and exactly that size is accepted (commands.md
+/// `frame.resize`). The least is read from the message and checked against the rule (one unit less in either direction
+/// is refused, the least itself is not), never typed in from the output of a run.
+#[test]
+fn a_frame_is_resized_and_a_size_under_its_content_is_refused_with_the_least() {
+    let (mut session, memory) = session();
+    let before = "labcraft 1\n\nfn h(v: [f64]) -> (ys: [f64]) {\n    ys = for x in v {\n        collect x\n    }\n}\n";
+    memory.put("/p/h.lcf", before);
+    // Large enough for any content of this loop (the limit of a coordinate is 1_000_000).
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [900, 700] }));
+    assert_eq!(text(&memory, "/p/h.lcf"), format!("{before}\nlayout {{\n    frame ys size (900, 700)\n}}\n"));
+    // Again: one entry.
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [901, 701] }));
+    assert_eq!(text(&memory, "/p/h.lcf"), format!("{before}\nlayout {{\n    frame ys size (901, 701)\n}}\n"));
+    let agent = Author::Agent("test".to_owned());
+    let error = refused(&mut session, &agent, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [1, 1] }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("params.invalid", Some("size")));
+    let least = error.message.split("least size is [").nth(1).and_then(|rest| rest.split(']').next()).unwrap_or_else(|| panic!("{}", error.message));
+    let (w, h) = least.split_once(", ").map(|(w, h)| (w.parse::<i64>().unwrap(), h.parse::<i64>().unwrap())).unwrap();
+    assert!(w > 1 && h > 1, "{least}");
+    refused(&mut session, &agent, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [w - 1, h] }));
+    refused(&mut session, &agent, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [w, h - 1] }));
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": [w, h] }));
+    assert_eq!(text(&memory, "/p/h.lcf"), format!("{before}\nlayout {{\n    frame ys size ({w}, {h})\n}}\n"));
+    // The frame of the function, without `inside`.
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "size": [900, 700] }));
+    assert_eq!(text(&memory, "/p/h.lcf"), format!("{before}\nlayout {{\n    frame size (900, 700)\n    frame ys size ({w}, {h})\n}}\n"));
+    // `size: null` removes an entry ("Remove the fixed size"), the last one the section; a missing `size` is `params.missing` (commands.md, section 2).
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "inside": "ys", "size": null }));
+    assert_eq!(text(&memory, "/p/h.lcf"), format!("{before}\nlayout {{\n    frame size (900, 700)\n}}\n"));
+    ok(&mut session, "frame.resize", json!({ "file": "h.lcf", "size": null }));
+    assert_eq!(text(&memory, "/p/h.lcf"), before);
+    let error = refused(&mut session, &agent, "frame.resize", json!({ "file": "h.lcf" }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("params.missing", Some("size")));
+}

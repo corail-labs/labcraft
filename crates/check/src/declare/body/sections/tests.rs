@@ -524,3 +524,31 @@ fn a_limit_reached_is_known() {
     assert!(!on_a_large_stack(|| cut_short(&values_under_loops(1_290, 200))));
     assert!(on_a_large_stack(|| cut_short(&values_under_loops(1_310, 200))));
 }
+
+// The layout: the size of a frame (`frame size`, `frame NAME size`).
+
+#[test]
+fn a_frame_size_names_a_structure_or_the_function() {
+    // `total` and `sum` are loops of `WIRES`; no diagnostic.
+    for entry in ["frame size (600, 300)", "frame total size (320, 200)", "frame sum size (1, 2)", "frame total size (1, 2)\nframe size (3, 4)"] {
+        assert_eq!(wires(entry), NOTHING, "{entry}");
+    }
+}
+
+#[test]
+fn a_frame_size_on_a_node_that_is_no_structure_names_nothing() {
+    // `mean` is a call.
+    assert_eq!(wires("frame mean size (320, 200)"), ["LC5004"]);
+}
+
+#[test]
+fn a_frame_has_one_size() {
+    assert_eq!(wires("frame total size (1, 2)\nframe total size (3, 4)"), ["LC5007"]);
+    assert_eq!(wires("frame size (1, 2)\nframe size (3, 4)"), ["LC5007"]);
+}
+
+#[test]
+fn the_coordinates_of_a_frame_size_are_integers_in_the_range() {
+    assert_eq!(wires("frame size (5.0, 1)"), ["LC5005"]);
+    assert_eq!(wires("frame total size (1, 1000001)"), ["LC5005"]);
+}

@@ -1666,7 +1666,8 @@ wrong type: one that adds an error of type (`LC30`) to the file is `wire.type_mi
 are read from the file alone, in `edit`. From step 2, `Judge` also gives what an operation must know of the drawing, which
 `diagram` (L5) computes above it: the place and the box of a node placed automatically (a move by `[dx, dy]` of a free
 node, the top-left corner of what `fragment.copy` copies, where `structure.surround` puts the structure), and the
-smallest size of a frame (`frame.resize`). `engine` implements it from the kept check and the drawing of the function,
+smallest size of a frame (`frame.resize`, `Judge::frames`, from `BodyDrawn::least` and `Placed::least`, which the
+placement gives whatever the `frame` entries). `engine` implements it from the kept check and the drawing of the function,
 so that `edit` stays below `diagram`. As step 2b writes it, `Judge::places(file, text)` gives each node of the drawing
 of `text`, where it is in its frame, in units: `engine` checks the text with the others in memory, unless it is the
 one on the disk, and draws it in the view state of the window and the values of the notation in force, so that a
@@ -1851,7 +1852,8 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   `show_in_style` is `begin` (the viewport, the glide, what the viewport shows and the pointer is over), `input` and
   `paint`; `describe` gives the tree of AccessKit, the canvas a list box and each node and terminal of the frame an
   option, selected or not. The box of a shape is `diagram::extent`; a node is hit on its box, a structure on its header
-  and its edges (its frames are canvas), a wire within 4 units of its route.
+  and its edges, 6 units wide inside its box (`select::EDGE_GRAB`; the rest of its frames is canvas, `BodyDrawn::header`
+  saying how high its header is), a wire within 4 units of its route.
 - **As step 2b writes them.** `Intent::Move { nodes, by }` and `Intent::Arrange(Selection)`, and `Gesture::Move`. A move
   under way is the canvas's own state (`moving.rs`): the nodes dragged, by whole steps of the grid of 8, or moved by a
   run of presses of Ctrl and an arrow, which the canvas reads on the focus and ends after a second, at a press of the
@@ -2087,8 +2089,9 @@ stay.
    outputs.
 4. **Insertion and the rest of the nodes.** Quick insertion, delete, copy and paste (`fragment.*`), constants, rename,
    labels, templates of `string.format`.
-5. **Structures.** Surrounding with a structure (commands.md 9.6), the arms of `match` and `handle`, their parts.
-6. **The function.** Signature, a new function, `frame.resize`, `terminal.move`, the view `Block` and its commands,
+5. **Structures.** Surrounding with a structure (commands.md 9.6), the arms of `match` and `handle`, their parts; their
+   size, and so `frame.resize`, of the frame of the function too (decision of the owner, 2026-11-18).
+6. **The function.** Signature, a new function, `terminal.move`, the view `Block` and its commands,
    the mask of a library, `settings.*`.
 7. **The `Text` panel.** `kit-text` and `kit-text-egui`, the language service, writing when the text parses, the
    recovery folder.
