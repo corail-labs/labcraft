@@ -23,6 +23,7 @@ use labcraft_check::Checked;
 use labcraft_types::text::{ShownText, cut_middle};
 use labcraft_types::{Code, Diagnostic, Interner};
 
+mod block;
 mod graph;
 mod marks;
 mod names;
@@ -38,7 +39,9 @@ mod svg;
 pub mod theme;
 pub mod values;
 
+pub use block::PITCH as PLACE_PITCH;
 pub use labcraft_check::{PathSegment, path_segments};
+pub use labcraft_graph::BlockSide;
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
@@ -473,6 +476,11 @@ fn shapes(
             over,
             least: sized.least,
             size: node.size,
+            callee: match &node.kind {
+                Kind::Call { glyph: None, file: Some(file), .. } if !node.standard => file.clone(),
+                _ => String::new(),
+            },
+            held: sized.held.iter().map(|(side, place)| (side.word().to_owned(), *place)).collect(),
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
@@ -1322,7 +1330,7 @@ fn wire_groups(
     let mut obstacles = names::Obstacles::default();
     for &node in &of.nodes {
         let (Some(Some(at)), Some(found)) = (placement.nodes.get(node), sized.get(node)) else { continue };
-        obstacles.rect(at.x - found.left, at.y - found.above, at.x + found.width + found.right, at.y + found.height);
+        obstacles.rect(at.x - found.left, at.y - found.above, at.x + found.width + found.right, at.y + found.height + found.below);
         // The terminals of the frames of a structure reach past its edges.
         for &inner in graph.nodes.get(node).map_or(&[][..], |found| &found.bodies[..]) {
             if let (Some(inner_of), Some(frame)) = (graph.bodies.get(inner), placement.frames.get(inner)) {

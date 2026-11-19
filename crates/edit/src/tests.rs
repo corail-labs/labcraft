@@ -1246,6 +1246,7 @@ fn a_junction_follows_the_trunk_and_not_another_branch() {
     assert!(written.contains("    wire a -> z via (140, 48)\n"), "{written}");
 }
 
+mod block;
 mod fields;
 mod fragment;
 mod frames;

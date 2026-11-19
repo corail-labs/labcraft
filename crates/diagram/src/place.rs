@@ -737,6 +737,12 @@ impl Body<'_> {
         self.sized.get(local).map_or(0, |sized| sized.above)
     }
 
+    /// How far a node reaches below the corner of its block: its block, and what it draws under it, the label of a block
+    /// with a top side (notation 3.2).
+    fn reach_down(&self, local: usize) -> i64 {
+        self.sized.get(local).map_or(0, |sized| sized.height + sized.below)
+    }
+
     /// Stacks a column from the bottom: its node of the chain, its pair on the axis, then the others in order.
     fn stack(&mut self, chain: Option<(usize, i64)>, members: &[usize], has_axis: bool) {
         let mut limit = match chain {
@@ -751,7 +757,7 @@ impl Body<'_> {
             None => 0,
         };
         for &member in members {
-            let top = limit - self.height(member);
+            let top = limit - self.reach_down(member);
             if let Some(y) = self.y.get_mut(member) {
                 *y = top;
             }
@@ -985,7 +991,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         .chain(left.iter().chain(&right).map(|y| y - style::slot() / 2))
         .chain(plan.highest.map(|track| track - style::track_room()));
     let bottoms = (0..count)
-        .map(|local| body.top(local) + body.height(local))
+        .map(|local| body.top(local) + body.reach_down(local))
         .chain(left.iter().chain(&right).map(|y| y + style::slot() / 2))
         .chain(plan.lowest.map(|track| track + style::wire_gap()));
     let top = tops.min().unwrap_or(0);
@@ -1018,7 +1024,7 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         // right, as automatic placement leaves them (notation 2.1).
         let after = columns.get(local).map_or(0, |&column| plan.channel(column + 2)).max(style::min_channel());
         width = width.max(size::up(at.x + sized.width + sized.right + after + right_zone));
-        height = height.max(at.y + sized.height + style::frame_pad());
+        height = height.max(at.y + sized.height + sized.below + style::frame_pad());
         highest = highest.min(at.y - sized.above - sized.over);
     }
     // The wires, where the nodes ended.
@@ -1137,7 +1143,7 @@ fn column_blocks(body: &Body<'_>, columns: &[usize], column_count: usize, ys: &[
     let mut blocks: Vec<Vec<(i64, i64)>> = vec![Vec::new(); column_count + 2];
     for (local, &column) in columns.iter().enumerate() {
         if let (Some(&y), Some(list)) = (ys.get(local), blocks.get_mut(column + 1)) {
-            list.push((y - body.above(local), y + body.height(local)));
+            list.push((y - body.above(local), y + body.reach_down(local)));
         }
     }
     blocks
@@ -1166,6 +1172,19 @@ fn wire_ends(
             End::Node { node: index, terminal } => {
                 let (column, sized, x, y) = node(index)?;
                 let &(dx, dy) = sized.outputs.get(terminal)?;
+                // An output on the left or the top edge (spec 11.2): out of its side, then over the block to its right edge, on
+                // its own lane above the block, which the node reserves.
+                if let Some((side, lane, beside)) = sized.lanes.1.get(terminal).copied().flatten() {
+                    let over = y - sized.above + lane;
+                    let right = x + sized.width;
+                    let head = if side == labcraft_graph::BlockSide::Left {
+                        let out = x + dx - beside;
+                        [(x + dx, y + dy), (out, y + dy), (out, over)]
+                    } else {
+                        [(x + dx, y + dy), (x + dx, over), (x + dx, over)]
+                    };
+                    return Some((column, At { head: Some(head), ..At::side(right, over, Side::Right) }));
+                }
                 Some((column, At::side(x + dx, y + dy, Side::Right)))
             }
             // An order wire from a label starts right after the label.
@@ -1186,6 +1205,16 @@ fn wire_ends(
             End::Node { node: index, terminal } => {
                 let (column, sized, x, y) = node(index)?;
                 let &(dx, dy) = sized.inputs.get(terminal)?;
+                // An input on the top edge is reached from above; one on the right edge from above too, beside that edge, then
+                // into it (spec 11.2): each on its own lane above the block, which the node reserves.
+                if let Some((side, lane, beside)) = sized.lanes.0.get(terminal).copied().flatten() {
+                    let over = y - sized.above + lane;
+                    if side == labcraft_graph::BlockSide::Right {
+                        let beside = x + dx + beside;
+                        return Some((column, At { approach: over, foot: Some((x + dx, y + dy)), ..At::side(beside, y + dy, Side::Top) }));
+                    }
+                    return Some((column, At { approach: over, ..At::side(x + dx, y + dy, Side::Top) }));
+                }
                 Some((column, At::side(x + dx, y + dy, Side::Left)))
             }
             End::Order(index) => {
@@ -1193,7 +1222,7 @@ fn wire_ends(
                 Some(match sized.order {
                     // On the top edge: reached from above, past what is above the node.
                     Some((dx, dy)) if dy <= 0 && dx > 0 => {
-                        (column, At { x: x + dx, y: y + dy, side: Side::Top, approach: y + dy - sized.above - style::wire_gap() })
+                        (column, At { approach: y + dy - sized.above - style::wire_gap(), ..At::side(x + dx, y + dy, Side::Top) })
                     }
                     Some((dx, dy)) => (column, At::side(x + dx, y + dy, Side::Left)),
                     None => (column, At::side(x, y + sized.height / 2, Side::Left)),
@@ -1463,7 +1492,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
     let span = |local: usize, placed: &[(usize, NodeAt)]| -> Option<(i64, i64, i64, i64)> {
         let sized = body.sized.get(local)?;
         let at = placed.get(local)?.1;
-        Some((at.x - sized.left, at.x + sized.width + sized.right, at.y - sized.above, at.y + sized.height))
+        Some((at.x - sized.left, at.x + sized.width + sized.right, at.y - sized.above, at.y + sized.height + sized.below))
     };
     // Across, from the left: the placed nodes that reach into each column, found in one sweep, so that the work follows
     // the overlaps rather than the columns times the placed nodes.
@@ -1503,9 +1532,10 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
                 continue;
             }
             let (Some(sized), Some(at)) = (body.sized.get(local), placed.get(local).map(|slot| slot.1)) else { continue };
-            let mut bottom = (at.y + sized.height).min(limit);
+            // Its label below it counts, as its label above does (notation 3.2).
+            let mut bottom = (at.y + sized.height + sized.below).min(limit);
             while let Some(&(top_of, bottom_of)) = obstacles.get(next) {
-                let top = bottom - sized.height - sized.above;
+                let top = bottom - sized.below - sized.height - sized.above;
                 if top_of >= bottom {
                     // Below: never in the way again, since what follows is higher.
                     next += 1;
@@ -1516,7 +1546,7 @@ fn keep_placed(graph: &Graph<'_>, body: &Body<'_>, placed: &mut [(usize, NodeAt)
                     break;
                 }
             }
-            let y = bottom - sized.height;
+            let y = bottom - sized.below - sized.height;
             if let Some(slot) = placed.get_mut(local) {
                 slot.1.y = y;
             }

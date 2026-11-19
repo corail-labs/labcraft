@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{
-    Attached, Body, Clause, ClauseKind, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel, PanelDirection, PanelItem,
-    Path, Point, Rhs, Signature, SourceMap, Statement, StatementKind, Target, Use,
+    Attached, BlockPlace, BlockSide, Body, Clause, ClauseKind, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel,
+    PanelDirection, PanelItem, Path, Point, Rhs, Signature, SourceMap, Statement, StatementKind, Target, TerminalsKind, Use,
 };
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Report};
 
@@ -30,6 +30,7 @@ pub fn canonicalize(mut file: File, map: &SourceMap, names: &mut Interner, repor
         sort_panel(panel, signature_of(&file.decl), names);
     }
     canonicalize_layout(&mut file, ordered, map, names, report);
+    canonicalize_terminals(&mut file, names);
     if file.panel.as_ref().is_some_and(|panel| panel.items.is_empty() && panel.end.is_empty() && nothing_attached(&panel.comments)) {
         file.panel = None;
     }
@@ -241,6 +242,75 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
     });
     if layout.items.is_empty() && layout.end.is_empty() && nothing_attached(&layout.comments) {
         file.layout = None;
+    }
+}
+
+/// The `terminals` section (5.2): `top`, `left`, the lines of the terminals in signature order, the inputs then the
+/// outputs, those that name no terminal after them in written order, then `band`; numbers in plain decimal; `input` or
+/// `output` kept only where the name alone would mean the other terminal (11.2).
+fn canonicalize_terminals(file: &mut File, names: &mut Interner) {
+    let Some(section) = &mut file.terminals else {
+        return;
+    };
+    let (mut inputs, mut outputs): (HashMap<Name, usize>, HashMap<Name, usize>) = (HashMap::new(), HashMap::new());
+    if let Some(signature) = signature_of(&file.decl) {
+        for (index, param) in signature.params.iter().enumerate() {
+            inputs.entry(param.name).or_insert(index);
+        }
+        for (index, output) in signature.outputs.iter().enumerate() {
+            outputs.entry(output.name).or_insert(index);
+        }
+    }
+    for item in &mut section.items {
+        match &mut item.kind {
+            TerminalsKind::Size { places, .. } => plain_digits(places, names),
+            TerminalsKind::Place { side, place, output, name } => {
+                if let BlockPlace::Number(digits) = place {
+                    plain_digits(digits, names);
+                }
+                // The name alone means the input on the left or the top, the output on the right, when it is both.
+                let both = inputs.contains_key(name) && outputs.contains_key(name);
+                let alone_means_output = both && *side == BlockSide::Right;
+                let kept = match *output {
+                    Some(true) => !outputs.contains_key(name) || (both && !alone_means_output),
+                    Some(false) => !inputs.contains_key(name) || (both && alone_means_output),
+                    None => false,
+                };
+                if !kept {
+                    *output = None;
+                }
+            }
+            TerminalsKind::Band(_) => {}
+        }
+    }
+    section.items.sort_by_key(|item| match item.kind {
+        TerminalsKind::Size { side, .. } => (0_u8, usize::from(side != BlockSide::Top)),
+        TerminalsKind::Place { side, output, name, .. } => {
+            let means_output = match output {
+                Some(output) => output,
+                None => !inputs.contains_key(&name) || (side == BlockSide::Right && outputs.contains_key(&name)),
+            };
+            let found = if means_output { outputs.get(&name) } else { inputs.get(&name) };
+            match found {
+                Some(index) => (if means_output { 2 } else { 1 }, *index),
+                None => (3, 0),
+            }
+        }
+        TerminalsKind::Band(_) => (4, 0),
+    });
+    if section.items.is_empty() && section.end.is_empty() && nothing_attached(&section.comments) {
+        file.terminals = None;
+    }
+}
+
+/// The digits of a number of `terminals` in plain decimal (`1_6`, `016`: `16`), when they read as one.
+fn plain_digits(digits: &mut Name, names: &mut Interner) {
+    let Some(value) = coordinate_value(names.resolve(*digits)) else {
+        return;
+    };
+    let text = value.to_string();
+    if text != names.resolve(*digits) {
+        *digits = names.intern(&text);
     }
 }
 

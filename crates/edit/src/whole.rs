@@ -285,6 +285,7 @@ pub fn new_type(name: &str, definition: &str, doc: Option<&str>, limits: &Limits
         matches!(&file.decl, Decl::Type(declared) if names.resolve(declared.name) == name)
             && file.panel.is_none()
             && file.layout.is_none()
+            && file.terminals.is_none()
             && file.icon.is_none()
     });
     if reading.file.is_none() || !reading.report.diagnostics().is_empty() || !one_type {

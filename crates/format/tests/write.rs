@@ -1177,3 +1177,48 @@ fn a_terminal_entry_needs_at_and_one_number() {
         assert_eq!(result.report.diagnostics().first().map(|diagnostic| diagnostic.code()), Some(Code::Lc1001), "{section}");
     }
 }
+
+// The `terminals` section (spec 5.2, "Items of `terminals`", and 11.2).
+
+const BLOCK_HEAD: &str = "labcraft 1\n\nuse core\n\nfn f(a: f64, err: error, b: f64) -> (y: f64, err: error) {\n    y = core.add(a, b)\n}\n";
+
+fn block(lines: &str) -> String {
+    format!("{BLOCK_HEAD}\nterminals {{\n{lines}}}\n")
+}
+
+#[test]
+fn terminals_go_top_left_the_lines_in_signature_order_and_band() {
+    // Inputs a, err, b then outputs y, err; a line naming no terminal after them, in written order (zz written before yy).
+    // Numbers in plain decimal: `0_3` is 3, `05` is 5.
+    let messy =
+        block("    band above\n    right 2 y\n    left 9 zz\n    left 8 yy\n    left 4 b\n    left 0_3 err\n    left 2 a\n    left 3\n    top 05\n");
+    let canonical =
+        block("    top 5\n    left 3\n    left 2 a\n    left 3 err\n    left 4 b\n    right 2 y\n    left 9 zz\n    left 8 yy\n    band above\n");
+    assert_canonical(&messy, &canonical);
+}
+
+#[test]
+fn input_and_output_go_where_the_name_alone_means_the_same_terminal() {
+    // On the right a name that is both means the output; on the left or the top, the input. Kept otherwise.
+    assert_canonical(&block("    left 2 input a\n"), &block("    left 2 a\n"));
+    assert_canonical(&block("    left 2 input err\n"), &block("    left 2 err\n"));
+    assert_canonical(&block("    top 3 input err\n"), &block("    top 3 err\n"));
+    assert_canonical(&block("    right 2 output y\n"), &block("    right 2 y\n"));
+    assert_canonical(&block("    right 3 output err\n"), &block("    right 3 err\n"));
+    assert_stays(&block("    left 4 output err\n"));
+    assert_stays(&block("    right 4 input err\n"));
+    assert_stays(&block("    top 4 output err\n"));
+    // Both terminals of the pair, each on its own line: the input first, then the output, in signature order.
+    assert_canonical(&block("    right 3 output err\n    left 3 input err\n"), &block("    left 3 err\n    right 3 err\n"));
+}
+
+#[test]
+fn an_empty_terminals_section_is_removed() {
+    assert_canonical(&format!("{BLOCK_HEAD}\nterminals {{\n}}\n"), BLOCK_HEAD);
+}
+
+#[test]
+fn terminals_stays_a_name_outside_the_section() {
+    assert_stays("labcraft 1\n\nfn f(terminals: f64) -> (y: f64) {\n    y = terminals\n}\n");
+    assert_stays("labcraft 1\n\nfn f(x: f64) -> (terminals: f64) {\n    terminals = x\n}\n");
+}

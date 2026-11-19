@@ -662,77 +662,68 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "block.set_terminal",
-                "Set Block Terminal",
-                "Write the place of a terminal on the block of a function",
-                "Writes the line `side place name` of the `terminals` section (spec 11.2). `terminal` is `input x` or `output x`; `side` is `top`, `left` or `right`; `place` is a number, `last` or `middle`. A terminal has one line: a new place replaces the old one. `null` removes the line, and the section when nothing is left in it. A place outside its side, or one that another line holds, is `params.invalid`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The terminal: `input x` or `output x`.")),
-                        ("side", json!({ "type": "string", "description": "The side of the block.", "enum": ["top", "left", "right"] })),
-                        (
-                            "place",
-                            json!({ "type": ["integer", "string", "null"], "description": "A number, `last` or `middle`; `null` removes the line." }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "side", "place"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "block.set_terminal",
+            "Set Block Terminal",
+            "Write the place of a terminal on the block of a function",
+            "Writes the line `side place name` of the `terminals` section (spec 11.2). `terminal` is `input x` or `output x`; `side` is `top`, `left` or `right`; `place` is a number, `last` or `middle`. A terminal has one line: a new place replaces the old one. `null` removes the line, and the section when nothing is left in it. A place outside its side, one that another line holds, the place of `after:` (`top 1`), or a change that would leave another line unable to apply, is `params.invalid`; a place that a terminal holds by default is free, and that terminal takes the first free place.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The terminal: `input x` or `output x`.")),
+                    ("side", json!({ "type": "string", "description": "The side of the block.", "enum": ["top", "left", "right"] })),
+                    (
+                        "place",
+                        json!({ "type": ["integer", "string", "null"], "description": "A number, `last` or `middle`; `null` removes the line." }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "side", "place"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "block.set_size",
-                "Set Block Size",
-                "Write the number of places of the block, `top N` and `left N`",
-                "Writes `top N` and `left N`; `null` removes one. A size whose places cannot hold the terminals that the section names is `params.invalid`, and the message gives the smallest.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        (
-                            "top",
-                            json!({ "type": ["integer", "null"], "description": "The places on the top side; `null` removes the line.", "minimum": 1 }),
-                        ),
-                        (
-                            "left",
-                            json!({ "type": ["integer", "null"], "description": "The places on the left side; `null` removes the line.", "minimum": 1 }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "block.set_size",
+            "Set Block Size",
+            "Write the number of places of the block, `top N` and `left N`",
+            "Writes `top N` and `left N`; `null` removes one. A size whose places cannot hold the terminals that the section names is `params.invalid`, and the message gives the smallest.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    (
+                        "top",
+                        json!({ "type": ["integer", "null"], "description": "The places on the top side, 3 to 64; `null` removes the line.", "minimum": 3, "maximum": 64 }),
+                    ),
+                    (
+                        "left",
+                        json!({ "type": ["integer", "null"], "description": "The places on the left side, 3 to 64; `null` removes the line.", "minimum": 3, "maximum": 64 }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "block.set_band",
-                "Set Block Band",
-                "Write the band of the block: hidden, inside or above",
-                "Writes `band hidden`, `band inside` or `band above`; `null` removes it, and the function follows the mask of its library.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        (
-                            "band",
-                            json!({ "type": ["string", "null"], "description": "The band; `null` removes it.", "enum": ["hidden", "inside", "above", null] }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "band"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "block.set_band",
+            "Set Block Band",
+            "Write the band of the block: hidden, inside or above",
+            "Writes `band hidden`, `band inside` or `band above`; `null` removes it, and the function follows the mask of its library.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    (
+                        "band",
+                        json!({ "type": ["string", "null"], "description": "The band; `null` removes it.", "enum": ["hidden", "inside", "above", null] }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "band"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -753,17 +744,14 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_6,
-            editing(
-                "block.reset",
-                "Reset Block",
-                "Remove the `terminals` and `outline` sections of the block",
-                "Removes the `terminals` and `outline` sections: the block goes back to the defaults, with the outline of the mask of its library when it has one.",
-                object(&[("file", string(FILE)), ("expected_revision", revision())], &["file"]),
-                EDIT_ERRORS,
-                false,
-            ),
+        editing(
+            "block.reset",
+            "Reset Block",
+            "Remove the `terminals` and `outline` sections of the block",
+            "Removes the `terminals` and `outline` sections: the block goes back to the defaults, with the outline of the mask of its library when it has one.",
+            object(&[("file", string(FILE)), ("expected_revision", revision())], &["file"]),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -1037,7 +1025,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "signature.remove",
             "Remove Terminal",
             "Remove an input or an output of a function, and its wires",
-            "Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole. Callers are not changed: `check` shows each of them.",
+            "Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole, and its entry of `layout` and its line of `terminals`. Callers are not changed: `check` shows each of them.",
             object(
                 &[("file", string(FILE)), ("terminal", string("The terminal: `input x` or `output x`.")), ("expected_revision", revision())],
                 &["file", "terminal"],
@@ -1049,7 +1037,7 @@ pub(super) fn catalog() -> Vec<Command> {
             "signature.rename",
             "Rename Terminal",
             "Rename an input or an output, and the calls that name it",
-            "Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step.",
+            "Renames an input or an output in the body, in `layout` and in the line of `terminals` that names it. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step.",
             object(
                 &[
                     ("file", string(FILE)),

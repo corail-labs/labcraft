@@ -2,6 +2,7 @@
 //! order of their body (spec 5.2), their terminals in signature order with their families (notation 4.1). `LC7002` is
 //! decided here: the nodes are counted before anything is built, the terminals as the graph is built.
 
+use crate::block::Block;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -115,7 +116,17 @@ pub enum Expects {
 pub enum Kind<'a> {
     /// A call: `qualified` as the text writes it (`visa.open`), the library of the callee for its band, and its glyph
     /// when it is a primitive drawn as a D (notation 3.2).
-    Call { qualified: String, short: String, library: Option<String>, glyph: Option<Glyph>, icon: Option<&'a Icon> },
+    /// `block`: where the `terminals` section of its function puts its terminals (spec 11.2), when it has one; `file`: the
+    /// file of that function as `check` shows it, when the check holds it, which the commands of its block write.
+    Call {
+        qualified: String,
+        short: String,
+        library: Option<String>,
+        glyph: Option<Glyph>,
+        icon: Option<&'a Icon>,
+        block: Option<Rc<Block>>,
+        file: Option<String>,
+    },
     /// A struct construction: the name of its type without its library, which goes to the band.
     Construction { ty: String, library: Option<String> },
     /// A variant constructor with values.
@@ -405,6 +416,8 @@ struct Callee<'a> {
     always: bool,
     glyph: Option<&'static str>,
     icon: Option<&'a Icon>,
+    block: Option<Rc<Block>>,
+    file: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -1043,7 +1056,15 @@ impl<'a> Builder<'a> {
                     (Some(sign), _) => Some(Glyph::Sign(sign)),
                     (None, _) => None,
                 };
-                Kind::Call { qualified, short, library: signature.band.clone(), glyph, icon: signature.icon }
+                Kind::Call {
+                    qualified,
+                    short,
+                    library: signature.band.clone(),
+                    glyph,
+                    icon: signature.icon,
+                    block: signature.block.clone(),
+                    file: signature.file.clone(),
+                }
             }
         };
         (kind, inputs, outputs, signature.always, after)
@@ -1068,7 +1089,17 @@ impl<'a> Builder<'a> {
     }
 
     fn make_callee(&self, callee: Meaning) -> Callee<'a> {
-        let mut found = Callee { params: Vec::new(), wires: Vec::new(), outputs: Vec::new(), band: None, always: false, glyph: None, icon: None };
+        let mut found = Callee {
+            params: Vec::new(),
+            wires: Vec::new(),
+            outputs: Vec::new(),
+            band: None,
+            always: false,
+            glyph: None,
+            icon: None,
+            block: None,
+            file: None,
+        };
         // The parameters: name, whether it is a wire at all (not a unit, a category, an element), its type or its family.
         match callee {
             Meaning::Function { library, name } => {
@@ -1108,6 +1139,27 @@ impl<'a> Builder<'a> {
                             .or_else(|| function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.icon.as_ref()))
                     })
                     .filter(|icon| labcraft_check::icon_refused(icon, self.names).is_none());
+                found.file =
+                    function.and_then(|function| function.file).and_then(|file| self.checked.files.get(file as usize)).map(|file| file.shown.clone());
+                // The section of its file, as for its icon (spec 11.2).
+                let section = function.and_then(|function| {
+                    function.terminals.as_ref().or_else(|| {
+                        function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.terminals.as_ref())
+                    })
+                });
+                if let (Some(function), Some(section)) = (function, section) {
+                    let inputs: Vec<Name> = function.params.iter().map(|param| param.name).collect();
+                    let outputs: Vec<Name> = function.outputs.iter().map(|output| output.name).collect();
+                    let (read, _) = labcraft_format::block::read(section, &inputs, &outputs, self.names);
+                    let optional = function
+                        .params
+                        .iter()
+                        .zip(&function.defaults)
+                        .filter(|(_, default)| default.is_some())
+                        .map(|(param, _)| self.text(param.name))
+                        .collect();
+                    found.block = Some(Rc::new(Block::of(&read, self.names, optional)));
+                }
             }
             Meaning::Primitive { library, name } => {
                 if let Some(primitive) = primitive(library, self.names.resolve(name)) {

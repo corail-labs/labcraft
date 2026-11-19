@@ -4,10 +4,11 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use labcraft_graph::{IconShape as Written, Numeral, NumeralKind};
+use labcraft_graph::{BandPlace, BlockSide, IconShape as Written, Numeral, NumeralKind};
 use labcraft_types::text::{self, ShownText};
 use labcraft_types::{Interner, TyId, cut_text};
 
+use crate::block::Block;
 use crate::graph::{Base, Family, Glyph, Kind, Node, Terminal};
 use crate::shape::{Detail, IconDrawing, IconDrawn, IconItem, IconShape, Paint, Run, Shape, Token, token_of};
 use crate::style;
@@ -258,6 +259,10 @@ pub fn lines(inputs: &[Terminal], outputs: &[Terminal]) -> Vec<Line> {
     found
 }
 
+/// A terminal off its default side (`Sized::lanes`): that side, the lane of its wire above the block, and how far beside
+/// its side the wire runs up to that lane, one wire gap more for each terminal before it on that side.
+pub type Lane = (BlockSide, i64, i64);
+
 /// What the drawing of one node gives: its block and the shapes around it, relative to the top-left of the block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sized {
@@ -269,6 +274,10 @@ pub struct Sized {
     /// its origin): the placement of its body does not count it, so the structure stays where it is, and the frame of
     /// its body grows upward to hold it.
     pub over: i64,
+    /// How far the shapes reach below the block: the label of a block with a top side, drawn under it (notation 3.2).
+    pub below: i64,
+    /// A terminal on its top side: its label goes below it (notation 3.2).
+    pub top_side: bool,
     /// For a structure, the size its content needs, from its corner, whatever its `frame … size` entry (spec 11): the
     /// least that a resize writes.
     pub least: (i64, i64),
@@ -287,6 +296,12 @@ pub struct Sized {
     /// For each input with a pill outside (an inline constant, the pill of its wire), how far left of the terminal the
     /// pill starts: further when it steps past the pill of a neighbour (notation 3.2).
     pub reaches: Vec<Option<i64>>,
+    /// For the terminals off their default side (spec 11.2), by input and by output: that side, and the lane of its wire
+    /// above the block, from the top of what the node reserves for them (`above`), 8 apart, so that no two of its wires
+    /// share a segment.
+    pub lanes: (Vec<Option<Lane>>, Vec<Option<Lane>>),
+    /// The places of a block that the lines of its section hold (spec 11.2), for the editor.
+    pub held: Vec<(BlockSide, u32)>,
 }
 
 impl Sized {
@@ -295,6 +310,8 @@ impl Sized {
             width,
             height,
             above: 0,
+            below: 0,
+            top_side: false,
             over: 0,
             least: (0, 0),
             left: 0,
@@ -306,6 +323,8 @@ impl Sized {
             label_end: None,
             arms: Vec::new(),
             reaches: Vec::new(),
+            lanes: (Vec::new(), Vec::new()),
+            held: Vec::new(),
         }
     }
 }
@@ -615,6 +634,17 @@ fn pill_text(terminal: &Terminal) -> Option<(Text, bool)> {
     }
 }
 
+/// The mark of direction of a terminal off its default side (notation 3.2): a chevron in `ink.muted`, centred on `(x, y)`,
+/// pointing along `towards`, the way the data go.
+fn chevron(x: i64, y: i64, towards: (i64, i64)) -> Shape {
+    let (along, across) = (150, 250);
+    let points = match towards {
+        (dx, 0) => vec![(x - dx * along, y - across), (x + dx * along, y), (x - dx * along, y + across)],
+        (_, dy) => vec![(x - across, y - dy * along), (x, y + dy * along), (x + across, y - dy * along)],
+    };
+    Shape::Poly { points, closed: false, paint: Paint::stroke("ink.muted", 150) }
+}
+
 /// The wire from a constant that stepped away from its terminal to that terminal (notation 3.2).
 fn lead(family: Family, from: (i64, i64), to: (i64, i64)) -> Shape {
     Shape::Poly { points: vec![from, to], closed: false, paint: Paint::stroke(wire_token(family), wire_style(family, "node.fill").width) }
@@ -633,9 +663,11 @@ impl Sizer<'_> {
         let mut sized = match &node.kind {
             Kind::Constant { name, value } => self.constant(name, value),
             Kind::Call { glyph: Some(glyph), .. } if !standard => self.primitive(node, glyph),
-            Kind::Call { qualified, short, .. } => {
+            Kind::Call { qualified, short, block, .. } => {
                 if standard {
                     self.standard(node, qualified)
+                } else if let Some(block) = block {
+                    self.sectioned(node, short, band, icon, block)
                 } else {
                     self.square(node, short, band, icon)
                 }
@@ -671,12 +703,21 @@ impl Sizer<'_> {
             // Right of an `after:` terminal on the top edge, which a wire reaches from above (notation 2.2).
             let text = Text::new(&format!("{label}:"), any_text(), medium());
             let start = match sized.order {
-                Some((x, y)) if y <= 0 && x > 0 => x + style::terminal() / 2 + style::padding(),
+                Some((x, y)) if y <= 0 && x > 0 && !sized.top_side => x + style::terminal() / 2 + style::padding(),
                 _ => 0,
             };
-            let middle = -sized.above - 400 - line_height(medium()) / 2;
+            // A block with a top side draws it 4 below instead, clear of the wires that come down to that side.
+            let middle = if sized.top_side {
+                sized.height + sized.below + 400 + line_height(medium()) / 2
+            } else {
+                -sized.above - 400 - line_height(medium()) / 2
+            };
             sized.shapes.push(text.at(start, middle, "ink.muted"));
-            sized.above += 400 + line_height(medium());
+            if sized.top_side {
+                sized.below += 400 + line_height(medium());
+            } else {
+                sized.above += 400 + line_height(medium());
+            }
             sized.right = sized.right.max(start + text.width - sized.width);
             sized.label_end = Some((start + text.width + style::padding(), middle));
         }
@@ -778,6 +819,177 @@ impl Sizer<'_> {
         let drawn = self.terminals(node, &places, width, &mut shapes);
         let order = self.compact_marks(node, width, side, &mut shapes);
         compact(width, side, shapes, drawn, order)
+    }
+
+    /// A compact block whose function places its terminals (spec 11.2, notation 3.2): as large as its places, each
+    /// terminal on its own, a mark of direction on one off its default side, the band inside or above, the label below
+    /// when the top side holds a terminal.
+    fn sectioned(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>, block: &Block) -> Sized {
+        let places = crate::block::places(block, node);
+        if places.inputs.len() != node.inputs.len() || places.outputs.len() != node.outputs.len() {
+            return self.square(node, short, band, icon);
+        }
+        let (width, height) = (places.width(), places.height());
+        let top_side = places.has_top_side();
+        let band = band.map(|band| Text::measured(band.clone(), small()));
+        let mut shapes = Vec::new();
+        let mut above = 0;
+        let top = match (band, block.band.unwrap_or(BandPlace::Inside)) {
+            (None, _) | (Some(_), BandPlace::Hidden) => body(None, (0, 0), width, height, &mut shapes),
+            // On the block, 12 high, without moving it: its corner, its size and its lines stay.
+            (Some(text), BandPlace::Above) if !top_side => {
+                let band_height = style::band_height();
+                let radius = style::radius();
+                shapes.push(Shape::Rect {
+                    x: 0,
+                    y: -band_height,
+                    width,
+                    height: band_height + radius,
+                    radius,
+                    paint: Paint::both("band.fill", "node.stroke", style::outline()),
+                });
+                shapes.push(text.centred(width / 2, -band_height / 2, "band.text"));
+                above = band_height;
+                body(None, (0, 0), width, height, &mut shapes)
+            }
+            (Some(text), _) if top_side => {
+                // In the widest gap between the terminals of the top side, cut to it.
+                let mut xs: Vec<i64> =
+                    places.inputs.iter().chain(&places.outputs).filter(|at| at.0 == BlockSide::Top).map(|at| places.at(*at).0).collect();
+                if node.after {
+                    xs.push(style::grid());
+                }
+                xs.push(0);
+                xs.push(width);
+                xs.sort_unstable();
+                let reach = style::terminal() / 2 + 200;
+                let (from, to) =
+                    xs.windows(2).filter_map(|pair| pair.first().zip(pair.get(1))).map(|(a, b)| (*a, *b)).fold((0, 0), |best, (a, b)| {
+                        let (a, b) = (if a > 0 { a + reach } else { a + 200 }, if b < width { b - reach } else { b - 200 });
+                        if b - a > best.1 - best.0 { (a, b) } else { best }
+                    });
+                let cells = cells_in(to - from, small());
+                let cut = if cells == 0 { Text::new("", 1, small()) } else { Text::new(&text.shown.text(), cells, small()) };
+                body(Some(&cut), (from, width - to), width, height, &mut shapes)
+            }
+            (Some(text), _) => body(Some(&text), band_insets(node), width, height, &mut shapes),
+        };
+        // The centre: the icon, scaled down to what a small block leaves, never up; else the name, cut to the width.
+        let centre = top + (height - top) / 2;
+        match icon {
+            Some(icon) => {
+                // A block that the section makes smaller than 40 scales its icon down to what its band leaves, never up.
+                let side = if width >= style::square() && height >= style::square() {
+                    style::icon()
+                } else {
+                    style::icon().min(width.min(height - top) - (style::square() - style::icon())).max(0)
+                };
+                shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
+            }
+            None => {
+                let cells = cells_in(width - style::terminal(), label_size());
+                let label = if node.always { vec![Text::new(short, cells, label_size())] } else { label_lines(short, cells) };
+                let line = line_height(label_size());
+                let centre = if node.always { (top + always_top(height)) / 2 } else { centre };
+                let first = centre - line * label.len() as i64 / 2;
+                for (row, text) in label.iter().enumerate() {
+                    shapes.push(text.centred(width / 2, first + line * row as i64 + line / 2, "node.title"));
+                }
+            }
+        }
+        // The terminals, the pills of their constants, and a mark of direction on those off their default side.
+        let half = style::terminal() / 2;
+        let mut pills = Vec::new();
+        let (mut right, mut over) = (half, above);
+        let mut inputs = Vec::with_capacity(node.inputs.len());
+        let mut tops: Vec<(i64, Text, Family)> = Vec::new();
+        for (index, (terminal_of, at)) in node.inputs.iter().zip(&places.inputs).enumerate() {
+            let (x, y) = places.at(*at);
+            shapes.extend(terminal(terminal_of.family, x, y, 100, false));
+            inputs.push((x, y));
+            match at.0 {
+                BlockSide::Left => pills.push((index, x, y)),
+                BlockSide::Right => {
+                    shapes.push(chevron(x + half + 400, y, (-1, 0)));
+                    if let Some((text, constant)) = pill_text(terminal_of) {
+                        let start = x + half + style::grid();
+                        if constant {
+                            shapes.extend(pill(&text, start, y));
+                        }
+                        right = right.max(start + pill_width(&text) - width);
+                    }
+                }
+                BlockSide::Top => {
+                    if let Some((text, true)) = pill_text(terminal_of) {
+                        tops.push((x, text, terminal_of.family));
+                    }
+                }
+            }
+        }
+        // Above a terminal of the top side, its bottom 8 above the edge; one that would meet its neighbour steps upward.
+        tops.sort_by_key(|(x, _, _)| *x);
+        let mut placed: Vec<(i64, i64, i64)> = Vec::new();
+        for (x, text, family) in tops {
+            let width_of = pill_width(&text);
+            let (start, end) = (x - width_of / 2, x + width_of / 2);
+            let mut bottom = -style::grid();
+            for &(left_end, right_end, other_bottom) in &placed {
+                if start < right_end + style::grid() && end + style::grid() > left_end {
+                    bottom = bottom.min(other_bottom - style::pill_height() - style::grid() / 2);
+                }
+            }
+            shapes.extend(pill(&text, start, bottom - style::pill_height() / 2));
+            if bottom < -style::grid() {
+                shapes.push(lead(family, (x, bottom), (x, -half)));
+            }
+            over = over.max(-bottom + style::pill_height());
+            placed.push((start, end, bottom));
+        }
+        let mut outputs = Vec::with_capacity(node.outputs.len());
+        for (output, at) in node.outputs.iter().zip(&places.outputs) {
+            let (x, y) = places.at(*at);
+            shapes.extend(terminal(output.family, x, y, 100, output.ignored));
+            match at.0 {
+                BlockSide::Left => shapes.push(chevron(x - half - 400, y, (-1, 0))),
+                BlockSide::Top => shapes.push(chevron(x, y - half - 400, (0, -1))),
+                BlockSide::Right => {}
+            }
+            outputs.push((x, y));
+        }
+        let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
+        let order = self.compact_marks(node, width, height, &mut shapes);
+        // A lane above the block for each wire of a terminal off its default side: the outputs first, then the inputs.
+        let (mut lane, mut beside_left, mut beside_right) = (0_i64, 0_i64, 0_i64);
+        let gap = style::wire_gap();
+        let mut take = |side: BlockSide, default: BlockSide| {
+            (side != default).then(|| {
+                lane += 1;
+                let beside = match side {
+                    BlockSide::Left => &mut beside_left,
+                    BlockSide::Right => &mut beside_right,
+                    BlockSide::Top => return (side, (lane - 1) * gap, 0),
+                };
+                *beside += 1;
+                (side, (lane - 1) * gap, *beside * gap)
+            })
+        };
+        let lanes_out: Vec<Option<Lane>> = places.outputs.iter().map(|at| take(at.0, BlockSide::Right)).collect();
+        let lanes_in: Vec<Option<Lane>> = places.inputs.iter().map(|at| take(at.0, BlockSide::Left)).collect();
+        let over = over + lane * gap;
+        Sized {
+            lanes: (lanes_in, lanes_out),
+            held: places.held.clone(),
+            // The wires that run up beside a side, and the chevrons, reach out that far.
+            left: left.max(if beside_left > 0 { half + beside_left * gap } else { 0 }),
+            right: right.max(if beside_right > 0 { half + beside_right * gap } else { 0 }),
+            above: over,
+            top_side,
+            inputs,
+            outputs,
+            order,
+            reaches,
+            ..Sized::new(width, height, shapes)
+        }
     }
 
     /// The terminals of a block on its places, and the pills of its constants.

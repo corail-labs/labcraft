@@ -13,10 +13,11 @@
 //! It recurses on the model: the nesting limit bounds it (`crates/format/tests/stack.rs`).
 
 use labcraft_graph::{
-    Arg, Arm, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType, Exponent, Extern,
-    Field, File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem, LayoutKind, Loop, NamedType,
-    NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature,
-    Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
+    Arg, Arm, Attached, Binding, BlockPlace, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType,
+    Exponent, Extern, Field, File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem, LayoutKind, Loop,
+    NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs,
+    Signature, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl, TypeExpr,
+    UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
 };
 use labcraft_types::{Interner, Limits, Name};
 
@@ -313,6 +314,10 @@ impl<'a> Writer<'a> {
         if let Some(layout) = &file.layout {
             self.newline();
             self.layout(layout);
+        }
+        if let Some(terminals) = &file.terminals {
+            self.newline();
+            self.terminals(terminals);
         }
         if let Some(icon) = &file.icon {
             self.newline();
@@ -1134,6 +1139,45 @@ impl<'a> Writer<'a> {
         self.push(", ");
         self.numeral(point.y);
         self.push(")");
+    }
+
+    fn terminals(&mut self, terminals: &Terminals) {
+        self.comment_lines(&terminals.comments.before, 0);
+        self.push("terminals ");
+        self.section(&terminals.items, &terminals.end, Self::terminals_item);
+        self.end_line(terminals.comments.line.as_deref());
+    }
+
+    fn terminals_item(&mut self, item: &TerminalsItem) {
+        self.comment_lines(&item.comments.before, 1);
+        self.indent(1);
+        match item.kind {
+            TerminalsKind::Size { side, places } => {
+                self.push(side.word());
+                self.push(" ");
+                self.name(places);
+            }
+            TerminalsKind::Place { side, place, output, name } => {
+                self.push(side.word());
+                self.push(" ");
+                match place {
+                    BlockPlace::Number(digits) => self.name(digits),
+                    BlockPlace::Last => self.push("last"),
+                    BlockPlace::Middle => self.push("middle"),
+                }
+                self.push(match output {
+                    Some(true) => " output ",
+                    Some(false) => " input ",
+                    None => " ",
+                });
+                self.name(name);
+            }
+            TerminalsKind::Band(place) => {
+                self.push("band ");
+                self.push(place.word());
+            }
+        }
+        self.end_line(item.comments.line.as_deref());
     }
 
     fn icon(&mut self, icon: &Icon) {

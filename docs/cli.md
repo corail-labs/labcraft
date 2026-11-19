@@ -500,6 +500,8 @@ section 3), not a diagnostic.
 | `LC5011` | error | Panel kind that does not show the type of the input or the output of its name: a wire that it refuses is `LC3001`, a `default:` `LC3017` | 10 |
 | `LC5012` | error | `default:` on an input or an output, whether or not its signature has a default, or given twice | 10 |
 | `LC5013` | error | Panel element that receives wires or constants of different types, `f64[V]` and `f64[mV]` included. On the element, naming at most five values. Not when its name, its kind or its `default:` gives the type, where each one goes to that type as on a terminal | 10 |
+| `LC5014` | warning | Line of a `terminals` section that cannot apply, whose terminal keeps its default place: it names no terminal of the signature (`input x` where `x` is no input), a place outside its side (0, or past the last of a side whose size the section gives), a place that another line took, or the place of `after:` (`top 1`) | 11.2 |
+| `LC5015` | error | `terminals` section that cannot be read as one: two sizes for one side, two `band` lines, two lines for one terminal, or a size outside 3 to 64 | 11.2 |
 
 ### `fmt`: `LC60`
 

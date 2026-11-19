@@ -2138,3 +2138,128 @@ fn the_first_of_two_entries_for_one_terminal_counts() {
     };
     assert_eq!(height_of(&drawing, "a", false), 40_000);
 }
+
+// The terminals of a block (spec 11.2). The places are 8 apart (800 hundredths) and counted from 1: the terminal of place
+// `p` on the left or the right is at height `p × 800`, on the top at `p × 800` from the left. A block is `(top + 1) × 8`
+// wide and `(left + 1) × 8` high; without `top` the top side has 4 places (width 40), and without `left` the left side has
+// 4 places, 40 high, for a function so small.
+
+const G: &str = "fn g(x: f64) -> (n: i64) {\n    n = 1\n}\n";
+const H: &str = "fn h(a: f64, err: error = none) -> (n: i64, err: error) {\n    n = 1\n    err = err\n}\n";
+
+/// The size of the only call of `main` to `callee` (a function of `main.lcf`'s folder), with `terminals` added to it.
+fn block_sized(callee: &str, call: &str, terminals: &str) -> crate::size::Sized {
+    let callee = format!("labcraft 1\n\n{callee}{terminals}");
+    let main = format!("labcraft 1\n\nfn main(v: f64, e: error) -> (r: i64, err: error) {{\n    {call}\n    err = e\n}}\n");
+    let file = if callee.contains("fn g(") { "g.lcf" } else { "h.lcf" };
+    let (checked, names) = checked(&[("main.lcf", &main), (file, &callee)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
+    Sizer { names: &names, standard_everywhere: false }.size(node, None, None)
+}
+
+fn g_sized(terminals: &str) -> crate::size::Sized {
+    block_sized(G, "r = g(v)", terminals)
+}
+
+fn h_sized(terminals: &str) -> crate::size::Sized {
+    block_sized(H, "r, e2 = h(v, err: e)", terminals)
+}
+
+#[test]
+fn a_block_without_a_section_is_unchanged() {
+    let sized = g_sized("");
+    assert_eq!((sized.width, sized.height), (4000, 4000));
+    assert_eq!((sized.inputs, sized.outputs), (vec![(0, 800)], vec![(4000, 800)]));
+    let sized = h_sized("");
+    assert_eq!((sized.width, sized.height), (4000, 4000));
+    assert!(!sized.top_side);
+}
+
+#[test]
+fn top_5_gives_a_block_48_wide() {
+    // (5 + 1) × 8 = 48; the left side keeps its 4 places by default: (4 + 1) × 8 = 40.
+    let sized = g_sized("\nterminals {\n    top 5\n}\n");
+    assert_eq!((sized.width, sized.height), (4800, 4000));
+    // The terminals stay on their default places: the right edge moved with the width.
+    assert_eq!((sized.inputs, sized.outputs), (vec![(0, 800)], vec![(4800, 800)]));
+}
+
+#[test]
+fn left_3_gives_a_block_32_high_and_left_4_with_a_middle_five_places() {
+    // `left 3`: (3 + 1) × 8 = 32.
+    assert_eq!(g_sized("\nterminals {\n    left 3\n}\n").height, 3200);
+    // `left 4` with `left middle x`: 5 places, (5 + 1) × 8 = 48 high; the middle is place 3, 3 × 8 = 24 from the top.
+    let sized = g_sized("\nterminals {\n    left 4\n    left middle x\n}\n");
+    assert_eq!((sized.width, sized.height), (4000, 4800));
+    assert_eq!(sized.inputs, [(0, 2400)]);
+    assert_eq!(sized.outputs, [(4000, 800)]);
+    // Without `left`, the side has the 4 places of a small block, and the middle makes it 5: the same.
+    let sized = g_sized("\nterminals {\n    left middle x\n}\n");
+    assert_eq!((sized.width, sized.height), (4000, 4800));
+    assert_eq!(sized.inputs, [(0, 2400)]);
+}
+
+#[test]
+fn a_terminal_moved_to_the_right_or_the_top_is_drawn_there() {
+    // `right 2 x`: the input on the right edge, place 2, 16 from the top; `n` takes the first place that no line took.
+    let sized = g_sized("\nterminals {\n    right 2 x\n}\n");
+    assert_eq!((sized.inputs, sized.outputs), (vec![(4000, 1600)], vec![(4000, 800)]));
+    assert!(!sized.top_side);
+    // `top 3 x`: 3 × 8 = 24 from the left, on the top edge.
+    let sized = g_sized("\nterminals {\n    top 3 x\n}\n");
+    assert_eq!((sized.inputs, sized.outputs), (vec![(2400, 0)], vec![(4000, 800)]));
+    assert!(sized.top_side);
+    // `top last x`: the top side has 4 places by default, so the last is 4 × 8 = 32.
+    assert_eq!(g_sized("\nterminals {\n    top last x\n}\n").inputs, [(3200, 0)]);
+    // An output on the left: place 2.
+    assert_eq!(g_sized("\nterminals {\n    left 2 n\n}\n").outputs, [(0, 1600)]);
+}
+
+#[test]
+fn the_err_pair_takes_the_last_place_of_its_sides() {
+    // `top 5`: 48 wide, 4 places on the left: the last is 4 × 8 = 32; `a` and `n` take the first, 8.
+    let sized = h_sized("\nterminals {\n    top 5\n}\n");
+    assert_eq!((sized.width, sized.height), (4800, 4000));
+    assert_eq!(sized.inputs, [(0, 800), (0, 3200)]);
+    assert_eq!(sized.outputs, [(4800, 800), (4800, 3200)]);
+    // A line that moves `a` leaves the pair where it is.
+    let sized = h_sized("\nterminals {\n    top 5\n    top 3 a\n}\n");
+    assert_eq!(sized.inputs, [(2400, 0), (0, 3200)]);
+}
+
+#[test]
+fn the_label_of_a_block_with_a_top_side_goes_below_it() {
+    let labelled = |terminals: &str| block_sized(G, "#lab: r = g(v)", terminals);
+    // Notation 3.2: the label is above a block, and below it when a terminal is on its top side.
+    let plain = labelled("");
+    assert!(plain.above > 0 && plain.below == 0, "{} {}", plain.above, plain.below);
+    let top = labelled("\nterminals {\n    top 3 x\n}\n");
+    // Above it, only the lane of the wire of `x`, its one terminal off its default side (spec 11.2): one wire gap.
+    assert!(top.below > 0 && top.above == crate::style::wire_gap(), "{} {}", top.above, top.below);
+}
+
+#[test]
+fn each_terminal_off_its_side_has_its_own_lane_above_the_block() {
+    // `a` on the top, the output `n` on the left 1, the input `err` on the right 2, whose pair takes the facing place, left 2
+    // (11.2). The outputs take the lanes first (n, err), then the inputs (a, err), 8 apart, and the node reserves them above
+    // its block (notation 2.2: two wires never share a segment).
+    let sized = block_sized(
+        H,
+        "r, e2 = h(v, e)",
+        "
+terminals {
+    top 3 a
+    left 1 n
+    right 2 input err
+}
+",
+    );
+    let gap = crate::style::wire_gap();
+    use labcraft_graph::BlockSide::{Left, Right, Top};
+    // Beside its side, each wire one gap further out than the one before it on that side: n then err on the left.
+    assert_eq!(sized.lanes.1, [Some((Left, 0, gap)), Some((Left, gap, 2 * gap))]);
+    assert_eq!(sized.lanes.0, [Some((Top, 2 * gap, 0)), Some((Right, 3 * gap, gap))]);
+    assert!(sized.above >= 4 * gap, "{}", sized.above);
+}

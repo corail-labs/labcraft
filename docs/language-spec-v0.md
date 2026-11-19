@@ -1535,7 +1535,9 @@ terminals {
   libraries have no band, whatever the line says.
 - **Lines that cannot apply.** A line that names no terminal of the signature, a place outside its side (past the
   last), a place that another line took, or the place of `after:` (`top 1`) is a warning, and its terminal keeps
-  its default place. Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside 3 to 64
+  its default place. Lines take their places in the order of the signature, the inputs then the outputs, the order
+  that `fmt` writes (5.2): of two lines on one place, the second in that order does not apply, whatever their written
+  order (decision of the owner, 2026-11-19). Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside 3 to 64
   are an error. The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section 5,
   lists only those).
 - **The standard view does not follow the section** (visual notation 3.1): it lists the terminals by name, in

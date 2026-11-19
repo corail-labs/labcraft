@@ -69,6 +69,10 @@ pub const EDITING: &[&str] = &[
     "signature.rename",
     "signature.set_type",
     "signature.set_default",
+    "block.set_terminal",
+    "block.set_size",
+    "block.set_band",
+    "block.reset",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -372,6 +376,45 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         "signature.set_type" => Op::SignatureSetType { file, terminal: terminal(params)?, ty: params.text("type")?.to_owned() },
         // `default` is required (the schema), and `null` makes the input required.
         "signature.set_default" => Op::SignatureSetDefault { file, terminal: terminal(params)?, default: params.str("default").map(str::to_owned) },
+        "block.set_terminal" => {
+            let at = match params.get("place") {
+                None => None,
+                Some(place) => {
+                    let place = match place {
+                        Value::Number(number) => number.to_string(),
+                        Value::String(text) => text.clone(),
+                        _ => String::new(),
+                    };
+                    Some(labcraft_edit::BlockAt::parse(params.text("side")?, &place).map_err(command_error)?)
+                }
+            };
+            Op::BlockSetTerminal { file, terminal: terminal(params)?, at }
+        }
+        "block.set_size" => {
+            let size = |key: &str| -> Result<Option<Option<u32>>, CommandError> {
+                if params.is_null(key) {
+                    return Ok(Some(None));
+                }
+                match params.get(key) {
+                    None => Ok(None),
+                    Some(value) => match value.as_u64().and_then(|places| u32::try_from(places).ok()) {
+                        Some(places) => Ok(Some(Some(places))),
+                        None => Err(CommandError::of("params.invalid", key, format!("`{key}` is a number of places"))),
+                    },
+                }
+            };
+            Op::BlockSetSize { file, top: size("top")?, left: size("left")? }
+        }
+        "block.set_band" => {
+            let band = match params.str("band") {
+                None => None,
+                Some(text) => Some(labcraft_graph::BandPlace::from_word(text).ok_or_else(|| {
+                    CommandError::of("params.invalid", "band", format!("`{}` is no band: `hidden`, `inside` or `above`", labcraft_edit::cut(text)))
+                })?),
+            };
+            Op::BlockSetBand { file, band }
+        }
+        "block.reset" => Op::BlockReset { file },
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
     Ok((op, target))
