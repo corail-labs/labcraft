@@ -58,6 +58,18 @@ pub struct Step {
     /// UTC, in nanoseconds since 1970.
     pub time_ns: i64,
     pub changes: Vec<Change>,
+    /// A function renamed by this step (`function.rename`): what the tabs and the windows follow when it is undone or
+    /// done again (decision of the owner, 2026-11-19).
+    pub renamed: Option<Renamed>,
+}
+
+/// A function renamed: its file and its own name (`settle`) before, and after.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Renamed {
+    pub from_file: String,
+    pub from_name: String,
+    pub to_file: String,
+    pub to_name: String,
 }
 
 impl Step {
@@ -83,10 +95,17 @@ pub struct History {
 
 impl History {
     /// A new step. It drops what redo would replay. Its number.
+    /// The step just recorded renamed a function.
+    pub fn mark_renamed(&mut self, number: u64, renamed: Renamed) {
+        if let Some(step) = self.done.last_mut().filter(|step| step.number == number) {
+            step.renamed = Some(renamed);
+        }
+    }
+
     pub fn record(&mut self, author: Author, label: String, time_ns: i64, changes: Vec<Change>) -> u64 {
         self.undone.clear();
         self.last += 1;
-        self.done.push(Step { number: self.last, author, label, time_ns, changes });
+        self.done.push(Step { number: self.last, author, label, time_ns, changes, renamed: None });
         self.trim();
         self.last
     }

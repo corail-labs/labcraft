@@ -33,6 +33,8 @@ pub enum FieldKind {
     /// `signature.add`: `name: type`, or `name: type = default` for an input; with no type, the host opens the list of
     /// types (decision of the owner, 2026-11-19).
     AddTerminal { input: bool },
+    /// `function.rename` of the function shown, from the title of its frame (decision of the owner, 2026-11-19).
+    FunctionName,
 }
 
 /// A field open on the canvas.
@@ -191,6 +193,14 @@ impl Canvas {
             self.field = Some(Field::new(FieldKind::TerminalName { terminal: terminal.clone() }, caption, at, None));
             return true;
         }
+        // Nothing selected: the name of the function, on the title of its frame.
+        if self.found.is_empty()
+            && self.port_focus.is_none()
+            && let Some((name, at)) = crate::signature::title(&drawing)
+        {
+            self.field = Some(Field::new(FieldKind::FunctionName, name, at, None));
+            return true;
+        }
         let focused = self.port_focus.and_then(|at| drawing.ports.get(at)).and_then(|port| port.placed);
         let placed = match (focused, self.found.nodes.len()) {
             (Some(placed), _) => placed,
@@ -302,6 +312,13 @@ impl Canvas {
             return false;
         }
         let drawing = frame.drawing.clone();
+        // The title of the frame of the function: its name.
+        if frame.hovered.is_none()
+            && let Some((name, at)) = crate::signature::title_under(&drawing, unit)
+        {
+            self.field = Some(Field::new(FieldKind::FunctionName, name, at, None));
+            return true;
+        }
         // A terminal of the frame of the function: its name, the pill of its default (notation 2.4).
         if frame.hovered.is_none()
             && let Some((kind, text, at)) = crate::signature::text_under(&drawing, unit)

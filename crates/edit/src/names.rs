@@ -165,7 +165,8 @@ pub(crate) fn rename_in_layout(edit: &mut Edit, from: Name, to: Name, is_label: 
     let Some(layout) = &mut edit.file.layout else { return };
     for item in &mut layout.items {
         match &mut item.kind {
-            LayoutKind::Frame { node: None, .. } => {}
+            // The terminals of the frame are renamed with the signature (`signature.rename`).
+            LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => {}
             LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => {
                 if node.is_label == is_label && node.name == from {
                     node.name = to;

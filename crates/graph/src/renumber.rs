@@ -350,6 +350,7 @@ impl Ids {
                     }
                     self.point(size);
                 }
+                LayoutKind::Terminal { .. } => {}
                 LayoutKind::Node { node, at, .. } => {
                     self.node_ref(node);
                     if let Some(at) = at {

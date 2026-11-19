@@ -248,6 +248,7 @@ fn listing(view: &Published, report: &Report) -> Listing {
                 warnings: listed.warnings,
             })
             .collect(),
+        types: view.types.iter().map(|listed| (listed.name.clone(), listed.file.clone())).collect(),
         problems: report
             .diagnostics()
             .iter()

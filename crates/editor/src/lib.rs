@@ -25,6 +25,7 @@ use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
 mod clip;
+mod edge;
 mod fields;
 mod fonts;
 mod frames;
@@ -48,7 +49,7 @@ pub use frames::{InFrame, STRUCTURES, Seen};
 pub use parts::PartAsked;
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
-pub use signature::{default_is_cut, frame_default};
+pub use signature::{default_is_cut, frame_default, frame_height, frame_terminal, own_name};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use moving::Moving;
@@ -180,6 +181,10 @@ pub enum Intent {
     MakeTerminal { terminal: String, ty: String, from: String, to: String },
     /// `signature.remove`: "Remove" of the menu of a terminal of the frame of the function.
     RemoveTerminal { terminal: String },
+    /// `terminal.move`: a terminal of the frame of the function (`input x`) to the height `y`, in units from the origin of
+    /// the frame (spec 11), by a drag along its edge or a run of Ctrl and an arrow (notation 2.4). The canvas shows it there
+    /// until the next drawing, or until the host calls [`Canvas::cancel_move`].
+    MoveTerminal { terminal: String, y: i64 },
     /// "Type…" of the menu of a terminal of the frame of the function: the host opens the list of types, and
     /// `signature.set_type` with the one chosen (decision of the owner, 2026-11-19).
     PickType { terminal: String },
@@ -285,6 +290,8 @@ pub struct Canvas {
     rerouting: Option<rerouting::Rerouting>,
     /// A frame resized by its edge (notation 2.6).
     resizing: Option<Resizing>,
+    /// A terminal of the frame of the function moved along its edge, or asked of the host and not drawn yet (notation 2.4).
+    sliding: Option<edge::Sliding>,
     /// The wire routed by hand that a right-click was on, by its group, for its menu (notation 2.4).
     wire_context: Option<usize>,
     /// The room of the last frame, on the screen: where quick insertion opens.
@@ -495,6 +502,7 @@ impl Canvas {
             retract: None,
             rerouting: None,
             resizing: None,
+            sliding: None,
             wire_context: None,
             rect: Rect::NOTHING,
             field: None,
@@ -557,8 +565,12 @@ impl Canvas {
         }
         self.context = None;
         self.wire_context = None;
-        // A size asked for is in the new drawing; a resize under way ends, its frame drawn anew.
+        // A size asked for is in the new drawing; a resize under way ends, its frame drawn anew. So does a terminal moved.
         self.resizing = None;
+        self.sliding = match self.sliding.take() {
+            Some(sliding) if sliding.state != edge::State::Asked => sliding.again(&drawing),
+            _ => None,
+        };
         // A route asked for is in the new drawing. A segment being moved goes on over the new drawing when its wire is
         // drawn there as it was; otherwise it ends.
         self.rerouting = match (self.rerouting.take(), &self.drawing) {
@@ -661,6 +673,9 @@ impl Canvas {
         if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Asked) {
             self.resizing = None;
         }
+        if self.sliding.as_ref().is_some_and(|sliding| sliding.state == edge::State::Asked) {
+            self.sliding = None;
+        }
     }
 
     /// The wire asked for failed: it goes, and the old wire it would have replaced stays.
@@ -696,6 +711,14 @@ impl Canvas {
     /// Ends a run of presses of Ctrl and an arrow now (notation 2.6: another key ends it): the move it asks for, if any.
     /// The host calls it before it runs a key of its own, so that the move comes before what the key does.
     pub fn end_run(&mut self) -> Option<Intent> {
+        if let Some(sliding) = self.sliding.as_mut().filter(|sliding| matches!(sliding.state, edge::State::Keys { .. })) {
+            if !sliding.changed() {
+                self.sliding = None;
+                return None;
+            }
+            sliding.state = edge::State::Asked;
+            return Some(Intent::MoveTerminal { terminal: sliding.terminal.clone(), y: sliding.y });
+        }
         let moving = self.moving.as_mut().filter(|moving| matches!(moving.state, moving::State::Keys { .. }))?;
         moving.state = moving::State::Asked;
         let (by, nodes) = (moving.by, moving.nodes.clone());
@@ -800,6 +823,8 @@ impl Canvas {
             Some(Gesture::Route)
         } else if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Dragging) {
             Some(Gesture::Resize)
+        } else if self.sliding.as_ref().is_some_and(|sliding| sliding.state != edge::State::Asked) {
+            Some(Gesture::Move)
         } else {
             None
         };
@@ -1111,6 +1136,9 @@ impl Canvas {
         if input.hint.is_none() && shown.mark_fixed && !coarse {
             input.hint = frame.at.and_then(|unit| pins::under(drawing, frame, &self.grid, unit)).map(|placed| pins::tooltip(drawing, placed));
         }
+        if input.hint.is_none() && shown.mark_fixed && !coarse && frame.offsets.is_none() {
+            input.hint = frame.at.and_then(|unit| pins::terminal_under(drawing, unit)).map(|port| pins::terminal_tooltip(drawing, port));
+        }
         // And the corner of a frame of fixed size.
         if input.hint.is_none() && shown.mark_fixed && !coarse && frame.offsets.is_none() {
             let fixed = sizing::fixed(drawing, &|placed| self.grid.shown(placed, &|within| frame.visible(within)));
@@ -1167,7 +1195,10 @@ impl Canvas {
     /// A run of presses of Ctrl and an arrow ends a second after the last press, or at a press of the pointer or of
     /// another key (notation 2.6): then it is the move it asks for.
     fn end_run_when_due(&mut self, frame: &Frame, input: &mut Input) {
-        let Some(moving::State::Keys { last }) = self.moving.as_ref().map(|moving| moving.state) else { return };
+        let last = match (self.moving.as_ref().map(|moving| moving.state), self.sliding.as_ref().map(|sliding| sliding.state)) {
+            (Some(moving::State::Keys { last }), _) | (_, Some(edge::State::Keys { last })) => last,
+            _ => return,
+        };
         let other_key = frame.ctx.input(|input| {
             input.events.iter().any(|event| {
                 matches!(event, egui::Event::Key { key, pressed: true, modifiers, .. } if !(is_arrow(*key) && modifiers.command && !modifiers.alt))
@@ -1354,9 +1385,14 @@ impl Canvas {
         let Some(found) = frame.drawing.ports.get(port) else { return };
         let Some(terminal) = signature::frame_terminal(found) else { return };
         let is_input = !found.input;
+        let fixed = found.fixed;
         let caption = found.caption.clone();
         let mut chosen: Option<&'static str> = None;
         response.context_menu(|ui| {
+            if fixed && ui.button("Remove the fixed position").clicked() {
+                chosen = Some("unfix");
+                ui.close();
+            }
             for (entry, shown) in [("rename", true), ("type", true), ("default", is_input), ("remove", true)] {
                 let label = match entry {
                     "rename" => "Rename",
@@ -1396,6 +1432,7 @@ impl Canvas {
                 }
             }
             "remove" => input.intents.push(Intent::RemoveTerminal { terminal }),
+            "unfix" => input.intents.push(Intent::Arrange(Selection { terminals: vec![terminal], ..Selection::default() })),
             "add input" => self.add_terminal(&frame.drawing, true),
             _ => self.add_terminal(&frame.drawing, false),
         }
@@ -1424,13 +1461,15 @@ impl Canvas {
         let rules = Rules { alt: modifiers.alt, ..self.rules };
         if response.drag_started_by(PointerButton::Primary) && frame.offsets.is_none() {
             let from = ctx.input(|input| input.pointer.press_origin()).map(unit_of);
-            // A drag from a terminal draws a wire; Ctrl with it takes the end of its wire (notation 2.6). Alt with it
-            // moves a terminal of a block, from step 6 of M1.
+            // A drag from a terminal draws a wire; Ctrl with it takes the end of its wire (notation 2.6). A terminal of the
+            // frame of the function moves along its edge (notation 2.4). Alt with it moves a terminal of a block, from
+            // step 6 of M1.
             let port = from.and_then(|from| port_at(drawing, from, (6.0 / zoom).max(5.0), &visible));
             if let (Some(from), Some(port)) = (from, port) {
                 let of_the_function = drawing.ports.get(port).is_some_and(|found| found.frame && found.placed.is_none());
                 if of_the_function {
-                    input.intents.push(Intent::Say("Moving a terminal of the frame comes with M1 step 6".to_owned()));
+                    self.sliding = edge::Sliding::new(drawing, port, edge::State::Dragging, from.y);
+                    self.port_focus = None;
                     self.drag = Some(Drag::Held);
                     return;
                 }
@@ -1460,6 +1499,22 @@ impl Canvas {
             self.resizing = Some(resizing);
             self.port_focus = None;
             self.drag = Some(Drag::Held);
+        }
+        if let Some(sliding) = self.sliding.as_mut().filter(|sliding| sliding.state == edge::State::Dragging) {
+            if let Some(at) = response.interact_pointer_pos() {
+                sliding.set_at(unit_of(at).y);
+                ctx.request_repaint();
+            }
+            if response.drag_stopped_by(PointerButton::Primary) {
+                if sliding.changed() {
+                    sliding.state = edge::State::Asked;
+                    input.intents.push(Intent::MoveTerminal { terminal: sliding.terminal.clone(), y: sliding.y });
+                } else {
+                    self.sliding = None;
+                }
+                self.drag = None;
+            }
+            return;
         }
         if let Some(resizing) = self.resizing.as_mut().filter(|resizing| resizing.state == sizing::State::Dragging) {
             if let Some(at) = response.interact_pointer_pos() {
@@ -1707,6 +1762,37 @@ impl Canvas {
         moving.set_by(drawing, by);
     }
 
+    /// The terminal of the frame of the function that the selection holds alone, by its port.
+    fn selected_frame_terminal(&self, drawing: &Drawing) -> Option<usize> {
+        let base = self.asked_found.as_ref().unwrap_or(&self.found);
+        if !base.nodes.is_empty() || !base.groups.is_empty() || base.terminals.len() != 1 {
+            return None;
+        }
+        let name = base.terminals.first().and_then(|&hint| drawing.hints.get(hint)).and_then(|hint| hint.selects.clone())?;
+        drawing.ports.iter().position(|port| signature::frame_terminal(port).as_deref() == Some(name.as_str()))
+    }
+
+    /// Ctrl and Up or Down on a terminal of the frame of the function: to the next free place that way, the presses that
+    /// follow one another one move (notation 2.4, 2.6).
+    fn slide(&mut self, drawing: &Drawing, port: usize, by: i64, now: f64, input: &mut Input) {
+        if self.sliding.as_ref().is_some_and(|sliding| sliding.state == edge::State::Asked) {
+            return;
+        }
+        if self.sliding.as_ref().is_some_and(|sliding| sliding.port != port) {
+            input.intents.extend(self.end_run());
+            self.sliding = None;
+        }
+        let sliding = match &mut self.sliding {
+            Some(sliding) => sliding,
+            None => match edge::Sliding::new(drawing, port, edge::State::Keys { last: now }, 0.0) {
+                Some(sliding) => self.sliding.insert(sliding),
+                None => return,
+            },
+        };
+        sliding.state = edge::State::Keys { last: now };
+        sliding.step(by);
+    }
+
     /// With the focus: Tab and Shift+Tab, the arrows, Enter and Escape move the selection, which is the focus (notation
     /// 2.6). Tab past the last one, or Shift+Tab before the first, leaves the canvas.
     fn select_by_keys(&mut self, ui: &mut Ui, response: &Response, frame: &Frame, input: &mut Input) {
@@ -1763,6 +1849,9 @@ impl Canvas {
             } else if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Dragging) {
                 self.resizing = None;
                 self.drag = Some(Drag::Held);
+            } else if self.sliding.as_ref().is_some_and(|sliding| sliding.state == edge::State::Dragging) {
+                self.sliding = None;
+                self.drag = Some(Drag::Held);
             } else if matches!(self.drag, Some(Drag::Rectangle { .. })) {
                 self.drag = Some(Drag::Held);
             } else if self.list.is_some() {
@@ -1807,6 +1896,13 @@ impl Canvas {
             if let Some(big) = found {
                 let size = if big { 64 } else { moving::GRID as i64 };
                 let now = ui.input(|input| input.time);
+                // A terminal of the frame of the function selected alone moves along its edge (notation 2.4).
+                if let Some(port) = self.selected_frame_terminal(drawing) {
+                    if dy != 0 {
+                        self.slide(drawing, port, dy * size, now, input);
+                    }
+                    return;
+                }
                 self.nudge(drawing, (dx * size, dy * size), now, input);
                 return;
             }
@@ -2066,8 +2162,14 @@ impl Canvas {
                     pins::paint(&painter, Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2())), theme, zoom);
                 }
             }
-            // The corner of each frame of fixed size, as the pin of a fixed node (notation 2.4); not while nodes move.
+            // The corner of each frame of fixed size, as the pin of a fixed node (notation 2.4), and the pin of each fixed
+            // terminal of the frame of the function; not while nodes move.
             if frame.offsets.is_none() {
+                for port in 0..drawing.ports.len() {
+                    if let Some(area) = pins::terminal_area(drawing, port) {
+                        pins::paint(&painter, Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2())), theme, zoom);
+                    }
+                }
                 for (_, area) in sizing::fixed(drawing, &|placed| self.grid.shown(placed, &visible)) {
                     paint_corner(&painter, to_screen(area.max.to_vec2()), zoom, theme.color("ink.muted"));
                 }
@@ -2281,6 +2383,16 @@ impl Canvas {
         let screen = |area: Rect| Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2()));
         let select = theme.color("select.stroke");
         let muted = theme.color("ink.muted");
+        // Where a terminal of the frame goes, while it moves: a mark across its edge, its place on the grid.
+        if let Some(sliding) = &self.sliding {
+            let at = to_screen(sliding.at().to_vec2());
+            let reach = 8.0 * zoom;
+            painter.line_segment([at - Vec2::new(reach, 0.0), at + Vec2::new(reach, 0.0)], egui::Stroke::new(2.0, select));
+            painter.circle(at, (3.0 * zoom).max(3.0), select.gamma_multiply(0.25), egui::Stroke::new(1.5, select));
+            if sliding.state == edge::State::Dragging {
+                frame.ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+        }
         if let Some(resizing) = &self.resizing {
             let area = screen(resizing.area());
             painter.rect(

@@ -82,7 +82,7 @@ pub(super) fn judge_sections<'a>(
                 let limit = scope.model.source_map.len().saturating_mul(WIRES_PER_PLACE).max(MIN_WIRES);
                 let wires = Wires::of(function, signature, resolved, context, &mentioned, limit);
                 sections.pass.cut_short |= wires.overflow;
-                sections.layout(layout, &wires);
+                sections.layout(layout, &wires, signature);
             }
             Some(_) => {}
         }
@@ -163,20 +163,27 @@ impl<'a> Sections<'_, 'a> {
     fn coordinates(&mut self, layout: &'a Layout) {
         for item in &layout.items {
             let points = match &item.kind {
+                LayoutKind::Terminal { y, .. } => {
+                    self.coordinate(*y, item.id);
+                    continue;
+                }
                 LayoutKind::Frame { size, .. } => std::slice::from_ref(size),
                 LayoutKind::Node { at, .. } => at.as_slice(),
                 LayoutKind::Wire { via, .. } => via.as_slice(),
             };
             for point in points {
                 for numeral in [point.x, point.y] {
-                    if !self.is_coordinate(numeral) {
-                        let text = numeral_text(numeral, self.names());
-                        let message =
-                            format!("`{text}` is not a coordinate: a coordinate is an integer between -1000000 and 1000000, written in digits (11)");
-                        self.say(Code::Lc5005, message, point.id, Vec::new());
-                    }
+                    self.coordinate(numeral, point.id);
                 }
             }
+        }
+    }
+
+    fn coordinate(&mut self, numeral: Numeral, id: Id) {
+        if !self.is_coordinate(numeral) {
+            let text = numeral_text(numeral, self.names());
+            let message = format!("`{text}` is not a coordinate: a coordinate is an integer between -1000000 and 1000000, written in digits (11)");
+            self.say(Code::Lc5005, message, id, Vec::new());
         }
     }
 
@@ -195,7 +202,10 @@ impl<'a> Sections<'_, 'a> {
         }
     }
 
-    fn layout(&mut self, layout: &'a Layout, wires: &Wires) {
+    fn layout(&mut self, layout: &'a Layout, wires: &Wires, signature: &Signature) {
+        // The inputs and the outputs, once: a file can have an entry for each of a hundred thousand.
+        let frame: (HashSet<Name>, HashSet<Name>) =
+            (signature.params.iter().map(|param| param.name).collect(), signature.outputs.iter().map(|output| output.name).collect());
         let mut designated: HashMap<Designated, Id> = HashMap::with_capacity(layout.items.len());
         let items = u64::try_from(layout.items.len().saturating_add(wires.list.len())).unwrap_or(u64::MAX);
         let mut work = items.saturating_mul(WORK_PER_ITEM).max(MIN_WORK);
@@ -203,6 +213,7 @@ impl<'a> Sections<'_, 'a> {
             let found = match &item.kind {
                 LayoutKind::Frame { node: None, .. } => Some(Designated::Frame(None)),
                 LayoutKind::Frame { node: Some(node), .. } => self.frame_entry(item, node, wires),
+                LayoutKind::Terminal { output, name, .. } => self.terminal_entry(item, *output, *name, &frame),
                 LayoutKind::Node { node, .. } => self.node_entry(item, node, wires),
                 LayoutKind::Wire { from, to, .. } => self.wire_entry(item, from, to, wires, &mut work),
             };
@@ -210,6 +221,7 @@ impl<'a> Sections<'_, 'a> {
             if let Some(first) = designated.get(&found).copied() {
                 let what = match found {
                     Designated::Frame(_) => "frame",
+                    Designated::Terminal(..) => "terminal",
                     Designated::Node(_) => "node",
                     Designated::Wire(_) => "wire",
                 };
@@ -254,6 +266,29 @@ impl<'a> Sections<'_, 'a> {
                 None
             }
         }
+    }
+
+    /// `input x at y` or `output x at y`: a terminal of the frame of the function, of that kind (11).
+    fn terminal_entry(
+        &mut self,
+        item: &'a LayoutItem,
+        output: bool,
+        name: Name,
+        (inputs, outputs): &(HashSet<Name>, HashSet<Name>),
+    ) -> Option<Designated> {
+        let found = if output { outputs.contains(&name) } else { inputs.contains(&name) };
+        if found {
+            return Some(Designated::Terminal(output, name));
+        }
+        let shown = self.text(name);
+        let (kind, other, one) = if output { ("output", "an input", "an output") } else { ("input", "an output", "an input") };
+        let other_kind = if output { inputs.contains(&name) } else { outputs.contains(&name) };
+        let message = match other_kind {
+            true => format!("`{kind} {shown} at` names no {kind}: `{shown}` is {other} of the function, not {one} (11)"),
+            false => format!("`{kind} {shown} at` names no {kind}: the function has no {kind} `{shown}` (11)"),
+        };
+        self.say(Code::Lc5004, message, item.id, Vec::new());
+        None
     }
 
     /// `frame ys size (w, h)`: the size of a structure, which its label or the name of its line designates, as a node.
@@ -421,6 +456,8 @@ fn numeral_text(numeral: Numeral, names: &Interner) -> String {
 enum Designated {
     /// The frame of the function, or of a structure.
     Frame(Option<Id>),
+    /// A terminal of the frame of the function: an output or an input, by its name.
+    Terminal(bool, Name),
     Node(Id),
     Wire(usize),
 }

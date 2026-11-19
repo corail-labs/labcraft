@@ -209,7 +209,7 @@ pub(crate) fn route(edit: &mut Edit, judge: &dyn Judge, wire: &str, via: &[Point
             LayoutKind::Wire { from: old_from, to: old_to, .. } => {
                 designated(edit, &of_value, &texts_of(edit, old_from, old_to)).is_none_or(|other| other.name != found.name)
             }
-            LayoutKind::Node { .. } | LayoutKind::Frame { .. } => true,
+            LayoutKind::Node { .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => true,
         };
         if !keep && at.is_none() {
             at = Some(index);

@@ -1392,8 +1392,8 @@ fn the_keyboard_draws_a_wire_from_a_terminal() {
 }
 
 /// The terminal in focus belongs to the node selected: another selection takes the focus away, and Space on a terminal
-/// asks for quick insertion (notation 2.6). A drag on a terminal of the frame of the function moves it, from step 6, and
-/// draws no wire; "accept it" from a wired input replaces what it holds.
+/// asks for quick insertion (notation 2.6). A drag on a terminal of the frame of the function moves it along its edge
+/// and draws no wire; "accept it" from a wired input replaces what it holds.
 #[test]
 fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_no_wire() {
     let ctx = context();
@@ -1413,9 +1413,13 @@ fn the_focus_of_a_terminal_follows_the_selection_and_a_drag_on_the_frame_draws_n
     let a = showing(&selecting(&["a"], &[], &[]));
     frame_shown(&ctx, &mut canvas, 0.4, Vec::new(), &a);
     assert_eq!(canvas.port_focus(), None);
-    // From `x`, a terminal of the frame: no wire, and why.
-    let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "x", false), port_of(&drawn, "b.b", true)), 1.0, &a);
-    assert_eq!(intents, vec![Intent::Say("Moving a terminal of the frame comes with M1 step 6".to_owned())]);
+    // From `x`, a terminal of the frame: no wire; it moves along its edge, up by 48 to the place on the grid of 8 nearest
+    // there, from the origin of the frame (notation 2.4, spec 11). `flag` is below it: that place is free.
+    let x = port_of(&drawn, "x", false);
+    let origin = drawn.bodies[0].origin.1 as f32 / 100.0;
+    let intents = drag_with(&ctx, &mut canvas, (x, x - Vec2::new(0.0, 48.0)), 1.0, &a);
+    let expected = ((x.y - origin - 48.0) / 8.0).round() as i64 * 8;
+    assert_eq!(intents, vec![Intent::MoveTerminal { terminal: "input x".to_owned(), y: expected }]);
     // From the input `b.b`, which holds `2.0`, back to `flag`, a bool, with "accept it": written, replacing the constant.
     let accept = Shown { accept_mismatch: true, ..Shown::default() };
     let intents = drag_with(&ctx, &mut canvas, (port_of(&drawn, "b.b", true), port_of(&drawn, "flag", false)), 2.0, &accept);
@@ -2025,6 +2029,21 @@ fn the_name_and_the_default_of_a_terminal_of_the_frame_open_their_fields() {
     assert_eq!(signature::frame_default(&drawing, "input low"), "220 V");
 }
 
+/// The title of the frame, `fn` and the name (notation 2): a double-click on it, or F2 with nothing selected, renames
+/// the function (decision of the owner, 2026-11-19).
+#[test]
+fn the_title_of_the_frame_opens_the_name_of_the_function() {
+    let drawing = drawing(WIRED, &ViewState::default());
+    let (name, at) = signature::title(&drawing).unwrap();
+    assert_eq!(name, "main");
+    assert_eq!(signature::title_under(&drawing, at + Vec2::new(4.0, 2.0)).map(|(name, _)| name), Some("main".to_owned()));
+    assert_eq!(signature::title_under(&drawing, at + Vec2::new(0.0, 200.0)), None);
+    let mut canvas = Canvas::new();
+    canvas.set_drawing(drawing, false);
+    assert!(canvas.edit_name());
+    assert_eq!(canvas.field.as_ref().map(|field| (field.kind.clone(), field.text.clone())), Some((FieldKind::FunctionName, "main".to_owned())));
+}
+
 #[test]
 fn the_edges_of_the_frame_of_the_function_are_its_sides() {
     let drawing = scaled();
@@ -2033,4 +2052,77 @@ fn the_edges_of_the_frame_of_the_function_are_its_sides() {
     assert_eq!(signature::function_edge(&drawing, Pos2::new(left + 1.0, middle), 4.0), Some(true));
     assert_eq!(signature::function_edge(&drawing, Pos2::new(right - 1.0, middle), 4.0), Some(false));
     assert_eq!(signature::function_edge(&drawing, Pos2::new((left + right) / 2.0, middle), 4.0), None);
+}
+
+/// Ctrl and Up on a terminal of the frame of the function selected alone: to the next place on the grid of 8 that way,
+/// the presses that follow one another one `terminal.move` (notation 2.4, 2.6). `x` is the first input: nothing above it.
+#[test]
+fn a_run_of_ctrl_and_up_moves_a_terminal_of_the_frame_along_its_edge() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let x = showing(&selecting(&[], &[], &["input x"]));
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &x);
+    // The focus comes with a click on it, which selects it.
+    let clicked = click_with(&ctx, &mut canvas, port_of(&drawn, "x", false), 0.1, egui::Modifiers::NONE, &x);
+    assert!(clicked.1.contains(&selecting(&[], &[], &["input x"])), "{clicked:?}");
+    let ctrl = egui::Modifiers::COMMAND;
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.5, vec![key(egui::Key::ArrowUp, ctrl)], &x);
+    assert_eq!(intents, Vec::new(), "a run asks for nothing while it goes on");
+    // Left and Right do not take a terminal off its edge.
+    frame_shown(&ctx, &mut canvas, 0.6, vec![key(egui::Key::ArrowLeft, ctrl)], &x);
+    frame_shown(&ctx, &mut canvas, 0.7, vec![key(egui::Key::ArrowUp, ctrl)], &x);
+    let port = port_of(&drawn, "x", false);
+    let origin = drawn.bodies[0].origin.1 as f32 / 100.0;
+    let start = (port.y - origin).round() as i64;
+    let once = ((start - 8) as f32 / 8.0).round() as i64 * 8;
+    assert_eq!(canvas.end_run(), Some(Intent::MoveTerminal { terminal: "input x".to_owned(), y: once - 8 }));
+    assert_eq!(canvas.end_run(), None);
+}
+
+/// `x` fixed by the file.
+const TERMINAL_FIXED: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64, flag: bool) -> (y: f64) {\n    a = core.add(x, 1.0)\n    b = core.mul(a, 2.0)\n    y = b\n}\n\nlayout {\n    input x at 200\n}\n";
+
+#[test]
+fn a_fixed_terminal_of_the_frame_shows_its_pin_under_the_setting() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(TERMINAL_FIXED, &ViewState::default());
+    let fixed: Vec<&str> = drawn.ports.iter().filter(|port| port.fixed).map(|port| port.caption.as_str()).collect();
+    assert_eq!(fixed, ["x"]);
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let lines = |shapes: &[ClippedShape]| shapes.iter().filter(|shape| matches!(shape.shape, egui::Shape::Path(_))).count();
+    let (with, _, _) = frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &Shown { mark_fixed: true, ..Shown::default() });
+    let (without, _, _) = frame_shown(&ctx, &mut canvas, 0.1, Vec::new(), &Shown::default());
+    assert!(lines(&with) > lines(&without), "{} {}", lines(&with), lines(&without));
+}
+
+/// A new drawing during a drag of a terminal of the frame does not end it: the drop asks for its move, as for a node.
+#[test]
+fn a_terminal_dragged_goes_on_over_a_new_drawing() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let drawn = drawing(WIRED, &ViewState::default());
+    canvas.set_drawing(drawn.clone(), false);
+    canvas.set_viewport(1.0, Vec2::ZERO);
+    let shown = Shown::default();
+    let x = port_of(&drawn, "x", false);
+    let to = x - Vec2::new(0.0, 48.0);
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    frame_shown(&ctx, &mut canvas, 0.0, Vec::new(), &shown);
+    frame_shown(&ctx, &mut canvas, 0.1, vec![egui::Event::PointerMoved(x), button(x, true)], &shown);
+    frame_shown(&ctx, &mut canvas, 0.2, vec![egui::Event::PointerMoved(x - Vec2::new(0.0, 20.0))], &shown);
+    canvas.set_drawing(drawn.clone(), false);
+    frame_shown(&ctx, &mut canvas, 0.3, vec![egui::Event::PointerMoved(to)], &shown);
+    let (_, _, intents) = frame_shown(&ctx, &mut canvas, 0.4, vec![egui::Event::PointerMoved(to), button(to, false)], &shown);
+    let origin = drawn.bodies[0].origin.1 as f32 / 100.0;
+    let expected = ((x.y - origin - 48.0) / 8.0).round() as i64 * 8;
+    assert_eq!(intents, vec![Intent::MoveTerminal { terminal: "input x".to_owned(), y: expected }]);
 }

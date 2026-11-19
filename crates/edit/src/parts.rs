@@ -298,7 +298,7 @@ pub(crate) fn follow_name(edit: &mut Edit, loc: &Loc, before: Option<(Name, bool
         None => {
             let named = edit.file.layout.as_ref().is_some_and(|layout| {
                 layout.items.iter().any(|item| match &item.kind {
-                    LayoutKind::Frame { node: None, .. } => false,
+                    LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => false,
                     LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => !node.is_label && node.name == old,
                     LayoutKind::Wire { to, .. } => !to.node.is_label && to.node.name == old,
                 })

@@ -339,6 +339,44 @@ pub(crate) fn resize(edit: &mut Edit, judge: &dyn Judge, inside: Option<&str>, s
     Ok(())
 }
 
+/// `terminal.move` (commands.md 6.7): writes `input x at y` or `output x at y` with `y` as given (spec 11), in place of
+/// the entry that the terminal has, whose comments it keeps. The grid and the room between terminals are rules of the
+/// gesture (notation 2.4), not of the command.
+pub(crate) fn move_terminal(edit: &mut Edit, terminal: &crate::Terminal, y: i64, edited: &mut Edited) -> Result<(), EditError> {
+    if !(-crate::MAX_COORDINATE..=crate::MAX_COORDINATE).contains(&y) {
+        return Err(EditError::invalid("y", format!("a coordinate is between -{0} and {0}", crate::MAX_COORDINATE)));
+    }
+    let at = crate::signature::find(edit, terminal)?;
+    let signature = &edit.body_function()?.signature;
+    let output = matches!(terminal, crate::Terminal::Output(_));
+    let name = match output {
+        false => signature.params.get(at).map(|param| param.name),
+        true => signature.outputs.get(at).map(|found| found.name),
+    }
+    .ok_or_else(|| EditError::internal("a terminal that went"))?;
+    edited.names.insert("terminal", terminal.shown());
+    let height = coordinate(edit, y);
+    let (layout_id, item_id) = (edit.id(), edit.id());
+    let layout = edit.file.layout.get_or_insert_with(|| Layout { id: layout_id, comments: Attached::default(), items: Vec::new(), end: Vec::new() });
+    let of_it = |kind: &LayoutKind| matches!(kind, LayoutKind::Terminal { output: found, name: named, .. } if *found == output && *named == name);
+    // A second entry of the terminal (`LC5007`) goes: the one written is its entry.
+    let mut seen = false;
+    layout.items.retain(|item| {
+        let second = of_it(&item.kind) && seen;
+        seen |= of_it(&item.kind);
+        !second
+    });
+    let entry = layout.items.iter_mut().find_map(|item| match &mut item.kind {
+        LayoutKind::Terminal { output: kind, name: named, y } if *kind == output && *named == name => Some(y),
+        _ => None,
+    });
+    match entry {
+        Some(entry) => *entry = height,
+        None => layout.items.push(LayoutItem { id: item_id, comments: Attached::default(), kind: LayoutKind::Terminal { output, name, y: height } }),
+    }
+    Ok(())
+}
+
 /// The least size of the structure at `loc` among the frames drawn: the one that starts on its line, or among several
 /// there the one of its name as the drawing names it (the name of its line, `@N`) or as a command does (its label).
 fn least_of(edit: &Edit, frames: &[crate::FrameDrawn], loc: &Loc) -> Result<Option<Point>, EditError> {
@@ -449,7 +487,7 @@ pub(crate) fn arrange(
         refs::split_wire(name).map_err(|error| error.of("wires"))?;
         let names = |item: &LayoutItem| match &item.kind {
             LayoutKind::Wire { from, to, .. } => crate::route::entry_names(edit, &of_value, from, to, name, None),
-            LayoutKind::Node { .. } | LayoutKind::Frame { .. } => false,
+            LayoutKind::Node { .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => false,
         };
         let routed = drawn.is_some() || edit.file.layout.as_ref().is_some_and(|layout| layout.items.iter().any(names));
         if !routed {
@@ -491,7 +529,7 @@ pub(crate) fn arrange(
                     *at = None;
                 }
             }
-            LayoutKind::Wire { .. } | LayoutKind::Frame { .. } => {}
+            LayoutKind::Wire { .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => {}
         }
     }
     // A structure arranged takes its automatic size again, and the frame of the function with the whole function.
@@ -501,7 +539,16 @@ pub(crate) fn arrange(
         index += 1;
         keep
     });
+    // A terminal arranged goes back to its automatic place, and every terminal with the whole function.
     items.retain(|item| match &item.kind {
+        LayoutKind::Terminal { output, name, .. } => {
+            // `input  x` names `input x`, as `select::terminal` reads it.
+            let named = |terminal: &String| {
+                crate::Terminal::parse(terminal)
+                    .is_some_and(|found| found.name() == edit.text(*name) && matches!(found, crate::Terminal::Output(_)) == *output)
+            };
+            !(whole || terminals.iter().any(named))
+        }
         LayoutKind::Node { .. } | LayoutKind::Frame { .. } => true,
         LayoutKind::Wire { from, to, .. } => {
             let between = named.contains(&from.node.name) && named.contains(&to.node.name);
