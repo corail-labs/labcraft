@@ -41,6 +41,7 @@ mod rename;
 mod route;
 mod scope;
 mod select;
+mod signature;
 mod surround;
 mod wire;
 
@@ -49,6 +50,7 @@ pub use frame::Within;
 pub use names::of_type;
 pub use route::MAX_VIA;
 pub use select::selectable;
+pub use signature::{Terminal, new_function};
 
 #[cfg(test)]
 mod tests;
@@ -58,7 +60,7 @@ mod tests;
 const SHOWN: usize = 60;
 
 /// A text that a caller gave, cut for a message.
-pub(crate) fn cut(text: &str) -> String {
+pub fn cut(text: &str) -> String {
     if text.chars().count() <= SHOWN {
         return text.to_owned();
     }
@@ -84,6 +86,11 @@ impl<'a> Files<'a> {
 
     pub fn get(&self, path: &str) -> Option<&'a str> {
         self.texts.get(path).copied()
+    }
+
+    /// Each text, by its path, in the order of the paths.
+    pub fn iter(&self) -> impl Iterator<Item = (&'a str, &'a str)> + '_ {
+        self.texts.iter().map(|(path, text)| (*path, *text))
     }
 }
 
@@ -303,6 +310,42 @@ pub enum Op {
         option: StructureOption,
         on: bool,
     },
+    /// `function.set_doc`: an empty text removes the documentation.
+    FunctionSetDoc {
+        file: String,
+        doc: String,
+    },
+    /// `signature.add`: `ty` and `default` as a file writes them; `position` among the terminals of its side.
+    SignatureAdd {
+        file: String,
+        terminal: Terminal,
+        ty: String,
+        default: Option<String>,
+        position: Option<u64>,
+    },
+    /// `signature.remove`.
+    SignatureRemove {
+        file: String,
+        terminal: Terminal,
+    },
+    /// `signature.rename`: in the file of the function, and in the calls of the files of the project that name the input.
+    SignatureRename {
+        file: String,
+        terminal: Terminal,
+        name: String,
+    },
+    /// `signature.set_type`.
+    SignatureSetType {
+        file: String,
+        terminal: Terminal,
+        ty: String,
+    },
+    /// `signature.set_default`: `None` makes the input required.
+    SignatureSetDefault {
+        file: String,
+        terminal: Terminal,
+        default: Option<String>,
+    },
 }
 
 /// An option of a loop (spec 6.2, 6.3).
@@ -389,7 +432,13 @@ impl Op {
             | Op::StructureAddLast { file, .. }
             | Op::StructureRemovePart { file, .. }
             | Op::StructureSetPassage { file, .. }
-            | Op::StructureSetOption { file, .. } => file,
+            | Op::StructureSetOption { file, .. }
+            | Op::FunctionSetDoc { file, .. }
+            | Op::SignatureAdd { file, .. }
+            | Op::SignatureRemove { file, .. }
+            | Op::SignatureRename { file, .. }
+            | Op::SignatureSetType { file, .. }
+            | Op::SignatureSetDefault { file, .. } => file,
         }
     }
 }
@@ -530,6 +579,14 @@ pub trait Judge {
         let _ = literal;
         Err("this judge reads no template".to_owned())
     }
+
+    /// The file of the project that declares the function that `call` names, seen from `file`, as the project shows its
+    /// path: what tells the calls that `signature.rename` updates. None for a primitive, a function of a library outside
+    /// the project, or a name that it does not know.
+    fn function_file(&self, file: &str, call: &str) -> Option<String> {
+        let _ = (file, call);
+        None
+    }
 }
 
 /// The type of a value, as far as a structure needs it (commands.md 9.6), and as the check writes it (`f64[V]`).
@@ -659,6 +716,9 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         }
         return Ok(edited);
     }
+    if let Op::SignatureRename { terminal, name, .. } = op {
+        return signature::rename_everywhere(files, path, text, terminal, name, judge, limits);
+    }
     let mut edit = model::Edit::read(path, text, limits)?;
     match op {
         Op::NodeAdd { call, at, name, within, .. } => {
@@ -715,6 +775,15 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::StructureRemovePart { structure, part, .. } => parts::remove_part(&mut edit, judge, structure, part)?,
         Op::StructureSetPassage { structure, part, to, .. } => parts::set_passage(&mut edit, judge, structure, part, *to, &mut edited)?,
         Op::StructureSetOption { structure, option, on, .. } => parts::set_option(&mut edit, structure, *option, *on)?,
+        Op::FunctionSetDoc { doc, .. } => signature::set_doc(&mut edit, doc)?,
+        Op::SignatureAdd { terminal, ty, default, position, .. } => {
+            signature::add(&mut edit, terminal, ty, default.as_deref(), *position, &mut edited)?;
+        }
+        Op::SignatureRemove { terminal, .. } => signature::remove(&mut edit, judge, terminal, &mut edited)?,
+        // Handled above, since it changes the callers too.
+        Op::SignatureRename { .. } => return Err(EditError::internal("`signature.rename` goes through its own path")),
+        Op::SignatureSetType { terminal, ty, .. } => signature::set_type(&mut edit, terminal, ty)?,
+        Op::SignatureSetDefault { terminal, default, .. } => signature::set_default(&mut edit, terminal, default.as_deref())?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {

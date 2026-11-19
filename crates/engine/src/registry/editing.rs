@@ -383,7 +383,7 @@ pub(super) fn catalog() -> Vec<Command> {
             id: "commands.batch",
             label: "Run Batch",
             summary: "Run editing commands in order, as one step of undo",
-            description: "Runs a list of `{ \"id\", \"params\" }` in order, on the texts in memory, written once at the end, as one step of undo. If one fails, nothing is written, and the error gives its `index`. Otherwise it returns, for each command, its `names` and `renamed` (`commands`), and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root. It takes the commands that edit, at most 1,000; `expected_revision` is the batch's, judged once before its first command, and its commands take none. In a parameter that names a node or a wire, `$i` names the node that the earlier command `i` named (`names.node`): `{ \"to\": \"$0.a\" }` after a `node.add`.",
+            description: "Runs a list of `{ \"id\", \"params\" }` in order, on the texts in memory, written once at the end, as one step of undo. If one fails, nothing is written, and the error gives its `index`. Otherwise it returns, for each command, its `names` and `renamed` (`commands`), and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root. It takes the commands that edit but `function.create`, which makes a file, at most 1,000; `expected_revision` is the batch's, judged once before its first command, and its commands take none. In a parameter that names a node or a wire, `$i` names the node that the earlier command `i` named (`names.node`): `{ \"to\": \"$0.a\" }` after a `node.add`.",
             params: object(
                 &[
                     (
@@ -980,24 +980,21 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "function.create",
-                "Create Function",
-                "Write a new function, `fn name() -> () {}`",
-                "Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists`.",
-                object(
-                    &[
-                        ("path", string("The new `.lcf`, from the root of the project, written with `/`.")),
-                        ("doc", string("Its documentation comment.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["path"],
-                ),
-                MAKING_ERRORS,
-                false,
+        editing(
+            "function.create",
+            "Create Function",
+            "Write a new function, `fn name() -> () {}`",
+            "Writes a new function, `fn name() -> () {}`, named after its file (R-22). An existing file is `path.exists`.",
+            object(
+                &[
+                    ("path", string("The new `.lcf`, from the root of the project, written with `/`.")),
+                    ("doc", string("Its documentation comment.")),
+                    ("expected_revision", revision()),
+                ],
+                &["path"],
             ),
+            MAKING_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -1011,120 +1008,102 @@ pub(super) fn catalog() -> Vec<Command> {
                 false,
             ),
         ),
-        planned(
-            STEP_6,
-            editing(
-                "function.set_doc",
-                "Set Documentation",
-                "Write the documentation comment of a function",
-                "Writes the documentation comment (`///`); an empty text removes it.",
-                object(
-                    &[("file", string(FILE)), ("doc", string("The documentation; empty removes it.")), ("expected_revision", revision())],
-                    &["file", "doc"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "function.set_doc",
+            "Set Documentation",
+            "Write the documentation comment of a function",
+            "Writes the documentation comment (`///`); an empty text removes it.",
+            object(
+                &[("file", string(FILE)), ("doc", string("The documentation; empty removes it.")), ("expected_revision", revision())],
+                &["file", "doc"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "signature.add",
-                "Add Terminal",
-                "Add an input or an output to a function",
-                "Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101`.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The terminal: `input x` or `output x`.")),
-                        ("type", string("Its type.")),
-                        ("default", string("Its default value, for an input; without it, the input is required.")),
-                        ("position", integer("Its position among the terminals; by default, the last, before `err`.", 0, 1_000, None)),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "type"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "signature.add",
+            "Add Terminal",
+            "Add an input or an output to a function",
+            "Adds an input (`input x`) or an output (`output x`). Callers are not changed: a new required input gives each of them `LC2101`. An output named like a value that a line of the body binds is given by that line.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The terminal: `input x` or `output x`.")),
+                    ("type", string("Its type.")),
+                    ("default", string("Its default value, for an input; without it, the input is required.")),
+                    ("position", integer("Its position among the terminals; by default, the last, before `err`.", 0, 1_000, None)),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "type"],
             ),
+            NAMING_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "signature.remove",
-                "Remove Terminal",
-                "Remove an input or an output of a function, and its wires",
-                "Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole. Callers are not changed: `check` shows each of them.",
-                object(
-                    &[("file", string(FILE)), ("terminal", string("The terminal: `input x` or `output x`.")), ("expected_revision", revision())],
-                    &["file", "terminal"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "signature.remove",
+            "Remove Terminal",
+            "Remove an input or an output of a function, and its wires",
+            "Removes an input or an output, and its wires in the body: what read the input becomes unwired or gets a hole. Callers are not changed: `check` shows each of them.",
+            object(
+                &[("file", string(FILE)), ("terminal", string("The terminal: `input x` or `output x`.")), ("expected_revision", revision())],
+                &["file", "terminal"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "signature.rename",
-                "Rename Terminal",
-                "Rename an input or an output, and the calls that name it",
-                "Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The terminal: `input x` or `output x`.")),
-                        ("name", string("Its new name.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "name"],
-                ),
-                NAMING_ERRORS,
-                false,
+        editing(
+            "signature.rename",
+            "Rename Terminal",
+            "Rename an input or an output, and the calls that name it",
+            "Renames an input or an output in the body and in `layout`. It also updates the calls that name it in the project (`high: 250 V`), and their `wire` entries (`wire x -> c.high`), in the same step.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The terminal: `input x` or `output x`.")),
+                    ("name", string("Its new name.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "name"],
             ),
+            NAMING_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "signature.set_type",
-                "Set Terminal Type",
-                "Change the type of an input or an output",
-                "Changes the type of an input or an output; `check` judges the wires that it reaches.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The terminal: `input x` or `output x`.")),
-                        ("type", string("Its new type.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "type"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "signature.set_type",
+            "Set Terminal Type",
+            "Change the type of an input or an output",
+            "Changes the type of an input or an output; `check` judges the wires that it reaches.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The terminal: `input x` or `output x`.")),
+                    ("type", string("Its new type.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "type"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "signature.set_default",
-                "Set Terminal Default",
-                "Set the default value of an input",
-                "Sets the default value of an input (a constant, spec 4); `null` makes the input required.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The input: `input x`.")),
-                        (
-                            "default",
-                            json!({ "type": ["string", "null"], "description": "The constant, as a file writes it; `null` makes the input required." }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "default"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "signature.set_default",
+            "Set Terminal Default",
+            "Set the default value of an input",
+            "Sets the default value of an input (a constant, spec 4); `null` makes the input required.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The input: `input x`.")),
+                    (
+                        "default",
+                        json!({ "type": ["string", "null"], "description": "The constant, as a file writes it; `null` makes the input required." }),
+                    ),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "default"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,

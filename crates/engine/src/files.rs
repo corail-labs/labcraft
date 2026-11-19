@@ -159,7 +159,7 @@ fn escaped_len(c: char) -> usize {
 }
 
 /// A name that differs from another of its folder only by its case or its spelling, which `check` refuses (`LC2024`).
-fn refuse_case_twin(session: &Session, path: &Path, shown: &str, parameter: &str, except: Option<&Path>) -> Result<(), CommandError> {
+pub(crate) fn refuse_case_twin(session: &Session, path: &Path, shown: &str, parameter: &str, except: Option<&Path>) -> Result<(), CommandError> {
     let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else { return Ok(()) };
     let key = case_key(&name.to_string_lossy());
     let mut twin = None;

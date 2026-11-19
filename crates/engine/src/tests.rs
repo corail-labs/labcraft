@@ -483,9 +483,9 @@ fn an_unknown_command_or_parameter_names_the_nearest() {
 fn a_planned_command_is_listed_greyed_with_its_reason_and_refused() {
     let (mut session, _) = session();
     // A command of a later step of M1 says why it is not enabled, and is refused.
-    let planned = crate::registry::command("function.create").unwrap();
+    let planned = crate::registry::command("function.rename").unwrap();
     assert_eq!(session.not_enabled(planned).as_deref(), Some("it is planned, and comes with M1 step 6 (#165)"));
-    assert_eq!(error(&mut session, "function.create", json!({})).code, "command.not_enabled");
+    assert_eq!(error(&mut session, "function.rename", json!({})).code, "command.not_enabled");
     let listed = ok(&mut session, "commands.list", json!({ "filter": "run." }));
     let commands = listed["commands"].as_array().unwrap();
     let of = |id: &str| commands.iter().find(|command| command["id"] == id).unwrap();

@@ -55,6 +55,7 @@ pub mod pane;
 pub mod panels;
 mod running;
 pub mod text;
+mod types;
 mod values;
 
 pub use host::{Host, Reply, Snapshot};
@@ -258,6 +259,11 @@ pub struct Ide {
     texts: HashMap<String, text::Kept>,
     callables: panels::Callables,
     problems: panels::ProblemsFilter,
+    /// The field of "New function" in `Project`, and the answer it waits for (ide.md 4).
+    new_function: panels::NewFunction,
+    creating: Option<Reply>,
+    /// A function created, by its file: shown once the session lists it.
+    open_created: Option<String>,
     /// The function asked for by a click on its tab, until the session shows it.
     asking_show: Option<(String, Reply)>,
     /// The function shown that the dock last brought to the front.
@@ -304,6 +310,8 @@ pub struct Ide {
     quick: Option<insert::QuickList>,
     /// The value that a structure being made needs, asked for (notation 2.6).
     values: Option<values::ValueList>,
+    /// The list of types of a terminal of the function (notation 2.4).
+    types: Option<types::TypeList>,
     /// The run the window started, followed to its end (decisions of the owner, 2026-11-16).
     running: Option<running::Running>,
     /// The time of the frame, on the clock of egui.
@@ -357,6 +365,9 @@ impl Ide {
             texts: HashMap::new(),
             callables: panels::Callables::default(),
             problems: panels::ProblemsFilter::default(),
+            new_function: panels::NewFunction::default(),
+            creating: None,
+            open_created: None,
             asking_show: None,
             brought: None,
             focus: None,
@@ -379,6 +390,7 @@ impl Ide {
             pointer: None,
             quick: None,
             values: None,
+            types: None,
             selecting: Vec::new(),
             running: None,
             now: 0.0,
@@ -621,6 +633,9 @@ impl Ide {
         {
             self.show_quick(ui.ctx(), host);
         }
+        if let Some(host) = host {
+            self.show_types(ui.ctx(), host, &view);
+        }
         let values_elsewhere = self.values.as_ref().is_some_and(|list| self.native.contains(&list.function));
         if let Some(host) = host
             && !values_elsewhere
@@ -701,6 +716,30 @@ impl Ide {
 
     /// The results that came: the failures to say, the function shown, the history.
     fn take_replies(&mut self, host: &dyn Host, view: &Published) {
+        // "New function": the field closes when it is written, and the function shows once the session lists it.
+        if let Some(answer) = self.creating.as_ref().and_then(Reply::take) {
+            self.creating = None;
+            match answer {
+                Ok(result) => {
+                    self.open_created = result
+                        .get("files")
+                        .and_then(|files| files.get(0))
+                        .and_then(|file| file.get("file"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                    self.new_function.close();
+                }
+                Err(error) => self.new_function.refused(&error.message),
+            }
+        }
+        if let Some(file) = &self.open_created
+            && let Some(listed) = view.functions.iter().find(|listed| listed.file == *file)
+        {
+            let function = listed.function.clone();
+            self.open_created = None;
+            let reply = host.send("view.show_function", json!({ "function": function }));
+            self.pending.push(("view.show_function".to_owned(), reply));
+        }
         let mut failures = Vec::new();
         let mut take = |id: &str, reply: &Reply| match reply.take() {
             None => true,
@@ -1405,6 +1444,14 @@ impl Ide {
             }
             panels::Asked::Command(id, params) => self.run(CommandRef::with_params(id, params), host, view, outward),
             panels::Asked::Window(id) => self.run(CommandRef::new(id), host, view, outward),
+            panels::Asked::PickType { file, terminal, default, add } => {
+                let purpose = if add { types::Purpose::Add { default } } else { types::Purpose::Set };
+                self.open_types(view, &file, &terminal, purpose);
+            }
+            panels::Asked::NewFunction { path } => match host {
+                Some(host) => self.creating = Some(host.send("function.create", json!({ "path": path }))),
+                None => self.new_function.refused("open a project first"),
+            },
         }
     }
 
@@ -1528,6 +1575,38 @@ impl Ide {
     }
 
     /// The list of values, while it is open: Enter makes the structure, one step (notation 2.6).
+    /// The list of types open, and the command of the type chosen (notation 2.4).
+    fn show_types(&mut self, ctx: &egui::Context, host: &dyn Host, view: &Published) {
+        let Some(mut list) = self.types.take() else { return };
+        match list.show(ctx) {
+            types::Closed::Open => self.types = Some(list),
+            types::Closed::Cancelled => {}
+            types::Closed::Picked(id, params) => {
+                let reply = host.send(id, params);
+                let function = list.function.clone();
+                if view.functions.iter().any(|listed| listed.function == function) {
+                    self.edits.push((function, reply, None));
+                } else {
+                    self.pending.push((id.to_owned(), reply));
+                }
+            }
+        }
+    }
+
+    /// Opens the list of types for `terminal` of the function of `file`, where the pointer is.
+    fn open_types(&mut self, view: &Published, file: &str, terminal: &str, purpose: types::Purpose) {
+        let Some(function) = view.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone()) else { return };
+        let project: Vec<String> = self
+            .callables
+            .list
+            .iter()
+            .filter(|callable| callable.kind == "type")
+            .map(|callable| if callable.library.is_empty() { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) })
+            .collect();
+        let at = self.pointer.or_else(|| self.canvas_rect.map(|rect| rect.center())).unwrap_or_default();
+        self.types = Some(types::TypeList::new(function, file.to_owned(), terminal.to_owned(), purpose, project, at));
+    }
+
     fn show_values(&mut self, ctx: &egui::Context, host: &dyn Host) {
         let Some(mut list) = self.values.take() else { return };
         match list.show(ctx) {
@@ -1637,9 +1716,21 @@ impl Ide {
             Value::Object(map) => map,
             _ => Map::new(),
         };
-        params.retain(|_, value| !value.is_null());
+        // `null` of `signature.set_default` makes the input required: it is a value there.
+        if id != "signature.set_default" {
+            params.retain(|_, value| !value.is_null());
+        }
         let shown = self.target(view).function.clone();
         match id.as_str() {
+            // From the palette or a menu, with no path: the field of "New function" in `Project`, at the root (ide.md 4).
+            "function.create" if !params.contains_key("path") => {
+                self.new_function.open("");
+                if !self.workspace.layout.contains(&Pane::Project)
+                    && self.workspace.set_visible(Pane::Project, true, None, self.permissions()).is_ok()
+                {
+                    self.prefs_changed = true;
+                }
+            }
             "project.new" | "project.open" => {
                 let folder = params.get("folder").and_then(Value::as_str).filter(|folder| !folder.is_empty()).map(str::to_owned);
                 outward.push(if id == "project.new" { Outward::NewProject(folder) } else { Outward::OpenFolder(folder) });
@@ -1823,7 +1914,7 @@ impl Ide {
                 let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
                 let opened = self.drawn.get_mut(&function).is_some_and(|drawn| drawn.canvas.edit_name());
                 if !opened {
-                    self.say("F2 renames the node selected: select one node");
+                    self.say("F2 renames the node or the terminal of the frame selected: select one");
                 }
             }
             // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
@@ -1946,7 +2037,39 @@ fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accep
             ("structure.set_patterns", json!({ "file": file, "structure": structure, "arm": arm, "patterns": text }))
         }
         FieldKind::AddCarry { structure } => ("structure.add_carry", carry_params(file, &structure, text)),
+        // The signature (notation 2.4).
+        FieldKind::TerminalName { terminal } => ("signature.rename", json!({ "file": file, "terminal": terminal, "name": text })),
+        // An empty field makes the input required.
+        FieldKind::TerminalDefault { terminal } => {
+            let default = if text.is_empty() { Value::Null } else { json!(text) };
+            ("signature.set_default", json!({ "file": file, "terminal": terminal, "default": default }))
+        }
+        FieldKind::AddTerminal { input } => ("signature.add", terminal_params(file, input, text)),
     }
+}
+
+/// `name: type` or `name: type = default` as `signature.add` takes them; without `: type`, the command says what is
+/// missing.
+pub(crate) fn terminal_params(file: &str, input: bool, text: &str) -> Value {
+    let (head, default) = match text.split_once('=') {
+        Some((head, default)) => (head.trim(), Some(default.trim()).filter(|default| !default.is_empty())),
+        None => (text.trim(), None),
+    };
+    let (name, ty) = match head.split_once(':') {
+        Some((name, ty)) => (name.trim(), Some(ty.trim()).filter(|ty| !ty.is_empty())),
+        None => (head, None),
+    };
+    let side = if input { "input" } else { "output" };
+    let mut params = json!({ "file": file, "terminal": format!("{side} {name}") });
+    if let Some(object) = params.as_object_mut() {
+        if let Some(ty) = ty {
+            object.insert("type".to_owned(), json!(ty));
+        }
+        if let Some(default) = default {
+            object.insert("default".to_owned(), json!(default));
+        }
+    }
+    params
 }
 
 /// `name = initial`, `name: type = initial` or `name: type` as `structure.add_carry` takes them: a hole, or nothing after
@@ -2000,7 +2123,19 @@ fn quoted(text: &str) -> String {
 }
 
 /// The editing commands whose results the window follows (`Ide::edits`).
-const EDITS: &[&str] = &["node.move", "node.place", "node.set_view", "layout.arrange", "frame.resize"];
+const EDITS: &[&str] = &[
+    "node.move",
+    "node.place",
+    "node.set_view",
+    "layout.arrange",
+    "frame.resize",
+    "function.set_doc",
+    "signature.add",
+    "signature.remove",
+    "signature.rename",
+    "signature.set_type",
+    "signature.set_default",
+];
 
 /// The file of a function, as the session lists it.
 fn file_of(view: &Published, function: &str) -> Option<String> {
@@ -2202,7 +2337,7 @@ impl Content<'_> {
         let view = self.view;
         let focused = self.ide.target(view);
         let asked = match pane {
-            Pane::Project => panels::project(ui, view, focused.function.as_deref(), self.ide.prefs.preview_tabs),
+            Pane::Project => panels::project(ui, view, focused.function.as_deref(), self.ide.prefs.preview_tabs, &mut self.ide.new_function),
             Pane::Palette => {
                 panels::palette(ui, &mut self.ide.callables);
                 None
@@ -2543,6 +2678,38 @@ impl Content<'_> {
                 }
                 // "Surround with ▸" of the context menu of a node (notation 2.6).
                 Intent::Surround { kind, nodes } => self.ide.surround(self.host, view, function, kind, Some(nodes)),
+                // A terminal of a node made an input or an output of the function, in one step (notation 2.4).
+                Intent::MakeTerminal { terminal, ty, from, to } => {
+                    if let Some(file) = file_of(view, function) {
+                        let label = if terminal.starts_with("input ") { "Make Input" } else { "Make Output" };
+                        let commands = json!([
+                            { "id": "signature.add", "params": { "file": file, "terminal": terminal, "type": ty } },
+                            { "id": "wire.connect", "params": { "file": file, "from": from, "to": to } },
+                        ]);
+                        let reply = self.host.send("commands.batch", json!({ "commands": commands, "label": label }));
+                        self.ide.edits.push((function.to_owned(), reply, None));
+                    }
+                }
+                Intent::RemoveTerminal { terminal } => {
+                    self.ide.send_edit(self.host, view, function, "signature.remove", json!({ "terminal": terminal }));
+                }
+                Intent::PickType { terminal } => {
+                    if let Some(file) = file_of(view, function) {
+                        self.ide.open_types(view, &file, &terminal, types::Purpose::Set);
+                    }
+                }
+                // A new terminal named with no type: the list of types (decision of the owner, 2026-11-19).
+                Intent::Field { kind: labcraft_editor::FieldKind::AddTerminal { input }, text } if !types::has_type(&text) => {
+                    if let (Some(file), Some(drawn)) = (file_of(view, function), self.ide.drawn.get_mut(function)) {
+                        drawn.canvas.close_field();
+                        let (name, default) = types::name_and_default(&text);
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let side = if input { "input" } else { "output" };
+                        self.ide.open_types(view, &file, &format!("{side} {name}"), types::Purpose::Add { default });
+                    }
+                }
                 // A field in place written (notation 2.6).
                 Intent::Field { kind, text } => match file_of(view, function) {
                     Some(file) => {
@@ -2640,6 +2807,24 @@ mod field_tests {
         assert_eq!(carry("acc: f64 = ?"), json!({ "file": "f.lcf", "structure": "#l", "name": "acc", "type": "f64" }));
         assert_eq!(carry("n: i32 = x"), json!({ "file": "f.lcf", "structure": "#l", "name": "n", "initial": "x", "type": "i32" }));
         assert_eq!(carry("acc"), json!({ "file": "f.lcf", "structure": "#l", "name": "acc" }));
+        // The signature (notation 2.4).
+        let terminal = |kind: FieldKind, text: &str| field_command("f.lcf", kind, text, false);
+        assert_eq!(
+            terminal(FieldKind::TerminalName { terminal: "input x".to_owned() }, "volts"),
+            ("signature.rename", json!({ "file": "f.lcf", "terminal": "input x", "name": "volts" }))
+        );
+        assert_eq!(
+            terminal(FieldKind::TerminalDefault { terminal: "input x".to_owned() }, "2 V"),
+            ("signature.set_default", json!({ "file": "f.lcf", "terminal": "input x", "default": "2 V" }))
+        );
+        assert_eq!(
+            terminal(FieldKind::TerminalDefault { terminal: "input x".to_owned() }, ""),
+            ("signature.set_default", json!({ "file": "f.lcf", "terminal": "input x", "default": null }))
+        );
+        let add = |input: bool, text: &str| terminal(FieldKind::AddTerminal { input }, text).1;
+        assert_eq!(add(true, "gain: f64 = 2"), json!({ "file": "f.lcf", "terminal": "input gain", "type": "f64", "default": "2" }));
+        assert_eq!(add(false, "count : i64"), json!({ "file": "f.lcf", "terminal": "output count", "type": "i64" }));
+        assert_eq!(add(true, "gain"), json!({ "file": "f.lcf", "terminal": "input gain" }));
     }
 
     #[test]

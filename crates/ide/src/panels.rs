@@ -29,6 +29,71 @@ pub enum Asked {
     Command(String, Value),
     /// An action of the window (`ide.*`).
     Window(&'static str),
+    /// `function.create` of `path`, then the function shown once the session lists it (ide.md 4).
+    NewFunction { path: String },
+    /// The list of types of `terminal` of the function of `file` (notation 2.4): for a new one when `add`, with its default.
+    PickType { file: String, terminal: String, default: Option<String>, add: bool },
+}
+
+/// The field of "New function" in the tree of `Project` (ide.md 4): the folder it writes in, from the root of the
+/// project, the name typed, and why the last one was refused.
+#[derive(Clone, Debug, Default)]
+pub struct NewFunction {
+    pub folder: Option<String>,
+    pub name: String,
+    pub error: Option<String>,
+    /// Sent, and the answer not back yet.
+    pub pending: bool,
+    focused: bool,
+}
+
+impl NewFunction {
+    /// Opens the field in `folder` (`""` for the root).
+    pub fn open(&mut self, folder: &str) {
+        *self = NewFunction { folder: Some(folder.to_owned()), ..NewFunction::default() };
+    }
+
+    pub fn close(&mut self) {
+        *self = NewFunction::default();
+    }
+
+    /// The command refused the name: the field stays, with the message.
+    pub fn refused(&mut self, message: &str) {
+        self.pending = false;
+        self.focused = false;
+        self.error = Some(message.to_owned());
+    }
+
+    /// The field, in the folder it is for: Enter asks for the function, Escape closes it.
+    fn ui(&mut self, ui: &mut egui::Ui) -> Option<Asked> {
+        let folder = self.folder.clone()?;
+        let mut asked = None;
+        ui.horizontal(|ui| {
+            icon::leading(ui, Icon::Diagram, ui.visuals().text_color());
+            let response =
+                ui.add_enabled(!self.pending, egui::TextEdit::singleline(&mut self.name).hint_text("name of the function").desired_width(140.0));
+            if !self.focused {
+                response.request_focus();
+                self.focused = true;
+            }
+            if response.lost_focus() && !self.pending {
+                let name = self.name.trim();
+                if ui.input(|input| input.key_pressed(egui::Key::Escape)) || name.is_empty() {
+                    self.close();
+                } else {
+                    let file = format!("{}.lcf", name.strip_suffix(".lcf").unwrap_or(name));
+                    let path = if folder.is_empty() { file } else { format!("{folder}/{file}") };
+                    self.pending = true;
+                    self.error = None;
+                    asked = Some(Asked::NewFunction { path });
+                }
+            }
+        });
+        if let Some(error) = &self.error {
+            ui.label(RichText::new(error.as_str()).small().color(ui.visuals().error_fg_color));
+        }
+        asked
+    }
 }
 
 /// Whether `file` holds one function only, named like it (its last name): it is shown as that function, on one line.
@@ -39,12 +104,19 @@ fn alone(file: &str, functions: &[&Listed]) -> bool {
 
 /// `Project`: the files of the folder, as a tree of folders, each file with its functions.
 /// `focused`: the function of the window that has focus, marked in the tree.
-pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, preview_tabs: bool) -> Option<Asked> {
+/// `new`: the field of "New function", which a right-click on a folder, or on the tree, opens (ide.md 4).
+pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, preview_tabs: bool, new: &mut NewFunction) -> Option<Asked> {
     let Some(folder) = &published.folder else {
         ui.label(RichText::new("No folder open").weak());
         return None;
     };
     let mut asked = None;
+    let menu = |ui: &mut egui::Ui, folder: &str, new: &mut NewFunction| {
+        if ui.button("New function").clicked() {
+            new.open(folder);
+            ui.close();
+        }
+    };
     // By folder, then by file.
     let mut tree: BTreeMap<Vec<&str>, BTreeMap<&str, Vec<&Listed>>> = BTreeMap::new();
     for listed in &published.functions {
@@ -54,10 +126,19 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if folder != "." {
-            ui.label(RichText::new(folder).weak().small());
+            ui.label(RichText::new(folder).weak().small()).context_menu(|ui| menu(ui, "", new));
         }
+        if new.folder.as_deref() == Some("") {
+            asked = asked.take().or(new.ui(ui));
+        }
+        // A folder whose header asked for "New function": its body holds the field from the next frame.
+        let mut open_in: Option<String> = None;
         for (folders, files) in &tree {
+            let joined = folders.join("/");
             let mut body = |ui: &mut egui::Ui| {
+                if !joined.is_empty() && new.folder.as_deref() == Some(joined.as_str()) {
+                    asked = asked.take().or(new.ui(ui));
+                }
                 for (file, functions) in files {
                     // A file of one function of its name is that function: one line, its file on hover. Else the
                     // file, then its functions under it.
@@ -88,6 +169,7 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                         };
                         let response = if alone { line(ui) } else { ui.indent(("project", &listed.file, &listed.function), line).inner };
                         let response = response.on_hover_text(&listed.file);
+                        response.context_menu(|ui| menu(ui, &joined, new));
                         if response.double_clicked() {
                             asked = Some(Asked::Show { function: listed.function.clone(), preview: false });
                         } else if response.clicked() {
@@ -103,7 +185,12 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                 egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
                     .show_header(ui, |ui| {
                         icon::leading(ui, Icon::Folder, ui.visuals().weak_text_color());
-                        ui.label(folders.join("/"));
+                        ui.label(joined.as_str()).context_menu(|ui| {
+                            if ui.button("New function").clicked() {
+                                open_in = Some(joined.clone());
+                                ui.close();
+                            }
+                        });
                     })
                     .body(body);
             }
@@ -111,6 +198,13 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
         if published.functions.is_empty() {
             ui.label(RichText::new("No function in this folder").weak());
         }
+        if let Some(folder) = open_in {
+            new.open(&folder);
+        }
+        // The room left under the tree: its menu writes at the root.
+        let room = egui::Vec2::new(ui.available_width(), ui.available_height().clamp(24.0, 4_000.0));
+        let rest = ui.allocate_response(room, egui::Sense::click());
+        rest.context_menu(|ui| menu(ui, "", new));
     });
     asked
 }
@@ -277,8 +371,9 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
     let selection = &shown.selection;
     let drawing = shown.drawing.as_deref();
     let (Some(drawing), true) = (drawing, selection.function == *function && !selection.is_empty()) else {
-        of_function(ui, published, shown, function, callables);
-        return None;
+        let answer = of_function(ui, published, shown, function, callables)?;
+        let file = published.functions.iter().find(|listed| listed.function == *function).map(|listed| listed.file.clone())?;
+        return function_asked(answer, &file);
     };
     let file = published.functions.iter().find(|listed| listed.function == *function).map(|listed| listed.file.clone());
     // The values that the selection names: a wire is selected with every wire of its value.
@@ -303,8 +398,8 @@ pub fn inspector(ui: &mut egui::Ui, published: &Published, shown: &Shown, callab
             return Some(Asked::Command("layout.arrange".to_owned(), json!({ "file": file?, "wires": wires })));
         }
         ([], 0, [terminal]) => {
-            of_terminal(ui, drawing, terminal);
-            None
+            let answer = of_terminal(ui, drawing, terminal)?;
+            return terminal_asked(answer, &file?, terminal);
         }
         (nodes, values, terminals) => {
             let mut fields = Vec::new();
@@ -357,6 +452,7 @@ fn asked_of(answer: inspector::Answer, file: &str, nodes: &[String], drawing: &D
             Some(Asked::Command("node.set_view".to_owned(), json!({ "file": file, "nodes": nodes, "view": view })))
         }
         inspector::Answer::Pressed { .. } => Some(Asked::Command("layout.arrange".to_owned(), json!({ "file": file, "nodes": nodes }))),
+        inspector::Answer::Text { .. } => None,
     }
 }
 
@@ -366,8 +462,56 @@ fn place_in_frame(drawing: &Drawing, at: usize) -> Option<(i64, i64)> {
     Some(((x + 50).div_euclid(100), (y + 50).div_euclid(100)))
 }
 
-/// The inspector of the function itself.
-fn of_function(ui: &mut egui::Ui, published: &Published, shown: &Shown, function: &str, callables: &Callables) {
+/// The command of a field of the inspector of the function (notation 2.4): its documentation, a new terminal.
+fn function_asked(answer: inspector::Answer, file: &str) -> Option<Asked> {
+    match answer {
+        inspector::Answer::Text { key, value } if key == "doc" => {
+            Some(Asked::Command("function.set_doc".to_owned(), json!({ "file": file, "doc": value })))
+        }
+        // A name with no type: the list of types (decision of the owner, 2026-11-19).
+        inspector::Answer::Text { key, value } if !value.trim().is_empty() && !crate::types::has_type(&value) => {
+            let (name, default) = crate::types::name_and_default(&value);
+            let side = if key == "add input" { "input" } else { "output" };
+            Some(Asked::PickType { file: file.to_owned(), terminal: format!("{side} {name}"), default, add: true })
+        }
+        inspector::Answer::Text { key, value } if !value.trim().is_empty() => {
+            let params = crate::terminal_params(file, key == "add input", &value);
+            Some(Asked::Command("signature.add".to_owned(), params))
+        }
+        _ => None,
+    }
+}
+
+/// The command of a field of the inspector of a terminal of the frame of the function (ide.md 4).
+fn terminal_asked(answer: inspector::Answer, file: &str, terminal: &str) -> Option<Asked> {
+    let command = |id: &str, mut params: Value| {
+        if let Some(object) = params.as_object_mut() {
+            object.insert("file".to_owned(), json!(file));
+            object.insert("terminal".to_owned(), json!(terminal));
+        }
+        Some(Asked::Command(id.to_owned(), params))
+    };
+    match answer {
+        inspector::Answer::Text { key, value } => match key.as_str() {
+            "name" if !value.trim().is_empty() => command("signature.rename", json!({ "name": value.trim() })),
+            // An empty default makes the input required.
+            "default" => {
+                let default = if value.trim().is_empty() { Value::Null } else { json!(value.trim()) };
+                command("signature.set_default", json!({ "default": default }))
+            }
+            _ => None,
+        },
+        inspector::Answer::Pressed { key } if key == "remove" => command("signature.remove", json!({})),
+        inspector::Answer::Pressed { key } if key == "pick type" => {
+            Some(Asked::PickType { file: file.to_owned(), terminal: terminal.to_owned(), default: None, add: false })
+        }
+        _ => None,
+    }
+}
+
+/// The inspector of the function itself: its documentation, which edits, and "Add input", "Add output" under its
+/// signature (decision of the owner, 2026-11-19).
+fn of_function(ui: &mut egui::Ui, published: &Published, shown: &Shown, function: &str, callables: &Callables) -> Option<inspector::Answer> {
     let mut sections = Vec::new();
     let listed = published.functions.iter().find(|listed| listed.function == *function);
     let mut fields = vec![Field::code("Function", function)];
@@ -387,10 +531,22 @@ fn of_function(ui: &mut egui::Ui, published: &Published, shown: &Shown, function
         fields.push(Field::new("Nodes", drawing.placed.len().to_string()));
     }
     sections.push(Section { title: None, fields, text: None });
-    if let Some(doc) = own.and_then(|callable| callable.doc.as_ref()) {
-        sections.push(Section { title: Some("Documentation".to_owned()), fields: Vec::new(), text: Some(doc.clone()) });
+    // The signature, then a terminal to add on each side (notation 2.4).
+    if let Some(callable) = own {
+        let mut terminals = Vec::new();
+        for (side, slots) in [("input", &callable.typed.inputs), ("output", &callable.typed.outputs)] {
+            for slot in slots {
+                terminals.push(Field::code(format!("{side} {}", slot.name), slot.ty.as_str()));
+            }
+        }
+        terminals.push(Field::text("Add input", "add input", "", "name, then Enter"));
+        terminals.push(Field::text("Add output", "add output", "", "name, then Enter"));
+        sections.push(Section { title: Some("Terminals".to_owned()), fields: terminals, text: None });
     }
-    inspector::show(ui, "Function", &sections);
+    let doc = own.and_then(|callable| callable.doc.clone()).unwrap_or_default();
+    let documentation = vec![Field::text_lines("", "doc", doc, "What the function does (Ctrl+Enter writes it)")];
+    sections.push(Section { title: Some("Documentation".to_owned()), fields: documentation, text: None });
+    inspector::show(ui, "Function", &sections)
 }
 
 /// The inspector of one node: what it calls, its signature and documentation, where it is, the values of the last run
@@ -472,22 +628,42 @@ fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, grou
 
 /// The inspector of one terminal of the frame: its name, its type and its default, as its tooltip gives them. Whether it
 /// is fixed comes with `input x at y` and `terminal.move` (step 6).
-fn of_terminal(ui: &mut egui::Ui, drawing: &Drawing, name: &str) {
-    let mut fields = vec![Field::code("Terminal", name)];
+fn of_terminal(ui: &mut egui::Ui, drawing: &Drawing, name: &str) -> Option<inspector::Answer> {
+    let (side, caption) = name.split_once(' ').unwrap_or(("", name));
+    let mut fields = vec![Field::code("Terminal", name), Field::text("Name", "name", caption, "a name")];
+    let mut ty = String::new();
     if let Some(hint) = drawing.hints.iter().find(|hint| hint.selects.as_deref() == Some(name)) {
         let mut lines = hint.text.lines();
-        if let Some((_, ty)) = lines.next().and_then(|line| line.split_once(": ")) {
-            fields.push(Field::code("Type", ty));
+        if let Some((_, written)) = lines.next().and_then(|line| line.split_once(": ")) {
+            ty = written.to_owned();
         }
+        fields.push(Field::button("Type", "pick type", format!("{} ▾", if ty.is_empty() { "choose" } else { ty.as_str() })));
         for line in lines {
             if let Some((label, value)) = line.split_once(": ") {
                 let mut chars = label.chars();
                 let label: String = chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default();
-                fields.push(Field::code(label, value));
+                // The default edits, below.
+                if label != "Default" {
+                    fields.push(Field::code(label, value));
+                }
             }
         }
+    } else {
+        fields.push(Field::button("Type", "pick type", "choose ▾"));
     }
-    inspector::show(ui, "Terminal", &[Section { title: None, fields, text: None }]);
+    // An input of the function: its default, which an empty field removes (spec 4).
+    if side == "input" {
+        let default = labcraft_editor::frame_default(drawing, name);
+        // A default cut by the drawing is shown, not edited: the field would write it cut.
+        if labcraft_editor::default_is_cut(&default) {
+            fields.push(Field::code("Default", default));
+        } else {
+            fields.push(Field::text("Default", "default", default, "required"));
+        }
+    }
+    fields.push(Field::button("Terminal", "remove", "Remove"));
+    // The fields of each terminal keep their own typed text: a text typed for one never goes to the next selected.
+    ui.push_id(("terminal", name), |ui| inspector::show(ui, "Terminal", &[Section { title: None, fields, text: None }])).inner
 }
 
 /// What `Problems` filters.
