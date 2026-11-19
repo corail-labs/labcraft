@@ -1,0 +1,2 @@
+fn net.receive(socket: udp_socket, max: i32 = 65507, err: error = none) -> (data: bytes, socket: udp_socket, err: error)
+  native receive  skip(err: 2)

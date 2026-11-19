@@ -1,0 +1,7 @@
+# net:S006: a request given in both forms.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+
+[[net.device.reply]]
+request = "A"
+request_hex = "41"

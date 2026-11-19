@@ -1,0 +1,2 @@
+fn net.read_available(connection: connection, max: i32 = 65536, err: error = none) -> (data: bytes, connection: connection, err: error)
+  native read_available  skip(err: 2)

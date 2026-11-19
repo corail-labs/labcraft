@@ -358,8 +358,8 @@ impl LibraryRun for VisaRun {
             .instruments
             .iter()
             .zip(&self.instruments)
-            .filter(|(_, state)| !state.log.is_empty() || state.more > 0)
-            .map(|(spec, state)| InstrumentLog { resource: spec.resource.clone(), commands: state.log.clone(), more: state.more })
+            .filter(|(_, state)| !state.log.is_empty())
+            .map(|(spec, state)| state.log.instrument(&spec.resource))
             .collect();
         logs.sort_by(|a, b| a.resource.cmp(&b.resource));
         logs

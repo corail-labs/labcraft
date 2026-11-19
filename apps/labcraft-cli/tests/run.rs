@@ -74,7 +74,7 @@ fn engine_report(params: &Value) -> Value {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_results_log::ResultsLog)],
+                    natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_net::Net), Arc::new(labcraft_results_log::ResultsLog)],
                     clock: if real_time {
                         #[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
                         let now = std::time::Instant::now();
@@ -485,4 +485,46 @@ fn a_frame_of_bytes_is_the_same_in_both_modes() {
         assert_eq!(value("read_back"), 107, "{mode:?}");
         assert_eq!(value("err"), Value::Null, "{mode:?}: {report}");
     }
+}
+
+/// A program of `net` against a simulated device, through the command line (io.md 6, commands.md 7). By hand: the write of
+/// `TEMP?\n` is taken at 0 ms; its response is ready 2 ms later, its latency, and `read_line` takes it then and strips `\r\n`;
+/// the report has one entry per write (its `sent`, an `answer` of `null`) and one per read (the reverse). An endpoint the file
+/// does not describe is not found, after the timeout of the open, 2 s by default (io.md 3).
+#[test]
+fn a_program_of_net_runs_against_a_simulated_device() {
+    let scratch = Scratch::new("net");
+    let folder = scratch.0.join("p");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("ask.lcf"),
+        "labcraft 1\n\nuse net\n\n/// Asks a board its temperature.\nfn ask(host: string) -> (text: string, err: error) {\n    c, e1 = net.connect(host, 23)\n    c2, e2 = net.write_line(c, \"TEMP?\", err: e1)\n    text, c3, e3 = net.read_line(c2, err: e2)\n    err = net.close(c3, err: e3)\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        scratch.0.join("board.toml"),
+        "[[net.device]]\nendpoint = \"tcp:board.local:23\"\nlatency_ms = 2\n\n[[net.device.reply]]\nrequest = \"TEMP?\\n\"\nresponse = \"23.5\\r\\n\"\n",
+    )
+    .unwrap();
+    let run = |host: &str| {
+        let host = format!("host={host}");
+        report_of(&cli_in(&scratch.0, &["run", "--json", "--no-trace", "--sim", "board.toml", "--arg", &host, "p", "ask"]))
+    };
+    let report = run("board.local");
+    let value =
+        |report: &Value, name: &str| report["outputs"].as_array().unwrap().iter().find(|output| output["name"] == name).unwrap()["value"].clone();
+    assert_eq!(value(&report, "text"), json!("23.5"), "{report}");
+    assert_eq!(value(&report, "err"), Value::Null, "{report}");
+    assert_eq!(
+        report["instruments"],
+        json!([{ "resource": "tcp:board.local:23", "commands": [
+            { "t_ms": 0.0, "sent": "TEMP?\n", "answer": null },
+            { "t_ms": 2.0, "sent": null, "answer": "23.5\r\n" }
+        ] }]),
+        "{report}"
+    );
+    let report = run("other.local");
+    assert!(value(&report, "err").to_string().contains("net.host_not_found"), "{report}");
+    assert_eq!(report["clock"]["simulated_ms"], json!(2000.0), "{report}");
+    assert!(report.get("instruments").is_none(), "nothing reached: {report}");
 }

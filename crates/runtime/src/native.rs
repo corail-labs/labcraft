@@ -180,18 +180,140 @@ pub struct InstrumentLog {
     pub more: u64,
 }
 
-/// A command as the report shows it: each text cut to its first 1,000 code points when it is kept (commands.md 5), with its
-/// whole length, so that what a program sends cannot grow the memory of the run beyond `--max-memory`.
+/// A command as the report shows it (commands.md 7): when it was handled, what was sent and what was answered. An entry of a
+/// stream (`net`, io.md 6) is a write, its `sent` and no answer, or a read, its `answer` and no `sent`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CommandLog {
     /// When the command was handled, after its latency, in nanoseconds.
     pub at: i64,
-    pub sent: String,
-    /// In code points.
-    pub sent_length: u64,
+    /// `None` for a read of a stream.
+    pub sent: Option<LogText>,
     /// `None` for a write, and for a query never answered.
-    pub answer: Option<String>,
-    pub answer_length: u64,
+    pub answer: Option<LogText>,
+}
+
+/// A text of the report: its first 1,000 code points when it is kept (commands.md 5), with its whole length, so that what a
+/// program sends cannot grow the memory of the run beyond `--max-memory`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LogText {
+    pub kept: String,
+    /// In code points.
+    pub length: u64,
+    /// The text is the bytes in lowercase hexadecimal, since they are not text (io.md 6): `"hex": true` in the report.
+    pub hex: bool,
+}
+
+/// How many entries the log of one resource keeps for the report *(proposed)*.
+pub const KEPT_ENTRIES: usize = 1000;
+/// How much of a text the report shows (commands.md 5).
+pub const KEPT_TEXT: usize = 1000;
+
+/// What a library gives the log of a resource: a text, or bytes, which the log writes as text when they are UTF-8 without
+/// control characters other than `\r`, `\n` and `\t`, else in hexadecimal (io.md 6).
+#[derive(Clone, Copy, Debug)]
+pub enum Logged<'a> {
+    Text(&'a str),
+    Bytes(&'a [u8]),
+}
+
+fn shown_as_text(c: char) -> bool {
+    !c.is_control() || matches!(c, '\r' | '\n' | '\t')
+}
+
+/// Bytes as the report and a description write them (io.md 6): their text when they are UTF-8 without control characters
+/// other than `\r`, `\n` and `\t`, else lowercase hexadecimal (`true`).
+pub fn bytes_text(bytes: &[u8]) -> (String, bool) {
+    match std::str::from_utf8(bytes) {
+        Ok(text) if text.chars().all(shown_as_text) => (text.to_owned(), false),
+        _ => (crate::text::hex(bytes), true),
+    }
+}
+
+/// How an entry writes what it was given: its text, or its bytes in hexadecimal.
+#[derive(Clone, Copy)]
+enum Written<'a> {
+    Text(&'a str),
+    Hex(&'a [u8]),
+}
+
+impl<'a> Logged<'a> {
+    fn written(self) -> Written<'a> {
+        match self {
+            Logged::Text(text) => Written::Text(text),
+            Logged::Bytes(bytes) => match std::str::from_utf8(bytes) {
+                Ok(text) if text.chars().all(shown_as_text) => Written::Text(text),
+                _ => Written::Hex(bytes),
+            },
+        }
+    }
+}
+
+impl Written<'_> {
+    /// What it costs the budget, before anything is copied: its size in bytes as written, at most four bytes a code point
+    /// kept.
+    fn cost(self) -> u64 {
+        let size = match self {
+            Written::Text(text) => text.len(),
+            Written::Hex(bytes) => bytes.len().saturating_mul(2),
+        };
+        size.min(4 * KEPT_TEXT) as u64
+    }
+
+    /// What the report keeps of it: its first 1,000 code points, and its length.
+    fn kept(self) -> LogText {
+        match self {
+            Written::Text(text) => {
+                let mut length = 0_u64;
+                let mut kept = String::new();
+                for c in text.chars() {
+                    if length < KEPT_TEXT as u64 {
+                        kept.push(c);
+                    }
+                    length += 1;
+                }
+                LogText { kept, length, hex: false }
+            }
+            Written::Hex(bytes) => LogText {
+                kept: crate::text::hex(bytes.get(..bytes.len().min(KEPT_TEXT / 2)).unwrap_or_default()),
+                length: u64::try_from(bytes.len()).unwrap_or(u64::MAX).saturating_mul(2),
+                hex: true,
+            },
+        }
+    }
+}
+
+/// The log of one resource for the report (commands.md 7, `instruments`): the start of what it saw, then a count. Each entry
+/// kept costs its texts, at most four bytes a code point kept, and 64 bytes, from the budget of the run: from the first entry
+/// that does not fit, or past [`KEPT_ENTRIES`], entries are counted, not kept, so that the log is the start of what it saw.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ResourceLog {
+    pub entries: Vec<CommandLog>,
+    /// Entries counted, not kept.
+    pub more: u64,
+}
+
+impl ResourceLog {
+    pub fn entry(&mut self, budget: &LogBudget, at: i64, sent: Option<Logged<'_>>, answer: Option<Logged<'_>>) {
+        if self.more > 0 || self.entries.len() >= KEPT_ENTRIES {
+            self.more = self.more.saturating_add(1);
+            return;
+        }
+        let (sent, answer) = (sent.map(Logged::written), answer.map(Logged::written));
+        if !budget.take(sent.map_or(0, Written::cost) + answer.map_or(0, Written::cost) + 64) {
+            self.more = self.more.saturating_add(1);
+            return;
+        }
+        self.entries.push(CommandLog { at, sent: sent.map(Written::kept), answer: answer.map(Written::kept) });
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty() && self.more == 0
+    }
+
+    /// For the report, by the name of its resource.
+    pub fn instrument(&self, resource: &str) -> InstrumentLog {
+        InstrumentLog { resource: resource.to_owned(), commands: self.entries.clone(), more: self.more }
+    }
 }
 
 /// What the libraries of a run may keep for its report (commands.md 7, `instruments` and `logs`), in bytes: one budget for the
@@ -278,5 +400,29 @@ pub trait LibraryRun: Send {
     /// What it kept of the values it was given, for the report.
     fn logs(&self) -> Logs {
         Logs::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
+
+    use super::{LogBudget, Logged, ResourceLog};
+
+    /// commands.md 7: an entry costs its texts, at most four bytes a code point kept, and 64 bytes. By hand: 2,500 `é` are
+    /// 5,000 bytes, so 4,000 + 64 = 4,064 bytes; 3 bytes not text, `00 ff 07` in hexadecimal, 6 + 64 = 70.
+    #[test]
+    fn an_entry_costs_its_size_as_written() {
+        let text = "é".repeat(2500);
+        for (budget, kept) in [(4063, 0), (4064, 1)] {
+            let mut log = ResourceLog::default();
+            log.entry(&LogBudget::new(budget), 0, Some(Logged::Text(&text)), None);
+            assert_eq!((log.entries.len(), log.more), (kept, 1 - kept as u64), "{budget}");
+        }
+        let budget = LogBudget::new(70);
+        let mut log = ResourceLog::default();
+        log.entry(&budget, 0, None, Some(Logged::Bytes(&[0, 255, 7])));
+        let answer = log.entries[0].answer.as_ref().unwrap();
+        assert_eq!((answer.kept.as_str(), answer.length, answer.hex, budget.left()), ("00ff07", 6, true, 0));
     }
 }

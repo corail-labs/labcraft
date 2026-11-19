@@ -1,0 +1,4 @@
+# net:S001: a key that the format does not have (`latency` for `latency_ms`).
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+latency = 2

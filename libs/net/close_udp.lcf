@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Closes the socket. Marked `always`: it runs even if an error arrives on its input.
+extern rust(crate: "labcraft-net", function: "close_udp")
+fn close_udp(socket: udp_socket, err: error = none) -> (err: error)

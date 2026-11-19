@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use labcraft_runtime::native::LibraryCode;
 use labcraft_types::Code;
 
 const START: &str = "## 5. Diagnostic codes";
@@ -49,19 +50,20 @@ fn read_row(line: &str) -> Option<(&str, &str)> {
     (is_code(code) && matches!(severity, "error" | "warning")).then_some((code, severity))
 }
 
-pub fn check(documented: &BTreeMap<String, String>, codes: &[(&str, &str)]) -> Vec<String> {
+/// The codes of `list` (`the enumeration Code`) against the table of `document` (`docs/cli.md`).
+pub fn check(documented: &BTreeMap<String, String>, codes: &[(&str, &str)], document: &str, list: &str) -> Vec<String> {
     let mut violations = Vec::new();
     for (code, severity) in codes {
         match documented.get(*code) {
-            None => violations.push(format!("{code}: in the enumeration Code, not in docs/cli.md")),
+            None => violations.push(format!("{code}: in {list}, not in {document}")),
             Some(written) if written != severity => {
-                violations.push(format!("{code}: {severity} in the enumeration Code, {written} in docs/cli.md"));
+                violations.push(format!("{code}: {severity} in {list}, {written} in {document}"));
             }
             Some(_) => {}
         }
     }
     for code in documented.keys().filter(|code| !codes.iter().any(|(known, _)| known == code)) {
-        violations.push(format!("{code}: in docs/cli.md, not in the enumeration Code"));
+        violations.push(format!("{code}: in {document}, not in {list}"));
     }
     violations
 }
@@ -89,9 +91,43 @@ pub fn library_from_document(document: &str, heading: &str, library: &str) -> Re
     Ok(rows)
 }
 
-/// The codes of `labcraft-visa`, with their severity.
-pub fn of_visa() -> Vec<(&'static str, &'static str)> {
-    labcraft_visa::CODES.iter().map(|code| (code.code, code.severity.as_str())).collect()
+/// A library with native bodies, whose codes equal the table of its document (`docs/architecture.md`, 10.6).
+pub struct Library {
+    pub name: &'static str,
+    /// From the root of the repository.
+    pub document: &'static str,
+    /// The section of the document that holds the table.
+    pub heading: &'static str,
+    /// How a violation names the list of the crate.
+    pub list: &'static str,
+    pub codes: &'static [LibraryCode],
+}
+
+pub const LIBRARIES: &[Library] = &[
+    Library {
+        name: "visa",
+        document: "libs/visa/simulation.md",
+        heading: "## 7. What is refused",
+        list: "labcraft_visa::CODES",
+        codes: labcraft_visa::CODES,
+    },
+    Library { name: "net", document: "libs/net/README.md", heading: "## Simulation", list: "labcraft_net::CODES", codes: labcraft_net::CODES },
+];
+
+impl Library {
+    /// Its codes, with their severity.
+    pub fn codes(&self) -> Vec<(&'static str, &'static str)> {
+        self.codes.iter().map(|code| (code.code, code.severity.as_str())).collect()
+    }
+
+    /// Its codes against the text of its document, and any code given twice.
+    pub fn violations(&self, document: &str) -> Result<Vec<String>, String> {
+        let documented = library_from_document(document, self.heading, self.name).map_err(|error| format!("{}: {error}", self.document))?;
+        let codes = self.codes();
+        let mut violations = check(&documented, &codes, self.document, self.list);
+        violations.extend(twice(&codes));
+        Ok(violations)
+    }
 }
 
 /// A code given twice in a list of a library.
@@ -156,12 +192,12 @@ Reserved for later specifications: `LC7xxx` for `diagram`.
 
     #[test]
     fn equal_lists_pass() {
-        assert!(check(&documented(), &[("LC0001", "error"), ("LC0005", "warning"), ("LC0006", "error")]).is_empty());
+        assert!(check(&documented(), &[("LC0001", "error"), ("LC0005", "warning"), ("LC0006", "error")], CLI, CODE).is_empty());
     }
 
     #[test]
     fn each_difference_is_a_violation() {
-        let found = check(&documented(), &[("LC0001", "warning"), ("LC0002", "error"), ("LC0006", "error")]);
+        let found = check(&documented(), &[("LC0001", "warning"), ("LC0002", "error"), ("LC0006", "error")], CLI, CODE);
         assert_eq!(found.len(), 3, "{found:?}");
         assert!(found[0].contains("warning in the enumeration Code, error in docs/cli.md"), "{found:?}");
         assert!(found[1].contains("LC0002: in the enumeration Code"), "{found:?}");
@@ -206,8 +242,11 @@ Reserved for later specifications: `LC7xxx` for `diagram`.
 
     #[test]
     fn an_empty_list_fails_against_the_enumeration() {
-        assert!(!check(&BTreeMap::new(), &in_code()).is_empty());
+        assert!(!check(&BTreeMap::new(), &in_code(), CLI, CODE).is_empty());
     }
+
+    const CLI: &str = "docs/cli.md";
+    const CODE: &str = "the enumeration Code";
 
     const LIBRARY: &str = "## 7. What is refused
 
@@ -234,12 +273,15 @@ Reserved for later specifications: `LC7xxx` for `diagram`.
     }
 
     #[test]
-    fn the_codes_of_visa_are_its_table() {
-        let document = include_str!("../../libs/visa/simulation.md");
-        let documented = library_from_document(document, "## 7. What is refused", "visa").unwrap();
-        assert_eq!(check(&documented, &of_visa()), Vec::<String>::new());
-        assert!(!check(&documented, &of_visa()[1..]).is_empty(), "one code missing is a violation");
-        assert_eq!(twice(&of_visa()), Vec::<String>::new());
+    fn the_codes_of_each_library_are_its_table() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        for library in LIBRARIES {
+            let document = std::fs::read_to_string(root.join(library.document)).unwrap();
+            assert_eq!(library.violations(&document).unwrap(), Vec::<String>::new(), "{}", library.name);
+            let documented = library_from_document(&document, library.heading, library.name).unwrap();
+            let codes = library.codes();
+            assert!(!check(&documented, &codes[1..], library.document, library.list).is_empty(), "one code missing is a violation");
+        }
         assert_eq!(twice(&[("visa:S001", "error"), ("visa:S001", "error")]).len(), 1);
     }
 

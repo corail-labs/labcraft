@@ -1,0 +1,2 @@
+fn net.open_udp(host: string, port: u16, local_port: u16 = 0, timeout: duration = 2000000000 ns, err: error = none) -> (socket: udp_socket, err: error)
+  native open_udp  skip(err: 4)

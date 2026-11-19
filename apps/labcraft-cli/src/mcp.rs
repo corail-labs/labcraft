@@ -65,7 +65,7 @@ pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, Str
         lib_paths: options.lib_paths.clone(),
         limits: options.limits.clone(),
         shipped: crate::shipped(),
-        natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_results_log::ResultsLog)],
+        natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_net::Net), Arc::new(labcraft_results_log::ResultsLog)],
         clock: Arc::new(crate::clock::Real::new()),
         process: std::process::id(),
     };

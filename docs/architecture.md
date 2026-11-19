@@ -505,7 +505,7 @@ apps/labcraft-cli ──> mcp ──> engine ──> runtime ──> ir ──> 
 | L4 | `ir` | The dataflow IR: [ir.md](ir.md) |
 | L5 | `runtime` | Values, the scheduler, the interpreter, the primitives, the interface of a native library, the report of a run |
 | L6 | `engine` | The session, the registry of commands, runs as tasks |
-| L6 | `labcraft-visa`, `labcraft-results-log` | The native crates of the libraries `visa` and `results_log` |
+| L6 | `labcraft-visa`, `labcraft-results-log` | The native crates of the libraries `visa` and `results_log` (and `labcraft-net` in M4) |
 | L7 | `mcp` | The MCP server over stdio, made from the registry |
 
 **A native crate lives beside the declarations it gives bodies to**: `labcraft-visa` in `libs/visa/`,
@@ -750,7 +750,7 @@ each `set`, which `runtime::trace` writes (10.7).
 ### 10.6 Native libraries
 
 *Status: implemented: the interface, `labcraft-visa` and `labcraft-results-log` (step 4), `Blocking` and the pool
-(step 8), the context of a run and `runtime::io` (M4).* The runtime defines what a library with native functions gives it (`runtime::native`):
+(step 8), the context of a run and `runtime::io`, and `labcraft-net` (M4).* The runtime defines what a library with native functions gives it (`runtime::native`):
 
 ```rust
 pub trait NativeLibrary: Send + Sync {
@@ -877,6 +877,19 @@ scheduler does, gets the error `results_log.not_in_progress`.
   expected values worked out by hand, or by a Python script written from simulation.md 3 alone, which gives the factor that
   the document states. `cargo xtask codes` compares `labcraft_visa::CODES` with simulation.md 7. `labcraft-visa` builds for
   WASM.
+
+`labcraft-net` (M4, [libs/net](../libs/net/README.md)) holds the connections and sockets of a run, real or simulated. An
+open reduces the host and the port to its endpoint (io.md 2), then follows `io::open_real`; a real open, read or write is
+`Blocking` work over the standard library, and a call holds the key of its handle for all of its length. A real
+connection keeps the bytes received and not taken behind a mutex its work owns, and a clone of its stream outside, so that
+`release` shuts it down without waiting for the mutex. The runtime calls `release` only once no call of the run is in
+progress: a call that waits ends, or reaches its timeout, within the grace period, or is abandoned and its handle reported
+as leaked (io.md 7). A simulated device keeps, per connection, the bytes it received and
+not matched, and its responses each with the time it is ready; a read sleeps on the clock of the run until it has what it
+needs, its timeout, or `close_ms`. One rule judges what a read takes, for both. The report gets one entry per write and per
+read, in text or in hexadecimal (`LogText::hex`), a read with no `sent`, kept by `native::ResourceLog` as `visa` keeps its commands. On WASM every open gives `io.unsupported`.
+`cargo xtask codes` compares `labcraft_net::CODES` with the table of its README; its tests start TCP and UDP servers on
+`127.0.0.1`.
 
 ### 10.7 The trace and the report
 

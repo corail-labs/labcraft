@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Writes the UTF-8 bytes of `text`, then those of `terminator`.
+extern rust(crate: "labcraft-net", function: "write_line")
+fn write_line(
+    connection: connection,
+    text: string,
+    terminator: string = "\n",
+    err: error = none,
+) -> (connection: connection, err: error)

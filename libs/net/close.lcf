@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Closes the connection. Marked `always`: it runs even if an error arrives on its input.
+extern rust(crate: "labcraft-net", function: "close")
+fn close(connection: connection, err: error = none) -> (err: error)

@@ -1,0 +1,5 @@
+labcraft 1
+
+/// An open UDP socket, connected to an endpoint `udp:HOST:PORT`: a handle. Its default value is a socket never
+/// opened.
+type udp_socket = opaque

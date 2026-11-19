@@ -352,3 +352,42 @@ fn the_diagnostics_give_way_before_the_values() {
     assert!(listed > 1000 && listed < 100_000, "{listed}");
     assert_eq!(json["truncated"], true);
 }
+
+/// commands.md 7 and io.md 6: an entry of a stream is a write, its `sent` and an `answer` of `null`, or a read, its `answer`
+/// and a `sent` of `null`; bytes that are not text are in hexadecimal, with `"hex": true`. A command of `visa` is written as
+/// before: no `hex`. Each expected text is written by hand from those rules.
+#[test]
+fn the_entries_of_a_stream_say_which_way_they_went_and_whether_they_are_hexadecimal() {
+    use crate::native::{CommandLog, InstrumentLog, LogText};
+    let mut names = Interner::new();
+    let (checked, program) = checked(&[("f.lcf", "labcraft 1\n\nfn f() -> (x: i32) {\n    x = 1\n}\n")], &mut names);
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs: vec![],
+        settings: Settings::default(),
+        context: Context::default(),
+    };
+    let mut end = run(given, &mut Still, &mut Unobserved);
+    let entry = |sent: Option<&str>, answer: Option<&str>, hex: bool| {
+        let logged = |text: &str| LogText { kept: text.to_owned(), length: text.chars().count() as u64, hex };
+        CommandLog { at: 0, sent: sent.map(logged), answer: answer.map(logged) }
+    };
+    end.instruments = vec![
+        InstrumentLog { resource: "SIM::DMM0".to_owned(), commands: vec![entry(Some("*IDN?"), Some("SIM"), false)], more: 0 },
+        InstrumentLog {
+            resource: "tcp:10.0.0.7:502".to_owned(),
+            commands: vec![entry(Some("000100000006010300000002"), None, true), entry(None, Some("OK\r\n"), false)],
+            more: 0,
+        },
+    ];
+    let text = report_of(&end, &checked, &program, &names);
+    assert!(
+        text.contains(
+            r#""instruments":[{"resource":"SIM::DMM0","commands":[{"t_ms":0.0,"sent":"*IDN?","answer":"SIM"}]},{"resource":"tcp:10.0.0.7:502","commands":[{"t_ms":0.0,"sent":"000100000006010300000002","answer":null,"hex":true},{"t_ms":0.0,"sent":null,"answer":"OK\r\n"}]}]"#
+        ),
+        "{text}"
+    );
+}

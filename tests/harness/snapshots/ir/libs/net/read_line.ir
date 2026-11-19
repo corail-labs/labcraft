@@ -1,0 +1,2 @@
+fn net.read_line(connection: connection, terminator: string = "\n", max: i32 = 65536, err: error = none) -> (text: string, connection: connection, err: error)
+  native read_line  skip(err: 3)

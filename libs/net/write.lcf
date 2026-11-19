@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Sends all the bytes, or fails.
+extern rust(crate: "labcraft-net", function: "write")
+fn write(
+    connection: connection,
+    data: bytes,
+    err: error = none,
+) -> (connection: connection, err: error)

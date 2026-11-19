@@ -1,0 +1,11 @@
+# net:S007: a request that is the start of another one of the same device, which could never match.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+
+[[net.device.reply]]
+request = "TEMP"
+response = "1"
+
+[[net.device.reply]]
+request = "TEMP?"
+response = "2"

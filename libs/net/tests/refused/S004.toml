@@ -1,0 +1,6 @@
+# net:S004: an endpoint defined again; the second is the same endpoint once written one way (io.md 2).
+[[net.device]]
+endpoint = "tcp:Board.local:23"
+
+[[net.device]]
+endpoint = "tcp:board.local:0023"

@@ -1,0 +1,2 @@
+fn net.connect(host: string, port: u16, timeout: duration = 2000000000 ns, err: error = none) -> (connection: connection, err: error)
+  native connect  skip(err: 3)

@@ -1,0 +1,4 @@
+# net:S008: `close_ms` on a UDP device.
+[[net.device]]
+endpoint = "udp:10.0.0.9:5000"
+faults = { close_ms = 50 }

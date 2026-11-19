@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 
-use labcraft_runtime::native::{CommandLog, LogBudget};
+use labcraft_runtime::native::{LogBudget, Logged, ResourceLog};
 
 use crate::file::{Bench, InstrumentSpec, QUEUE_SIZE};
 
@@ -102,20 +102,16 @@ fn set(quantities: &mut [QuantityState], id: usize, target: f64, t: i64, settle:
     }
 }
 
-/// How many commands an instrument keeps for the report (commands.md 7) *(proposed)*.
-pub(crate) const KEPT_COMMANDS: usize = 1000;
-
 /// An instrument in one run.
 #[derive(Debug)]
 pub(crate) struct Instrument {
     queue: VecDeque<(i64, String)>,
-    pub(crate) log: Vec<CommandLog>,
-    pub(crate) more: u64,
+    pub(crate) log: ResourceLog,
 }
 
 impl Instrument {
     pub(crate) fn new(spec: &InstrumentSpec) -> Self {
-        Instrument { queue: spec.error_queue.iter().cloned().collect(), log: Vec::new(), more: 0 }
+        Instrument { queue: spec.error_queue.iter().cloned().collect(), log: ResourceLog::default() }
     }
 
     /// One more error; past the size of the queue, the last becomes `-350,"Queue overflow"` (simulation.md 4).
@@ -126,32 +122,6 @@ impl Instrument {
             *last = (-350, "Queue overflow".to_owned());
         }
     }
-
-    /// Each command kept costs its two texts, as kept, and 64 bytes, from the budget of the run (`LogBudget`): from the first
-    /// command that does not fit, commands are counted, not kept, whatever the number of instruments, so that the log of an
-    /// instrument is the start of what it received.
-    fn log(&mut self, budget: &LogBudget, at: i64, sent: &str, answer: Option<&str>) {
-        let cost = (sent.len().min(4 * KEPT_TEXT) + answer.map_or(0, |answer| answer.len().min(4 * KEPT_TEXT)) + 64) as u64;
-        if self.more == 0 && self.log.len() < KEPT_COMMANDS && budget.take(cost) {
-            let (sent, sent_length) = head(sent);
-            let (answer, answer_length) = answer.map_or((None, 0), |answer| {
-                let (text, length) = head(answer);
-                (Some(text), length)
-            });
-            self.log.push(CommandLog { at, sent, sent_length, answer, answer_length });
-        } else {
-            self.more = self.more.saturating_add(1);
-        }
-    }
-}
-
-/// How much of a text the report shows (commands.md 5): what is kept of each command and answer.
-pub(crate) const KEPT_TEXT: usize = 1000;
-
-/// The first 1,000 code points of a text, and its length in code points.
-fn head(text: &str) -> (String, u64) {
-    let length = text.chars().count();
-    (text.chars().take(KEPT_TEXT).collect(), u64::try_from(length).unwrap_or(u64::MAX))
 }
 
 /// The command without one `\n` or `\r\n` that ends it, then without spaces (U+0020) at its ends.
@@ -190,7 +160,7 @@ pub(crate) fn execute(
 ) -> Option<String> {
     let c = command_text(command);
     if spec.timeouts.contains(c) {
-        state.log(budget, t, c, None);
+        state.log.entry(budget, t, Some(Logged::Text(c)), None);
         return None;
     }
     if let Some((code, message)) = spec.error_on.get(c) {
@@ -236,6 +206,6 @@ pub(crate) fn execute(
             }
         }
     };
-    state.log(budget, t, c, answer.as_deref());
+    state.log.entry(budget, t, Some(Logged::Text(c)), answer.as_deref().map(Logged::Text));
     answer
 }

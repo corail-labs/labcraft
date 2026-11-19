@@ -1,0 +1,2 @@
+fn net.send(socket: udp_socket, data: bytes, err: error = none) -> (socket: udp_socket, err: error)
+  native send  skip(err: 2)

@@ -1,0 +1,515 @@
+# net:S009: more than 256 devices.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:1"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:2"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:3"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:4"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:5"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:6"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:7"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:8"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:9"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:10"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:11"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:12"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:13"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:14"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:15"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:16"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:17"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:18"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:19"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:20"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:21"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:22"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:23"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:24"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:25"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:26"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:27"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:28"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:29"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:30"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:31"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:32"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:33"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:34"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:35"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:36"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:37"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:38"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:39"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:40"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:41"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:42"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:43"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:44"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:45"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:46"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:47"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:48"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:49"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:50"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:51"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:52"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:53"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:54"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:55"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:56"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:57"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:58"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:59"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:60"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:61"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:62"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:63"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:64"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:65"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:66"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:67"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:68"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:69"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:70"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:71"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:72"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:73"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:74"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:75"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:76"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:77"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:78"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:79"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:80"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:81"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:82"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:83"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:84"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:85"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:86"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:87"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:88"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:89"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:90"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:91"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:92"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:93"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:94"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:95"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:96"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:97"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:98"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:99"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:100"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:101"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:102"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:103"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:104"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:105"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:106"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:107"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:108"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:109"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:110"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:111"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:112"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:113"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:114"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:115"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:116"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:117"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:118"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:119"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:120"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:121"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:122"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:123"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:124"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:125"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:126"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:127"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:128"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:129"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:130"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:131"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:132"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:133"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:134"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:135"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:136"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:137"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:138"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:139"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:140"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:141"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:142"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:143"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:144"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:145"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:146"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:147"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:148"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:149"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:150"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:151"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:152"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:153"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:154"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:155"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:156"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:157"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:158"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:159"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:160"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:161"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:162"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:163"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:164"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:165"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:166"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:167"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:168"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:169"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:170"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:171"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:172"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:173"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:174"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:175"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:176"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:177"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:178"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:179"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:180"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:181"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:182"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:183"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:184"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:185"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:186"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:187"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:188"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:189"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:190"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:191"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:192"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:193"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:194"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:195"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:196"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:197"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:198"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:199"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:200"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:201"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:202"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:203"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:204"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:205"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:206"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:207"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:208"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:209"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:210"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:211"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:212"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:213"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:214"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:215"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:216"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:217"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:218"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:219"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:220"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:221"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:222"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:223"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:224"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:225"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:226"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:227"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:228"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:229"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:230"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:231"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:232"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:233"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:234"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:235"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:236"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:237"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:238"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:239"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:240"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:241"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:242"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:243"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:244"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:245"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:246"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:247"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:248"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:249"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:250"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:251"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:252"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:253"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:254"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:255"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:256"
+[[net.device]]
+endpoint = "tcp:10.0.0.7:257"
