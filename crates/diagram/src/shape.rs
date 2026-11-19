@@ -751,6 +751,14 @@ pub struct Placed {
     /// (notation 2.4); none for a structure of automatic size and for another node.
     #[cfg_attr(feature = "serde", serde(default))]
     pub size: Option<(i64, i64)>,
+    /// For a call in compact view to a function that the check holds, the file of that function as `check` shows it:
+    /// what `block.set_terminal` writes when a terminal of its block is moved (notation 2.4). Empty otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub callee: String,
+    /// The places of its block that the lines of the section of its function hold, by side (`top`, `left`, `right`) and
+    /// place: a terminal moved by hand cannot take them (notation 2.4). Empty otherwise.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub held: Vec<(String, u32)>,
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

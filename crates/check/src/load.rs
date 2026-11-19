@@ -569,6 +569,7 @@ fn judge_the_kind_of_file(shown: &str, model: &Model, checked: bool, sink: &mut 
         let sections = [
             file.panel.as_ref().map(|panel| ("panel", panel.id)),
             file.layout.as_ref().map(|layout| ("layout", layout.id)),
+            file.terminals.as_ref().map(|terminals| ("terminals", terminals.id)),
             file.icon.as_ref().map(|icon| ("icon", icon.id)),
         ];
         for (section, id) in sections.into_iter().flatten() {
@@ -766,6 +767,13 @@ mod tests {
         assert_eq!(found, ["LC0103", "LC0103", "LC0103"]);
         let checked = check(library("", vec![file("T.lcf", ty), file("f.lct", FUNCTION)]), &Nothing, &mut Interner::new(), &Limits::default());
         assert_eq!((checked.counts.functions, checked.counts.types), (1, 1));
+    }
+
+    #[test]
+    fn a_terminals_section_in_a_type_file_is_refused() {
+        // R-19: a type file has no `terminals` section.
+        let text = b"labcraft 1\n\ntype T = f64\n\nterminals {\n    top 5\n}\n";
+        assert_eq!(codes_of_files(vec![file("T.lct", text)]), ["LC0104"]);
     }
 
     #[test]

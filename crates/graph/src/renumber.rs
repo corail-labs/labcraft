@@ -40,6 +40,12 @@ impl File {
         if let Some(layout) = &mut self.layout {
             ids.layout(layout);
         }
+        if let Some(terminals) = &mut self.terminals {
+            ids.next(&mut terminals.id);
+            for item in &mut terminals.items {
+                ids.next(&mut item.id);
+            }
+        }
         if let Some(icon) = &mut self.icon {
             ids.icon(icon);
         }

@@ -35,8 +35,6 @@ fn markdown_files() -> Vec<PathBuf> {
 /// Blocks whose grammar the spec gives before the parser reads it: each is a text the block holds. The test checks
 /// that each still fails, so that the entry goes when the parser catches up (`AGENTS.md`).
 const AHEAD_OF_THE_PARSER: &[&str] = &[
-    // Spec 11.2, M1 step 6 (#165): the terminals of the compact block.
-    "terminals {",
     // Spec 11.4, M1 step 6 (#165): the outline of the compact block.
     "outline {",
 ];

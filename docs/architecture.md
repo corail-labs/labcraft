@@ -110,7 +110,7 @@ Decisions:
     a file can hold millions of them.
 - **Every comment has a place:** on each item that can carry one, by `Attached` (the comments before it,
   the one that ends on its line): declarations with their documentation, `use` lines, parameters,
-  outputs, fields, variants, loop clauses, statements, arms, `panel`, `layout` and `icon` items, sections.
+  outputs, fields, variants, loop clauses, statements, arms, `panel`, `layout`, `terminals` and `icon` items, sections.
   Also after an opening `{`, on a closing `}`, and at the end of a list (`end`). The tests of 5.2 are
   written against these slots.
 - **Ids instead of positions.** Everything that a diagnostic can point at has an `Id`: statements, and

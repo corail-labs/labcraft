@@ -36,11 +36,16 @@ pub struct At {
     pub side: Side,
     /// The height of the horizontal that reaches it: its own height, or above its node for the top edge.
     pub approach: i64,
+    /// A terminal off its default side (spec 11.2): the wire leaves an output on the left or the top edge of its block by
+    /// these points, around the block, to where the routing takes it, `(x, y)` on the right edge.
+    pub head: Option<[(i64, i64); 3]>,
+    /// An input on the right edge of its block: the routing brings the wire down beside that edge, then into it here.
+    pub foot: Option<(i64, i64)>,
 }
 
 impl At {
     pub fn side(x: i64, y: i64, side: Side) -> At {
-        At { x, y, side, approach: y }
+        At { x, y, side, approach: y, head: None, foot: None }
     }
 }
 
@@ -930,7 +935,29 @@ pub fn geometry(plan: &Plan, ends: &[Option<Ends>], channels: &[i64]) -> Vec<Rou
         }
     }
     through(plan, ends, &mut routed);
+    around(ends, &mut routed);
     routed
+}
+
+/// The wires of the terminals off their default side (spec 11.2): around their block, by `head` and `foot`.
+fn around(ends: &[Option<Ends>], routed: &mut [Routed]) {
+    for found in routed.iter_mut() {
+        let mut changed = false;
+        for (wire, branch) in found.wires.iter().zip(found.branches.iter_mut()) {
+            let Some(Some(ends)) = ends.get(*wire) else { continue };
+            if ends.from.head.is_none() && ends.to.foot.is_none() {
+                continue;
+            }
+            let mut points: Vec<(i64, i64)> = ends.from.head.map(|head| head.to_vec()).unwrap_or_default();
+            points.append(branch);
+            points.extend(ends.to.foot);
+            *branch = simplify(points);
+            changed = true;
+        }
+        if changed {
+            found.junctions = junctions(&found.branches);
+        }
+    }
 }
 
 /// A wire with waypoints not routed yet: the wire, its ends, its points.
@@ -1425,7 +1452,7 @@ mod tests {
                     (column, draw.range(top / unit, bottom / unit) * unit)
                 };
                 let to = if draw.below(8) == 0 {
-                    At { x: 0, y: to + dy, side: Side::Top, approach: to - draw.range(8, 30) * unit + dy }
+                    At { x: 0, y: to + dy, side: Side::Top, approach: to - draw.range(8, 30) * unit + dy, head: None, foot: None }
                 } else {
                     At::side(0, to + dy, Side::Left)
                 };

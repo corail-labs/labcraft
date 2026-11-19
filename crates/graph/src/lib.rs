@@ -113,6 +113,8 @@ pub struct File {
     pub decl: Decl,
     pub panel: Option<Panel>,
     pub layout: Option<Layout>,
+    /// The places of the terminals of its compact block (spec 11.2, M1).
+    pub terminals: Option<Terminals>,
     pub icon: Option<Icon>,
     /// Comments after the last section.
     pub end: Vec<Comment>,
@@ -731,6 +733,128 @@ pub struct Point {
     pub id: Id,
     pub x: Numeral,
     pub y: Numeral,
+}
+
+/// The `terminals` section (spec 11.2): where the terminals of the compact block of the function go. Like `layout`, it says
+/// nothing about running; `check` judges its lines (`LC5014`, `LC5015`), the drawing applies those that can apply.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Terminals {
+    pub id: Id,
+    pub comments: Attached,
+    pub items: Vec<TerminalsItem>,
+    pub end: Vec<Comment>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerminalsItem {
+    pub id: Id,
+    pub comments: Attached,
+    pub kind: TerminalsKind,
+}
+
+/// A side of a compact block that holds terminals: the bottom one has none (spec 11.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BlockSide {
+    Top,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminalsKind {
+    /// `top N` or `left N`: the number of places of a side, its digits as written (`check` judges 3 to 64).
+    Size { side: BlockSide, places: Name },
+    /// `left middle x`, `right 2 output err`: a terminal on a place. `output` is `Some(true)` for `output x`, `Some(false)`
+    /// for `input x`, `None` for the name alone.
+    Place { side: BlockSide, place: BlockPlace, output: Option<bool>, name: Name },
+    /// `band hidden`, `band inside` or `band above`.
+    Band(BandPlace),
+}
+
+/// A place on a side, counted from 1 (spec 11.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockPlace {
+    /// Its digits as written.
+    Number(Name),
+    Last,
+    Middle,
+}
+
+/// Where the band of a block goes (spec 11.2, 11.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BandPlace {
+    Hidden,
+    Inside,
+    Above,
+}
+
+impl BlockSide {
+    /// As the section writes it.
+    pub fn word(self) -> &'static str {
+        match self {
+            BlockSide::Top => "top",
+            BlockSide::Left => "left",
+            BlockSide::Right => "right",
+        }
+    }
+
+    pub fn from_word(word: &str) -> Option<BlockSide> {
+        [BlockSide::Top, BlockSide::Left, BlockSide::Right].into_iter().find(|side| side.word() == word)
+    }
+
+    /// The side across the block, where the other terminal of a pair goes (11.2); the top side has none.
+    pub fn facing(self) -> Option<BlockSide> {
+        match self {
+            BlockSide::Left => Some(BlockSide::Right),
+            BlockSide::Right => Some(BlockSide::Left),
+            BlockSide::Top => None,
+        }
+    }
+}
+
+impl BandPlace {
+    /// As the section writes it, after `band`.
+    pub fn word(self) -> &'static str {
+        match self {
+            BandPlace::Hidden => "hidden",
+            BandPlace::Inside => "inside",
+            BandPlace::Above => "above",
+        }
+    }
+
+    pub fn from_word(word: &str) -> Option<BandPlace> {
+        [BandPlace::Hidden, BandPlace::Inside, BandPlace::Above].into_iter().find(|band| band.word() == word)
+    }
+}
+
+/// The least and the most places of a side (spec 11.2, *proposed*): a block is never smaller than a primitive.
+pub const MIN_PLACES: u32 = 3;
+pub const MAX_PLACES: u32 = 64;
+
+/// The places of the top side of a block of 40 without `top` (visual notation 3.2: its width over 8, rounded down, less
+/// one).
+pub const DEFAULT_TOP: u32 = 4;
+
+/// A place as a line gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Place {
+    Number(u32),
+    Last,
+    Middle,
+}
+
+/// The places of a side of `places`, odd when it holds a `middle` (11.2: `left 4` then gives 5).
+pub fn odd_when_middle(places: u32, middle: bool) -> u32 {
+    if middle && places.is_multiple_of(2) { places.saturating_add(1) } else { places }
+}
+
+/// The number of a place on a side of `count` places.
+pub fn place_number(place: Place, count: u32) -> u32 {
+    match place {
+        Place::Number(number) => number,
+        Place::Last => count,
+        Place::Middle => count / 2 + 1,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

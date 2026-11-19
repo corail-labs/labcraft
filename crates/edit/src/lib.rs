@@ -26,6 +26,7 @@ use std::collections::BTreeMap;
 use labcraft_types::{Diagnostic, Limits};
 
 mod add;
+mod block;
 mod constant;
 mod delete;
 mod fragment;
@@ -46,6 +47,7 @@ mod surround;
 mod whole;
 mod wire;
 
+pub use block::BlockAt;
 pub use fragment::MAX_FRAGMENT;
 pub use frame::Within;
 pub use names::of_type;
@@ -354,6 +356,27 @@ pub enum Op {
         terminal: Terminal,
         default: Option<String>,
     },
+    /// `block.set_terminal`: the line of `terminal` in the `terminals` section; `None` removes it.
+    BlockSetTerminal {
+        file: String,
+        terminal: Terminal,
+        at: Option<BlockAt>,
+    },
+    /// `block.set_size`: `top N` and `left N`, each when given; `Some(None)` removes one.
+    BlockSetSize {
+        file: String,
+        top: Option<Option<u32>>,
+        left: Option<Option<u32>>,
+    },
+    /// `block.set_band`: `None` removes the line.
+    BlockSetBand {
+        file: String,
+        band: Option<labcraft_graph::BandPlace>,
+    },
+    /// `block.reset`: the `terminals` section goes.
+    BlockReset {
+        file: String,
+    },
 }
 
 /// An option of a loop (spec 6.2, 6.3).
@@ -447,7 +470,11 @@ impl Op {
             | Op::SignatureRemove { file, .. }
             | Op::SignatureRename { file, .. }
             | Op::SignatureSetType { file, .. }
-            | Op::SignatureSetDefault { file, .. } => file,
+            | Op::SignatureSetDefault { file, .. }
+            | Op::BlockSetTerminal { file, .. }
+            | Op::BlockSetSize { file, .. }
+            | Op::BlockSetBand { file, .. }
+            | Op::BlockReset { file } => file,
         }
     }
 }
@@ -802,6 +829,10 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::SignatureRename { .. } => return Err(EditError::internal("`signature.rename` goes through its own path")),
         Op::SignatureSetType { terminal, ty, .. } => signature::set_type(&mut edit, terminal, ty)?,
         Op::SignatureSetDefault { terminal, default, .. } => signature::set_default(&mut edit, terminal, default.as_deref())?,
+        Op::BlockSetTerminal { terminal, at, .. } => block::set_terminal(&mut edit, terminal, *at, &mut edited)?,
+        Op::BlockSetSize { top, left, .. } => block::set_size(&mut edit, *top, *left)?,
+        Op::BlockSetBand { band, .. } => block::set_band(&mut edit, *band)?,
+        Op::BlockReset { .. } => block::reset(&mut edit)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;
     if new_text != text {

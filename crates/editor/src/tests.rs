@@ -237,6 +237,8 @@ fn the_glide_eases_from_the_old_place() {
             over: 0,
             least: (0, 0),
             size: None,
+            callee: String::new(),
+            held: Vec::new(),
         }],
         ..Drawing::default()
     };
@@ -2125,4 +2127,55 @@ fn a_terminal_dragged_goes_on_over_a_new_drawing() {
     let origin = drawn.bodies[0].origin.1 as f32 / 100.0;
     let expected = ((x.y - origin - 48.0) / 8.0).round() as i64 * 8;
     assert_eq!(intents, vec![Intent::MoveTerminal { terminal: "input x".to_owned(), y: expected }]);
+}
+
+// Alt and a drag on a terminal of a block (notation 2.4, spec 11.2): the places are 8 apart, a block of 40 has 4 on each
+// side (40 / 8 - 1), the first place of the top side is `after:`'s.
+
+const BLOCK_CALLEE: &str = "labcraft 1\n\nfn g(x: f64, y: f64, z: f64) -> (n: i64) {\n    n = 1\n}\n";
+const BLOCK_MAIN: &str = "labcraft 1\n\nfn main(a: f64) -> (r: i64) {\n    r = g(a, a, a)\n}\n";
+
+/// The drawing, the block of the call to `g` and a drag of its input `x`.
+fn block_drag() -> (Arc<Drawing>, usize, blockdrag::BlockDrag, Pos2) {
+    let drawing = drawing_of(&[("main.lcf", BLOCK_MAIN), ("g.lcf", BLOCK_CALLEE)], &ViewState::default());
+    let placed = drawing.placed.iter().position(|node| !node.callee.is_empty()).expect("the call is a block of the project");
+    let port = drawing.ports.iter().position(|port| port.placed == Some(placed) && port.caption == "x" && port.input).expect("x");
+    let origin = Pos2::new(drawing.placed[placed].x as f32 / 100.0, drawing.placed[placed].y as f32 / 100.0);
+    let drag = blockdrag::BlockDrag::new(&drawing, port, origin).expect("a block of the project");
+    (drawing, placed, drag, origin)
+}
+
+#[test]
+fn a_terminal_goes_to_the_nearest_side_and_place_of_the_pointer() {
+    let (drawing, _, mut drag, origin) = block_drag();
+    // `x` starts on the left, place 1 (the first free place from the top).
+    assert_eq!(drag.from, (blockdrag::Side::Left, 1));
+    assert!(!drag.changed());
+    let mut to = |dx: f32, dy: f32| {
+        drag.set_at(&drawing, origin + Vec2::new(dx, dy));
+        drag.to
+    };
+    // The block is 40 by 40. 1 from the left edge, 17 down: 17 / 8 = 2.1, place 2.
+    assert_eq!(to(1.0, 17.0), (blockdrag::Side::Left, 2));
+    // 1 from the right edge (x = 39), 30 down: 30 / 8 = 3.75, place 4.
+    assert_eq!(to(39.0, 30.0), (blockdrag::Side::Right, 4));
+    // 1 below the top edge, 25 along: 25 / 8 = 3.1, place 3.
+    assert_eq!(to(25.0, 1.0), (blockdrag::Side::Top, 3));
+    // Never the first place of the top side, which is `after:`'s: 2 along is place 0, which the top side takes as place 2.
+    assert_eq!(to(2.0, 0.0), (blockdrag::Side::Top, 2));
+    assert_eq!(to(9.0, 0.0), (blockdrag::Side::Top, 2));
+    // Past the last place of a side: the last. 4 places: 32.
+    assert_eq!(to(1.0, 100.0), (blockdrag::Side::Left, 4));
+    assert_eq!(to(39.0, 100.0), (blockdrag::Side::Right, 4));
+    assert_eq!(to(100.0, 1.0), (blockdrag::Side::Top, 4));
+    assert!(drag.changed());
+}
+
+#[test]
+fn the_free_places_are_all_but_its_own_and_the_first_of_the_top() {
+    let (drawing, _, drag, _) = block_drag();
+    // A place held by default is free (commands.md 9.4): only the place of `x` itself, left 1, is left out, and top 1, which
+    // is `after:`'s. The top side lists places 2 to 4, then each place of the left and the right in turn.
+    use blockdrag::Side::{Left, Right, Top};
+    assert_eq!(drag.free(&drawing), [(Top, 2), (Top, 3), (Top, 4), (Right, 1), (Left, 2), (Right, 2), (Left, 3), (Right, 3), (Left, 4), (Right, 4)]);
 }

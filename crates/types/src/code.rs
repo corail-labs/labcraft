@@ -151,6 +151,8 @@ codes! {
     Lc5011 = "LC5011" Error,
     Lc5012 = "LC5012" Error,
     Lc5013 = "LC5013" Error,
+    Lc5014 = "LC5014" Warning,
+    Lc5015 = "LC5015" Error,
     Lc6001 = "LC6001" Error,
     Lc6002 = "LC6002" Warning,
     Lc6003 = "LC6003" Error,

@@ -102,6 +102,8 @@ pub struct DeclaredFunction {
     /// The `icon` section of its file (spec 11.1) when that file is not kept (a library that is not checked, outside a
     /// run): moved here, so that each call still draws it. A kept file holds its own.
     pub icon: Option<Icon>,
+    /// The `terminals` section of its file (spec 11.2), moved here as its icon is.
+    pub terminals: Option<labcraft_graph::Terminals>,
     /// The default of each parameter as the text writes it, stopped past 200 bytes: what the tooltip of a terminal that
     /// no argument wires says (notation 3.2), whichever library declares it.
     pub defaults: Vec<Option<String>>,
@@ -1011,14 +1013,19 @@ impl<'a> Pass<'a> {
             self.begin_declaration(model);
             let outcome = last_resort(|| match &model.file.decl {
                 Decl::Function(function) => {
-                    let declared =
-                        DeclaredFunction { file: at, icon: None, ..self.declare_function(function.name, &function.signature, scope, None) };
+                    let declared = DeclaredFunction {
+                        file: at,
+                        icon: None,
+                        terminals: None,
+                        ..self.declare_function(function.name, &function.signature, scope, None)
+                    };
                     keep_the_first(&mut functions, function.name, declared, copy);
                 }
                 Decl::Extern(function) => {
                     let declared = DeclaredFunction {
                         file: at,
                         icon: None,
+                        terminals: None,
                         ..self.declare_function(function.name, &function.signature, scope, Some(function.id))
                     };
                     keep_the_first(&mut functions, function.name, declared, copy);
@@ -1157,6 +1164,7 @@ impl<'a> Pass<'a> {
             faulty,
             file: None,
             icon: None,
+            terminals: None,
             defaults,
         }
     }

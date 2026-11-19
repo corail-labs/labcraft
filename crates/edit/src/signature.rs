@@ -346,6 +346,10 @@ pub(crate) fn remove(edit: &mut Edit, judge: &dyn Judge, terminal: &Terminal, ed
             .items
             .retain(|item| !matches!(&item.kind, LayoutKind::Terminal { output: kind, name: named, .. } if *kind == output && *named == name));
     }
+    // Its line of `terminals` too (11.2).
+    if let Some((output, name)) = removed {
+        crate::block::remove_line(edit, output, name)?;
+    }
     match terminal {
         Terminal::Input(_) => {
             let Some(param) = function.signature.params.get(at) else { return Err(EditError::internal("an input that went")) };
@@ -489,7 +493,7 @@ fn rename_terminal(edit: &mut Edit, terminal: &Terminal, new: &str, edited: &mut
             free_name(edit, terminal, new, Some(from), false, "name")?;
             let to = edit.intern(new);
             rename_input(edit, from, to)?;
-            rename_entry(edit, false, from, to);
+            rename_entry(edit, false, from, to)?;
             Ok(())
         }
         Terminal::Output(_) => {
@@ -519,23 +523,26 @@ fn rename_terminal(edit: &mut Edit, terminal: &Terminal, new: &str, edited: &mut
             if let Some(output) = edit.body_function_mut()?.signature.outputs.get_mut(at) {
                 output.name = to;
             }
-            rename_entry(edit, true, from, to);
+            rename_entry(edit, true, from, to)?;
             Ok(())
         }
     }
 }
 
-/// The `input x at y` or `output x at y` entry of a terminal renamed follows it (spec 11).
-fn rename_entry(edit: &mut Edit, output: bool, from: Name, to: Name) {
-    let Some(layout) = &mut edit.file.layout else { return };
-    for item in &mut layout.items {
-        if let LayoutKind::Terminal { output: kind, name, .. } = &mut item.kind
-            && *kind == output
-            && *name == from
-        {
-            *name = to;
+/// The `input x at y` or `output x at y` entry of a terminal renamed follows it (spec 11), and its line of `terminals`
+/// (11.2).
+fn rename_entry(edit: &mut Edit, output: bool, from: Name, to: Name) -> Result<(), EditError> {
+    if let Some(layout) = &mut edit.file.layout {
+        for item in &mut layout.items {
+            if let LayoutKind::Terminal { output: kind, name, .. } = &mut item.kind
+                && *kind == output
+                && *name == from
+            {
+                *name = to;
+            }
         }
     }
+    crate::block::rename_line(edit, output, from, to)
 }
 
 /// The calls of `edit` to the function of `target` give the input `from` as `to`: their named argument (`high: 250 V`)

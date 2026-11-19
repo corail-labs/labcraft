@@ -14,11 +14,11 @@
 //! recursive step. Tokens are read one at a time, since a file of 16 MiB can hold 8 million of them.
 
 use labcraft_graph::{
-    Arg, Arm, ArrayType, Attached, Binding, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType,
-    Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather, Generic, Icon, IconItem, IconShape, Id, IntBound, Label,
-    Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem,
-    Param, Path, Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, TypeDecl, TypeExpr,
-    UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
+    Arg, Arm, ArrayType, Attached, BandPlace, Binding, BlockPlace, BlockSide, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind,
+    Constant, Decl, EnumType, Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather, Generic, Icon, IconItem,
+    IconShape, Id, IntBound, Label, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel,
+    PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target,
+    TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
 };
 use labcraft_types::{Code, Diagnostic, Fix, Interner, Limits, Name, Position, Report, Span};
 
@@ -484,14 +484,26 @@ impl<'a> Parser<'a, '_> {
         self.end_line("the declaration")?;
         let panel = self.section(K::Panel, Self::panel)?;
         let layout = self.section(K::Layout, Self::layout)?;
+        let terminals = self.terminals_section()?;
         let icon = self.section(K::Icon, Self::icon)?;
         self.skip_lines(false)?;
         if self.raw()?.is_some() {
-            return Err(
-                self.unexpected("the end of the file, since a file has one declaration and its sections in this order: `panel`, `layout`, `icon`")
-            );
+            return Err(self.unexpected(
+                "the end of the file, since a file has one declaration and its sections in this order: `panel`, `layout`, `terminals`, `icon`",
+            ));
         }
-        Ok(File { version, header_comment, use_comments, uses, decl, panel, layout, icon, end: self.take_pending() })
+        Ok(File { version, header_comment, use_comments, uses, decl, panel, layout, terminals, icon, end: self.take_pending() })
+    }
+
+    /// `terminals`, a contextual word (14.1): a section only where a section can start.
+    fn terminals_section(&mut self) -> Parse<Option<Terminals>> {
+        self.skip_lines(false)?;
+        if !self.at_word("terminals")? {
+            return Ok(None);
+        }
+        let section = self.terminals()?;
+        self.end_line("a section")?;
+        Ok(Some(section))
     }
 
     fn use_line(&mut self) -> Parse<Use> {
@@ -1930,6 +1942,77 @@ impl<'a> Parser<'a, '_> {
         let y = self.numeral()?;
         self.close(T::RightParen, "`)`")?;
         Ok(Point { id: self.place(start), x, y })
+    }
+
+    fn terminals(&mut self) -> Parse<Terminals> {
+        let (before, start) = self.section_start()?;
+        self.bump();
+        self.open_section()?;
+        let (items, end) = self.section_items("`top`, `left`, `right`, `band` or `}`", Self::terminals_item)?;
+        self.bump();
+        let id = self.place(start);
+        let comments = self.end_item(before)?;
+        Ok(Terminals { id, comments, items, end })
+    }
+
+    /// `top 5`, `left middle x`, `right 2 output err`, `band hidden` (14.6).
+    fn terminals_item(&mut self) -> Parse<TerminalsItem> {
+        let before = self.begin_item();
+        let start = self.start()?;
+        let kind = if self.eat_word("band")? {
+            let word = match self.peek_kind()? {
+                Some(T::Name(word)) => Some(word),
+                _ => None,
+            };
+            let Some(place) = word.and_then(|word| BandPlace::from_word(self.resolve(word))) else {
+                return Err(self.unexpected("`hidden`, `inside` or `above`"));
+            };
+            self.bump();
+            TerminalsKind::Band(place)
+        } else {
+            let word = match self.peek_kind()? {
+                Some(T::Name(word)) => Some(word),
+                _ => None,
+            };
+            let Some(side) = word.and_then(|word| BlockSide::from_word(self.resolve(word))) else {
+                return Err(self.unexpected("`top`, `left`, `right` or `band`"));
+            };
+            self.bump();
+            let place = match self.peek_kind()? {
+                Some(T::Int(text)) => {
+                    self.bump();
+                    BlockPlace::Number(self.intern(text))
+                }
+                _ if self.eat_word("last")? => BlockPlace::Last,
+                _ if self.eat_word("middle")? => BlockPlace::Middle,
+                _ => return Err(self.unexpected("a number of places, a place (a number, `last` or `middle`)")),
+            };
+            match (place, self.peek_kind()?) {
+                // `top 5`, `left 3`: the size of a side; the right side has as many places as the left.
+                (BlockPlace::Number(places), next) if side != BlockSide::Right && !matches!(next, Some(T::Name(_))) => {
+                    TerminalsKind::Size { side, places }
+                }
+                _ => {
+                    // `input` or `output` before a name says which terminal; alone, it is the name.
+                    let (word, _) = self.name("the name of a terminal")?;
+                    let which = match self.resolve(word) {
+                        "input" => Some(false),
+                        "output" => Some(true),
+                        _ => None,
+                    };
+                    match (which, self.peek_kind()?) {
+                        (Some(output), Some(T::Name(_))) => {
+                            let (name, _) = self.name("the name of a terminal")?;
+                            TerminalsKind::Place { side, place, output: Some(output), name }
+                        }
+                        _ => TerminalsKind::Place { side, place, output: None, name: word },
+                    }
+                }
+            }
+        };
+        let id = self.place(start);
+        let comments = self.end_item(before)?;
+        Ok(TerminalsItem { id, comments, kind })
     }
 
     fn icon(&mut self) -> Parse<Icon> {

@@ -1,4 +1,5 @@
-//! Pass 6 (`docs/architecture.md`, section 5): the `panel`, `layout` and `icon` sections of a function (spec 10, 11, 11.1).
+//! Pass 6 (`docs/architecture.md`, section 5): the `panel`, `layout`, `terminals` and `icon` sections of a function (spec 10, 11, 11.2,
+//! 11.1).
 //!
 //! A `layout` entry is matched against the wires of the function, as the diagram draws them: a wire carries a value to an input of a
 //! node, and a value from outside a structure crosses each edge on its way, one wire per frame, each with its own route. The entries wait
@@ -43,7 +44,17 @@ const MIN_WIRES: usize = 1 << 18;
 pub(in crate::declare) fn only_this_pass(code: Code) -> bool {
     matches!(
         code,
-        Code::Lc5001 | Code::Lc5002 | Code::Lc5003 | Code::Lc5004 | Code::Lc5005 | Code::Lc5006 | Code::Lc5007 | Code::Lc5008 | Code::Lc5009
+        Code::Lc5001
+            | Code::Lc5002
+            | Code::Lc5003
+            | Code::Lc5004
+            | Code::Lc5005
+            | Code::Lc5006
+            | Code::Lc5007
+            | Code::Lc5008
+            | Code::Lc5009
+            | Code::Lc5014
+            | Code::Lc5015
     )
 }
 
@@ -85,6 +96,14 @@ pub(super) fn judge_sections<'a>(
                 sections.layout(layout, &wires, signature);
             }
             Some(_) => {}
+        }
+    }
+    if let Some(terminals) = &file.terminals {
+        let inputs: Vec<Name> = signature.params.iter().map(|param| param.name).collect();
+        let outputs: Vec<Name> = signature.outputs.iter().map(|output| output.name).collect();
+        let (_, problems) = labcraft_format::block::read(terminals, &inputs, &outputs, sections.names());
+        for (code, message, id) in problems {
+            sections.say(code, message, id, Vec::new());
         }
     }
     if let Some(icon) = &file.icon {

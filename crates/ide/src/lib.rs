@@ -2202,6 +2202,10 @@ const EDITS: &[&str] = &[
     "signature.rename",
     "signature.set_type",
     "signature.set_default",
+    "block.set_terminal",
+    "block.set_size",
+    "block.set_band",
+    "block.reset",
 ];
 
 /// The file of a function, as the session lists it.
@@ -2771,6 +2775,15 @@ impl Content<'_> {
                 }
                 Intent::MoveTerminal { terminal, y } => {
                     self.ide.send_edit(self.host, view, function, "terminal.move", json!({ "terminal": terminal, "y": y }));
+                }
+                // The file of the function called, not the one shown: every call to it changes (notation 2.4).
+                Intent::BlockTerminal { file, terminal, side, place } => {
+                    let reply = self.host.send("block.set_terminal", json!({ "file": file, "terminal": terminal, "side": side, "place": place }));
+                    self.ide.edits.push((function.to_owned(), reply, None));
+                }
+                Intent::ResetBlock { file } => {
+                    let reply = self.host.send("block.reset", json!({ "file": file }));
+                    self.ide.edits.push((function.to_owned(), reply, None));
                 }
                 Intent::PickType { terminal } => {
                     if let Some(file) = file_of(view, function) {

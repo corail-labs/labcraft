@@ -579,3 +579,106 @@ fn the_height_of_a_terminal_is_an_integer_in_the_range() {
     assert_eq!(wires("output mean at 1000001"), ["LC5005"]);
     assert_eq!(wires("output mean at -1000000"), NOTHING);
 }
+
+// The terminals of the block (spec 11.2): `LC5014` for a line that cannot apply (a warning), `LC5015` for a section that
+// contradicts itself (an error).
+
+const BLOCK_FUNCTION: &str = "use time\n\nfn f(a: f64, err: error, b: f64) -> (y: f64, err: error) {\n    y = core.add(a, b)\n    e1 = time.wait(1 s, after: y)\n    err = e1\n}";
+
+fn block(lines: &str) -> Vec<&'static str> {
+    with(BLOCK_FUNCTION, &format!("terminals {{\n{lines}\n}}"))
+}
+
+#[test]
+fn a_clean_terminals_section_says_nothing() {
+    assert_eq!(block("top 5\nleft 4\ntop 3 a\nleft middle b\nright 4 y"), NOTHING);
+    // `left 4` with a `middle` has 5 places, `top 4` likewise: place 5 is there.
+    assert_eq!(block("left 4\nleft middle a\nleft 5 b"), NOTHING);
+    assert_eq!(block("top 4\ntop middle a\ntop 5 b"), NOTHING);
+    // Both terminals of the pair named: each keeps its own place, nothing is taken twice.
+    assert_eq!(block("left 2 err\nright 2 err"), NOTHING);
+    assert_eq!(block("left 2 err\nright 3 output err"), NOTHING);
+    // The default top side has 4 places: 2 to 4 are free; the left side without `left N` grows to hold what it is given.
+    assert_eq!(block("top 4 a\nleft 40 b\nband above"), NOTHING);
+}
+
+#[test]
+fn two_sizes_for_one_side_two_bands_two_lines_for_one_terminal_or_a_size_outside_3_to_64_are_an_error() {
+    for lines in [
+        "top 4\ntop 5",
+        "left 3\nleft 4",
+        "band above\nband hidden",
+        "left 3 a\nleft 4 a",
+        "left 2 err\ntop 3 err",
+        "top 2",
+        "top 65",
+        "left 2",
+        "left 0_65",
+    ] {
+        assert_eq!(block(lines), ["LC5015"], "{lines}");
+    }
+    // 3 and 64 are in the range.
+    assert_eq!(block("top 3\nleft 64"), NOTHING);
+}
+
+#[test]
+fn a_line_that_cannot_apply_is_a_warning() {
+    for lines in [
+        // Names no terminal, or no terminal of that kind.
+        "left 2 zz",
+        "left 2 input y",
+        "left 2 output a",
+        "left 2 output b",
+        // Place 0, past the last place of the side, the first place of the top side.
+        "left 0 a",
+        "top 5 a",
+        "top 3\ntop 4 a",
+        "left 3\nleft 4 a",
+        "left 3\nright 4 y",
+        "top 1 a",
+        // `middle` makes the count odd, 4 becomes 5, so 6 is still past.
+        "top 4\ntop middle a\ntop 6 b",
+        // Another line took the place, on the same side.
+        "left 2 a\nleft 2 b",
+        "top 3 a\ntop 3 b",
+        // A pair named alone takes the same place on the facing side: `err` on the right 2 takes the left 2 too.
+        "right 2 err\nleft 2 a",
+        "left 2 err\nright 2 y",
+    ] {
+        assert_eq!(block(lines), ["LC5014"], "{lines}");
+    }
+}
+
+#[test]
+fn of_two_lines_on_one_place_the_first_in_signature_order_applies() {
+    // `b` comes after `a` in the signature, so its line is the one that does not apply, whatever the written order (11.2).
+    for lines in [
+        "left 2 b
+left 2 a",
+        "left 2 a
+left 2 b",
+    ] {
+        let found = judged(&format!(
+            "{BLOCK_FUNCTION}
+
+terminals {{
+{lines}
+}}"
+        ));
+        assert_eq!(found.len(), 1, "{lines}: {found:?}");
+        assert!(found.iter().all(|(code, message)| *code == "LC5014" && message.contains("`b`")), "{lines}: {found:?}");
+    }
+}
+
+#[test]
+fn a_middle_counts_only_on_a_line_that_names_a_terminal() {
+    // `top middle zz` names no terminal (LC5014): it does not make the top side odd, so the default 4 places stay 4 and
+    // `top 5 a` is past the last, as the drawing counts them (11.2).
+    assert_eq!(
+        block(
+            "top middle zz
+top 5 a"
+        ),
+        ["LC5014", "LC5014"]
+    );
+}

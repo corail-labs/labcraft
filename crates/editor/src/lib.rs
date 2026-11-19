@@ -24,6 +24,7 @@ use egui::{Color32, PointerButton, Pos2, Rect, Response, Sense, Ui, Vec2};
 use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
+mod blockdrag;
 mod clip;
 mod edge;
 mod fields;
@@ -188,6 +189,11 @@ pub enum Intent {
     /// "Type…" of the menu of a terminal of the frame of the function: the host opens the list of types, and
     /// `signature.set_type` with the one chosen (decision of the owner, 2026-11-19).
     PickType { terminal: String },
+    /// `block.set_terminal`: Alt and a drag moved a terminal of a block (`input x`) onto a place of a side of its block
+    /// (notation 2.4), in the file of the function called.
+    BlockTerminal { file: String, terminal: String, side: &'static str, place: u32 },
+    /// `block.reset`: "Reset the terminals of this block" of the context menu of a node (notation 2.4).
+    ResetBlock { file: String },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -292,6 +298,8 @@ pub struct Canvas {
     resizing: Option<Resizing>,
     /// A terminal of the frame of the function moved along its edge, or asked of the host and not drawn yet (notation 2.4).
     sliding: Option<edge::Sliding>,
+    /// A terminal of a block moved by Alt and a drag (notation 2.4).
+    block_drag: Option<blockdrag::BlockDrag>,
     /// The wire routed by hand that a right-click was on, by its group, for its menu (notation 2.4).
     wire_context: Option<usize>,
     /// The room of the last frame, on the screen: where quick insertion opens.
@@ -503,6 +511,7 @@ impl Canvas {
             rerouting: None,
             resizing: None,
             sliding: None,
+            block_drag: None,
             wire_context: None,
             rect: Rect::NOTHING,
             field: None,
@@ -823,7 +832,7 @@ impl Canvas {
             Some(Gesture::Route)
         } else if self.resizing.as_ref().is_some_and(|resizing| resizing.state == sizing::State::Dragging) {
             Some(Gesture::Resize)
-        } else if self.sliding.as_ref().is_some_and(|sliding| sliding.state != edge::State::Asked) {
+        } else if self.sliding.as_ref().is_some_and(|sliding| sliding.state != edge::State::Asked) || self.block_drag.is_some() {
             Some(Gesture::Move)
         } else {
             None
@@ -1296,6 +1305,9 @@ impl Canvas {
             frame.drawing.placed.get(placed).map(|found| (found.name.clone(), found.at.is_some() && !found.name.is_empty())).unwrap_or_default();
         let sized = frame.drawing.placed.get(placed).is_some_and(|found| found.size.is_some() && !found.name.is_empty());
         let mut unsize = false;
+        // The block of a function of the project: its terminals can go back to their defaults (notation 2.4).
+        let callee = frame.drawing.placed.get(placed).map(|found| found.callee.clone()).unwrap_or_default();
+        let mut reset = false;
         let (mut arrange, mut label, mut surround) = (false, false, None);
         let shown_arm = |index: usize| frame.arms.get(index).copied().unwrap_or(false);
         let (context_arm, context_port) = (self.context_arm, self.context_port);
@@ -1312,6 +1324,10 @@ impl Canvas {
             }
             if sized && ui.button("Remove the fixed size").clicked() {
                 unsize = true;
+                ui.close();
+            }
+            if !callee.is_empty() && ui.button("Reset the terminals of this block").clicked() {
+                reset = true;
                 ui.close();
             }
             ui.menu_button("Surround with", |ui| {
@@ -1367,6 +1383,10 @@ impl Canvas {
         }
         if unsize {
             input.intents.push(Intent::Resize { structure: Some(name.clone()), size: None });
+            self.context = None;
+        }
+        if reset {
+            input.intents.push(Intent::ResetBlock { file: callee });
             self.context = None;
         }
         if arrange {
@@ -1473,8 +1493,14 @@ impl Canvas {
                     self.drag = Some(Drag::Held);
                     return;
                 }
+                // The same setting as for a wire (notation 2.6): Shift and Alt when Alt alone is the desktop's.
                 if modifiers.alt && (modifiers.shift || !shown.route_with_shift_alt) {
-                    input.intents.push(Intent::Say("Moving a terminal of a block comes with M1 step 6".to_owned()));
+                    match blockdrag::BlockDrag::new(drawing, port, from) {
+                        Ok(moving) => self.block_drag = Some(moving),
+                        Err(why) if !why.is_empty() => input.intents.push(Intent::Say(why)),
+                        Err(_) => {}
+                    }
+                    self.port_focus = None;
                     self.drag = Some(Drag::Held);
                     return;
                 }
@@ -1512,6 +1538,26 @@ impl Canvas {
                 } else {
                     self.sliding = None;
                 }
+                self.drag = None;
+            }
+            return;
+        }
+        if let Some(moving) = self.block_drag.as_mut() {
+            if let Some(at) = response.interact_pointer_pos() {
+                moving.set_at(drawing, unit_of(at));
+                ctx.request_repaint();
+            }
+            if response.drag_stopped_by(PointerButton::Primary) {
+                if moving.changed() {
+                    let (side, place) = moving.to;
+                    input.intents.push(Intent::BlockTerminal {
+                        file: moving.file.clone(),
+                        terminal: moving.terminal.clone(),
+                        side: side.word(),
+                        place,
+                    });
+                }
+                self.block_drag = None;
                 self.drag = None;
             }
             return;
@@ -1851,6 +1897,9 @@ impl Canvas {
                 self.drag = Some(Drag::Held);
             } else if self.sliding.as_ref().is_some_and(|sliding| sliding.state == edge::State::Dragging) {
                 self.sliding = None;
+                self.drag = Some(Drag::Held);
+            } else if self.block_drag.is_some() {
+                self.block_drag = None;
                 self.drag = Some(Drag::Held);
             } else if matches!(self.drag, Some(Drag::Rectangle { .. })) {
                 self.drag = Some(Drag::Held);
@@ -2383,6 +2432,21 @@ impl Canvas {
         let screen = |area: Rect| Rect::from_min_max(to_screen(area.min.to_vec2()), to_screen(area.max.to_vec2()));
         let select = theme.color("select.stroke");
         let muted = theme.color("ink.muted");
+        // A terminal of a block moved by Alt and a drag: the free places of its block lit, the one it goes to ringed, and a
+        // note that every call changes (notation 2.4).
+        if let Some(moving) = &self.block_drag {
+            for place in moving.free(drawing) {
+                if let Some(at) = blockdrag::place_at(drawing, moving.placed, place) {
+                    painter.circle_filled(to_screen(at.to_vec2()), (2.0 * zoom).max(2.0), select.gamma_multiply(0.35));
+                }
+            }
+            if let Some(at) = blockdrag::place_at(drawing, moving.placed, moving.to) {
+                painter.circle(to_screen(at.to_vec2()), (4.0 * zoom).max(4.0), select.gamma_multiply(0.25), egui::Stroke::new(1.5, select));
+            }
+            let at = to_screen(moving.at.to_vec2()) + Vec2::new(12.0, 12.0);
+            painter.text(at, egui::Align2::LEFT_TOP, &moving.note, egui::FontId::proportional(12.0), muted);
+            frame.ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
         // Where a terminal of the frame goes, while it moves: a mark across its edge, its place on the grid.
         if let Some(sliding) = &self.sliding {
             let at = to_screen(sliding.at().to_vec2());

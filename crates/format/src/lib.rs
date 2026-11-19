@@ -17,6 +17,7 @@
 )]
 #![forbid(unsafe_code)]
 
+pub mod block;
 mod canonicalize;
 mod decode;
 mod lexer;
