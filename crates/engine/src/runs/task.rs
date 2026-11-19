@@ -487,6 +487,7 @@ pub(crate) fn execute(
         texts: want_texts,
         real_time,
         max_nesting,
+        context,
     } = prepared;
     let env = Env { program: &program, names: &names };
     let natives: Vec<Native<'_>> =
@@ -518,7 +519,7 @@ pub(crate) fn execute(
     if real_time {
         settings.real_time = Some(RealTime { pool: pool.clone(), wake: steer.wake(), epoch: clock.utc_ns() });
     }
-    let given = Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings };
+    let given = Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings, context };
 
     let (end, trace_json, trace_file): (RunEnd, Option<Box<dyn Part + '_>>, Option<String>) = match trace {
         TraceMode::None => (run(given, &mut control, &mut Unobserved), None, None),

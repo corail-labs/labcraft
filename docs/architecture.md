@@ -749,7 +749,7 @@ each `set`, which `runtime::trace` writes (10.7).
 ### 10.6 Native libraries
 
 *Status: implemented: the interface, `labcraft-visa` and `labcraft-results-log` (step 4), `Blocking` and the pool
-(step 8).* The runtime defines what a library with native functions gives it (`runtime::native`):
+(step 8), the context of a run and `runtime::io` (M4).* The runtime defines what a library with native functions gives it (`runtime::native`):
 
 ```rust
 pub trait NativeLibrary: Send + Sync {
@@ -757,8 +757,22 @@ pub trait NativeLibrary: Send + Sync {
     fn codes(&self) -> &'static [LibraryCode];                           // `visa:S001`…, for `xtask codes`
     fn simulates(&self) -> bool;                                         // it reads a section of a simulation file
     fn simulate(&self, section: &Section) -> Result<Simulation, Vec<LibraryDiagnostic>>;
-    fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun>;
+    fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun>;
 }
+pub struct Start<'a> {                                                   // what one run of a library is given
+    pub library: u32,                                                    // its index among the libraries of the run
+    pub simulation: Option<&'a Simulation>,                              // its section, if the file has one
+    pub budget: LogBudget,
+    pub mode: Mode,                                                      // Deterministic, RealTime
+    pub context: &'a Context,
+}
+pub struct Context {                                                     // what the host says of the run (io.md 7)
+    pub simulation_file: bool,                                           // `--sim` given, a section for this library or not
+    pub project: Option<PathBuf>,
+    pub started_by: StartedBy,                                           // Human, Agent { client, rights }
+}
+pub trait Consent: Send + Sync { fn ask(&self, question: &Question<'_>) -> bool; } // io.md 4; it may wait
+pub struct Question<'a> { pub run: &'a str, pub client: &'a str, pub project: Option<&'a Path>, pub reach: &'a Reach }
 pub trait LibraryRun: Send {                                             // its sessions, its instruments, for one run
     fn call(&mut self, function: &str, inputs: Vec<Value>) -> Option<CallId>;   // starts an `extern rust` body
     fn step(&mut self, call: CallId, cx: CallContext) -> Step;           // asked again after each wait
@@ -792,6 +806,29 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   `cargo xtask codes` checks that each has its row there. A library says its problems in the order of the keys of its
   section, which `toml` sorts: the tool sorts the diagnostics of a run by place (cli.md 4.2).
 
+- **What a library learns of its run** (M4, io.md 7), besides its section: whether a simulation file was given at all
+  (`Context::simulation_file`: with `--sim visa-only.toml`, `net` finds no device and never goes to the hardware), the
+  mode, the project, and who started the run (`StartedBy`): the human, who has every right (io.md 4), or an agent by the
+  name of its client, with its `runtime::io::Rights`. The host makes them for each run: `labcraft-cli run` and `exec`,
+  and Run in the IDE, start runs of the human; a run that `run.start` starts for an MCP client is the agent's, with what
+  the app gave `engine::Session::allow_agents` (`io::Allowed`: the endpoints of `--allow-hardware`, the folders of
+  `--allow-path`, and the `Consent` of the window that asks the rest), nothing until it gives it. `Context` is in
+  `runtime::io`, beside what it holds.
+- **`runtime::io`** is what every transport shares. Its categories (io.md 8), which a manifest declares as any other
+  (spec 7.1); `io.not_allowed`, `io.needs_real_time` and `io.unsupported` with code 0. `io::open_real` applies the
+  table of io.md 3 to a real name, once the library has read the name and knows it has the transport: with a file,
+  the device it describes or not found; without one, `io.needs_real_time` at once in deterministic mode, else the
+  rights. `Context::judge` gives the right to reach an endpoint or a path outside the project: allowed, `io.not_allowed`
+  (code 0, its message naming the endpoint and how it is allowed), or a question, which is a `Job`: the call returns
+  `Blocking` with it, so that in real time the other branches go on while the human answers, and in deterministic mode
+  the run stops, its clock with it (io.md 4). `Context::answered` reads what the job returned. **An answer holds for the
+  run**: `Rights` keeps one per endpoint and per folder, shared by the libraries of the run, an answer for a folder
+  holding for what is under it, and a second call that asks while the first waits waits for its answer, so that `net`
+  and `visa` on one endpoint ask once. The `Question` names the run by its id, its client and its project, which the
+  window shows; `Consent::ask` returns `false` when that run is aborted: the host that aborts the run takes its question
+  away. A call that waits for a question holds a thread of the pool (10.4) while it waits.
+- **The order of the checks at an open** is the library's, and the same in every transport (io.md 3): its name first
+  (`resource_not_found` for a text that is no name), then `io.unsupported`, then `open_real`, then the open itself.
 - **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
   the run, and `describe` and `release` read them there.
 - **What libraries keep for the report has one budget per run** (`LogBudget`, decision of the owner, 2026-11-10): 16 MiB

@@ -7,7 +7,9 @@
 
 use std::sync::Arc;
 
-use labcraft_runtime::native::{CallContext, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, NativeOutcome, Step};
+use labcraft_runtime::native::{
+    CallContext, Context, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, Mode, NativeLibrary, NativeOutcome, Start, Step,
+};
 use labcraft_runtime::simulation::{self, read};
 use labcraft_runtime::{Handle, Value};
 use labcraft_types::Severity;
@@ -93,7 +95,13 @@ fn exercised(text: &str) -> Vec<String> {
     let Ok(simulations) = file.judge(&[&Visa]) else { panic!("accepted once, refused now") };
     let Some(simulation) = simulations.first().and_then(Option::as_ref) else { panic!("no simulation for visa") };
     let Some(bench) = simulation.downcast_ref::<Arc<Bench>>() else { panic!("visa gives a bench") };
-    let mut run = Visa.start_run(0, Some(simulation), LogBudget::new(LOG_BUDGET));
+    let mut run = Visa.start_run(Start {
+        library: 0,
+        simulation: Some(simulation),
+        budget: LogBudget::new(LOG_BUDGET),
+        mode: Mode::Deterministic,
+        context: &Context { simulation_file: true, ..Context::default() },
+    });
     let mut driver = Driver { run: &mut run, now: 0, calls: 0, said: Vec::new() };
     for (index, instrument) in bench.commands().into_iter().enumerate() {
         let Some(session) = driver.open(&instrument.resource) else { break };

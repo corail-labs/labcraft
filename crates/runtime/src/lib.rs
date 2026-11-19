@@ -18,6 +18,7 @@
 
 mod convert;
 mod fault;
+pub mod io;
 pub mod json;
 pub mod native;
 mod pool;

@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use labcraft_runtime::native::{CallContext, CallId, Key, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, NativeOutcome, Step};
+use labcraft_runtime::native::{
+    CallContext, CallId, Context, Key, LOG_BUDGET, LibraryDiagnostic, LibraryRun, LogBudget, Mode, NativeLibrary, NativeOutcome, Start, Step,
+};
 use labcraft_runtime::simulation::read;
 use labcraft_runtime::{Handle, Value};
 
@@ -22,7 +24,13 @@ fn shipped(name: &str) -> String {
 fn judged(text: &str) -> Result<Box<dyn LibraryRun>, Vec<LibraryDiagnostic>> {
     let file = read(text, 64).map_err(|diagnostic| vec![diagnostic])?;
     let simulations = file.judge(&[&Visa])?;
-    Ok(Visa.start_run(0, simulations.first().and_then(Option::as_ref), LogBudget::new(LOG_BUDGET)))
+    Ok(Visa.start_run(Start {
+        library: 0,
+        simulation: simulations.first().and_then(Option::as_ref),
+        budget: LogBudget::new(LOG_BUDGET),
+        mode: Mode::Deterministic,
+        context: &Context { simulation_file: true, ..Context::default() },
+    }))
 }
 
 fn codes(text: &str) -> Vec<(&'static str, u32, u32)> {
@@ -57,12 +65,29 @@ impl Driver {
     fn with_budget(text: &str, bytes: u64) -> Self {
         let file = read(text, 64).unwrap();
         let simulations = file.judge(&[&Visa]).unwrap();
-        let run = Visa.start_run(0, simulations.first().and_then(Option::as_ref), LogBudget::new(bytes));
+        let run = Visa.start_run(Start {
+            library: 0,
+            simulation: simulations.first().and_then(Option::as_ref),
+            budget: LogBudget::new(bytes),
+            mode: Mode::Deterministic,
+            context: &Context { simulation_file: true, ..Context::default() },
+        });
         Driver { run, now: 0, tasks: Vec::new(), holders: HashMap::new() }
     }
 
     fn without_simulation() -> Self {
-        Driver { run: Visa.start_run(0, None, LogBudget::new(LOG_BUDGET)), now: 0, tasks: Vec::new(), holders: HashMap::new() }
+        Driver {
+            run: Visa.start_run(Start {
+                library: 0,
+                simulation: None,
+                budget: LogBudget::new(LOG_BUDGET),
+                mode: Mode::Deterministic,
+                context: &Context::default(),
+            }),
+            now: 0,
+            tasks: Vec::new(),
+            holders: HashMap::new(),
+        }
     }
 
     fn start(&mut self, function: &str, inputs: Vec<Value>) -> usize {

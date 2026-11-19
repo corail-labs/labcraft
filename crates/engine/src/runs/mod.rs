@@ -32,6 +32,8 @@ pub use prepare::{CommandLine, Outside};
 pub use task::{Clock, Still, let_go};
 
 use crate::error::CommandError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::history::Author;
 use crate::params::{self, Params};
 use crate::registry;
 use crate::session::Session;
@@ -590,15 +592,22 @@ impl Runs {
 
     /// Starts a run on a thread of its own, and waits for it up to `wait`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn start(&self, session: &Session, params: &Params, waiter: &dyn Waiter) -> Result<Json, CommandError> {
-        self.start_with(session, params, CommandLine::default(), waiter)
+    pub(crate) fn start(&self, session: &Session, author: &Author, params: &Params, waiter: &dyn Waiter) -> Result<Json, CommandError> {
+        self.start_with(session, author, params, CommandLine::default(), waiter)
     }
 
     /// As [`Runs::start`], with what the command line gives beyond the parameters.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn start_with(&self, session: &Session, params: &Params, line: CommandLine, waiter: &dyn Waiter) -> Result<Json, CommandError> {
+    pub(crate) fn start_with(
+        &self,
+        session: &Session,
+        author: &Author,
+        params: &Params,
+        line: CommandLine,
+        waiter: &dyn Waiter,
+    ) -> Result<Json, CommandError> {
         let max_nesting = session.config.limits.max_nesting();
-        let given = with_line(given(params, max_nesting, session.config.limits.max_file_size)?, line, max_nesting)?;
+        let mut given = with_line(given(params, max_nesting, session.config.limits.max_file_size)?, line, max_nesting)?;
         if given.real_time && !session.config.clock.moves() {
             return Err(CommandError::of("command.not_enabled", "mode", "a run in real time needs a clock that moves, which this session has not"));
         }
@@ -618,6 +627,7 @@ impl Runs {
             state.going = Some(Arc::clone(&going));
             going
         };
+        given.by = started_by(session, author, &going.id);
         let ready = match prepare(session, &given, &going.id) {
             Ok(ready) => ready,
             Err(error) => {
@@ -707,6 +717,19 @@ pub fn duration_ns(text: &str) -> Result<i64, String> {
 /// The report of a run refused before any session could start, with its diagnostics: a `FOLDER` that does not read.
 pub fn refused_report(function: &str, real_time: bool, diagnostics: Vec<Json>) -> Json {
     prepare::refused_in("r1", function, real_time, parts::CheckPart::of_problems(diagnostics))
+}
+
+/// Who starts the run `run` (io.md 4): an MCP client is an agent, with what the session allows agents and no answer yet; the
+/// window and the command line are the human.
+#[cfg(not(target_arch = "wasm32"))]
+fn started_by(session: &Session, author: &Author, run: &str) -> labcraft_runtime::io::StartedBy {
+    use labcraft_runtime::io::{Rights, StartedBy};
+    match author {
+        Author::Agent(client) => {
+            StartedBy::Agent { client: client.clone(), rights: Rights::of_run(session.agents.clone(), run, client, Some(&session.root)) }
+        }
+        Author::User | Author::External => StartedBy::Human,
+    }
 }
 
 /// Why the commands of runs cannot run here, if they cannot.

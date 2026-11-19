@@ -8,6 +8,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use labcraft_runtime::io::Allowed;
 use labcraft_runtime::native::NativeLibrary;
 use labcraft_types::Limits;
 use serde_json::{Value, json};
@@ -67,6 +68,8 @@ pub struct Session {
     pub(crate) known: crate::external::Known,
     /// The journal of its commands (architecture 12.5).
     journal: crate::journal::Journal,
+    /// What the runs that an agent starts may reach (io.md 4): nothing until the app says (`allow_agents`).
+    pub(crate) agents: Allowed,
     /// The files that the command going wrote, with their revisions, for its line of the journal.
     pub(crate) wrote_now: Vec<(String, Option<String>)>,
 }
@@ -98,6 +101,7 @@ impl Session {
             known: crate::external::Known::default(),
             journal,
             wrote_now: Vec::new(),
+            agents: Allowed::default(),
         };
         if background {
             session.start_first_check();
@@ -259,6 +263,12 @@ impl Session {
         self.has_window = true;
     }
 
+    /// What a run that an agent starts may reach (io.md 4): the endpoints of `--allow-hardware`, the folders of
+    /// `--allow-path`, the question of the window. Without it, nothing.
+    pub fn allow_agents(&mut self, allowed: Allowed) {
+        self.agents = allowed;
+    }
+
     /// The zoom of the canvas of the window that shows `function`, which `view.get_state` returns. Not a command: the
     /// window says what it shows, as the app says what changed on the disk.
     pub fn set_zoom(&mut self, function: &str, zoom: f32) {
@@ -345,7 +355,7 @@ impl Session {
         let params = params::judge(command, params)?;
         let runs = self.runs.clone();
         let session = &*self;
-        guarded("run.start", || runs.start_with(session, &params, line, &Patient)).unwrap_or_else(Err)
+        guarded("run.start", || runs.start_with(session, &Author::User, &params, line, &Patient)).unwrap_or_else(Err)
     }
 
     /// Why a command cannot run now, if it cannot.
@@ -404,7 +414,7 @@ impl Session {
             "view.dock" => crate::view::window::dock(self, params),
             "view.get_state" => Ok(crate::view::window::get_state(self)),
             #[cfg(not(target_arch = "wasm32"))]
-            "run.start" => self.runs.start(self, params, waiter),
+            "run.start" => self.runs.start(self, author, params, waiter),
             "run.wait" | "run.status" | "run.abort" | "run.set_element" | "run.trace" => {
                 let max_nesting = self.config.limits.max_nesting();
                 self.runs.dispatch(&*self.ws, &self.root, command.id, params, max_nesting, waiter)

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use labcraft_runtime::native::{Described, LibraryCode, LibraryDiagnostic, LibraryRun, LogBudget, NativeLibrary, Section, Simulation};
+use labcraft_runtime::native::{Described, LibraryCode, LibraryDiagnostic, LibraryRun, NativeLibrary, Section, Simulation, Start};
 use labcraft_types::Limits;
 use serde_json::{Value, json};
 
@@ -64,7 +64,7 @@ impl NativeLibrary for Fake {
         simulation.downcast_ref::<String>().cloned().into_iter().collect()
     }
 
-    fn start_run(&self, _: u32, _: Option<&Simulation>, _: LogBudget) -> Box<dyn LibraryRun> {
+    fn start_run(&self, _: Start<'_>) -> Box<dyn LibraryRun> {
         unimplemented_run()
     }
 }

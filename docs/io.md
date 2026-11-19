@@ -78,6 +78,12 @@ consent covers it (decision of the owner, 2026-11-19):
   both modes, as the instruments of `visa` are.
 - **A host without the transport** (the browser, a host that does not give it) gives `io.unsupported` at the open,
   with or without `--sim`, unless the host gives its own library.
+- **The order of the checks at an open**, the same in every library (decision of the owner, 2026-11-19): the name, a text that is no
+  name giving `resource_not_found`; then `io.unsupported`; then the rows of the table above, so that with `--sim` the
+  file decides, and without it `io.needs_real_time` comes in deterministic mode before any right is judged; then the
+  right of section 4, `io.not_allowed` or the question; then the open of the hardware, which may give
+  `resource_not_found` after its timeout. No question is asked whose answer could not be used: an agent that opens a
+  real name in deterministic mode gets `io.needs_real_time`, and no window.
 
 ## 4. Consent
 
@@ -247,7 +253,7 @@ response_hex = "0001 0000 0007 01 03 04 00e6 0019"
   server on `127.0.0.1` that its tests start, written in Rust. A real serial port is not in the CI: `serial` is tried
   by hand on a virtual pair of ports (com0com on Windows, `socat` on Linux) and on the boards of the final trial, as the
   trial of `serial2` was.
-- **How the runtime gives this to a library** (architecture.md 10.6, to write with the Rust): a library learns, besides
+- **How the runtime gives this to a library** (architecture.md 10.6, `runtime::io`): a library learns, besides
   its section of the simulation file, whether a file was given at all (with `--sim visa-only.toml`, `net` must not go to
   the hardware), the mode of the run, the project, who started it, and the rights of section 4; and it can ask the host
   the question of section 4, and wait for its answer.

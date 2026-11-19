@@ -11,6 +11,7 @@ use labcraft_types::{Interner, Limits};
 
 use super::{RESULT_MAX, ReportOf, Whole, refused, report};
 use crate::convert::Env;
+use crate::native::Context;
 use crate::run::{Control, Run, RunEnd, Settings, Unobserved, run};
 use crate::trace::TraceObserver;
 use crate::value::Value;
@@ -80,8 +81,15 @@ fn a_report_writes_each_value_against_its_type() {
     ];
     let mut names = Interner::new();
     let (checked, program) = checked(&files, &mut names);
-    let given =
-        Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs: vec![Value::F64(1.5)], settings: Settings::default() };
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs: vec![Value::F64(1.5)],
+        settings: Settings::default(),
+        context: Context::default(),
+    };
     let end = run(given, &mut Still, &mut Unobserved);
     let text = report_of(&end, &checked, &program, &names);
     // By hand, from commands.md 5: a struct is an object of its fields in declared order, a number with a unit a string in
@@ -120,7 +128,15 @@ fn a_report_stays_within_its_bound() {
     let mut names = Interner::new();
     let (checked, program) = checked(&files, &mut names);
     let inputs = vec![Value::string("\t".repeat(1000))];
-    let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs, settings: Settings::default() };
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs,
+        settings: Settings::default(),
+        context: Context::default(),
+    };
     let end = run(given, &mut Still, &mut Unobserved);
     let limit = 1 << 20;
     let of = ReportOf {
@@ -155,8 +171,15 @@ fn a_report_of_many_outputs_counts_those_that_do_not_fit() {
     let source = format!("labcraft 1\n\nfn f(x: i8) -> ({}) {{\n{}}}\n", outputs.join(", "), body.concat());
     let mut names = Interner::new();
     let (checked, program) = checked(&[("f.lcf", source.as_str())], &mut names);
-    let given =
-        Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs: vec![Value::I8(0)], settings: Settings::default() };
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs: vec![Value::I8(0)],
+        settings: Settings::default(),
+        context: Context::default(),
+    };
     let end = run(given, &mut Still, &mut Unobserved);
     let limit = 64 << 10;
     let of = ReportOf {
@@ -200,7 +223,15 @@ fn the_error_of_a_report_is_that_of_err() {
     };
     for (second, status, field) in [(error("visa.closed"), "error", Some("visa.closed")), (Value::Error(None), "ok", None)] {
         let inputs = vec![error("io.timeout"), second];
-        let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs, settings: Settings::default() };
+        let given = Run {
+            program: &program,
+            names: &names,
+            files: &checked.files,
+            natives: &[],
+            inputs,
+            settings: Settings::default(),
+            context: Context::default(),
+        };
         let end = run(given, &mut Still, &mut Unobserved);
         let json: serde_json::Value = serde_json::from_str(&report_of(&end, &checked, &program, &names)).unwrap();
         assert_eq!(json["status"].as_str(), Some(status));
@@ -231,7 +262,15 @@ fn the_trace_gives_the_iteration_of_each_node_in_a_loop() {
     let env = Env { program: &program, names: &names };
     let header = Header { run: "r1", function: "g", mode: "deterministic", files: &[("g.lcf", "0")] };
     let mut observer = TraceObserver::new(Vec::new(), &header, env, &checked.files, WriteLimits::default());
-    let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs: vec![], settings: Settings::default() };
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs: vec![],
+        settings: Settings::default(),
+        context: Context::default(),
+    };
     let end = run(given, &mut Still, &mut observer);
     let traced = observer.finish(&end);
     let text = String::from_utf8(traced.sink).unwrap();
@@ -281,7 +320,15 @@ fn the_diagnostics_give_way_before_the_values() {
     let mut names = Interner::new();
     let (checked, program) = checked(&[("f.lcf", source)], &mut names);
     let inputs = vec![Value::string("x".repeat(990))];
-    let given = Run { program: &program, names: &names, files: &checked.files, natives: &[], inputs, settings: Settings::default() };
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs,
+        settings: Settings::default(),
+        context: Context::default(),
+    };
     let end = run(given, &mut Still, &mut Unobserved);
     let limit = 64 << 10;
     let diagnostics = Diagnostics(100_000);

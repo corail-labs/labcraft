@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use labcraft_types::{Severity, Span};
 
+pub use crate::io::Context;
 use crate::value::{Handle, Value};
 
 /// A code of a library (`visa:S001`), with what it means: `cargo xtask codes` compares them with the table of its document.
@@ -66,10 +67,28 @@ pub trait NativeLibrary: Send + Sync {
         let _ = simulation;
         Vec::new()
     }
-    /// What one run of it holds, from its simulation if it has one. `library` is its index among the libraries of the run,
-    /// which its handles and its keys carry.
-    /// What one run of it holds. `budget` is the memory that every library of the run shares for what it keeps for the report.
-    fn start_run(&self, library: u32, simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun>;
+    /// What one run of it holds, from what [`Start`] gives it.
+    fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun>;
+}
+
+/// What one run of a library is given as it starts (`docs/architecture.md`, 10.6).
+pub struct Start<'a> {
+    /// Its index among the libraries of the run, which its handles and its keys carry.
+    pub library: u32,
+    /// What it judged of its section of the simulation file, when the file has one.
+    pub simulation: Option<&'a Simulation>,
+    /// The memory that every library of the run shares for what it keeps for the report.
+    pub budget: LogBudget,
+    pub mode: Mode,
+    /// What the host says of the run: whether a simulation file was given, the project, who started it (io.md 7).
+    pub context: &'a Context,
+}
+
+/// The mode of a run (spec 8): on a simulated clock, or on the real one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    Deterministic,
+    RealTime,
 }
 
 /// What a library says of its part of a simulation file, in the shape JSON gives it, which `engine` writes as it is.

@@ -2,13 +2,19 @@
 //! for each value, plus the bytes of a `string`, and 1 for a `bool`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
-use labcraft_runtime::native::{CallContext, LOG_BUDGET, LibraryRun, LogBudget, Logs, NativeLibrary, NativeOutcome, Step};
+use labcraft_runtime::native::{CallContext, Context, LOG_BUDGET, LibraryRun, LogBudget, Logs, Mode, NativeLibrary, NativeOutcome, Start, Step};
 use labcraft_runtime::{Handle, Value};
 
 use crate::{KEPT_ENTRIES, ResultsLog};
 
 fn fresh() -> Box<dyn LibraryRun> {
-    ResultsLog.start_run(0, None, LogBudget::new(LOG_BUDGET))
+    ResultsLog.start_run(Start {
+        library: 0,
+        simulation: None,
+        budget: LogBudget::new(LOG_BUDGET),
+        mode: Mode::Deterministic,
+        context: &Context::default(),
+    })
 }
 
 /// The log as `(function, time, value)`, the value as `Debug` writes it: `Value` has no equality, since `NaN` has none.
@@ -96,8 +102,10 @@ fn the_budget_is_the_run_s_and_follows_max_memory() {
     assert_eq!(LogBudget::of_run(1024 * 1024).left(), 1024 * 1024);
     // Two libraries of a run share it: what one keeps, the other no longer can. By hand: a `bool` costs 17 bytes.
     let budget = LogBudget::new(40);
-    let mut first = ResultsLog.start_run(0, None, budget.clone());
-    let mut second = ResultsLog.start_run(1, None, budget.clone());
+    let mut first =
+        ResultsLog.start_run(Start { library: 0, simulation: None, budget: budget.clone(), mode: Mode::Deterministic, context: &Context::default() });
+    let mut second =
+        ResultsLog.start_run(Start { library: 1, simulation: None, budget: budget.clone(), mode: Mode::Deterministic, context: &Context::default() });
     append(&mut first, Value::Bool(true), 0);
     append(&mut second, Value::Bool(true), 1);
     assert_eq!(budget.left(), 6);
