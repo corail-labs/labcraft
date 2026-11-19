@@ -135,6 +135,7 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | [docs/commands.md](docs/commands.md) | The commands of LabCraft: how they are named, called and described, the catalog of M0b, values in JSON, the report and the trace of a run (implemented for M0b) |
 | [docs/ide.md](docs/ide.md) | The window of the IDE of M1: panels, tabs and views, command palette, planned workspaces, the agent attached, detached windows (specification, before the Rust) |
 | [docs/mcp.md](docs/mcp.md) | The MCP server: tools, results and errors, what the agent is told, bounds (implemented for M0b) |
+| [docs/io.md](docs/io.md) | Real I/O of M4 (release 0.5.0): endpoints, what a run reaches with and without `--sim`, the consent of the human, files, simulated raw devices (specification, before the Rust) |
 | [skills/](skills/README.md) | Skills for agents: writing, debugging and testing a program, which the MCP server serves through `guide_read` |
 | [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; implemented for M0b) |
 | [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (implemented for M0b) |

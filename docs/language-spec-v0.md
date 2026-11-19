@@ -1,6 +1,6 @@
 # Language and format specification — v0
 
-*Last updated: 2026-11-18. Status: draft, nothing is frozen.*
+*Last updated: 2026-11-19. Status: draft, nothing is frozen.*
 
 This document describes both the language and the file format: the text syntax *is* the format
 (D-08). Keywords are in English, since the public repository will be too (D-21). Open questions are
@@ -210,7 +210,8 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   `i32[V]`. To a floating-point type it is accepted: `i32[mV]` to `f64[V]`.
 - **`core.div`, `core.sqrt` and `core.pow` on integers give an `f64`**: `core.div(3, 2)` is `1.5`, and x/0
   is `inf` or `nan`. `core.add`, `core.sub` and `core.mul` stay integers. An `i64` or a `u64`, which does
-  not widen to `f64`, is rejected there.
+  not widen to `f64`, is rejected there. The integer division is `core.quotient`, with its `core.remainder`, which stay
+  integers (0.5.0, appendix A.5).
 - **A conversion applies to a number on a wire**, never inside an array or a struct: `[f32]` to `[f64]` is
   rejected. In an array literal, the first element that decides gives the type of the others, as for
   branches (R-7): `[1 V, 200 mV]` is an `[f64[V]]`.
@@ -243,7 +244,13 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
   as zero (`1e-999`, or `1e-50` for an `f32`). A literal in the unit it goes to is read once in its type; in another
   unit it is read as an `f64`, converted as a wire is (3.3), then rounded to its type once: `1e39 mV` for an `f32[V]`
   is the `f32` nearest to 1e36.
-
+- **Hexadecimal and binary integers** (0.5.0, 14.1): `0xFF00` and `0b1010_0001` are integer literals like any other,
+  as a value or in a pattern (`0x30..=0x39`), typed by the rules above: `0xFF` for an `i8` is rejected, as `255` is,
+  since a literal keeps its value, not its bits. Elsewhere (the header, the dimensions of an array, a `code` of
+  `handle`, an exponent of a unit, the numbers of the sections of section 11) numbers stay decimal. They keep their
+  spelling in the canonical form (5.2), so a mask reads as its datasheet writes it: `low = core.and(word, 0x00FF)`.
+  Before 0.5.0, `0x00FF` read as `0` followed by a unit `x00FF`, which no unit table holds and `check` refused: the
+  change takes away no program that checks.
 ### 3.5 Generics
 
 ```text
@@ -257,6 +264,11 @@ whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the r
 - **The v0 bound is `Number`**: integers, floats and complex numbers, with any unit. A `duration`
   counts as an `f64[s]`: `core.add` of two durations is an `f64[s]`. A variable without a bound stands
   for any type (`core.select`, appendix A).
+- **Two bounds for the bitwise primitives** (0.5.0): `Integer`, the integer types without a unit (`i8` to `u64`), and
+  `Bits`, `bool` or an `Integer`. They serve the primitives of appendix A.5 (`core.and`, `core.shl`, `core.quotient`…):
+  a function written by the user takes them with the generics of M2. Two integer types that meet in one of them give the
+  smallest type that both widen to, as for `Number` (3.4): `core.and` of a `u8` and an `i32` is an `i32`; a `bool` and an
+  integer do not meet, and `i32[mV]` is not an `Integer`.
 - **Complex numbers have no order**: `core.lt`, `core.le`, `core.gt`, `core.ge`, `core.min` and `core.max`
   reject them.
 - **A type argument or an array fixes the variable**, and an input is then judged against it like any
@@ -1000,7 +1012,8 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   parallel branches read it together, and a modification works on a copy (D-11).
 - **Races remain possible on resources**, that is, what a value designates without containing it: a
   session (two copies of the handle designate the same connection, and the instrument has a
-  state), a `ref<T>` reference, a panel element read or written live (10), a file.
+  state), a TCP connection or a serial port (0.5.0, [io.md](io.md)), a `ref<T>` reference, a panel element read or
+  written live (10), a file.
 - **What a call guarantees on its resource is up to its library**, which says it; the runtime adds no
   lock. `visa` makes each of its calls atomic on its session, so that `visa.query` writes then reads
   without another call stepping in ([libs/visa/README.md](../libs/visa/README.md)). Two calls that the
@@ -1086,7 +1099,9 @@ beyond any run, and a wait that would pass it is a fault. The values of the limi
 an integer that overflows (`core.add` of two `i32` past 2^31, `core.neg` of a `u8`, `array.sum`), `core.to_i32` and
 `core.round_to_i32` of `nan` or of a value beyond the `i32`, a `duration` that is not finite or does not fit
 (3.1), and the empty separator of `string.split`. A silent value there would be a wrong measurement that looks right; a
-program that counts past 2^31 takes an `i64`. A division of integers cannot be one: `core.div` gives an `f64` (3.4).
+program that counts past 2^31 takes an `i64`. `core.div` of integers cannot be one, since it gives an `f64` (3.4); from
+0.5.0, `core.quotient` and `core.remainder` by 0, `core.quotient` of the lowest value of a signed type by −1, and a
+negative count of `core.shl` or `core.shr` are (appendix A.5).
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
 top-level function holds an error (7.5); `aborted`; `fault`.
@@ -1124,17 +1139,24 @@ to it.
 | Library | Content | Milestone |
 |---|---|---|
 | `core` | arithmetic, comparisons, logic, `select`, conversions, units, `call` (function references, section 4) | M0 |
+| `core` | bitwise `and`, `or`, `xor`, `not` on integers, shifts (`shl`, `shr`), integer division (`quotient`, `remainder`) | 0.5.0 (M4) |
+| `bytes` | length, slices, concatenation; from and to `[u8]` and UTF-8 text; integers and `f32` read at a position and written, in big or little endian | 0.5.0 (M4) |
 | `string` | `concat` (variadic), `join`, `format` (5.4), `split`, number parsing (`to_f64`, `to_i32`) | M0 |
 | `array` | size, index (`len`, `get`, `set`), subarray (`slice`), construction (`push`, `concat`, `repeat`), rows (`from_rows`, `to_rows`), `sum` | M0 |
 | `errors` | `merge`, error creation (`make`, `raise_if`) | M0 |
-| `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`), shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17). Real instruments in M4 | M0 |
+| `visa` | `open`, `close`, `write`, `read`, `query` (text). Native (`extern rust`), shipped in `libs/visa`, with its simulator: the `SIM::` resources answer as the instruments described in TOML files (D-17) | M0 |
+| `visa` | Real instruments over TCP (`::SOCKET`) and serial (`ASRL`), a simulated instrument by its real name; `read_bytes`, `write_bytes`, `set_serial` ([io.md](io.md)) | 0.5.0 (M4) |
 | `scpi` | `query_f64`, `check_errors` (`SYST:ERR?`). Written in LabCraft over `visa`, shipped in `libs/scpi` | M0 |
+| `scpi` | `query_i32`, `wait_complete` (`*OPC?`), `event_status` (`*ESR?`), `status_byte` (`*STB?`), `query_block` (a binary block `#…`) | 0.5.0 (M4) |
+| `net`, `serial`, `file` | TCP and UDP, serial ports, files and folders: native, shipped in `libs/`, with the consent of [io.md](io.md) 4 | 0.5.0 (M4) |
+| `console` | `write_line`: the text output of a program, shown where each host shows it ([io.md](io.md) 5) | 0.5.0 (M4) |
 | `time` | `now`, `wait`, `elapsed` | M0 |
 | `ui` | `get`, `set`: panel elements read and written live (section 10) | M0 |
 | `config` | reading a configuration file into a declared type (Q-15) | Libraries, with the generics of M2 |
 
-`visa` and `scpi` are not part of the language (section 1): they are libraries shipped with
-LabCraft, outside the crates of the tool ([roadmap](roadmap.md)). The signatures of the functions
+`visa`, `scpi`, `net`, `serial`, `file` and `console` are not part of the language (section 1): they are libraries shipped with
+LabCraft, outside the crates of the tool ([roadmap](roadmap.md)). `bytes` is a primitive, like `string`, added after
+M0, so it ranks after the folders of a project ([cli.md](cli.md) 3, rule 1). The signatures of the functions
 this document uses are in appendix A.
 
 ## 10. Panel (`panel` section)
@@ -1884,6 +1906,11 @@ letter     = a Unicode letter (a-z, A-Z, µ, Ω…) ;       (* never "_" or "°"
 mark       = a Unicode combining mark ;                 (* é as e + U+0301: one name (R-20) *)
 digit      = "0" | … | "9" ;
 INT        = digit { digit | "_" } ;
+BASED      = "0x" hex { hex | "_" } | "0b" bin { bin | "_" } ;
+                                                        (* 0x00FF, 0b1010_0001 (0.5.0): an integer in
+                                                           a value or a pattern only, never 0 and a unit *)
+hex        = digit | "a" | … | "f" | "A" | … | "F" ;
+bin        = "0" | "1" ;
 FLOAT      = INT "." INT [ ( "e" | "E" ) [ "-" ] INT ] | INT ( "e" | "E" ) [ "-" ] INT ;
                                                         (* 1_000.5_0 is 1000.50, with no unit *)
 STRING     = '"' { char | "\\" escape } '"' ;           (* char: not '"', "\" or a line ending;
@@ -2043,7 +2070,7 @@ field_init    = IDENT ":" operand ;
 
 literal       = number [ unit_expr ] | STRING | "true" | "false" | "none"
               | "[" [ operand { "," operand } ] "]" ;
-number        = [ "-" ] ( INT | FLOAT | "inf" ) | "nan" ;   (* no space after the minus *)
+number        = [ "-" ] ( INT | BASED | FLOAT | "inf" ) | "nan" ;   (* no space after the minus *)
 ```
 
 ### 14.5 Structures
@@ -2054,8 +2081,9 @@ structure     = match_expr | for_expr | loop_expr | handle_expr ;
 match_expr    = "match" operand "{" { match_arm } "}" ;
 match_arm     = ( bound_pattern | pattern { "," pattern } ) "=>" arm_body ;
 bound_pattern = path "(" IDENT { "," IDENT } ")" ;                      (* Reading.Value(v) *)
-pattern       = literal | [ "-" ] INT ".." [ "=" ] [ "-" ] INT           (* -5..=5 *)
+pattern       = literal | [ "-" ] whole ".." [ "=" ] [ "-" ] whole       (* -5..=5, 0x30..=0x39 *)
               | path | "_" ;
+whole         = INT | BASED ;
 
 for_expr      = "for" [ "parallel" ] for_in { "," for_in } { "," carry } for_body ;
 for_in        = IDENT "in" ( operand | operand ".." operand ) ;
@@ -2219,7 +2247,7 @@ fn core.max<N: Number>(a: N, b: N) -> (result: N)               // same dimensio
 
 fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge; no complex numbers
 fn core.eq<T>(a: T, b: T) -> (result: bool)                     // same for ne
-fn core.and(a: bool, b: bool) -> (result: bool)                 // same for or
+fn core.and(a: bool, b: bool) -> (result: bool)                 // same for or; on integers from 0.5.0 (A.5)
 fn core.not(a: bool) -> (result: bool)
 fn core.select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
@@ -2378,6 +2406,41 @@ fn scpi.check_errors(session: visa.session,
                      err: error = none) -> (session: visa.session, err: error)   // SYST:ERR?
 ```
 
+From 0.5.0 (M4, [io.md](io.md); [libs/visa](../libs/visa/README.md) for the transports):
+
+```text
+fn visa.write_bytes(session: visa.session, data: bytes,
+                    err: error = none) -> (session: visa.session, err: error)
+fn visa.read_bytes(session: visa.session, count: i32,
+                   err: error = none) -> (data: bytes, session: visa.session, err: error)
+fn visa.set_serial(session: visa.session, baud: u32 = 9600, data_bits: u8 = 8,
+                   parity: serial.Parity = serial.Parity.None,
+                   stop_bits: serial.StopBits = serial.StopBits.One,
+                   flow: serial.Flow = serial.Flow.None,
+                   err: error = none) -> (session: visa.session, err: error)
+
+fn scpi.query_i32(session: visa.session, command: string,
+                  err: error = none) -> (value: i32, session: visa.session, err: error)
+fn scpi.wait_complete(session: visa.session,
+                      err: error = none) -> (session: visa.session, err: error)   // *OPC?
+fn scpi.event_status(session: visa.session,
+                     err: error = none) -> (status: i32, session: visa.session, err: error)   // *ESR?
+fn scpi.status_byte(session: visa.session,
+                    err: error = none) -> (status: i32, session: visa.session, err: error)    // *STB?
+fn scpi.query_block(session: visa.session, command: string,
+                    err: error = none) -> (data: bytes, session: visa.session, err: error)
+```
+
+`visa` then uses the types of `serial` (its manifest gains `dependencies = ["serial"]`). `scpi.wait_complete` waits,
+within the timeout of the session, for the `1` of `*OPC?`, and fails with `scpi.unexpected_response` on any other
+answer; `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?`, whose bits the program
+reads with `core.and` (A.5). `scpi.query_block` writes the command, then reads a definite-length block of IEEE 488.2
+with `visa.read_bytes`: `#`, one digit n from 1 to 9, n digits of a length, that many bytes, and the `\n` after them; it
+gives the bytes, and fails with `scpi.unexpected_response` on anything else (an indefinite block `#0` included). All
+are written in LabCraft over `visa`, `string` and `bytes`, as `query_f64` is. The functions of `net`, `serial` and
+`file` are on their pages: [libs/net](../libs/net/README.md), [libs/serial](../libs/serial/README.md),
+[libs/file](../libs/file/README.md).
+
 The `visa` functions are declared with `extern rust` in `libs/visa` (4.1), and its manifest marks
 `visa.close` as `always`. `scpi` is written in LabCraft over `visa`, in `libs/scpi`:
 `query_f64` is a `visa.query` followed by `string.to_f64`. A `scpi` call is therefore atomic only
@@ -2405,3 +2468,63 @@ fn results_log.append_csv(results: [results_log.StepResult], err: error = none) 
 
 The libraries `instrument` (6.3), `sound` and `lamp` (5.3) are illustrative and have no signatures
 here. The signatures of `config` (Q-15) and `sim` (section 9) are not written yet.
+
+### A.5 Primitives of release 0.5.0 (M4), ahead of the implementation
+
+Specified with [io.md](io.md) on 2026-11-19, not built yet. They stay here, apart from A.1 and A.2, whose
+declarations the tests of `check` and `engine` compare with the primitives the tool has; the pull request that
+builds them moves them there, as the blocks of `AHEAD_OF_THE_PARSER` leave it once the parser reads them.
+
+```text
+fn core.and<B: Bits>(a: B, b: B) -> (result: B)                // replaces the `bool` one of A.1; same for or, xor
+fn core.not<B: Bits>(a: B) -> (result: B)                       // replaces the `bool` one of A.1
+fn core.shl<I: Integer>(x: I, count: i32) -> (result: I)        // bits out are lost
+fn core.shr<I: Integer>(x: I, count: i32) -> (result: I)        // a signed type copies its sign bit
+fn core.quotient<I: Integer>(a: I, b: I) -> (result: I)         // rounded toward −∞; by 0: a fault
+fn core.remainder<I: Integer>(a: I, b: I) -> (result: I)        // a − b × quotient: the sign of b
+```
+
+**Bits and integer division** (0.5.0, decision of the owner, 2026-11-19). On a `bool`, `core.and`, `core.or`, `core.xor`
+and `core.not` are logical; on an `Integer` (3.5), they work bit by bit, on the bits of the value in two's complement for
+a signed type: `core.and(0x1234, 0x00FF)` is `0x34`, `core.not` of a `u8` 0 is 255, of an `i8` 0 is −1. `core.shl`
+moves the bits toward the high end and fills with 0, and the bits that leave the type are lost, which is no overflow;
+`core.shr` moves them toward the low end and fills with 0 for an unsigned type, with the sign bit for a signed one, so
+that `core.shr` of an `i16` −8 by 1 is −4. A `count` at or above the width of the type gives 0, or −1 for a negative
+value moved by `core.shr`; a negative `count` is a fault (8.2). `core.quotient` rounds toward −∞ and `core.remainder` is
+`a − b × quotient`, so that the remainder has the sign of `b` and an index wraps the right way: `core.quotient(−7, 2)`
+is −4 and `core.remainder(−7, 2)` is 1. By 0 both are a fault, and so is `core.quotient` of the lowest value of a signed
+type by −1, which its type cannot hold; `core.remainder` of it by −1 is 0. `core.and`, `core.or` and `core.not` keep their glyph on integers;
+`core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have the ordinary block (A.1, "Blocks of the primitives"), outside the
+closed list of glyphs of the visual notation (3.2).
+
+**`bytes`** (0.5.0, M4): the binary data of frames and of instrument responses ([io.md](io.md)), on the type `bytes`
+(3.1). A protocol is built from these, as the example Modbus TCP of 0.5.0 is: a frame is a `bytes.concat` of
+fields, and a response is read field by field at its position.
+
+```text
+fn bytes.len(data: bytes) -> (length: i32)
+fn bytes.concat(parts: bytes...) -> (data: bytes)             // 5.4
+fn bytes.slice(data: bytes, start: i32 = 0, length: i32 = …,
+               err: error = none) -> (data: bytes, err: error)
+fn bytes.from_array(values: [u8]) -> (data: bytes)
+fn bytes.to_array(data: bytes) -> (values: [u8])
+fn bytes.from_string(text: string) -> (data: bytes)           // its UTF-8 bytes
+fn bytes.to_string(data: bytes, err: error = none) -> (text: string, err: error)
+
+fn bytes.read_u8(data: bytes, position: i32, err: error = none) -> (value: u8, err: error)
+fn bytes.read_u16(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: u16, err: error)   // same for i16, u32, i32, f32
+fn bytes.from_u8(value: i64, err: error = none) -> (data: bytes, err: error)
+fn bytes.from_u16(value: i64, little_endian: bool = false,
+                  err: error = none) -> (data: bytes, err: error)  // same for i16, u32, i32
+fn bytes.from_f32(value: f64, little_endian: bool = false) -> (data: bytes)
+```
+
+`bytes.slice` takes as `array.slice` does, and fails as it does, with `bytes.out_of_range`, giving its input. A
+`read_…` reads the bytes of its type from `position`, in big endian (network order, that of Modbus) unless
+`little_endian`; a position below 0, or bytes past the end, fail with `bytes.out_of_range`, and the value is 0. A
+`from_…` gives the bytes of its value in its type: it takes an `i64` so that any integer wire up to `u32` goes in, and a
+value out of the range of its type fails with `bytes.out_of_range`, giving empty bytes; `from_f32` rounds to the
+nearest `f32`, ties to even, and gives an infinity for a value beyond it, as a conversion does (3.4). `read_f32` gives
+the `f32` its four bytes hold, a `nan` included. `bytes.to_string` fails with `bytes.invalid_text` on bytes that are not
+UTF-8, giving `""`. The binary blocks of SCPI (`#…`) are read by `scpi.query_block` (A.3).
