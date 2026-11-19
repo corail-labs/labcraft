@@ -115,6 +115,8 @@ pub struct File {
     pub layout: Option<Layout>,
     /// The places of the terminals of its compact block (spec 11.2, M1).
     pub terminals: Option<Terminals>,
+    /// The outline of its compact block (spec 11.4, M1).
+    pub outline: Option<Outline>,
     pub icon: Option<Icon>,
     /// Comments after the last section.
     pub end: Vec<Comment>,
@@ -750,6 +752,71 @@ pub struct TerminalsItem {
     pub id: Id,
     pub comments: Attached,
     pub kind: TerminalsKind,
+}
+
+/// The `outline` section (spec 11.4): the shape of the compact block of the function. Like `terminals`, it says nothing
+/// about running; `check` judges its items (`LC5016`) and its geometry at every size the block takes (`LC5017`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Outline {
+    pub id: Id,
+    pub comments: Attached,
+    pub items: Vec<OutlineItem>,
+    pub end: Vec<Comment>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutlineItem {
+    pub id: Id,
+    pub comments: Attached,
+    pub kind: OutlineKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum OutlineKind {
+    /// `path (16, 0) (w - 8, 0) round 4 (w - 8, h) …`: the body, its corners joined in order and closed.
+    Path(Vec<Corner>),
+    /// `right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }`: a piece repeated at each terminal of a side.
+    Piece { side: BlockSide, points: Vec<Offset> },
+    /// `template d` or `template block`: an outline that LabCraft gives, by its name as written.
+    Template(Name),
+}
+
+/// A corner of the body: two coordinates, and the radius of its rounding as written (`round 4`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Corner {
+    pub x: Coordinate,
+    pub y: Coordinate,
+    pub round: Option<Name>,
+}
+
+/// An integer, `w`, `h` or the name of a terminal, with an optional `+ N` or `- N` (spec 11.4); digits as written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Coordinate {
+    pub base: Anchor,
+    /// `Some((true, digits))` for `- N`, `Some((false, digits))` for `+ N`.
+    pub shift: Option<(bool, Name)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Anchor {
+    /// Its digits as written.
+    Number(Name),
+    /// `w`, `h`, or a terminal.
+    Name(Name),
+}
+
+/// A point of a piece, counted from where the place of a terminal meets the edge (spec 11.4): outward, then along.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Offset {
+    pub out: Signed,
+    pub along: Signed,
+}
+
+/// An integer of a piece, which may be negative; its digits as written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Signed {
+    pub negative: bool,
+    pub digits: Name,
 }
 
 /// A side of a compact block that holds terminals: the bottom one has none (spec 11.2).

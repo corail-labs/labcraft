@@ -108,6 +108,8 @@ pub enum TokenKind<'a> {
     Slash,
     Caret,
     Minus,
+    /// `+`, in an `outline` coordinate (spec 11.4).
+    Plus,
     /// `?`, a hole (spec 5.1).
     Question,
 }
@@ -395,6 +397,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             '.' => single(TokenKind::Dot, self),
             '-' if self.eat("->") => Ok(TokenKind::Arrow),
             '-' => single(TokenKind::Minus, self),
+            '+' => single(TokenKind::Plus, self),
             '=' if self.eat("=>") => Ok(TokenKind::FatArrow),
             '=' => single(TokenKind::Equals, self),
             '(' => single(TokenKind::LeftParen, self),

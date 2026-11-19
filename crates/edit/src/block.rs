@@ -1,5 +1,6 @@
-//! `block.set_terminal`, `block.set_size`, `block.set_band` and `block.reset` (commands.md 9.4): the `terminals` section
-//! of the function whose block they change (spec 11.2), never the file of a caller. `fmt` puts the lines in their order.
+//! `block.set_terminal`, `block.set_size`, `block.set_band`, `block.set_outline` and `block.reset` (commands.md 9.4): the
+//! `terminals` and `outline` sections of the function whose block they change (spec 11.2, 11.4), never the file of a
+//! caller. `fmt` puts the lines in their order.
 
 use labcraft_format::block::{Problem, Which, named, read};
 use labcraft_graph::{Attached, BandPlace, BlockPlace, BlockSide, MAX_PLACES, MIN_PLACES, Place, Terminals, TerminalsItem, TerminalsKind};
@@ -210,9 +211,33 @@ pub(crate) fn set_band(edit: &mut Edit, band: Option<BandPlace>) -> Result<(), E
     Ok(())
 }
 
-/// `block.reset`: the block goes back to the defaults of notation 3.2.
+/// `block.set_outline`: the `outline` section from its items, one per line; `None` removes it. Items that do not read, or
+/// that `check` refuses as an error (`LC5016`), are refused; an outline that breaks a guard of 11.4 is written, and `check`
+/// gives its warning, as the drawing judges it at every size.
+pub(crate) fn set_outline(edit: &mut Edit, items: Option<&str>) -> Result<(), EditError> {
+    edit.body_function()?;
+    let Some(items) = items else {
+        edit.file.outline = None;
+        return Ok(());
+    };
+    let mut section = labcraft_format::read_outline(items, &mut edit.names)
+        .map_err(|message| EditError::invalid("outline", format!("the items do not read as an `outline` section: {message}")))?;
+    let (_, problems) = labcraft_check::outline::read(&section, &edit.names);
+    if let Some((_, message, _)) = problems.iter().find(|(code, _, _)| *code == labcraft_types::Code::Lc5016) {
+        return Err(EditError::invalid("outline", message.trim_end_matches(" (11.4)").to_owned()));
+    }
+    section.id = edit.id();
+    for item in &mut section.items {
+        item.id = edit.id();
+    }
+    edit.file.outline = (!section.items.is_empty()).then_some(section);
+    Ok(())
+}
+
+/// `block.reset`: the block goes back to the defaults of notation 3.2, or to the outline of the mask of its library.
 pub(crate) fn reset(edit: &mut Edit) -> Result<(), EditError> {
     edit.body_function()?;
     edit.file.terminals = None;
+    edit.file.outline = None;
     Ok(())
 }

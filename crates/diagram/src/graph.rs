@@ -23,39 +23,8 @@ pub const LITERAL_BYTES: usize = 4096;
 
 mod flow;
 
-/// The family of a terminal, which its shape tells (notation 4.1). An array is the family of its element, with its
-/// dimensions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Family {
-    pub base: Base,
-    pub dimensions: u8,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Base {
-    Number,
-    Bool,
-    Text,
-    Enum,
-    Struct,
-    Session,
-    Error,
-    Function,
-    /// A type that an error left unknown, or a type variable.
-    Unknown,
-    /// An order wire (`after:`), which carries no value.
-    Order,
-}
-
-impl Family {
-    pub const ERROR: Family = Family { base: Base::Error, dimensions: 0 };
-    pub const ORDER: Family = Family { base: Base::Order, dimensions: 0 };
-
-    /// The families whose input and output share a line when a node passes them through (notation 3.1).
-    pub fn passes_through(self) -> bool {
-        self.dimensions == 0 && matches!(self.base, Base::Error | Base::Session)
-    }
-}
+use labcraft_check::places::library_named;
+pub use labcraft_check::places::{Base, Family, family};
 
 /// A terminal of a node, as the drawing needs it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,6 +60,25 @@ pub struct Terminal {
     pub place: Option<usize>,
     /// What an input takes, which the wiring of the editor judges a wire by.
     pub expects: Expects,
+}
+
+impl labcraft_check::places::Slot for Terminal {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn ty(&self) -> TyId {
+        self.ty
+    }
+
+    fn family(&self) -> Family {
+        self.family
+    }
+
+    /// A value of a variadic parameter anchors no coordinate of an outline (spec 11.4).
+    fn anchor(&self) -> bool {
+        self.place.is_none()
+    }
 }
 
 /// What an input takes (notation 2.5): what judges a wire drawn to it before `wire.connect` does.
@@ -1115,7 +1103,7 @@ impl<'a> Builder<'a> {
                             is_wire: true,
                             ty: Some(param.ty),
                             family: None,
-                            variadic: false,
+                            variadic: param.variadic,
                             ty_text: None,
                             fixed: false,
                             takes: None,
@@ -1147,10 +1135,21 @@ impl<'a> Builder<'a> {
                         function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.terminals.as_ref())
                     })
                 });
-                if let (Some(function), Some(section)) = (function, section) {
+                // Its outline, likewise (spec 11.4): a block with one is placed by the rules of 11.2, its section or none.
+                let outline = function
+                    .and_then(|function| {
+                        function.outline.as_ref().or_else(|| {
+                            function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.outline.as_ref())
+                        })
+                    })
+                    .map(|outline| labcraft_check::outline::read(outline, self.names).0)
+                    .filter(|read| *read != labcraft_check::outline::Read::Block);
+                if let Some(function) = function
+                    && (section.is_some() || outline.is_some())
+                {
                     let inputs: Vec<Name> = function.params.iter().map(|param| param.name).collect();
                     let outputs: Vec<Name> = function.outputs.iter().map(|output| output.name).collect();
-                    let (read, _) = labcraft_format::block::read(section, &inputs, &outputs, self.names);
+                    let read = labcraft_check::places::section_of(section, &inputs, &outputs, self.names);
                     let optional = function
                         .params
                         .iter()
@@ -1158,7 +1157,7 @@ impl<'a> Builder<'a> {
                         .filter(|(_, default)| default.is_some())
                         .map(|(param, _)| self.text(param.name))
                         .collect();
-                    found.block = Some(Rc::new(Block::of(&read, self.names, optional)));
+                    found.block = Some(Rc::new(Block { outline, ..Block::of(&read, self.names, optional) }));
                 }
             }
             Meaning::Primitive { library, name } => {
@@ -1569,10 +1568,6 @@ fn sign_of(name: &str) -> Option<&'static str> {
     })
 }
 
-fn library_named(libraries: &[DeclaredLibrary], id: LibraryId) -> Option<&DeclaredLibrary> {
-    libraries.iter().find(|library| library.id == id)
-}
-
 /// What a declared type stands for, followed a few times at most: an alias names a type, never itself.
 fn definition(types: &TypeTable, libraries: &[DeclaredLibrary], ty: TyId) -> TyId {
     let mut current = ty;
@@ -1585,43 +1580,6 @@ fn definition(types: &TypeTable, libraries: &[DeclaredLibrary], ty: TyId) -> TyI
         current = declared.definition;
     }
     current
-}
-
-/// The family of a type (notation 4.1).
-pub fn family(types: &TypeTable, libraries: &[DeclaredLibrary], ty: TyId) -> Family {
-    let mut dimensions: u8 = 0;
-    let mut current = ty;
-    for _ in 0..64 {
-        let base = match types.get(current) {
-            Ty::Error | Ty::Variable(_) => Base::Unknown,
-            Ty::Bool => Base::Bool,
-            Ty::Number { .. } | Ty::Duration | Ty::Timestamp => Base::Number,
-            Ty::String | Ty::Bytes => Base::Text,
-            Ty::ErrorValue => return Family { dimensions, ..Family::ERROR },
-            Ty::Array { element, dimensions: more } => {
-                dimensions = dimensions.saturating_add(*more);
-                current = *element;
-                continue;
-            }
-            Ty::Struct(_) | Ty::Waveform(_) => Base::Struct,
-            Ty::Enum(_) => Base::Enum,
-            Ty::Queue(_) | Ty::Ref(_) => Base::Session,
-            Ty::Function { .. } => Base::Function,
-            Ty::Named { library, name } => {
-                let declared = library_named(libraries, *library).and_then(|library| library.types.get(name));
-                match declared {
-                    Some(declared) if declared.opaque => Base::Session,
-                    Some(declared) if declared.definition != current => {
-                        current = declared.definition;
-                        continue;
-                    }
-                    _ => Base::Unknown,
-                }
-            }
-        };
-        return Family { base, dimensions };
-    }
-    Family { base: Base::Unknown, dimensions }
 }
 
 /// The unit of a number, for its badge (notation 4.2): none for a number without one.

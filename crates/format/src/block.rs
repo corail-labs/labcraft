@@ -26,6 +26,8 @@ pub struct Placed {
     pub place: Place,
     pub terminal: Which,
     pub partner: bool,
+    /// The line, which a diagnostic points at.
+    pub id: Id,
 }
 
 /// What a `terminals` section says, once the lines that cannot apply are left out.
@@ -201,7 +203,7 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
         for key in wanted {
             taken.insert(key, id);
         }
-        read.lines.push(Placed { side, place, terminal, partner });
+        read.lines.push(Placed { side, place, terminal, partner, id });
     }
     (read, problems)
 }

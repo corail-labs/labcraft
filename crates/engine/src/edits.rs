@@ -72,6 +72,7 @@ pub const EDITING: &[&str] = &[
     "block.set_terminal",
     "block.set_size",
     "block.set_band",
+    "block.set_outline",
     "block.reset",
 ];
 
@@ -414,6 +415,12 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             };
             Op::BlockSetBand { file, band }
         }
+        "block.set_outline" => match params.get("outline") {
+            None if params.is_null("outline") => Op::BlockSetOutline { file, outline: None },
+            None => return Err(CommandError::of("params.invalid", "outline", "`outline` is required: the items, or `null`".to_owned())),
+            Some(Value::String(items)) => Op::BlockSetOutline { file, outline: Some(items.clone()) },
+            Some(_) => return Err(CommandError::of("params.invalid", "outline", "`outline` is the items, one per line, or `null`".to_owned())),
+        },
         "block.reset" => Op::BlockReset { file },
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };

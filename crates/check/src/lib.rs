@@ -1,7 +1,7 @@
 //! L3: name resolution, signatures, type and connection checking (`docs/architecture.md`, section 5).
 //!
 //! Passes 1 to 6: reading the files, finding the libraries that they use, what each library declares, the names of each body,
-//! its types, its dataflow, and the `panel`, `layout`, `terminals` and `icon` sections.
+//! its types, its dataflow, and the `panel`, `layout`, `terminals`, `outline` and `icon` sections.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -25,7 +25,9 @@ mod declare;
 mod file_name;
 mod load;
 pub mod manifest;
+pub mod outline;
 mod passed_in;
+pub mod places;
 pub mod primitives;
 mod reach;
 mod resolved;
@@ -223,6 +225,7 @@ fn check_with(root: LibrarySource, libraries: &dyn Libraries, names: &mut Intern
                     // One that would not be drawn is not kept (11.1).
                     function.icon = model.file.icon.take().filter(|icon| icon_refused(icon, names).is_none());
                     function.terminals = model.file.terminals.take();
+                    function.outline = model.file.outline.take();
                 }
                 at.push(None);
                 continue;

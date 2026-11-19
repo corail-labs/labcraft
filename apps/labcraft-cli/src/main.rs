@@ -24,7 +24,7 @@ commands:
   fmt [--check] [--json] [options] PATH...    write each file in canonical form
   check [--json] [options] FOLDER...          read each library, find what it uses, and check what it
                                               declares, each body, its types, its dataflow, and its
-                                              `panel`, `layout`, `terminals`, `icon` sections
+                                              `panel`, `layout`, `terminals`, `outline`, `icon` sections
   diagram --svg --out DIR [--json] [options] FOLDER [FUNCTION]...
                                               draw each function of FOLDER, or those named, as an SVG
                                               under DIR, at the path of its file

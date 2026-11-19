@@ -1517,7 +1517,7 @@ terminals {
   its default side, inputs on the left and outputs on the right, in signature order, on the first place that no line
   took, from the top: a pass-through pair on one place, the `err` pair on the last place of the left and right sides,
   an optional input on the top side when the left side is full. Without a section, the block is drawn as visual
-  notation 3.2 says.
+  notation 3.2 says, unless the function gives it an outline (11.4).
 - **The middle is always a place.** A side that holds a terminal on `middle` has an odd number of places: `left 4`
   then gives 5. So the middle never falls between two places, off the grid.
 - **A block grows only down.** When its places do not hold its terminals, the left and right sides grow by two
@@ -1631,7 +1631,8 @@ outline {
   (11.2) never gets a piece.
 - **Templates.** `template d` or `template block`, alone in the section, names an outline that LabCraft gives: `d` is
   the D of the primitives (visual notation 3.2),
-  `path (0, 0) (w - 8, 0) (w, 8) (w, h - 8) (w - 8, h) (0, h)`, its 8 being `node.chamfer` of the style; `block` is
+  `path (0, 0) (w - 8, 0) (w, 8) (w, h - 8) (w - 8, h) (0, h)`, its 8 being `node.chamfer` of the style (`check`
+  judges it with that of the default style); `block` is
   the ordinary block of visual notation 3.2, which brings it back under the outline of a mask. A template names no
   terminal, and does not place one: `terminals` does.
 - **Where a terminal starts.** On its place, at the outermost point of the outline, pieces included, on its side,
@@ -1645,7 +1646,9 @@ outline {
   the block, its places, its position (the top-left corner of the box `w` × `h`, 11) or its label; a wire goes
   around the pieces as around the block.
 - **Which outline.** The section of the function, else the `outline` of the mask of its library (11.3), else the
-  ordinary block. The primitives of `core` have the D because their files say so (appendix A.1).
+  ordinary block. The primitives of `core` have the D because their files say so (appendix A.1). A block with an
+  outline and no `terminals` section has the places of an empty one: it is placed by the rules of 11.2, whose `w` and
+  `h` the outline counts from; with the style of the notation, that is the block of visual notation 3.2.
 - **Guards.** `check` judges the geometry, not the taste: whether a shape still reads as a block is the choice of its
   author (visual notation 3.2 gives the guidance). A warning, and the block drawn ordinary, for: an outline that
   crosses itself, the body or a piece; a corner outside the box `w` × `h`; a piece outside its bounds; a side that has
@@ -1656,7 +1659,8 @@ outline {
   size of the section and each call of the project, the drawing each block it draws. A warning goes on the item that
   breaks the guard, in the file of the function or in the manifest of the mask, once for that item whatever the
   number of calls. Two `path` items, two pieces for
-  one side, a `template` with another item, an unknown template, or a `round` outside 1 to 16 are an error. At most
+  one side, a piece without a `path` (a template followed by pieces comes later), a `template` with another item, an
+  unknown template, or a `round` outside 1 to 16 are an error. At most
   64 corners in the body and 16 points in a piece *(proposed)*; past them, the outline is not drawn, as an icon past
   its bounds (11.1). The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section
   5, lists only those).

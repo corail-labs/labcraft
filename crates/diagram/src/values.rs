@@ -1333,11 +1333,12 @@ fn under(drawing: &Drawing, reading: &Reading<'_>, contexts: &[Option<Vec<u64>>]
                         .filter_map(|&wire| Some((trace.value(index32, wire, iters)?, node.wires.get(wire as usize)?)))
                         .find_map(|(json, wire)| short(json, &wire.ty).filter(|short| short.error));
                     let around = style::mark_around();
+                    let (left, right, top) = block.reach;
                     let mut shapes = vec![Shape::Rect {
-                        x: block.x - around,
-                        y: block.y - around,
-                        width: block.width + 2 * around,
-                        height: block.height + 2 * around,
+                        x: block.x - left - around,
+                        y: block.y - top - around,
+                        width: block.width + left + right + 2 * around,
+                        height: block.height + top + 2 * around,
                         radius: style::radius() + around,
                         paint: Paint::stroke("wire.error", style::mark_width()),
                     }];
@@ -1586,11 +1587,12 @@ const HALO_WIDTH: i64 = 800;
 pub fn selected_node(drawing: &Drawing, placed: usize) -> Vec<Shape> {
     let Some(block) = drawing.placed.get(placed) else { return Vec::new() };
     let around = 2 * style::mark_around();
+    let (left, right, top) = block.reach;
     vec![Shape::Rect {
-        x: block.x - around,
-        y: block.y - around,
-        width: block.width + 2 * around,
-        height: block.height + 2 * around,
+        x: block.x - left - around,
+        y: block.y - top - around,
+        width: block.width + left + right + 2 * around,
+        height: block.height + top + 2 * around,
         radius: style::radius() + around,
         paint: Paint::stroke("select.stroke", style::mark_width()),
     }]

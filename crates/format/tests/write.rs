@@ -1222,3 +1222,75 @@ fn terminals_stays_a_name_outside_the_section() {
     assert_stays("labcraft 1\n\nfn f(terminals: f64) -> (y: f64) {\n    y = terminals\n}\n");
     assert_stays("labcraft 1\n\nfn f(x: f64) -> (terminals: f64) {\n    terminals = x\n}\n");
 }
+
+// The `outline` section (spec 5.2, "Items of `outline`", 11.4 and 14.6). Written by hand from those sections.
+
+fn outline(items: &str) -> String {
+    format!("{BLOCK_HEAD}\noutline {{\n{items}}}\n")
+}
+
+#[test]
+fn an_outline_stays() {
+    assert_stays(&outline("    template d\n"));
+    assert_stays(&outline(
+        "    path (16, 0) (w - 8, 0) (w - 8, h) (16, h) (4, a + 2) (4, a - 2)\n    right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }\n",
+    ));
+    assert_stays(&outline("    path (0, 0) (w, 0) round 4 (w, h) round 4 (0, h)\n"));
+    // Comments attach to the section and to its items, as in `terminals`.
+    assert_stays(&format!("{BLOCK_HEAD}\n// The shape.\noutline {{\n    // The body.\n    path (0, 0) (w, 0) (0, h) // a triangle\n}}\n"));
+    // After `terminals`, before `icon` (spec 2).
+    assert_stays(&format!(
+        "{BLOCK_HEAD}\nterminals {{\n    top 5\n}}\n\noutline {{\n    template d\n}}\n\nicon 32 {{\n    line (2, 2) (30, 30)\n}}\n"
+    ));
+}
+
+#[test]
+fn the_items_of_an_outline_go_body_then_top_left_right_pieces_one_line_each() {
+    let messy = outline(
+        "right terminal {path (0,-2)(8,-2)\n(8,2)(0,2)}\nleft terminal { path (0, 0) (-4, 2) (0, 4) }\ntop terminal { path (0, -4) (4, 0) (0, 4) }\npath (0,0)(w,0)(w,h)(0,h)\n",
+    );
+    let canonical = outline(
+        "    path (0, 0) (w, 0) (w, h) (0, h)\n    top terminal { path (0, -4) (4, 0) (0, 4) }\n    left terminal { path (0, 0) (-4, 2) (0, 4) }\n    right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }\n",
+    );
+    assert_canonical(&messy, &canonical);
+}
+
+#[test]
+fn the_integers_of_an_outline_are_written_in_plain_decimal() {
+    // `1_6` becomes `16`, `x + 0` becomes `x`, `-0` becomes `0`, `round 04` becomes `round 4` (11.4, 5.2).
+    assert_canonical(
+        &outline("    path (1_6, 0) (w - 0, 0) round 04 (w, h + 00) (a + 0, h)\n    left terminal { path (0, -0) (-4, 2) (-0, 4) }\n"),
+        &outline("    path (16, 0) (w, 0) round 4 (w, h) (a, h)\n    left terminal { path (0, 0) (-4, 2) (0, 4) }\n"),
+    );
+}
+
+#[test]
+fn an_empty_outline_section_is_removed() {
+    assert_canonical(&format!("{BLOCK_HEAD}\noutline {{\n}}\n"), BLOCK_HEAD);
+}
+
+#[test]
+fn an_outline_that_does_not_read_is_a_syntax_error() {
+    for items in [
+        // Fewer than three corners, or three points in a piece.
+        "    path (0, 0) (w, 0)\n",
+        "    right terminal { path (0, 0) (4, 0) }\n",
+        // A number with a shift, a fraction, arithmetic beyond `+ N` or `- N`, a piece without `terminal`.
+        "    path (0 + 1, 0) (w, 0) (w, h)\n",
+        "    path (0.5, 0) (w, 0) (w, h)\n",
+        "    path (w / 2, 0) (w, 0) (w, h)\n",
+        "    path (w - a, 0) (w, 0) (w, h)\n",
+        "    right { path (0, 0) (4, 0) (0, 4) }\n",
+        "    bottom terminal { path (0, 0) (4, 0) (0, 4) }\n",
+    ] {
+        let mut names = Interner::new();
+        let result = format(outline(items).as_bytes(), &mut names, &Limits::default());
+        assert!(result.text.is_none(), "{items}");
+        assert_eq!(result.report.diagnostics().first().map(|diagnostic| diagnostic.code()), Some(Code::Lc1001), "{items}");
+    }
+}
+
+#[test]
+fn outline_and_its_words_stay_names_outside_the_section() {
+    assert_stays("labcraft 1\n\nfn f(outline: f64, w: f64) -> (template: f64) {\n    template = core.add(outline, w)\n}\n");
+}

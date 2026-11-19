@@ -34,10 +34,7 @@ fn markdown_files() -> Vec<PathBuf> {
 
 /// Blocks whose grammar the spec gives before the parser reads it: each is a text the block holds. The test checks
 /// that each still fails, so that the entry goes when the parser catches up (`AGENTS.md`).
-const AHEAD_OF_THE_PARSER: &[&str] = &[
-    // Spec 11.4, M1 step 6 (#165): the outline of the compact block.
-    "outline {",
-];
+const AHEAD_OF_THE_PARSER: &[&str] = &[];
 
 /// The blocks fenced as `text` or with no word, each with the line of the spec where it starts. A block indented in a
 /// list loses the indent of its fence.

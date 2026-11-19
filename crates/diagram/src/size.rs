@@ -2,16 +2,18 @@
 //! every text cut in cells by `types::text`, and the shapes of the node around its block. All in hundredths of a unit,
 //! relative to the top-left corner of the block, which is what `node x at (40, 80)` places (spec 11).
 
-use std::collections::{HashMap, VecDeque};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use labcraft_graph::{BandPlace, BlockSide, IconShape as Written, Numeral, NumeralKind};
 use labcraft_types::text::{self, ShownText};
-use labcraft_types::{Interner, TyId, cut_text};
+use labcraft_types::{Interner, cut_text};
 
 use crate::block::Block;
 use crate::graph::{Base, Family, Glyph, Kind, Node, Terminal};
 use crate::shape::{Detail, IconDrawing, IconDrawn, IconItem, IconShape, Paint, Run, Shape, Token, token_of};
 use crate::style;
+use labcraft_check::outline::{Drawn, Frame, crossing, draw};
 
 /// The three sizes of text (notation 2.3), in force.
 pub fn large() -> u32 {
@@ -168,96 +170,7 @@ pub fn up(value: i64) -> i64 {
     if rest == 0 { value } else { value.saturating_add(style::grid() - rest) }
 }
 
-/// A line of terminals: at most one input and one output (notation 3.1), by their index.
-pub type Line = (Option<usize>, Option<usize>);
-
-/// The lines of a node, from the top, as notation 3.1 makes them: pass-through pairs on one line, the `err` pair on the
-/// bottom one, the others side by side in signature order between the pairs.
-pub fn lines(inputs: &[Terminal], outputs: &[Terminal]) -> Vec<Line> {
-    // `err` is made last in both lists: the input named `err`, else the last error input; its output by name, else the
-    // last error output.
-    let error_input = inputs
-        .iter()
-        .position(|terminal| terminal.name == "err" && terminal.family.base == Base::Error)
-        .or_else(|| inputs.iter().rposition(|terminal| terminal.family == Family { base: Base::Error, dimensions: 0 }));
-    let error_output = outputs
-        .iter()
-        .position(|terminal| terminal.name == "err" && terminal.family.base == Base::Error)
-        .or_else(|| outputs.iter().rposition(|terminal| terminal.family == Family { base: Base::Error, dimensions: 0 }));
-    let last = |count: usize, moved: Option<usize>| -> Vec<usize> {
-        let mut order: Vec<usize> = (0..count).filter(|&index| Some(index) != moved).collect();
-        order.extend(moved);
-        order
-    };
-    let ins = last(inputs.len(), error_input);
-    let outs = last(outputs.len(), error_output);
-    // Pairs by name first, then in order among what is left, of one type and a family that passes through. Each input
-    // takes the first output not taken of its name and type, then of its type: queues of the outputs that pass through,
-    // in order, from which a taken one is dropped when it comes first, so that pairing is linear.
-    let mut paired_in = vec![None; ins.len()];
-    let mut taken = vec![false; outs.len()];
-    let mut by_name: HashMap<(&str, TyId), VecDeque<usize>> = HashMap::new();
-    let mut by_type: HashMap<TyId, VecDeque<usize>> = HashMap::new();
-    // Every error has one type: an error input that no argument wires, which has the family of its table and no type yet
-    // (a primitive), pairs as one that has it.
-    let key = |terminal: &Terminal| if terminal.family == Family::ERROR { TyId::ERROR } else { terminal.ty };
-    for (other, &output) in outs.iter().enumerate() {
-        let Some(out) = outputs.get(output).filter(|out| out.family.passes_through()) else { continue };
-        by_name.entry((out.name.as_str(), key(out))).or_default().push_back(other);
-        by_type.entry(key(out)).or_default().push_back(other);
-    }
-    for named in [true, false] {
-        for (slot, &input) in ins.iter().enumerate() {
-            let Some(terminal) = inputs.get(input).filter(|terminal| terminal.family.passes_through()) else { continue };
-            if paired_in.get(slot).copied().flatten().is_some() {
-                continue;
-            }
-            let queue = if named { by_name.get_mut(&(terminal.name.as_str(), key(terminal))) } else { by_type.get_mut(&key(terminal)) };
-            let Some(queue) = queue else { continue };
-            while queue.front().is_some_and(|&other| taken.get(other).copied().unwrap_or(true)) {
-                queue.pop_front();
-            }
-            if let (Some(found), Some(pair)) = (queue.pop_front(), paired_in.get_mut(slot)) {
-                *pair = Some(found);
-                if let Some(flag) = taken.get_mut(found) {
-                    *flag = true;
-                }
-            }
-        }
-    }
-    // A pair that crosses one before it, in signature order, is not kept.
-    let mut kept: Vec<(usize, usize)> = Vec::new();
-    for (slot, pair) in paired_in.iter().enumerate() {
-        if let Some(output) = *pair
-            && kept.last().is_none_or(|&(_, before)| output > before)
-        {
-            kept.push((slot, output));
-        }
-    }
-    let mut found = Vec::new();
-    let (mut next_in, mut next_out) = (0, 0);
-    let fill = |found: &mut Vec<Line>, from_in: usize, to_in: usize, from_out: usize, to_out: usize| {
-        let (left, right) = (to_in.saturating_sub(from_in), to_out.saturating_sub(from_out));
-        for row in 0..left.max(right) {
-            let input = (row < left).then(|| ins.get(from_in + row).copied()).flatten();
-            let output = (row < right).then(|| outs.get(from_out + row).copied()).flatten();
-            found.push((input, output));
-        }
-    };
-    for &(slot, output) in &kept {
-        fill(&mut found, next_in, slot, next_out, output);
-        found.push((ins.get(slot).copied(), outs.get(output).copied()));
-        (next_in, next_out) = (slot + 1, output + 1);
-    }
-    // An error output with no input is alone on the bottom line (`errors.merge`).
-    let alone = error_output.filter(|_| kept.last().is_none_or(|&(_, output)| outs.get(output).copied() != error_output));
-    let end_out = if alone.is_some() { outs.len().saturating_sub(1) } else { outs.len() };
-    fill(&mut found, next_in, ins.len(), next_out.min(end_out), end_out);
-    if let Some(output) = alone {
-        found.push((None, Some(output)));
-    }
-    found
-}
+pub use labcraft_check::places::{Line, lines};
 
 /// A terminal off its default side (`Sized::lanes`): that side, the lane of its wire above the block, and how far beside
 /// its side the wire runs up to that lane, one wire gap more for each terminal before it on that side.
@@ -302,6 +215,8 @@ pub struct Sized {
     pub lanes: (Vec<Option<Lane>>, Vec<Option<Lane>>),
     /// The places of a block that the lines of its section hold (spec 11.2), for the editor.
     pub held: Vec<(BlockSide, u32)>,
+    /// How far its outline reaches outside the block on the left, the right and the top (spec 11.4).
+    pub reach: (i64, i64, i64),
 }
 
 impl Sized {
@@ -325,6 +240,7 @@ impl Sized {
             reaches: Vec::new(),
             lanes: (Vec::new(), Vec::new()),
             held: Vec::new(),
+            reach: (0, 0, 0),
         }
     }
 }
@@ -606,6 +522,55 @@ fn body(band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64,
     band_height
 }
 
+/// The body of a compact block whose function gives it an outline (spec 11.4): the outline filled, the band cut to it,
+/// its divider across it, the outline stroked over both. Where what the band leaves starts: 0 without a band.
+fn shaped((drawn, index): &(Drawn, usize), band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+    let extent = drawn.points.iter().fold((i64::MAX, i64::MAX, i64::MIN, i64::MIN), |(a, b, c, d), &(x, y)| (a.min(x), b.min(y), c.max(x), d.max(y)));
+    let outline = |paint| Shape::Outline { x: 0, y: 0, outline: *index, extent, paint };
+    let Some(band) = band else {
+        shapes.push(outline(Paint::both("node.fill", "node.stroke", style::outline())));
+        return 0;
+    };
+    let band_height = style::band_height().min(height);
+    shapes.push(outline(Paint::fill("node.fill")));
+    let cut = above_line(&drawn.points, band_height);
+    if cut.len() >= 3 {
+        shapes.push(Shape::Poly { points: cut, closed: true, paint: Paint::fill("band.fill") });
+    }
+    let across = (crossing(drawn, BlockSide::Left, band_height), crossing(drawn, BlockSide::Right, band_height));
+    if let (Some(from), Some(to)) = across {
+        shapes.push(Shape::Poly { points: vec![from, to], closed: false, paint: Paint::stroke("node.stroke", style::outline()) });
+    }
+    shapes.push(band.centred((left + width - right) / 2, band_height / 2, "band.text"));
+    shapes.push(outline(Paint::stroke("node.stroke", style::outline())));
+    band_height
+}
+
+/// What of a polygon lies above the line `y = limit`, closed (Sutherland and Hodgman, against one half-plane).
+fn above_line(points: &[(i64, i64)], limit: i64) -> Vec<(i64, i64)> {
+    let mut found = Vec::with_capacity(points.len());
+    for (index, &a) in points.iter().enumerate() {
+        let Some(&b) = points.get((index + 1) % points.len()) else { continue };
+        let (a_in, b_in) = (a.1 <= limit, b.1 <= limit);
+        if a_in {
+            found.push(a);
+        }
+        if a_in != b_in && b.1 != a.1 {
+            let x = a.0 + (b.0 - a.0) * (limit - a.1) / (b.1 - a.1);
+            found.push((x, limit));
+        }
+    }
+    found
+}
+
+/// The body of a compact block: its outline when it has one, else the block of notation 3.2.
+fn body_of(drawn: Option<&(Drawn, usize)>, band: Option<&Text>, insets: (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+    match drawn {
+        Some(drawn) => shaped(drawn, band, insets, width, height, shapes),
+        None => body(band, insets, width, height, shapes),
+    }
+}
+
 /// The top of the line of the `▴` of `always`, centred 8 above the bottom of a compact node `height` high (notation 3.2).
 fn always_top(height: i64) -> i64 {
     height - style::grid() - line_height(medium()) / 2
@@ -650,12 +615,23 @@ fn lead(family: Family, from: (i64, i64), to: (i64, i64)) -> Shape {
     Shape::Poly { points: vec![from, to], closed: false, paint: Paint::stroke(wire_token(family), wire_style(family, "node.fill").width) }
 }
 
+/// A block, by the address of the section of its function, and the places of its terminals and its sides.
+type OutlineKey = (usize, Vec<(BlockSide, u32)>, u32, u32);
+
 pub struct Sizer<'a> {
     pub names: &'a Interner,
     pub standard_everywhere: bool,
+    /// The outlines drawn, by the block of their function and the places of their terminals: the calls of one function at
+    /// one size share one, so that drawing them costs one outline, not one per call (spec 11.4).
+    pub outlines: RefCell<HashMap<OutlineKey, Option<(Drawn, usize)>>>,
+    /// The points of each outline drawn, by the index that `Shape::Outline` gives: what `Drawing::outlines` holds.
+    pub outlines_drawn: RefCell<Vec<Vec<(i64, i64)>>>,
 }
 
-impl Sizer<'_> {
+impl<'a> Sizer<'a> {
+    pub fn new(names: &'a Interner, standard_everywhere: bool) -> Sizer<'a> {
+        Sizer { names, standard_everywhere, outlines: RefCell::new(HashMap::new()), outlines_drawn: RefCell::new(Vec::new()) }
+    }
     /// The node in its view: its band already chosen for the whole drawing (notation 3.2).
     /// `icon`: the index in `Drawing::icons` of the icon of what it calls, when it shows one.
     pub fn size(&self, node: &Node<'_>, band: Option<&ShownText>, icon: Option<usize>) -> Sized {
@@ -831,11 +807,27 @@ impl Sizer<'_> {
         }
         let (width, height) = (places.width(), places.height());
         let top_side = places.has_top_side();
+        // Its outline at the size of this call: the ordinary block where a guard breaks there (11.4), which `check` says.
+        let drawn = block.outline.as_ref().and_then(|read| {
+            let key = (std::ptr::from_ref(block) as usize, places.inputs.iter().chain(&places.outputs).copied().collect(), places.top, places.left);
+            if let Some(found) = self.outlines.borrow().get(&key) {
+                return found.clone();
+            }
+            let frame = Frame::of(&places, &node.inputs, &node.outputs, style::chamfer());
+            let found = draw(read, &frame).ok().flatten().map(|drawn| {
+                let mut list = self.outlines_drawn.borrow_mut();
+                list.push(drawn.points.clone());
+                (drawn, list.len() - 1)
+            });
+            self.outlines.borrow_mut().insert(key, found.clone());
+            found
+        });
+        let start = |index: usize| drawn.as_ref().and_then(|(drawn, _)| drawn.starts.get(index).copied());
         let band = band.map(|band| Text::measured(band.clone(), small()));
         let mut shapes = Vec::new();
         let mut above = 0;
         let top = match (band, block.band.unwrap_or(BandPlace::Inside)) {
-            (None, _) | (Some(_), BandPlace::Hidden) => body(None, (0, 0), width, height, &mut shapes),
+            (None, _) | (Some(_), BandPlace::Hidden) => body_of(drawn.as_ref(), None, (0, 0), width, height, &mut shapes),
             // On the block, 12 high, without moving it: its corner, its size and its lines stay.
             (Some(text), BandPlace::Above) if !top_side => {
                 let band_height = style::band_height();
@@ -850,7 +842,7 @@ impl Sizer<'_> {
                 });
                 shapes.push(text.centred(width / 2, -band_height / 2, "band.text"));
                 above = band_height;
-                body(None, (0, 0), width, height, &mut shapes)
+                body_of(drawn.as_ref(), None, (0, 0), width, height, &mut shapes)
             }
             (Some(text), _) if top_side => {
                 // In the widest gap between the terminals of the top side, cut to it.
@@ -870,9 +862,9 @@ impl Sizer<'_> {
                     });
                 let cells = cells_in(to - from, small());
                 let cut = if cells == 0 { Text::new("", 1, small()) } else { Text::new(&text.shown.text(), cells, small()) };
-                body(Some(&cut), (from, width - to), width, height, &mut shapes)
+                body_of(drawn.as_ref(), Some(&cut), (from, width - to), width, height, &mut shapes)
             }
-            (Some(text), _) => body(Some(&text), band_insets(node), width, height, &mut shapes),
+            (Some(text), _) => body_of(drawn.as_ref(), Some(&text), band_insets(node), width, height, &mut shapes),
         };
         // The centre: the icon, scaled down to what a small block leaves, never up; else the name, cut to the width.
         let centre = top + (height - top) / 2;
@@ -904,7 +896,7 @@ impl Sizer<'_> {
         let mut inputs = Vec::with_capacity(node.inputs.len());
         let mut tops: Vec<(i64, Text, Family)> = Vec::new();
         for (index, (terminal_of, at)) in node.inputs.iter().zip(&places.inputs).enumerate() {
-            let (x, y) = places.at(*at);
+            let (x, y) = start(index).unwrap_or_else(|| places.at(*at));
             shapes.extend(terminal(terminal_of.family, x, y, 100, false));
             inputs.push((x, y));
             match at.0 {
@@ -946,8 +938,8 @@ impl Sizer<'_> {
             placed.push((start, end, bottom));
         }
         let mut outputs = Vec::with_capacity(node.outputs.len());
-        for (output, at) in node.outputs.iter().zip(&places.outputs) {
-            let (x, y) = places.at(*at);
+        for (index, (output, at)) in node.outputs.iter().zip(&places.outputs).enumerate() {
+            let (x, y) = start(node.inputs.len() + index).unwrap_or_else(|| places.at(*at));
             shapes.extend(terminal(output.family, x, y, 100, output.ignored));
             match at.0 {
                 BlockSide::Left => shapes.push(chevron(x - half - 400, y, (-1, 0))),
@@ -957,7 +949,9 @@ impl Sizer<'_> {
             outputs.push((x, y));
         }
         let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
-        let order = self.compact_marks(node, width, height, &mut shapes);
+        // The `after:` terminal starts where the outline crosses its place, wherever that is (11.4).
+        let after = drawn.as_ref().and_then(|(drawn, _)| crossing(drawn, BlockSide::Top, style::grid()));
+        let order = self.compact_marks_at(node, width, height, after, &mut shapes);
         // A lane above the block for each wire of a terminal off its default side: the outputs first, then the inputs.
         let (mut lane, mut beside_left, mut beside_right) = (0_i64, 0_i64, 0_i64);
         let gap = style::wire_gap();
@@ -976,9 +970,12 @@ impl Sizer<'_> {
         let lanes_out: Vec<Option<Lane>> = places.outputs.iter().map(|at| take(at.0, BlockSide::Right)).collect();
         let lanes_in: Vec<Option<Lane>> = places.inputs.iter().map(|at| take(at.0, BlockSide::Left)).collect();
         let over = over + lane * gap;
+        let (reach_left, reach_right, reach_top) = drawn.as_ref().map_or((0, 0, 0), |(drawn, _)| (drawn.left, drawn.right, drawn.top));
+        let (left, right, over) = (left.max(reach_left + half), right.max(reach_right + half), over.max(reach_top));
         Sized {
             lanes: (lanes_in, lanes_out),
             held: places.held.clone(),
+            reach: (reach_left, reach_right, reach_top),
             // The wires that run up beside a side, and the chevrons, reach out that far.
             left: left.max(if beside_left > 0 { half + beside_left * gap } else { 0 }),
             right: right.max(if beside_right > 0 { half + beside_right * gap } else { 0 }),
@@ -1019,6 +1016,11 @@ impl Sizer<'_> {
     /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal, whose
     /// centre it gives.
     fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
+        self.compact_marks_at(node, width, height, None, shapes)
+    }
+
+    /// The same, the `after:` terminal at `after` when an outline moves it, else on the top edge 8 from the left.
+    fn compact_marks_at(&self, node: &Node<'_>, width: i64, height: i64, after: Option<(i64, i64)>, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
         if node.always {
             let mark = Text::new("\u{25B4}", 1, medium());
             shapes.push(mark.centred(width / 2, always_top(height) + line_height(medium()) / 2, "node.title"));
@@ -1026,8 +1028,9 @@ impl Sizer<'_> {
         if !node.after {
             return None;
         }
-        shapes.push(order_terminal(style::grid(), 0));
-        Some((style::grid(), 0))
+        let (x, y) = after.unwrap_or((style::grid(), 0));
+        shapes.push(order_terminal(x, y));
+        Some((x, y))
     }
 
     /// A construction, a variant constructor or a node of `ui`: as wide as its label, never a square (notation 3.2). Its

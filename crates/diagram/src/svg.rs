@@ -150,6 +150,7 @@ pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> S
         let _ = writeln!(out, "<rect width=\"{width}\" height=\"{height}\" style=\"fill: var(--canvas-fill)\"/>");
     }
     let icons = icons(drawing, &mut out);
+    outlines(drawing, &mut out);
     for shape in &drawing.loose {
         write_shape(shape, &icons, &mut out);
     }
@@ -255,6 +256,19 @@ fn runs(runs: &[Run], out: &mut String) {
 /// Each icon once, as a `<symbol>` that the nodes `<use>`, so that an SVG holds an icon once however many calls show
 /// it. Its id is a hash of what it draws, so that two SVGs inlined in one page share a symbol when they draw the same
 /// icon; two different icons of one SVG whose hashes meet are told apart by a suffix.
+/// The outlines of the blocks, each once, which their calls use (`Shape::Outline`): unpainted, so that each use paints it.
+fn outlines(drawing: &Drawing, out: &mut String) {
+    if drawing.outlines.is_empty() {
+        return;
+    }
+    out.push_str("<defs>\n");
+    for (index, points) in drawing.outlines.iter().enumerate() {
+        let points: Vec<String> = points.iter().map(|(x, y)| format!("{},{}", n(*x), n(*y))).collect();
+        let _ = writeln!(out, "<polygon id=\"outline-{index}\" points=\"{}\"/>", points.join(" "));
+    }
+    out.push_str("</defs>\n");
+}
+
 fn icons(drawing: &Drawing, out: &mut String) -> Vec<String> {
     if drawing.icons.is_empty() {
         return Vec::new();
@@ -324,6 +338,9 @@ fn write_shape(shape: &Shape, icons: &[String], out: &mut String) {
             let _ = write!(out, "<text x=\"{}\" y=\"{}\" font-size=\"{}\"", n(*x), n(*y), decimal(i128::from(*size), 2));
             runs(text, out);
             out.push_str("</text>\n");
+        }
+        Shape::Outline { x, y, outline, paint, .. } => {
+            let _ = writeln!(out, "<use href=\"#outline-{outline}\" x=\"{}\" y=\"{}\" style=\"{}\"/>", n(*x), n(*y), style(paint));
         }
         Shape::Icon { x, y, side, icon } => {
             let Some(id) = icons.get(*icon) else { return };
