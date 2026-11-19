@@ -122,6 +122,16 @@ pub enum Shape {
         closed: bool,
         paint: Paint,
     },
+    /// The outline of a block (spec 11.4), closed, at `(x, y)`: its points, from that corner, are those of
+    /// `Drawing::outlines` at the index `outline`, which every call of one function at one size shares. `extent` is the
+    /// box of the points, `(left, top, right, bottom)` from that corner.
+    Outline {
+        x: i64,
+        y: i64,
+        outline: usize,
+        extent: (i64, i64, i64, i64),
+        paint: Paint,
+    },
     /// A text in logical order, isolated, left to right (notation 2.3): `x` its start, `y` its baseline, `size` in
     /// hundredths, `width` what its cells take.
     Text {
@@ -613,6 +623,9 @@ pub struct Drawing {
     pub groups: Vec<Group>,
     /// The icons that the shapes show, each once.
     pub icons: Vec<IconDrawing>,
+    /// The outlines of blocks that the shapes show (`Shape::Outline`), each once.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub outlines: Vec<Vec<(i64, i64)>>,
     /// Where each node is, by the key that follows it across a change of the file (notation 2.1): for the glide of
     /// the canvas, and the figure of stability. Not in the SVG.
     pub placed: Vec<Placed>,
@@ -759,6 +772,10 @@ pub struct Placed {
     /// place: a terminal moved by hand cannot take them (notation 2.4). Empty otherwise.
     #[cfg_attr(feature = "serde", serde(default))]
     pub held: Vec<(String, u32)>,
+    /// How far the outline of its block reaches outside its box, by its pieces (spec 11.4): on the left, the right and
+    /// the top, in hundredths. The marks around a block go around them (notation 3.2).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub reach: (i64, i64, i64),
 }
 
 /// The token of a run of text, from its ink (notation 2.3).

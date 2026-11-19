@@ -14,11 +14,12 @@
 //! recursive step. Tokens are read one at a time, since a file of 16 MiB can hold 8 million of them.
 
 use labcraft_graph::{
-    Arg, Arm, ArrayType, Attached, BandPlace, Binding, BlockPlace, BlockSide, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind,
-    Constant, Decl, EnumType, Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather, Generic, Icon, IconItem,
-    IconShape, Id, IntBound, Label, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel,
-    PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature, SourceMap, Statement, StatementKind, StructLit, StructType, Target,
-    TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
+    Anchor, Arg, Arm, ArrayType, Attached, BandPlace, Binding, BlockPlace, BlockSide, Body, Branching, Call, Carry, Clause, ClauseKind, Comment,
+    CommentKind, Constant, Coordinate, Corner, Decl, EnumType, Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather,
+    Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Offset,
+    Operand, OrderRef, Outline, OutlineItem, OutlineKind, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature,
+    Signed, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl,
+    TypeExpr, UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
 };
 use labcraft_types::{Code, Diagnostic, Fix, Interner, Limits, Name, Position, Report, Span};
 
@@ -221,6 +222,7 @@ impl<'a> Parser<'a, '_> {
             T::Slash => "`/`".to_owned(),
             T::Caret => "`^`".to_owned(),
             T::Minus => "`-`".to_owned(),
+            T::Plus => "`+`".to_owned(),
             T::Question => "`?`".to_owned(),
         }
     }
@@ -485,14 +487,15 @@ impl<'a> Parser<'a, '_> {
         let panel = self.section(K::Panel, Self::panel)?;
         let layout = self.section(K::Layout, Self::layout)?;
         let terminals = self.terminals_section()?;
+        let outline = self.outline_section()?;
         let icon = self.section(K::Icon, Self::icon)?;
         self.skip_lines(false)?;
         if self.raw()?.is_some() {
             return Err(self.unexpected(
-                "the end of the file, since a file has one declaration and its sections in this order: `panel`, `layout`, `terminals`, `icon`",
+                "the end of the file, since a file has one declaration and its sections in this order: `panel`, `layout`, `terminals`, `outline`, `icon`",
             ));
         }
-        Ok(File { version, header_comment, use_comments, uses, decl, panel, layout, terminals, icon, end: self.take_pending() })
+        Ok(File { version, header_comment, use_comments, uses, decl, panel, layout, terminals, outline, icon, end: self.take_pending() })
     }
 
     /// `terminals`, a contextual word (14.1): a section only where a section can start.
@@ -502,6 +505,17 @@ impl<'a> Parser<'a, '_> {
             return Ok(None);
         }
         let section = self.terminals()?;
+        self.end_line("a section")?;
+        Ok(Some(section))
+    }
+
+    /// `outline`, a contextual word (14.1), as `terminals`.
+    fn outline_section(&mut self) -> Parse<Option<Outline>> {
+        self.skip_lines(false)?;
+        if !self.at_word("outline")? {
+            return Ok(None);
+        }
+        let section = self.outline()?;
         self.end_line("a section")?;
         Ok(Some(section))
     }
@@ -2013,6 +2027,118 @@ impl<'a> Parser<'a, '_> {
         let id = self.place(start);
         let comments = self.end_item(before)?;
         Ok(TerminalsItem { id, comments, kind })
+    }
+
+    fn outline(&mut self) -> Parse<Outline> {
+        let (before, start) = self.section_start()?;
+        self.bump();
+        self.open_section()?;
+        let (items, end) = self.section_items("`path`, `template`, `top`, `left`, `right` or `}`", Self::outline_item)?;
+        self.bump();
+        let id = self.place(start);
+        let comments = self.end_item(before)?;
+        Ok(Outline { id, comments, items, end })
+    }
+
+    /// `path (0, 0) (w, 0) round 4 (w, h)`, `right terminal { path (0, -4) (-4, 0) (0, 4) }`, `template d` (14.6).
+    fn outline_item(&mut self) -> Parse<OutlineItem> {
+        let before = self.begin_item();
+        let start = self.start()?;
+        let kind = if self.eat_word("template")? {
+            OutlineKind::Template(self.name("the name of a template, `d` or `block`")?.0)
+        } else if self.eat_word("path")? {
+            let mut corners = Vec::new();
+            while corners.len() < 3 || self.at(T::LeftParen)? {
+                corners.push(self.corner()?);
+            }
+            OutlineKind::Path(corners)
+        } else {
+            let word = match self.peek_kind()? {
+                Some(T::Name(word)) => Some(word),
+                _ => None,
+            };
+            let Some(side) = word.and_then(|word| BlockSide::from_word(self.resolve(word))) else {
+                return Err(self.unexpected("`path`, `template`, `top`, `left` or `right`"));
+            };
+            self.bump();
+            if !self.eat_word("terminal")? {
+                return Err(self.unexpected("`terminal`"));
+            }
+            self.open(T::LeftBrace, "`{`")?;
+            if !self.eat_word("path")? {
+                return Err(self.unexpected("`path`"));
+            }
+            let mut points = Vec::new();
+            while points.len() < 3 || self.at(T::LeftParen)? {
+                points.push(self.offset()?);
+            }
+            self.close(T::RightBrace, "a point of the piece or `}`")?;
+            OutlineKind::Piece { side, points }
+        };
+        let id = self.place(start);
+        let comments = self.end_item(before)?;
+        Ok(OutlineItem { id, comments, kind })
+    }
+
+    /// `(w - 8, 0) round 4`.
+    fn corner(&mut self) -> Parse<Corner> {
+        self.open(T::LeftParen, "a corner, `(`")?;
+        let x = self.coordinate()?;
+        self.expect(T::Comma, "`,`")?;
+        let y = self.coordinate()?;
+        self.close(T::RightParen, "`)`")?;
+        let round = if self.eat_word("round")? { Some(self.digits("the radius of the corner")?) } else { None };
+        Ok(Corner { x, y, round })
+    }
+
+    /// `16`, `w`, `x + 2`, `h - 8`.
+    fn coordinate(&mut self) -> Parse<Coordinate> {
+        let base = match self.peek_kind()? {
+            Some(T::Int(text)) => {
+                self.bump();
+                return Ok(Coordinate { base: Anchor::Number(self.intern(text)), shift: None });
+            }
+            Some(T::Name(name)) => {
+                self.bump();
+                Anchor::Name(name)
+            }
+            _ => return Err(self.unexpected("a coordinate: an integer, `w`, `h` or the name of a terminal")),
+        };
+        let minus = if self.eat(T::Minus)? {
+            true
+        } else if self.eat(T::Plus)? {
+            false
+        } else {
+            return Ok(Coordinate { base, shift: None });
+        };
+        let digits = self.digits("an integer after `+` or `-`")?;
+        Ok(Coordinate { base, shift: Some((minus, digits)) })
+    }
+
+    /// `(0, -4)`.
+    fn offset(&mut self) -> Parse<Offset> {
+        self.open(T::LeftParen, "a point of the piece, `(`")?;
+        let out = self.signed()?;
+        self.expect(T::Comma, "`,`")?;
+        let along = self.signed()?;
+        self.close(T::RightParen, "`)`")?;
+        Ok(Offset { out, along })
+    }
+
+    fn signed(&mut self) -> Parse<Signed> {
+        let negative = self.eat(T::Minus)?;
+        Ok(Signed { negative, digits: self.digits("an integer")? })
+    }
+
+    /// An integer, its digits as written.
+    fn digits(&mut self, expected: &str) -> Parse<Name> {
+        match self.peek_kind()? {
+            Some(T::Int(text)) => {
+                self.bump();
+                Ok(self.intern(text))
+            }
+            _ => Err(self.unexpected(expected)),
+        }
     }
 
     fn icon(&mut self) -> Parse<Icon> {

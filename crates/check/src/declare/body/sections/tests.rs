@@ -670,6 +670,27 @@ terminals {{
     }
 }
 
+/// Worked out by hand from spec 11.2 and notation 3.1: `f` has three lines of terminals, `a` beside `y`, `b`, then the
+/// `err` pair, so a side that grows holds 4 places, 5 with a `middle`, whose middle is place 3 (#250).
+#[test]
+fn a_middle_or_a_last_on_a_side_that_grows_takes_its_place_before_a_number() {
+    for (lines, refused) in [
+        // 5 places: `middle` is 3, which `a` takes first, in signature order.
+        ("left middle a\nleft 3 b", "`b`"),
+        // `left 4 b` makes the side 4 places, whose last is 4.
+        ("left last a\nleft 4 b", "`b`"),
+        // A pair named alone on the middle takes the same place of the facing side, before an output.
+        ("left middle err\nright 3 y", "`y`"),
+    ] {
+        let found = judged(&format!("{BLOCK_FUNCTION}\n\nterminals {{\n{lines}\n}}"));
+        assert_eq!(found.len(), 1, "{lines}: {found:?}");
+        assert!(found.iter().all(|(code, message)| *code == "LC5014" && message.contains(refused)), "{lines}: {found:?}");
+    }
+    // On a place that the middle leaves free, both apply.
+    assert_eq!(block("left middle a\nleft 4 b"), NOTHING);
+    assert_eq!(block("left middle a\nright 3 y"), NOTHING);
+}
+
 #[test]
 fn a_middle_counts_only_on_a_line_that_names_a_terminal() {
     // `top middle zz` names no terminal (LC5014): it does not make the top side odd, so the default 4 places stay 4 and
@@ -681,4 +702,84 @@ top 5 a"
         ),
         ["LC5014", "LC5014"]
     );
+}
+
+// The `outline` section (11.4). `f` has 3 lines of terminals: its block is 40 × 40, `a` on the left at 8, `b` at 16, the
+// `err` pair on the last place, 32, and `y` on the right at 8.
+
+fn outline(items: &str) -> Vec<&'static str> {
+    with(BLOCK_FUNCTION, &format!("outline {{\n{items}\n}}"))
+}
+
+#[test]
+fn a_clean_outline_says_nothing() {
+    assert_eq!(outline("template d"), NOTHING);
+    assert_eq!(outline("template block"), NOTHING);
+    assert_eq!(outline("path (0, 0) (w, 0) round 4 (w, h) (0, h)\nright terminal { path (0, -2) (4, 0) (0, 2) }"), NOTHING);
+    // A coordinate anchored on a terminal of the left side, as a height.
+    assert_eq!(outline("path (4, 0) (w, 0) (w, h) (4, h) (0, b + 2) (0, b - 2)"), NOTHING);
+}
+
+#[test]
+fn an_outline_that_cannot_be_read_as_one_is_an_error() {
+    for items in ["template d\ntemplate block", "template d\npath (0, 0) (w, 0) (w, h)", "template e", "path (0, 0) (w, 0) round 17 (w, h)"] {
+        assert_eq!(outline(items), ["LC5016"], "{items}");
+    }
+}
+
+#[test]
+fn an_outline_that_breaks_a_guard_at_the_size_of_its_section_is_a_warning() {
+    for items in [
+        "path (0, 0) (w, 0) (w, 41) (0, h)",
+        "path (0, 0) (w, zz) (w, h) (0, h)",
+        "path (0, 0) (w, h) (w, 0) (0, h)",
+        "path (8, 0) (w, 0) (w, h) (8, h)",
+    ] {
+        assert_eq!(outline(items), ["LC5017"], "{items}");
+    }
+    // The size of the section counts: `left 5` makes the block 48 high.
+    assert_eq!(with(BLOCK_FUNCTION, "terminals {\n    left 5\n}\n\noutline {\n    path (0, 0) (w, 0) (w, 48) (0, h)\n}"), NOTHING);
+    assert_eq!(with(BLOCK_FUNCTION, "terminals {\n    left 5\n}\n\noutline {\n    path (0, 0) (w, 0) (w, 49) (0, h)\n}"), ["LC5017"]);
+}
+
+/// The diagnostics of a library of several files, each with its own name.
+fn judged_files(files: &[(&str, &str)]) -> Vec<(String, &'static str)> {
+    let mut names = Interner::new();
+    let files = files
+        .iter()
+        .map(|(shown, text)| SourceFile {
+            shown: (*shown).to_owned(),
+            content: Content::Bytes(Cow::Owned(format!("labcraft 1\n\nuse core\n\n{text}\n").into_bytes())),
+        })
+        .collect();
+    let source = LibrarySource { files, ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+    let mut report = check(source, &Nothing, &mut names, &Limits::default()).report;
+    report.finish();
+    report.diagnostics().iter().map(|diagnostic| (diagnostic.file.clone(), diagnostic.code().as_str())).collect()
+}
+
+#[test]
+fn an_outline_is_judged_at_the_size_of_each_call_once_for_its_item() {
+    // `g` has 2 lines of terminals with one value of `rest`: 40 high, a rectangle with its corner (0, 40) on (0, h). A call
+    // with 5 values has 6 lines: 56 high (4 places grow by two to 6), and the last value of `rest`, on the left at 48,
+    // meets the outline at 20 from the left edge: past 4 (11.4). Two such calls give one warning, in the file of `g`.
+    let g = "fn g(first: f64, rest: f64...) -> (y: f64) {\n    y = first\n}\n\noutline {\n    path (0, 0) (w, 0) (w, h) (0, 40)\n}";
+    let small = "fn small(x: f64) -> (y: f64) {\n    y = g(x, 1.0)\n}";
+    assert_eq!(judged_files(&[("g.lcf", g), ("small.lcf", small)]), []);
+    let large = "fn large(x: f64) -> (y: f64, z: f64) {\n    y = g(x, 1.0, 2.0, 3.0, 4.0, 5.0)\n    z = g(x, 5.0, 4.0, 3.0, 2.0, 1.0)\n}";
+    assert_eq!(judged_files(&[("g.lcf", g), ("large.lcf", large)]), [("g.lcf".to_owned(), "LC5017")]);
+}
+
+#[test]
+fn a_line_on_a_side_that_grows_is_judged_at_the_size_of_each_call() {
+    // `g(a, b, rest...)` with `left middle a` and `left 5 b` (#250). Worked out by hand from spec 11.2:
+    // - one value of `rest`: 3 lines, at least 5 places for `left 5`, so 6, odd with the middle: 7; the middle is 4, and
+    //   `b` keeps 5: nothing to say;
+    // - five values: 7 lines, so 8, odd: 9; the middle is 5, which `a` takes first, in signature order: `b` keeps its
+    //   default place, one LC5014 in the file of `g`, once for two such calls.
+    let g = "fn g(a: f64, b: f64, rest: f64...) -> (y: f64) {\n    y = a\n}\n\nterminals {\n    left middle a\n    left 5 b\n}";
+    let one = "fn one(x: f64) -> (y: f64) {\n    y = g(x, x, x)\n}";
+    assert_eq!(judged_files(&[("g.lcf", g), ("one.lcf", one)]), []);
+    let five = "fn five(x: f64) -> (y: f64, z: f64) {\n    y = g(x, x, x, x, x, x, x)\n    z = g(x, x, 1.0, 2.0, 3.0, 4.0, 5.0)\n}";
+    assert_eq!(judged_files(&[("g.lcf", g), ("five.lcf", five)]), [("g.lcf".to_owned(), "LC5014")]);
 }

@@ -1,5 +1,5 @@
-//! Pass 6 (`docs/architecture.md`, section 5): the `panel`, `layout`, `terminals` and `icon` sections of a function (spec 10, 11, 11.2,
-//! 11.1).
+//! Pass 6 (`docs/architecture.md`, section 5): the `panel`, `layout`, `terminals`, `outline` and `icon` sections of a function (spec 10, 11, 11.2,
+//! 11.4, 11.1).
 //!
 //! A `layout` entry is matched against the wires of the function, as the diagram draws them: a wire carries a value to an input of a
 //! node, and a value from outside a structure crosses each edge on its way, one wire per frame, each with its own route. The entries wait
@@ -55,6 +55,8 @@ pub(in crate::declare) fn only_this_pass(code: Code) -> bool {
             | Code::Lc5009
             | Code::Lc5014
             | Code::Lc5015
+            | Code::Lc5016
+            | Code::Lc5017
     )
 }
 
@@ -105,6 +107,14 @@ pub(super) fn judge_sections<'a>(
         for (code, message, id) in problems {
             sections.say(code, message, id, Vec::new());
         }
+        // A side that grows is judged at every size that the block takes, once every body is resolved (`outlines`).
+    }
+    if let Some(outline) = &file.outline {
+        let (_, problems) = crate::outline::read(outline, sections.names());
+        for (code, message, id) in problems {
+            sections.say(code, message, id, Vec::new());
+        }
+        // Its geometry, at every size that the block takes, once every body is resolved (`outlines`).
     }
     if let Some(icon) = &file.icon {
         icon::judge(&mut sections, icon);
@@ -135,6 +145,8 @@ impl<'a> Sections<'_, 'a> {
     fn here(&self, message: String, id: Id) -> Related {
         Related { message, file: self.scope.file.shown.clone(), span: self.scope.model.source_map.span(id) }
     }
+
+    // The terminals of the block (11.2).
 
     // The panel (10).
 

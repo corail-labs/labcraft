@@ -266,7 +266,7 @@ fn title(kind: &Kind<'_>) -> String {
 /// shapes, then the extent of the whole and its margin.
 fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<&labcraft_types::TypeTable>) -> Drawing {
     let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
-    let mut sized = sizes(graph, names, view, &mut drawing.icons);
+    let mut sized = sizes(graph, names, view, &mut drawing.icons, &mut drawing.outlines);
     let titles = titles(graph, view);
     let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
     drawing.warnings = overlapping(graph, &sized, &placement);
@@ -282,8 +282,14 @@ fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<
 
 /// The size of each node in its view (notation 3), the icons it shows added to `icons_drawn`, each once; the pill of a
 /// wire widens the room left of its reader.
-fn sizes(graph: &Graph<'_>, names: &Interner, view: &ViewState, icons_drawn: &mut Vec<IconDrawing>) -> Vec<size::Sized> {
-    let sizer = Sizer { names, standard_everywhere: view.standard_everywhere };
+fn sizes(
+    graph: &Graph<'_>,
+    names: &Interner,
+    view: &ViewState,
+    icons_drawn: &mut Vec<IconDrawing>,
+    outlines_drawn: &mut Vec<Vec<(i64, i64)>>,
+) -> Vec<size::Sized> {
+    let sizer = Sizer::new(names, view.standard_everywhere);
     let bands = bands(graph);
     // Each icon once in the drawing, however many calls show it.
     let mut icons: HashMap<*const labcraft_graph::Icon, usize> = HashMap::new();
@@ -304,6 +310,8 @@ fn sizes(graph: &Graph<'_>, names: &Interner, view: &ViewState, icons_drawn: &mu
             sizer.size(node, bands.get(index).and_then(Option::as_ref), icon)
         })
         .collect();
+    // Each outline once, however many calls show it.
+    *outlines_drawn = sizer.outlines_drawn.take();
     // The pill of a wire stands left of its reader, as the pill of an inline constant does (notation 3.2).
     for (&(body, wire), pill) in &graph.pills {
         let Some(graph::End::Node { node, .. }) = graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to) else { continue };
@@ -481,6 +489,7 @@ fn shapes(
                 _ => String::new(),
             },
             held: sized.held.iter().map(|(side, place)| (side.word().to_owned(), *place)).collect(),
+            reach: sized.reach,
         });
         let placed = Some(drawing.placed.len() - 1);
         let half = style::terminal() / 2;
@@ -1146,6 +1155,7 @@ pub fn extent(shape: &Shape) -> (i64, i64, i64, i64) {
         }
         Shape::Text { x, y, size, width, .. } => (*x, y - size::line_height(*size), x + width, *y),
         Shape::Icon { x, y, side, .. } => (*x, *y, x + side, y + side),
+        Shape::Outline { x, y, extent: (left, top, right, bottom), .. } => (x + left, y + top, x + right, y + bottom),
         Shape::Wire { points, style } => {
             let half = style.width.max(600) / 2;
             let (a, b, c, d) =
@@ -1171,6 +1181,7 @@ fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
             ground: ground.map(|ground| Ground { x: ground.x + dx, y: ground.y + dy, ..ground }),
         },
         Shape::Icon { x, y, side, icon } => Shape::Icon { x: x + dx, y: y + dy, side, icon },
+        Shape::Outline { x, y, outline, extent, paint } => Shape::Outline { x: x + dx, y: y + dy, outline, extent, paint },
         Shape::Wire { points, style } => Shape::Wire { points: points.into_iter().map(|(x, y)| (x + dx, y + dy)).collect(), style },
     }
 }

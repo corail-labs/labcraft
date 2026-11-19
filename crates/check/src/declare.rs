@@ -104,6 +104,8 @@ pub struct DeclaredFunction {
     pub icon: Option<Icon>,
     /// The `terminals` section of its file (spec 11.2), moved here as its icon is.
     pub terminals: Option<labcraft_graph::Terminals>,
+    /// The `outline` section of its file (spec 11.4), likewise.
+    pub outline: Option<labcraft_graph::Outline>,
     /// The default of each parameter as the text writes it, stopped past 200 bytes: what the tooltip of a terminal that
     /// no argument wires says (notation 3.2), whichever library declares it.
     pub defaults: Vec<Option<String>>,
@@ -1017,6 +1019,7 @@ impl<'a> Pass<'a> {
                         file: at,
                         icon: None,
                         terminals: None,
+                        outline: None,
                         ..self.declare_function(function.name, &function.signature, scope, None)
                     };
                     keep_the_first(&mut functions, function.name, declared, copy);
@@ -1026,6 +1029,7 @@ impl<'a> Pass<'a> {
                         file: at,
                         icon: None,
                         terminals: None,
+                        outline: None,
                         ..self.declare_function(function.name, &function.signature, scope, Some(function.id))
                     };
                     keep_the_first(&mut functions, function.name, declared, copy);
@@ -1165,6 +1169,7 @@ impl<'a> Pass<'a> {
             file: None,
             icon: None,
             terminals: None,
+            outline: None,
             defaults,
         }
     }

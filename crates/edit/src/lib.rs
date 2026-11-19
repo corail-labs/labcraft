@@ -373,7 +373,12 @@ pub enum Op {
         file: String,
         band: Option<labcraft_graph::BandPlace>,
     },
-    /// `block.reset`: the `terminals` section goes.
+    /// `block.set_outline`: the items of the section, one per line; `None` removes it.
+    BlockSetOutline {
+        file: String,
+        outline: Option<String>,
+    },
+    /// `block.reset`: the `terminals` and `outline` sections go.
     BlockReset {
         file: String,
     },
@@ -474,6 +479,7 @@ impl Op {
             | Op::BlockSetTerminal { file, .. }
             | Op::BlockSetSize { file, .. }
             | Op::BlockSetBand { file, .. }
+            | Op::BlockSetOutline { file, .. }
             | Op::BlockReset { file } => file,
         }
     }
@@ -832,6 +838,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::BlockSetTerminal { terminal, at, .. } => block::set_terminal(&mut edit, terminal, *at, &mut edited)?,
         Op::BlockSetSize { top, left, .. } => block::set_size(&mut edit, *top, *left)?,
         Op::BlockSetBand { band, .. } => block::set_band(&mut edit, *band)?,
+        Op::BlockSetOutline { outline, .. } => block::set_outline(&mut edit, outline.as_deref())?,
         Op::BlockReset { .. } => block::reset(&mut edit)?,
     }
     let new_text = route::follow(path, text, edit.finish()?, judge, limits)?;

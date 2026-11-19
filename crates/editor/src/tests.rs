@@ -221,6 +221,7 @@ fn a_new_drawing_glides_then_shows_its_wires() {
 fn the_glide_eases_from_the_old_place() {
     let old = Drawing {
         placed: vec![labcraft_diagram::Placed {
+            reach: (0, 0, 0),
             key: "a".into(),
             x: 1000,
             y: 0,

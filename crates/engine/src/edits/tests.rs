@@ -984,3 +984,23 @@ fn a_library_bytes_of_a_lib_path_replaces_the_primitive_too() {
     ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "bytes.from_u16" }));
     assert!(text(&memory, "/p/f.lcf").contains("    data, _ = bytes.from_u16()\n"), "{}", text(&memory, "/p/f.lcf"));
 }
+
+#[test]
+fn an_outline_is_written_and_null_removes_it() {
+    // commands.md, `block.set_outline`: the items in canonical form; `null` removes the section.
+    let (mut session, memory) = session();
+    ok(&mut session, "block.set_outline", json!({ "file": "f.lcf", "outline": "template d" }));
+    assert_eq!(text(&memory, "/p/f.lcf"), format!("{START}\noutline {{\n    template d\n}}\n"));
+    ok(&mut session, "block.set_outline", json!({ "file": "f.lcf", "outline": null }));
+    assert_eq!(text(&memory, "/p/f.lcf"), START);
+    // Items that close the section and open another one are refused.
+    let agent = Author::Agent("test".to_owned());
+    let error = refused(
+        &mut session,
+        &agent,
+        "block.set_outline",
+        json!({ "file": "f.lcf", "outline": "template d\n}\n\nicon 32 {\n    line (2, 2) (30, 30)" }),
+    );
+    assert_eq!((error.code, error.parameter.as_deref()), ("params.invalid", Some("outline")));
+    assert_eq!(text(&memory, "/p/f.lcf"), START);
+}

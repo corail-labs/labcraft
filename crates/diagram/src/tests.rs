@@ -196,7 +196,7 @@ fn titles(sized: &crate::size::Sized) -> Vec<String> {
 fn a_compact_block_has_the_width_of_the_square() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let band = labcraft_types::text::ShownText::plain("dev");
     let size_of = |key: &str| {
         let node = graph.nodes.iter().find(|node| node.key == key).unwrap();
@@ -245,7 +245,7 @@ fn a_name_holds_on_two_lines_of_the_block() {
         let callee = format!("labcraft 1\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = x\n}}\n");
         let (checked, names) = checked(&[("main.lcf", &source), (&format!("{name}.lcf"), &callee)]);
         let graph = graph(&checked, &names, "main.lcf");
-        titles(&Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None))
+        titles(&Sizer::new(&names, false).size(&graph.nodes[0], None, None))
     };
     assert_eq!(cut_of("open"), ["open"]);
     assert_eq!(cut_of("a_b"), ["a_b"]);
@@ -284,7 +284,7 @@ fn a_primitive_has_its_size_whatever_a_call_wires() {
     let source = "labcraft 1\n\nuse errors\nuse time\n\nfn main(e: error) -> (a: error, b: error, c: error) {\n    a = time.wait(1 s)\n    b = time.wait(1 s, err: e)\n    c = errors.merge()\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let of = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
     for key in ["a", "b"] {
         assert_eq!(of(key).inputs.iter().map(|input| input.family.base).collect::<Vec<_>>(), [Base::Number, Base::Error], "{key}");
@@ -306,7 +306,7 @@ fn a_block_grows_by_its_lines_only() {
         let source = format!("labcraft 1\n\nfn main(x: f64) -> (y: f64) {{\n    y = many({})\n}}\n", vec!["x"; count].join(", "));
         let (checked, names) = checked(&[("main.lcf", &source), ("many.lcf", &callee)]);
         let graph = graph(&checked, &names, "main.lcf");
-        Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None)
+        Sizer::new(&names, false).size(&graph.nodes[0], None, None)
     };
     let four = size_of(4);
     // Four lines 8 apart need 8 + 24 + 8 = 40: the square.
@@ -338,7 +338,7 @@ fn a_block_of_five_lines_grows_by_two_places() {
         let (checked, names) = checked(&[("main.lcf", source), ("wide.lcf", callee)]);
         assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
         let graph = graph(&checked, &names, "main.lcf");
-        let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+        let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
         // 8, 16, 24, 32 for `a` (with `y`), `b`, `c`, `d`; 56 - 8 = 48 for the `err` pair.
         assert_eq!((sized.width, sized.height), (4000, 5600));
         assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4800)]);
@@ -355,7 +355,7 @@ fn an_oblong_takes_the_places_of_a_square() {
     let (checked, names) = checked(&[("main.lcf", source), ("Five.lct", ty)]);
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
     assert_eq!(sized.height, 5600);
     assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4000)]);
 }
@@ -368,7 +368,7 @@ fn neighbouring_pills_step_outward() {
     let source = "labcraft 1\n\nfn main() -> (y: f64) {\n    y = three(1.0, 2.0, 3.0)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source), ("three.lcf", callee)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
     // Lines at 8, 16 and 24. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
     // end 8 left of the half terminal of 6: -11; it starts at -37.06. The second, 8 lower, under 14, ends 8 left of that,
     // -45.06, and starts at -71.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
@@ -394,7 +394,7 @@ fn a_primitive_is_a_d() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, ok: bool) -> (y: f64, z: f64, w: f64) {\n    y = core.add(a, b)\n    z = core.select(ok, 1.0, 0.0)\n    w = core.neg(a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let node = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
     let add = sizer.size(node("y"), None, None);
     assert_eq!((add.width, add.height), (3200, 3200));
@@ -422,7 +422,7 @@ fn a_long_unit_widens_the_d() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[kg/(m*s)]) {\n    y = core.with_unit(a, [kg/(m*s)])\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
     // `[kg/(m*s)]`, 10 cells at 10: 10 × 1233 × 10 / 2048 = 60.21, and 3 on each side, 66.21: 72 on the grid.
     assert_eq!((sized.width, sized.height), (7200, 3200));
     assert_eq!(sized.outputs, [(7200, 1600)]);
@@ -434,7 +434,7 @@ fn a_long_unit_widens_the_d() {
 fn a_standard_block_has_the_numbers_of_step_2() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer { names: &names, standard_everywhere: true };
+    let sizer = Sizer::new(&names, true);
     let raw = graph.nodes.iter().find(|node| node.key == "raw").unwrap();
     let sized = sizer.size(raw, None, None);
     // Four lines: 40 + 3 × 24 + 16 = 128.
@@ -457,7 +457,7 @@ fn a_constant_shows_its_controls_by_their_signs() {
     let graph = graph(&checked, &names, "main.lcf");
     let node = &graph.nodes[0];
     assert_eq!(node.inputs[1].constant.as_deref(), Some("\"x\ny\""));
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(node, None, None);
+    let sized = Sizer::new(&names, false).size(node, None, None);
     let pills: Vec<String> = sized
         .shapes
         .iter()
@@ -543,7 +543,7 @@ fn a_name_is_centred_on_its_block() {
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(node, Some(&wide), None);
+    let sized = Sizer::new(&names, false).size(node, Some(&wide), None);
     // 40 wide; `open`, 4 cells at 9, 4 × 1233 × 9 / 2048 = 21.674, 2167 hundredths: it starts at 2000 - 2167 / 2, 917.
     let starts: Vec<i64> = sized
         .shapes
@@ -689,7 +689,7 @@ fn a_d_holds_all_its_inputs() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = core.add(a, b, a, b, a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
     // Five inputs 8 apart from 8: 8 + 32 + 8 = 48, two places more than 32.
     assert_eq!(sized.height, 4800);
     let ys: Vec<i64> = sized.inputs.iter().map(|&(_, y)| y).collect();
@@ -708,7 +708,7 @@ fn the_outputs_too_many_of_a_d_take_places() {
             format!("labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> ({}) {{\n    {targets} = core.add(a, b)\n}}\n", outputs.join(", "));
         let (checked, names) = checked(&[("main.lcf", &source)]);
         let graph = graph(&checked, &names, "main.lcf");
-        let sizer = Sizer { names: &names, standard_everywhere: false };
+        let sizer = Sizer::new(&names, false);
         crate::style::scope(&std::sync::Arc::new(style.clone()), || sizer.size(&graph.nodes[0], None, None))
     };
     let defaults = crate::style::Style::default();
@@ -740,7 +740,7 @@ fn the_band_of_an_oblong_is_inside() {
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
     let bands = crate::bands(&graph);
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let sized = |key: &str| {
         let index = graph.nodes.iter().position(|node| node.key == key).unwrap();
         sizer.size(&graph.nodes[index], bands[index].as_ref(), None)
@@ -792,7 +792,7 @@ fn the_band_keeps_clear_of_the_chevron_of_after() {
     // 40 less 5 on each side, 30: 5 cells at 9 (27.09), `resu…`. With `after:`, 40 less 13 and 5, 22: 4 cells (21.67).
     assert_eq!(bands[index("y")].as_ref().unwrap().text(), "resu\u{2026}");
     assert_eq!(bands[index("w")].as_ref().unwrap().text(), "res\u{2026}");
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let sized = sizer.size(&graph.nodes[index("w")], bands[index("w")].as_ref(), None);
     assert_eq!(sized.order, Some((800, 0)));
     // `res…`, 4 cells, centred between 13 and 35: from 24 - 21.67 / 2 = 13.17 to 34.84, past the chevron, which ends at
@@ -821,7 +821,7 @@ fn the_band_keeps_clear_of_the_brackets_of_an_array() {
     let bands = crate::bands(&graph);
     // 40 less 21.2 is 18.8: 3 cells at 9 (16.25), `re…`.
     assert_eq!(bands[0].as_ref().unwrap().text(), "re\u{2026}");
-    let sized = Sizer { names: &names, standard_everywhere: false }.size(&graph.nodes[0], bands[0].as_ref(), None);
+    let sized = Sizer::new(&names, false).size(&graph.nodes[0], bands[0].as_ref(), None);
     // Centred at 20: from 20 - 8.13 = 11.87 to 28.13, between 10.6 and 29.4.
     assert_eq!(band_span(&sized), Some((1187, 2813)));
 }
@@ -832,7 +832,7 @@ fn the_band_keeps_clear_of_the_brackets_of_an_array() {
 fn the_name_of_an_always_node_is_on_one_line() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer { names: &names, standard_everywhere: false };
+    let sizer = Sizer::new(&names, false);
     let band = labcraft_types::text::ShownText::plain("dev");
     let mut node = graph.nodes.iter().find(|node| node.key == "raw").unwrap().clone();
     node.always = true;
@@ -2156,7 +2156,7 @@ fn block_sized(callee: &str, call: &str, terminals: &str) -> crate::size::Sized 
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
-    Sizer { names: &names, standard_everywhere: false }.size(node, None, None)
+    Sizer::new(&names, false).size(node, None, None)
 }
 
 fn g_sized(terminals: &str) -> crate::size::Sized {
@@ -2262,4 +2262,67 @@ terminals {
     assert_eq!(sized.lanes.1, [Some((Left, 0, gap)), Some((Left, gap, 2 * gap))]);
     assert_eq!(sized.lanes.0, [Some((Top, 2 * gap, 0)), Some((Right, 3 * gap, gap))]);
     assert!(sized.above >= 4 * gap, "{}", sized.above);
+}
+
+// The outline of a block (spec 11.4). `g(x) -> (n)`: 40 × 40, `x` on the left at 8, `n` on the right at 8. Worked out by
+// hand from 11.4: a piece moves where a terminal starts and how far the block reaches.
+
+/// The size of the call of `main` to `g`, with `sections` added to `g`, and the outlines that the sizer drew.
+fn g_outlined(sections: &str) -> (crate::size::Sized, Vec<Vec<(i64, i64)>>) {
+    let callee = format!("labcraft 1\n\n{G}{sections}");
+    let main = "labcraft 1\n\nfn main(v: f64, e: error) -> (r: i64, err: error) {\n    r = g(v)\n    err = e\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main), ("g.lcf", &callee)]);
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
+    let sizer = Sizer::new(&names, false);
+    let sized = sizer.size(node, None, None);
+    (sized, sizer.outlines_drawn.take())
+}
+
+/// The outlines that a block draws, as their points.
+fn outline_polygons((sized, outlines): &(crate::size::Sized, Vec<Vec<(i64, i64)>>)) -> Vec<Vec<(i64, i64)>> {
+    sized
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Outline { x, y, outline, .. } => outlines.get(*outline).map(|points| points.iter().map(|(px, py)| (px + x, py + y)).collect()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_block_with_an_outline_draws_it_and_its_terminals_start_on_it() {
+    // Without `terminals`, the block is placed as 11.2 places it, 40 × 40; a pin of 4 at `n`, a notch of 4 at `x`.
+    let drawn = g_outlined(
+        "\noutline {\n    path (0, 0) (w, 0) (w, h) (0, h)\n    left terminal { path (0, -4) (-4, 0) (0, 4) }\n    right terminal { path (0, -2) (4, -2) (4, 2) (0, 2) }\n}\n",
+    );
+    assert_eq!((drawn.0.width, drawn.0.height), (4000, 4000));
+    assert_eq!(drawn.0.inputs, [(400, 800)], "the notch: 4 inside");
+    assert_eq!(drawn.0.outputs, [(4400, 800)], "the pin: 4 outside");
+    assert_eq!(drawn.0.reach, (0, 400, 0));
+    let expected =
+        vec![(0, 0), (4000, 0), (4000, 600), (4400, 600), (4400, 1000), (4000, 1000), (4000, 4000), (0, 4000), (0, 1200), (400, 800), (0, 400)];
+    assert!(outline_polygons(&drawn).contains(&expected), "{:?}", outline_polygons(&drawn));
+    // `template d`: the D of the primitives.
+    let drawn = g_outlined("\noutline {\n    template d\n}\n");
+    assert!(outline_polygons(&drawn).contains(&vec![(0, 0), (3200, 0), (4000, 800), (4000, 3200), (3200, 4000), (0, 4000)]));
+}
+
+#[test]
+fn an_outline_that_breaks_a_guard_is_drawn_as_the_ordinary_block() {
+    let drawn = g_outlined("\noutline {\n    path (8, 0) (w, 0) (w, h) (8, h)\n}\n");
+    assert!(outline_polygons(&drawn).is_empty());
+    assert_eq!((drawn.0.inputs, drawn.0.outputs), (vec![(0, 800)], vec![(4000, 800)]));
+}
+
+#[test]
+fn the_after_terminal_starts_where_the_outline_crosses_its_place() {
+    // A body whose top-left corner is cut from (0, 6) to (12, 0), clear of `v` at 8: the place of `after:`, 8 from the
+    // left, crosses the cut at 6 - 6 × 8 / 12 = 2 below the top edge (11.4).
+    let sized = block_sized(G, "r = g(v, after: e)", "\noutline {\n    path (12, 0) (w, 0) (w, h) (0, h) (0, 6)\n}\n");
+    assert_eq!(sized.order, Some((800, 200)));
+    // Without an outline, on the top edge.
+    assert_eq!(block_sized(G, "r = g(v, after: e)", "").order, Some((800, 0)));
 }

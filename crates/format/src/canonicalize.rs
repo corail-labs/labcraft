@@ -4,8 +4,8 @@
 use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{
-    Attached, BlockPlace, BlockSide, Body, Clause, ClauseKind, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand, Panel,
-    PanelDirection, PanelItem, Path, Point, Rhs, Signature, SourceMap, Statement, StatementKind, Target, TerminalsKind, Use,
+    Anchor, Attached, BlockPlace, BlockSide, Body, Clause, ClauseKind, Decl, File, LayoutItem, LayoutKind, NodeRef, Numeral, NumeralKind, Operand,
+    OutlineKind, Panel, PanelDirection, PanelItem, Path, Point, Rhs, Signature, SourceMap, Statement, StatementKind, Target, TerminalsKind, Use,
 };
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Report};
 
@@ -31,6 +31,7 @@ pub fn canonicalize(mut file: File, map: &SourceMap, names: &mut Interner, repor
     }
     canonicalize_layout(&mut file, ordered, map, names, report);
     canonicalize_terminals(&mut file, names);
+    canonicalize_outline(&mut file, names);
     if file.panel.as_ref().is_some_and(|panel| panel.items.is_empty() && panel.end.is_empty() && nothing_attached(&panel.comments)) {
         file.panel = None;
     }
@@ -300,6 +301,56 @@ fn canonicalize_terminals(file: &mut File, names: &mut Interner) {
     });
     if section.items.is_empty() && section.end.is_empty() && nothing_attached(&section.comments) {
         file.terminals = None;
+    }
+}
+
+/// The `outline` section (5.2): `template` or `path` first, then the pieces of the `top`, `left` and `right` sides, each
+/// kind in written order; integers in plain decimal, `x + 0` written `x`, `-0` written `0` (11.4).
+fn canonicalize_outline(file: &mut File, names: &mut Interner) {
+    let Some(section) = &mut file.outline else {
+        return;
+    };
+    for item in &mut section.items {
+        match &mut item.kind {
+            OutlineKind::Template(_) => {}
+            OutlineKind::Path(corners) => {
+                for corner in corners {
+                    for coordinate in [&mut corner.x, &mut corner.y] {
+                        if let Anchor::Number(digits) = &mut coordinate.base {
+                            plain_digits(digits, names);
+                        }
+                        if let Some((_, digits)) = &mut coordinate.shift {
+                            plain_digits(digits, names);
+                            if names.resolve(*digits) == "0" {
+                                coordinate.shift = None;
+                            }
+                        }
+                    }
+                    if let Some(round) = &mut corner.round {
+                        plain_digits(round, names);
+                    }
+                }
+            }
+            OutlineKind::Piece { points, .. } => {
+                for point in points {
+                    for signed in [&mut point.out, &mut point.along] {
+                        plain_digits(&mut signed.digits, names);
+                        if names.resolve(signed.digits) == "0" {
+                            signed.negative = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    section.items.sort_by_key(|item| match item.kind {
+        OutlineKind::Template(_) | OutlineKind::Path(_) => 0_u8,
+        OutlineKind::Piece { side: BlockSide::Top, .. } => 1,
+        OutlineKind::Piece { side: BlockSide::Left, .. } => 2,
+        OutlineKind::Piece { side: BlockSide::Right, .. } => 3,
+    });
+    if section.items.is_empty() && section.end.is_empty() && nothing_attached(&section.comments) {
+        file.outline = None;
     }
 }
 

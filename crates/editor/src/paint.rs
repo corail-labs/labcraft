@@ -217,6 +217,15 @@ impl Painted {
                         icons.push(icon_of(ctx, &mut tessellator, area, found, theme, step));
                     }
                 }
+                // A closed shape that may be concave, an outline of its own (spec 11.4): filled as the SVG fills it.
+                Shape::Poly { points, closed: true, paint } if paint.fill.is_some() && !convex(points) => {
+                    closed_shape(points.iter().copied(), paint, theme, step, &mut tessellator, &mut mesh);
+                }
+                // The outline of a block, its points shared by the calls of its function (spec 11.4).
+                Shape::Outline { x, y, outline, paint, .. } => {
+                    let points = drawing.outlines.get(*outline).map_or(&[][..], Vec::as_slice);
+                    closed_shape(points.iter().map(|&(px, py)| (px + x, py + y)), paint, theme, step, &mut tessellator, &mut mesh);
+                }
                 other => {
                     for painted in geometry(other, theme, step) {
                         tessellator.tessellate_shape(painted, &mut mesh);
@@ -319,7 +328,7 @@ fn geometry(shape: &Shape, theme: Theme, step: f32) -> Vec<Painted2> {
             vec![Painted2::Path(PathShape { points, closed: *closed, fill, stroke: PathStroke::from(stroke) })]
         }
         Shape::Wire { points, style } => wire(points, style, theme, step),
-        Shape::Text { .. } | Shape::Icon { .. } => Vec::new(),
+        Shape::Text { .. } | Shape::Icon { .. } | Shape::Outline { .. } => Vec::new(),
     }
 }
 
@@ -481,6 +490,42 @@ fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon:
         }
     }
     Icon { area, mesh: Arc::new(mesh), texts }
+}
+
+/// A closed polygon, filled as the SVG fills it whether it is convex or not, and stroked.
+fn closed_shape(points: impl Iterator<Item = (i64, i64)>, paint: &Paint, theme: Theme, step: f32, tessellator: &mut Tessellator, mesh: &mut Mesh) {
+    let (fill, stroke) = fill_and_stroke(paint, theme, step);
+    let raw: Vec<(i64, i64)> = points.collect();
+    let points: Vec<Pos2> = raw.iter().map(|&(x, y)| point(x, y, step)).collect();
+    if fill != Color32::TRANSPARENT {
+        if convex(&raw) {
+            let shape = PathShape { points: points.clone(), closed: true, fill, stroke: PathStroke::NONE };
+            tessellator.tessellate_shape(Painted2::Path(shape), mesh);
+        } else {
+            fill_polygon(&points, fill, tessellator, mesh);
+        }
+    }
+    if stroke != Stroke::NONE {
+        let shape = PathShape { points, closed: true, fill: Color32::TRANSPARENT, stroke: PathStroke::from(stroke) };
+        tessellator.tessellate_shape(Painted2::Path(shape), mesh);
+    }
+}
+
+/// Whether a closed polygon turns one way only, which epaint fills, smoothing its edges.
+fn convex(points: &[(i64, i64)]) -> bool {
+    let count = points.len();
+    let mut sign = 0_i128;
+    for index in 0..count {
+        let (Some(a), Some(b), Some(c)) = (points.get(index), points.get((index + 1) % count), points.get((index + 2) % count)) else { return false };
+        let turn = i128::from(b.0 - a.0) * i128::from(c.1 - b.1) - i128::from(b.1 - a.1) * i128::from(c.0 - b.0);
+        if turn != 0 {
+            if sign != 0 && turn.signum() != sign {
+                return false;
+            }
+            sign = turn.signum();
+        }
+    }
+    true
 }
 
 /// The fill of a polygon, as the SVG fills it (non-zero for a simple polygon): cut into triangles one ear at a time, or,

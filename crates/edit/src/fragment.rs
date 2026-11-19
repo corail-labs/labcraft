@@ -325,6 +325,7 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
         panel: None,
         layout: None,
         terminals: None,
+        outline: None,
         icon: None,
         end: Vec::new(),
     });

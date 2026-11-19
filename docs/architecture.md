@@ -110,7 +110,7 @@ Decisions:
     a file can hold millions of them.
 - **Every comment has a place:** on each item that can carry one, by `Attached` (the comments before it,
   the one that ends on its line): declarations with their documentation, `use` lines, parameters,
-  outputs, fields, variants, loop clauses, statements, arms, `panel`, `layout`, `terminals` and `icon` items, sections.
+  outputs, fields, variants, loop clauses, statements, arms, `panel`, `layout`, `terminals`, `outline` and `icon` items, sections.
   Also after an opening `{`, on a closing `}`, and at the end of a list (`end`). The tests of 5.2 are
   written against these slots.
 - **Ids instead of positions.** Everything that a diagnostic can point at has an `Id`: statements, and
@@ -1672,8 +1672,8 @@ file, as when an agent writes it.
 | Layer | Crate | In M1 |
 |---|---|---|
 | L1, L2 | `graph`, `format` | The entries of `layout` of spec 11 (`frame size`, `input x at y`, `output x at y`), `terminals` and `outline` (spec 11.2 to 11.4), holes `?` (spec 5.1) |
-| L3 | `check` | Judges them (`LC5004`, `LC5007`, the codes of 11.2 to 11.4); unchanged otherwise |
-| L4 | **`edit`** (new) | The editing operations on the text of a file: text in, text out, and what changed (12.3). No history, no file, no thread; what it needs of the check and of the drawing comes through a trait |
+| L3 | `check` | Judges them (`LC5004`, `LC5007`, the codes of 11.2 to 11.4). The places of the terminals of a compact block and the geometry of its outline are worked out there once (`places`, `outline`), for `check`, which judges them at every size a block takes, and for the drawing and `edit`, so that the three never disagree; unchanged otherwise |
+| L4 | **`edit`** (new) | The editing operations on the text of a file: text in, text out, and what changed (12.3). No history, no file, no thread; what it needs of the check and of the drawing comes through a trait, but for the reading of an outline, which it takes from `check` (`outline`), as the drawing does |
 | L5 | `diagram` | Stable placement around what is fixed; the preview of a drag (12.4) |
 | L6 | `engine` | The editing commands, the history, the revisions, the journal, the settings, the gesture lock (12.5) |
 | L7 | `editor` | The canvas turns gestures into intents (12.6) |

@@ -190,6 +190,14 @@ const CASES: &[Case] = &[
         codes: Some((&["LC6001"], &["LC2107"])),
     },
     Case {
+        name: "outline-at-1400-call-sizes",
+        folders: outline_at_1400_call_sizes,
+        fmt: false,
+        diagram: false,
+        seconds: SECONDS,
+        codes: Some((&[], &[])),
+    },
+    Case {
         name: "library-of-100000-files",
         folders: library_of_100000_files,
         fmt: false,
@@ -198,6 +206,14 @@ const CASES: &[Case] = &[
         codes: Some((&[], &[])),
     },
     Case { name: "drawn-chain-of-20000-nodes", folders: drawn_chain, fmt: false, diagram: true, seconds: SECONDS, codes: None },
+    Case {
+        name: "drawn-calls-of-a-rounded-outline",
+        folders: drawn_calls_of_a_rounded_outline,
+        fmt: false,
+        diagram: true,
+        seconds: SECONDS,
+        codes: None,
+    },
     Case { name: "drawn-value-in-every-column", folders: drawn_value_in_every_column, fmt: false, diagram: true, seconds: SECONDS, codes: None },
     Case { name: "drawn-wires-over-100-columns", folders: drawn_wires_over_100_columns, fmt: false, diagram: true, seconds: SECONDS, codes: None },
     Case { name: "drawn-error-read-everywhere", folders: drawn_error_read_everywhere, fmt: false, diagram: true, seconds: SECONDS, codes: None },
@@ -1059,6 +1075,44 @@ fn calls_of_a_faulty_signature() -> Vec<Folder> {
     let f = format!("labcraft 1\n\nfn f({}) -> (y: f64) {{\n    y = 1.0\n}}\n", params.join(", "));
     let main = format!("labcraft 1\n\nfn main(x: f64) -> (z: f64) {{\n{}    z = x\n}}\n", "    f()\n".repeat(100_000));
     vec![vec![("f.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
+}
+
+/// The most a body of an outline holds (spec 11.4): 64 corners, each rounded by 16, a zigzag along its top.
+fn rounded_body() -> String {
+    let corners: Vec<String> = (0..64)
+        .map(|index| match index {
+            63 => "(0, h)".to_owned(),
+            62 => "(w, h) round 16".to_owned(),
+            _ if index < 31 => format!("({}, {}) round 16", index * 4, (index % 2) * 4),
+            _ => format!("(w - {}, {}) round 16", (61 - index) * 4, (index % 2) * 4),
+        })
+        .collect();
+    format!(
+        "    path {}
+",
+        corners.join(" ")
+    )
+}
+
+/// A function with a variadic parameter and an outline of 64 rounded corners with a piece of 16 points at each terminal
+/// of its left side, and 1,400 calls of 1 to 1,400 values: `check` judges the outline at each size (spec 11.4).
+fn outline_at_1400_call_sizes() -> Vec<Folder> {
+    let piece = "    left terminal { path (0, -4) (1, -3) (5, -3) (1, -2) (5, -2) (1, -1) (5, -1) (1, 0) (5, 0) (1, 1) (5, 1) (1, 2) (5, 2) (1, 3) (5, 3) (0, 4) }\n";
+    let f = format!(
+        "labcraft 1\n\nfn f(a: f64...) -> (y: f64) {{\n    y = 1.0\n}}\n\nterminals {{\n    top 64\n}}\n\noutline {{\n{}{piece}}}\n",
+        rounded_body()
+    );
+    let calls: String = (0..1_400).map(|k| format!("    y{k} = f({})\n", vec!["a"; k + 1].join(", "))).collect();
+    let main = format!("labcraft 1\n\nfn main(a: f64) -> (y: f64) {{\n{calls}    y = y0\n}}\n");
+    vec![vec![("f.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
+}
+
+/// Calls of one function whose block has an outline of 64 rounded corners: drawn once for all of them, not once per call.
+fn drawn_calls_of_a_rounded_outline() -> Vec<Folder> {
+    let f = format!("labcraft 1\n\nfn g(a: f64) -> (y: f64) {{\n    y = a\n}}\n\nterminals {{\n    top 64\n}}\n\noutline {{\n{}}}\n", rounded_body());
+    let calls: String = (0..DRAWN).map(|k| format!("    y{k} = g(a)\n")).collect();
+    let main = format!("labcraft 1\n\nfn main(a: f64) -> (y: f64) {{\n{calls}    y = y0\n}}\n");
+    vec![vec![("g.lcf".to_owned(), f.into_bytes()), ("main.lcf".to_owned(), main.into_bytes())]]
 }
 
 fn library_of_100000_files() -> Vec<Folder> {

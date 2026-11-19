@@ -266,3 +266,43 @@ terminals {{
         ),
     );
 }
+
+fn outline(items: Option<&str>) -> Op {
+    Op::BlockSetOutline { file: FILE.to_owned(), outline: items.map(str::to_owned) }
+}
+
+fn with_outline(items: &str) -> String {
+    format!("{HEAD}\noutline {{\n{items}}}\n")
+}
+
+#[test]
+fn an_outline_is_written_in_canonical_form_and_null_removes_it() {
+    // Spec 5.2: the body first, then the pieces of the top, left and right sides; plain decimal; one line each.
+    gives(HEAD, outline(Some("template d")), &with_outline("    template d\n"));
+    gives(
+        HEAD,
+        outline(Some("right terminal {path (0,-2) (8,0) (0,2)}\npath (0,0) (w - 0,0) round 0_4 (w,h) (0,h)")),
+        &with_outline("    path (0, 0) (w, 0) round 4 (w, h) (0, h)\n    right terminal { path (0, -2) (8, 0) (0, 2) }\n"),
+    );
+    gives(&with_outline("    template d\n"), outline(Some("template block")), &with_outline("    template block\n"));
+    gives(&with_outline("    template d\n"), outline(None), HEAD);
+    // After `terminals`, which stays.
+    gives(&with("    top 5\n"), outline(Some("template d")), &format!("{}\noutline {{\n    template d\n}}\n", with("    top 5\n")));
+}
+
+#[test]
+fn an_outline_that_does_not_read_or_that_check_refuses_is_refused_and_one_that_breaks_a_guard_is_written() {
+    for items in
+        ["path (0, 0) (w, 0)", "template e", "template d\ntemplate block", "path (0, 0) (w, 0) round 17 (w, h)", "path (0, 0) (2000, 0) (w, h)"]
+    {
+        assert_eq!(refused(HEAD, outline(Some(items)), "params.invalid").parameter, Some("outline"), "{items}");
+    }
+    // A corner outside the box is a warning of `check`, at the size of each block: written.
+    gives(HEAD, outline(Some("path (0, 0) (w + 4, 0) (w, h) (0, h)")), &with_outline("    path (0, 0) (w + 4, 0) (w, h) (0, h)\n"));
+}
+
+#[test]
+fn a_reset_removes_the_outline_too() {
+    let reset = Op::BlockReset { file: FILE.to_owned() };
+    gives(&format!("{}\noutline {{\n    template d\n}}\n", with("    top 5\n")), reset, HEAD);
+}

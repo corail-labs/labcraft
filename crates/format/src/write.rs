@@ -13,11 +13,11 @@
 //! It recurses on the model: the nesting limit bounds it (`crates/format/tests/stack.rs`).
 
 use labcraft_graph::{
-    Arg, Arm, Attached, Binding, BlockPlace, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Decl, EnumType,
-    Exponent, Extern, Field, File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem, LayoutKind, Loop,
-    NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs,
-    Signature, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl, TypeExpr,
-    UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
+    Anchor, Arg, Arm, Attached, Binding, BlockPlace, Body, Branching, Call, Carry, Clause, ClauseKind, Comment, CommentKind, Constant, Coordinate,
+    Decl, EnumType, Exponent, Extern, Field, File, FnType, For, ForIn, Function, Generic, Icon, IconItem, IconShape, IntBound, Layout, LayoutItem,
+    LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Operand, OrderRef, Outline, OutlineItem, OutlineKind, Output, Panel, PanelDirection,
+    PanelItem, Param, Path, Pattern, Point, Rhs, Signature, Signed, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals,
+    TerminalsItem, TerminalsKind, TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, VariantDecl, View,
 };
 use labcraft_types::{Interner, Limits, Name};
 
@@ -318,6 +318,10 @@ impl<'a> Writer<'a> {
         if let Some(terminals) = &file.terminals {
             self.newline();
             self.terminals(terminals);
+        }
+        if let Some(outline) = &file.outline {
+            self.newline();
+            self.outline(outline);
         }
         if let Some(icon) = &file.icon {
             self.newline();
@@ -1146,6 +1150,69 @@ impl<'a> Writer<'a> {
         self.push("terminals ");
         self.section(&terminals.items, &terminals.end, Self::terminals_item);
         self.end_line(terminals.comments.line.as_deref());
+    }
+
+    fn outline(&mut self, outline: &Outline) {
+        self.comment_lines(&outline.comments.before, 0);
+        self.push("outline ");
+        self.section(&outline.items, &outline.end, Self::outline_item);
+        self.end_line(outline.comments.line.as_deref());
+    }
+
+    /// One item on one line, a piece with one space inside its braces (5.2).
+    fn outline_item(&mut self, item: &OutlineItem) {
+        self.comment_lines(&item.comments.before, 1);
+        self.indent(1);
+        match &item.kind {
+            OutlineKind::Template(name) => {
+                self.push("template ");
+                self.name(*name);
+            }
+            OutlineKind::Path(corners) => {
+                self.push("path");
+                for corner in corners {
+                    self.push(" (");
+                    self.coordinate(corner.x);
+                    self.push(", ");
+                    self.coordinate(corner.y);
+                    self.push(")");
+                    if let Some(round) = corner.round {
+                        self.push(" round ");
+                        self.name(round);
+                    }
+                }
+            }
+            OutlineKind::Piece { side, points } => {
+                self.push(side.word());
+                self.push(" terminal { path");
+                for point in points {
+                    self.push(" (");
+                    self.signed(point.out);
+                    self.push(", ");
+                    self.signed(point.along);
+                    self.push(")");
+                }
+                self.push(" }");
+            }
+        }
+        self.end_line(item.comments.line.as_deref());
+    }
+
+    fn coordinate(&mut self, coordinate: Coordinate) {
+        match coordinate.base {
+            Anchor::Number(digits) | Anchor::Name(digits) => self.name(digits),
+        }
+        if let Some((minus, digits)) = coordinate.shift {
+            self.push(if minus { " - " } else { " + " });
+            self.name(digits);
+        }
+    }
+
+    fn signed(&mut self, signed: Signed) {
+        if signed.negative {
+            self.push("-");
+        }
+        self.name(signed.digits);
     }
 
     fn terminals_item(&mut self, item: &TerminalsItem) {

@@ -46,6 +46,12 @@ impl File {
                 ids.next(&mut item.id);
             }
         }
+        if let Some(outline) = &mut self.outline {
+            ids.next(&mut outline.id);
+            for item in &mut outline.items {
+                ids.next(&mut item.id);
+            }
+        }
         if let Some(icon) = &mut self.icon {
             ids.icon(icon);
         }

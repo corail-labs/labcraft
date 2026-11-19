@@ -25,6 +25,7 @@ use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
 pub use sections::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
 
 pub(super) mod flow;
+mod outlines;
 pub(super) mod sections;
 #[cfg(test)]
 mod tests;
@@ -402,6 +403,7 @@ impl<'a> Pass<'a> {
             }
             all.push(resolved);
         }
+        self.judge_blocks(declared, &all);
         all
     }
 
