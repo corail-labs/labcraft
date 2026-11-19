@@ -1,0 +1,5 @@
+# A copy of the visa library in the project (rule 2 of docs/cli.md, section 3): it replaces the shipped one here.
+name = "visa"
+version = "0.1.0"
+always = ["close"]
+resources = ["session"]

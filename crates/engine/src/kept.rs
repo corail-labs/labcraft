@@ -5,12 +5,13 @@
 //!
 //! What a check saw is noted while it runs, so that a file changed while the check reads it is seen next time: the files
 //! the walk of the folder found or refused, and what it said; the folders of `--lib-path` that could be listed; for each
-//! library looked for under them, the folder found under each, and the files there; and for each file read, the SHA-256
+//! library looked for under them, the folder found under each, and the files there; the `labcraft.toml` of each folder
+//! that holds a file, there or not (`docs/cli.md`, section 3); and for each file read, the SHA-256
 //! of its bytes, the size that refused it, or the error of the system. A command that reports a check looks again the
 //! same way, reading every file, and compares. Size and time of change would be cheaper, but a file rewritten with the
 //! same size within one tick of the clock of the file system keeps both, and the report would be wrong.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use labcraft_types::{Code, Limits, Report};
@@ -67,6 +68,10 @@ pub fn look_for(
             };
             let walked = walk::walk_alone(ws, &folder, current, limits);
             read.extend(walked.files.iter().map(|found| (found.path.clone(), read_program_stamped(ws, &found.path, limits).1)));
+            if !walked.files.is_empty() || !walked.refused.is_empty() {
+                let real = ws.canonicalize(&folder).unwrap_or_else(|_| folder.clone());
+                let _ = walk::read_manifest(ws, &real, limits, Some(&mut read));
+            }
             let said = walked.report.diagnostics().iter().map(|diagnostic| (diagnostic.code(), diagnostic.file.clone())).collect();
             let mut listing: Vec<PathBuf> =
                 walked.files.into_iter().map(|found| found.path).chain(walked.refused.into_iter().map(|refused| refused.path)).collect();
@@ -88,6 +93,19 @@ fn look_again(
 ) -> Seen {
     let walked = walk::walk(ws, std::slice::from_ref(&folder.to_path_buf()), current, limits);
     let mut seen = Seen::of_walk(&walked);
+    // The manifest of each folder that holds a file, as `folders::library_of` reads it.
+    let holders: BTreeSet<PathBuf> = walked
+        .files
+        .iter()
+        .map(|found| &found.path)
+        .chain(walked.refused.iter().map(|refused| &refused.path))
+        .filter_map(|path| path.parent().map(Path::to_path_buf))
+        .collect();
+    let mut stamps = Vec::new();
+    for holder in holders {
+        let _ = walk::read_manifest(ws, &holder, limits, Some(&mut stamps));
+    }
+    seen.contents.extend(stamps);
     let read: Vec<PathBuf> = walked.files.into_iter().map(|found| found.path).collect();
     let mut scratch = Report::for_limits(limits);
     seen.lib_paths = readable_lib_paths(ws, std::slice::from_ref(&folder.to_path_buf()), lib_paths, current, &mut scratch);

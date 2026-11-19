@@ -16,7 +16,8 @@ follows (events, panel widgets, timed loops, PLC mode).
   version, dependencies: the basis of the package, D-25). In M0 only the libraries shipped with
   LabCraft have one (section 9), with the fields `name`, `version`, `description`, `dependencies`,
   `always` (native functions, 7.2), `resources` (opaque types, 8.1) and `categories` (of errors,
-  7.1); see `libs/visa`. From M1, `mask` gives the band and the colour of the blocks of its functions (11.3).
+  7.1); see `libs/visa`. From M1, `mask` gives the band and the colour of the blocks of its functions (11.3). From
+  0.5.0, `check` also reads `name`, `always` and `resources` in the manifest of a user library (cli.md 3).
 - A library contains **functions** and **types**, **one per file** (D-07).
 - A **function** = a signature (inputs, outputs) + a **diagram**. A **panel** can be attached to it
   (D-06).
@@ -1008,9 +1009,8 @@ into its `others`. Nothing is lost. With no error among the arguments, the resul
   "concurrent access to `dmm`: order by the error wire or `after:`", once per resource. Two nodes in
   different arms of a `match` or `handle` never run together and do not count; `bench.dmm` and
   `bench.source` are different resources, and `bench` overlaps both. A library declares in its
-  manifest which of its opaque types are resources, as it marks its `always` functions there; a struct,
-  a variant or an array that holds one is a resource too. An opaque type of a project is none before
-  the manifests of user libraries (section 9).
+  manifest which of its opaque types are resources, as it marks its `always` functions there, a user library as
+  well as one shipped with LabCraft (section 9); a struct, a variant or an array that holds one is a resource too.
 - **`check` assumes nothing about what a node does.** It reads signatures, so any node that calls a
   function and receives a resource counts, even one that only seems to read: `query` can change the
   state of an instrument. A primitive or a construction only moves a value, and does not count. So the
@@ -1112,7 +1112,7 @@ to it.
 | Running external functions (4.1), except `extern rust`, which runs from M0; they are all read and checked from M0 | M8 |
 | The `panel` section beyond its elements, their kind and their `default:` (widgets, other properties) | M3 |
 | `ref<T>` and its access structure (8.1, Q-19) | M2 |
-| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; manifests of user libraries, versions and their dependencies | M2 |
+| Manifests (1, D-25): the libraries shipped with LabCraft declare their categories, `always` functions, resources and dependencies (`scpi` uses `visa`) from M0; a user library its `always` functions and resources from 0.5.0 (M4, [cli.md](cli.md) 3), and its `[mask]` from M1 (11.3); the rest of the manifests of user libraries, versions and their dependencies | M2 |
 | Structures planned outside v0 (6.4): events, queues, notifiers | M2 |
 | Maps and sets (6.4) | M2 |
 | Timed loops, cyclic tasks (6.4) | Horizon 2 |
@@ -1520,7 +1520,7 @@ terminals {
 
 A library says once how the blocks of its functions look, in its manifest (section 1), so that two of its functions
 in a row look alike. The table is read for every library from M1, before the rest of the manifest of a user library
-(M2):
+(its `always` functions and resources from 0.5.0, the rest in M2, section 9):
 
 ```toml
 [mask]
@@ -1551,9 +1551,9 @@ right terminal { path (0, -4) (-4, 0) (0, 4) }
   band names it and not its parent.
 - `check` of the library judges the table: a field that the mask does not know, or a value that it refuses (a colour
   that is not `#RRGGBB`, an unknown place), is a warning, and the field keeps its default. A manifest that is not
-  TOML, or larger than `--max-file-size`, gives a warning and no mask. A library without a manifest gets one, holding
+  TOML, or larger than `--max-file-size`, gives a warning (`LC0106`) and no mask. A library without a manifest gets one, holding
   the table alone, from `library.set_mask` ([commands.md](commands.md), 9.4); what else the manifest of a user library
-  holds comes with M2. Like a `terminals` section, the mask says nothing about running.
+  holds, beyond `always` and `resources`, comes with M2. Like a `terminals` section, the mask says nothing about running.
 
 ### 11.4 Outline of the block (`outline` section, M1)
 

@@ -69,14 +69,64 @@ pub fn read_program(ws: &dyn Workspace, path: &Path, limits: &Limits) -> Result<
 
 /// As [`read_program`], with what the read saw.
 pub fn read_program_stamped(ws: &dyn Workspace, path: &Path, limits: &Limits) -> (Result<Vec<u8>, ReadError>, ContentStamp) {
+    let (read, stamp) = read_stamped(ws, path, limits);
+    (read_result(read, limits), stamp)
+}
+
+/// A read within `--max-file-size`, as the system gave it, with what it saw: a missing file is told apart.
+pub fn read_stamped(ws: &dyn Workspace, path: &Path, limits: &Limits) -> (io::Result<Read>, ContentStamp) {
     let read = ws.read(path, limits.max_file_size);
     let stamp = match &read {
         Ok(Read::Bytes(bytes)) => ContentStamp::Hash(Sha256::digest(bytes).into()),
         Ok(Read::TooLarge(size)) => ContentStamp::TooLarge(*size),
         Err(error) => ContentStamp::Unreadable(io_text(error)),
     };
-    (read_result(read, limits), stamp)
+    (read, stamp)
 }
+
+/// The manifest of the library of `folder`, `labcraft.toml`: its text, `None` when there is none, or why it cannot be
+/// read, in one line, which `check` says (`docs/cli.md`, section 3). The folder is listed, so that the name compares
+/// exactly on every file system (R-20, as `folders::locate` does), and a link is not followed, as in any walk. What
+/// the read saw goes to `stamps`, for a session that compares it later.
+pub fn read_manifest(
+    ws: &dyn Workspace,
+    folder: &Path,
+    limits: &Limits,
+    stamps: Option<&mut Vec<(PathBuf, ContentStamp)>>,
+) -> Result<Option<String>, String> {
+    let path = folder.join(MANIFEST);
+    let mut kind = None;
+    let listed = ws.read_dir(folder, &mut |entry| {
+        if let Ok(entry) = entry
+            && entry.name == MANIFEST
+        {
+            kind = Some(entry.kind.map_err(|error| io_text(&error)));
+        }
+    });
+    let (outcome, stamp) = match (listed, kind) {
+        (Err(error), _) => (Err(io_text(&error)), ContentStamp::Unreadable(io_text(&error))),
+        (Ok(()), None) => (Ok(None), ContentStamp::Unreadable("none".to_owned())),
+        (Ok(()), Some(Err(why))) => (Err(why.clone()), ContentStamp::Unreadable(why)),
+        (Ok(()), Some(Ok(Kind::File))) => {
+            let (read, stamp) = read_stamped(ws, &path, limits);
+            let outcome = match read {
+                Ok(Read::Bytes(bytes)) => String::from_utf8(bytes).map(Some).map_err(|_| "it is not UTF-8".to_owned()),
+                Ok(Read::TooLarge(size)) => Err(format!("file of {size} bytes, over the limit of {} bytes", limits.max_file_size)),
+                Err(error) => Err(io_text(&error)),
+            };
+            (outcome, stamp)
+        }
+        (Ok(()), Some(Ok(Kind::Link))) => (Err("a symbolic link is not followed".to_owned()), ContentStamp::Unreadable("link".to_owned())),
+        (Ok(()), Some(Ok(_))) => (Err("it is not a file".to_owned()), ContentStamp::Unreadable("not a file".to_owned())),
+    };
+    if let Some(stamps) = stamps {
+        stamps.push((path, stamp));
+    }
+    outcome
+}
+
+/// The name of the manifest of a library.
+pub const MANIFEST: &str = "labcraft.toml";
 
 fn read_result(read: io::Result<Read>, limits: &Limits) -> Result<Vec<u8>, ReadError> {
     match read {

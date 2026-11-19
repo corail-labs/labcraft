@@ -76,8 +76,10 @@ pub struct LibrarySource {
     /// The folder as reports show it.
     pub shown: String,
     pub files: Vec<SourceFile>,
-    /// The text of `labcraft.toml`, read only for a shipped library (`docs/cli.md`, section 3).
-    pub manifest: Option<String>,
+    /// The text of `labcraft.toml`, read whole for a shipped library, and for its `name`, `always` and `resources` for
+    /// any other (`docs/cli.md`, section 3). `Err` says in one line why the host could not read it (not UTF-8, over
+    /// `--max-file-size`, an error of the system), and `check` says it, `LC0105` or `LC0106` by what the library declares.
+    pub manifest: Option<Result<String, Box<str>>>,
     pub sub_libraries: Vec<LibrarySource>,
     pub origin: Origin,
     /// What the host met while gathering these files: a warning on a folder, a file it could not read.

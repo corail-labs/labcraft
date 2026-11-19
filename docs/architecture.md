@@ -189,7 +189,8 @@ pub trait Libraries {                       // how `use` finds a library: the ca
     fn last_panic(&self) -> Option<String>;  // where a panic happened, which only a panic hook can see
 }
 pub enum Found { Library(LibrarySource), NotFound, Unreadable(Box<Diagnostic>) }  // LC2004, or LC0001
-pub struct LibrarySource { name: String, shown: String, files: Vec<SourceFile>, manifest: Option<String>,
+pub struct LibrarySource { name: String, shown: String, files: Vec<SourceFile>,
+                           manifest: Option<Result<String, Box<str>>>,  // `labcraft.toml`, or why it did not read
                            sub_libraries: Vec<LibrarySource>, origin: Origin,
                            report: Report,          // what its host met while gathering the files
                            checked_elsewhere: bool }  // a dependency in a folder that a run checks anyway
@@ -354,7 +355,7 @@ character boundary, and these crates hold little numerical code.
 | `notices` | Not a check: `notices TARGET OUT` writes into `OUT` the licences of the crates built into the binaries of a release for `TARGET`, from `cargo metadata` filtered for it, ours left out, each text once. Not part of `ci`: the workflow `release` runs it (section 8) |
 
 **Dependencies** of the crates, kept few and permissive: `unicode-normalization` (R-20),
-`unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of shipped libraries),
+`unicode-properties` (the Unicode categories of 14.1), `serde` and `serde_json` (reports), `toml` (manifests of libraries),
 `thiserror` for the error type of a crate, where a function can fail on something other than the program,
 such as a file that cannot be written (the versions the Craft apps use). `serde` is optional in `diagram`, behind its feature
 `serde`, and `postcard` (MIT or Apache-2.0) carries a drawing from the worker of the web viewer to its page (section 11.5). In tests: `wasm-bindgen-test`,

@@ -20,7 +20,7 @@ impl Libraries for Shipped {
             return Found::NotFound;
         }
         let mut source = LibrarySource::new("visa".to_owned(), "visa".to_owned(), Origin::Shipped);
-        source.manifest = Some("name = \"visa\"\nversion = \"1\"\nresources = [\"session\", \"link\"]\n".to_owned());
+        source.manifest = Some(Ok("name = \"visa\"\nversion = \"1\"\nresources = [\"session\", \"link\"]\n".to_owned()));
         source.files = vec![
             file("session.lct", "type session = opaque"),
             file(

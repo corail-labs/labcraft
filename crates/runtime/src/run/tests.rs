@@ -63,7 +63,7 @@ impl Libraries for Shipped {
             .collect();
         Found::Library(LibrarySource {
             files,
-            manifest: Some(MANIFEST.to_owned()),
+            manifest: Some(Ok(MANIFEST.to_owned())),
             ..LibrarySource::new("bench".to_owned(), "<labcraft>/bench".to_owned(), Origin::Shipped)
         })
     }

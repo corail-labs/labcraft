@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Closes the session. Marked `always`: it runs even if an error arrives on its input.
+extern rust(crate: "labcraft-visa", function: "close")
+fn close(session: session, err: error = none) -> (err: error)

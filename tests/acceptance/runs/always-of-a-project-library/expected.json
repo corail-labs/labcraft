@@ -1,0 +1,63 @@
+{
+  "how": "`use visa` finds the sub-folder `visa` of the folder given, rule 2 of cli.md 3, which replaces the shipped `visa` for this project; of its manifest `check` reads `name`, `always` and `resources` (cli.md 3, spec 9), so `close` is `always` and `session` a resource (spec 7.2, 8.1). Its functions are `extern rust` on the crate `labcraft-visa`, linked into the application, so they run as the shipped ones do (spec 4.1, as `results_log` of A.4); their declarations are those of `libs/visa`, so nothing differs from the native bodies (LC4005) and the check finds nothing. `visa.open` of SIM::DMM0, which dmm-timeout.toml defines with no latency, opens a session at 0 ms with the timeout 2 s. `visa.query` sends `MEAS:VOLT:DC?` at 0 ms; it is in `faults.timeout`, so it gets no answer (`answer` null, commands.md 7) and the read waits the timeout of the session, 2000 ms, then fails with `io.timeout`, code -1073807339 (libs/visa/simulation.md 4, 5, 6; libs/visa/README.md, Sessions). Its output `text` takes its default value `\"\"` and `session`, named like its input, passes the session through (spec 7.2). `visa.close`, marked `always` by the project manifest, runs anyway, closes the session and passes on the error it received (spec 7.2), so no resource is left open. `err = e3` holds the error, so the status is `error` and `error` repeats it (spec 7.5, 8.2; commands.md 7). Its origin is the node `text`, named by its first output (commands.md 5 and 8), line 8 of the file, path from the root of the project (tests/acceptance/README.md), `callers` empty since it was made in the top-level function (commands.md 5). The run ends at 2000 ms.",
+  "status": "error",
+  "outputs": [
+    {
+      "name": "text",
+      "type": "string",
+      "value": ""
+    },
+    {
+      "name": "err",
+      "type": "error",
+      "value": {
+        "category": "io.timeout",
+        "code": -1073807339,
+        "origin": {
+          "function": "measure_once",
+          "node": "text",
+          "file": "tests/acceptance/runs/always-of-a-project-library/measure_once.lcf",
+          "line": 8,
+          "callers": []
+        }
+      }
+    }
+  ],
+  "error": {
+    "category": "io.timeout",
+    "code": -1073807339,
+    "origin": {
+      "function": "measure_once",
+      "node": "text",
+      "file": "tests/acceptance/runs/always-of-a-project-library/measure_once.lcf",
+      "line": 8,
+      "callers": []
+    }
+  },
+  "clock": {
+    "simulated_ms": 2000.0
+  },
+  "resources": {
+    "opened": 1,
+    "open": [],
+    "leaked": []
+  },
+  "instruments": [
+    {
+      "resource": "SIM::DMM0",
+      "commands": [
+        {
+          "t_ms": 0.0,
+          "sent": "MEAS:VOLT:DC?",
+          "answer": null
+        }
+      ]
+    }
+  ],
+  "check": {
+    "summary": {
+      "errors": 0
+    },
+    "diagnostics": []
+  }
+}
