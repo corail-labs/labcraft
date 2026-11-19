@@ -171,11 +171,9 @@ fn exercised(text: &str) -> Vec<String> {
         assert!(instrument.commands.windows(2).all(|pair| pair[0].at <= pair[1].at), "{}: in the order of the clock", instrument.resource);
         for command in &instrument.commands {
             let counted = |text: &str| u64::try_from(text.chars().count()).unwrap_or(u64::MAX);
-            assert!(counted(&command.sent) <= 1000 && counted(&command.sent) <= command.sent_length, "{command:?}");
-            assert!(
-                command.answer.as_deref().is_none_or(|answer| counted(answer) <= 1000 && counted(answer) <= command.answer_length),
-                "{command:?}"
-            );
+            for text in [&command.sent, &command.answer].into_iter().flatten() {
+                assert!(counted(&text.kept) <= 1000 && counted(&text.kept) <= text.length, "{command:?}");
+            }
         }
     }
     let mut said = driver.said;
