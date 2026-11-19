@@ -96,7 +96,8 @@ jobs:
           mkdir -p "$out/assets/fonts" "$out/crates/types" "$out/sim"
           cp "target/$TARGET/release/labcraft-cli$EXE" "target/$TARGET/release/labcraft$EXE" "$out/"
           cp README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$out/"
-          cp "docs/releases/v$VERSION.md" "$out/RELEASE.md"
+          # The note exists on a tag (job `version`); a `-dev` version between two tags has none.
+          if [ -f "docs/releases/v$VERSION.md" ]; then cp "docs/releases/v$VERSION.md" "$out/RELEASE.md"; fi
           cp assets/fonts/LICENSE-Hack.md assets/fonts/LICENSE-Inter.txt "$out/assets/fonts/"
           cp crates/types/LICENSE-Unicode.txt "$out/crates/types/"
           cargo xtask notices "$TARGET" "$out/THIRD-PARTY-LICENSES.txt"
