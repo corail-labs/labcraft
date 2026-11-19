@@ -453,9 +453,10 @@ it without the release, and so does a run by hand; GitHub does not require it, a
 red `windows` does. The binaries are not signed for the platforms: an installer signed for Windows comes with release 0.4.0, macOS later (the theme Distribution in
 [roadmap.md](roadmap.md)).
 
-To release: the version in `Cargo.toml` (and both `Cargo.lock`), the note `docs/releases/v<version>.md`, merged
+To release: the version in `Cargo.toml` (and both `Cargo.lock`), without its `-dev`, the note `docs/releases/v<version>.md`, merged
 through a pull request; then, on the owner's word, the annotated tag on the merge commit, pushed; then the owner
-publishes the draft.
+publishes the draft. Right after the tag, a pull request sets the version of `main` to the next one with `-dev`
+(`0.4.0-dev` after `v0.3.0-m0`), so that a build of `main` never calls itself the release.
 
 The Python proof of concept was the reference for what the examples do until the Rust `run` passed the corpus of runs
 (section 10.11); it did not judge types, where the corpus decides. It was retired after M0 (2026-11-15).
