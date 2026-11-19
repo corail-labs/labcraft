@@ -1,0 +1,4 @@
+# net:S005: a time above one day.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+latency_ms = 86400001

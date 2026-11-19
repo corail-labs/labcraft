@@ -122,7 +122,21 @@ type Received = Vec<(String, Vec<(i64, String, Option<String>)>)>;
 fn commands(end: &RunEnd) -> Received {
     end.instruments
         .iter()
-        .map(|log| (log.resource.clone(), log.commands.iter().map(|command| (command.at, command.sent.clone(), command.answer.clone())).collect()))
+        .map(|log| {
+            (
+                log.resource.clone(),
+                log.commands
+                    .iter()
+                    .map(|command| {
+                        (
+                            command.at,
+                            command.sent.as_ref().map(|sent| sent.kept.clone()).unwrap_or_default(),
+                            command.answer.as_ref().map(|answer| answer.kept.clone()),
+                        )
+                    })
+                    .collect(),
+            )
+        })
         .collect()
 }
 
@@ -191,7 +205,7 @@ fn point_3_an_error_in_one_branch_does_not_stop_the_other() {
     // Branch A sent its one measure at 0 ms and got no answer.
     let a = &end.instruments[0];
     assert_eq!((a.resource.as_str(), a.commands.len()), ("SIM::DMM0", 1));
-    assert_eq!((a.commands[0].at, a.commands[0].answer.as_deref()), (0, None));
+    assert_eq!((a.commands[0].at, a.commands[0].answer.as_ref().map(|answer| answer.kept.as_str())), (0, None));
 }
 
 #[test]

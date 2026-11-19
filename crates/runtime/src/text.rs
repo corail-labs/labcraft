@@ -507,7 +507,8 @@ pub fn quoted(text: &str) -> String {
     quoted
 }
 
-fn hex(bytes: &[u8]) -> String {
+/// The bytes in lowercase hexadecimal, two digits a byte: `0a ff` is `0aff`.
+pub fn hex(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         let _ = write!(text, "{byte:02x}");

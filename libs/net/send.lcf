@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Sends one datagram; one larger than 65,507 bytes is `net.datagram_too_long`, and nothing is sent.
+extern rust(crate: "labcraft-net", function: "send")
+fn send(socket: udp_socket, data: bytes, err: error = none) -> (socket: udp_socket, err: error)

@@ -1,0 +1,2 @@
+fn net.write_line(connection: connection, text: string, terminator: string = "\n", err: error = none) -> (connection: connection, err: error)
+  native write_line  skip(err: 3)

@@ -1,0 +1,2 @@
+fn net.read_until(connection: connection, terminator: bytes, max: i32 = 65536, err: error = none) -> (data: bytes, connection: connection, err: error)
+  native read_until  skip(err: 3)

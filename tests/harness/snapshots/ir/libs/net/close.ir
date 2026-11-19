@@ -1,0 +1,2 @@
+fn net.close(connection: connection, err: error = none) -> (err: error)
+  native close  skip(err: 1)

@@ -1,0 +1,11 @@
+labcraft 1
+
+/// Opens a TCP connection to the endpoint `tcp:HOST:PORT`, within `timeout`, which the connection keeps for
+/// each of its reads and writes.
+extern rust(crate: "labcraft-net", function: "connect")
+fn connect(
+    host: string,
+    port: u16,
+    timeout: duration = 2 s,
+    err: error = none,
+) -> (connection: connection, err: error)

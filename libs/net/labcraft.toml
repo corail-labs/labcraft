@@ -1,0 +1,20 @@
+# The library net shipped with LabCraft: raw TCP and UDP (M4, docs/io.md); declarations here, native bodies in its Rust crate.
+name = "net"
+version = "0.1.0"
+description = "TCP connections and UDP sockets in raw bytes; a simulation file gives devices by their exchanges"
+dependencies = []
+always = ["close", "close_udp"]
+resources = ["connection", "udp_socket"]
+categories = [
+    "io.closed",
+    "io.invalid_argument",
+    "io.invalid_text",
+    "io.needs_real_time",
+    "io.not_allowed",
+    "io.timeout",
+    "io.too_long",
+    "io.unsupported",
+    "net.connection_refused",
+    "net.datagram_too_long",
+    "net.host_not_found",
+]

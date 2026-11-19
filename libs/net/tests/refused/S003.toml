@@ -1,0 +1,3 @@
+# net:S003: an endpoint that is not `tcp:HOST:PORT` or `udp:HOST:PORT`.
+[[net.device]]
+endpoint = "serial:COM3"

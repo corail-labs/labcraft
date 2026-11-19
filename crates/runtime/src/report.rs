@@ -452,11 +452,17 @@ fn instruments(out: &mut String, end: &RunEnd, left: &mut usize) -> bool {
                 entry.push(',');
             }
             let _ = write!(entry, "{{\"t_ms\":{},\"sent\":", ms(command.at));
-            text(&mut entry, &command.sent, command.sent_length);
+            match &command.sent {
+                Some(sent) => text(&mut entry, &sent.kept, sent.length),
+                None => entry.push_str("null"),
+            }
             entry.push_str(",\"answer\":");
             match &command.answer {
-                Some(answer) => text(&mut entry, answer, command.answer_length),
+                Some(answer) => text(&mut entry, &answer.kept, answer.length),
                 None => entry.push_str("null"),
+            }
+            if command.sent.iter().chain(&command.answer).any(|logged| logged.hex) {
+                entry.push_str(",\"hex\":true");
             }
             entry.push('}');
             if out.len() - start + entry.len() + CLOSE > room {

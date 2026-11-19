@@ -1,0 +1,2 @@
+fn net.close_udp(socket: udp_socket, err: error = none) -> (err: error)
+  native close_udp  skip(err: 1)

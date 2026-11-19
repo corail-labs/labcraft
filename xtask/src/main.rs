@@ -35,12 +35,12 @@ commands:
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/ or on a native crate of examples/
-  codes     the enumeration Code equals the tables of docs/cli.md, section 5, and labcraft_visa::CODES those of simulation.md, 7
+  codes     the enumeration Code equals the tables of docs/cli.md, section 5, labcraft_visa::CODES those of simulation.md, 7, and labcraft_net::CODES that of libs/net
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required, their defaults
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   clean-room no LabVIEW file in the repository, tracked or about to be added (D-23)
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
+  wasm      format, check, trace, ir, runtime, net, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
   hooks     the Python tests of the hook of the agents (.claude/hooks); not part of ci
   web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
   web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
@@ -313,19 +313,13 @@ fn check_codes() -> Result<(), String> {
     let path = root().join("docs").join("cli.md");
     let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     let in_code = codes::in_code();
-    report("codes", in_code.len(), "codes", codes::check(&codes::from_document(&document)?, &in_code))?;
+    report("codes", in_code.len(), "codes", codes::check(&codes::from_document(&document)?, &in_code, "docs/cli.md", "the enumeration Code"))?;
     // The codes of each library with native bodies equal the table of its document (`docs/architecture.md`, 10.6).
-    let path = root().join("libs").join("visa").join("simulation.md");
-    let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let documented =
-        codes::library_from_document(&document, "## 7. What is refused", "visa").map_err(|error| format!("{}: {error}", path.display()))?;
-    let visa = codes::of_visa();
-    let mut violations: Vec<String> = codes::check(&documented, &visa)
-        .into_iter()
-        .map(|violation| violation.replace("docs/cli.md", "libs/visa/simulation.md").replace("the enumeration Code", "labcraft_visa::CODES"))
-        .collect();
-    violations.extend(codes::twice(&visa));
-    report("codes of visa", visa.len(), "codes", violations)?;
+    for library in codes::LIBRARIES {
+        let path = root().join(library.document);
+        let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        report(&format!("codes of {}", library.name), library.codes.len(), "codes", library.violations(&document)?)?;
+    }
     let path = root().join("docs").join("cli.md");
     let document = std::fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
     report("codes of the simulation file", labcraft_runtime::simulation::CODES.len(), "codes", codes::of_the_simulation_file(&document))
@@ -367,6 +361,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-ir",
         "--package",
         "labcraft-runtime",
+        "--package",
+        "labcraft-net",
         "--package",
         "labcraft-visa",
         "--package",

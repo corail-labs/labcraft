@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Takes exactly `count` bytes; without them within the timeout, `io.timeout`, and takes nothing.
+extern rust(crate: "labcraft-net", function: "read")
+fn read(
+    connection: connection,
+    count: i32,
+    err: error = none,
+) -> (data: bytes, connection: connection, err: error)

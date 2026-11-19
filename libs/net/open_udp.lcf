@@ -1,0 +1,12 @@
+labcraft 1
+
+/// Opens a UDP socket bound to `local_port` (0: one the system chooses) and connected to the endpoint
+/// `udp:HOST:PORT`.
+extern rust(crate: "labcraft-net", function: "open_udp")
+fn open_udp(
+    host: string,
+    port: u16,
+    local_port: u16 = 0,
+    timeout: duration = 2 s,
+    err: error = none,
+) -> (socket: udp_socket, err: error)

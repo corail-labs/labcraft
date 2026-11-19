@@ -1,0 +1,4 @@
+# net:S002: a value of the wrong TOML type.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+latency_ms = "2"

@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Takes one datagram, waiting for one up to the timeout of the socket; one longer than `max` is dropped.
+extern rust(crate: "labcraft-net", function: "receive")
+fn receive(
+    socket: udp_socket,
+    max: i32 = 65507,
+    err: error = none,
+) -> (data: bytes, socket: udp_socket, err: error)

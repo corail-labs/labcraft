@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "kit/*", "apps/*", "libs/embedded", "libs/visa", "examples/results_log", "tests/harness", "xtask"]
+members = ["crates/*", "kit/*", "apps/*", "libs/embedded", "libs/net", "libs/visa", "examples/results_log", "tests/harness", "xtask"]
 
 [workspace.package]
 version = "0.4.0-dev"
@@ -26,6 +26,7 @@ labcraft-editor = { path = "crates/editor" }
 labcraft-ide = { path = "crates/ide" }
 labcraft-cli = { path = "apps/labcraft-cli" }
 labcraft-libs = { path = "libs/embedded" }
+labcraft-net = { path = "libs/net" }
 labcraft-visa = { path = "libs/visa" }
 labcraft-results-log = { path = "examples/results_log" }
 

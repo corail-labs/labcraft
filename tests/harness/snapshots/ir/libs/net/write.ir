@@ -1,0 +1,2 @@
+fn net.write(connection: connection, data: bytes, err: error = none) -> (connection: connection, err: error)
+  native write  skip(err: 2)

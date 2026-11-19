@@ -432,7 +432,11 @@ fn the_report_gets_the_commands_of_each_instrument_in_order_of_resources() {
     driver.write(zero, "BOGUS");
     let logs = driver.run.instruments();
     assert_eq!(logs.iter().map(|log| log.resource.as_str()).collect::<Vec<_>>(), ["SIM::DMM0", "SIM::DMM1"]);
-    let zero_log: Vec<(&str, Option<&str>)> = logs[0].commands.iter().map(|command| (command.sent.as_str(), command.answer.as_deref())).collect();
+    let zero_log: Vec<(&str, Option<&str>)> = logs[0]
+        .commands
+        .iter()
+        .map(|command| (command.sent.as_ref().map_or("", |sent| sent.kept.as_str()), command.answer.as_ref().map(|answer| answer.kept.as_str())))
+        .collect();
     assert_eq!(zero_log, [("*IDN?", Some("SIM,DMM,0,1.0")), ("BOGUS", None)]);
 }
 
@@ -594,8 +598,9 @@ fn the_log_keeps_the_start_of_each_text_and_its_length() {
     driver.write(dmm, &long);
     let logs = driver.run.instruments();
     let command = &logs[0].commands[0];
-    assert_eq!((command.sent.chars().count(), command.sent_length), (1000, 2500), "commands.md 5: 1,000 code points");
-    assert_eq!((command.answer.as_deref(), command.answer_length), (None, 0));
+    let sent = command.sent.as_ref().unwrap();
+    assert_eq!((sent.kept.chars().count(), sent.length), (1000, 2500), "commands.md 5: 1,000 code points");
+    assert_eq!(command.answer, None);
 }
 
 #[test]

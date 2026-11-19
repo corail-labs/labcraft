@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn the_libraries_are_those_of_the_folder() {
         let names: Vec<&str> = LIBRARIES.iter().map(|library| library.name).collect();
-        assert_eq!(names, ["scpi", "visa"]);
+        assert_eq!(names, ["net", "scpi", "visa"]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         for library in LIBRARIES {
             let on_disk: BTreeSet<String> = std::fs::read_dir(root.join(library.name))

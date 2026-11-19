@@ -1,0 +1,5 @@
+labcraft 1
+
+/// An open TCP connection to an endpoint `tcp:HOST:PORT`: a handle, not the device. Its default value is a
+/// connection never opened.
+type connection = opaque
