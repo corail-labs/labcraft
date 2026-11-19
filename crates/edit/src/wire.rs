@@ -99,6 +99,13 @@ pub(crate) fn connect(
     let (replace, accept_mismatch) = (how.replace, how.accept_mismatch);
     let function = edit.body_function()?.clone();
     let end = resolve_end(edit, judge, &function, &InputName::parse(to, "to")?, Some(from), arm)?;
+    // The template of a `string.format` is text written in the call: it has no terminal, so no wire reaches it (spec 5.4).
+    if crate::constant::is_template(edit, &function, &end) {
+        return Err(EditError::invalid(
+            "to",
+            format!("the template of `string.format` is text written in the call: no wire reaches `{to}`; `node.set_template` writes it (spec 5.4)"),
+        ));
+    }
     let reader = reader_body(&function, &end);
     // `node.output` (`#lbl.out`, `@41.out` too) names one value, where its node is: the structures around it take that
     // value out, not another of its name (9.2). An output with no name gets one there.
@@ -945,7 +952,7 @@ pub(crate) fn forget_wire(edit: &mut Edit, value: Name, node: Option<(Name, bool
             };
             !(this && (named_input || (to.terminal.is_none() && !still_reaches)))
         }
-        LayoutKind::Node { .. } | LayoutKind::Frame { .. } => true,
+        LayoutKind::Node { .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => true,
     });
 }
 

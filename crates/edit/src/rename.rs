@@ -133,7 +133,7 @@ fn by_label(edit: &mut Edit, line_name: Name, label: Name) {
     let Some(layout) = &mut edit.file.layout else { return };
     for item in &mut layout.items {
         match &mut item.kind {
-            LayoutKind::Frame { node: None, .. } => {}
+            LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => {}
             LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => {
                 if !node.is_label && node.name == line_name {
                     node.is_label = true;

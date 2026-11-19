@@ -262,6 +262,9 @@ pub struct Ide {
     /// The field of "New function" in `Project`, and the answer it waits for (ide.md 4).
     new_function: panels::NewFunction,
     creating: Option<Reply>,
+    /// The field of "Rename" in `Project`, and the answer it waits for (ide.md 4).
+    renaming: panels::Renaming,
+    renamed: Option<Reply>,
     /// A function created, by its file: shown once the session lists it.
     open_created: Option<String>,
     /// The function asked for by a click on its tab, until the session shows it.
@@ -366,6 +369,8 @@ impl Ide {
             callables: panels::Callables::default(),
             problems: panels::ProblemsFilter::default(),
             new_function: panels::NewFunction::default(),
+            renaming: panels::Renaming::default(),
+            renamed: None,
             creating: None,
             open_created: None,
             asking_show: None,
@@ -721,15 +726,26 @@ impl Ide {
             self.creating = None;
             match answer {
                 Ok(result) => {
-                    self.open_created = result
-                        .get("files")
-                        .and_then(|files| files.get(0))
-                        .and_then(|file| file.get("file"))
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
+                    // A type opens in no tab before the view `Text` (step 7).
+                    if !self.new_function.is_type {
+                        self.open_created = result
+                            .get("files")
+                            .and_then(|files| files.get(0))
+                            .and_then(|file| file.get("file"))
+                            .and_then(Value::as_str)
+                            .map(str::to_owned);
+                    }
                     self.new_function.close();
                 }
                 Err(error) => self.new_function.refused(&error.message),
+            }
+        }
+        // "Rename": the field closes when it is written; the tab and the window of a function follow its name.
+        if let Some(answer) = self.renamed.as_ref().and_then(Reply::take) {
+            self.renamed = None;
+            match answer {
+                Ok(_) => self.renaming.close(),
+                Err(error) => self.renaming.refused(&error.message),
             }
         }
         if let Some(file) = &self.open_created
@@ -1452,6 +1468,18 @@ impl Ide {
                 Some(host) => self.creating = Some(host.send("function.create", json!({ "path": path }))),
                 None => self.new_function.refused("open a project first"),
             },
+            panels::Asked::NewType { path, definition } => match host {
+                Some(host) => self.creating = Some(host.send("type.create", json!({ "path": path, "definition": definition }))),
+                None => self.new_function.refused("open a project first"),
+            },
+            panels::Asked::PickDefinition { path } => self.open_definitions(&path),
+            panels::Asked::Rename { file, name } => match host {
+                Some(host) => {
+                    let id = if file.ends_with(".lct") { "type.rename" } else { "function.rename" };
+                    self.renamed = Some(host.send(id, json!({ "file": file, "name": name })));
+                }
+                None => self.renaming.refused("open a project first"),
+            },
         }
     }
 
@@ -1460,8 +1488,12 @@ impl Ide {
         let ended: Vec<(String, Intent)> =
             self.drawn.iter_mut().filter_map(|(function, drawn)| Some((function.clone(), drawn.canvas.end_run()?))).collect();
         for (function, intent) in ended {
-            if let Intent::Move { nodes, by } = intent {
-                self.ask_move(host, view, &function, &nodes, by);
+            match intent {
+                Intent::Move { nodes, by } => self.ask_move(host, view, &function, &nodes, by),
+                Intent::MoveTerminal { terminal, y } => {
+                    self.send_edit(host, view, &function, "terminal.move", json!({ "terminal": terminal, "y": y }))
+                }
+                _ => {}
             }
         }
     }
@@ -1584,13 +1616,31 @@ impl Ide {
             types::Closed::Picked(id, params) => {
                 let reply = host.send(id, params);
                 let function = list.function.clone();
-                if view.functions.iter().any(|listed| listed.function == function) {
+                // The definition of a new type: its answer goes to the field of "New type".
+                if id == "type.create" {
+                    self.new_function.pending = true;
+                    self.creating = Some(reply);
+                } else if view.functions.iter().any(|listed| listed.function == function) {
                     self.edits.push((function, reply, None));
                 } else {
                     self.pending.push((id.to_owned(), reply));
                 }
             }
         }
+    }
+
+    /// Opens the list of types for the definition of the new type of `path`, where the pointer is: an alias of the one
+    /// chosen.
+    fn open_definitions(&mut self, path: &str) {
+        let project: Vec<String> = self
+            .callables
+            .list
+            .iter()
+            .filter(|callable| callable.kind == "type")
+            .map(|callable| if callable.library.is_empty() { callable.name.clone() } else { format!("{}.{}", callable.library, callable.name) })
+            .collect();
+        let at = self.pointer.or_else(|| self.canvas_rect.map(|rect| rect.center())).unwrap_or_default();
+        self.types = Some(types::TypeList::new(String::new(), path.to_owned(), String::new(), types::Purpose::Define, project, at));
     }
 
     /// Opens the list of types for `terminal` of the function of `file`, where the pointer is.
@@ -1722,9 +1772,23 @@ impl Ide {
         }
         let shown = self.target(view).function.clone();
         match id.as_str() {
-            // From the palette or a menu, with no path: the field of "New function" in `Project`, at the root (ide.md 4).
-            "function.create" if !params.contains_key("path") => {
-                self.new_function.open("");
+            // From the palette or a menu, with no path: the field of "New function" or "New type" in `Project`, at the root
+            // (ide.md 4); with no file, "Rename" of the function shown, there.
+            "function.create" | "type.create" | "function.rename" if !params.contains_key("path") && !params.contains_key("file") => {
+                match id.as_str() {
+                    "function.create" => self.new_function.open(""),
+                    "type.create" => self.new_function.open_type(""),
+                    _ => match shown.as_deref().and_then(|function| view.functions.iter().find(|listed| listed.function == function)) {
+                        Some(listed) => {
+                            let name = labcraft_editor::own_name(&listed.function).to_owned();
+                            self.renaming.open(&listed.file, &name);
+                        }
+                        None => {
+                            self.say("Rename: show a function first");
+                            return;
+                        }
+                    },
+                }
                 if !self.workspace.layout.contains(&Pane::Project)
                     && self.workspace.set_visible(Pane::Project, true, None, self.permissions()).is_ok()
                 {
@@ -1914,7 +1978,7 @@ impl Ide {
                 let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
                 let opened = self.drawn.get_mut(&function).is_some_and(|drawn| drawn.canvas.edit_name());
                 if !opened {
-                    self.say("F2 renames the node or the terminal of the frame selected: select one");
+                    self.say("F2 renames the node or the terminal of the frame selected, or the function when nothing is: select one");
                 }
             }
             // Arrange (notation 2.4, 2.6): the selection of the canvas that has the keyboard, else the whole function.
@@ -2045,6 +2109,7 @@ fn field_command(file: &str, kind: labcraft_editor::FieldKind, text: &str, accep
             ("signature.set_default", json!({ "file": file, "terminal": terminal, "default": default }))
         }
         FieldKind::AddTerminal { input } => ("signature.add", terminal_params(file, input, text)),
+        FieldKind::FunctionName => ("function.rename", json!({ "file": file, "name": text })),
     }
 }
 
@@ -2124,11 +2189,13 @@ fn quoted(text: &str) -> String {
 
 /// The editing commands whose results the window follows (`Ide::edits`).
 const EDITS: &[&str] = &[
+    "function.rename",
     "node.move",
     "node.place",
     "node.set_view",
     "layout.arrange",
     "frame.resize",
+    "terminal.move",
     "function.set_doc",
     "signature.add",
     "signature.remove",
@@ -2337,7 +2404,14 @@ impl Content<'_> {
         let view = self.view;
         let focused = self.ide.target(view);
         let asked = match pane {
-            Pane::Project => panels::project(ui, view, focused.function.as_deref(), self.ide.prefs.preview_tabs, &mut self.ide.new_function),
+            Pane::Project => panels::project(
+                ui,
+                view,
+                focused.function.as_deref(),
+                self.ide.prefs.preview_tabs,
+                &mut self.ide.new_function,
+                &mut self.ide.renaming,
+            ),
             Pane::Palette => {
                 panels::palette(ui, &mut self.ide.callables);
                 None
@@ -2575,7 +2649,9 @@ impl Content<'_> {
                 // "Remove the fixed position", "Arrange this wire" (notation 2.4).
                 Intent::Arrange(selection) => {
                     if let Some(file) = file_of(view, function) {
-                        let params = if selection.wires.is_empty() {
+                        let params = if !selection.terminals.is_empty() {
+                            json!({ "file": file, "terminals": selection.terminals })
+                        } else if selection.wires.is_empty() {
                             json!({ "file": file, "nodes": selection.nodes })
                         } else {
                             json!({ "file": file, "wires": selection.wires })
@@ -2692,6 +2768,9 @@ impl Content<'_> {
                 }
                 Intent::RemoveTerminal { terminal } => {
                     self.ide.send_edit(self.host, view, function, "signature.remove", json!({ "terminal": terminal }));
+                }
+                Intent::MoveTerminal { terminal, y } => {
+                    self.ide.send_edit(self.host, view, function, "terminal.move", json!({ "terminal": terminal, "y": y }));
                 }
                 Intent::PickType { terminal } => {
                     if let Some(file) = file_of(view, function) {
@@ -2821,6 +2900,7 @@ mod field_tests {
             terminal(FieldKind::TerminalDefault { terminal: "input x".to_owned() }, ""),
             ("signature.set_default", json!({ "file": "f.lcf", "terminal": "input x", "default": null }))
         );
+        assert_eq!(terminal(FieldKind::FunctionName, "twice"), ("function.rename", json!({ "file": "f.lcf", "name": "twice" })));
         let add = |input: bool, text: &str| terminal(FieldKind::AddTerminal { input }, text).1;
         assert_eq!(add(true, "gain: f64 = 2"), json!({ "file": "f.lcf", "terminal": "input gain", "type": "f64", "default": "2" }));
         assert_eq!(add(false, "count : i64"), json!({ "file": "f.lcf", "terminal": "output count", "type": "i64" }));

@@ -552,3 +552,30 @@ fn the_coordinates_of_a_frame_size_are_integers_in_the_range() {
     assert_eq!(wires("frame size (5.0, 1)"), ["LC5005"]);
     assert_eq!(wires("frame total size (1, 1000001)"), ["LC5005"]);
 }
+
+// The layout: the height of a terminal of the frame (`input x at y`, `output x at y`).
+
+#[test]
+fn a_terminal_entry_names_an_input_or_an_output_of_its_kind() {
+    // Spec 11: `values`, `k`, `gain` are inputs of `WIRES`; `mean`, `err` outputs. No diagnostic.
+    for entry in ["input values at 40", "input gain at -16", "output mean at 120", "output err at 0", "input k at 8\noutput mean at 8"] {
+        assert_eq!(wires(entry), NOTHING, "{entry}");
+    }
+    // An input that is no output, an output that is no input, and a name of neither.
+    for entry in ["output values at 40", "input mean at 40", "input sq at 40", "output nothing at 40"] {
+        assert_eq!(wires(entry), ["LC5004"], "{entry}");
+    }
+}
+
+#[test]
+fn a_terminal_has_one_entry() {
+    assert_eq!(wires("input k at 8\ninput k at 64"), ["LC5007"]);
+    assert_eq!(wires("output err at 8\noutput err at 64"), ["LC5007"]);
+}
+
+#[test]
+fn the_height_of_a_terminal_is_an_integer_in_the_range() {
+    assert_eq!(wires("input k at 5.0"), ["LC5005"]);
+    assert_eq!(wires("output mean at 1000001"), ["LC5005"]);
+    assert_eq!(wires("output mean at -1000000"), NOTHING);
+}

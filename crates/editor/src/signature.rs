@@ -24,12 +24,23 @@ pub fn default_is_cut(default: &str) -> bool {
 pub(crate) const CUT_DEFAULT: &str = "This default is too long to edit here: edit it in the Text view";
 
 /// A terminal of the frame of the function, as `signature.*` names it: `input x` or `output x`. None for another port.
-pub(crate) fn frame_terminal(port: &Port) -> Option<String> {
+pub fn frame_terminal(port: &Port) -> Option<String> {
     if !port.frame || port.placed.is_some() || port.caption.is_empty() {
         return None;
     }
     // An input of the function gives a value (no wire reaches it); an output takes one.
     Some(if port.input { format!("output {}", port.caption) } else { format!("input {}", port.caption) })
+}
+
+/// The height of a port from the origin of the frame of the function (spec 11), in units: what `input x at y` writes.
+pub fn frame_height(drawing: &Drawing, port: &Port) -> Option<i64> {
+    let origin = drawing.bodies.first()?.origin.1;
+    Some(crate::rerouting::unit(port.y - origin))
+}
+
+/// The name of a function without its library: `settle` of `dmm_driver.settle`, as its file and its title name it.
+pub fn own_name(function: &str) -> &str {
+    function.rsplit('.').next().unwrap_or(function)
 }
 
 /// The frame of the function, in units: its left, top, right and bottom.
@@ -129,6 +140,35 @@ pub(crate) fn make(drawing: &Drawing, at: usize) -> Option<Intent> {
     } else {
         Intent::MakeTerminal { terminal: format!("output {name}"), ty, from: port.name.clone(), to: format!("output {name}") }
     })
+}
+
+/// The title of the frame of the function (`fn settle`, notation 2): the name of the function, which a field renames,
+/// and its box, in units. None when the drawing cuts the name (`…`): the field would write it cut.
+fn title_box(drawing: &Drawing) -> Option<(String, egui::Rect)> {
+    drawing.loose.iter().find_map(|shape| {
+        let Shape::Text { x, y, size, width, runs, .. } = shape else { return None };
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
+        let name = own_name(text.strip_prefix("fn ")?);
+        if name.is_empty() || name.ends_with('…') {
+            return None;
+        }
+        let size = *size as f32 / 100.0;
+        let (left, baseline) = (*x as f32 / 100.0, *y as f32 / 100.0);
+        Some((
+            name.to_owned(),
+            egui::Rect::from_min_max(Pos2::new(left, baseline - size), Pos2::new(left + *width as f32 / 100.0, baseline + size * 0.3)),
+        ))
+    })
+}
+
+/// The title of the frame of the function under `unit`: the name of the function, and where its field opens.
+pub(crate) fn title_under(drawing: &Drawing, unit: Pos2) -> Option<(String, Pos2)> {
+    title_box(drawing).filter(|(_, rect)| rect.expand(2.0).contains(unit)).map(|(name, rect)| (name, rect.min))
+}
+
+/// The name of the function on the title of its frame, and where its field opens: F2 with nothing selected.
+pub(crate) fn title(drawing: &Drawing) -> Option<(String, Pos2)> {
+    title_box(drawing).map(|(name, rect)| (name, rect.min))
 }
 
 /// A text of the terminals of the frame of the function under `unit`: the name of a terminal, or the pill of the default

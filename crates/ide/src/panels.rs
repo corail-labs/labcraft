@@ -10,10 +10,10 @@ use egui::RichText;
 use kit_shell::icon::{self, Icon};
 use kit_shell::inspector::{self, Field, Section};
 use labcraft_diagram::{Drawing, Overlay};
-use labcraft_editor::Dragged;
 use labcraft_editor::insertion::{self, Catalog, EntryKind};
+use labcraft_editor::{Dragged, own_name};
 use labcraft_engine::drawings::TracePart;
-use labcraft_engine::view::{Listed, Published, Shown};
+use labcraft_engine::view::{Listed, ListedType, Published, Shown};
 use labcraft_types::Severity;
 use labcraft_types::listing::Typed;
 use serde_json::{Value, json};
@@ -31,16 +31,26 @@ pub enum Asked {
     Window(&'static str),
     /// `function.create` of `path`, then the function shown once the session lists it (ide.md 4).
     NewFunction { path: String },
+    /// `type.create` of `path` with `definition` (ide.md 4; decision of the owner, 2026-11-19).
+    NewType { path: String, definition: String },
+    /// The list of types, for the definition of the new type of `path`: an alias of the type chosen.
+    PickDefinition { path: String },
+    /// `function.rename` or `type.rename` of `file` to `name` (ide.md 4).
+    Rename { file: String, name: String },
     /// The list of types of `terminal` of the function of `file` (notation 2.4): for a new one when `add`, with its default.
     PickType { file: String, terminal: String, default: Option<String>, add: bool },
 }
 
-/// The field of "New function" in the tree of `Project` (ide.md 4): the folder it writes in, from the root of the
-/// project, the name typed, and why the last one was refused.
+/// The field of "New function" or "New type" in the tree of `Project` (ide.md 4): the folder it writes in, from the
+/// root of the project, the name typed, for a type its definition once the name is given, and why the last one was
+/// refused.
 #[derive(Clone, Debug, Default)]
 pub struct NewFunction {
     pub folder: Option<String>,
     pub name: String,
+    /// A type: none while its name is typed, then its definition.
+    pub definition: Option<String>,
+    pub is_type: bool,
     pub error: Option<String>,
     /// Sent, and the answer not back yet.
     pub pending: bool,
@@ -51,6 +61,11 @@ impl NewFunction {
     /// Opens the field in `folder` (`""` for the root).
     pub fn open(&mut self, folder: &str) {
         *self = NewFunction { folder: Some(folder.to_owned()), ..NewFunction::default() };
+    }
+
+    /// Opens the field of a new type in `folder` (`""` for the root): its name, then its definition.
+    pub fn open_type(&mut self, folder: &str) {
+        *self = NewFunction { folder: Some(folder.to_owned()), is_type: true, ..NewFunction::default() };
     }
 
     pub fn close(&mut self) {
@@ -64,14 +79,74 @@ impl NewFunction {
         self.error = Some(message.to_owned());
     }
 
-    /// The field, in the folder it is for: Enter asks for the function, Escape closes it.
+    /// The path of the file of the name typed, in its folder.
+    fn path(&self, folder: &str) -> String {
+        let extension = if self.is_type { ".lct" } else { ".lcf" };
+        let name = self.name.trim();
+        let file = format!("{}{extension}", name.strip_suffix(extension).unwrap_or(name));
+        if folder.is_empty() { file } else { format!("{folder}/{file}") }
+    }
+
+    /// The definition of a new type, under its name: Ctrl+Enter or "Create" asks for it, "Pick a type…" makes it an
+    /// alias of a type of the list, Escape closes it.
+    fn definition_ui(&mut self, ui: &mut egui::Ui, folder: &str) -> Option<Asked> {
+        let mut asked = None;
+        let path = self.path(folder);
+        ui.horizontal(|ui| {
+            icon::leading(ui, Icon::File, ui.visuals().text_color());
+            ui.label(format!("type {} =", self.name.trim()));
+        });
+        let definition = self.definition.get_or_insert_with(String::new);
+        let response = ui.add_enabled(
+            !self.pending,
+            egui::TextEdit::multiline(definition)
+                .hint_text("struct { value: f64, ok: bool }\nenum { Pass, Fail }")
+                .desired_rows(2)
+                .desired_width(220.0),
+        );
+        if !self.focused {
+            response.request_focus();
+            self.focused = true;
+        }
+        let written = definition.trim().to_owned();
+        let (escape, create) =
+            ui.input(|input| (input.key_pressed(egui::Key::Escape), input.key_pressed(egui::Key::Enter) && input.modifiers.command));
+        if escape && (response.has_focus() || response.lost_focus()) {
+            self.close();
+            return None;
+        }
+        ui.horizontal(|ui| {
+            let ready = !self.pending && !written.is_empty();
+            if ui.add_enabled(ready, egui::Button::new("Create")).clicked() || (create && response.has_focus() && ready) {
+                asked = Some(Asked::NewType { path: path.clone(), definition: written.clone() });
+            }
+            if ui.add_enabled(!self.pending, egui::Button::new("Pick a type…")).clicked() {
+                asked = Some(Asked::PickDefinition { path: path.clone() });
+            }
+        });
+        if matches!(asked, Some(Asked::NewType { .. })) {
+            self.pending = true;
+            self.error = None;
+        }
+        asked
+    }
+
+    /// The field, in the folder it is for: Enter asks for the function, or goes on to the definition of a type; Escape
+    /// closes it.
     fn ui(&mut self, ui: &mut egui::Ui) -> Option<Asked> {
         let folder = self.folder.clone()?;
+        if self.definition.is_some() {
+            let asked = self.definition_ui(ui, &folder);
+            if let Some(error) = &self.error {
+                ui.label(RichText::new(error.as_str()).small().color(ui.visuals().error_fg_color));
+            }
+            return asked;
+        }
         let mut asked = None;
         ui.horizontal(|ui| {
-            icon::leading(ui, Icon::Diagram, ui.visuals().text_color());
-            let response =
-                ui.add_enabled(!self.pending, egui::TextEdit::singleline(&mut self.name).hint_text("name of the function").desired_width(140.0));
+            let (glyph, hint) = if self.is_type { (Icon::File, "name of the type") } else { (Icon::Diagram, "name of the function") };
+            icon::leading(ui, glyph, ui.visuals().text_color());
+            let response = ui.add_enabled(!self.pending, egui::TextEdit::singleline(&mut self.name).hint_text(hint).desired_width(140.0));
             if !self.focused {
                 response.request_focus();
                 self.focused = true;
@@ -80,12 +155,78 @@ impl NewFunction {
                 let name = self.name.trim();
                 if ui.input(|input| input.key_pressed(egui::Key::Escape)) || name.is_empty() {
                     self.close();
+                } else if self.is_type {
+                    // The definition next, under the name (decision of the owner, 2026-11-19).
+                    self.definition = Some(String::new());
+                    self.focused = false;
+                    self.error = None;
                 } else {
-                    let file = format!("{}.lcf", name.strip_suffix(".lcf").unwrap_or(name));
-                    let path = if folder.is_empty() { file } else { format!("{folder}/{file}") };
+                    let path = self.path(&folder);
                     self.pending = true;
                     self.error = None;
                     asked = Some(Asked::NewFunction { path });
+                }
+            }
+        });
+        if let Some(error) = &self.error {
+            ui.label(RichText::new(error.as_str()).small().color(ui.visuals().error_fg_color));
+        }
+        asked
+    }
+}
+
+/// The field in place of a function or a type renamed in the tree of `Project` (ide.md 4): its file, the name typed,
+/// and why the last one was refused.
+#[derive(Clone, Debug, Default)]
+pub struct Renaming {
+    pub file: Option<String>,
+    pub name: String,
+    pub error: Option<String>,
+    /// Sent, and the answer not back yet.
+    pub pending: bool,
+    focused: bool,
+}
+
+impl Renaming {
+    /// Opens the field on the line of `file`, with the name it has.
+    pub fn open(&mut self, file: &str, name: &str) {
+        *self = Renaming { file: Some(file.to_owned()), name: name.to_owned(), ..Renaming::default() };
+    }
+
+    pub fn close(&mut self) {
+        *self = Renaming::default();
+    }
+
+    pub fn refused(&mut self, message: &str) {
+        self.pending = false;
+        self.focused = false;
+        self.error = Some(message.to_owned());
+    }
+
+    /// Whether it is open on the line of `file`.
+    fn on(&self, file: &str) -> bool {
+        self.file.as_deref() == Some(file)
+    }
+
+    /// The field on the line: Enter asks for the rename, Escape or a name left as it was closes it.
+    fn ui(&mut self, ui: &mut egui::Ui, glyph: Icon, old: &str) -> Option<Asked> {
+        let file = self.file.clone()?;
+        let mut asked = None;
+        ui.horizontal(|ui| {
+            icon::leading(ui, glyph, ui.visuals().text_color());
+            let response = ui.add_enabled(!self.pending, egui::TextEdit::singleline(&mut self.name).desired_width(140.0));
+            if !self.focused {
+                response.request_focus();
+                self.focused = true;
+            }
+            if response.lost_focus() && !self.pending {
+                let name = self.name.trim().to_owned();
+                if ui.input(|input| input.key_pressed(egui::Key::Escape)) || name.is_empty() || name == old {
+                    self.close();
+                } else {
+                    self.pending = true;
+                    self.error = None;
+                    asked = Some(Asked::Rename { file, name });
                 }
             }
         });
@@ -104,8 +245,16 @@ fn alone(file: &str, functions: &[&Listed]) -> bool {
 
 /// `Project`: the files of the folder, as a tree of folders, each file with its functions.
 /// `focused`: the function of the window that has focus, marked in the tree.
-/// `new`: the field of "New function", which a right-click on a folder, or on the tree, opens (ide.md 4).
-pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, preview_tabs: bool, new: &mut NewFunction) -> Option<Asked> {
+/// `new`: the field of "New function" or "New type", which a right-click on a folder, or on the tree, opens; `renaming`:
+/// the field of "Rename", from the menu of a function or a type, or F2 on its line (ide.md 4).
+pub fn project(
+    ui: &mut egui::Ui,
+    published: &Published,
+    focused: Option<&str>,
+    preview_tabs: bool,
+    new: &mut NewFunction,
+    renaming: &mut Renaming,
+) -> Option<Asked> {
     let Some(folder) = &published.folder else {
         ui.label(RichText::new("No folder open").weak());
         return None;
@@ -116,13 +265,37 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
             new.open(folder);
             ui.close();
         }
+        if ui.button("New type").clicked() {
+            new.open_type(folder);
+            ui.close();
+        }
     };
+    // The menu of a function or a type: "Rename" first (ide.md 4).
+    let line_menu = |ui: &mut egui::Ui, folder: &str, file: &str, name: &str, new: &mut NewFunction, renaming: &mut Renaming| {
+        if ui.button("Rename").clicked() {
+            renaming.open(file, name);
+            ui.close();
+        }
+        ui.separator();
+        menu(ui, folder, new);
+    };
+    // The types of each folder, after its functions.
+    let mut types: BTreeMap<Vec<&str>, Vec<&ListedType>> = BTreeMap::new();
+    for listed in &published.types {
+        let mut parts: Vec<&str> = listed.file.split('/').collect();
+        parts.pop();
+        types.entry(parts).or_default().push(listed);
+    }
     // By folder, then by file.
     let mut tree: BTreeMap<Vec<&str>, BTreeMap<&str, Vec<&Listed>>> = BTreeMap::new();
     for listed in &published.functions {
         let mut parts: Vec<&str> = listed.file.split('/').collect();
         let file = parts.pop().unwrap_or_default();
         tree.entry(parts).or_default().entry(file).or_default().push(listed);
+    }
+    // A folder of types alone is in the tree too.
+    for folders in types.keys() {
+        tree.entry(folders.clone()).or_default();
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if folder != "." {
@@ -131,8 +304,8 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
         if new.folder.as_deref() == Some("") {
             asked = asked.take().or(new.ui(ui));
         }
-        // A folder whose header asked for "New function": its body holds the field from the next frame.
-        let mut open_in: Option<String> = None;
+        // A folder whose header asked for "New function" or "New type": its body holds the field from the next frame.
+        let mut open_in: Option<(String, bool)> = None;
         for (folders, files) in &tree {
             let joined = folders.join("/");
             let mut body = |ui: &mut egui::Ui| {
@@ -150,6 +323,10 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                         });
                     }
                     for listed in functions {
+                        if renaming.on(&listed.file) {
+                            asked = asked.take().or(renaming.ui(ui, Icon::Diagram, own_name(&listed.function)));
+                            continue;
+                        }
                         let shown = focused == Some(listed.function.as_str());
                         let warned = !listed.drawable && listed.errors > 0;
                         let text = if warned {
@@ -169,12 +346,35 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                         };
                         let response = if alone { line(ui) } else { ui.indent(("project", &listed.file, &listed.function), line).inner };
                         let response = response.on_hover_text(&listed.file);
-                        response.context_menu(|ui| menu(ui, &joined, new));
+                        response.context_menu(|ui| line_menu(ui, &joined, &listed.file, own_name(&listed.function), new, renaming));
+                        if (response.hovered() || response.has_focus())
+                            && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F2))
+                        {
+                            renaming.open(&listed.file, own_name(&listed.function));
+                        }
                         if response.double_clicked() {
                             asked = Some(Asked::Show { function: listed.function.clone(), preview: false });
                         } else if response.clicked() {
                             asked = Some(Asked::Show { function: listed.function.clone(), preview: preview_tabs });
                         }
+                    }
+                }
+                // Its types: a line each, its file on hover; it opens in no tab before the view `Text` (step 7).
+                for listed in types.get(folders).map_or(&[][..], Vec::as_slice) {
+                    if renaming.on(&listed.file) {
+                        asked = asked.take().or(renaming.ui(ui, Icon::File, &listed.name));
+                        continue;
+                    }
+                    let response = ui
+                        .horizontal(|ui| {
+                            icon::leading(ui, Icon::File, ui.visuals().text_color());
+                            ui.selectable_label(false, RichText::new(format!("type {}", listed.name)))
+                        })
+                        .inner
+                        .on_hover_text(&listed.file);
+                    response.context_menu(|ui| line_menu(ui, &joined, &listed.file, &listed.name, new, renaming));
+                    if (response.hovered() || response.has_focus()) && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F2)) {
+                        renaming.open(&listed.file, &listed.name);
                     }
                 }
             };
@@ -187,7 +387,11 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
                         icon::leading(ui, Icon::Folder, ui.visuals().weak_text_color());
                         ui.label(joined.as_str()).context_menu(|ui| {
                             if ui.button("New function").clicked() {
-                                open_in = Some(joined.clone());
+                                open_in = Some((joined.clone(), false));
+                                ui.close();
+                            }
+                            if ui.button("New type").clicked() {
+                                open_in = Some((joined.clone(), true));
                                 ui.close();
                             }
                         });
@@ -198,8 +402,10 @@ pub fn project(ui: &mut egui::Ui, published: &Published, focused: Option<&str>, 
         if published.functions.is_empty() {
             ui.label(RichText::new("No function in this folder").weak());
         }
-        if let Some(folder) = open_in {
-            new.open(&folder);
+        match open_in {
+            Some((folder, true)) => new.open_type(&folder),
+            Some((folder, false)) => new.open(&folder),
+            None => {}
         }
         // The room left under the tree: its menu writes at the root.
         let room = egui::Vec2::new(ui.available_width(), ui.available_height().clamp(24.0, 4_000.0));
@@ -502,6 +708,10 @@ fn terminal_asked(answer: inspector::Answer, file: &str, terminal: &str) -> Opti
             _ => None,
         },
         inspector::Answer::Pressed { key } if key == "remove" => command("signature.remove", json!({})),
+        inspector::Answer::Integer { key, value } if key == "y" => command("terminal.move", json!({ "y": value })),
+        inspector::Answer::Pressed { key } if key == "unfix" => {
+            Some(Asked::Command("layout.arrange".to_owned(), json!({ "file": file, "terminals": [terminal] })))
+        }
         inspector::Answer::Pressed { key } if key == "pick type" => {
             Some(Asked::PickType { file: file.to_owned(), terminal: terminal.to_owned(), default: None, add: false })
         }
@@ -626,8 +836,8 @@ fn of_wire(ui: &mut egui::Ui, drawing: &Drawing, overlay: Option<&Overlay>, grou
     inspector::show(ui, "Wire", &[Section { title: None, fields, text: None }])
 }
 
-/// The inspector of one terminal of the frame: its name, its type and its default, as its tooltip gives them. Whether it
-/// is fixed comes with `input x at y` and `terminal.move` (step 6).
+/// The inspector of one terminal of the frame: its name, its type and its default, as its tooltip gives them, and its
+/// height on its edge, which moves it (`terminal.move`), with "Remove the fixed position" when `layout` fixes it.
 fn of_terminal(ui: &mut egui::Ui, drawing: &Drawing, name: &str) -> Option<inspector::Answer> {
     let (side, caption) = name.split_once(' ').unwrap_or(("", name));
     let mut fields = vec![Field::code("Terminal", name), Field::text("Name", "name", caption, "a name")];
@@ -659,6 +869,15 @@ fn of_terminal(ui: &mut egui::Ui, drawing: &Drawing, name: &str) -> Option<inspe
             fields.push(Field::code("Default", default));
         } else {
             fields.push(Field::text("Default", "default", default, "required"));
+        }
+    }
+    // Its height from the origin of the frame (spec 11), where it is drawn.
+    let port = drawing.ports.iter().find(|port| labcraft_editor::frame_terminal(port).as_deref() == Some(name));
+    if let Some((port, y)) = port.and_then(|port| Some((port, labcraft_editor::frame_height(drawing, port)?))) {
+        fields.push(Field::new("Position", if port.fixed { "Fixed" } else { "Placed automatically" }));
+        fields.push(Field::integer("Y", "y", y));
+        if port.fixed {
+            fields.push(Field::button("Fixed position", "unfix", "Remove the fixed position"));
         }
     }
     fields.push(Field::button("Terminal", "remove", "Remove"));

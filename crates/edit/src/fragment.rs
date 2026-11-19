@@ -257,7 +257,7 @@ pub(crate) fn copy(edit: &Edit, judge: &dyn Judge, nodes: &[String]) -> Result<S
     let mut wires: Vec<(LayoutItem, bool)> = Vec::new();
     for item in edit.file.layout.iter().flat_map(|layout| &layout.items) {
         match &item.kind {
-            LayoutKind::Frame { node: None, .. } => {}
+            LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => {}
             LayoutKind::Frame { node: Some(node), size } => {
                 let Some(loc) = named_by(&nodes_of, node).filter(|loc| held.contains(*loc)) else { continue };
                 if let (Some(x), Some(y)) = (value_of(edit, &size.x), value_of(edit, &size.y)) {
@@ -517,7 +517,7 @@ fn rename_all(edit: &mut Edit, values: &HashMap<Name, Name>, labels: &HashMap<Na
     };
     for item in edit.file.layout.iter_mut().flat_map(|layout| layout.items.iter_mut()) {
         match &mut item.kind {
-            LayoutKind::Frame { node: None, .. } => {}
+            LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => {}
             LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => of(node),
             LayoutKind::Wire { from, to, .. } => {
                 of(&mut from.node);
@@ -581,7 +581,8 @@ fn prepare(
     let mut kept: Vec<(LayoutItem, bool)> = Vec::new();
     for item in edit.file.layout.take().map(|layout| layout.items).unwrap_or_default() {
         let (node, from) = match &item.kind {
-            LayoutKind::Frame { node: None, .. } => continue,
+            // The terminals of the frame of the clipboard are not those of this one.
+            LayoutKind::Frame { node: None, .. } | LayoutKind::Terminal { .. } => continue,
             LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => (*node, None),
             LayoutKind::Wire { from, to, .. } => (to.node, Some(from.node)),
         };
@@ -608,7 +609,7 @@ fn prepare(
         if outer {
             match &mut item.kind {
                 LayoutKind::Node { at: Some(point), .. } => shifted(edit, point, by, "at")?,
-                LayoutKind::Node { at: None, .. } | LayoutKind::Frame { .. } => {}
+                LayoutKind::Node { at: None, .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => {}
                 LayoutKind::Wire { via, .. } => {
                     for point in via.iter_mut() {
                         shifted(edit, point, by, "at")?;

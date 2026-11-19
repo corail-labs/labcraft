@@ -846,6 +846,92 @@ fn the_documentation_type_and_default_are_steps() {
     assert_eq!(text(&memory, "/p/f.lcf"), CALLED);
 }
 
+#[test]
+fn a_terminal_moved_writes_its_entry_and_arrange_takes_it_away() {
+    // commands.md 6.7, `terminal.move`; spec 11: `output y at 40`. "Remove the fixed position" is `layout.arrange`.
+    let (mut session, memory) = called();
+    let result = ok(&mut session, "terminal.move", json!({ "file": "f.lcf", "terminal": "output y", "y": 40 }));
+    let moved = "labcraft 1\n\nfn f(x: f64, gain: f64 = 1) -> (y: f64) {\n    y = x\n}\n\nlayout {\n    output y at 40\n}\n";
+    assert_eq!(text(&memory, "/p/f.lcf"), moved);
+    assert_eq!(result["names"], json!({ "terminal": "output y" }));
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+    ok(&mut session, "layout.arrange", json!({ "file": "f.lcf", "terminals": ["output y"] }));
+    assert_eq!(text(&memory, "/p/f.lcf"), CALLED);
+    let error = refused(&mut session, &Author::User, "terminal.move", json!({ "file": "f.lcf", "terminal": "input y", "y": 40 }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("edit.unknown", Some("terminal")));
+    let error = refused(&mut session, &Author::User, "terminal.move", json!({ "file": "f.lcf", "terminal": "output y", "y": 4.5 }));
+    assert_eq!(error.code, "params.invalid");
+}
+
+#[test]
+fn a_function_renamed_moves_its_file_and_renames_its_callers_in_one_step() {
+    // commands.md 6.7, `function.rename`: the file of the function is named after it (R-22), and `main` calls it.
+    let (mut session, memory) = called();
+    let result = ok(&mut session, "function.rename", json!({ "file": "f.lcf", "name": "scale" }));
+    let function = "labcraft 1\n\nfn scale(x: f64, gain: f64 = 1) -> (y: f64) {\n    y = x\n}\n";
+    let caller = "labcraft 1\n\nfn main(k: f64) -> (r: f64) {\n    r = scale(k, gain: 2)\n}\n";
+    assert!(memory.get("/p/f.lcf").is_none(), "the old file goes");
+    assert_eq!((text(&memory, "/p/scale.lcf"), text(&memory, "/p/main.lcf")), (function.to_owned(), caller.to_owned()));
+    assert_eq!(result["names"], json!({ "function": "scale", "file": "scale.lcf" }));
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+    ok(&mut session, "history.undo", json!({}));
+    assert!(memory.get("/p/scale.lcf").is_none());
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/main.lcf")), (CALLED.to_owned(), CALLER.to_owned()), "one undo takes all back");
+    // A name whose file exists, a name of no function, and a type file.
+    let error = refused(&mut session, &Author::User, "function.rename", json!({ "file": "f.lcf", "name": "main" }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("path.exists", Some("name")));
+    let error = refused(&mut session, &Author::User, "function.rename", json!({ "file": "f.lcf", "name": "two words" }));
+    assert_eq!(error.code, "name.invalid");
+    let error = refused(
+        &mut session,
+        &Author::User,
+        "commands.batch",
+        json!({ "commands": [{ "id": "function.rename", "params": { "file": "f.lcf", "name": "g" } }] }),
+    );
+    assert_eq!(error.code, "params.invalid");
+}
+
+#[test]
+fn a_type_made_then_renamed_renames_its_uses() {
+    // commands.md 6.7, `type.create` and `type.rename`; spec 3.2.
+    let (mut session, memory) = called();
+    let result =
+        ok(&mut session, "type.create", json!({ "path": "Reading.lct", "definition": "struct { value: f64, ok: bool }", "doc": "A reading." }));
+    assert_eq!(text(&memory, "/p/Reading.lct"), "labcraft 1\n\n/// A reading.\ntype Reading = struct { value: f64, ok: bool }\n");
+    assert_eq!(result["names"], json!({ "type": "Reading" }));
+    let error = refused(&mut session, &Author::User, "type.create", json!({ "path": "Reading.lct", "definition": "bool" }));
+    assert_eq!(error.code, "path.exists");
+    let error = refused(&mut session, &Author::User, "type.create", json!({ "path": "Other.lct", "definition": "struct {" }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("params.invalid", Some("definition")));
+    let error = refused(&mut session, &Author::User, "type.create", json!({ "path": "Other.lcf", "definition": "bool" }));
+    assert_eq!(error.code, "path.invalid");
+    memory.put("/p/user.lcf", "labcraft 1\n\nfn user(r: Reading) -> (v: f64) {\n    v = r.value\n}\n");
+    let result = ok(&mut session, "type.rename", json!({ "file": "Reading.lct", "name": "Sample" }));
+    assert_eq!(text(&memory, "/p/Sample.lct"), "labcraft 1\n\n/// A reading.\ntype Sample = struct { value: f64, ok: bool }\n");
+    assert_eq!(text(&memory, "/p/user.lcf"), "labcraft 1\n\nfn user(r: Sample) -> (v: f64) {\n    v = r.value\n}\n");
+    assert!(memory.get("/p/Reading.lct").is_none());
+    assert_eq!(result["names"], json!({ "type": "Sample", "file": "Sample.lct" }));
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+}
+
+#[test]
+fn the_tab_of_a_function_renamed_follows_its_name_through_undo_and_redo() {
+    // Decision of the owner, 2026-11-19: the tab follows the rename, its undo and its redo.
+    let (mut session, _) = called();
+    ok(&mut session, "view.open", json!({ "folder": "." }));
+    ok(&mut session, "view.show_function", json!({ "function": "f" }));
+    let shown = |session: &Session| session.view.published().main.function.clone();
+    ok(&mut session, "function.rename", json!({ "file": "f.lcf", "name": "scale" }));
+    session.view.settle();
+    assert_eq!(shown(&session).as_deref(), Some("scale"));
+    ok(&mut session, "history.undo", json!({}));
+    session.view.settle();
+    assert_eq!(shown(&session).as_deref(), Some("f"));
+    ok(&mut session, "history.redo", json!({}));
+    session.view.settle();
+    assert_eq!(shown(&session).as_deref(), Some("scale"));
+}
+
 /// `bytes`, a primitive added after M0, gives way to a folder `bytes` of the project (`docs/cli.md`, section 3, rule 1):
 /// `node.add` takes the function of the folder, and refuses one the folder does not have, as for any library; with no such
 /// folder, it adds the primitive. `functions.list` lists only what a call would find.

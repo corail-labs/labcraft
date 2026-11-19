@@ -1079,6 +1079,12 @@ impl<'a> Writer<'a> {
                 self.push("size ");
                 self.point(*size);
             }
+            LayoutKind::Terminal { output, name, y } => {
+                self.push(if *output { "output " } else { "input " });
+                self.name(*name);
+                self.push(" at ");
+                self.numeral(*y);
+            }
             LayoutKind::Node { node, at, view } => {
                 self.push("node ");
                 self.node_ref(*node);

@@ -53,7 +53,7 @@ impl Terminal {
         }
     }
 
-    fn shown(&self) -> String {
+    pub(crate) fn shown(&self) -> String {
         format!("{} {}", self.side(), self.name())
     }
 }
@@ -86,7 +86,7 @@ pub fn new_function(name: &str, doc: Option<&str>, limits: &Limits) -> Result<St
 
 /// The lines of a documentation, as comments `///`: one per line of the text, its ending spaces cut, the empty lines at
 /// its start and its end left out; an empty text has none.
-fn doc_lines(doc: &str) -> Vec<Comment> {
+pub(crate) fn doc_lines(doc: &str) -> Vec<Comment> {
     let doc = doc.replace("\r\n", "\n").replace('\r', "\n");
     let mut lines: Vec<&str> = doc.split('\n').map(str::trim_end).collect();
     while lines.last().is_some_and(|line| line.is_empty()) {
@@ -265,7 +265,7 @@ fn default_of(edit: &mut Edit, text: &str) -> Result<Constant, EditError> {
 }
 
 /// The input or the output that `terminal` names, by its place on its side, or `edit.unknown`.
-fn find(edit: &Edit, terminal: &Terminal) -> Result<usize, EditError> {
+pub(crate) fn find(edit: &Edit, terminal: &Terminal) -> Result<usize, EditError> {
     let function = edit.body_function()?;
     let names: Vec<Name> = match terminal {
         Terminal::Input(_) => function.signature.params.iter().map(|param| param.name).collect(),
@@ -335,6 +335,17 @@ fn is_alias(edit: &Edit, value: &Value) -> bool {
 pub(crate) fn remove(edit: &mut Edit, judge: &dyn Judge, terminal: &Terminal, edited: &mut Edited) -> Result<(), EditError> {
     let at = find(edit, terminal)?;
     let function = edit.body_function()?.clone();
+    // Its `input x at y` or `output x at y` entry goes with it, a comment on it too: a terminal of that name added later
+    // starts at its automatic place (spec 11).
+    let removed = match terminal {
+        Terminal::Input(_) => function.signature.params.get(at).map(|param| (false, param.name)),
+        Terminal::Output(_) => function.signature.outputs.get(at).map(|output| (true, output.name)),
+    };
+    if let (Some((output, name)), Some(layout)) = (removed, &mut edit.file.layout) {
+        layout
+            .items
+            .retain(|item| !matches!(&item.kind, LayoutKind::Terminal { output: kind, name: named, .. } if *kind == output && *named == name));
+    }
     match terminal {
         Terminal::Input(_) => {
             let Some(param) = function.signature.params.get(at) else { return Err(EditError::internal("an input that went")) };
@@ -477,7 +488,9 @@ fn rename_terminal(edit: &mut Edit, terminal: &Terminal, new: &str, edited: &mut
             // A value of the body by the new name would hide it, an output that a line gives included.
             free_name(edit, terminal, new, Some(from), false, "name")?;
             let to = edit.intern(new);
-            rename_input(edit, from, to)
+            rename_input(edit, from, to)?;
+            rename_entry(edit, false, from, to);
+            Ok(())
         }
         Terminal::Output(_) => {
             let from = function.signature.outputs.get(at).map(|output| output.name).ok_or_else(|| EditError::internal("an output that went"))?;
@@ -506,7 +519,21 @@ fn rename_terminal(edit: &mut Edit, terminal: &Terminal, new: &str, edited: &mut
             if let Some(output) = edit.body_function_mut()?.signature.outputs.get_mut(at) {
                 output.name = to;
             }
+            rename_entry(edit, true, from, to);
             Ok(())
+        }
+    }
+}
+
+/// The `input x at y` or `output x at y` entry of a terminal renamed follows it (spec 11).
+fn rename_entry(edit: &mut Edit, output: bool, from: Name, to: Name) {
+    let Some(layout) = &mut edit.file.layout else { return };
+    for item in &mut layout.items {
+        if let LayoutKind::Terminal { output: kind, name, .. } = &mut item.kind
+            && *kind == output
+            && *name == from
+        {
+            *name = to;
         }
     }
 }

@@ -355,6 +355,16 @@ pub struct Graph<'a> {
     pub vias: HashMap<(usize, usize), Vec<(i64, i64)>>,
     /// The size of the frame of the function that `frame size` sets (spec 11), in hundredths, from its origin.
     pub frame_size: Option<(i64, i64)>,
+    /// The heights of the terminals of the frame of the function that `input x at y` and `output x at y` set (spec 11).
+    pub terminals_at: TerminalsAt,
+}
+
+/// The heights that the `layout` section sets for terminals of the frame of the function (spec 11), in hundredths, in
+/// the coordinates of the frame, by the place of each terminal in the signature: inputs on the left, outputs on the right.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TerminalsAt {
+    pub left: HashMap<usize, i64>,
+    pub right: HashMap<usize, i64>,
 }
 
 /// The wires of each value to each reader, by body and index.
@@ -517,7 +527,9 @@ impl<'a> Builder<'a> {
         let mut body = self.function_frame(function.clone(), signature);
         flow::finish_frame(&mut body, None);
         let frame_size = self.frame_entries(&self.file.file).0;
-        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new(), frame_size }
+        // An entry of an `extern` names nothing (`LC5004`): its terminals keep their places.
+        let terminals_at = TerminalsAt::default();
+        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new(), frame_size, terminals_at }
     }
 
     /// From the root, as `run` names it.
@@ -538,6 +550,7 @@ impl<'a> Builder<'a> {
             pills: HashMap::new(),
             vias: HashMap::new(),
             frame_size: None,
+            terminals_at: self.terminal_entries(&self.file.file, &function.signature),
         };
         let entries = self.layout_entries(&self.file.file);
         let (frame_size, sizes) = self.frame_entries(&self.file.file);
@@ -827,6 +840,35 @@ impl<'a> Builder<'a> {
             }
         }
         (function, structures)
+    }
+
+    /// The `input x at y` and `output x at y` entries (spec 11), in hundredths; a second entry for one terminal is
+    /// `LC5007`, and the first one counts. Of an input and an output of one name (R-2), each entry names its kind.
+    fn terminal_entries(&self, file: &File, signature: &Signature) -> TerminalsAt {
+        let mut found = TerminalsAt::default();
+        let Some(layout) = &file.layout else { return found };
+        // The place of each name in the signature, once: the first of a name, as the signature binds it.
+        let (mut inputs, mut outputs): (HashMap<Name, usize>, HashMap<Name, usize>) = (HashMap::new(), HashMap::new());
+        for (place, param) in signature.params.iter().enumerate() {
+            inputs.entry(param.name).or_insert(place);
+        }
+        for (place, output) in signature.outputs.iter().enumerate() {
+            outputs.entry(output.name).or_insert(place);
+        }
+        for item in &layout.items {
+            let LayoutKind::Terminal { output, name, y } = &item.kind else { continue };
+            let NumeralKind::Int(text) = y.kind else { continue };
+            let Some(value) = labcraft_format::coordinate_value(self.names.resolve(text)) else { continue };
+            let height = i64::from(value) * if y.negative { -100 } else { 100 };
+            let (place, list) = match output {
+                false => (inputs.get(name).copied(), &mut found.left),
+                true => (outputs.get(name).copied(), &mut found.right),
+            };
+            if let Some(place) = place {
+                list.entry(place).or_insert(height);
+            }
+        }
+        found
     }
 
     /// `docs/cli.md`, 4.3: the name of its line, its label, or `@12`.

@@ -120,6 +120,8 @@ pub(crate) enum Purpose {
     Add { default: Option<String> },
     /// `signature.set_type` of `terminal`.
     Set,
+    /// `type.create` of the `.lct` of `file`: an alias of the type chosen (decision of the owner, 2026-11-19).
+    Define,
 }
 
 /// The list open, over the window.
@@ -180,6 +182,7 @@ impl TypeList {
                 ("signature.add", params)
             }
             Purpose::Set => ("signature.set_type", json!({ "file": self.file, "terminal": self.terminal, "type": ty })),
+            Purpose::Define => ("type.create", json!({ "path": self.file, "definition": ty })),
         }
     }
 
@@ -207,6 +210,7 @@ impl TypeList {
         let title = match self.purpose {
             Purpose::Add { .. } => format!("The type of {}", self.terminal),
             Purpose::Set => format!("A new type for {}", self.terminal),
+            Purpose::Define => format!("The type that {} stands for", self.file),
         };
         let area = egui::Area::new(egui::Id::unique("labcraft-type-list")).order(egui::Order::Foreground).fixed_pos(self.at).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -299,6 +303,8 @@ mod tests {
 
     #[test]
     fn a_type_chosen_sends_its_command() {
+        let define = TypeList::new(String::new(), "Volts.lct".to_owned(), String::new(), Purpose::Define, Vec::new(), egui::Pos2::ZERO);
+        assert_eq!(define.command("f64[V]"), ("type.create", json!({ "path": "Volts.lct", "definition": "f64[V]" })));
         let add = list(Purpose::Add { default: Some("2".to_owned()) });
         assert_eq!(add.command("f64"), ("signature.add", json!({ "file": "main.lcf", "terminal": "input gain", "type": "f64", "default": "2" })));
         assert_eq!(

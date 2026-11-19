@@ -1841,6 +1841,15 @@ impl<'a> Parser<'a, '_> {
             let node = self.frame_ref()?;
             let size = self.point()?;
             LayoutKind::Frame { node, size }
+        } else if self.at_word("input")? || self.at_word("output")? {
+            let output = self.at_word("output")?;
+            self.bump();
+            let (name, _) = self.name("the name of an input or an output of the function")?;
+            if !self.eat_word("at")? {
+                return Err(self.unexpected("`at`"));
+            }
+            let y = self.numeral()?;
+            LayoutKind::Terminal { output, name, y }
         } else if self.eat_word("node")? {
             let node = self.node_ref()?;
             if self.eat_word("at")? {
@@ -1863,7 +1872,7 @@ impl<'a> Parser<'a, '_> {
             }
             LayoutKind::Wire { from, to, via }
         } else {
-            return Err(self.unexpected("`frame`, `node` or `wire`"));
+            return Err(self.unexpected("`frame`, `input`, `output`, `node` or `wire`"));
         };
         let id = self.place(start);
         let comments = self.end_item(before)?;

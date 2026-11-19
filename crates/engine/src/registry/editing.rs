@@ -645,25 +645,22 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "terminal.move",
-                "Move Terminal",
-                "Write `input x at y` or `output x at y`",
-                "Writes `input x at y` or `output x at y` (spec 11), with `y` as given: the grid of 8 and the 24 units between two terminals are rules of the gesture, and a file that places them closer draws them as written.",
-                object(
-                    &[
-                        ("file", string(FILE)),
-                        ("terminal", string("The terminal: `input x` or `output x`.")),
-                        ("y", json!({ "type": "integer", "description": "Its position, in canvas units." })),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "terminal", "y"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "terminal.move",
+            "Move Terminal",
+            "Write `input x at y` or `output x at y`",
+            "Writes `input x at y` or `output x at y` (spec 11), with `y` as given, in place of the entry that the terminal has: the grid of 8 and the 24 units between two terminals are rules of the gesture, and a file that places them closer draws them as written. `layout.arrange` with the terminal removes the entry (\"Remove the fixed position\"); `names.terminal` gives the terminal.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("terminal", string("The terminal: `input x` or `output x`.")),
+                    ("y", json!({ "type": "integer", "description": "Its position, in canvas units." })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "terminal", "y"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         planned(
             STEP_6,
@@ -996,17 +993,14 @@ pub(super) fn catalog() -> Vec<Command> {
             MAKING_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "function.rename",
-                "Rename Function",
-                "Rename a function and its file, and every call to it",
-                "Renames the function and its file. It updates every call and every reference to it in the project, in the same step.",
-                object(&[("file", string(FILE)), ("name", string("Its new name.")), ("expected_revision", revision())], &["file", "name"]),
-                MAKING_ERRORS,
-                false,
-            ),
+        editing(
+            "function.rename",
+            "Rename Function",
+            "Rename a function and its file, and every call to it",
+            "Renames the function and its file, in its folder. It updates every call and every reference to it in the project, in the same step; `names.file` gives the new file. It does not go in a `commands.batch`.",
+            object(&[("file", string(FILE)), ("name", string("Its new name.")), ("expected_revision", revision())], &["file", "name"]),
+            MAKING_ERRORS,
+            false,
         ),
         editing(
             "function.set_doc",
@@ -1105,44 +1099,38 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "type.create",
-                "Create Type",
-                "Write a new `.lct`: `type Name = definition`",
-                "Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2). An existing file is `path.exists`.",
-                object(
-                    &[
-                        ("path", string("The new `.lct`, from the root of the project, written with `/`.")),
-                        ("definition", string("The type, in text.")),
-                        ("doc", string("Its documentation comment.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["path", "definition"],
-                ),
-                MAKING_ERRORS,
-                false,
+        editing(
+            "type.create",
+            "Create Type",
+            "Write a new `.lct`: `type Name = definition`",
+            "Writes a new `.lct`: `type Name = definition`, named after its file (R-22). `definition` is a type in text (spec 3.2); one that does not read is `params.invalid`, with why. An existing file is `path.exists`. It does not go in a `commands.batch`.",
+            object(
+                &[
+                    ("path", string("The new `.lct`, from the root of the project, written with `/`.")),
+                    ("definition", string("The type, in text.")),
+                    ("doc", string("Its documentation comment.")),
+                    ("expected_revision", revision()),
+                ],
+                &["path", "definition"],
             ),
+            MAKING_ERRORS,
+            false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "type.rename",
-                "Rename Type",
-                "Rename a type and its file, and every use of it",
-                "Renames the type and its file, and every use of it in the project, in the same step.",
-                object(
-                    &[
-                        ("file", string("The `.lct` of the type, from the root of the project, written with `/`.")),
-                        ("name", string("Its new name.")),
-                        ("expected_revision", revision()),
-                    ],
-                    &["file", "name"],
-                ),
-                MAKING_ERRORS,
-                false,
+        editing(
+            "type.rename",
+            "Rename Type",
+            "Rename a type and its file, and every use of it",
+            "Renames the type and its file, in its folder, and every use of it in the project (signatures, other types, constructions, variants), in the same step; `names.file` gives the new file. It does not go in a `commands.batch`.",
+            object(
+                &[
+                    ("file", string("The `.lct` of the type, from the root of the project, written with `/`.")),
+                    ("name", string("Its new name.")),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "name"],
             ),
+            MAKING_ERRORS,
+            false,
         ),
         Command {
             result: "`{ \"text\": … }`, the nodes as the text of a function `clipboard`",

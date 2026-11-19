@@ -1024,8 +1024,17 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     // The wires, where the nodes ended.
     let xs: Vec<i64> = placed.iter().map(|(_, at)| at.x).collect();
     let ys: Vec<i64> = placed.iter().map(|(_, at)| at.y).collect();
-    let left_at: Vec<i64> = left.iter().map(|y| y + shift).collect();
-    let right_at: Vec<i64> = right.iter().map(|y| y + shift).collect();
+    let mut left_at: Vec<i64> = left.iter().map(|y| y + shift).collect();
+    let mut right_at: Vec<i64> = right.iter().map(|y| y + shift).collect();
+    // The terminals that the file places, at their height; the others around them (spec 11). The frame holds them all.
+    if index == 0 {
+        fix_terminals(&mut left_at, &graph.terminals_at.left);
+        fix_terminals(&mut right_at, &graph.terminals_at.right);
+        for y in left_at.iter().chain(&right_at) {
+            height = height.max(y + style::slot() / 2 + style::frame_pad());
+            highest = highest.min(y - style::slot() / 2);
+        }
+    }
     // A node that the file places is, for the routes, in the column where it stands: its wires take the channels beside
     // it and go round it there, not where the automatic placement had put it (the owner's trial, 2026-11-17). Column `c`
     // reaches from the start of the channel before it to the start of the channel after it.
@@ -1066,12 +1075,51 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
         height,
         header,
         nodes: placed,
-        left: left.iter().map(|y| y + shift).collect(),
-        right: right.iter().map(|y| y + shift).collect(),
+        left: left_at,
+        right: right_at,
         axis: has_axis.then_some(shift),
         rise,
         routes,
         from_file: nodes.iter().any(|&node| graph.nodes.get(node).is_some_and(|node| node.at.is_some())),
+    }
+}
+
+/// The terminals of one edge at the heights that `fixed` gives (spec 11), and the others in their order, each where the
+/// placement put it unless it comes within a place (24) of one above it, fixed or not: then it goes down past it.
+fn fix_terminals(heights: &mut [i64], fixed: &HashMap<usize, i64>) {
+    if fixed.is_empty() {
+        return;
+    }
+    let mut taken: Vec<i64> = Vec::with_capacity(fixed.len());
+    for (&place, &y) in fixed {
+        if let Some(at) = heights.get_mut(place) {
+            *at = y;
+            taken.push(y);
+        }
+    }
+    taken.sort_unstable();
+    let mut free: Vec<(i64, usize)> =
+        heights.iter().enumerate().filter(|(place, _)| !fixed.contains_key(place)).map(|(place, &y)| (y, place)).collect();
+    free.sort_unstable();
+    let mut above: Option<i64> = None;
+    // The heights only go down: a cursor over the fixed ones, sorted, keeps the work linear.
+    let mut cursor = 0;
+    for (wanted, place) in free {
+        let mut y = above.map_or(wanted, |above| wanted.max(above + style::slot()));
+        // Past every fixed terminal too near, from the top: each one moved past can bring the next one near.
+        loop {
+            while taken.get(cursor).is_some_and(|&other| other <= y - style::slot()) {
+                cursor += 1;
+            }
+            match taken.get(cursor) {
+                Some(&other) if other < y + style::slot() => y = other + style::slot(),
+                _ => break,
+            }
+        }
+        if let Some(at) = heights.get_mut(place) {
+            *at = y;
+        }
+        above = Some(y);
     }
 }
 

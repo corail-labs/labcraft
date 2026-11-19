@@ -29,7 +29,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The version of `[workspace.package]`, the first `version =` of Cargo.toml; a tag must name it, and its note must exist.
+      # The version of `[workspace.package]`, the first `version =` of Cargo.toml; a tag must name it, and its note must exist. Between two
+      # tags it ends in `-dev` and has no note (architecture.md 8).
       - name: The version, the tag and the note
         id: read
         env:
@@ -39,11 +40,13 @@ jobs:
           set -eu
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
           [ -n "$version" ] || { echo "::error::no version in Cargo.toml"; exit 1; }
-          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "v$version" ]; then
-            echo "::error::the tag $REF_NAME does not name the version $version of Cargo.toml"
-            exit 1
+          if [ "$REF_TYPE" = tag ]; then
+            if [ "$REF_NAME" != "v$version" ]; then
+              echo "::error::the tag $REF_NAME does not name the version $version of Cargo.toml"
+              exit 1
+            fi
+            [ -f "docs/releases/v$version.md" ] || { echo "::error::docs/releases/v$version.md is missing"; exit 1; }
           fi
-          [ -f "docs/releases/v$version.md" ] || { echo "::error::docs/releases/v$version.md is missing"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   build:
@@ -93,7 +96,8 @@ jobs:
           mkdir -p "$out/assets/fonts" "$out/crates/types" "$out/sim"
           cp "target/$TARGET/release/labcraft-cli$EXE" "target/$TARGET/release/labcraft$EXE" "$out/"
           cp README.md LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md "$out/"
-          cp "docs/releases/v$VERSION.md" "$out/RELEASE.md"
+          # The note exists on a tag (job `version`); a `-dev` version between two tags has none.
+          if [ -f "docs/releases/v$VERSION.md" ]; then cp "docs/releases/v$VERSION.md" "$out/RELEASE.md"; fi
           cp assets/fonts/LICENSE-Hack.md assets/fonts/LICENSE-Inter.txt "$out/assets/fonts/"
           cp crates/types/LICENSE-Unicode.txt "$out/crates/types/"
           cargo xtask notices "$TARGET" "$out/THIRD-PARTY-LICENSES.txt"

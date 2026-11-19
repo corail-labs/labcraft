@@ -1134,3 +1134,46 @@ fn the_frames_of_a_layout_go_first_the_function_then_the_structures_by_name() {
         ),
     );
 }
+
+fn with_terminals(section: &str) -> String {
+    format!("labcraft 1\n\nfn f(a: f64, err: error, b: f64) -> (y: f64, err: error) {{\n    y = core.add(a, b)\n}}\n\n{section}")
+}
+
+#[test]
+fn a_terminal_entry_stays() {
+    // Written by hand from spec 11 and 14.6.
+    assert_stays(&with_terminals("layout {\n    input a at 40\n}\n"));
+    assert_stays(&with_terminals("layout {\n    output err at -16\n}\n"));
+}
+
+#[test]
+fn the_terminals_of_a_layout_come_after_the_frames_inputs_then_outputs_in_signature_order() {
+    // 5.2: frame, structures, the `input` items then the `output` items, each in signature order, then nodes, wires;
+    // `1_000` is written `1000`.
+    assert_canonical(
+        &with_terminals(
+            "layout {\nwire a -> y\nnode y at (1,2)\noutput err at 3\noutput y at 4\ninput b at 1_000\ninput err at 6\ninput a at 7\nframe size (8,9)\n}\n",
+        ),
+        &with_terminals(
+            "layout {\n    frame size (8, 9)\n    input a at 7\n    input err at 6\n    input b at 1000\n    output y at 4\n    output err at 3\n    node y at (1, 2)\n    wire a -> y\n}\n",
+        ),
+    );
+}
+
+#[test]
+fn a_terminal_entry_on_no_terminal_of_its_kind_goes() {
+    // `fmt` removes it (docs/cli.md, `LC5004`): `y` is no input, `a` no output, `z` neither.
+    let result = formatted(&with_terminals("layout {\n    input y at 8\n    output a at 8\n    input z at 8\n    input a at 8\n}\n"));
+    assert_eq!(result.text, with_terminals("layout {\n    input a at 8\n}\n"));
+    assert_eq!(result.codes, [Code::Lc5004, Code::Lc5004, Code::Lc5004]);
+}
+
+#[test]
+fn a_terminal_entry_needs_at_and_one_number() {
+    for section in ["layout {\n    input a 8\n}\n", "layout {\n    input a at (8, 8)\n}\n", "layout {\n    input at 8\n}\n"] {
+        let mut names = Interner::new();
+        let result = format(with_terminals(section).as_bytes(), &mut names, &Limits::default());
+        assert!(result.text.is_none(), "{section}");
+        assert_eq!(result.report.diagnostics().first().map(|diagnostic| diagnostic.code()), Some(Code::Lc1001), "{section}");
+    }
+}

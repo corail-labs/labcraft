@@ -60,6 +60,13 @@ pub struct Listed {
     pub needs: Vec<String>,
 }
 
+/// A type of the folder, as the tree of the window lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListedType {
+    pub name: String,
+    pub file: String,
+}
+
 /// What one window shows (ide.md 9): the window of the project, the function of its tab shown; a detached window, its
 /// function.
 #[derive(Clone, Debug, Default)]
@@ -100,6 +107,8 @@ pub struct Published {
     /// be read.
     pub folder: Option<String>,
     pub functions: Vec<Listed>,
+    /// The types of the folder, each with its file (`Step.lct`), as the tree of the window lists them (ide.md 4).
+    pub types: Vec<ListedType>,
     /// The report of the check of the folder, with the diagnostics of the drawings shown (`LC7005`) and of reading their
     /// traces; a new one with each check and each drawing.
     pub report: Option<Arc<Report>>,
@@ -316,6 +325,50 @@ impl View {
                 ..self.now.clone()
             });
         }
+    }
+
+    /// The function of `file` is renamed `name` in `new_file` (`function.rename`): its tab, its window, its view and its
+    /// zoom follow it, in their places (ide.md 4), before the folder is read again.
+    pub(crate) fn function_renamed(&mut self, file: &str, name: &str, new_file: &str) {
+        let Some(old) = self.now.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone()) else { return };
+        let new = match old.rsplit_once('.') {
+            Some((library, _)) => format!("{library}.{name}"),
+            None => name.to_owned(),
+        };
+        let follow = |function: &mut String| {
+            if *function == old {
+                function.clone_from(&new);
+            }
+        };
+        self.now.opened.iter_mut().for_each(follow);
+        if let Some(preview) = &mut self.now.preview {
+            follow(preview);
+        }
+        if let Some(tab) = self.now.tabs.remove(&old) {
+            self.now.tabs.insert(new.clone(), tab);
+        }
+        if let Some(zoom) = self.zooms.remove(&old) {
+            self.zooms.insert(new.clone(), zoom);
+        }
+        for window in std::iter::once(&mut self.main).chain(self.detached.iter_mut()) {
+            if window.file.as_deref() == Some(file) {
+                window.file = Some(new_file.to_owned());
+            }
+            if let Some(function) = &mut window.shown.function {
+                follow(function);
+            }
+        }
+        if let Some(of) = self.views.remove(file) {
+            self.views.insert(new_file.to_owned(), of);
+        }
+        if let Some(last) = self.last.remove(file) {
+            self.last.insert(new_file.to_owned(), last);
+        }
+        if let Some(listed) = self.now.functions.iter_mut().find(|listed| listed.file == file) {
+            listed.function.clone_from(&new);
+            listed.file = new_file.to_owned();
+        }
+        self.publish();
     }
 
     /// The zoom of the canvas of this function, which has a tab.
@@ -823,6 +876,7 @@ fn load(session: &mut Session) {
     let view = &mut session.view;
     view.now.folder = loaded.root.as_ref().map(|_| shown);
     view.now.functions = listed(&loaded);
+    view.now.types = listed_types(&loaded);
     let checked = Arc::new(loaded.report.clone());
     view.checked = Some(checked.clone());
     view.now.report = Some(checked);
@@ -1018,6 +1072,24 @@ fn needs(loaded: &Loaded, files: &HashMap<&str, usize>, function: &Function) -> 
     declared
         .map(|declared| declared.params.iter().filter(|param| !param.has_default).map(|param| loaded.names.resolve(param.name).to_owned()).collect())
         .unwrap_or_default()
+}
+
+/// The types of the files of the folder that the check read, by their file.
+fn listed_types(loaded: &Loaded) -> Vec<ListedType> {
+    let Some(checked) = &loaded.checked else { return Vec::new() };
+    let mut found: Vec<ListedType> = checked
+        .files
+        .iter()
+        .filter(|file| checked.libraries.get(file.library as usize).is_some_and(|library| library.checked))
+        .filter_map(|file| match &file.file.decl {
+            labcraft_graph::Decl::Type(declared) => {
+                Some(ListedType { name: loaded.names.resolve(declared.name).to_owned(), file: file.shown.clone() })
+            }
+            _ => None,
+        })
+        .collect();
+    found.sort_by(|a, b| a.file.cmp(&b.file));
+    found
 }
 
 /// The functions of a folder, with whether each is drawable and the counts of its file.
