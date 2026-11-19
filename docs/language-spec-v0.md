@@ -1302,6 +1302,8 @@ polling in a loop. The panel of M3 has none: its elements are read in a loop, as
 ## 11. Layout (`layout` section)
 
 ```text
+fn measure(…) -> (…, err: error) { … }
+
 layout {
     frame size (720, 240)
     output err at 120

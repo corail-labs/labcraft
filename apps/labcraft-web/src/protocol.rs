@@ -128,6 +128,9 @@ pub struct SeenWindow {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Listing {
     pub functions: Vec<Listed>,
+    /// The types of the folder, by name and file.
+    #[serde(default)]
+    pub types: Vec<(String, String)>,
     pub problems: Vec<Problem>,
     pub errors: u64,
     pub warnings: u64,

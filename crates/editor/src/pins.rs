@@ -1,7 +1,8 @@
 //! The pin of a fixed node (notation 2.4, 2.5): the icon `pin` of Lucide (`assets/icons/lucide/pin.svg`, ISC, attributed
 //! in `ATTRIBUTION.md`; decision of the owner, 2026-11-17) in `ink.muted`, 16 units across, on the top-left corner of the
 //! body of a node that `layout` fixes. It shows an entry of the file, but only the editor draws it, under the setting
-//! "mark the fixed nodes"; an export never does.
+//! "mark the fixed nodes"; an export never does. A terminal of the frame of the function that `layout` fixes has it too,
+//! outside its edge.
 
 use std::sync::OnceLock;
 
@@ -45,6 +46,29 @@ pub(crate) fn area(drawing: &Drawing, placed: usize, offset: Vec2) -> Option<Rec
     node.at?;
     let corner = Pos2::new(node.x as f32, node.y as f32) / 100.0 + offset;
     Some(Rect::from_center_size(corner, Vec2::splat(SIDE)))
+}
+
+/// Where the pin of a terminal of the frame of the function that `layout` fixes is, in units (spec 11): outside its edge,
+/// beside it, so that it hides neither its wire nor its name.
+pub(crate) fn terminal_area(drawing: &Drawing, port: usize) -> Option<Rect> {
+    let found = drawing.ports.get(port).filter(|found| found.fixed)?;
+    // An input of the function gives a value: it stands on the left edge.
+    let side = if found.input { 1.0 } else { -1.0 };
+    let centre = Pos2::new(found.x as f32, found.y as f32) / 100.0 + Vec2::new(side * (SIDE / 2.0 + 4.0), 0.0);
+    Some(Rect::from_center_size(centre, Vec2::splat(SIDE)))
+}
+
+/// The fixed terminal of the frame whose pin is under `unit`, by its port.
+pub(crate) fn terminal_under(drawing: &Drawing, unit: Pos2) -> Option<usize> {
+    (0..drawing.ports.len()).find(|&port| terminal_area(drawing, port).is_some_and(|area| area.contains(unit)))
+}
+
+/// What the pin of a terminal says on hover (notation 2.4).
+pub(crate) fn terminal_tooltip(drawing: &Drawing, port: usize) -> String {
+    let Some(found) = drawing.ports.get(port) else { return String::new() };
+    let Some(terminal) = crate::signature::frame_terminal(found) else { return String::new() };
+    let y = crate::signature::frame_height(drawing, found).unwrap_or_default();
+    format!("Position fixed (`{terminal} at {y}` in `layout`). Right-click › Remove the fixed position")
 }
 
 /// Paints the pin in `area`, a rectangle of the screen.

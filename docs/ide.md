@@ -110,17 +110,23 @@ greyed and says why.
 - **`Project`**: the tree of the folder, the files of each library under it, each line with its icon (a folder, a
   file of code, a function with the icon of the view `Diagram`); a function that does not draw shows the number of
   its errors, its icon in the colour of its text; the shipped libraries (`core`, `visa`, `scpi`…), read only, at the end. A file opened
-  in a detached window says so. Right click: new function, new type, rename, delete, open in a window, each a
-  command. "New function" opens a field in place in the tree, in the folder clicked; Enter writes the function
-  (`function.create`) and opens it.
+  in a detached window says so. The types of a folder follow its functions, a line each (`type Step`), its file on
+  hover. Right click: new function, new type, rename, delete, open in a window, each a command. "New function" opens a
+  field in place in the tree, in the folder clicked; Enter writes the function (`function.create`) and opens it. "New
+  type" opens a field for its name, then one of several lines for its definition (`struct { … }`, `enum { … }`, or a type
+  of the language); Ctrl+Enter or "Create" writes it (`type.create`), and "Pick a type…" makes it an alias of a type of
+  the list of notation 2.4. "Rename", or F2 on a line, opens a field in place on it: Enter renames the function or the
+  type and its file (`function.rename`, `type.rename`), and a tab or a window that shows the function follows it
+  (decisions of the owner, 2026-11-19). A type opens in no tab before the view `Text` (step 7 of M1).
 - **`Palette`**: the functions the project can call, grouped by library, with a search field on top that searches as
   quick insertion does (notation 2.6). A function dragged onto the canvas is a node added there (`node.add`).
 - **`Inspector`**: what the selection is (decision of the owner, 2026-11-14):
   - one node: its function, its signature, its documentation, the help of each parameter, its values of the last run,
     whether it is fixed, with "Remove the fixed position";
   - one wire: its type, its source and its destination, its value of the last run, its `via` line;
-  - one terminal of the frame: its name, its type, its default, whether it is fixed, each a field (`signature.rename`,
-    `signature.set_type`, `signature.set_default`), and "Remove" (`signature.remove`);
+  - one terminal of the frame: its name, its type, its default, each a field (`signature.rename`,
+    `signature.set_type`, `signature.set_default`), whether it is fixed and its height on its edge (`terminal.move`),
+    with "Remove the fixed position" when it is, and "Remove" (`signature.remove`);
   - nothing: the function itself, with its signature, its documentation, its icon and its `frame size`; its
     documentation is a field (`function.set_doc`), and "Add input" and "Add output" under the signature take a name and,
     for an input, a default, then the type from the list of types of notation 2.4 (`signature.add`); the type of a

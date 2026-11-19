@@ -2065,3 +2065,76 @@ fn a_stacked_match_taller_has_its_last_arm_taller() {
     assert_eq!(arm_height(&sized, placed, last), arm_height(&automatic, auto, last) + extra);
     assert_eq!(arm_height(&sized, placed, 0), arm_height(&automatic, auto, 0));
 }
+
+// The height of a terminal of the frame (`input x at y`, `output x at y`, spec 11): a terminal that its entry places is at
+// that height, the others keep their order and stay a place (24) apart, and the frame holds them all. Expected heights are
+// those of the entries, and the rule of spec 11 for the others.
+
+const TERMINALS_FOR: &str =
+    "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, c: f64) -> (y: f64, z: f64) {\n    y = core.add(a, b)\n    z = core.mul(b, c)\n}\n";
+
+/// The height of each terminal of the frame of the function, from its origin, and whether it is fixed: inputs, then outputs.
+fn frame_terminals(drawing: &crate::Drawing) -> Vec<(String, bool, i64, bool)> {
+    let origin = drawing.bodies[0].origin.1;
+    drawing
+        .ports
+        .iter()
+        .filter(|port| port.frame && port.body == 0)
+        .map(|port| (port.caption.clone(), port.input, port.y - origin, port.fixed))
+        .collect()
+}
+
+fn height_of(drawing: &crate::Drawing, name: &str, output: bool) -> i64 {
+    frame_terminals(drawing).into_iter().find(|(caption, input, _, _)| caption == name && *input == output).unwrap().2
+}
+
+#[test]
+fn a_terminal_that_its_entry_places_is_at_that_height() {
+    let drawing = drawing_with_layout(TERMINALS_FOR, "input b at 400");
+    assert_eq!(height_of(&drawing, "b", false), 40_000);
+    let fixed: Vec<String> = frame_terminals(&drawing).into_iter().filter(|(_, _, _, fixed)| *fixed).map(|(name, ..)| name).collect();
+    assert_eq!(fixed, ["b"]);
+    let drawing = drawing_with_layout(TERMINALS_FOR, "output z at 16");
+    assert_eq!(height_of(&drawing, "z", true), 1_600);
+}
+
+#[test]
+fn the_other_terminals_keep_their_order_a_place_apart_around_a_fixed_one() {
+    let automatic = drawing_with_layout(TERMINALS_FOR, "");
+    let (a, c) = (height_of(&automatic, "a", false), height_of(&automatic, "c", false));
+    // `b` fixed where `a` was: `a` and `c` stay in their order, each at least 24 from `b` and from each other.
+    let drawing = drawing_with_layout(TERMINALS_FOR, &format!("input b at {}", a / 100));
+    let (a2, b2, c2) = (height_of(&drawing, "a", false), height_of(&drawing, "b", false), height_of(&drawing, "c", false));
+    assert_eq!(b2, a);
+    assert!(a2 < c2, "{a2} {c2}");
+    for (one, other) in [(a2, b2), (b2, c2), (a2, c2)] {
+        assert!((one - other).abs() >= 2_400, "{one} {other}");
+    }
+    // A terminal far from the fixed one stays where it was.
+    let far = drawing_with_layout(TERMINALS_FOR, "input b at 2000");
+    assert_eq!((height_of(&far, "a", false), height_of(&far, "c", false)), (a, c));
+}
+
+#[test]
+fn the_frame_grows_to_hold_a_terminal_placed_above_or_below_it() {
+    let frame = |drawing: &crate::Drawing| {
+        let body = &drawing.bodies[0];
+        (body.frame.1 - body.origin.1, body.frame.1 + body.frame.3 - body.origin.1)
+    };
+    let below = drawing_with_layout(TERMINALS_FOR, "input a at 2000");
+    assert!(frame(&below).1 >= 200_000 + 1_200, "{:?}", frame(&below));
+    let above = drawing_with_layout(TERMINALS_FOR, "output y at -200");
+    assert!(frame(&above).0 <= -20_000 - 1_200, "{:?}", frame(&above));
+    assert_eq!(height_of(&above, "y", true), -20_000);
+}
+
+#[test]
+fn the_first_of_two_entries_for_one_terminal_counts() {
+    // `check` says `LC5007` of the second; the drawing takes the first, as for a node.
+    let text = format!("{TERMINALS_FOR}\nlayout {{\n    input a at 400\n    input a at 800\n}}\n");
+    let (checked, names) = checked(&[("main.lcf", text.as_str())]);
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &ViewState::default(), &DiagramLimits::default()) else {
+        panic!()
+    };
+    assert_eq!(height_of(&drawing, "a", false), 40_000);
+}

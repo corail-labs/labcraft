@@ -952,7 +952,7 @@ pub(crate) fn forget_wire(edit: &mut Edit, value: Name, node: Option<(Name, bool
             };
             !(this && (named_input || (to.terminal.is_none() && !still_reaches)))
         }
-        LayoutKind::Node { .. } | LayoutKind::Frame { .. } => true,
+        LayoutKind::Node { .. } | LayoutKind::Frame { .. } | LayoutKind::Terminal { .. } => true,
     });
 }
 

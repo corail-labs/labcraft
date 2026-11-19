@@ -181,7 +181,8 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
             // A wire starts at the value it carries, or at a label (spec 11): any name that the function binds.
             let mut starts = nodes.clone();
             add_values(&function.body, &mut starts);
-            Some(Known { nodes, starts })
+            let inputs = function.signature.params.iter().map(|param| param.name).collect();
+            Some(Known { nodes, starts, inputs, outputs })
         }
         Decl::Extern(_) => Some(Known::default()),
         // A section in a type file is the business of `check` (`LC0104`).
@@ -202,6 +203,7 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
     for item in &mut layout.items {
         match &mut item.kind {
             LayoutKind::Frame { size, .. } => plain_point(size, names),
+            LayoutKind::Terminal { y, .. } => plain_coordinate(y, names),
             LayoutKind::Node { at, .. } => {
                 if let Some(point) = at {
                     plain_point(point, names);
@@ -215,12 +217,27 @@ fn canonicalize_layout(file: &mut File, ordered: bool, map: &SourceMap, names: &
         }
     }
     let names: &Interner = names;
-    // The frame of the function, those of the structures by name, the nodes, the wires (spec 5.2).
+    // The place of each terminal in the signature, for the order of their entries.
+    let (mut inputs, mut outputs): (HashMap<Name, usize>, HashMap<Name, usize>) = (HashMap::new(), HashMap::new());
+    if let Decl::Function(function) = &file.decl {
+        for (index, param) in function.signature.params.iter().enumerate() {
+            inputs.entry(param.name).or_insert(index);
+        }
+        for (index, output) in function.signature.outputs.iter().enumerate() {
+            outputs.entry(output.name).or_insert(index);
+        }
+    }
+    // The frame of the function, those of the structures by name, the inputs then the outputs in signature order (an
+    // entry that names no terminal after those of its kind), the nodes, the wires (spec 5.2).
     layout.items.sort_by_cached_key(|item| match &item.kind {
-        LayoutKind::Frame { node: None, .. } => (0_u8, String::new(), String::new()),
-        LayoutKind::Frame { node: Some(node), .. } => (1_u8, reference_text(*node, None, names), String::new()),
-        LayoutKind::Node { node, .. } => (2_u8, reference_text(*node, None, names), String::new()),
-        LayoutKind::Wire { from, to, .. } => (3_u8, reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names)),
+        LayoutKind::Frame { node: None, .. } => (0_u8, 0, String::new(), String::new()),
+        LayoutKind::Frame { node: Some(node), .. } => (1_u8, 0, reference_text(*node, None, names), String::new()),
+        LayoutKind::Terminal { output, name, .. } => {
+            let (group, places) = if *output { (3_u8, &outputs) } else { (2_u8, &inputs) };
+            (group, places.get(name).copied().unwrap_or(usize::MAX), String::new(), String::new())
+        }
+        LayoutKind::Node { node, .. } => (4_u8, 0, reference_text(*node, None, names), String::new()),
+        LayoutKind::Wire { from, to, .. } => (5_u8, 0, reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names)),
     });
     if layout.items.is_empty() && layout.end.is_empty() && nothing_attached(&layout.comments) {
         file.layout = None;
@@ -231,6 +248,7 @@ fn report_stale_entry(item: &LayoutItem, map: &SourceMap, names: &Interner, repo
     let what = match &item.kind {
         LayoutKind::Frame { node: None, .. } => "frame size".to_owned(),
         LayoutKind::Frame { node: Some(node), .. } => format!("frame {} size", reference_text(*node, None, names)),
+        LayoutKind::Terminal { output, name, .. } => format!("{} {}", if *output { "output" } else { "input" }, names.resolve(*name)),
         LayoutKind::Node { node, .. } => format!("node {}", reference_text(*node, None, names)),
         LayoutKind::Wire { from, to, .. } => {
             format!("wire {} -> {}", reference_text(from.node, from.terminal, names), reference_text(to.node, to.terminal, names))
@@ -251,12 +269,17 @@ struct Known {
     nodes: HashSet<(Name, bool)>,
     /// Those, and every value and label of the function: where a wire starts.
     starts: HashSet<(Name, bool)>,
+    /// The inputs and the outputs of the function: what an `input` or an `output` entry names.
+    inputs: HashSet<Name>,
+    outputs: HashSet<Name>,
 }
 
 fn names_what_is_known(item: &LayoutItem, known: &Known) -> bool {
     let is = |set: &HashSet<(Name, bool)>, node: &NodeRef| set.contains(&(node.name, node.is_label));
     match &item.kind {
         LayoutKind::Frame { node: None, .. } => true,
+        LayoutKind::Terminal { output: false, name, .. } => known.inputs.contains(name),
+        LayoutKind::Terminal { output: true, name, .. } => known.outputs.contains(name),
         LayoutKind::Frame { node: Some(node), .. } | LayoutKind::Node { node, .. } => is(&known.nodes, node),
         // A wire starts at the value it carries, never at a terminal (`raw.session`): one file is enough to see it.
         LayoutKind::Wire { from, to, .. } => from.terminal.is_none() && is(&known.starts, &from.node) && is(&known.nodes, &to.node),

@@ -1252,3 +1252,5 @@ mod frames;
 mod parts;
 mod signature;
 mod structures;
+mod terminals;
+mod whole;

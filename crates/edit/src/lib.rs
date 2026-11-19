@@ -43,6 +43,7 @@ mod scope;
 mod select;
 mod signature;
 mod surround;
+mod whole;
 mod wire;
 
 pub use fragment::MAX_FRAGMENT;
@@ -51,6 +52,7 @@ pub use names::of_type;
 pub use route::MAX_VIA;
 pub use select::selectable;
 pub use signature::{Terminal, new_function};
+pub use whole::{new_type, rename_function, rename_type};
 
 #[cfg(test)]
 mod tests;
@@ -161,6 +163,12 @@ pub enum Op {
         file: String,
         inside: Option<String>,
         size: Option<Point>,
+    },
+    /// `terminal.move`: `input x at y` or `output x at y`.
+    TerminalMove {
+        file: String,
+        terminal: Terminal,
+        y: i64,
     },
     /// `node.place`: one node at `at` in its frame, fixed.
     NodePlace {
@@ -412,6 +420,7 @@ impl Op {
             | Op::WireDisconnect { file, .. }
             | Op::NodeMove { file, .. }
             | Op::FrameResize { file, .. }
+            | Op::TerminalMove { file, .. }
             | Op::NodePlace { file, .. }
             | Op::NodeSetView { file, .. }
             | Op::LayoutArrange { file, .. }
@@ -587,6 +596,14 @@ pub trait Judge {
         let _ = (file, call);
         None
     }
+
+    /// The file of the project that declares the type that `path` names, seen from `file` (`Step`, `stations.Step`), as
+    /// the project shows its path: what tells the uses that `type.rename` updates. None for a type of the language, of a
+    /// library outside the project, or a name that it does not know.
+    fn type_file(&self, file: &str, path: &str) -> Option<String> {
+        let _ = (file, path);
+        None
+    }
 }
 
 /// The type of a value, as far as a structure needs it (commands.md 9.6), and as the check writes it (`f64[V]`).
@@ -737,6 +754,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::WireDisconnect { wire, arm, .. } => wire::disconnect(&mut edit, judge, wire, arm.as_deref(), &mut edited)?,
         Op::NodeMove { nodes, by, .. } => layout::move_nodes(&mut edit, judge, nodes, *by, &mut edited)?,
         Op::NodePlace { node, at, .. } => layout::place_node(&mut edit, node, *at, &mut edited)?,
+        Op::TerminalMove { terminal, y, .. } => layout::move_terminal(&mut edit, terminal, *y, &mut edited)?,
         Op::FrameResize { inside, size, .. } => layout::resize(&mut edit, judge, inside.as_deref(), size.as_ref().copied(), &mut edited)?,
         Op::NodeSetView { nodes, view, .. } => layout::set_view(&mut edit, nodes, *view, &mut edited)?,
         Op::LayoutArrange { nodes, wires, terminals, within, .. } => {

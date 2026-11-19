@@ -41,6 +41,7 @@ pub const EDITING: &[&str] = &[
     "wire.disconnect",
     "node.move",
     "frame.resize",
+    "terminal.move",
     "node.place",
     "node.set_view",
     "layout.arrange",
@@ -236,6 +237,10 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
         // `size` is required (the schema), and `null` removes the entry (notation 2.4).
         "frame.resize" => Op::FrameResize { file, inside: params.str("inside").map(str::to_owned), size: point(params, "size")? },
         "node.place" => Op::NodePlace { file, node: params.text("node")?.to_owned(), at: required_point(params, "at")? },
+        "terminal.move" => {
+            let y = params.get("y").and_then(Value::as_i64).ok_or_else(|| CommandError::of("params.invalid", "y", "`y` is an integer"))?;
+            Op::TerminalMove { file, terminal: terminal(params)?, y }
+        }
         "node.set_view" => {
             let view = match params.text("view")? {
                 "standard" => Some(labcraft_graph::View::Standard),
@@ -558,8 +563,12 @@ impl Judge for SessionJudge<'_> {
         let segments: Vec<&str> = call.split('.').collect();
         let library = match segments.as_slice() {
             [_] => checked.files.iter().find(|candidate| candidate.shown == file).and_then(|found| checked.libraries.get(found.library as usize))?,
-            [first, _] => checked.libraries.iter().find(|library| !library.name.is_empty() && library.name == *first)?,
-            _ => return None,
+            // `lib.f`, `a.b.f` of a sub-library (spec 4).
+            [prefix @ .., _] => {
+                let named = prefix.join(".");
+                checked.libraries.iter().find(|library| !library.name.is_empty() && library.name == named)?
+            }
+            [] => return None,
         };
         if !library.checked {
             return None;
@@ -567,6 +576,29 @@ impl Judge for SessionJudge<'_> {
         let function = library.functions.get(&names.find(segments.last()?)?)?;
         let index = usize::try_from(function.file?).ok()?;
         checked.files.get(index).map(|found| found.shown.clone())
+    }
+
+    fn type_file(&self, file: &str, path: &str) -> Option<String> {
+        let (checked, names) = self.checked()?;
+        let segments: Vec<&str> = path.split('.').collect();
+        // `Step`, `lib.Step`, `a.b.Step` of a sub-library (spec 4).
+        let library = match segments.as_slice() {
+            [_] => checked.files.iter().find(|candidate| candidate.shown == file).map(|found| found.library)?,
+            [prefix @ .., _] => {
+                let named = prefix.join(".");
+                u32::try_from(checked.libraries.iter().position(|library| !library.name.is_empty() && library.name == named)?).ok()?
+            }
+            [] => return None,
+        };
+        if !checked.libraries.get(library as usize)?.checked {
+            return None;
+        }
+        let name = names.find(segments.last()?)?;
+        checked
+            .files
+            .iter()
+            .find(|found| found.library == library && matches!(&found.file.decl, labcraft_graph::Decl::Type(declared) if declared.name == name))
+            .map(|found| found.shown.clone())
     }
 
     fn errors(&self, file: &str, text: &str) -> Vec<Diagnostic> {
@@ -820,7 +852,7 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
     }
     // A rename of an input also updates the calls of the other files of the project (commands.md 6.7).
     let others = match &op {
-        Op::SignatureRename { terminal: Terminal::Input(_), .. } => programs_besides(session, texts)?,
+        Op::SignatureRename { terminal: Terminal::Input(_), .. } => programs_besides(session, texts, &["lcf"])?,
         _ => Vec::new(),
     };
     let root = session.root.clone();
@@ -851,12 +883,13 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
 
 /// The `.lcf` files of the project that the command has not read yet: their path, their name as shown, their bytes and
 /// their text. One that is not UTF-8 does not parse, and stops a command that changes other files (`file.unparsed`).
-fn programs_besides(session: &Session, texts: &Texts) -> Result<Vec<Other>, CommandError> {
+fn programs_besides(session: &Session, texts: &Texts, extensions: &[&str]) -> Result<Vec<Other>, CommandError> {
     let root = session.root.clone();
     let walked = crate::walk::walk(&*session.ws, std::slice::from_ref(&root), Some(&root), &session.config.limits);
     let mut found = Vec::new();
     for file in walked.files {
-        if texts.files.contains_key(&file.path) || !file.path.extension().is_some_and(|extension| extension == "lcf") {
+        let kept = file.path.extension().and_then(|extension| extension.to_str()).is_some_and(|extension| extensions.contains(&extension));
+        if texts.files.contains_key(&file.path) || !kept {
             continue;
         }
         let Some(bytes) = bytes_now(session, &file.path)? else { continue };
@@ -904,6 +937,114 @@ pub(crate) fn create_function(session: &mut Session, author: &Author, command: &
     let mut extra = Map::new();
     extra.insert("names".to_owned(), json!({ "function": name }));
     extra.insert("renamed".to_owned(), json!([]));
+    result(session, step, &changes, false, &before, extra)
+}
+
+/// `type.create` (commands.md 6.7): a new `.lct` holding `type Name = definition`, named after its file (R-22), one step
+/// of history. An existing file is `path.exists`.
+pub(crate) fn create_type(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
+    judge_revisions(session, params)?;
+    let (path, shown, exists) = paths::in_project(&*session.ws, &session.root, params.text("path")?, "path", Wanted::File)?;
+    if !path.extension().is_some_and(|extension| extension == "lct") {
+        return Err(CommandError::of("path.invalid", "path", format!("`{shown}` is not a `.lct`: a type is written in a `.lct` named after it")));
+    }
+    if exists {
+        return Err(CommandError::of("path.exists", "path", format!("`{shown}` exists already: open it, or choose another name")));
+    }
+    crate::files::refuse_case_twin(session, &path, &shown, "path", None)?;
+    let name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    let text = labcraft_edit::new_type(&name, params.text("definition")?, params.str("doc"), &session.config.limits).map_err(command_error)?;
+    if text.len() as u64 > session.config.limits.max_file_size {
+        return Err(CommandError::of("file.too_large", "definition", "the new type would be over the limit of `--max-file-size`"));
+    }
+    let before = session.root_check_document()?;
+    let changes = vec![Change { path, shown, before: None, after: Some(Arc::from(text.into_bytes())) }];
+    write_changes(session, &changes, false)?;
+    let step = record(session, author, command.label.to_owned(), changes.clone());
+    let mut extra = Map::new();
+    extra.insert("names".to_owned(), json!({ "type": name }));
+    extra.insert("renamed".to_owned(), json!([]));
+    result(session, step, &changes, false, &before, extra)
+}
+
+/// `function.rename` and `type.rename` (commands.md 6.7): the declaration and its file, and every use of it in the files
+/// of the project, in one step of history (decision of the owner, 2026-11-15). The file is removed under its old name
+/// and made under the new one, in the same folder, as `file.rename` does; `names.file` gives its path after the step.
+pub(crate) fn rename_declaration(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
+    judge_revisions(session, params)?;
+    let is_type = command.id == "type.rename";
+    let (extension, word) = if is_type { ("lct", "type") } else { ("lcf", "function") };
+    let (path, shown) = paths::existing_in_project(&*session.ws, &session.root, params.text("file")?, "file", Wanted::File)?;
+    if !path.extension().is_some_and(|found| found == extension) {
+        return Err(CommandError::of("path.invalid", "file", format!("`{shown}` is not a `.{extension}`: a {word} is written in a `.{extension}`")));
+    }
+    let name = params.text("name")?.to_owned();
+    let new_path = path.with_file_name(format!("{name}.{extension}"));
+    let new_shown = match shown.rsplit_once('/') {
+        Some((folder, _)) => format!("{folder}/{name}.{extension}"),
+        None => format!("{name}.{extension}"),
+    };
+    let text = read_text(session, &Target { path: path.clone(), shown: shown.clone() })?;
+    let mut texts = Texts::default();
+    texts.files.insert(path.clone(), (shown.clone(), text.as_bytes().to_vec(), text.clone()));
+    let others = programs_besides(session, &texts, if is_type { &["lcf", "lct"] } else { &["lcf"] })?;
+    let root = session.root.clone();
+    let memory = texts.memory();
+    session.checked(&root)?;
+    let edited = {
+        let kept = session.kept_root().ok_or_else(|| CommandError::internal("the check of the root is not kept"))?;
+        let judge = SessionJudge { session, kept: &kept.checked, memory: &memory, typed: Default::default() };
+        let mut files = Files::new();
+        files.insert(&shown, &text);
+        for other in &others {
+            files.insert(&other.shown, &other.text);
+        }
+        let renamed = if is_type { labcraft_edit::rename_type } else { labcraft_edit::rename_function };
+        renamed(&files, &shown, &name, &judge, &session.config.limits).map_err(command_error)?
+    };
+    let (mut names, renamed) = names_json(&edited);
+    if let Some(object) = names.as_object_mut() {
+        object.insert("file".to_owned(), json!(if edited.texts.is_empty() { shown.clone() } else { new_shown.clone() }));
+    }
+    let mut extra = Map::new();
+    extra.insert("names".to_owned(), names);
+    extra.insert("renamed".to_owned(), renamed);
+    let before = session.root_check_document()?;
+    if edited.texts.is_empty() {
+        return result(session, None, &[], false, &before, extra);
+    }
+    // The new file is free, but for the file itself when only its case changes (`Gain.lcf` to `gain.lcf`).
+    let same_file = session.ws.canonicalize(&new_path).ok().is_some_and(|found| session.ws.canonicalize(&path).ok() == Some(found));
+    if bytes_now(session, &new_path)?.is_some() && !same_file {
+        return Err(CommandError::of("path.exists", "name", format!("`{new_shown}` exists already: choose another name")));
+    }
+    crate::files::refuse_case_twin(session, &new_path, &new_shown, "name", Some(&path))?;
+    let mut changes = Vec::new();
+    for (shown_now, now) in &edited.texts {
+        if *shown_now == shown {
+            let before = shared_bytes(session, &path, text.as_bytes().to_vec());
+            changes.push(Change { path: path.clone(), shown: shown.clone(), before: Some(before), after: None });
+            changes.push(Change { path: new_path.clone(), shown: new_shown.clone(), before: None, after: Some(Arc::from(now.as_bytes())) });
+        } else if let Some(other) = others.iter().find(|other| other.shown == *shown_now) {
+            let before = shared_bytes(session, &other.path, other.bytes.clone());
+            changes.push(Change {
+                path: other.path.clone(),
+                shown: other.shown.clone(),
+                before: Some(before),
+                after: Some(Arc::from(now.as_bytes())),
+            });
+        }
+    }
+    write_changes(session, &changes, false)?;
+    let old_name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    if !is_type {
+        session.view.function_renamed(&shown, &name, &new_shown);
+    }
+    let step = record(session, author, command.label.to_owned(), changes.clone());
+    if let (Some(number), false) = (step, is_type) {
+        let renamed = crate::history::Renamed { from_file: shown.clone(), from_name: old_name, to_file: new_shown.clone(), to_name: name.clone() };
+        session.history.mark_renamed(number, renamed);
+    }
     result(session, step, &changes, false, &before, extra)
 }
 
@@ -1073,7 +1214,8 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
             registry::command(id).ok_or_else(|| at(CommandError::of("command.unknown", "commands", format!("no command has the id `{id}`"))))?;
         // The commands that edit, built or planned; a planned one is not enabled yet. The commands of files make steps too,
         // but write the disk at once: they are not commands of 6.7.
-        if !command.undoable || id == "commands.batch" || id.starts_with("file.") || id == "function.create" {
+        let alone = ["commands.batch", "function.create", "function.rename", "type.create", "type.rename"];
+        if !command.undoable || alone.contains(&id) || id.starts_with("file.") {
             return Err(at(CommandError::of(
                 "params.invalid",
                 "commands",
@@ -1351,6 +1493,10 @@ pub(crate) fn undo(session: &mut Session, author: &Author) -> Result<Value, Comm
     }
     let before = session.root_check_document()?;
     write_changes(session, &step.changes, true)?;
+    // A function renamed takes its name back, and its tab and its window with it.
+    if let Some(renamed) = &step.renamed {
+        session.view.function_renamed(&renamed.to_file, &renamed.from_name, &renamed.from_file);
+    }
     session.history.undo(author.clone());
     let mut extra = Map::new();
     extra.insert("author".to_owned(), json!(step.author.name()));
@@ -1374,6 +1520,9 @@ pub(crate) fn redo(session: &mut Session, author: &Author) -> Result<Value, Comm
     }
     let before = session.root_check_document()?;
     write_changes(session, &step.changes, false)?;
+    if let Some(renamed) = &step.renamed {
+        session.view.function_renamed(&renamed.from_file, &renamed.to_name, &renamed.to_file);
+    }
     session.history.redo();
     let mut extra = Map::new();
     extra.insert("author".to_owned(), json!(step.author.name()));

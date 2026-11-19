@@ -575,6 +575,10 @@ pub struct Port {
     /// leaves it, that is, whether the body reads it. False for another terminal.
     #[cfg_attr(feature = "serde", serde(default))]
     pub read: bool,
+    /// For a terminal of the frame of the function: whether an `input x at y` or `output x at y` entry fixes its height
+    /// (spec 11), which the editor marks with a pin (notation 2.4). False for another terminal.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fixed: bool,
 }
 
 /// What a terminal holds (notation 2.5): an input is wired, given a constant, left to its default, a hole, or a required

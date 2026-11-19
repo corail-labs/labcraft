@@ -19,7 +19,10 @@
 
 use labcraft_types::{Name, Span};
 
+mod paths;
 mod renumber;
+
+pub use paths::PathAt;
 
 /// What a diagnostic can point at. [`SourceMap`] gives its place in the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -680,6 +683,13 @@ pub enum LayoutKind {
     Frame {
         node: Option<NodeRef>,
         size: Point,
+    },
+    /// `input x at y` or `output x at y`: the height of a terminal of the frame of the function, on its edge (spec 11).
+    /// `check` judges the coordinate (`LC5005`) on the entry.
+    Terminal {
+        output: bool,
+        name: Name,
+        y: Numeral,
     },
     Node {
         node: NodeRef,

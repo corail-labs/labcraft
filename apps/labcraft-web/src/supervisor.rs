@@ -429,6 +429,7 @@ impl Supervisor {
             generation: self.counts.generation,
             folder: seen.folder.clone(),
             functions,
+            types: self.listing.types.iter().map(|(name, file)| view::ListedType { name: name.clone(), file: file.clone() }).collect(),
             report: self.report.clone(),
             checks: self.counts.checks,
             errors: self.listing.errors,
