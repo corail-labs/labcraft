@@ -661,7 +661,8 @@ label = string.concat(prefix, "-", serial, "-", suffix)
 - In the diagram, one terminal line per argument, and a handle to add one.
 - An existing array is not spread into a variadic parameter in v0 (Q-17): call the function that
   takes an array (`string.join`).
-- `errors.merge` (7.4) is variadic.
+- The variadic primitives of the standard library are those declared with `...` in Appendix A, for example
+  `string.concat` and `errors.merge` (7.4).
 
 **Inputs deduced from a template.** `string.format` takes a constant template; each `{name}` field
 of the template becomes a named input of the node.
