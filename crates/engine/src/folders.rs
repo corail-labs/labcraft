@@ -15,7 +15,7 @@ use labcraft_types::{CheckCounts, Code, Diagnostic, Interner, Limits, Report, Se
 use crate::kept::Seen;
 use crate::panics::last_panic;
 use crate::shipped::Shipped;
-use crate::walk::{self, Found, Refused, Walked, io_text, read_program, read_program_stamped, shown_of, slashed};
+use crate::walk::{self, ContentStamp, Found, Refused, Walked, io_text, read_manifest, read_program, read_program_stamped, shown_of, slashed};
 use crate::workspace::{Kind, Workspace};
 
 /// What to check, and where to look for libraries.
@@ -261,9 +261,28 @@ pub fn library_of(
     for refused in refused {
         tree.insert(refused.path.strip_prefix(real).ok(), SourceFile { shown: refused.shown, content: Content::Unread });
     }
-    let mut source = tree.into_source(String::new(), shown);
+    let mut stamps = Vec::new();
+    let mut manifests = Manifests { ws, limits, stamps: seen.map(|_| &mut stamps) };
+    let mut source = tree.into_source(String::new(), shown, real, &mut manifests);
+    if let Some(seen) = seen {
+        seen.borrow_mut().contents.extend(stamps);
+    }
     source.report = report;
     Some(source)
+}
+
+/// Reads the manifest of each folder of a library that has files of its own, as a session reads it again (`kept`).
+struct Manifests<'a, 'b> {
+    ws: &'a dyn Workspace,
+    limits: &'a Limits,
+    stamps: Option<&'b mut Vec<(PathBuf, ContentStamp)>>,
+}
+
+impl Manifests<'_, '_> {
+    /// Its text, or why it could not be read, for `check` to say.
+    fn read(&mut self, folder: &Path) -> Option<Result<String, Box<str>>> {
+        read_manifest(self.ws, folder, self.limits, self.stamps.as_deref_mut()).transpose().map(|read| read.map_err(Box::from))
+    }
 }
 
 /// The folders under the one given. A walk stops at 32 levels, which bounds the recursion here. Folders are told apart by
@@ -288,17 +307,20 @@ impl Tree {
         folder.files.push(file);
     }
 
-    fn into_source(self, name: String, shown: &str) -> LibrarySource {
+    /// `real` is the folder on disk. A folder without files of its own is no library: its manifest is not read.
+    fn into_source(self, name: String, shown: &str, real: &Path, manifests: &mut Manifests<'_, '_>) -> LibrarySource {
+        let manifest = if self.files.is_empty() { None } else { manifests.read(real) };
         let sub_libraries = self
             .folders
             .into_iter()
             .map(|(sub, tree)| {
+                let sub_real = real.join(&sub);
                 let sub = sub.to_string_lossy().into_owned();
                 let sub_shown = format!("{}/{sub}", shown.trim_end_matches('/'));
-                tree.into_source(sub, &sub_shown)
+                tree.into_source(sub, &sub_shown, &sub_real, manifests)
             })
             .collect();
-        LibrarySource { files: self.files, sub_libraries, ..LibrarySource::new(name, shown.to_owned(), Origin::Project) }
+        LibrarySource { files: self.files, manifest, sub_libraries, ..LibrarySource::new(name, shown.to_owned(), Origin::Project) }
     }
 }
 

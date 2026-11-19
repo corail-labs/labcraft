@@ -129,9 +129,17 @@ Checks the libraries given as folders, without running anything: names, signatur
 dataflow rules, panel, layout, icon. It writes nothing and does not care whether a file is canonical.
 
 **A library is a folder.** Its files are the `.lcf` and `.lct` files directly in it; each sub-folder
-that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read only for
-the libraries shipped with LabCraft (spec, section 9): any other `labcraft.toml` is ignored, except, from M1, its
-`[mask]` table, which `check` judges and `diagram` reads to draw the blocks of its functions (spec 11.3). In M0a
+that holds such files is a sub-library, and is checked as well. Until M2, a manifest is read whole only for
+the libraries shipped with LabCraft (spec, section 9). Of any other `labcraft.toml`, `check` reads only `name`,
+`always` and `resources`, from 0.5.0, so that a function marked `always` runs whichever rule found its library (#138),
+and, from M1, its `[mask]` table, which `check` judges and `diagram` reads to draw the blocks of its functions (spec
+11.3); its other keys are ignored. Such a manifest that cannot be read (not TOML, larger than `--max-file-size`) is
+a warning, `LC0106`, and none of it is read; in a library that declares a native function, which only it may mark
+`always`, it is the error `LC0105` instead, so that a run that reaches that library never goes on without its
+`always` and without a word, even as a dependency. One that reads and says something wrong of `name`, `always` or
+`resources` is `LC0105`, as for a library shipped with LabCraft. Its `name` is that of its folder, whatever the path
+that finds it (`visa` for `libs/visa`, which the folder given names `libs.visa`); it may be left out (a manifest that
+holds a mask alone has none), and that of the folder given to `check` is not compared, since no `use` can name it. In M0a
 a file bears the name of what it declares, and the names of files and folders are names that every system can hold (spec, R-22:
 `LC2023`, `LC2024`, `LC2025`). A folder given inside another one given
 is one of its sub-libraries, even one that a walk of the outer folder would not reach, such as `.hidden`: each
@@ -372,7 +380,8 @@ section 3), not a diagnostic.
 | `LC0102` | error | Format version not supported: any integer other than the exact text `1`, such as a newer one (`labcraft 99999`), `0` or `01` | 2, 14.2 |
 | `LC0103` | error | Declaration in the wrong kind of file: a `fn` in a `.lct`, a `type` in a `.lcf` | 2 |
 | `LC0104` | error | `panel`, `layout` or `icon` section in a type file, and `terminals` and `outline` from M1 | R-19 |
-| `LC0105` | error | Manifest of a shipped library that cannot be read or names another library, or an `always` on something other than a native function | 1, 7.2 |
+| `LC0105` | error | Manifest of a shipped library, or of a library that declares a native function, that cannot be read; manifest of any library that names another library than its folder, gives `name`, `always` or `resources` of the wrong kind (`name = 1`, `always = "close"`), an `always` on something other than a native function of the library, or a resource that is not an opaque type of it | 1, 7.2, 8.1 |
+| `LC0106` | warning | Manifest of a user library without a native function that cannot be read (not TOML, not UTF-8, larger than `--max-file-size`, a symbolic link, an error of the system): none of it is read, neither `always`, nor `resources`, nor `[mask]` | 1, 7.2, 11.3 |
 
 ### Syntax: `LC10`
 

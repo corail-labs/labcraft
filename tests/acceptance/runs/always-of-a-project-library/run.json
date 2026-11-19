@@ -1,0 +1,8 @@
+{
+  "function": "measure_once",
+  "folder": "tests/acceptance/runs/always-of-a-project-library",
+  "sim": "<labcraft>/visa/sim/dmm-timeout.toml",
+  "args": {
+    "resource": "SIM::DMM0"
+  }
+}

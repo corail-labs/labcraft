@@ -1,0 +1,11 @@
+labcraft 1
+
+use visa
+
+/// Opens a session, asks one measurement, and closes the session.
+fn measure_once(resource: string, err: error = none) -> (text: string, err: error) {
+    dmm, e1 = visa.open(resource, timeout: 2 s, err: err)
+    text, dmm2, e2 = visa.query(dmm, "MEAS:VOLT:DC?", err: e1)
+    #close: e3 = visa.close(dmm2, err: e2)
+    err = e3
+}

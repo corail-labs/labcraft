@@ -10,7 +10,7 @@ use labcraft_graph::{Decl, File, Id, SourceMap, TypeExpr};
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, cut_text, normalize};
 
 use crate::file_name::{case_key, kept_by_windows};
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, UserManifest};
 use crate::primitives::PrimitiveLibrary;
 use crate::{Content, DependencyReport, Found, Libraries, LibrarySource, Origin, SourceFile};
 
@@ -31,8 +31,8 @@ pub(crate) struct Library {
     /// The errors of a dependency, kept apart: several folders given can read one dependency.
     pub(crate) report: Report,
     pub(crate) checked_elsewhere: bool,
-    /// What its manifest says, once read: only a shipped library has one before M2, and a manifest that does not read says
-    /// nothing.
+    /// What its manifest says, once read: all of it for a shipped library, only `always` and `resources` for another one
+    /// before M2, and nothing for a manifest that does not read.
     pub(crate) manifest: Manifest,
 }
 
@@ -125,6 +125,15 @@ fn say(sink: &mut Report, checked: bool, diagnostic: Diagnostic) {
     }
 }
 
+/// The manifest of a library as reports show it, as a host shows a file of the folder: `labcraft.toml` alone in the
+/// current folder.
+fn manifest_shown(shown: &str) -> String {
+    match shown.strip_prefix("./").unwrap_or(shown) {
+        "" | "." => "labcraft.toml".to_owned(),
+        folder => format!("{}/labcraft.toml", folder.trim_end_matches('/')),
+    }
+}
+
 fn over_the_limit(limits: &Limits) -> String {
     format!("files left out: over the limit of {} bytes in a folder", limits.max_library_size)
 }
@@ -190,7 +199,7 @@ impl Loader<'_> {
 
     /// `None` for a folder without files of its own, which is no library, though its sub-folders can be.
     fn add(&mut self, source: LibrarySource, name: String, checked: bool, budget: &mut Budget) -> Option<usize> {
-        let LibrarySource { shown, files, manifest, origin, report: met, checked_elsewhere, .. } = source;
+        let LibrarySource { name: folder, shown, files, manifest, origin, report: met, checked_elsewhere, .. } = source;
         let mut sink = Report::for_limits(self.limits);
         if checked {
             sink.merge(met);
@@ -201,12 +210,20 @@ impl Loader<'_> {
             None
         } else {
             let files: Vec<LoadedFile> = files.into_iter().map(|file| self.read_file(file, checked, origin, budget, &mut sink)).collect();
-            let mut read = Manifest::default();
-            if origin == Origin::Shipped
-                && let Some(text) = manifest
-            {
-                read = self.read_manifest(&text, &shown, &name, &files, &mut sink);
-            }
+            let read = match (origin, manifest) {
+                (_, None) => Manifest::default(),
+                (Origin::Shipped, Some(Ok(text))) => self.read_manifest(&text, &shown, &name, &files, &mut sink),
+                (Origin::Shipped, Some(Err(why))) => {
+                    sink.push(Diagnostic::new(Code::Lc0105, format!("cannot read this manifest: {why}"), manifest_shown(&shown)));
+                    Manifest::default()
+                }
+                (Origin::Project, Some(text)) => {
+                    // The folder itself: a sub-library of the folder given knows its own, which can hold a `.`, and the
+                    // folder given has none; a dependency is the folder of the last segment of the `use` that found it.
+                    let folder = if checked { normalize(&folder).into_owned() } else { name.rsplit('.').next().unwrap_or_default().to_owned() };
+                    self.read_user_manifest(text.as_deref().map_err(|why| &**why), &shown, &folder, &files, checked, &mut sink)
+                }
+            };
             Some(Library {
                 name,
                 checked,
@@ -275,7 +292,7 @@ impl Loader<'_> {
 
     /// What it says, or nothing when it does not read.
     fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) -> Manifest {
-        let path = format!("{shown}/labcraft.toml");
+        let path = manifest_shown(shown);
         let manifest = match Manifest::parse(text) {
             Ok(manifest) => manifest,
             Err(why) => {
@@ -287,9 +304,60 @@ impl Loader<'_> {
             let message = format!("this manifest names the library `{}`, whose name is `{name}`", manifest.name);
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
+        self.judge_the_marks(&manifest.always, &manifest.resources, &path, files, sink);
+        manifest
+    }
+
+    /// What `check` reads of the manifest of a user library (`docs/cli.md`, section 3): `name`, `always` and
+    /// `resources`, so that a function marked `always` runs whichever rule found its library. `name` is compared with the
+    /// name of the folder itself, `folder`, normalized: one folder can be `libs.visa` from the folder given and `visa`
+    /// from a `--lib-path` (cli.md 3). The folder given has no name, since no `use` can name it: its manifest may say
+    /// any. `text` is the error of the host when it could not read the file.
+    fn read_user_manifest(
+        &mut self,
+        text: Result<&str, &str>,
+        shown: &str,
+        folder: &str,
+        files: &[LoadedFile],
+        checked: bool,
+        sink: &mut Report,
+    ) -> Manifest {
+        let path = manifest_shown(shown);
+        let read = match text.map_err(str::to_owned).and_then(UserManifest::parse) {
+            Ok(read) => read,
+            Err(why) => {
+                // Only a native function can be `always`: in a library that has one, a manifest lost changes the run, and
+                // a run that reaches it must not go on as if nothing was said (owner, 2026-11-19).
+                let native = files.iter().any(|file| file.model.as_ref().is_some_and(|model| matches!(model.file.decl, Decl::Extern(_))));
+                let (code, then) = if native {
+                    (Code::Lc0105, "this library has a native function, which it may mark `always`")
+                } else {
+                    (Code::Lc0106, "neither its `always`, nor its `resources`, nor its `[mask]` is read")
+                };
+                say(sink, checked, Diagnostic::new(code, format!("cannot read this manifest: {why}; {then}"), path));
+                return Manifest::default();
+            }
+        };
+        for wrong in &read.wrong {
+            sink.push(Diagnostic::new(Code::Lc0105, wrong.clone(), path.as_str()));
+        }
+        if let Some(named) = &read.name
+            && !folder.is_empty()
+            && normalize(named) != folder
+        {
+            let message = format!("this manifest names the library `{}`, whose folder is `{folder}`", cut_text(named));
+            sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
+        }
+        self.judge_the_marks(&read.always, &read.resources, &path, files, sink);
+        Manifest { always: read.always, resources: read.resources, ..Manifest::default() }
+    }
+
+    /// `always` marks native functions of the library, and `resources` names opaque types of it, each an `LC0105`
+    /// otherwise.
+    fn judge_the_marks(&self, always: &[String], resources: &[String], path: &str, files: &[LoadedFile], sink: &mut Report) {
         // A file that did not read has its own diagnostic, and may hold the native function named here.
         if files.iter().any(|file| file.model.is_none()) {
-            return manifest;
+            return;
         }
         let native: HashSet<&str> = files
             .iter()
@@ -298,9 +366,9 @@ impl Loader<'_> {
                 _ => None,
             })
             .collect();
-        for always in manifest.always.iter().filter(|always| !native.contains(normalize(always).as_ref())) {
-            let message = format!("`always` can only mark a native function of this library, and `{always}` is none (spec 7.2)");
-            sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
+        for always in always.iter().filter(|always| !native.contains(normalize(always).as_ref())) {
+            let message = format!("`always` can only mark a native function of this library, and `{}` is none (spec 7.2)", cut_text(always));
+            sink.push(Diagnostic::new(Code::Lc0105, message, path));
         }
         let opaque: HashSet<&str> = files
             .iter()
@@ -309,11 +377,10 @@ impl Loader<'_> {
                 _ => None,
             })
             .collect();
-        for resource in manifest.resources.iter().filter(|resource| !opaque.contains(normalize(resource).as_ref())) {
-            let message = format!("`resources` can only name an opaque type of this library, and `{resource}` is none (spec 8.1)");
-            sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
+        for resource in resources.iter().filter(|resource| !opaque.contains(normalize(resource).as_ref())) {
+            let message = format!("`resources` can only name an opaque type of this library, and `{}` is none (spec 8.1)", cut_text(resource));
+            sink.push(Diagnostic::new(Code::Lc0105, message, path));
         }
-        manifest
     }
 
     /// The files of a library are set aside meanwhile, since what their `use` lines find joins the list of libraries.
@@ -921,7 +988,7 @@ mod tests {
     }
 
     fn shipped_with_manifest(text: &str, files: Vec<SourceFile>) -> LibrarySource {
-        LibrarySource { manifest: Some(text.to_owned()), ..shipped("dep", files) }
+        LibrarySource { manifest: Some(Ok(text.to_owned())), ..shipped("dep", files) }
     }
 
     fn codes_of_manifest(text: &str) -> Vec<&'static str> {
@@ -953,15 +1020,117 @@ mod tests {
     }
 
     #[test]
-    fn a_manifest_is_read_for_a_shipped_library_and_ignored_for_any_other() {
+    fn a_manifest_is_read_whole_for_a_shipped_library() {
         assert_eq!(codes_of_manifest("name = \"dep\"\nversion = \"1\"\nalways = [\"close\"]\n"), Vec::<&str>::new());
         assert_eq!(codes_of_manifest("name = \"dep\""), ["LC0105"]);
         assert_eq!(codes_of_manifest("name = \"other\"\nversion = \"1\"\n"), ["LC0105"]);
         assert_eq!(codes_of_manifest("name = \"dep\"\nversion = \"1\"\nalways = [\"open\"]\n"), ["LC0105"]);
         assert_eq!(codes_of_manifest("name = \"dep\"\nversion = \"1\"\nalways = [\"nowhere\"]\n"), ["LC0105"]);
+        assert_eq!(codes_of_manifest("name = \"dep\"\nversion = \"1\"\nnonsense = 1\n"), ["LC0105"]);
+    }
+
+    const CLOSE: &[u8] = b"labcraft 1\n\nextern rust(crate: \"a\", function: \"b\")\nfn close() -> (err: error)\n";
+
+    /// A library of the user found by `--lib-path` (rule 3 of `docs/cli.md`, section 3), with this manifest.
+    fn user_dependency(manifest: &str) -> impl Libraries {
+        let text = manifest.to_owned();
+        Answering(move |_: &str, _| {
+            let files = vec![file("libs/dep/close.lcf", CLOSE), file("libs/dep/open.lcf", FUNCTION)];
+            Found::Library(LibrarySource { manifest: Some(Ok(text.clone())), ..library("dep", files) })
+        })
+    }
+
+    fn always_of_dep(libraries: &dyn Libraries) -> usize {
+        let checked = check(library("", vec![file("f.lcf", &uses(&["dep"]))]), libraries, &mut Interner::new(), &Limits::default());
+        checked.libraries.iter().find(|declared| declared.name == "dep").map_or(0, |declared| declared.always.len())
+    }
+
+    /// #138: `always` holds whichever rule found the library.
+    #[test]
+    fn a_user_library_gives_its_always_and_its_resources_and_nothing_else() {
+        let root = || library("", vec![file("f.lcf", &uses(&["dep"]))]);
+        let codes_with = |manifest: &str| codes(root(), &user_dependency(manifest), &Limits::default());
+        assert_eq!(always_of_dep(&user_dependency("name = \"dep\"\nalways = [\"close\"]\n")), 1);
+        assert_eq!(always_of_dep(&user_dependency("always = [\"close\"]\nversion = 3\nnonsense = 1\n[mask]\nband = \"D\"\n")), 1);
+        assert_eq!(codes_with("always = [\"close\"]\nversion = 3\nnonsense = 1\n"), Vec::<&str>::new(), "its other keys are ignored");
+        assert_eq!(codes_with("[mask]\nband = \"D\"\n"), Vec::<&str>::new(), "a mask alone has no name");
+        assert_eq!(codes_with("name = \"other\"\n"), ["LC0105"]);
+        assert_eq!(codes_with("name = 1\n"), ["LC0105"]);
+        assert_eq!(codes_with("always = [\"open\"]\n"), ["LC0105"], "open is no native function");
+        assert_eq!(codes_with("always = \"close\"\n"), ["LC0105"]);
+        assert_eq!(codes_with("resources = [\"session\"]\n"), ["LC0105"], "it has no opaque type");
+        // A manifest lost in a library with a native function is an error, a dependency's too (owner, 2026-11-19).
+        assert_eq!(codes_with("nonsense"), ["LC0105"]);
+        assert_eq!(always_of_dep(&user_dependency("nonsense")), 0);
+    }
+
+    /// Why the host could not read a manifest: `LC0105` in a library that has a native function, `LC0106` otherwise, kept for
+    /// when a dependency is itself checked.
+    #[test]
+    fn a_manifest_the_host_could_not_read_is_an_error_only_where_always_can_mark() {
+        let dependency = |files: Vec<SourceFile>| {
+            Answering(move |_: &str, _| {
+                let files = files.iter().map(|file| SourceFile { shown: file.shown.clone(), content: copy(&file.content) }).collect();
+                Found::Library(LibrarySource { manifest: Some(Err("it is not UTF-8".into())), ..library("dep", files) })
+            })
+        };
+        let root = || library("", vec![file("f.lcf", &uses(&["dep"]))]);
+        let native = dependency(vec![file("libs/dep/close.lcf", CLOSE)]);
+        assert_eq!(codes(root(), &native, &Limits::default()), ["LC0105"]);
+        let plain = dependency(vec![file("libs/dep/open.lcf", FUNCTION)]);
+        assert_eq!(codes(root(), &plain, &Limits::default()), Vec::<&str>::new());
+        let mut checked = library("", vec![file("f.lcf", FUNCTION)]);
+        checked.manifest = Some(Err("it is not UTF-8".into()));
+        assert_eq!(codes(checked, &Nothing, &Limits::default()), ["LC0106"]);
+    }
+
+    fn copy(content: &Content) -> Content {
+        match content {
+            Content::Bytes(bytes) => Content::Bytes(bytes.clone()),
+            Content::Unread => Content::Unread,
+        }
+    }
+
+    #[test]
+    fn the_manifest_of_a_folder_checked_says_its_warning_and_the_folder_given_has_no_name_to_check() {
         let mut root = library("", vec![file("f.lcf", FUNCTION)]);
-        root.manifest = Some("nonsense".to_owned());
+        root.manifest = Some(Ok("nonsense".to_owned()));
+        assert_eq!(codes(root, &Nothing, &Limits::default()), ["LC0106"]);
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        root.manifest = Some(Ok("name = \"anything\"\n".to_owned()));
         assert_eq!(codes(root, &Nothing, &Limits::default()), Vec::<&str>::new());
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        let mut sub = library("dep", vec![file("dep/close.lcf", CLOSE)]);
+        sub.manifest = Some(Ok("name = \"dep\"\nalways = [\"close\"]\n".to_owned()));
+        root.sub_libraries.push(sub);
+        assert_eq!(codes(root, &Nothing, &Limits::default()), Vec::<&str>::new());
+    }
+
+    /// One folder is `libs.dep` from the folder given and `dep` from a `--lib-path`: its manifest names the folder itself.
+    #[test]
+    fn the_name_of_a_manifest_is_that_of_its_folder_however_deep() {
+        // A folder with a `.` in its name is no library that a `use` can name, and still has a manifest of its own.
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        let mut dotted = library("a.b", vec![file("a.b/close.lcf", CLOSE)]);
+        dotted.manifest = Some(Ok("name = \"a.b\"\nalways = [\"close\"]\n".to_owned()));
+        root.sub_libraries.push(dotted);
+        assert_eq!(codes(root, &Nothing, &Limits::default()), Vec::<&str>::new());
+        let nested = |manifest: &str| {
+            let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+            let mut libs = library("libs", Vec::new());
+            let mut dep = library("dep", vec![file("libs/dep/close.lcf", CLOSE)]);
+            dep.manifest = Some(Ok(manifest.to_owned()));
+            libs.sub_libraries.push(dep);
+            root.sub_libraries.push(libs);
+            codes(root, &Nothing, &Limits::default())
+        };
+        assert_eq!(nested("name = \"dep\"\nalways = [\"close\"]\n"), Vec::<&str>::new());
+        assert_eq!(nested("name = \"libs.dep\"\n"), ["LC0105"]);
+        let libraries = Answering(|_: &str, _| {
+            let source = library("tools.dep", vec![file("libs/tools/dep/close.lcf", CLOSE)]);
+            Found::Library(LibrarySource { manifest: Some(Ok("name = \"dep\"\nalways = [\"close\"]\n".to_owned())), ..source })
+        });
+        assert_eq!(codes(library("", vec![file("f.lcf", &uses(&["tools.dep"]))]), &libraries, &Limits::default()), Vec::<&str>::new());
     }
 
     /// A list cut to nothing still counts: the status of a run comes from the counts.

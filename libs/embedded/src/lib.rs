@@ -66,7 +66,11 @@ pub fn source(name: &str) -> Option<LibrarySource> {
         .iter()
         .map(|file| SourceFile { shown: format!("{shown}/{}", file.name), content: Content::Bytes(Cow::Borrowed(file.bytes)) })
         .collect();
-    Some(LibrarySource { files, manifest: Some(library.manifest.to_owned()), ..LibrarySource::new(library.name.to_owned(), shown, Origin::Shipped) })
+    Some(LibrarySource {
+        files,
+        manifest: Some(Ok(library.manifest.to_owned())),
+        ..LibrarySource::new(library.name.to_owned(), shown, Origin::Shipped)
+    })
 }
 
 #[cfg(test)]

@@ -209,6 +209,22 @@ fn a_run_reads_as_cli_6_7_shows_it() {
     );
 }
 
+/// #138: `visa` found by `--lib-path` (rule 3 of cli.md 3) closes its session after an error as the shipped one does,
+/// since its manifest marks `close` as `always` (spec 7.2). By hand: `dmm-timeout.toml` never answers, so the run ends in
+/// `io.timeout` (exit 1, cli.md 6.7), and the session opened is closed.
+#[test]
+fn always_holds_for_a_library_found_by_a_lib_path() {
+    for lib_path in [&[][..], &["--lib-path", "libs"][..]] {
+        let mut args = vec!["run", "--no-trace"];
+        args.extend_from_slice(lib_path);
+        args.extend_from_slice(&["--sim", "libs/visa/sim/dmm-timeout.toml", "--arg", "resource=SIM::DMM0", "examples", "check_voltage"]);
+        let output = cli(&args);
+        assert_eq!(output.status.code(), Some(1), "{lib_path:?}: {}", String::from_utf8_lossy(&output.stderr));
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(text.lines().last(), Some("resources: 1 opened, 0 open"), "{lib_path:?}: {text}");
+    }
+}
+
 #[test]
 fn a_refused_run_gives_its_diagnostics_then_refused_and_exit_1() {
     let output = cli(&["run", "--no-trace", "--arg", "resourc=SIM::DMM0", "examples", "check_voltage"]);

@@ -63,7 +63,7 @@ impl Shipped {
             .collect();
         Some(LibrarySource {
             files,
-            manifest: Some(library.manifest.to_owned()),
+            manifest: Some(Ok(library.manifest.to_owned())),
             ..LibrarySource::new(library.name.to_owned(), shown, Origin::Shipped)
         })
     }

@@ -94,7 +94,8 @@ network device with a protocol of its own.
   create, delete and rename; whether a path needs the consent of the real resources (mcp.md 6, ide.md 8); in the
   browser, the host gives its own or an error. Reading a file
   into a declared type (`csv`, `json`, `config` of Q-15) needs the generics of M2.
-- The fix of #138 (from M0).
+- The fix of #138 (from M0): `always` and `resources` are read in the manifest of every library, not only of those
+  shipped (cli.md 3).
 
 **Later in the theme, as separate libraries** (one issue each, open to contributors, according to demand and the hardware available):
 VXI-11, HiSLIP, USBTMC, the binding to an installed VISA (its C API, loaded at run time: `unsafe`, which would be an
@@ -176,7 +177,7 @@ nested access that it sees), `for` that stops early (Q-22). The scenario put off
 stop without loss. In deterministic mode, the events of a test are scripted on the simulated clock.
 
 **Types and libraries**: user generics, with the units in the signatures (Q-12); `map<K, V>` and `set<T>` (Q-28);
-shared constants (Q-29); manifests of the user libraries (D-25: dependencies, `always`, `resources`), with their page in
+shared constants (Q-29); manifests of the user libraries (D-25: dependencies; their `always` and `resources` are read from 0.5.0), with their page in
 the IDE (at the head of the library in the tree: name, version, dependencies, and the text, to switch like `Diagram` and
 `Text`), storage folders without namespace, private functions; the recommended entry (Q-31, "not in M1"), with the
 signatures.

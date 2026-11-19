@@ -210,6 +210,55 @@ fn library_check_gives_the_report_of_labcraft_cli_check_and_keeps_it() {
     assert_eq!(counting.reads.load(Ordering::SeqCst), 4);
 }
 
+/// #138: the manifest of a folder is read as its files are, and a change of it is seen too (`docs/cli.md`, section 3).
+#[test]
+fn a_manifest_that_appears_or_changes_is_seen_by_the_next_check() {
+    let (mut session, counting) = session();
+    assert_eq!(ok(&mut session, "library.check", json!({}))["status"], "ok");
+    counting.memory.put("/p/labcraft.toml", "nonsense".to_owned());
+    let report = ok(&mut session, "library.check", json!({}));
+    assert_eq!(report["diagnostics"][0]["code"], "LC0106", "{report}");
+    assert_eq!(report["diagnostics"][0]["file"], "labcraft.toml");
+    counting.memory.put("/p/labcraft.toml", "name = \"p\"\n".to_owned());
+    assert_eq!(ok(&mut session, "library.check", json!({}))["diagnostics"], json!([]));
+    // The manifest of a sub-folder, shown as its files are.
+    counting.memory.put("/p/sub/b.lcf", MAIN.replace("double", "b"));
+    counting.memory.put("/p/sub/labcraft.toml", "name = \"other\"\n".to_owned());
+    let report = ok(&mut session, "library.check", json!({}));
+    assert_eq!((&report["diagnostics"][0]["code"], &report["diagnostics"][0]["file"]), (&json!("LC0105"), &json!("sub/labcraft.toml")), "{report}");
+    counting.memory.put("/p/sub/labcraft.toml", "name = \"sub\"\n".to_owned());
+    assert_eq!(ok(&mut session, "library.check", json!({}))["diagnostics"], json!([]));
+}
+
+/// `LC0106` for a manifest that the host cannot read: not UTF-8, or over `--max-file-size` (`docs/cli.md`, section 3).
+#[test]
+fn a_manifest_that_does_not_read_is_lc0106() {
+    let memory = project();
+    let mut limits = Limits::default();
+    limits.max_file_size = 4096;
+    let counting = Arc::new(Counting { memory, reads: AtomicUsize::new(0), panic_on: None });
+    let config = Config { limits, ..config_on_p() };
+    let mut session = Session::new(counting.clone(), config, false).unwrap();
+    for bytes in [vec![0xFF, 0xFE, b'x'], vec![b'#'; 4097]] {
+        counting.memory.put("/p/labcraft.toml", bytes);
+        let report = ok(&mut session, "library.check", json!({}));
+        assert_eq!(report["status"], "ok", "a warning: {report}");
+        assert_eq!((&report["diagnostics"][0]["code"], &report["diagnostics"][0]["file"]), (&json!("LC0106"), &json!("labcraft.toml")));
+    }
+}
+
+fn config_on_p() -> Config {
+    Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        shipped: Shipped::default(),
+        natives: vec![Arc::new(Fake)],
+        clock: Arc::new(crate::Still),
+        process: 0,
+    }
+}
+
 #[test]
 fn a_file_changed_by_the_client_s_own_tools_is_seen_by_the_next_check() {
     let (mut session, counting) = session();
@@ -276,6 +325,14 @@ fn a_library_under_lib_path_that_appears_or_changes_is_seen() {
     counting.memory.put_keeping_time("/libs/helpers/twice.lcf", twice.replace("(x: f64)", "(x: str)"));
     assert_eq!(twice.len(), twice.replace("(x: f64)", "(x: str)").len());
     assert_eq!(ok(&mut session, "library.check", json!({}))["status"], "error");
+    // Its manifest is read too (#138), and a change of it is seen.
+    counting.memory.put("/libs/helpers/twice.lcf", twice);
+    assert_eq!(ok(&mut session, "library.check", json!({}))["status"], "ok");
+    counting.memory.put("/libs/helpers/labcraft.toml", "name = \"other\"\n".to_owned());
+    let report = ok(&mut session, "library.check", json!({}));
+    assert_eq!((&report["status"], &report["diagnostics"][0]["code"]), (&json!("error"), &json!("LC0105")), "{report}");
+    counting.memory.put("/libs/helpers/labcraft.toml", "name = \"helpers\"\n".to_owned());
+    assert_eq!(ok(&mut session, "library.check", json!({}))["status"], "ok");
 }
 
 #[test]

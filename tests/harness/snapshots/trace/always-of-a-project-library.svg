@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 486 188" width="486" height="188" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="measure_once">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="486" height="188" style="fill: var(--canvas-fill)"/>
+<rect x="19" y="16" width="448" height="156" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn measure_once</text>
+<g data-wire="resource" data-from="fn.resource" data-to="dmm.resource">
+<path d="M19 120 L162.24 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="err" data-from="fn.err" data-to="dmm.err">
+<path d="M19 144 L162.24 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M30.1 145.4 L31.9 144 L30.1 142.6 M38.1 145.4 L39.9 144 L38.1 142.6 M46.1 145.4 L47.9 144 L46.1 142.6 M54.1 145.4 L55.9 144 L54.1 142.6 M62.1 145.4 L63.9 144 L62.1 142.6 M70.1 145.4 L71.9 144 L70.1 142.6 M78.1 145.4 L79.9 144 L78.1 142.6 M86.1 145.4 L87.9 144 L86.1 142.6 M94.1 145.4 L95.9 144 L94.1 142.6 M102.1 145.4 L103.9 144 L102.1 142.6 M110.1 145.4 L111.9 144 L110.1 142.6 M118.1 145.4 L119.9 144 L118.1 142.6 M126.1 145.4 L127.9 144 L126.1 142.6 M134.1 145.4 L135.9 144 L134.1 142.6 M142.1 145.4 L143.9 144 L142.1 142.6 M150.1 145.4 L151.9 144 L150.1 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+</g>
+<g data-wire="dmm" data-from="dmm.session" data-to="text.session">
+<path d="M202.24 120 L209.24 120 Q213.24 120 213.24 124 L213.24 124 Q213.24 128 217.24 128 L288.4 128" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+</g>
+<g data-wire="e1" data-from="dmm.err" data-to="text.err">
+<path d="M202.24 144 L288.4 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M213.34 145.4 L215.14 144 L213.34 142.6 M221.34 145.4 L223.14 144 L221.34 142.6 M229.34 145.4 L231.14 144 L229.34 142.6 M237.34 145.4 L239.14 144 L237.34 142.6 M245.34 145.4 L247.14 144 L245.34 142.6 M253.34 145.4 L255.14 144 L253.34 142.6 M261.34 145.4 L263.14 144 L261.34 142.6 M269.34 145.4 L271.14 144 L269.34 142.6 M277.34 145.4 L279.14 144 L277.34 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="206.24" y="141" font-size="10" style="fill: var(--ink-muted)">e1</text>
+</g>
+<g data-wire="text" data-from="text.text" data-to="fn.text">
+<path d="M328.4 120 L333.9 120 Q339.4 120 339.4 114.5 L339.4 86 Q339.4 80 345.4 80 L403.4 80 Q409.4 80 409.4 86 L409.4 114 Q409.4 120 415.4 120 L467 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="343.4" y="77" font-size="10" style="fill: var(--ink-muted)">text</text>
+</g>
+<g data-wire="dmm2" data-from="text.session" data-to="e3.session">
+<path d="M328.4 128 L343.4 128 Q347.4 128 347.4 124 L347.4 124 Q347.4 120 351.4 120 L358.4 120" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+</g>
+<g data-wire="e2" data-from="text.err" data-to="e3.err">
+<path d="M328.4 144 L358.4 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M339.5 145.4 L341.3 144 L339.5 142.6 M347.5 145.4 L349.3 144 L347.5 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="332.4" y="141" font-size="10" style="fill: var(--ink-muted)">e2</text>
+</g>
+<g data-wire="e3" data-from="e3.err" data-to="fn.err">
+<path d="M398.4 144 L467 144" style="fill: none; stroke: var(--wire-error); stroke-width: 4"/>
+<path d="M409.5 145.4 L411.3 144 L409.5 142.6 M417.5 145.4 L419.3 144 L417.5 142.6 M425.5 145.4 L427.3 144 L425.5 142.6 M433.5 145.4 L435.3 144 L433.5 142.6 M441.5 145.4 L443.3 144 L441.5 142.6 M449.5 145.4 L451.3 144 L449.5 142.6 M457.5 145.4 L459.3 144 L457.5 142.6" style="fill: none; stroke: var(--canvas-fill); stroke-width: 0.9"/>
+<text x="402.4" y="141" font-size="10" style="fill: var(--ink-muted)">e3</text>
+</g>
+<g>
+<rect x="16" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="23" y="114.18" width="60.16" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="123.65" font-size="10" style="fill: var(--node-title)">resource</text>
+<polygon points="16,141 22,144 16,147 18,144" style="fill: var(--wire-error)"/>
+<rect x="23" y="138.18" width="34.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="147.65" font-size="10" style="fill: var(--node-title)">err</text>
+<rect x="57.06" y="137" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="61.06" y="147.65" font-size="10" style="fill: var(--pill-text)">◂ none</text>
+<rect x="464" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="426.92" y="114.18" width="36.08" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="430.92" y="123.65" font-size="10" style="fill: var(--node-title)">text</text>
+<polygon points="464,141 470,144 464,147 466,144" style="fill: var(--wire-error)"/>
+<rect x="432.94" y="138.18" width="30.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="436.94" y="147.65" font-size="10" style="fill: var(--node-title)">err</text>
+</g>
+<g data-node="dmm"><title>visa.open</title>
+<rect x="162.24" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="162.24" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="162.24" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="162.24,124 202.24,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="171.41" y="121.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="162.24" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="171.41" y="141.28" font-size="9" style="fill: var(--node-title)">open</text>
+<rect x="159.24" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="199.24" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<circle cx="162.24" cy="128" r="3" style="fill: var(--wire-data)"/>
+<polygon points="159.24,141 165.24,144 159.24,147 161.24,144" style="fill: var(--wire-error)"/>
+<polygon points="199.24,141 205.24,144 199.24,147 201.24,144" style="fill: var(--wire-error)"/>
+<rect x="125.18" y="121" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="129.18" y="131.65" font-size="10" style="fill: var(--pill-text)">2 s</text>
+</g>
+<g data-node="text"><title>visa.query</title>
+<rect x="288.4" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="288.4" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="288.4" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="288.4,124 328.4,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="297.57" y="121.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="288.4" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="294.86" y="141.28" font-size="9" style="fill: var(--node-title)">query</text>
+<rect x="325.4" y="117.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<rect x="285.4" y="125" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="325.4" y="125" width="6" height="6" style="fill: var(--wire-resource)"/>
+<rect x="285.4" y="133.9" width="6" height="4.2" style="fill: var(--wire-data)"/>
+<polygon points="285.4,141 291.4,144 285.4,147 287.4,144" style="fill: var(--wire-error)"/>
+<polygon points="325.4,141 331.4,144 325.4,147 327.4,144" style="fill: var(--wire-error)"/>
+<rect x="221.24" y="129" width="56.16" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="225.24" y="139.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:V…</text>
+</g>
+<g data-node="e3"><title>visa.close</title>
+<rect x="358.4" y="112" width="40" height="40" rx="2" style="fill: var(--node-fill)"/>
+<rect x="358.4" y="112" width="40" height="12" rx="2" style="fill: var(--band-fill)"/>
+<rect x="358.4" y="122" width="40" height="2" style="fill: var(--band-fill)"/>
+<polyline points="358.4,124 398.4,124" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="367.57" y="121.28" font-size="9" style="fill: var(--band-text)">visa</text>
+<rect x="358.4" y="112" width="40" height="40" rx="2" style="fill: none; stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="364.86" y="134.37" font-size="9" style="fill: var(--node-title)">close</text>
+<rect x="355.4" y="117" width="6" height="6" style="fill: var(--wire-resource)"/>
+<polygon points="355.4,141 361.4,144 355.4,147 357.4,144" style="fill: var(--wire-error)"/>
+<polygon points="395.4,141 401.4,144 395.4,147 397.4,144" style="fill: var(--wire-error)"/>
+<text x="375.39" y="147.65" font-size="10" style="fill: var(--node-title)">▴</text>
+<text x="358.4" y="105.83" font-size="10" style="fill: var(--ink-muted)">#close:</text>
+</g>
+<g>
+<rect x="285.4" y="109" width="46" height="46" rx="5" style="fill: none; stroke: var(--wire-error); stroke-width: 2"/>
+<rect x="266.22" y="93" width="62.18" height="14" rx="7" style="fill: var(--probe-fill); stroke: var(--wire-error); stroke-width: 1"/>
+<text x="270.22" y="103.28" font-size="9" style="fill: var(--wire-error)">io.timeout</text>
+</g>
+<g data-value="resource"><title>&quot;SIM::DMM0&quot;</title>
+<rect x="23" y="100" width="74.23" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="27" y="111.65" font-size="10" style="fill: var(--node-title)">&quot;SIM::DMM0&quot;</text>
+</g>
+<g data-value="dmm"><title>{&quot;opaque&quot;:&quot;visa.session&quot;,&quot;resource&quot;:&quot;SIM::DMM0&quot;,&quot;open&quot;:true}</title>
+<rect x="206.24" y="100" width="62.18" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="210.24" y="111.65" font-size="10" style="fill: var(--node-title)">SIM::DMM0</text>
+</g>
+<g data-value="dmm2"><title>{&quot;opaque&quot;:&quot;visa.session&quot;,&quot;resource&quot;:&quot;SIM::DMM0&quot;,&quot;open&quot;:true}</title>
+</g>
+<g data-value="e2"><title>{&quot;category&quot;:&quot;io.timeout&quot;,&quot;code&quot;:-1073807339,&quot;message&quot;:&quot;SIM::DMM0: no answer to `MEAS:VOLT:DC?` within 2 s&quot;,&quot;origin&quot;:{&quot;function&quot;:&quot;measure_once&quot;,&quot;node&quot;:&quot;text&quot;,&quot;file&quot;:&quot;tests/acceptance/runs/always-of-a-…</title>
+</g>
+<g data-value="e3"><title>{&quot;category&quot;:&quot;io.timeout&quot;,&quot;code&quot;:-1073807339,&quot;message&quot;:&quot;SIM::DMM0: no answer to `MEAS:VOLT:DC?` within 2 s&quot;,&quot;origin&quot;:{&quot;function&quot;:&quot;measure_once&quot;,&quot;node&quot;:&quot;text&quot;,&quot;file&quot;:&quot;tests/acceptance/runs/always-of-a-…</title>
+</g>
+</svg>
