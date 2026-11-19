@@ -1,6 +1,6 @@
 # Command line: `fmt`, `check`, `run`, `diagram` and the IDE
 
-*Last updated: 2026-11-16. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
+*Last updated: 2026-11-19. Status: `fmt` and `check` implemented for milestone M0a; `run` (section 6) and `mcp`
 ([mcp.md](mcp.md)) implemented for M0b (tag `v0.2.0-m0b`); `diagram` (section 7) and the desktop viewer `labcraft`
 (section 8) implemented for M0v (tag `v0.3.0-m0`), the window of the IDE from step 1 of M1; `exec` (section 9) from
 step 0 of M1.*
@@ -152,8 +152,9 @@ file is checked once, under the outermost folder given.
    project (spec, 14.1, new words);
 2. a sub-folder `lib` of the `FOLDER` given to `check` (`use a.b`: the folder `a/b`);
 3. `DIR/lib`, for each `--lib-path DIR`, in the order given;
-4. the libraries shipped with LabCraft (`visa`, `scpi`), whose declarations are built into the tool,
-   so that `check` works in any folder and in the WASM build.
+4. the libraries shipped with LabCraft (`visa`, `scpi`; from 0.5.0 `net`, `serial`, `file`, and the primitive
+   `bytes`, added after M0: rule 1), whose declarations are built into the tool, so that `check` works in any folder
+   and in the WASM build.
 
 A library shipped with LabCraft follows only rules 1 and 4: a folder `visa` in a project replaces
 `visa` for that project, but not for `scpi`. A library found by rule 3 follows rules 1, 3 and 4, so it says the
@@ -562,7 +563,9 @@ current folder, as for `check`.
 3. **Runs** the function, in deterministic mode unless `--real-time` is given (spec 8), and ends in one
    of the statuses of spec 8.2: `ok`, `error`, `aborted`, `fault`.
 4. **Reports**: the human-readable form (6.7), or `labcraft-run/1` with `--json`. The report is written
-   once, at the end; nothing else goes to stdout. The run id of a command-line run is `r1`.
+   once, at the end; nothing else goes to stdout. The run id of a command-line run is `r1`. From 0.5.0 the lines
+   that the program writes with `console.write_line` go to stderr as they come, with `--json` too, and the report
+   keeps them ([io.md](io.md) 5).
 
 Exit codes (section 1): 0 `ok`; 1 `error` or `refused`; 2 wrong usage; 3 `aborted`; 4 `fault`.
 
@@ -575,7 +578,7 @@ simulation file for its own problems; `FOLDER` itself, with no position, for an 
 
 | Option | Meaning |
 |---|---|
-| `--sim FILE` | The simulation file of the bench: TOML, one table per library that simulates, by its name (in M0 only `visa`, whose format is [libs/visa/simulation.md](../libs/visa/simulation.md)). `run` reads the file, gives each library its table, and each library judges its part and reports its problems with its own codes (`visa:S001`…). A path is data: a file that does not exist or cannot be read gives `LC0001`, one over `--max-file-size` `LC0006`, one nested deeper than `--max-nesting` or than 80 levels `LC0007` (the reader of TOML goes no deeper; decision of the owner, 2026-11-09: the levels from the root of the file to its deepest value, where a table header of n segments is n levels, a key of n segments n - 1, and an array or an inline table one), one that is not TOML `LC8109`, a key at its top level that no library claims `LC8110`, each with `refused`, not exit 2. A path that starts with `<labcraft>/` names a simulation file shipped with LabCraft, as for `run.start` (commands.md 2): `--sim "<labcraft>/visa/sim/dmm-230V.toml"`. Without it, no resource exists, and `visa.open` returns an error |
+| `--sim FILE` | The simulation file of the bench: TOML, one table per library that simulates, by its name (in M0 only `visa`, whose format is [libs/visa/simulation.md](../libs/visa/simulation.md)). `run` reads the file, gives each library its table, and each library judges its part and reports its problems with its own codes (`visa:S001`…). A path is data: a file that does not exist or cannot be read gives `LC0001`, one over `--max-file-size` `LC0006`, one nested deeper than `--max-nesting` or than 80 levels `LC0007` (the reader of TOML goes no deeper; decision of the owner, 2026-11-09: the levels from the root of the file to its deepest value, where a table header of n segments is n levels, a key of n segments n - 1, and an array or an inline table one), one that is not TOML `LC8109`, a key at its top level that no library claims `LC8110`, each with `refused`, not exit 2. A path that starts with `<labcraft>/` names a simulation file shipped with LabCraft, as for `run.start` (commands.md 2): `--sim "<labcraft>/visa/sim/dmm-230V.toml"`. Without it, no `SIM::` resource exists, and `visa.open` of one returns an error. From 0.5.0 `net` and `serial` simulate too, and the file is the whole bench: a real name it does not describe is not found; without `--sim`, a real name reaches the hardware, in real time only ([io.md](io.md) 3). A run started from the command line has the right to every endpoint and every file (io.md 4) |
 | `--args FILE` | The values of inputs, as one JSON object, the `args` of MCP (6.3). A path is data, as for `--sim`; the file is bounded by `--max-file-size` |
 | `--arg NAME=VALUE` | The value of an input of the function (6.3), which replaces the one of `--args` for that input. An input with a default may be left out |
 | `--set ELEMENT=VALUE@TIME` | Sets a panel element of the function at a time of the run (6.4) |
@@ -739,7 +742,7 @@ ships its own format, and the tool does not read it.
 | `LC8005` | error | Fault: the memory limit of the run is reached, at the node that would pass it |
 | `LC8006` | error | Fault: the real-time limit of a deterministic run is reached; the message says that this limit depends on the machine |
 | `LC8007` | error | Fault: the clock of the run would pass 2^62 ns, about 146 years: a wait or a timeout that long, or one that is not finite |
-| `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), or the empty separator of `string.split`, or a call of the default of a function type that has no output of type `error` to say that it designates no function (spec 7.2). Gives the node and the values |
+| `LC8008` | error | Fault: a value that its operation cannot take, where no `err` can say it (spec 8.2, Q-25): a number that its type cannot hold (an integer that overflows, `core.to_i32` or `core.round_to_i32` of `nan` or beyond the `i32`, a `duration` that is not finite or does not fit), a division by 0 of `core.quotient` or `core.remainder`, a negative count of `core.shl` or `core.shr` (0.5.0), or the empty separator of `string.split`, or a call of the default of a function type that has no output of type `error` to say that it designates no function (spec 7.2). Gives the node and the values |
 | `LC8009` | error | Fault: the bytes of the values the nodes made, in all, pass `--max-made`. Gives the node, and the bytes made |
 | `LC8101` | error | `FUNCTION` is not a function of the library; fix: the nearest names |
 | `LC8102` | error | An `--arg`, a key of `--args` or of `args` names no input of the function; fix: the nearest names |

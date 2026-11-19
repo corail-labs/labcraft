@@ -1,6 +1,6 @@
 # The MCP server
 
-*Last updated: 2026-11-13. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
+*Last updated: 2026-11-19. Status: milestone M0b: implemented in `labcraft-mcp` and `labcraft-cli mcp` (step 9a),
 with `guide_read` and the skills of [skills/](../skills/README.md) it serves (step 9b).*
 
 `labcraft-cli mcp` lets an agent write, check, run and fix LabCraft programs on its own (D-18). It is a
@@ -17,7 +17,7 @@ the starting point; section 7 says what changed.
 
 ```text
 labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-file-size BYTES]
-                 [--max-nesting N]
+                 [--max-nesting N] [--allow-hardware ENDPOINT]... [--allow-path DIR]...
 ```
 
 - **Transport:** stdio, JSON-RPC 2.0, one message per line, as MCP defines it. Nothing but MCP messages
@@ -35,7 +35,8 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   or the root of a drive is refused at start (wrong usage, exit 2): an agent started from its home folder
   would otherwise reach every program under it. A folder inside it is named with `--project`.
 - **The options** are `--lib-path` and the limits of cli.md, section 1, applied to every command of the
-  session. Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
+  session, and, from 0.5.0, `--allow-hardware` and `--allow-path`, the real endpoints and the folders outside the
+  project that the runs of the agent may reach (section 6). Not `--deny-warnings`: `library_check` and `run_start` take `deny_warnings` on each call.
 - **Headless in M0b.** The session lives in the process. It checks the root as it starts and keeps the
   result, so that a tool that checks answers in the time of the libraries it touched
   ([commands.md](commands.md), section 6.2). From M1, when a window of the IDE shows the
@@ -53,7 +54,8 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   the description of the tool, its `params` the `inputSchema`. Nothing is written twice.
 - **Annotations** follow `effects`, and all four are given, since MCP takes a missing `destructiveHint`
   or `openWorldHint` as true: a command with no effect is `readOnlyHint`; `run.start` is `openWorldHint`, since it
-  reaches instruments; every other hint is false. In M0b, `file.write`, `file.rename`, `file.delete` and `file.format`
+  reaches instruments (its effect `hardware`, io.md 4), and from 0.5.0 `destructiveHint`, since what a run writes with
+  `file` is no step of the history; every other hint is false. In M0b, `file.write`, `file.rename`, `file.delete` and `file.format`
   were `destructiveHint`, since they could replace or remove a file; from M1 every command that writes a file makes a
   step of the history, which undo reverses, and `destructiveHint` is kept for a command whose effect the history cannot
   undo (decision of the owner, 2026-11-15; [architecture.md](architecture.md), 12.8).
@@ -154,10 +156,12 @@ The server reads hostile requests as `check` reads hostile files (scenario 4, fa
   it also writes, through the commands of commands.md 9, the manifest `labcraft.toml` of a library of the project
   (`library.set_mask`), the settings of the project (`.labcraft/config.toml`) and of the user (`settings.set`, which
   ide.md 8 bounds), and the journal of its commands (`.labcraft/journal/`, [architecture.md](architecture.md) 12.5).
-- **Instruments:** in M0b only the `SIM::` resources of a simulation file exist, since `visa` has no real
-  transport before M4. A real instrument can switch on a supply, so from M4 an agent reaches one only if
-  the human allowed it when starting the server (an option of `mcp` such as `--allow-hardware RESOURCE`,
-  *to be specified in M4*); no tool can grant it.
+- **Instruments and devices:** in M0b only the `SIM::` resources of a simulation file exist, since `visa` has no real
+  transport before M4. A real instrument can switch on a supply, so from 0.5.0 a run of the agent reaches a real
+  endpoint (`tcp:10.0.0.5:5025`, `serial:COM3`) only if the human allowed it when starting the server, by
+  `--allow-hardware ENDPOINT`, and a file outside the project only under an `--allow-path DIR`
+  ([io.md](io.md) 4 and 5); no tool can grant it. Without the right, the run goes on and the open gets the error
+  `io.not_allowed`, which names the option. Attached to the IDE, the window asks instead (ide.md 8).
 
 ## 7. From the proof of concept to M0b
 

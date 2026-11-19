@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated: 2026-11-18*
+*Last updated: 2026-11-19*
 
 The language was described and tried out by a throwaway Python proof of concept, retired after M0 (2026-11-15). M0, the first
 milestone in Rust, is done in its three parts, M0a, M0b and M0v ([order of work](architecture.md#9-order-of-work); for M0b, [10.11](architecture.md#1011-tests-and-the-order-of-work); for M0v, [11.7](architecture.md#117-order-of-work)),
@@ -102,14 +102,14 @@ The next two releases are cut in detail; the later ones are one line each, propo
 | Release | Exit criterion | Slice |
 |---|---|---|
 | **0.4.0**, the editor | The scenarios of [acceptance-m1.md](acceptance-m1.md); and someone outside the project installs LabCraft from an installer signed on Windows, which the system does not refuse as coming from an unidentified developer, or from the Linux archive, opens an example, changes it in the diagram and runs it on the simulator | M1 ([acceptance-m1.md](acceptance-m1.md)) and #218, which adds its scenario there; Distribution: the signed installer for Windows, the archives for Linux and macOS. The first release for people outside the project |
-| **0.5.0**, the first real bench | A program drawn in the IDE talks to a real device over TCP (Modbus TCP, for example) and to another over a serial port; the same program runs on a `--sim` file without changing a line; an attached agent touches the hardware only after the human has said yes | M4: TCP and serial, `net`, `serial`, `file`, `bytes`, the bitwise operations, consent, `visa` on both transports, the extended `scpi`, Modbus TCP, #138. Its work goes on in parallel with M1; it is released after 0.4.0 |
+| **0.5.0**, the first real bench | A program drawn in the IDE talks to a real device over TCP (Modbus TCP, for example) and to another over a serial port; the same program runs on a `--sim` file without changing a line; an attached agent touches the hardware only after the human has said yes | M4 ([io.md](io.md)): TCP, UDP and serial, `net`, `serial`, `file`, `console`, `bytes`, the bitwise operations and hexadecimal integers, consent, `visa` on TCP and serial, the extended `scpi`, Modbus TCP, #138. Its work goes on in parallel with M1; it is released after 0.4.0 |
 | 0.6.0, the bench has its panel | An operator starts a test from a front panel: buttons, values, graphs, Stop | M3 |
 | 0.7.0, several loops | Acquisition, HMI and log in loops that talk to each other | M2: communication |
 | 0.8.0, libraries and generics | A generic function and a user library with its manifest | M2: types and libraries |
 | 0.9.0, the debugger | See the program run and stop it where one wants, the human as well as the agent | M5 |
 
 What a release does not need stays in its theme: for M4, USB and USBTMC, the other buses and transports, Modbus RTU
-([outline.md](outline.md), M4, "Later in the theme").
+([io.md](io.md), section 11).
 
 **Horizon 2, after v1:** real-time embedded Linux targets (D-24), controller mode and fieldbuses
 (D-26), with timed loops and cyclic tasks (spec 6.4), libraries generated from the Craft apps, LabCraft

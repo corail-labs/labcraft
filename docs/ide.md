@@ -126,7 +126,10 @@ greyed and says why.
 - **`Problems`**: the diagnostics of the project, by file, error first; a click opens the function and selects the
   node, or the line in the `Text` view. A filter by severity, and one for the function shown.
 - **`Run`**: the run of the function shown, its status, its report and its trace (the bar of the viewer of M0v, as a
-  panel), and the choice of the simulation file.
+  panel), and the choice of the simulation file: a file of the project or of `<labcraft>/`, No simulation, or, from
+  0.5.0, **Real hardware**, which runs without a simulation file and in real time, so that real names reach the
+  hardware ([io.md](io.md) 3 and 9). From 0.5.0 it has a tab `Console`, with the lines the run writes with
+  `console.write_line`, as they come, each with its time; a new run of the function starts it again ([io.md](io.md) 5).
 
 ## 5. The command palette
 
@@ -151,9 +154,9 @@ it does and, when it is planned, a link:
 | `Debug` | Planned (M5) | Probes, breakpoints, step by step on the diagram |
 | `Build` | Planned (M6) | A standalone executable, a library with a C ABI, a .NET facade |
 
-Planned entries are also where they will be: `Run > Real hardware` (M4: real instruments and devices instead of
-the simulator; they are resources that a program touches, not a target: "target" is kept for `Build` and
-deployment), `Run > Build` (M6), `Pause`,
+Planned entries are also where they will be: `Run > Real hardware` (0.5.0, M4, [io.md](io.md) 9: real instruments and
+devices instead of the simulator; they are resources that a program touches, not a target: "target" is kept for `Build`
+and deployment), `Run > Build` (M6), `Pause`,
 `Breakpoint` and `Watch` in the toolbar of a tab and the `Run` menu (M5), the `Panel` view of a tab (M3), the icon drawn
 by hand in `Block`. A planned entry can never be chosen: a click opens a short card that says what it will
 be and links to its theme in the roadmap or its issue, in the browser. The entries are **data**, a list shipped with
@@ -190,7 +193,11 @@ on (decision of the owner, 2026-11-15).
   (commands.md 1): **Ask** (a command with no effect runs; one with `files` or `run` waits for the user's answer),
   **Edits** (`files` runs; `run` asks), **All** (`files` and `run` run, on the simulator). `history.undo` and
   `history.redo` count as `files`. A question waits 60 s *(proposed)*; with no answer, the command is
-  `agent.not_allowed`, and so is a connection refused or not answered. No policy reaches a real instrument: how the user allows one is specified with M4 (mcp.md 6). The answer is
+  `agent.not_allowed`, and so is a connection refused or not answered. No policy reaches a real instrument: from 0.5.0,
+  a run of the agent that opens a real endpoint or a file outside the project waits, and the window asks, endpoint by
+  endpoint or folder by folder, For this run, Until the window closes, or Refuse; refused or not answered in 60 s
+  *(proposed)*, the open gets `io.not_allowed`, an error of the run, not of the command ([io.md](io.md) 4). Those answers
+  are never kept. The answer about the policy is
   kept, if the user wants, for that client and that project, in the settings of the user, never of the project.
   Refused, or not allowed by its policy, a command of the agent is `agent.not_allowed` (commands.md 3).
 - **Its policy is the user's.** The settings of AI and of the agents (the switch, each policy) are refused to an

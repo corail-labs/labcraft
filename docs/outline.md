@@ -1,6 +1,6 @@
 # Outline of the themes after M1 — not a specification
 
-*Last updated: 2026-11-18*
+*Last updated: 2026-11-19*
 
 This page outlines what the themes after M1 hold (M4, M3, M2, M5, in the order of work), so that M1 blocks
 none of them, and what must be decided early for the themes beyond. It is not a specification and decides no rule of
@@ -39,7 +39,7 @@ Seven constraints on M1, drawn from the themes below.
    refused to it (ide.md 8, commands.md 6.7); it designates by names (commands.md 9.2). In M5, the agent sets a probe or
    a breakpoint on what it names, the human on what they select, by the same commands.
 6. **The attached MCP has a place for consent**: the policies Ask, Edits and All by the `effects` of the commands
-   (ide.md 8); none reaches a real instrument, and M4 says how the human allows it (mcp.md 6).
+   (ide.md 8); none reaches a real instrument, and io.md 4 says how the human allows it (specified 2026-11-19).
 7. **The settings** (`.labcraft/config.toml` of the project, versioned, and those of the user; commands.md 9.1) receive
    no breakpoints and no probes: these are view state of the user (spec 11, ide.md 3, like the view of a tab), never in
    the `.lcf` (as in VS Code). "Workspace" means something else in ide.md 6 (`Edit`, `Panel`, `Debug`, `Build`): do not
@@ -49,7 +49,8 @@ Seven constraints on M1, drawn from the themes below.
 
 ### M4: real I/O
 
-*Outlined 2026-11-14, recast 2026-11-18 (owner's decision). State: outline; its specification is the next work of M4.*
+*Outlined 2026-11-14, recast 2026-11-18 (owner's decision), specified 2026-11-19. State: specified for release 0.5.0 in
+[io.md](io.md); its Rust is the next work of M4.*
 
 M4 does the real I/O in general, of which `visa` is the first user, rather than every transport of VISA: LabCraft is
 used for more than SCPI benches (owner's decision, 2026-11-18). It blocks nothing, and it goes on in parallel with M1.
@@ -58,72 +59,12 @@ used for more than SCPI benches (owner's decision, 2026-11-18). It blocks nothin
 hardware only if the human has allowed it. The hardware: a SCPI instrument, but also an Arduino board, a serial or
 network device with a protocol of its own.
 
-**In, for release 0.5.0** (roadmap.md, "Releases")
+**Specification**: [io.md](io.md) (endpoints, what a run reaches, consent, files, simulated raw devices, the example
+Modbus TCP, what is left for later), the pages of the libraries `net`, `serial`, `file` and `visa` (`libs/`), and the
+spec (appendix A: `bytes`, the bitwise operations, the integer division, `scpi`; 14.1: hexadecimal and binary
+integers). Release 0.5.0 holds TCP, UDP and serial, and a `console` for the text output of a program; the fix of #138 is merged (#225).
 
-- **Two transports in pure Rust, TCP and serial**, behind `NativeLibrary` (a host can provide its own, part 3), exposed
-  twice: as raw bytes, by libraries `net` and `serial`, for devices without VISA; and under `visa`, by the resource
-  names `TCPIP0::10.0.0.5::5025::SOCKET` and `ASRL3::INSTR`, with `SIM::` kept.
-- A `--sim` file can **answer for a real name**: the program of the bench, with its real resource name, is tested
-  without hardware. Without `--sim`, a real name goes to the hardware. `libs/visa/simulation.md`, where a
-  resource starts with `SIM::`, changes with it; a real name that the file given to `--sim` does not describe (the
-  hardware, or `resource_not_found`) is a question for the specification of M4.
-- **Consent, for any real resource** (not only VISA: a serial port, a host and a TCP port): `labcraft-cli run` started
-  by the human has the right; the MCP server alone, only for the resources given at start (`--allow-hardware RESOURCE`,
-  mcp.md 6); attached to the IDE, a question in the window, resource by resource (ide.md 8 points here). No tool grants
-  it. Without the right: a `not_allowed` error from the library, not a crash. The effect `instruments` of
-  the commands (commands.md 1), which the policies of ide.md 8 read, then covers every real resource, not only an
-  instrument; its name is reviewed with the specification of M4.
-- **In the IDE**: the choice of the simulation file in the `Run` panel (ide.md 4) gains an entry "Real hardware" (no
-  `--sim`: real names go to the hardware), and the consent question in the window. The planned entry `Run > Real
-  hardware` of ide.md 6 is where M4 appears. **An instrument is not a target** (owner's decision, 2026-11-18): a target
-  is where the program runs or what it becomes (`.exe`, Raspberry Pi, a microcontroller, plugin, web: M6, M9, M10, horizon 2 and after);
-  real hardware is a resource that the program touches, whatever the target.
-- **The binary minimum**: `read_bytes`, `write_bytes` (N bytes, with timeout) and, so that a protocol can be written in
-  pure LabCraft on top of `net` and `serial` (as `scpi` on top of `visa`):
-  - in `core`, the bitwise operations on integers (`and`, `or`, `xor`, `not`, shifts; today `core.and` and `core.or`
-    take only `bool`), the integer division and the modulo (today `core.div` of two integers gives an `f64`); new
-    primitives, so the spec (appendix A);
-  - in `bytes`: from and to `[u8]`, slicing, concatenation, length; read and write `u16`, `u32`, `i16`, `i32`, `f32` in
-    big and little endian at a position; SCPI binary blocks `#…`.
-  Without them, no oscilloscope traces, no Modbus, no custom serial protocol.
-- **Modbus TCP in pure LabCraft, the example that validates M4** (in `examples/`): MBAP header, PDU, big endian
-  registers, on top of `net` and `bytes`. It proves that the primitives are enough and serves as a model for
-  contributors for the other protocols. It also avoids `tokio-modbus`, which relies on tokio.
-- `scpi` extended: `*OPC?`, `*ESR?`, status registers; `faults.hang` in the simulator, to test a lost device.
-- **The `file` library**: read and write text and bytes. *Proposed*, for its specification: append, list a folder,
-  create, delete and rename; whether a path needs the consent of the real resources (mcp.md 6, ide.md 8); in the
-  browser, the host gives its own or an error. Reading a file
-  into a declared type (`csv`, `json`, `config` of Q-15) needs the generics of M2.
-- The fix of #138 (from M0): `always` and `resources` are read in the manifest of every library, not only of those
-  shipped (cli.md 3).
-
-**Later in the theme, as separate libraries** (one issue each, open to contributors, according to demand and the hardware available):
-VXI-11, HiSLIP, USBTMC, the binding to an installed VISA (its C API, loaded at run time: `unsafe`, which would be an
-exception that the repository names; how `unsafe` is allowed is not decided, craft-ecosystem.md), GPIB through an
-adapter (D-17); Modbus RTU (CRC-16 by the bitwise operations; frames cut by the length that the
-function code announces, not by the silence of 3.5 characters, which is hard to hold from a diagram), MQTT, CAN, DAQmx,
-`i2c`/`spi`, an Arduino board as a slave (the serial transport opens the way); a raw `usb` library, on which USBTMC
-can be written in LabCraft, as Modbus TCP on `net`. SRQ as events (waits for M2). A
-dedicated interface for the simulation files: the `Text` view is enough in M4.
-
-**When.** In parallel with M1: it lives in `libs/visa`, the runtime and the CLI, not in the crates of the editor
-(`edit`, `ide`, `engine/edits`). **First tasks**: the trial of `serial2` for the serial transport (below), then #138. The
-hardware serves for the final trial by hand, not for development: a software TCP server, a virtual serial port or an
-Arduino board are enough for the tests.
-
-**Needs.** From M1: point 6 of part 1. From M0: #138.
-
-**Risks.**
-- **Licence of the serial transport**: `serialport` 4.10 is MPL-2.0, which `cargo xtask licences` accepts (it refuses
-  only GPL, LGPL and AGPL); `serial2` 0.2.39 is `BSD-2-Clause OR Apache-2.0`, a permissive licence as the rest of the
-  repository, taken under Apache-2.0, maintained, with `libc`, `cfg-if` and `windows-sys` as its only dependencies, where
-  `serialport` also needs `libudev` on Linux. Owner's decision (2026-11-18): `serial2`; the first task of M4 is a short
-  trial that confirms it (read with a timeout, list the ports, on Windows, Linux and macOS, with a virtual port or an
-  Arduino board). It may give less USB information (VID, PID) when listing ports than `serialport`, which matters only
-  to a future discovery of devices.
-- The runtime: blocking real-time I/O touches the scheduler; a PR of M1 on `engine` may cross those of M4.
-- USBTMC on Windows (an instrument installed with the driver of its maker cannot be seen through WinUSB): not in
-  release 0.5.0, it stays the risk of its library.
+**Needs.** From M1: point 6 of part 1 (ide.md 8 now points to io.md 4).
 
 ### M3: front panel
 
