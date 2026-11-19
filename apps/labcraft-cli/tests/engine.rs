@@ -394,8 +394,8 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
 /// the command, which judges again at the drop (architecture 12.4), and counted: an input that takes a family whatever
 /// its unit or a type that the call settles, the canvas taking it, where `check` alone knows what the new wire changes
 /// downstream; a value whose name the reader sees in another body, which the canvas refuses for the port drawn and the
-/// command takes for the value that the name gives; and an input that no wire reaches yet (the template of
-/// `string.format`), which the canvas refuses.
+/// command takes for the value that the name gives; and a field of a template that the call does not give yet,
+/// which the canvas refuses.
 #[test]
 fn the_canvas_judges_a_wire_as_wire_connect_does() {
     let memory = examples_in_memory();
@@ -546,7 +546,9 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                             || (did == "edit.ambiguous" && named_twice(&from))
                             // A name of several arms is the one that the reader sees, for the command (9.2).
                             || (said == "wire.cycle" && named_twice(&from))
-                            || !target.never.is_empty();
+                            // The template of a `string.format` (`node.template`, a name that no field takes: spec 5.4) is refused by the
+                            // command too; the field of a template that the call does not give yet is wired from M1 step 4.
+                            || (!target.never.is_empty() && !target.name.ends_with(".template"));
                         if left {
                             *counts.entry("left to the command".to_owned()).or_insert(0) += 1;
                         } else if said != did {
