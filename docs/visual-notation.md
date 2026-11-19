@@ -784,7 +784,7 @@ When the function comes from another library, a **band** at the top of the block
   them stays straight. A block of 40 keeps 28 under its band for its icon or its name; an oblong (below), as wide as its label, holds more of it (`results_…` in the band of
   `StepResult`). The name of a library is whole in the tooltip, and a library mask will give it a shorter
   text (N-11). A call to a function of `core`, of the other primitive libraries of the spec
-  (`array`, `string`, `time`, `errors`, `ui`, spec appendix A.2) or of the library that holds the diagram has no
+  (`array`, `string`, `time`, `errors`, `ui`, `bytes`, spec appendix A.2) or of the library that holds the diagram has no
   band: those are everywhere, and their band would say nothing. `visa`, `scpi` and every other library keep
   theirs. A folder of the project is a library like any other (spec 4), so a call from the root to
   `relays.close` has the band `relays`. A sub-library `a.b` shows its last segment, `b`, with the full

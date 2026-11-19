@@ -12,6 +12,8 @@ pub enum PrimitiveLibrary {
     Errors,
     Time,
     Ui,
+    /// Added after M0 (0.5.0): it ranks after the folders of the project (`docs/cli.md`, section 3, rule 1).
+    Bytes,
 }
 
 impl PrimitiveLibrary {
@@ -23,6 +25,7 @@ impl PrimitiveLibrary {
             "errors" => Some(PrimitiveLibrary::Errors),
             "time" => Some(PrimitiveLibrary::Time),
             "ui" => Some(PrimitiveLibrary::Ui),
+            "bytes" => Some(PrimitiveLibrary::Bytes),
             _ => None,
         }
     }
@@ -35,7 +38,15 @@ impl PrimitiveLibrary {
             PrimitiveLibrary::Errors => "errors",
             PrimitiveLibrary::Time => "time",
             PrimitiveLibrary::Ui => "ui",
+            PrimitiveLibrary::Bytes => "bytes",
         }
+    }
+
+    /// A primitive library added after `core`, `string`, `array`, `errors`, `time` and `ui`: a folder of the project of its
+    /// name, or one of a `--lib-path`, replaces it, as for a library shipped with LabCraft (spec 14.1, new words;
+    /// `docs/cli.md`, section 3, rule 1).
+    pub fn gives_way(self) -> bool {
+        matches!(self, PrimitiveLibrary::Bytes)
     }
 }
 
@@ -58,8 +69,16 @@ pub enum PrimitiveTy {
     I32,
     F32,
     F64,
+    U8,
+    U16,
+    I16,
+    U32,
+    I64,
     Text,
     Texts,
+    Bytes,
+    /// `[u8]`
+    U8s,
     Timestamp,
     Duration,
     Error,
@@ -86,8 +105,15 @@ impl PrimitiveTy {
             PrimitiveTy::I32 => "i32".to_owned(),
             PrimitiveTy::F32 => "f32".to_owned(),
             PrimitiveTy::F64 => "f64".to_owned(),
+            PrimitiveTy::U8 => "u8".to_owned(),
+            PrimitiveTy::U16 => "u16".to_owned(),
+            PrimitiveTy::I16 => "i16".to_owned(),
+            PrimitiveTy::U32 => "u32".to_owned(),
+            PrimitiveTy::I64 => "i64".to_owned(),
             PrimitiveTy::Text => "string".to_owned(),
             PrimitiveTy::Texts => "[string]".to_owned(),
+            PrimitiveTy::Bytes => "bytes".to_owned(),
+            PrimitiveTy::U8s => "[u8]".to_owned(),
             PrimitiveTy::Timestamp => "timestamp".to_owned(),
             PrimitiveTy::Duration => "duration".to_owned(),
             PrimitiveTy::Error => "error".to_owned(),
@@ -128,6 +154,8 @@ pub enum PrimitiveDefault {
     Zero,
     /// `""`
     EmptyText,
+    /// `false`
+    False,
     /// `…`: the `length` of `array.slice`, which reaches the end of the array. It is no constant.
     ToTheEnd,
 }
@@ -139,6 +167,7 @@ impl PrimitiveDefault {
             PrimitiveDefault::NoError => "none",
             PrimitiveDefault::Zero => "0",
             PrimitiveDefault::EmptyText => "\"\"",
+            PrimitiveDefault::False => "false",
             PrimitiveDefault::ToTheEnd => "\u{2026}",
         }
     }
@@ -224,10 +253,12 @@ const fn f(
     Primitive { library, name, variables, params, outputs: Some(outputs), results, open: false }
 }
 
-use PrimitiveDefault::{EmptyText, NoError, ToTheEnd, Zero};
-use PrimitiveLibrary::{Array, Core, Errors, String as Strings, Time, Ui};
+use PrimitiveDefault::{EmptyText, False, NoError, ToTheEnd, Zero};
+use PrimitiveLibrary::{Array, Bytes as Octets, Core, Errors, String as Strings, Time, Ui};
 use PrimitiveOutput::{Is, Power, Product, Quotient, Root, Slice, WithUnit};
-use PrimitiveTy::{ArrayOf, Bool, Duration, Error, F32, F64, Function, I32, Rectangle, Rows, Text, Texts, Timestamp, Var};
+use PrimitiveTy::{
+    ArrayOf, Bool, Bytes, Duration, Error, F32, F64, Function, I16, I32, I64, Rectangle, Rows, Text, Texts, Timestamp, U8, U8s, U16, U32, Var,
+};
 
 const V0: PrimitiveTy = Var(0);
 
@@ -247,6 +278,16 @@ const GIVES_F64: &[PrimitiveOutput] = &[Is(F64)];
 const GIVES_I32: &[PrimitiveOutput] = &[Is(I32)];
 const GIVES_ERROR: &[PrimitiveOutput] = &[Is(Error)];
 const GIVES_TEXT: &[PrimitiveOutput] = &[Is(Text)];
+const DATA: &[&str] = &["data"];
+const DATA_ERR: &[&str] = &["data", "err"];
+const GIVES_BYTES: &[PrimitiveOutput] = &[Is(Bytes)];
+const GIVES_BYTES_ERROR: &[PrimitiveOutput] = &[Is(Bytes), Is(Error)];
+/// `bytes.read_u8`: no `little_endian`, a single byte has no order.
+const READ_ONE: &[PrimitiveParam] = &[value("data", Bytes), value("position", I32), default("err", Error, NoError)];
+const READ: &[PrimitiveParam] =
+    &[value("data", Bytes), value("position", I32), default("little_endian", Bool, False), default("err", Error, NoError)];
+const FROM_ONE: &[PrimitiveParam] = &[value("value", I64), default("err", Error, NoError)];
+const FROM: &[PrimitiveParam] = &[value("value", I64), default("little_endian", Bool, False), default("err", Error, NoError)];
 
 /// Every primitive of the language, in the order of appendix A.
 pub const PRIMITIVES: &[Primitive] = &[
@@ -337,6 +378,32 @@ pub const PRIMITIVES: &[Primitive] = &[
     f(Errors, "merge", NO_VARIABLE, &[variadic("errs", Error)], ERR, GIVES_ERROR),
     f(Ui, "get", T, &[element("element")], &["value"], GIVES_V0),
     f(Ui, "set", T, &[element("element"), value("value", V0)], &["value"], GIVES_V0),
+    f(Octets, "len", NO_VARIABLE, &[value("data", Bytes)], &["length"], GIVES_I32),
+    f(Octets, "concat", NO_VARIABLE, &[variadic("parts", Bytes)], DATA, GIVES_BYTES),
+    f(
+        Octets,
+        "slice",
+        NO_VARIABLE,
+        &[value("data", Bytes), default("start", I32, Zero), default("length", I32, ToTheEnd), default("err", Error, NoError)],
+        DATA_ERR,
+        GIVES_BYTES_ERROR,
+    ),
+    f(Octets, "from_array", NO_VARIABLE, &[value("values", U8s)], DATA, GIVES_BYTES),
+    f(Octets, "to_array", NO_VARIABLE, &[value("data", Bytes)], &["values"], &[Is(U8s)]),
+    f(Octets, "from_string", NO_VARIABLE, &[value("text", Text)], DATA, GIVES_BYTES),
+    f(Octets, "to_string", NO_VARIABLE, &[value("data", Bytes), default("err", Error, NoError)], &["text", "err"], &[Is(Text), Is(Error)]),
+    f(Octets, "read_u8", NO_VARIABLE, READ_ONE, VALUE_ERR, &[Is(U8), Is(Error)]),
+    f(Octets, "read_u16", NO_VARIABLE, READ, VALUE_ERR, &[Is(U16), Is(Error)]),
+    f(Octets, "read_i16", NO_VARIABLE, READ, VALUE_ERR, &[Is(I16), Is(Error)]),
+    f(Octets, "read_u32", NO_VARIABLE, READ, VALUE_ERR, &[Is(U32), Is(Error)]),
+    f(Octets, "read_i32", NO_VARIABLE, READ, VALUE_ERR, &[Is(I32), Is(Error)]),
+    f(Octets, "read_f32", NO_VARIABLE, READ, VALUE_ERR, &[Is(F32), Is(Error)]),
+    f(Octets, "from_u8", NO_VARIABLE, FROM_ONE, DATA_ERR, GIVES_BYTES_ERROR),
+    f(Octets, "from_u16", NO_VARIABLE, FROM, DATA_ERR, GIVES_BYTES_ERROR),
+    f(Octets, "from_i16", NO_VARIABLE, FROM, DATA_ERR, GIVES_BYTES_ERROR),
+    f(Octets, "from_u32", NO_VARIABLE, FROM, DATA_ERR, GIVES_BYTES_ERROR),
+    f(Octets, "from_i32", NO_VARIABLE, FROM, DATA_ERR, GIVES_BYTES_ERROR),
+    f(Octets, "from_f32", NO_VARIABLE, &[value("value", F64), default("little_endian", Bool, False)], DATA, GIVES_BYTES),
 ];
 
 #[cfg(test)]
@@ -442,6 +509,7 @@ mod tests {
             Some(NoError) => " = none",
             Some(Zero) => " = 0",
             Some(EmptyText) => " = \"\"",
+            Some(False) => " = false",
             Some(ToTheEnd) => " = …",
         };
         format!("{}{kind}{default}{}", param.name, if param.variadic { " ..." } else { "" })
@@ -454,8 +522,15 @@ mod tests {
             I32 => "i32".to_owned(),
             F32 => "f32".to_owned(),
             F64 => "f64".to_owned(),
+            U8 => "u8".to_owned(),
+            U16 => "u16".to_owned(),
+            I16 => "i16".to_owned(),
+            U32 => "u32".to_owned(),
+            I64 => "i64".to_owned(),
             Text => "string".to_owned(),
             Texts => "[string]".to_owned(),
+            Bytes => "bytes".to_owned(),
+            U8s => "[u8]".to_owned(),
             Timestamp => "timestamp".to_owned(),
             Duration => "duration".to_owned(),
             Error => "error".to_owned(),

@@ -1194,3 +1194,39 @@ mod arrays;
 mod constructions;
 mod fields;
 mod panel;
+
+/// `bytes` (appendix A.2): its inputs take what their types take, and an integer wire up to `u32` goes into the `i64` of a
+/// `from_…` (3.4).
+#[test]
+fn the_inputs_of_bytes_take_their_types() {
+    let with_bytes = |inputs: &str, outputs: &str, body: &str| {
+        let text = format!(
+            "use bytes
+
+fn f({inputs}) -> ({outputs}) {{
+{body}
+}}"
+        );
+        codes(&[("f.lcf", text.as_str())])
+    };
+    assert_eq!(with_bytes("t: string", "n: i32", "    n = bytes.len(t)"), ["LC3001"], "a string is no bytes");
+    assert_eq!(with_bytes("n: i32", "d: bytes, err: error", "    d, err = bytes.from_u16(n)"), NOTHING, "an i32 widens to i64");
+    assert_eq!(
+        with_bytes(
+            "w: u32, b: u8",
+            "d: bytes, e: bytes",
+            "    d, _ = bytes.from_u32(w)
+    e, _ = bytes.from_u8(b)"
+        ),
+        NOTHING
+    );
+    assert_eq!(with_bytes("m: u64", "d: bytes, err: error", "    d, err = bytes.from_u32(m)"), ["LC3004"], "a u64 narrows into an i64");
+    assert_eq!(
+        with_bytes("x: f64", "d: bytes, err: error", "    d, err = bytes.from_u16(x)"),
+        ["LC3004"],
+        "a real, too (cli.md: from a float to an integer)"
+    );
+    assert_eq!(with_bytes("d: bytes", "v: u16, err: error", "    v, err = bytes.read_u16(d, 0, little_endian: true)"), NOTHING);
+    assert_eq!(with_bytes("xs: [i32]", "d: bytes", "    d = bytes.from_array(xs)"), ["LC3001"], "no conversion inside an array (3.4)");
+    assert_eq!(with_bytes("a: bytes, b: bytes", "d: bytes", "    d = bytes.concat(a, b, a)"), NOTHING);
+}

@@ -2329,7 +2329,7 @@ outline {
 `with_unit` and `unitless` are a D as wide as their unit (visual notation 3.2), the only blocks whose width a
 `terminals` section does not give.
 
-### A.2 `array`, `string`, `time`, `errors`, `ui`
+### A.2 `array`, `string`, `time`, `errors`, `ui`, `bytes`
 
 ```text
 fn array.len<T>(array: [T]) -> (length: i32)
@@ -2387,6 +2387,53 @@ infinity that would look measured, and one too small gives zero with its sign (d
 optional sign and digits, in the range of `i32`. `errors.make` produces an error of the given category and
 code; `errors.raise_if` produces an error of the given category when `condition` is true, `none`
 otherwise.
+
+**`bytes`** (0.5.0, M4): the binary data of frames and of instrument responses ([io.md](io.md)), on the type `bytes`
+(3.1). A protocol is built from these, as the example Modbus TCP of 0.5.0 is: a frame is a `bytes.concat` of
+fields, and a response is read field by field at its position.
+
+```text
+fn bytes.len(data: bytes) -> (length: i32)
+fn bytes.concat(parts: bytes...) -> (data: bytes)             // 5.4
+fn bytes.slice(data: bytes, start: i32 = 0, length: i32 = …,
+               err: error = none) -> (data: bytes, err: error)
+fn bytes.from_array(values: [u8]) -> (data: bytes)
+fn bytes.to_array(data: bytes) -> (values: [u8])
+fn bytes.from_string(text: string) -> (data: bytes)           // its UTF-8 bytes
+fn bytes.to_string(data: bytes, err: error = none) -> (text: string, err: error)
+
+fn bytes.read_u8(data: bytes, position: i32, err: error = none) -> (value: u8, err: error)
+fn bytes.read_u16(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: u16, err: error)
+fn bytes.read_i16(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: i16, err: error)
+fn bytes.read_u32(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: u32, err: error)
+fn bytes.read_i32(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: i32, err: error)
+fn bytes.read_f32(data: bytes, position: i32, little_endian: bool = false,
+                  err: error = none) -> (value: f32, err: error)
+fn bytes.from_u8(value: i64, err: error = none) -> (data: bytes, err: error)
+fn bytes.from_u16(value: i64, little_endian: bool = false,
+                  err: error = none) -> (data: bytes, err: error)
+fn bytes.from_i16(value: i64, little_endian: bool = false,
+                  err: error = none) -> (data: bytes, err: error)
+fn bytes.from_u32(value: i64, little_endian: bool = false,
+                  err: error = none) -> (data: bytes, err: error)
+fn bytes.from_i32(value: i64, little_endian: bool = false,
+                  err: error = none) -> (data: bytes, err: error)
+fn bytes.from_f32(value: f64, little_endian: bool = false) -> (data: bytes)
+```
+
+`bytes.slice` takes as `array.slice` does, and fails as it does, with `bytes.out_of_range`, giving its input. A
+`read_…` reads the bytes of its type from `position`, in big endian (network order, that of Modbus) unless
+`little_endian`; a position below 0, or bytes past the end, fail with `bytes.out_of_range`, and the value is 0. A
+`from_…` gives the bytes of its value in its type: it takes an `i64` so that any integer wire up to `u32` goes in, and a
+value out of the range of its type fails with `bytes.out_of_range`, giving empty bytes; `from_f32` rounds to the
+nearest `f32`, ties to even, and gives an infinity for a value beyond it, as a conversion does (3.4); it writes any
+`nan` as `7fc00000`, whatever its sign and bits, since those depend on the platform that made it (decision of the owner,
+2026-11-19). `read_f32` gives the `f32` its four bytes hold, a `nan` included. `bytes.to_string` fails with `bytes.invalid_text` on bytes that are not
+UTF-8, giving `""`. The binary blocks of SCPI (`#…`) are read by `scpi.query_block` (A.3).
 
 ### A.3 `visa` and `scpi`
 
@@ -2498,34 +2545,3 @@ type by −1, which its type cannot hold; `core.remainder` of it by −1 is 0. `
 `core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have the ordinary block (A.1, "Blocks of the primitives"), outside the
 closed list of glyphs of the visual notation (3.2).
 
-**`bytes`** (0.5.0, M4): the binary data of frames and of instrument responses ([io.md](io.md)), on the type `bytes`
-(3.1). A protocol is built from these, as the example Modbus TCP of 0.5.0 is: a frame is a `bytes.concat` of
-fields, and a response is read field by field at its position.
-
-```text
-fn bytes.len(data: bytes) -> (length: i32)
-fn bytes.concat(parts: bytes...) -> (data: bytes)             // 5.4
-fn bytes.slice(data: bytes, start: i32 = 0, length: i32 = …,
-               err: error = none) -> (data: bytes, err: error)
-fn bytes.from_array(values: [u8]) -> (data: bytes)
-fn bytes.to_array(data: bytes) -> (values: [u8])
-fn bytes.from_string(text: string) -> (data: bytes)           // its UTF-8 bytes
-fn bytes.to_string(data: bytes, err: error = none) -> (text: string, err: error)
-
-fn bytes.read_u8(data: bytes, position: i32, err: error = none) -> (value: u8, err: error)
-fn bytes.read_u16(data: bytes, position: i32, little_endian: bool = false,
-                  err: error = none) -> (value: u16, err: error)   // same for i16, u32, i32, f32
-fn bytes.from_u8(value: i64, err: error = none) -> (data: bytes, err: error)
-fn bytes.from_u16(value: i64, little_endian: bool = false,
-                  err: error = none) -> (data: bytes, err: error)  // same for i16, u32, i32
-fn bytes.from_f32(value: f64, little_endian: bool = false) -> (data: bytes)
-```
-
-`bytes.slice` takes as `array.slice` does, and fails as it does, with `bytes.out_of_range`, giving its input. A
-`read_…` reads the bytes of its type from `position`, in big endian (network order, that of Modbus) unless
-`little_endian`; a position below 0, or bytes past the end, fail with `bytes.out_of_range`, and the value is 0. A
-`from_…` gives the bytes of its value in its type: it takes an `i64` so that any integer wire up to `u32` goes in, and a
-value out of the range of its type fails with `bytes.out_of_range`, giving empty bytes; `from_f32` rounds to the
-nearest `f32`, ties to even, and gives an infinity for a value beyond it, as a conversion does (3.4). `read_f32` gives
-the `f32` its four bytes hold, a `nan` included. `bytes.to_string` fails with `bytes.invalid_text` on bytes that are not
-UTF-8, giving `""`. The binary blocks of SCPI (`#…`) are read by `scpi.query_block` (A.3).

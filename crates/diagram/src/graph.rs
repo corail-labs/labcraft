@@ -1092,12 +1092,18 @@ impl<'a> Builder<'a> {
                                     Expects::Never("the template of `string.format` takes only text written in it, never a wire (spec 5.4)")
                                 }
                                 PrimitiveTy::Var(variable) => Expects::Variable { variable, numbers: primitive.variables.numbers },
-                                PrimitiveTy::Texts => Expects::Family(primitive_family(PrimitiveTy::Texts)),
+                                PrimitiveTy::Texts | PrimitiveTy::U8s => Expects::Family(primitive_family(param.ty)),
                                 PrimitiveTy::Bool
                                 | PrimitiveTy::I32
                                 | PrimitiveTy::F32
                                 | PrimitiveTy::F64
+                                | PrimitiveTy::U8
+                                | PrimitiveTy::U16
+                                | PrimitiveTy::I16
+                                | PrimitiveTy::U32
+                                | PrimitiveTy::I64
                                 | PrimitiveTy::Text
+                                | PrimitiveTy::Bytes
                                 | PrimitiveTy::Timestamp
                                 | PrimitiveTy::Duration
                                 | PrimitiveTy::Error => Expects::Fixed(param.ty),
@@ -1385,9 +1391,20 @@ struct Param {
 fn primitive_family(ty: PrimitiveTy) -> Family {
     let (base, dimensions) = match ty {
         PrimitiveTy::Bool => (Base::Bool, 0),
-        PrimitiveTy::I32 | PrimitiveTy::F32 | PrimitiveTy::F64 | PrimitiveTy::Timestamp | PrimitiveTy::Duration => (Base::Number, 0),
-        PrimitiveTy::Text => (Base::Text, 0),
+        PrimitiveTy::I32
+        | PrimitiveTy::F32
+        | PrimitiveTy::F64
+        | PrimitiveTy::U8
+        | PrimitiveTy::U16
+        | PrimitiveTy::I16
+        | PrimitiveTy::U32
+        | PrimitiveTy::I64
+        | PrimitiveTy::Timestamp
+        | PrimitiveTy::Duration => (Base::Number, 0),
+        // `bytes` is drawn as text is (`family`).
+        PrimitiveTy::Text | PrimitiveTy::Bytes => (Base::Text, 0),
         PrimitiveTy::Texts => (Base::Text, 1),
+        PrimitiveTy::U8s => (Base::Number, 1),
         PrimitiveTy::Error => return Family::ERROR,
         PrimitiveTy::Function => (Base::Function, 0),
         PrimitiveTy::ArrayOf(_) => (Base::Unknown, 1),

@@ -461,7 +461,8 @@ impl Loader<'_> {
     /// The rules of `docs/cli.md`, section 3, in order: the first match wins. Only what is in the folder given sees the
     /// other folders in it, so a dependency says the same whoever reads it.
     fn target(&mut self, segments: &[Name], name: &str, checked: bool, origin: Origin) -> Target {
-        if PrimitiveLibrary::from_name(name).is_some() {
+        let primitive = PrimitiveLibrary::from_name(name);
+        if primitive.is_some_and(|library| !library.gives_way()) {
             return Target::Primitive;
         }
         if checked && let Some(index) = self.project.get(&self.joined(segments, "/")) {
@@ -471,7 +472,11 @@ impl Loader<'_> {
         if let Some(target) = self.found.get(&key) {
             return *target;
         }
-        let target = self.find(name, origin);
+        let target = match self.find(name, origin) {
+            // A primitive added after M0 ranks with the libraries shipped with LabCraft, after the folders (rule 1).
+            Target::Missing if primitive.is_some() => Target::Primitive,
+            target => target,
+        };
         self.found.insert(key, target);
         target
     }
@@ -796,6 +801,68 @@ mod tests {
         root.sub_libraries.push(library("string", vec![file("string/g.lcf", b"not a program")]));
         assert_eq!(codes(root, &libraries, &Limits::default()), ["LC0101"]);
         assert!(!asked.get());
+    }
+
+    /// `bytes`, a primitive added after M0, ranks with the libraries shipped with LabCraft: a folder of the project or of a
+    /// `--lib-path` replaces it, and a shipped library always sees the primitive (`docs/cli.md`, section 3; spec 14.1).
+    #[test]
+    fn a_primitive_added_after_m0_gives_way_to_a_folder_of_its_name() {
+        let calls = |name: &str| {
+            format!(
+                "labcraft 1
+
+use bytes
+
+fn {name}() -> (n: i32) {{
+    d = bytes.from_string(\"AB\")
+    n = bytes.len(d)
+}}
+"
+            )
+        };
+        // Alone, the primitive: its functions are found.
+        assert_eq!(codes_of_files(vec![file("f.lcf", calls("f").as_bytes())]), Vec::<&str>::new());
+        // A folder `bytes` of the project replaces it: it has no `from_string` and no `len`, so each call is unknown.
+        let mut root = library("", vec![file("f.lcf", calls("f").as_bytes())]);
+        root.sub_libraries.push(library("bytes", vec![file("bytes/g.lcf", FUNCTION)]));
+        assert_eq!(codes(root, &Nothing, &Limits::default()), ["LC2002", "LC2002"], "it has neither `from_string` nor `len`");
+        // So does a library of a `--lib-path`, which the host is asked for; `string` is never asked for.
+        let asked = std::cell::RefCell::new(Vec::new());
+        let libraries = Answering(|name: &str, by| {
+            asked.borrow_mut().push((name.to_owned(), by));
+            match name {
+                "bytes" if by == Origin::Project => Found::Library(library(
+                    "bytes",
+                    vec![file(
+                        "lib/bytes/len.lcf",
+                        b"labcraft 1
+
+fn len() -> (n: i32) {
+    n = 2
+}
+",
+                    )],
+                )),
+                _ => Found::NotFound,
+            }
+        });
+        let root = library(
+            "",
+            vec![file(
+                "f.lcf",
+                b"labcraft 1
+
+use bytes
+use string
+
+fn f() -> (n: i32) {
+    n = bytes.len()
+}
+",
+            )],
+        );
+        assert_eq!(codes(root, &libraries, &Limits::default()), Vec::<&str>::new(), "the `len` of the folder, with no input");
+        assert_eq!(*asked.borrow(), [("bytes".to_owned(), Origin::Project)]);
     }
 
     #[test]

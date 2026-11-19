@@ -2325,9 +2325,19 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             PrimitiveTy::I32 => self.number(NumberKind::I32, one),
             PrimitiveTy::F32 => self.number(NumberKind::F32, one),
             PrimitiveTy::F64 => self.number(NumberKind::F64, one),
+            PrimitiveTy::U8 => self.number(NumberKind::U8, one),
+            PrimitiveTy::U16 => self.number(NumberKind::U16, one),
+            PrimitiveTy::I16 => self.number(NumberKind::I16, one),
+            PrimitiveTy::U32 => self.number(NumberKind::U32, one),
+            PrimitiveTy::I64 => self.number(NumberKind::I64, one),
             PrimitiveTy::Text => self.plain(Ty::String),
+            PrimitiveTy::Bytes => self.plain(Ty::Bytes),
             PrimitiveTy::Texts => {
                 let element = self.plain(Ty::String);
+                self.plain(Ty::Array { element, dimensions: 1 })
+            }
+            PrimitiveTy::U8s => {
+                let element = self.number(NumberKind::U8, one);
                 self.plain(Ty::Array { element, dimensions: 1 })
             }
             PrimitiveTy::Timestamp => self.plain(Ty::Timestamp),

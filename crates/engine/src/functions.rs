@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use labcraft_check::manifest::Manifest;
-use labcraft_check::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveOutput, PrimitiveParam, PrimitiveTy, Variables};
+use labcraft_check::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary, PrimitiveOutput, PrimitiveParam, PrimitiveTy, Variables};
 use labcraft_graph::{Attached, CommentKind, Decl, File, Generic, NamedType, Param, Path as NamePath, TypeExpr};
 use labcraft_types::listing::{Slot, SlotFit, Typed, VariantSlots};
 use labcraft_types::{Interner, Limits};
@@ -43,6 +43,12 @@ fn categories_of(primitive: &Primitive) -> &'static [&'static str] {
         ("array", "repeat") => &["array.negative_size"],
         ("array", "from_rows") => &["array.unequal_rows"],
         ("string", "to_f64" | "to_i32") => &["string.parse"],
+        ("bytes", "to_string") => &["bytes.invalid_text"],
+        (
+            "bytes",
+            "slice" | "read_u8" | "read_u16" | "read_i16" | "read_u32" | "read_i32" | "read_f32" | "from_u8" | "from_u16" | "from_i16" | "from_u32"
+            | "from_i32",
+        ) => &["bytes.out_of_range"],
         ("core", "call") => &["core.invalid_function"],
         _ => &[],
     }
@@ -123,7 +129,13 @@ fn primitive_fit(ty: PrimitiveTy, variables: &Variables) -> Option<SlotFit> {
         PrimitiveTy::I32 => number("i32"),
         PrimitiveTy::F32 => number("f32"),
         PrimitiveTy::F64 => number("f64"),
+        PrimitiveTy::U8 => number("u8"),
+        PrimitiveTy::U16 => number("u16"),
+        PrimitiveTy::I16 => number("i16"),
+        PrimitiveTy::U32 => number("u32"),
+        PrimitiveTy::I64 => number("i64"),
         PrimitiveTy::Text => base("string"),
+        PrimitiveTy::Bytes => base("bytes"),
         PrimitiveTy::Timestamp => base("timestamp"),
         PrimitiveTy::Duration => base("duration"),
         PrimitiveTy::Error => base("error"),
@@ -134,7 +146,7 @@ fn primitive_fit(ty: PrimitiveTy, variables: &Variables) -> Option<SlotFit> {
             dimensions: None,
         },
         PrimitiveTy::Rectangle(index) => SlotFit::Array { array: Box::new(primitive_variable(variables, index)), dimensions: Some(2) },
-        PrimitiveTy::Texts | PrimitiveTy::Function => SlotFit::Shape { shape: ty.text(variables.names) },
+        PrimitiveTy::Texts | PrimitiveTy::U8s | PrimitiveTy::Function => SlotFit::Shape { shape: ty.text(variables.names) },
         PrimitiveTy::None => return None,
     })
 }
@@ -484,13 +496,16 @@ fn shipped_entries(session: &Session, limits: &Limits) -> Vec<Entry> {
     entries
 }
 
-/// The project's own, from the check of the root: each library of the folder and its sub-libraries.
-fn project_entries(session: &mut Session) -> Result<Vec<Entry>, CommandError> {
+/// The project's own, from the check of the root: each library of the folder and its sub-libraries; and the names of every
+/// library that check read, dependencies included.
+fn project_entries(session: &mut Session) -> Result<(Vec<Entry>, Vec<String>), CommandError> {
     let root = session.root.clone();
     let kept = session.checked(&root)?;
     let mut entries = Vec::new();
+    let mut read = Vec::new();
     for (checked, names) in &kept.checked.checked {
         let mut names = names.clone();
+        read.extend(checked.libraries.iter().map(|library| library.name.clone()));
         for (index, library) in checked.libraries.iter().enumerate() {
             if !library.checked {
                 continue;
@@ -499,7 +514,7 @@ fn project_entries(session: &mut Session) -> Result<Vec<Entry>, CommandError> {
             entries.extend(entries_of(&library.name, &files, &mut names, None));
         }
     }
-    Ok(entries)
+    Ok((entries, read))
 }
 
 /// `functions.list`.
@@ -520,7 +535,14 @@ pub fn list(session: &mut Session, params: &Params) -> Result<Value, CommandErro
     });
     let mut all: Vec<Entry> = primitives.collect();
     all.extend(shipped_entries(session, &limits));
-    all.extend(project_entries(session)?);
+    let (project, read) = project_entries(session)?;
+    // A primitive added after M0 gives way to a library of its name, of the project or of a `--lib-path` (docs/cli.md,
+    // section 3, rule 1).
+    all.retain(|entry| {
+        let gives_way = PrimitiveLibrary::from_name(&entry.library).is_some_and(PrimitiveLibrary::gives_way);
+        !gives_way || !read.contains(&entry.library)
+    });
+    all.extend(project);
     follow_aliases(&mut all);
     let kept: Vec<Entry> =
         all.into_iter().filter(|entry| library.is_none_or(|library| entry.library == library) && entry.name.contains(filter)).collect();

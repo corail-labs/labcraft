@@ -157,7 +157,7 @@ As in the Craft apps: a crate depends only on strictly lower layers, checked by
 | L3 | `check` | Name resolution, signatures (those of the primitives too), type and connection checking |
 | L4 | `ir` | Dataflow IR, analyses, linear IR |
 | L4 | `edit` | The editing operations on the text of a file, from M1: text in, text out ([architecture](architecture.md), 12.3) |
-| L5 | `runtime` | Scheduler, interpreter, values, probes and breakpoints; the native primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) |
+| L5 | `runtime` | Scheduler, interpreter, values, probes and breakpoints; the native primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`, `bytes`) |
 | L5 | `diagram` | Automatic placement, wire routing and the visual notation as shapes, headless, with SVG export; run values come in as plain data |
 | L5 | `interop` | C ABI, .NET, Python |
 | L6 | `engine` | Session, command registry, undo, journal, crash reports |
@@ -183,7 +183,7 @@ When the registry exists, these libraries can be published as packages.
 | `libs/visa` | Declarations (`extern rust`) and manifest, with `visa.close` marked `always` (written, read by `check` from M0a); the native body: the simulator of `SIM::` resources ([libs/visa/simulation.md](../libs/visa/simulation.md)) and its instrument definitions, in `libs/visa/sim/`; the real transports (M4) |
 | `libs/scpi` | Written in LabCraft over `visa` (written, read from M0a): `query_f64`, `check_errors`… The first library shipped in the language itself, and the model for driver authors |
 
-The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`) stay native in
+The primitives of the language (`core`, `string`, `array`, `errors`, `time`, `ui`, `bytes`) stay native in
 `runtime`: they are the standard library.
 
 ## Repository layout
