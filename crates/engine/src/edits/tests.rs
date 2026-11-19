@@ -744,3 +744,104 @@ fn a_frame_is_resized_and_a_size_under_its_content_is_refused_with_the_least() {
     let error = refused(&mut session, &agent, "frame.resize", json!({ "file": "h.lcf" }));
     assert_eq!((error.code, error.parameter.as_deref()), ("params.missing", Some("size")));
 }
+
+// The function itself (commands.md 6.7, "Functions, signatures and types").
+
+#[test]
+fn a_new_function_is_one_step_that_undo_removes() {
+    let (mut session, memory) = session();
+    let result = ok(&mut session, "function.create", json!({ "path": "tools/check.lcf", "doc": "Checks a channel." }));
+    let made = "labcraft 1\n\n/// Checks a channel.\nfn check() -> () {}\n";
+    assert_eq!(text(&memory, "/p/tools/check.lcf"), made);
+    assert_eq!(result["step"], 1);
+    assert_eq!(result["files"], json!([{ "file": "tools/check.lcf", "revision": sha(made) }]));
+    assert_eq!(result["names"], json!({ "function": "check" }));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(memory.get("/p/tools/check.lcf"), None);
+    let agent = Author::Agent("claude".to_owned());
+    assert_eq!(refused(&mut session, &agent, "function.create", json!({ "path": "f.lcf" })).code, "path.exists");
+    assert_eq!(refused(&mut session, &agent, "function.create", json!({ "path": "Notes.lct" })).code, "path.invalid");
+    assert_eq!(refused(&mut session, &agent, "function.create", json!({ "path": "2nd.lcf" })).code, "name.invalid");
+    let batch = json!({ "commands": [{ "id": "function.create", "params": { "path": "h.lcf" } }] });
+    assert_eq!(refused(&mut session, &agent, "commands.batch", batch).code, "params.invalid");
+    assert_eq!(memory.get("/p/h.lcf"), None);
+}
+
+/// A project of `f` and a caller `main`, which names the input `gain` of `f`.
+fn called() -> (Session, Arc<Memory>) {
+    let memory = Arc::new(Memory::new());
+    memory.put("/p/f.lcf", CALLED);
+    memory.put("/p/main.lcf", CALLER);
+    let config = Config {
+        root: PathBuf::from("/p"),
+        lib_paths: Vec::new(),
+        limits: Limits::default(),
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 0,
+    };
+    let ws: Arc<dyn Workspace> = memory.clone();
+    (Session::new(ws, config, false).unwrap_or_else(|error| panic!("{error:?}")), memory)
+}
+
+const CALLED: &str = "labcraft 1\n\nfn f(x: f64, gain: f64 = 1) -> (y: f64) {\n    y = x\n}\n";
+const CALLER: &str = "labcraft 1\n\nfn main(k: f64) -> (r: f64) {\n    r = f(k, gain: 2)\n}\n";
+
+#[test]
+fn an_input_renamed_renames_the_calls_of_the_project_in_one_step() {
+    let (mut session, memory) = called();
+    let result = ok(&mut session, "signature.rename", json!({ "file": "f.lcf", "terminal": "input gain", "name": "scale" }));
+    let function = "labcraft 1\n\nfn f(x: f64, scale: f64 = 1) -> (y: f64) {\n    y = x\n}\n";
+    let caller = "labcraft 1\n\nfn main(k: f64) -> (r: f64) {\n    r = f(k, scale: 2)\n}\n";
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/main.lcf")), (function.to_owned(), caller.to_owned()));
+    assert_eq!(result["step"], 1);
+    assert_eq!(result["files"], json!([{ "file": "f.lcf", "revision": sha(function) }, { "file": "main.lcf", "revision": sha(caller) }]));
+    assert_eq!(result["names"], json!({ "terminal": "input scale" }));
+    assert_eq!(result["summary"]["errors"], 0, "{result}");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/main.lcf")), (CALLED.to_owned(), CALLER.to_owned()), "one undo takes both back");
+}
+
+#[test]
+fn a_rename_stops_at_a_caller_that_does_not_parse() {
+    let (mut session, memory) = called();
+    memory.put("/p/broken.lcf", "labcraft 1\n\nfn broken() -> () {\n    r = f(1, gain: \n}\n");
+    let error = refused(&mut session, &Author::User, "signature.rename", json!({ "file": "f.lcf", "terminal": "input gain", "name": "scale" }));
+    assert_eq!(error.code, "file.unparsed");
+    assert!(error.message.contains("broken.lcf"), "{}", error.message);
+    assert_eq!((text(&memory, "/p/f.lcf"), text(&memory, "/p/main.lcf")), (CALLED.to_owned(), CALLER.to_owned()));
+}
+
+#[test]
+fn a_new_required_input_shows_its_callers_unwired() {
+    let (mut session, memory) = called();
+    let result = ok(&mut session, "signature.add", json!({ "file": "f.lcf", "terminal": "input offset", "type": "f64" }));
+    assert_eq!(text(&memory, "/p/f.lcf"), "labcraft 1\n\nfn f(x: f64, gain: f64 = 1, offset: f64) -> (y: f64) {\n    y = x\n}\n");
+    assert_eq!(text(&memory, "/p/main.lcf"), CALLER, "callers are not changed");
+    let unwired: Vec<(&str, &str)> = result["diagnostics"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|diagnostic| Some((diagnostic["file"].as_str()?, diagnostic["code"].as_str()?)))
+        .collect();
+    assert!(unwired.contains(&("main.lcf", "LC2101")), "{result}");
+    let error = refused(&mut session, &Author::User, "signature.add", json!({ "file": "f.lcf", "terminal": "x", "type": "f64" }));
+    assert_eq!((error.code, error.parameter.as_deref()), ("params.invalid", Some("terminal")));
+}
+
+#[test]
+fn the_documentation_type_and_default_are_steps() {
+    let (mut session, memory) = called();
+    ok(&mut session, "function.set_doc", json!({ "file": "f.lcf", "doc": "Scales x." }));
+    ok(&mut session, "signature.set_type", json!({ "file": "f.lcf", "terminal": "input x", "type": "f64[V]" }));
+    ok(&mut session, "signature.set_type", json!({ "file": "f.lcf", "terminal": "output y", "type": "f64[V]" }));
+    ok(&mut session, "signature.set_default", json!({ "file": "f.lcf", "terminal": "input gain", "default": null }));
+    assert_eq!(text(&memory, "/p/f.lcf"), "labcraft 1\n\n/// Scales x.\nfn f(x: f64[V], gain: f64) -> (y: f64[V]) {\n    y = x\n}\n");
+    ok(&mut session, "signature.remove", json!({ "file": "f.lcf", "terminal": "input gain" }));
+    assert_eq!(text(&memory, "/p/f.lcf"), "labcraft 1\n\n/// Scales x.\nfn f(x: f64[V]) -> (y: f64[V]) {\n    y = x\n}\n");
+    for _ in 0..5 {
+        ok(&mut session, "history.undo", json!({}));
+    }
+    assert_eq!(text(&memory, "/p/f.lcf"), CALLED);
+}

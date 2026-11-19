@@ -181,7 +181,7 @@ fn the_command_palette_opens_with_its_key_and_runs_a_command_typed_as_json() {
     harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::P);
     harness.run_steps(3);
     // The one field shown: `Palette`, which has one too, is behind `Project`.
-    harness.get_by_role(egui::accesskit::Role::TextInput).type_text("view.set_view {\"function\": \"main\", \"view\": \"text\"}");
+    palette_field(&harness).type_text("view.set_view {\"function\": \"main\", \"view\": \"text\"}");
     harness.run_steps(3);
     assert!(harness.query_by_label_contains("valid: Enter runs it").is_some());
     harness.key_press(Key::Enter);
@@ -199,7 +199,7 @@ fn a_panel_closed_comes_back_from_view() {
     assert!(before.layout.contains(&labcraft_ide::Pane::Run));
     harness.key_press(Key::F1);
     harness.run_steps(3);
-    harness.get_by_role(egui::accesskit::Role::TextInput).type_text("view.toggle_panel {\"panel\": \"run\"}");
+    palette_field(&harness).type_text("view.toggle_panel {\"panel\": \"run\"}");
     harness.run_steps(2);
     harness.key_press(Key::Enter);
     harness.run_steps(3);
@@ -207,18 +207,28 @@ fn a_panel_closed_comes_back_from_view() {
     assert!(harness.state_mut().ide.take_prefs_changed());
     harness.key_press(Key::F1);
     harness.run_steps(3);
-    harness.get_by_role(egui::accesskit::Role::TextInput).type_text("view.toggle_panel {\"panel\": \"run\"}");
+    palette_field(&harness).type_text("view.toggle_panel {\"panel\": \"run\"}");
     harness.run_steps(2);
     harness.key_press(Key::Enter);
     harness.run_steps(3);
     assert!(harness.state().ide.prefs().layout.unwrap().layout.contains(&labcraft_ide::Pane::Run));
 }
 
+/// The field of the command palette: the inspector has fields of its own (ide.md 4).
+fn palette_field<'h>(harness: &'h Harness<'_, State>) -> egui_kittest::Node<'h> {
+    use egui_kittest::kittest::NodeT as _;
+    let placeholder = Some("Search a command, or type an id and a JSON object");
+    harness
+        .query_all_by_role(egui::accesskit::Role::TextInput)
+        .find(|node| node.accesskit_node().placeholder() == placeholder)
+        .unwrap_or_else(|| panic!("the command palette is not open"))
+}
+
 /// Types a command in the palette, `id {json}`, and runs it.
 fn run_in_palette(harness: &mut Harness<'_, State>, typed: &str) {
     harness.key_press(Key::F1);
     harness.run_steps(3);
-    harness.get_by_role(egui::accesskit::Role::TextInput).type_text(typed);
+    palette_field(harness).type_text(typed);
     harness.run_steps(2);
     harness.key_press(Key::Enter);
     harness.run_steps(4);

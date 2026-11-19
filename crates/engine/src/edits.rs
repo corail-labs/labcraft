@@ -11,7 +11,9 @@ use std::sync::Arc;
 use labcraft_check::primitives::{PRIMITIVES, PrimitiveLibrary, primitive};
 use labcraft_check::{Checked, DeclaredFunction, DeclaredLibrary};
 use labcraft_diagram::{DiagramLimits, Drawn, style};
-use labcraft_edit::{Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Passage, Point, StructureKind, StructureOption, Through, Within};
+use labcraft_edit::{
+    Callable, EditError, Files, Input, Judge, Kind, Lookup, Op, Passage, Point, StructureKind, StructureOption, Terminal, Through, Within,
+};
 use labcraft_types::{Diagnostic, Interner, Severity, Ty};
 use serde_json::{Map, Value, json};
 
@@ -60,6 +62,12 @@ pub const EDITING: &[&str] = &[
     "structure.remove_part",
     "structure.set_passage",
     "structure.set_option",
+    "function.set_doc",
+    "signature.add",
+    "signature.remove",
+    "signature.rename",
+    "signature.set_type",
+    "signature.set_default",
 ];
 
 /// The revision of a file: the SHA-256 of its bytes, `sha256:` and 64 lowercase hexadecimal digits (architecture 12.5).
@@ -202,6 +210,14 @@ fn passage_of(text: &str) -> Option<Passage> {
     }
 }
 
+/// `terminal`: `input x` or `output x` (commands.md 6.7).
+fn terminal(params: &Params) -> Result<Terminal, CommandError> {
+    let text = params.text("terminal")?;
+    Terminal::parse(text).ok_or_else(|| {
+        CommandError::of("params.invalid", "terminal", format!("`{}` is no terminal: `input x` or `output x`", labcraft_edit::cut(text)))
+    })
+}
+
 /// The operation of an editing command, from its parameters.
 fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), CommandError> {
     let target = target(session, params.text("file")?)?;
@@ -338,6 +354,19 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
             };
             Op::StructureSetOption { file, structure: params.text("structure")?.to_owned(), option, on }
         }
+        "function.set_doc" => Op::FunctionSetDoc { file, doc: params.str("doc").unwrap_or_default().to_owned() },
+        "signature.add" => Op::SignatureAdd {
+            file,
+            terminal: terminal(params)?,
+            ty: params.text("type")?.to_owned(),
+            default: params.str("default").map(str::to_owned),
+            position: params.u64("position"),
+        },
+        "signature.remove" => Op::SignatureRemove { file, terminal: terminal(params)? },
+        "signature.rename" => Op::SignatureRename { file, terminal: terminal(params)?, name: params.text("name")?.to_owned() },
+        "signature.set_type" => Op::SignatureSetType { file, terminal: terminal(params)?, ty: params.text("type")?.to_owned() },
+        // `default` is required (the schema), and `null` makes the input required.
+        "signature.set_default" => Op::SignatureSetDefault { file, terminal: terminal(params)?, default: params.str("default").map(str::to_owned) },
         other => return Err(CommandError::internal(format!("`{other}` is no editing command"))),
     };
     Ok((op, target))
@@ -522,6 +551,22 @@ impl Judge for SessionJudge<'_> {
             return Lookup::Found(found);
         }
         Lookup::Unknown(self.nearest(call))
+    }
+
+    fn function_file(&self, file: &str, call: &str) -> Option<String> {
+        let (checked, names) = self.checked()?;
+        let segments: Vec<&str> = call.split('.').collect();
+        let library = match segments.as_slice() {
+            [_] => checked.files.iter().find(|candidate| candidate.shown == file).and_then(|found| checked.libraries.get(found.library as usize))?,
+            [first, _] => checked.libraries.iter().find(|library| !library.name.is_empty() && library.name == *first)?,
+            _ => return None,
+        };
+        if !library.checked {
+            return None;
+        }
+        let function = library.functions.get(&names.find(segments.last()?)?)?;
+        let index = usize::try_from(function.file?).ok()?;
+        checked.files.get(index).map(|found| found.shown.clone())
     }
 
     fn errors(&self, file: &str, text: &str) -> Vec<Diagnostic> {
@@ -773,6 +818,11 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
         let text = read_text(session, &target)?;
         texts.files.insert(target.path.clone(), (target.shown.clone(), text.as_bytes().to_vec(), text));
     }
+    // A rename of an input also updates the calls of the other files of the project (commands.md 6.7).
+    let others = match &op {
+        Op::SignatureRename { terminal: Terminal::Input(_), .. } => programs_besides(session, texts)?,
+        _ => Vec::new(),
+    };
     let root = session.root.clone();
     let memory = texts.memory();
     // The check of the root, kept; then read through the session, which the judge borrows as a whole.
@@ -784,14 +834,77 @@ fn apply_one(session: &mut Session, id: &str, params: &Params, texts: &mut Texts
         for (shown, _, text) in texts.files.values() {
             files.insert(shown, text);
         }
+        for other in &others {
+            files.insert(&other.shown, &other.text);
+        }
         labcraft_edit::apply(&files, &op, &judge, &session.config.limits).map_err(command_error)?
     };
     for (shown, text) in &edited.texts {
         if let Some((_, (_, _, now))) = texts.files.iter_mut().find(|(_, (name, _, _))| name == shown) {
             *now = text.clone();
+        } else if let Some(other) = others.iter().find(|other| other.shown == *shown) {
+            texts.files.insert(other.path.clone(), (other.shown.clone(), other.bytes.clone(), text.clone()));
         }
     }
     Ok(edited)
+}
+
+/// The `.lcf` files of the project that the command has not read yet: their path, their name as shown, their bytes and
+/// their text. One that is not UTF-8 does not parse, and stops a command that changes other files (`file.unparsed`).
+fn programs_besides(session: &Session, texts: &Texts) -> Result<Vec<Other>, CommandError> {
+    let root = session.root.clone();
+    let walked = crate::walk::walk(&*session.ws, std::slice::from_ref(&root), Some(&root), &session.config.limits);
+    let mut found = Vec::new();
+    for file in walked.files {
+        if texts.files.contains_key(&file.path) || !file.path.extension().is_some_and(|extension| extension == "lcf") {
+            continue;
+        }
+        let Some(bytes) = bytes_now(session, &file.path)? else { continue };
+        // Not UTF-8, it does not parse: it stops the rename only when it seems to call (commands.md 6.7).
+        let Ok(text) = String::from_utf8(bytes.clone()) else {
+            if String::from_utf8_lossy(&bytes).contains('(') {
+                return Err(CommandError::of("file.unparsed", "file", format!("`{}` does not parse: it is not UTF-8", file.shown)));
+            }
+            continue;
+        };
+        found.push(Other { path: file.path, shown: file.shown, bytes, text });
+    }
+    Ok(found)
+}
+
+/// A file of the project that a command may change besides the one it names: a caller that a rename updates.
+struct Other {
+    path: PathBuf,
+    shown: String,
+    bytes: Vec<u8>,
+    text: String,
+}
+
+/// `function.create` (commands.md 6.7): a new `.lcf` holding `fn name() -> () {}`, named after its file (R-22), one
+/// step of history. An existing file is `path.exists`.
+pub(crate) fn create_function(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
+    judge_revisions(session, params)?;
+    let (path, shown, exists) = paths::in_project(&*session.ws, &session.root, params.text("path")?, "path", Wanted::File)?;
+    if !path.extension().is_some_and(|extension| extension == "lcf") {
+        return Err(CommandError::of("path.invalid", "path", format!("`{shown}` is not a `.lcf`: a function is written in a `.lcf` named after it")));
+    }
+    if exists {
+        return Err(CommandError::of("path.exists", "path", format!("`{shown}` exists already: open it, or choose another name")));
+    }
+    crate::files::refuse_case_twin(session, &path, &shown, "path", None)?;
+    let name = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default();
+    let text = labcraft_edit::new_function(&name, params.str("doc"), &session.config.limits).map_err(command_error)?;
+    if text.len() as u64 > session.config.limits.max_file_size {
+        return Err(CommandError::of("file.too_large", "doc", "the new function would be over the limit of `--max-file-size`"));
+    }
+    let before = session.root_check_document()?;
+    let changes = vec![Change { path, shown, before: None, after: Some(Arc::from(text.into_bytes())) }];
+    write_changes(session, &changes, false)?;
+    let step = record(session, author, command.label.to_owned(), changes.clone());
+    let mut extra = Map::new();
+    extra.insert("names".to_owned(), json!({ "function": name }));
+    extra.insert("renamed".to_owned(), json!([]));
+    result(session, step, &changes, false, &before, extra)
 }
 
 fn names_json(edited: &labcraft_edit::Edited) -> (Value, Value) {
@@ -960,7 +1073,7 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
             registry::command(id).ok_or_else(|| at(CommandError::of("command.unknown", "commands", format!("no command has the id `{id}`"))))?;
         // The commands that edit, built or planned; a planned one is not enabled yet. The commands of files make steps too,
         // but write the disk at once: they are not commands of 6.7.
-        if !command.undoable || id == "commands.batch" || id.starts_with("file.") {
+        if !command.undoable || id == "commands.batch" || id.starts_with("file.") || id == "function.create" {
             return Err(at(CommandError::of(
                 "params.invalid",
                 "commands",

@@ -1,6 +1,6 @@
 //! The inspector as a list of fields (ide.md 4 and 11): what the selection is, as sections of named values and a
 //! documentation. A field that edits gives back what the user chose ([`Answer`]), and the host calls the command of the
-//! same gesture (ide.md 4): an integer typed (Enter or leaving the field), a choice, a button.
+//! same gesture (ide.md 4): an integer or a text typed (Enter or leaving the field), a choice, a button.
 
 use egui::RichText;
 
@@ -24,6 +24,8 @@ pub enum Control {
     Choice { key: String, options: Vec<String>, chosen: usize },
     /// A button, its text.
     Button { key: String, text: String },
+    /// A text, typed: on one line, or on several (Ctrl+Enter writes it), with a hint shown while it is empty.
+    Text { key: String, value: String, lines: bool, hint: String },
 }
 
 /// What the user did to a field that edits.
@@ -32,6 +34,7 @@ pub enum Answer {
     Integer { key: String, value: i64 },
     Choice { key: String, chosen: usize },
     Pressed { key: String },
+    Text { key: String, value: String },
 }
 
 impl Field {
@@ -53,6 +56,18 @@ impl Field {
         let options: Vec<String> = options.iter().map(|option| (*option).to_owned()).collect();
         let value = options.get(chosen).cloned().unwrap_or_default();
         Field { control: Some(Control::Choice { key: key.into(), options, chosen }), ..Field::new(label, value) }
+    }
+
+    /// A text that the user types on one line; `hint` shows while it is empty.
+    pub fn text(label: impl Into<String>, key: impl Into<String>, value: impl Into<String>, hint: impl Into<String>) -> Field {
+        let value = value.into();
+        Field { control: Some(Control::Text { key: key.into(), value: value.clone(), lines: false, hint: hint.into() }), ..Field::new(label, value) }
+    }
+
+    /// A text of several lines, a documentation.
+    pub fn text_lines(label: impl Into<String>, key: impl Into<String>, value: impl Into<String>, hint: impl Into<String>) -> Field {
+        let value = value.into();
+        Field { control: Some(Control::Text { key: key.into(), value: value.clone(), lines: true, hint: hint.into() }), ..Field::new(label, value) }
     }
 
     /// A button.
@@ -157,6 +172,33 @@ fn edit(ui: &mut egui::Ui, control: &Control) -> Option<Answer> {
             answer
         }
         Control::Button { key, text } => ui.button(text).clicked().then(|| Answer::Pressed { key: key.clone() }),
+        Control::Text { key, value, lines, hint } => {
+            let id = ui.make_persistent_id(("kit-shell-inspector-text", key));
+            let mut text = ui.data(|data| data.get_temp::<Typed>(id)).map_or_else(|| value.clone(), |typed| typed.0);
+            let edit = if *lines {
+                egui::TextEdit::multiline(&mut text).desired_rows(3).desired_width(f32::INFINITY)
+            } else {
+                egui::TextEdit::singleline(&mut text).desired_width(160.0).font(egui::TextStyle::Monospace)
+            };
+            let response = ui.add(edit.hint_text(hint.as_str()));
+            // Ctrl+Enter writes a text of several lines, Enter one of one line.
+            let written = *lines && response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter) && input.modifiers.command);
+            if response.has_focus() && !written {
+                ui.data_mut(|data| data.insert_temp(id, Typed(text.clone())));
+                return None;
+            }
+            ui.data_mut(|data| data.remove::<Typed>(id));
+            if written {
+                response.surrender_focus();
+            }
+            // Enter, or leaving the field: a new text is the answer; Escape goes back to the value.
+            let escaped = ui.input(|input| input.key_pressed(egui::Key::Escape));
+            let typed = Some(text.trim_end().to_owned()).filter(|typed| typed != value.trim_end() && !escaped);
+            match (response.lost_focus() || written, typed) {
+                (true, Some(typed)) => Some(Answer::Text { key: key.clone(), value: typed }),
+                _ => None,
+            }
+        }
     }
 }
 

@@ -37,6 +37,7 @@ mod quick;
 pub(crate) mod rerouting;
 pub(crate) mod select;
 pub(crate) mod series;
+mod signature;
 mod sizing;
 pub(crate) mod view;
 pub(crate) mod wiring;
@@ -47,6 +48,7 @@ pub use frames::{InFrame, STRUCTURES, Seen};
 pub use parts::PartAsked;
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
+pub use signature::{default_is_cut, frame_default};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use moving::Moving;
@@ -173,6 +175,14 @@ pub enum Intent {
     /// `structure.add_collect`, or `structure.add_last` with `last`: a wire from inside a loop dropped on its inner right
     /// edge, Alt held for a `last` (notation 2.6).
     AddCollect { structure: String, value: String, last: bool },
+    /// "Make an input of the function", "Make an output of the function" (notation 2.4): `signature.add` of `terminal`
+    /// (`input gain`) of type `ty`, then `wire.connect` from `from` to `to`, in one `commands.batch`.
+    MakeTerminal { terminal: String, ty: String, from: String, to: String },
+    /// `signature.remove`: "Remove" of the menu of a terminal of the frame of the function.
+    RemoveTerminal { terminal: String },
+    /// "Type…" of the menu of a terminal of the frame of the function: the host opens the list of types, and
+    /// `signature.set_type` with the one chosen (decision of the owner, 2026-11-19).
+    PickType { terminal: String },
 }
 
 /// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
@@ -287,8 +297,13 @@ pub struct Canvas {
     /// menu (notation 2.6).
     context_arm: Option<usize>,
     context_port: Option<usize>,
-    /// The frame of the function right-clicked by its edge, when `layout` fixes its size: its menu (notation 2.4).
+    /// The frame of the function right-clicked by its edge: its menu (notation 2.4), with "Remove the fixed size" when
+    /// `layout` fixes its size.
     frame_context: bool,
+    /// The terminal of the frame of the function right-clicked, by its index in [`Drawing::ports`], for its menu.
+    terminal_context: Option<usize>,
+    /// Where the last right-click was, in units: where a field of its menu opens.
+    context_at: Option<Pos2>,
     /// What the command palette asked of the canvas, for the next frame to give back.
     queued: Vec<Intent>,
 }
@@ -487,6 +502,8 @@ impl Canvas {
             context_arm: None,
             context_port: None,
             frame_context: false,
+            terminal_context: None,
+            context_at: None,
             queued: Vec::new(),
         }
     }
@@ -1177,12 +1194,17 @@ impl Canvas {
                 select::wire_at(&frame.drawing, &frame.groups, at, reach, &visible).filter(|&group| !routed(&frame.drawing, group).is_empty())
             });
             self.context = frame.hovered.filter(|_| self.wire_context.is_none());
-            self.frame_context = self.wire_context.is_none()
-                && self.context.is_none()
-                && matches!(frame.grip, Some((None, _)))
-                && frame.drawing.bodies.first().is_some_and(|body| body.size.is_some());
             // The tab and the terminal under the pointer, for the parts of a structure (notation 2.6).
             let at = frame.ctx.input(|input| input.pointer.interact_pos()).map(unit_of);
+            self.context_at = at;
+            let port = at.and_then(|at| port_at(&frame.drawing, at, (6.0 / self.viewport.zoom).max(5.0), &visible));
+            self.terminal_context = port
+                .filter(|_| self.wire_context.is_none() && self.context.is_none())
+                .filter(|&port| frame.drawing.ports.get(port).and_then(signature::frame_terminal).is_some());
+            // The edge of the frame of the function: its resize grip, or its left or right edge (notation 2.4).
+            let on_edge = matches!(frame.grip, Some((None, _)))
+                || at.is_some_and(|at| signature::function_edge(&frame.drawing, at, (6.0 / self.viewport.zoom).max(4.0)).is_some());
+            self.frame_context = self.wire_context.is_none() && self.context.is_none() && self.terminal_context.is_none() && on_edge;
             self.context_arm = at.and_then(|at| {
                 frame.drawing.tabs.iter().find_map(|tab| {
                     let corner = Pos2::new(tab.x as f32, tab.y as f32) / 100.0 + frame.offset_of(Some(tab.structure));
@@ -1207,16 +1229,33 @@ impl Canvas {
             }
             return;
         }
+        if let Some(port) = self.terminal_context {
+            self.terminal_menu(response, frame, port, input);
+            return;
+        }
         if self.frame_context {
-            let mut asked = false;
+            let sized = frame.drawing.bodies.first().is_some_and(|body| body.size.is_some());
+            let (mut asked, mut adding) = (false, None);
             response.context_menu(|ui| {
-                if ui.button("Remove the fixed size").clicked() {
+                if ui.button("Add input").clicked() {
+                    adding = Some(true);
+                    ui.close();
+                }
+                if ui.button("Add output").clicked() {
+                    adding = Some(false);
+                    ui.close();
+                }
+                if sized && ui.button("Remove the fixed size").clicked() {
                     asked = true;
                     ui.close();
                 }
             });
             if asked {
                 input.intents.push(Intent::Resize { structure: None, size: None });
+                self.frame_context = false;
+            }
+            if let Some(side) = adding {
+                self.add_terminal(&frame.drawing, side);
                 self.frame_context = false;
             }
             return;
@@ -1230,6 +1269,7 @@ impl Canvas {
         let shown_arm = |index: usize| frame.arms.get(index).copied().unwrap_or(false);
         let (context_arm, context_port) = (self.context_arm, self.context_port);
         let mut part = None;
+        let mut make = false;
         response.context_menu(|ui| {
             if ui.button("Label…").clicked() {
                 label = true;
@@ -1255,7 +1295,28 @@ impl Canvas {
             if let Some(parts) = parts::PartsMenu::of(&frame.drawing, placed, context_arm, context_port, &shown_arm) {
                 part = parts.ui(ui);
             }
+            // A terminal of the node that holds nothing (notation 2.4).
+            if let Some((made, ty)) = context_port
+                .filter(|&port| frame.drawing.ports.get(port).is_some_and(|found| found.placed == Some(placed)))
+                .and_then(|port| signature::makeable(&frame.drawing, port))
+            {
+                let text = if made { "Make an input of the function" } else { "Make an output of the function" };
+                let button = ui.add_enabled(ty.is_some(), egui::Button::new(text));
+                let button = if ty.is_none() {
+                    button.on_disabled_hover_text("Its type is not known: add the terminal from the edge of the frame")
+                } else {
+                    button
+                };
+                if button.clicked() {
+                    make = true;
+                    ui.close();
+                }
+            }
         });
+        if make && let Some(intent) = context_port.and_then(|port| signature::make(&frame.drawing, port)) {
+            input.intents.push(intent);
+            self.context = None;
+        }
         match part {
             Some(parts::Chosen::Field(kind, text)) => {
                 self.edit_part(placed, kind, text);
@@ -1285,6 +1346,66 @@ impl Canvas {
             self.edit_label(placed);
             self.context = None;
         }
+    }
+
+    /// The menu of a terminal of the frame of the function (notation 2.4): "Rename", "Type…", "Default…" for an input,
+    /// "Remove", and "Add input", "Add output".
+    fn terminal_menu(&mut self, response: &Response, frame: &Frame, port: usize, input: &mut Input) {
+        let Some(found) = frame.drawing.ports.get(port) else { return };
+        let Some(terminal) = signature::frame_terminal(found) else { return };
+        let is_input = !found.input;
+        let caption = found.caption.clone();
+        let mut chosen: Option<&'static str> = None;
+        response.context_menu(|ui| {
+            for (entry, shown) in [("rename", true), ("type", true), ("default", is_input), ("remove", true)] {
+                let label = match entry {
+                    "rename" => "Rename",
+                    "type" => "Type…",
+                    "default" => "Default…",
+                    _ => "Remove",
+                };
+                if shown && ui.button(label).clicked() {
+                    chosen = Some(entry);
+                    ui.close();
+                }
+            }
+            ui.separator();
+            if ui.button("Add input").clicked() {
+                chosen = Some("add input");
+                ui.close();
+            }
+            if ui.button("Add output").clicked() {
+                chosen = Some("add output");
+                ui.close();
+            }
+        });
+        let Some(chosen) = chosen else { return };
+        self.terminal_context = None;
+        let at = signature::field_by(&frame.drawing, port);
+        match chosen {
+            "rename" => {
+                self.edit_terminal(FieldKind::TerminalName { terminal }, caption, at);
+            }
+            "type" => input.intents.push(Intent::PickType { terminal }),
+            "default" => {
+                let default = signature::default_at(&frame.drawing, port);
+                if signature::default_is_cut(&default) {
+                    input.intents.push(Intent::Say(signature::CUT_DEFAULT.to_owned()));
+                } else {
+                    self.edit_terminal(FieldKind::TerminalDefault { terminal }, default, at);
+                }
+            }
+            "remove" => input.intents.push(Intent::RemoveTerminal { terminal }),
+            "add input" => self.add_terminal(&frame.drawing, true),
+            _ => self.add_terminal(&frame.drawing, false),
+        }
+    }
+
+    /// "Add input", "Add output" (notation 2.4): the field of a new terminal, on its edge, where the menu was opened.
+    fn add_terminal(&mut self, drawing: &Drawing, input: bool) {
+        let y = self.context_at.map_or(0.0, |at| at.y);
+        let at = signature::edge_field_at(drawing, input, y);
+        self.edit_terminal(FieldKind::AddTerminal { input }, String::new(), at);
     }
 
     /// A click selects what it is on, Shift or Ctrl with it adds or takes out; a drag on the empty canvas draws a
@@ -1487,6 +1608,19 @@ impl Canvas {
         let Some(over) = wiring.over else {
             // On the edge of a loop: a `collect` (a `last` with Alt), or a clause of a `for` (notation 2.6).
             let reach = (6.0 / self.viewport.zoom).max(4.0);
+            // From a terminal of a node that holds nothing, on the edge of the frame of the function of its side: an input
+            // or an output of the function (notation 2.4).
+            if wiring.taken == wiring::Taken::Nothing
+                && wiring.branch.is_none()
+                && let Some((input_side, _)) = signature::makeable(drawing, wiring.from)
+                && signature::function_edge(drawing, wiring.at, reach) == Some(input_side)
+            {
+                match signature::make(drawing, wiring.from) {
+                    Some(intent) => input.intents.push(intent),
+                    None => input.intents.push(Intent::Say("Its type is not known: add the terminal from the edge of the frame".to_owned())),
+                }
+                return;
+            }
             if wiring.taken == wiring::Taken::Nothing
                 && wiring.branch.is_none()
                 && let Some(port) = drawing.ports.get(wiring.from)

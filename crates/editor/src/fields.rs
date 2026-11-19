@@ -26,6 +26,13 @@ pub enum FieldKind {
     Patterns { structure: String, arm: String },
     /// `structure.add_carry`: `name = initial`, or `name: type = initial`.
     AddCarry { structure: String },
+    /// `signature.rename` of a terminal of the frame of the function, `input x` or `output x`.
+    TerminalName { terminal: String },
+    /// `signature.set_default` of an input of the function; an empty text makes it required.
+    TerminalDefault { terminal: String },
+    /// `signature.add`: `name: type`, or `name: type = default` for an input; with no type, the host opens the list of
+    /// types (decision of the owner, 2026-11-19).
+    AddTerminal { input: bool },
 }
 
 /// A field open on the canvas.
@@ -167,12 +174,23 @@ impl Canvas {
     }
 
     /// F2 (notation 2.6): the name of the node selected, or of the one whose terminal is in focus; on a node with no
-    /// name, its label (decision of the owner, 2026-11-17). False when there is no one node.
+    /// name, its label (decision of the owner, 2026-11-17); the name of the one terminal of the frame selected (2.4).
+    /// False when there is no one node or terminal.
     pub fn edit_name(&mut self) -> bool {
         if self.waiting() {
             return false;
         }
         let Some(drawing) = self.drawing.clone() else { return false };
+        // One terminal of the frame of the function selected: its name (notation 2.4).
+        if self.found.nodes.is_empty()
+            && let [terminal] = self.found.terminals.iter().filter_map(|&at| drawing.hints.get(at)?.selects.clone()).collect::<Vec<_>>().as_slice()
+            && let Some(port) = drawing.ports.iter().position(|port| crate::signature::frame_terminal(port).as_deref() == Some(terminal.as_str()))
+        {
+            let caption = drawing.ports.get(port).map(|port| port.caption.clone()).unwrap_or_default();
+            let at = crate::signature::field_by(&drawing, port);
+            self.field = Some(Field::new(FieldKind::TerminalName { terminal: terminal.clone() }, caption, at, None));
+            return true;
+        }
         let focused = self.port_focus.and_then(|at| drawing.ports.get(at)).and_then(|port| port.placed);
         let placed = match (focused, self.found.nodes.len()) {
             (Some(placed), _) => placed,
@@ -214,6 +232,21 @@ impl Canvas {
             }
             None => return false,
         }
+        true
+    }
+
+    /// A field of a terminal of the frame of the function (notation 2.4): to rename it, type it, give it a default, or a
+    /// new one on an edge. A new one writes what Enter has, even the text it opened with.
+    pub(crate) fn edit_terminal(&mut self, kind: FieldKind, text: String, at: Pos2) -> bool {
+        if self.waiting() {
+            return false;
+        }
+        let adds = matches!(kind, FieldKind::AddTerminal { .. });
+        let mut field = Field::new(kind, text, at, None);
+        if adds {
+            field.original = String::new();
+        }
+        self.field = Some(field);
         true
     }
 
@@ -269,6 +302,13 @@ impl Canvas {
             return false;
         }
         let drawing = frame.drawing.clone();
+        // A terminal of the frame of the function: its name, the pill of its default (notation 2.4).
+        if frame.hovered.is_none()
+            && let Some((kind, text, at)) = crate::signature::text_under(&drawing, unit)
+        {
+            self.field = Some(Field::new(kind, text, at, None));
+            return true;
+        }
         let Some(placed) = frame.hovered.or_else(|| {
             drawing.ports.iter().filter(|port| port.input && frame.visible(port.within)).find_map(|port| {
                 let at = Pos2::new(port.x as f32, port.y as f32) / 100.0 + frame.offset_of(port.placed);

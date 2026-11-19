@@ -111,15 +111,20 @@ greyed and says why.
   file of code, a function with the icon of the view `Diagram`); a function that does not draw shows the number of
   its errors, its icon in the colour of its text; the shipped libraries (`core`, `visa`, `scpi`…), read only, at the end. A file opened
   in a detached window says so. Right click: new function, new type, rename, delete, open in a window, each a
-  command.
+  command. "New function" opens a field in place in the tree, in the folder clicked; Enter writes the function
+  (`function.create`) and opens it.
 - **`Palette`**: the functions the project can call, grouped by library, with a search field on top that searches as
   quick insertion does (notation 2.6). A function dragged onto the canvas is a node added there (`node.add`).
 - **`Inspector`**: what the selection is (decision of the owner, 2026-11-14):
   - one node: its function, its signature, its documentation, the help of each parameter, its values of the last run,
     whether it is fixed, with "Remove the fixed position";
   - one wire: its type, its source and its destination, its value of the last run, its `via` line;
-  - one terminal of the frame: its name, its type, its default, whether it is fixed;
-  - nothing: the function itself, with its signature, its documentation, its icon and its `frame size`;
+  - one terminal of the frame: its name, its type, its default, whether it is fixed, each a field (`signature.rename`,
+    `signature.set_type`, `signature.set_default`), and "Remove" (`signature.remove`);
+  - nothing: the function itself, with its signature, its documentation, its icon and its `frame size`; its
+    documentation is a field (`function.set_doc`), and "Add input" and "Add output" under the signature take a name and,
+    for an input, a default, then the type from the list of types of notation 2.4 (`signature.add`); the type of a
+    terminal is chosen from that list too (decisions of the owner, 2026-11-19);
   - several: how many, and the actions they share.
 
   A field changed in the inspector calls the command of the same gesture, and is one step of the history.

@@ -1948,3 +1948,89 @@ fn a_frame_of_fixed_size_shows_its_corner_under_the_setting() {
     assert_eq!(crate::sizing::tooltip(&drawn, Some(ys)), "Size fixed (`frame ys size (320, 200)` in `layout`). Right-click › Remove the fixed size");
     assert_eq!(crate::sizing::tooltip(&drawn, None), "Size fixed (`frame size (640, 400)` in `layout`). Right-click › Remove the fixed size");
 }
+
+// The signature on the canvas (notation 2.4; decisions of the owner, 2026-11-19). The intents expected are written by
+// hand from the rule: a terminal of a node that holds nothing becomes a terminal of the function of its name and type.
+
+const SCALED: &str = "labcraft 1\n\nfn main(low: f64[V] = 220 V) -> (y: f64[V]) {\n    y = low\n    r = scale(?)\n}\n";
+const SCALE: &str = "labcraft 1\n\nfn scale(v: f64[V], k: f64 = 2) -> (r: f64) {\n    r = 1.0\n}\n";
+
+fn scaled() -> Arc<Drawing> {
+    drawing_of(&[("main.lcf", SCALED), ("scale.lcf", SCALE)], &ViewState::default())
+}
+
+fn port_named(drawing: &Drawing, name: &str, input: bool) -> usize {
+    drawing.ports.iter().position(|port| port.name == name && port.input == input && !port.frame).unwrap_or_else(|| panic!("no port {name}"))
+}
+
+#[test]
+fn a_terminal_of_a_node_that_holds_nothing_becomes_one_of_the_function() {
+    let drawing = scaled();
+    let hole = port_named(&drawing, "r.v", true);
+    assert_eq!(
+        signature::make(&drawing, hole),
+        Some(Intent::MakeTerminal { terminal: "input v".to_owned(), ty: "f64[V]".to_owned(), from: "v".to_owned(), to: "r.v".to_owned() })
+    );
+    // The output `r`, read by nothing, keeps its own name.
+    let output = port_named(&drawing, "r", false);
+    assert_eq!(
+        signature::make(&drawing, output),
+        Some(Intent::MakeTerminal { terminal: "output r".to_owned(), ty: "f64".to_owned(), from: "r".to_owned(), to: "output r".to_owned() })
+    );
+    // `k` holds its default: it holds nothing, and its name is free.
+    assert!(signature::make(&drawing, port_named(&drawing, "r.k", true)).is_some());
+}
+
+#[test]
+fn a_name_that_the_drawing_shows_is_numbered() {
+    let text = "labcraft 1\n\nfn main(v: f64[V]) -> (y: f64[V]) {\n    y = v\n    r = scale(?)\n}\n";
+    let drawing = drawing_of(&[("main.lcf", text), ("scale.lcf", SCALE)], &ViewState::default());
+    let hole = port_named(&drawing, "r.v", true);
+    assert!(matches!(signature::make(&drawing, hole), Some(Intent::MakeTerminal { terminal, from, .. }) if terminal == "input v2" && from == "v2"));
+}
+
+#[test]
+fn a_wired_terminal_is_not_made_one_of_the_function() {
+    let drawing = scaled();
+    // `y` takes the wire of `low`.
+    let text = "labcraft 1\n\nfn main(low: f64[V]) -> (y: f64) {\n    y = scale(low)\n}\n";
+    let wired = drawing_of(&[("main.lcf", text), ("scale.lcf", SCALE)], &ViewState::default());
+    assert_eq!(signature::makeable(&wired, port_named(&wired, "y.v", true)), None);
+    // A terminal of the frame is one already.
+    let frame = drawing.ports.iter().position(|port| port.frame && port.placed.is_none()).unwrap();
+    assert_eq!(signature::makeable(&drawing, frame), None);
+}
+
+#[test]
+fn the_name_and_the_default_of_a_terminal_of_the_frame_open_their_fields() {
+    let drawing = scaled();
+    let text_at = |wanted: &str| {
+        drawing
+            .groups
+            .iter()
+            .filter(|group| group.terminals.is_some() && group.placed.is_none())
+            .flat_map(|group| &group.shapes)
+            .find_map(|shape| match shape {
+                labcraft_diagram::Shape::Text { x, y, size, runs, .. } if runs.iter().map(|run| run.text.as_str()).collect::<String>() == wanted => {
+                    Some(Pos2::new(*x as f32 / 100.0 + 2.0, *y as f32 / 100.0 - *size as f32 / 300.0))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no text {wanted}"))
+    };
+    let name = signature::text_under(&drawing, text_at("low")).map(|(kind, text, _)| (kind, text));
+    assert_eq!(name, Some((FieldKind::TerminalName { terminal: "input low".to_owned() }, "low".to_owned())));
+    let default = signature::text_under(&drawing, text_at("◂ 220 V")).map(|(kind, text, _)| (kind, text));
+    assert_eq!(default, Some((FieldKind::TerminalDefault { terminal: "input low".to_owned() }, "220 V".to_owned())));
+    assert_eq!(signature::frame_default(&drawing, "input low"), "220 V");
+}
+
+#[test]
+fn the_edges_of_the_frame_of_the_function_are_its_sides() {
+    let drawing = scaled();
+    let (x, y, width, height) = drawing.bodies[0].frame;
+    let (left, right, middle) = (x as f32 / 100.0, (x + width) as f32 / 100.0, (y + height / 2) as f32 / 100.0);
+    assert_eq!(signature::function_edge(&drawing, Pos2::new(left + 1.0, middle), 4.0), Some(true));
+    assert_eq!(signature::function_edge(&drawing, Pos2::new(right - 1.0, middle), 4.0), Some(false));
+    assert_eq!(signature::function_edge(&drawing, Pos2::new((left + right) / 2.0, middle), 4.0), None);
+}

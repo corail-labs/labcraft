@@ -500,11 +500,15 @@ in progress writes nothing (2.4).
 | Drag | the header or the left edge of a structure | `node.move`, as for a node |
 | Drag | the right edge, the bottom edge or the corner of the frame, or of a structure | `frame.resize`, with `inside` for a structure (2.4). Escape during the drag puts it back |
 | Drag | a terminal of the frame | `terminal.move` |
+| Drop | a wire from a terminal of a node that holds nothing, on the left edge of the frame (from an input) or its right edge (from an output) | Makes it an input or an output of the function, as "Make an input of the function" does (below) |
 | Alt+drag | a terminal of a block | `block.set_terminal` on the function called, to the place where it is dropped (2.4); the same setting as for a wire |
 | Double-click, or F2 | the name of a node, its label | A field in place: `value.rename` on Enter, nothing on Escape. F2 on a node with no name opens the field of its label above it (`node.set_label`), as "Label…" of its context menu does for any node (decision of the owner, 2026-11-17) |
 | Double-click | a pill of a constant, a dot of a default, a hole | A field in place: `input.set_constant` on Enter. An empty field on Enter clears a constant (`input.clear_constant`), and does nothing on a dot or a hole. On a dot, the field opens with the default, all of it selected; on the template of a `string.format`, `node.set_template` |
+| Double-click, or F2 | the name of a terminal of the frame | A field in place: `signature.rename` on Enter, which also renames the calls that name an input (decision of the owner, 2026-11-19) |
+| Double-click | the pill of the default of an input of the function | A field in place: `signature.set_default` on Enter; an empty field makes the input required |
 | Double-click | the body of a call to a function of the project | Opens that function in a tab |
-| Right-click | a node, a wire, a terminal | The context menu of what it is on, each entry with its key |
+| Right-click | a node, a wire, a terminal | The context menu of what it is on, each entry with its key. On a terminal of a node that holds nothing, "Make an input of the function" or "Make an output of the function": `signature.add` and `wire.connect` in one `commands.batch`, one step, the terminal named after it (N-14, numbered when the name is taken) and of its type; greyed when its type is not known |
+| Right-click | the edge of the frame, a terminal of the frame | "Add input" and "Add output": a field in place on that edge for its name (`name`, or `name = default` for an input), then the list of types, searched as quick insertion searches, the types of the language first, then those of the project and its libraries; a unit typed by its name gives the number of that unit (`mV` gives `f64[mV]`; `ohm`, `u` and `deg` spell `Ω`, `µ` and `°`), any named unit of spec 3.3 with its prefixes; the type chosen is `signature.add`. `name: type` typed in full adds it at once. On a terminal of the frame, also "Rename", "Type…" (the same list, `signature.set_type`), "Default…" (an input) and "Remove" (`signature.remove`) (decisions of the owner, 2026-11-19) |
 | Right-click | the empty canvas | The palette of functions (2.4); setting: "menu first" |
 | Drop | from the panel `Palette` ([ide.md](ide.md), 4) | `node.add` with `at`, where it is dropped; over a wire, into it (2.5) |
 
