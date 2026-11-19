@@ -97,6 +97,35 @@ pub enum PrimitiveTy {
 }
 
 impl PrimitiveTy {
+    /// The number type it is, without a unit; None for any other.
+    pub fn number_kind(self) -> Option<labcraft_types::NumberKind> {
+        use labcraft_types::NumberKind;
+        Some(match self {
+            PrimitiveTy::I32 => NumberKind::I32,
+            PrimitiveTy::F32 => NumberKind::F32,
+            PrimitiveTy::F64 => NumberKind::F64,
+            PrimitiveTy::U8 => NumberKind::U8,
+            PrimitiveTy::U16 => NumberKind::U16,
+            PrimitiveTy::I16 => NumberKind::I16,
+            PrimitiveTy::U32 => NumberKind::U32,
+            PrimitiveTy::I64 => NumberKind::I64,
+            PrimitiveTy::Bool
+            | PrimitiveTy::Text
+            | PrimitiveTy::Texts
+            | PrimitiveTy::Bytes
+            | PrimitiveTy::U8s
+            | PrimitiveTy::Timestamp
+            | PrimitiveTy::Duration
+            | PrimitiveTy::Error
+            | PrimitiveTy::Var(_)
+            | PrimitiveTy::ArrayOf(_)
+            | PrimitiveTy::Rows(_)
+            | PrimitiveTy::Rectangle(_)
+            | PrimitiveTy::Function
+            | PrimitiveTy::None => return None,
+        })
+    }
+
     /// As appendix A writes it, its type variables named by `variables` (`T` past them); empty for [`PrimitiveTy::None`].
     pub fn text(self, variables: &[&str]) -> String {
         let variable = |index: usize| variables.get(index).copied().unwrap_or("T").to_owned();

@@ -514,21 +514,23 @@ impl SessionJudge<'_> {
     /// Whether a library of this name replaces the primitive library that gives way to it (docs/cli.md, section 3, rule 1),
     /// as the check of `file` resolves its `use`: a folder of the project is in every check of the root; a library of a
     /// `--lib-path` only once a file uses it, so a file that does not yet is checked with the `use` that `node.add` writes.
-    fn replaced(&self, file: &str, library: &str) -> bool {
-        let has = |checked: &Checked| checked.libraries.iter().any(|found| found.name == library);
+    fn replaced(&self, file: &str, library: PrimitiveLibrary) -> bool {
         let Some((checked, names)) = self.checked() else { return false };
-        if has(checked) {
+        if checked.replaces(library) {
             return true;
         }
-        let uses_it = checked
-            .files
-            .iter()
-            .find(|found| found.shown == file)
-            .is_some_and(|found| found.file.uses.iter().any(|used| used.path.rest.is_empty() && names.resolve(used.path.first) == library));
+        // Without a `--lib-path`, only a folder of the project could replace it, and the check of the root has them all.
+        if self.session.config.lib_paths.is_empty() {
+            return false;
+        }
+        let uses_it =
+            checked.files.iter().find(|found| found.shown == file).is_some_and(|found| {
+                found.file.uses.iter().any(|used| used.path.rest.is_empty() && names.resolve(used.path.first) == library.as_str())
+            });
         if uses_it {
             return false;
         }
-        self.with_use(file, library).and_then(|kept| kept.checked.first().map(|(checked, _)| has(checked))).unwrap_or(false)
+        self.with_use(file, library.as_str()).and_then(|kept| kept.checked.first().map(|(checked, _)| checked.replaces(library))).unwrap_or(false)
     }
 
     /// A primitive of `library`, as appendix A declares it.
@@ -567,7 +569,7 @@ impl Judge for SessionJudge<'_> {
         };
         // `bytes`, added after M0, gives way to a library of its name (docs/cli.md, section 3, rule 1).
         if let Some((library_of, library, name)) = primitive_of
-            && (!library_of.gives_way() || !self.replaced(file, library))
+            && (!library_of.gives_way() || !self.replaced(file, library_of))
         {
             return self.primitive_lookup(library_of, library, name, call);
         }
@@ -771,11 +773,12 @@ impl SessionJudge<'_> {
 
     /// The name of a call nearest to `call`.
     fn nearest(&self, call: &str) -> Vec<String> {
-        let replaced = |library: PrimitiveLibrary| {
-            library.gives_way() && self.checked().is_some_and(|(checked, _)| checked.libraries.iter().any(|found| found.name == library.as_str()))
-        };
-        let mut known: Vec<String> =
-            PRIMITIVES.iter().filter(|found| !replaced(found.library)).map(|found| format!("{}.{}", found.library.as_str(), found.name)).collect();
+        let checked = self.checked().map(|(checked, _)| checked);
+        let mut known: Vec<String> = PRIMITIVES
+            .iter()
+            .filter(|found| !checked.is_some_and(|checked| checked.replaces(found.library)))
+            .map(|found| format!("{}.{}", found.library.as_str(), found.name))
+            .collect();
         if let Some((checked, names)) = self.checked() {
             for library in &checked.libraries {
                 for name in library.functions.keys().chain(library.types.keys()) {

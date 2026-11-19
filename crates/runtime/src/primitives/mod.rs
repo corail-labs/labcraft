@@ -219,6 +219,27 @@ fn variadic<'v>(call: &'v Call<'_>) -> Result<&'v [Value], Fault> {
     call.inputs.get(start..start.saturating_add(variadic.count as usize)).ok_or_else(|| Fault::bug("a variadic parameter beyond the inputs"))
 }
 
+/// The input at this index, an `i32`.
+fn i32_input(call: &Call<'_>, index: usize, name: &str) -> Result<i32, Fault> {
+    match input(call, index)? {
+        Value::I32(value) => Ok(*value),
+        _ => Err(wrong(name)),
+    }
+}
+
+/// The input at this index, a `bool`.
+fn bool_input(call: &Call<'_>, index: usize, name: &str) -> Result<bool, Fault> {
+    match input(call, index)? {
+        Value::Bool(value) => Ok(*value),
+        _ => Err(wrong(name)),
+    }
+}
+
+/// A length, as the `i32` the language gives it (Q-25).
+fn length_value(length: usize, name: &str) -> Result<Value, Fault> {
+    i32::try_from(length).map(Value::I32).map_err(|_| Fault::out_of_range(format!("{name}: a length of {length} is not an i32 (Q-25)")))
+}
+
 fn output_type(call: &Call<'_>, index: usize) -> Result<TyId, Fault> {
     call.output_types.get(index).copied().ok_or_else(|| Fault::bug(format!("a primitive without its output {index}")))
 }

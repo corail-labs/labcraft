@@ -8,21 +8,10 @@ use std::sync::Arc;
 use labcraft_types::{NumberKind, Ty};
 
 use super::number::{as_i128, to_kind};
-use super::{Call, Host, Outcome, input, output_type, room_for, variadic, wrong};
+use super::{Call, Host, Outcome, i32_input, input, length_value, output_type, room_for, variadic, wrong};
 use crate::convert::{grid, integer};
 use crate::fault::Fault;
 use crate::value::{Grid, Items, VALUE_COST, Value, logical_size};
-
-fn index_of(call: &Call<'_>, at: usize, name: &str) -> Result<i32, Fault> {
-    match input(call, at)? {
-        Value::I32(index) => Ok(*index),
-        _ => Err(wrong(name)),
-    }
-}
-
-fn length_value(length: usize, name: &str) -> Result<Value, Fault> {
-    i32::try_from(length).map(Value::I32).map_err(|_| Fault::out_of_range(format!("{name}: a length of {length} is not an i32 (Q-25)")))
-}
 
 fn out_of_range(host: &dyn Host, index: i64, length: usize) -> Outcome {
     Outcome::Fail(host.error("array.index_out_of_range", 0, format!("index {index} outside the array (size {length})")))
@@ -85,7 +74,7 @@ pub fn len(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
 
 /// The item at `index`; of an `[T; 2]`, the row.
 pub fn get(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
-    let index = index_of(call, 1, "array.get")?;
+    let index = i32_input(call, 1, "array.get")?;
     let (item, length) = match input(call, 0)? {
         Value::Array(items) => (usize::try_from(index).ok().and_then(|at| items.items().get(at)).cloned(), items.len()),
         Value::Grid(grid) => {
@@ -107,7 +96,7 @@ pub fn get(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
 
 pub fn set(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
     as_rows(call, host, 0, "array.set")?;
-    let index = index_of(call, 1, "array.set")?;
+    let index = i32_input(call, 1, "array.set")?;
     let length = items_of(call, 0, "array.set")?.len();
     let Some(at) = usize::try_from(index).ok().filter(|at| *at < length) else {
         return Ok(out_of_range(host, i64::from(index), length));
@@ -157,7 +146,7 @@ pub fn concat(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault
 }
 
 pub fn repeat(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
-    let count = index_of(call, 1, "array.repeat")?;
+    let count = i32_input(call, 1, "array.repeat")?;
     let Ok(count) = usize::try_from(count) else {
         return Ok(Outcome::Fail(host.error("array.negative_size", 0, format!("count {count} is negative"))));
     };
@@ -170,7 +159,7 @@ pub fn repeat(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault
 /// From `start` for `length` items, or rows of an `[T; 2]`: with no wire, `start` is 0 and `length` reaches the end; a
 /// negative value or what goes past the end fails.
 pub fn slice(call: &mut Call<'_>, host: &mut dyn Host) -> Result<Outcome, Fault> {
-    let start = index_of(call, 1, "array.slice")?;
+    let start = i32_input(call, 1, "array.slice")?;
     let length = input(call, 2)?;
     let total = match input(call, 0)? {
         Value::Array(items) => items.len(),

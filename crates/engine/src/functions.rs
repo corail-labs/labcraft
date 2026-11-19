@@ -122,18 +122,12 @@ fn primitive_variable(variables: &Variables, index: usize) -> SlotFit {
 
 /// What the rule of fit reads of a type of appendix A; None for a parameter of a kind, which takes no wire.
 fn primitive_fit(ty: PrimitiveTy, variables: &Variables) -> Option<SlotFit> {
-    let number = |number: &str| SlotFit::Number { number: number.to_owned(), unit: None };
+    if let Some(kind) = ty.number_kind() {
+        return Some(SlotFit::Number { number: kind.as_str().to_owned(), unit: None });
+    }
     let base = |base: &str| SlotFit::Base { base: base.to_owned() };
     Some(match ty {
         PrimitiveTy::Bool => base("bool"),
-        PrimitiveTy::I32 => number("i32"),
-        PrimitiveTy::F32 => number("f32"),
-        PrimitiveTy::F64 => number("f64"),
-        PrimitiveTy::U8 => number("u8"),
-        PrimitiveTy::U16 => number("u16"),
-        PrimitiveTy::I16 => number("i16"),
-        PrimitiveTy::U32 => number("u32"),
-        PrimitiveTy::I64 => number("i64"),
         PrimitiveTy::Text => base("string"),
         PrimitiveTy::Bytes => base("bytes"),
         PrimitiveTy::Timestamp => base("timestamp"),
@@ -147,7 +141,16 @@ fn primitive_fit(ty: PrimitiveTy, variables: &Variables) -> Option<SlotFit> {
         },
         PrimitiveTy::Rectangle(index) => SlotFit::Array { array: Box::new(primitive_variable(variables, index)), dimensions: Some(2) },
         PrimitiveTy::Texts | PrimitiveTy::U8s | PrimitiveTy::Function => SlotFit::Shape { shape: ty.text(variables.names) },
-        PrimitiveTy::None => return None,
+        // The numbers, above.
+        PrimitiveTy::I32
+        | PrimitiveTy::F32
+        | PrimitiveTy::F64
+        | PrimitiveTy::U8
+        | PrimitiveTy::U16
+        | PrimitiveTy::I16
+        | PrimitiveTy::U32
+        | PrimitiveTy::I64
+        | PrimitiveTy::None => return None,
     })
 }
 
@@ -496,16 +499,16 @@ fn shipped_entries(session: &Session, limits: &Limits) -> Vec<Entry> {
     entries
 }
 
-/// The project's own, from the check of the root: each library of the folder and its sub-libraries; and the names of every
-/// library that check read, dependencies included.
-fn project_entries(session: &mut Session) -> Result<(Vec<Entry>, Vec<String>), CommandError> {
+/// The project's own, from the check of the root: each library of the folder and its sub-libraries; and the primitive
+/// libraries that a library of the check replaces (`docs/cli.md`, section 3, rule 1).
+fn project_entries(session: &mut Session) -> Result<(Vec<Entry>, Vec<PrimitiveLibrary>), CommandError> {
     let root = session.root.clone();
     let kept = session.checked(&root)?;
     let mut entries = Vec::new();
-    let mut read = Vec::new();
+    let mut replaced = Vec::new();
     for (checked, names) in &kept.checked.checked {
         let mut names = names.clone();
-        read.extend(checked.libraries.iter().map(|library| library.name.clone()));
+        replaced.extend(PRIMITIVES.iter().map(|primitive| primitive.library).filter(|library| checked.replaces(*library)));
         for (index, library) in checked.libraries.iter().enumerate() {
             if !library.checked {
                 continue;
@@ -514,7 +517,7 @@ fn project_entries(session: &mut Session) -> Result<(Vec<Entry>, Vec<String>), C
             entries.extend(entries_of(&library.name, &files, &mut names, None));
         }
     }
-    Ok((entries, read))
+    Ok((entries, replaced))
 }
 
 /// `functions.list`.
@@ -535,13 +538,10 @@ pub fn list(session: &mut Session, params: &Params) -> Result<Value, CommandErro
     });
     let mut all: Vec<Entry> = primitives.collect();
     all.extend(shipped_entries(session, &limits));
-    let (project, read) = project_entries(session)?;
+    let (project, replaced) = project_entries(session)?;
     // A primitive added after M0 gives way to a library of its name, of the project or of a `--lib-path` (docs/cli.md,
-    // section 3, rule 1).
-    all.retain(|entry| {
-        let gives_way = PrimitiveLibrary::from_name(&entry.library).is_some_and(PrimitiveLibrary::gives_way);
-        !gives_way || !read.contains(&entry.library)
-    });
+    // section 3, rule 1); the entries of that library come after.
+    all.retain(|entry| PrimitiveLibrary::from_name(&entry.library).is_none_or(|library| !replaced.contains(&library)));
     all.extend(project);
     follow_aliases(&mut all);
     let kept: Vec<Entry> =
