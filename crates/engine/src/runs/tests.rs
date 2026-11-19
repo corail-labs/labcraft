@@ -946,3 +946,40 @@ fn a_report_keeps_the_order_of_its_keys_and_of_the_fields_of_a_struct() {
     assert!(text.contains(r#""value":{"zed":1.0,"alpha":2.0}"#), "{text}");
     assert!(text.starts_with(r#"{"schema":"labcraft-run/1","status":"ok","run":"#), "{text}");
 }
+
+/// What `run.start` tells the libraries of a run (io.md 7): the project, whether a simulation file was given, who started it.
+fn context_of(session: &Session, author: &crate::Author, params: Value) -> labcraft_runtime::io::Context {
+    let command = crate::registry::command("run.start").unwrap();
+    let params = crate::params::judge(command, &params).unwrap();
+    let mut given = super::prepare::given(&params, 64, 1 << 20).unwrap();
+    given.by = super::started_by(session, author, "r1");
+    match super::prepare::prepare(session, &given, "r1").unwrap() {
+        super::prepare::Ready::Run(prepared) => prepared.context,
+        super::prepare::Ready::Refused(report) => panic!("{report}"),
+    }
+}
+
+#[test]
+fn a_run_tells_its_libraries_the_project_the_simulation_file_and_who_started_it() {
+    use labcraft_runtime::io::{Allowed, Judged, Reach, StartedBy};
+    let memory = project();
+    memory.put("/p/bench.toml", "");
+    let mut session = session(&memory);
+    let tcp = Reach::Endpoint { endpoint: "tcp:10.0.0.5:502".to_owned(), given: "tcp:10.0.0.5:502".to_owned() };
+    // The window and the command line are the human (io.md 4), with no file unless `sim` names one.
+    let context = context_of(&session, &crate::Author::User, json!({ "function": "double", "args": { "x": 1 } }));
+    assert!(matches!(context.started_by, StartedBy::Human));
+    assert_eq!(context.project, Some(PathBuf::from("/p")));
+    assert!(!context.simulation_file);
+    let context = context_of(&session, &crate::Author::User, json!({ "function": "double", "args": { "x": 1 }, "sim": "bench.toml" }));
+    assert!(context.simulation_file);
+    // An MCP client is an agent, by its name: nothing is allowed until the app says what (`--allow-hardware`, #232).
+    let agent = crate::Author::Agent("client".to_owned());
+    let context = context_of(&session, &agent, json!({ "function": "double", "args": { "x": 1 } }));
+    let StartedBy::Agent { client, .. } = &context.started_by else { panic!("{:?}", context.started_by) };
+    assert_eq!(client, "client");
+    assert!(matches!(context.judge(&tcp), Judged::NotAllowed(_)));
+    session.allow_agents(Allowed { endpoints: ["tcp:10.0.0.5:502".to_owned()].into(), ..Allowed::default() });
+    let context = context_of(&session, &agent, json!({ "function": "double", "args": { "x": 1 } }));
+    assert!(matches!(context.judge(&tcp), Judged::Allowed));
+}

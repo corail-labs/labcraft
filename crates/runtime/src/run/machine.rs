@@ -21,7 +21,7 @@ use super::{
 use crate::convert::{Env, constant, read};
 use crate::fault::{Fault, FaultCode};
 use crate::json::Describe;
-use crate::native::{CallContext, CallId, HandleInfo, Job, Key, LibraryRun, LogBudget, NativeOutcome, Step};
+use crate::native::{CallContext, CallId, HandleInfo, Job, Key, LibraryRun, LogBudget, Mode, NativeOutcome, Start, Step};
 use crate::pool::Work;
 use crate::value::{ErrorData, Handle, Origin, Place, Value};
 
@@ -410,8 +410,9 @@ impl ForState<'_> {
 
 impl<'p, 'o> Machine<'p, 'o> {
     pub(super) fn new(run: Run<'p>, control: &'o mut dyn Control, observer: &'o mut dyn Observer) -> Self {
-        let Run { program, names, files, natives, inputs, mut settings } = run;
+        let Run { program, names, files, natives, inputs, mut settings, context } = run;
         let real_time = settings.real_time.take();
+        let mode = if real_time.is_some() { Mode::RealTime } else { Mode::Deterministic };
         let budget = LogBudget::of_run(settings.max_memory);
         let mut native_of = HashMap::new();
         let mut slots = Vec::with_capacity(natives.len());
@@ -420,7 +421,9 @@ impl<'p, 'o> Machine<'p, 'o> {
         // as it starts ends the run before anything runs.
         for (index, native) in natives.iter().enumerate() {
             let number = u32::try_from(index).unwrap_or(u32::MAX);
-            match catch_unwind(AssertUnwindSafe(|| native.native.start_run(number, native.simulation, budget.clone()))) {
+            match catch_unwind(AssertUnwindSafe(|| {
+                native.native.start_run(Start { library: number, simulation: native.simulation, budget: budget.clone(), mode, context: &context })
+            })) {
                 Ok(run) => {
                     native_of.insert(native.library, slots.len());
                     slots.push(NativeSlot { name: native.native.name().to_owned(), run });

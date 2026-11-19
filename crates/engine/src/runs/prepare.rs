@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use labcraft_check::Checked;
 use labcraft_ir::{ElementId, Program, Refused, lower_for_run};
+use labcraft_runtime::io::{Context, StartedBy};
 use labcraft_runtime::native::NativeLibrary;
 use labcraft_runtime::native::Simulation;
 use labcraft_runtime::run::{PanelSetting, SetBy, Settings};
@@ -76,6 +77,8 @@ pub(crate) struct Prepared {
     pub real_time: bool,
     /// `--max-nesting`, for the values of `run.set_element`.
     pub max_nesting: u32,
+    /// What its libraries learn of it (io.md 7).
+    pub context: Context,
 }
 
 /// A file of the command line, outside the rules of paths of commands (commands.md 2): named from the current folder,
@@ -156,6 +159,8 @@ pub(crate) struct Given {
     /// How long `run.start` waits, in nanoseconds.
     pub wait: i64,
     pub line: CommandLine,
+    /// The human, or the agent that called `run.start`, with its rights for this run (io.md 4).
+    pub by: StartedBy,
 }
 
 fn invalid(parameter: &str, message: impl Into<String>) -> CommandError {
@@ -316,6 +321,7 @@ pub(crate) fn given(params: &Params, max_nesting: u32, max_file_size: u64) -> Re
         trace,
         wait: wait_param(params, max_nesting)?,
         line: CommandLine::default(),
+        by: StartedBy::Human,
     })
 }
 
@@ -805,6 +811,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         texts: given.line.texts,
         real_time: given.real_time,
         max_nesting,
+        context: Context { simulation_file: sim.is_some(), project: Some(session.root.clone()), started_by: given.by.clone() },
     })))
 }
 

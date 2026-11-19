@@ -10,7 +10,7 @@ use std::borrow::Cow;
 use labcraft_check::{Checked, Content, Found, Libraries, LibrarySource, Origin, SourceFile, check_for_run};
 use labcraft_ir::{ElementId, Program, lower_for_run};
 use labcraft_runtime::Value;
-use labcraft_runtime::native::NativeLibrary;
+use labcraft_runtime::native::{Context, NativeLibrary};
 use labcraft_runtime::run::{AbortBy, Control, Native, PanelSetting, Pool, RealTime, Run, RunEnd, SetBy, Settings, Status, Unobserved, Wake, run};
 use labcraft_runtime::{FaultCode, simulation};
 use labcraft_types::{Interner, Limits};
@@ -79,7 +79,15 @@ fn run_controlled(bench: &Bench, sim: &str, settings: Settings, control: &mut dy
     let simulations = file.judge(&[&Visa as &dyn NativeLibrary]).unwrap();
     let visa = bench.checked.libraries.iter().find(|library| library.name == "visa").unwrap();
     let natives = [Native { library: visa.id, native: &Visa, simulation: simulations.first().and_then(Option::as_ref) }];
-    let given = Run { program: &bench.program, names: &bench.names, files: &bench.checked.files, natives: &natives, inputs: defaults(), settings };
+    let given = Run {
+        program: &bench.program,
+        names: &bench.names,
+        files: &bench.checked.files,
+        natives: &natives,
+        inputs: defaults(),
+        settings,
+        context: Context { simulation_file: true, ..Context::default() },
+    };
     run(given, control, &mut Unobserved)
 }
 

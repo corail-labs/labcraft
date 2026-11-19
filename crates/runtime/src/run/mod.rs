@@ -19,7 +19,7 @@ use labcraft_types::{Interner, LibraryId, Name};
 
 use crate::fault::Fault;
 use crate::json::Describe;
-use crate::native::{HandleInfo, InstrumentLog, Logs, NativeLibrary, Simulation};
+use crate::native::{Context, HandleInfo, InstrumentLog, Logs, NativeLibrary, Simulation};
 pub use crate::pool::Pool;
 use crate::value::{Handle, Value};
 
@@ -392,6 +392,8 @@ pub struct Run<'a> {
     /// The inputs of the top-level function, in the order of its signature, in their types.
     pub inputs: Vec<Value>,
     pub settings: Settings,
+    /// What its libraries learn of it besides their sections (io.md 7): the mode is that of the settings.
+    pub context: Context,
 }
 
 /// Runs `functions[0]` of the program to its end, in deterministic mode, or in real time with [`Settings::real_time`]. It

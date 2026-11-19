@@ -14,19 +14,25 @@ use labcraft_types::{Interner, Limits, Severity};
 
 use super::{AbortBy, Control, Live, Native, Observer, PanelSetting, Pool, RealTime, Run, RunEnd, SetBy, Settings, Status, Wake, run};
 use crate::fault::FaultCode;
-use crate::native::{CallContext, CallId, HandleInfo, Key, LibraryCode, LibraryRun, LogBudget, NativeLibrary, NativeOutcome, Simulation, Step};
+use crate::io::{Allowed, Consent, Open, Question, Reach, Rights, StartedBy, open_real};
+use crate::native::{CallContext, CallId, Context, HandleInfo, Key, LibraryCode, LibraryRun, Mode, NativeLibrary, NativeOutcome, Start, Step};
 use crate::value::{Handle, Value};
 
 const MS: i64 = 1_000_000;
 
 /// A library shipped for these tests: `bench.open` gives a handle, `bench.slow` holds the key of its handle for one second,
 /// `bench.block` holds it while work that blocks waits for the gate of the test, `bench.close` closes it and is `always`.
+/// `bench.connect` opens a real name as a transport of M4 does (io.md 3, 4), reaching no hardware: it notes the name.
 const BENCH: &[(&str, &str)] = &[
     ("port.lct", "labcraft 1\n\ntype port = opaque\n"),
     ("open.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"open\")\nfn open(err: error = none) -> (h: port, err: error)\n"),
     ("slow.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"slow\")\nfn slow(h: port, err: error = none) -> (h: port, err: error)\n"),
     ("block.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"block\")\nfn block(h: port, err: error = none) -> (h: port, err: error)\n"),
     ("close.lcf", "labcraft 1\n\nextern rust(crate: \"test\", function: \"close\")\nfn close(h: port, err: error = none) -> (err: error)\n"),
+    (
+        "connect.lcf",
+        "labcraft 1\n\nextern rust(crate: \"test\", function: \"connect\")\nfn connect(name: string, err: error = none) -> (h: port, err: error)\n",
+    ),
 ];
 
 /// What the work of `bench.block` waits for: it never waits more than 30 s, so that a test cannot hang.
@@ -48,7 +54,7 @@ impl Gate {
     }
 }
 
-const MANIFEST: &str = "name = \"bench\"\nversion = \"0.1.0\"\ndescription = \"test\"\ndependencies = []\nalways = [\"close\"]\nresources = [\"port\"]\ncategories = []\n";
+const MANIFEST: &str = "name = \"bench\"\nversion = \"0.1.0\"\ndescription = \"test\"\ndependencies = []\nalways = [\"close\"]\nresources = [\"port\"]\ncategories = [\"bench.not_found\", \"io.needs_real_time\", \"io.not_allowed\"]\n";
 
 struct Shipped;
 
@@ -78,12 +84,25 @@ struct Seen {
     gate: Option<Arc<Gate>>,
     panics: bool,
     resumed: Vec<u64>,
+    /// The work of `bench.block` going now, and the most that went at once.
+    inside: usize,
+    most: usize,
+    /// What each run of the library learnt as it started: whether a simulation file was given, and the mode.
+    started: Vec<(bool, Mode)>,
+    /// The real names that `bench.connect` reached: the hardware, were it real.
+    reached: Vec<String>,
 }
 
 struct Bench(Arc<Mutex<Seen>>);
 
 struct BenchRun {
     library: u32,
+    mode: Mode,
+    context: Context,
+    /// What the work of a question returned, for each call of `connect` that asked.
+    answers: HashMap<CallId, Box<dyn Any + Send>>,
+    /// The name given to each call of `connect`.
+    names: HashMap<CallId, String>,
     open: Vec<bool>,
     calls: HashMap<CallId, (String, Handle, u8)>,
     next: u64,
@@ -97,8 +116,49 @@ impl NativeLibrary for Bench {
     fn codes(&self) -> &'static [LibraryCode] {
         &[]
     }
-    fn start_run(&self, library: u32, _: Option<&Simulation>, _: LogBudget) -> Box<dyn LibraryRun> {
-        Box::new(BenchRun { library, open: Vec::new(), calls: HashMap::new(), next: 0, seen: Arc::clone(&self.0) })
+    fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun> {
+        self.0.lock().unwrap().started.push((start.context.simulation_file, start.mode));
+        Box::new(BenchRun {
+            library: start.library,
+            mode: start.mode,
+            context: start.context.clone(),
+            answers: HashMap::new(),
+            names: HashMap::new(),
+            open: Vec::new(),
+            calls: HashMap::new(),
+            next: 0,
+            seen: Arc::clone(&self.0),
+        })
+    }
+}
+
+impl BenchRun {
+    /// io.md 3 and 4, as a transport applies them once it has read the name and has the transport: the file describes no
+    /// device of `bench`, so with one the name is not found.
+    fn connect(&mut self, call: CallId) -> Step {
+        let name = self.names.get(&call).cloned().unwrap_or_default();
+        let reach = Reach::Endpoint { endpoint: name.clone(), given: name.clone() };
+        let open = match self.answers.remove(&call) {
+            Some(done) => match self.context.answered(&reach, done) {
+                Ok(()) => Open::Real,
+                Err(outcome) => Open::Fail(outcome),
+            },
+            None => open_real(self.mode, &self.context, false, &reach),
+        };
+        let outcome = match open {
+            Open::Ask(job) => return Step::Blocking(job),
+            Open::Simulated | Open::Real => {
+                self.seen.lock().unwrap().reached.push(name);
+                self.open.push(true);
+                let handle = Handle { library: self.library, number: self.open.len() as u64 };
+                NativeOutcome::Outputs(vec![Value::Handle(handle), Value::NONE])
+            }
+            Open::NotFound => NativeOutcome::Fail { category: "bench.not_found", code: 0, message: format!("no device `{name}`") },
+            Open::Fail(outcome) => outcome,
+        };
+        self.calls.remove(&call);
+        self.names.remove(&call);
+        Step::Done(outcome)
     }
 }
 
@@ -110,6 +170,9 @@ impl LibraryRun for BenchRun {
         };
         self.next += 1;
         let id = CallId(self.next);
+        if let Some(Value::String(name)) = inputs.first() {
+            self.names.insert(id, name.to_string());
+        }
         self.calls.insert(id, (function.to_owned(), handle, 0));
         Some(id)
     }
@@ -117,6 +180,9 @@ impl LibraryRun for BenchRun {
     fn step(&mut self, call: CallId, _: CallContext) -> Step {
         let Some((function, handle, phase)) = self.calls.get_mut(&call) else { return Step::Done(NativeOutcome::Outputs(vec![])) };
         let key = Key { library: self.library, id: handle.number };
+        if function == "connect" {
+            return self.connect(call);
+        }
         match (function.as_str(), *phase) {
             ("open", _) => {
                 self.open.push(true);
@@ -147,11 +213,18 @@ impl LibraryRun for BenchRun {
                     let seen = self.seen.lock().unwrap();
                     (seen.gate.clone(), seen.panics)
                 };
+                let seen = Arc::clone(&self.seen);
                 Step::Blocking(Box::new(move || {
                     assert!(!panics, "the work of `bench.block` panics, as the test asks");
+                    {
+                        let mut seen = seen.lock().unwrap();
+                        seen.inside += 1;
+                        seen.most = seen.most.max(seen.inside);
+                    }
                     if let Some(gate) = gate {
                         gate.pass();
                     }
+                    seen.lock().unwrap().inside -= 1;
                     Box::new(42_u64) as Box<dyn Any + Send>
                 }))
             }
@@ -171,9 +244,12 @@ impl LibraryRun for BenchRun {
         }
     }
 
-    fn resume(&mut self, _: CallId, done: Box<dyn Any + Send>) {
-        if let Ok(value) = done.downcast::<u64>() {
-            self.seen.lock().unwrap().resumed.push(*value);
+    fn resume(&mut self, call: CallId, done: Box<dyn Any + Send>) {
+        match done.downcast::<u64>() {
+            Ok(value) => self.seen.lock().unwrap().resumed.push(*value),
+            Err(done) => {
+                self.answers.insert(call, done);
+            }
         }
     }
 
@@ -267,6 +343,18 @@ fn run_files(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings, see
 }
 
 fn run_controlled(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings, seen: &Arc<Mutex<Seen>>, control: &mut dyn Control) -> Ran {
+    run_in(files, inputs, settings, seen, control, Context::default())
+}
+
+/// A run with what the host says of it (io.md 7).
+fn run_in(
+    files: &[(&str, &str)],
+    inputs: Vec<Value>,
+    settings: Settings,
+    seen: &Arc<Mutex<Seen>>,
+    control: &mut dyn Control,
+    context: Context,
+) -> Ran {
     let mut names = Interner::new();
     let checked = checked(files, &mut names);
     let start = checked.files.iter().position(|file| file.shown == files[0].0).unwrap();
@@ -279,7 +367,7 @@ fn run_controlled(files: &[(&str, &str)], inputs: Vec<Value>, settings: Settings
         .map(|library| Native { library: library.id, native: &bench, simulation: None })
         .collect();
     let mut heard = Heard { events: Vec::new(), names: &names };
-    let end = run(Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings }, control, &mut heard);
+    let end = run(Run { program: &program, names: &names, files: &checked.files, natives: &natives, inputs, settings, context }, control, &mut heard);
     let events = heard.events;
     drop(natives);
     Ran { end, events, program, names }
@@ -1026,4 +1114,182 @@ fn in_real_time_a_setting_of_set_is_dated_when_it_applies() {
     assert_eq!(ran.outputs()[0], "2.0");
     assert!(ran.end.panel[0].applied);
     assert_eq!(ran.end.panel[0].setting.at, 155 * MS);
+}
+
+// Real I/O (io.md 3, 4, 7): what a library learns of its run, and the table of what a real name reaches -------------------
+
+/// `bench.connect` of a real name, its error the output of the function.
+const CONNECT: &str =
+    "labcraft 1\n\nuse bench\n\nfn f() -> (err: error) {\n    h, e = bench.connect(\"tcp:10.0.0.5:5025\")\n    err = bench.close(h, err: e)\n}\n";
+
+/// The category of the error the function gave, `none` when there is none.
+fn category(ran: &Ran) -> String {
+    match &ran.end.outputs[0] {
+        Value::Error(Some(error)) => error.category.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn code(ran: &Ran) -> i64 {
+    match &ran.end.outputs[0] {
+        Value::Error(Some(error)) => error.code,
+        _ => 0,
+    }
+}
+
+fn connect_in(settings: Settings, context: Context, seen: &Arc<Mutex<Seen>>) -> Ran {
+    run_in(&[("f.lcf", CONNECT)], vec![], settings, seen, &mut Virtual::default(), context)
+}
+
+fn agent(allowed: Allowed) -> Context {
+    Context {
+        started_by: StartedBy::Agent { client: "client".to_owned(), rights: Rights::of_run(allowed, "r1", "client", None) },
+        ..Context::default()
+    }
+}
+
+#[test]
+fn without_a_simulation_file_a_real_name_needs_real_time_at_once() {
+    let seen = Arc::default();
+    let ran = connect_in(Settings::default(), Context::default(), &seen);
+    // io.md 3, deterministic mode without `--sim`: `io.needs_real_time` at the open, code 0 (io.md 7), with the clock still at
+    // 0, and nothing reached.
+    assert_eq!(ran.end.status, Status::Error);
+    assert_eq!((category(&ran).as_str(), code(&ran)), ("io.needs_real_time", 0));
+    assert_eq!(ran.end.clock, 0);
+    let Value::Error(Some(error)) = &ran.end.outputs[0] else { panic!("{:?}", ran.end.outputs) };
+    assert!(error.message.contains("--real-time"), "{}", error.message);
+    let seen = seen.lock().unwrap();
+    assert!(seen.reached.is_empty());
+    assert_eq!(seen.started, [(false, Mode::Deterministic)]);
+}
+
+#[test]
+fn in_real_time_a_run_of_the_human_reaches_the_hardware() {
+    let seen = Arc::default();
+    let ran = connect_in(real_time(0), Context::default(), &seen);
+    // io.md 3, real time without `--sim`; io.md 4, the human has every right. The library learns that no file was given.
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.outputs);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.reached, ["tcp:10.0.0.5:5025"]);
+    assert_eq!(seen.started, [(false, Mode::RealTime)]);
+}
+
+#[test]
+fn with_a_simulation_file_a_real_name_it_does_not_describe_is_not_found() {
+    for settings in [Settings::default(), real_time(0)] {
+        let seen = Arc::default();
+        let context = Context { simulation_file: true, ..Context::default() };
+        let ran = connect_in(settings, context, &seen);
+        // io.md 3: with `--sim`, the file is the whole bench, in both modes: the category of the library, never the hardware.
+        assert_eq!(category(&ran), "bench.not_found");
+        let seen = seen.lock().unwrap();
+        assert!(seen.reached.is_empty());
+        assert!(seen.started[0].0, "the library is told a file was given");
+    }
+}
+
+#[test]
+fn an_agent_without_the_right_gets_not_allowed() {
+    let seen = Arc::default();
+    let ran = connect_in(real_time(0), agent(Allowed::default()), &seen);
+    // io.md 4: a run of an agent on `labcraft-cli mcp` with no `--allow-hardware`: `io.not_allowed`, code 0, on a wire, and
+    // its message says how the endpoint is allowed.
+    assert_eq!(ran.end.status, Status::Error);
+    assert_eq!((category(&ran).as_str(), code(&ran)), ("io.not_allowed", 0));
+    let Value::Error(Some(error)) = &ran.end.outputs[0] else { panic!("{:?}", ran.end.outputs) };
+    assert!(error.message.contains("--allow-hardware tcp:10.0.0.5:5025"), "{}", error.message);
+    assert!(seen.lock().unwrap().reached.is_empty());
+    // Allowed by name, it reaches it.
+    let seen = Arc::default();
+    let allowed = Allowed { endpoints: ["tcp:10.0.0.5:5025".to_owned()].into(), ..Allowed::default() };
+    let ran = connect_in(real_time(0), agent(allowed), &seen);
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.outputs);
+    assert_eq!(seen.lock().unwrap().reached, ["tcp:10.0.0.5:5025"]);
+}
+
+/// The question of the window, answered at once with `yes`, and how many times it was asked.
+struct Answers {
+    yes: bool,
+    asked: Mutex<Vec<String>>,
+}
+
+impl Consent for Answers {
+    fn ask(&self, question: &Question<'_>) -> bool {
+        let Reach::Endpoint { endpoint, .. } = question.reach else { return false };
+        self.asked.lock().unwrap().push(endpoint.clone());
+        self.yes
+    }
+}
+
+/// Two branches open one endpoint, then another.
+const TWICE: &str = "labcraft 1\n\nuse bench\nuse errors\n\nfn f() -> (err: error) {\n    a, ea = bench.connect(\"tcp:10.0.0.5:5025\")\n    b, eb = bench.connect(\"tcp:10.0.0.5:5025\")\n    c, ec = bench.connect(\"tcp:10.0.0.6:502\", err: ea)\n    err = errors.merge(ea, eb, ec)\n}\n";
+
+#[test]
+fn the_question_is_asked_once_per_endpoint_and_per_run() {
+    for yes in [true, false] {
+        let seen = Arc::default();
+        let consent = Arc::new(Answers { yes, asked: Mutex::default() });
+        let context = agent(Allowed { consent: Some(Arc::clone(&consent) as Arc<dyn Consent>), ..Allowed::default() });
+        let ran = run_in(&[("f.lcf", TWICE)], vec![], real_time(0), &seen, &mut Virtual::default(), context);
+        // io.md 4: the right is judged once per endpoint and per run: `a` and `b` share one question; `c`, after `a`, asks its
+        // own, or skips on the error of a refused `a` (spec 7.2).
+        let asked = consent.asked.lock().unwrap().clone();
+        let expected: &[&str] = if yes { &["tcp:10.0.0.5:5025", "tcp:10.0.0.6:502"] } else { &["tcp:10.0.0.5:5025"] };
+        assert_eq!(asked, expected, "yes: {yes}");
+        let reached = seen.lock().unwrap().reached.len();
+        if yes {
+            assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.outputs);
+            assert_eq!(reached, 3);
+        } else {
+            // Refused, each open fails with `io.not_allowed`, whose message names the window; `c` skips on the error of `a`.
+            assert_eq!(category(&ran), "io.not_allowed");
+            assert_eq!(reached, 0);
+        }
+    }
+}
+
+#[test]
+fn in_deterministic_mode_an_agent_is_asked_nothing_for_a_real_name() {
+    let seen = Arc::default();
+    let consent = Arc::new(Answers { yes: true, asked: Mutex::default() });
+    let context = agent(Allowed { consent: Some(Arc::clone(&consent) as Arc<dyn Consent>), ..Allowed::default() });
+    let ran = connect_in(Settings::default(), context, &seen);
+    // io.md 3, the order of the checks: `io.needs_real_time` before any right, so no question whose answer could not be used.
+    assert_eq!(category(&ran), "io.needs_real_time");
+    assert!(consent.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn calls_on_one_key_never_overlap_and_a_call_on_another_runs_meanwhile() {
+    let source = "labcraft 1\n\nuse bench\nuse errors\n\nfn f() -> (err: error) {\n    h1, e1 = bench.open()\n    h2, e2 = bench.open()\n    a, ea = bench.block(h1, err: e1)\n    b, eb = bench.block(h1, err: e1)\n    s, es = bench.slow(h2, err: e2)\n    err = errors.merge(ea, eb, es)\n}\n";
+    let gate = Arc::new(Gate::default());
+    let seen = Arc::new(Mutex::new(Seen { gate: Some(Arc::clone(&gate)), ..Seen::default() }));
+    let mut control = Virtual { gate: Some(gate), ..Virtual::default() };
+    let ran = run_real(source, real_time(0), &seen, &mut control);
+    assert_eq!(ran.end.status, Status::Ok, "{:?}", ran.end.fault);
+    // io.md 7: `a` holds the key of `h1` while its work waits, so `b` waits for it; `s`, on `h2`, takes its 1 s meanwhile.
+    // The gate opens once nothing else is to come, at 1 s: `a` ends, then `b` runs its work alone.
+    assert_eq!(ran.events, ["ran h1[] at 0", "ran h2[] at 0", "ran s[] at 1000", "ran a[] at 1000", "ran b[] at 1000", "ran err[] at 1000"]);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.most, 1, "the work of `a` and of `b` never went at once");
+    assert_eq!(seen.resumed, [42, 42]);
+}
+
+#[test]
+fn after_an_abort_during_work_that_blocks_each_open_resource_is_released_once_or_leaked() {
+    let source = "labcraft 1\n\nuse bench\nuse errors\n\nfn f() -> (err: error) {\n    h1, e1 = bench.open()\n    h2, e2 = bench.open()\n    a, ea = bench.block(h1, err: e1)\n    m = errors.merge(ea, e2)\n    err = bench.close(h2, err: m)\n}\n";
+    let gate = Arc::new(Gate::default());
+    let seen = Arc::new(Mutex::new(Seen { gate: Some(Arc::clone(&gate)), ..Seen::default() }));
+    let mut control = Virtual { abort_at: Some(10_000_000), ..Virtual::default() };
+    let ran = run_real(source, real_time(0), &seen, &mut control);
+    gate.open();
+    assert_eq!(ran.end.status, Status::Aborted);
+    // Spec 8.2: the work of `a` never returns within the 5 s of grace, so `h1`, which it holds, is leaked, never released;
+    // `h2`, open and held by no call, is released by its library, once.
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen.released, [2]);
+    assert_eq!(seen.cancelled.len(), 1);
+    let flags: Vec<(bool, bool)> = ran.end.resources.iter().map(|resource| (resource.released, resource.leaked)).collect();
+    assert_eq!(flags, [(false, true), (true, false)]);
 }

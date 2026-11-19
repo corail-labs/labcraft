@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use labcraft_runtime::native::{
-    CallContext, CallId, HandleInfo, LibraryCode, LibraryRun, LogBudget, LogEntry, Logs, NativeLibrary, NativeOutcome, Simulation, Step,
+    CallContext, CallId, HandleInfo, LibraryCode, LibraryRun, LogBudget, LogEntry, Logs, NativeLibrary, NativeOutcome, Start, Step,
 };
 use labcraft_runtime::{Handle, Value, logical_size};
 
@@ -46,8 +46,8 @@ impl NativeLibrary for ResultsLog {
         &[]
     }
 
-    fn start_run(&self, _library: u32, _simulation: Option<&Simulation>, budget: LogBudget) -> Box<dyn LibraryRun> {
-        Box::new(ResultsLogRun { calls: HashMap::new(), next_call: 0, logs: Logs::default(), budget })
+    fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun> {
+        Box::new(ResultsLogRun { calls: HashMap::new(), next_call: 0, logs: Logs::default(), budget: start.budget })
     }
 }
 
