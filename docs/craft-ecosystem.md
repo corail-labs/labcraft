@@ -75,7 +75,7 @@ Collected from the `AGENTS.md` files of SolidCraft and GridCraft and from craft-
 | **One task identifier per commit** | For example `M2.1: borders gallery` | Adopted |
 | **Licence** | MIT OR Apache-2.0, Rust edition 2024 | Adopted (D-19) |
 | **House rules** (craft-contrib) | 15 common rules: pull requests on `main`, a local `plan/`, no secrets… Rule 15: a pull request does not say that an agent wrote it, and no rule of a repository may require it | Most are followed, the block itself not copied. Rule 15 in part: no rule requires saying that an agent helped, but unlike rule 15 an agent's `Co-Authored-By:` is accepted ([AGENTS.md](../AGENTS.md), [CONTRIBUTING.md](../CONTRIBUTING.md)) |
-| **Shared CI** (house rule 11) | Apps call the workflows of `craft-common-actions` (signed release for each platform) instead of copying CI | Not adopted: `checks` and `release` are LabCraft's. To revisit with the signed installer (release 0.4.0) |
+| **Shared CI** (house rule 11) | Apps call the workflows of `craft-common-actions` (signed release for each platform) instead of copying CI | Not adopted: `checks` and `release` are LabCraft's. To revisit with the signed installer for Windows (#255) |
 | **Confined file access** (RFC-0015, a proposal) | `<app>-cli mcp --automation-read-root DIR --automation-write-root DIR`: the folders an agent may read and write, refused without them | In M1, with the MCP server attached to the IDE; `labcraft-cli mcp --project DIR` stays and sets both |
 
 ## What LabCraft can reuse from craft-libs
