@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use labcraft_check::primitives::PrimitiveTy;
-use labcraft_types::{Fit, FitKey, NumberKind, Ty, TyId, TypeTable, Unit};
+use labcraft_types::{Fit, FitKey, Ty, TyId, TypeTable, Unit};
 
 use crate::graph::{self, Edge, Graph, Kind, StructureKind};
 use crate::place::Placement;
@@ -383,13 +383,13 @@ enum Key {
 
 /// The type of a parameter of a primitive of a fixed type (appendix A): a number without a unit for `f64`.
 fn fixed(ty: PrimitiveTy) -> Option<Ty> {
-    let number = |kind: NumberKind| Ty::Number { kind, unit: Unit::ONE };
+    if let Some(kind) = ty.number_kind() {
+        return Some(Ty::Number { kind, unit: Unit::ONE });
+    }
     Some(match ty {
         PrimitiveTy::Bool => Ty::Bool,
-        PrimitiveTy::I32 => number(NumberKind::I32),
-        PrimitiveTy::F32 => number(NumberKind::F32),
-        PrimitiveTy::F64 => number(NumberKind::F64),
         PrimitiveTy::Text => Ty::String,
+        PrimitiveTy::Bytes => Ty::Bytes,
         PrimitiveTy::Timestamp => Ty::Timestamp,
         PrimitiveTy::Duration => Ty::Duration,
         PrimitiveTy::Error => Ty::ErrorValue,

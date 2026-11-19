@@ -566,6 +566,14 @@ fn functions_list_gives_primitives_then_the_project_as_signatures() {
     let get = ok(&mut session, "functions.list", json!({ "library": "array", "filter": "get" }));
     assert_eq!(get["entries"][0]["signature"], "fn array.get<T>(array: [T], index: i32, err: error = none) -> (item: T, err: error)");
     assert_eq!(get["entries"][0]["categories"], json!(["array.index_out_of_range"]));
+    // The categories of `bytes`, from spec appendix A.2: `slice`, `read_…` and the `from_…` of an integer fail with
+    // `bytes.out_of_range`, `to_string` with `bytes.invalid_text`.
+    for (name, category) in
+        [("slice", "bytes.out_of_range"), ("read_f32", "bytes.out_of_range"), ("from_i16", "bytes.out_of_range"), ("to_string", "bytes.invalid_text")]
+    {
+        let listed = ok(&mut session, "functions.list", json!({ "library": "bytes", "filter": format!("bytes.{name}") }));
+        assert_eq!(listed["entries"][0]["categories"], json!([category]), "{name}");
+    }
     let types = ok(&mut session, "functions.list", json!({ "filter": "Verdict" }));
     assert_eq!(types["entries"][0]["signature"], "type Verdict = enum { Pass, Fail }");
 }

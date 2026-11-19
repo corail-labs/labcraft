@@ -931,3 +931,56 @@ fn the_tab_of_a_function_renamed_follows_its_name_through_undo_and_redo() {
     session.view.settle();
     assert_eq!(shown(&session).as_deref(), Some("scale"));
 }
+
+/// `bytes`, a primitive added after M0, gives way to a folder `bytes` of the project (`docs/cli.md`, section 3, rule 1):
+/// `node.add` takes the function of the folder, and refuses one the folder does not have, as for any library; with no such
+/// folder, it adds the primitive. `functions.list` lists only what a call would find.
+#[test]
+fn a_folder_bytes_replaces_the_primitive_for_node_add_and_functions_list() {
+    let (mut session, memory) = session();
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "bytes.from_u16" }));
+    assert!(text(&memory, "/p/f.lcf").contains("    data, _ = bytes.from_u16()\n"), "{}", text(&memory, "/p/f.lcf"));
+    memory.put("/p/f.lcf", START);
+    memory.put("/p/bytes/len.lcf", "labcraft 1\n\nfn len() -> (n: i32) {\n    n = 2\n}\n");
+    let refused = session.execute("node.add", &json!({ "file": "f.lcf", "call": "bytes.from_u16" })).unwrap_err();
+    assert_eq!(refused.code, "edit.unknown");
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "bytes.len" }));
+    assert!(text(&memory, "/p/f.lcf").contains("    n = bytes.len()\n"), "{}", text(&memory, "/p/f.lcf"));
+    let listed = ok(&mut session, "functions.list", json!({ "filter": "bytes.len" }));
+    let signatures: Vec<&str> = listed["entries"].as_array().unwrap().iter().filter_map(|entry| entry["signature"].as_str()).collect();
+    assert_eq!(signatures, ["fn bytes.len() -> (n: i32)"]);
+}
+
+/// The same for a library `bytes` of a `--lib-path`, which replaces the primitive once a file uses it (rule 3 before rule
+/// 4); and a file that already uses the primitive keeps it.
+#[test]
+fn a_library_bytes_of_a_lib_path_replaces_the_primitive_too() {
+    let memory = Arc::new(Memory::new());
+    memory.put("/p/f.lcf", "labcraft 1\n\nuse bytes\n\nfn f(x: f64) -> (y: f64) {\n    y = x\n}\n");
+    memory.put("/p/g.lcf", START.replace("fn f(", "fn g(").as_str());
+    memory.put("/lib/bytes/len.lcf", "labcraft 1\n\nfn len() -> (n: i32) {\n    n = 2\n}\n");
+    let config = |lib_paths: Vec<PathBuf>| Config {
+        root: PathBuf::from("/p"),
+        lib_paths,
+        limits: Limits::default(),
+        shipped: Shipped::default(),
+        natives: Vec::new(),
+        clock: Arc::new(Still),
+        process: 0,
+    };
+    let ws: Arc<dyn Workspace> = memory.clone();
+    let mut session = Session::new(ws.clone(), config(vec![PathBuf::from("/lib")]), false).unwrap_or_else(|error| panic!("{error:?}"));
+    for file in ["f.lcf", "g.lcf"] {
+        let refused = session.execute("node.add", &json!({ "file": file, "call": "bytes.from_u16" })).unwrap_err();
+        assert_eq!(refused.code, "edit.unknown", "{file}");
+    }
+    let listed = ok(&mut session, "functions.list", json!({ "filter": "bytes.len" }));
+    let signatures: Vec<&str> = listed["entries"].as_array().unwrap().iter().filter_map(|entry| entry["signature"].as_str()).collect();
+    // The primitive is not listed; nor is the library of the `--lib-path`, as for any of them (commands.md 6.1 lists the
+    // primitives, the shipped libraries and the project).
+    assert_eq!(signatures, [] as [&str; 0]);
+    // Without the `--lib-path`, `use bytes` is the primitive.
+    let mut session = Session::new(ws, config(Vec::new()), false).unwrap_or_else(|error| panic!("{error:?}"));
+    ok(&mut session, "node.add", json!({ "file": "f.lcf", "call": "bytes.from_u16" }));
+    assert!(text(&memory, "/p/f.lcf").contains("    data, _ = bytes.from_u16()\n"), "{}", text(&memory, "/p/f.lcf"));
+}

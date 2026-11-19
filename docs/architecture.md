@@ -258,7 +258,7 @@ quadratic again: beyond it, a warning less. A value follows at most sixteen reso
 beyond that the written order chooses which. Pass 5 has its own graph, in `declare/body/flow.rs`, since an order
 wire counts there and not for types. Its warnings wait for the errors of the function, one of which can be their cause.
 
-**Signatures of the primitives** (`core`, `string`, `array`, `errors`, `time`, `ui`) live here as data,
+**Signatures of the primitives** (`core`, `string`, `array`, `errors`, `time`, `ui`, `bytes`) live here as data,
 in the form of appendix A, with a rule attached where a signature cannot say it all: the units of `mul`,
 the template of `string.format`, the variadic `errors.merge`. A test compares this table with appendix A, types included.
 `runtime` (M0b) depends on `check` and tests that each signature has a body. The bodies
@@ -689,7 +689,7 @@ strings, structs and variants are behind an `Arc`, and a change works on a copy 
 checks the limits of cli.md 6.2 as it goes: iterations of a loop, nodes run, depth, memory, the real time of a
 deterministic run. A limit reached is a fault at that node.
 
-The primitives (`core`, `string`, `array`, `errors`, `time`, `ui`) have their bodies here, by the names of `check`'s
+The primitives (`core`, `string`, `array`, `errors`, `time`, `ui`, `bytes`) have their bodies here, by the names of `check`'s
 table of signatures; a test requires a body for every signature, and no body without one. A primitive that takes
 simulated time (`time.wait`) is a native call of the runtime's own.
 

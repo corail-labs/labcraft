@@ -1,4 +1,4 @@
-//! The bodies of the primitives (`core`, `string`, `array`, `errors`, `time`, `ui`), by the names of `check`'s table of
+//! The bodies of the primitives (`core`, `string`, `array`, `errors`, `time`, `ui`, `bytes`), by the names of `check`'s table of
 //! signatures (`docs/architecture.md`, section 10.5): a test requires a body for every signature, and no body without one.
 //!
 //! A body reads its inputs in the order of `docs/ir.md`, section 4: one per parameter of kind value, in order, a variadic
@@ -15,6 +15,7 @@ use crate::fault::Fault;
 use crate::value::Value;
 
 mod array;
+mod bytes;
 mod core;
 pub use self::core::equal;
 mod errors;
@@ -123,6 +124,25 @@ const BODIES: &[(PrimitiveLibrary, &str, Body)] = &[
     (PrimitiveLibrary::Errors, "merge", errors::merge),
     (PrimitiveLibrary::Ui, "get", ui::get),
     (PrimitiveLibrary::Ui, "set", ui::set),
+    (PrimitiveLibrary::Bytes, "len", bytes::len),
+    (PrimitiveLibrary::Bytes, "concat", bytes::concat),
+    (PrimitiveLibrary::Bytes, "slice", bytes::slice),
+    (PrimitiveLibrary::Bytes, "from_array", bytes::from_array),
+    (PrimitiveLibrary::Bytes, "to_array", bytes::to_array),
+    (PrimitiveLibrary::Bytes, "from_string", bytes::from_string),
+    (PrimitiveLibrary::Bytes, "to_string", bytes::to_string),
+    (PrimitiveLibrary::Bytes, "read_u8", bytes::read_u8),
+    (PrimitiveLibrary::Bytes, "read_u16", bytes::read_u16),
+    (PrimitiveLibrary::Bytes, "read_i16", bytes::read_i16),
+    (PrimitiveLibrary::Bytes, "read_u32", bytes::read_u32),
+    (PrimitiveLibrary::Bytes, "read_i32", bytes::read_i32),
+    (PrimitiveLibrary::Bytes, "read_f32", bytes::read_f32),
+    (PrimitiveLibrary::Bytes, "from_u8", bytes::from_u8),
+    (PrimitiveLibrary::Bytes, "from_u16", bytes::from_u16),
+    (PrimitiveLibrary::Bytes, "from_i16", bytes::from_i16),
+    (PrimitiveLibrary::Bytes, "from_u32", bytes::from_u32),
+    (PrimitiveLibrary::Bytes, "from_i32", bytes::from_i32),
+    (PrimitiveLibrary::Bytes, "from_f32", bytes::from_f32),
 ];
 
 /// Runs the primitive `library.name` on one call.
@@ -197,6 +217,27 @@ fn variadic<'v>(call: &'v Call<'_>) -> Result<&'v [Value], Fault> {
     let Some(variadic) = call.variadic else { return Ok(&[]) };
     let start = variadic.start as usize;
     call.inputs.get(start..start.saturating_add(variadic.count as usize)).ok_or_else(|| Fault::bug("a variadic parameter beyond the inputs"))
+}
+
+/// The input at this index, an `i32`.
+fn i32_input(call: &Call<'_>, index: usize, name: &str) -> Result<i32, Fault> {
+    match input(call, index)? {
+        Value::I32(value) => Ok(*value),
+        _ => Err(wrong(name)),
+    }
+}
+
+/// The input at this index, a `bool`.
+fn bool_input(call: &Call<'_>, index: usize, name: &str) -> Result<bool, Fault> {
+    match input(call, index)? {
+        Value::Bool(value) => Ok(*value),
+        _ => Err(wrong(name)),
+    }
+}
+
+/// A length, as the `i32` the language gives it (Q-25).
+fn length_value(length: usize, name: &str) -> Result<Value, Fault> {
+    i32::try_from(length).map(Value::I32).map_err(|_| Fault::out_of_range(format!("{name}: a length of {length} is not an i32 (Q-25)")))
 }
 
 fn output_type(call: &Call<'_>, index: usize) -> Result<TyId, Fault> {

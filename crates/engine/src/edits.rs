@@ -515,34 +515,68 @@ fn type_callable(
     }
 }
 
+impl SessionJudge<'_> {
+    /// Whether a library of this name replaces the primitive library that gives way to it (docs/cli.md, section 3, rule 1),
+    /// as the check of `file` resolves its `use`: a folder of the project is in every check of the root; a library of a
+    /// `--lib-path` only once a file uses it, so a file that does not yet is checked with the `use` that `node.add` writes.
+    fn replaced(&self, file: &str, library: PrimitiveLibrary) -> bool {
+        let Some((checked, names)) = self.checked() else { return false };
+        if checked.replaces(library) {
+            return true;
+        }
+        // Without a `--lib-path`, only a folder of the project could replace it, and the check of the root has them all.
+        if self.session.config.lib_paths.is_empty() {
+            return false;
+        }
+        let uses_it =
+            checked.files.iter().find(|found| found.shown == file).is_some_and(|found| {
+                found.file.uses.iter().any(|used| used.path.rest.is_empty() && names.resolve(used.path.first) == library.as_str())
+            });
+        if uses_it {
+            return false;
+        }
+        self.with_use(file, library.as_str()).and_then(|kept| kept.checked.first().map(|(checked, _)| checked.replaces(library))).unwrap_or(false)
+    }
+
+    /// A primitive of `library`, as appendix A declares it.
+    fn primitive_lookup(&self, library_of: PrimitiveLibrary, library: &str, name: &str, call: &str) -> Lookup {
+        match primitive(library_of, name) {
+            Some(found) => {
+                let variadic_at = found.params.iter().position(|param| param.variadic);
+                Lookup::Found(Callable {
+                    kind: Kind::Function,
+                    library: Some(library.to_owned()),
+                    inputs: found
+                        .params
+                        .iter()
+                        .enumerate()
+                        .map(|(index, param)| Input {
+                            name: param.name.to_owned(),
+                            required: param.default.is_none() && !param.variadic,
+                            variadic: param.variadic,
+                            named_only: variadic_at.is_some_and(|at| index > at),
+                        })
+                        .collect(),
+                    outputs: found.outputs.unwrap_or(&[]).iter().map(|output| (*output).to_owned()).collect(),
+                })
+            }
+            None => Lookup::Unknown(self.nearest(call)),
+        }
+    }
+}
+
 impl Judge for SessionJudge<'_> {
     fn callable(&self, file: &str, call: &str) -> Lookup {
         let segments: Vec<&str> = call.split('.').collect();
-        if let [library, name] = segments.as_slice()
-            && let Some(library_of) = PrimitiveLibrary::from_name(library)
+        let primitive_of = match segments.as_slice() {
+            [library, name] => PrimitiveLibrary::from_name(library).map(|library_of| (library_of, *library, *name)),
+            _ => None,
+        };
+        // `bytes`, added after M0, gives way to a library of its name (docs/cli.md, section 3, rule 1).
+        if let Some((library_of, library, name)) = primitive_of
+            && (!library_of.gives_way() || !self.replaced(file, library_of))
         {
-            return match primitive(library_of, name) {
-                Some(found) => {
-                    let variadic_at = found.params.iter().position(|param| param.variadic);
-                    Lookup::Found(Callable {
-                        kind: Kind::Function,
-                        library: Some((*library).to_owned()),
-                        inputs: found
-                            .params
-                            .iter()
-                            .enumerate()
-                            .map(|(index, param)| Input {
-                                name: param.name.to_owned(),
-                                required: param.default.is_none() && !param.variadic,
-                                variadic: param.variadic,
-                                named_only: variadic_at.is_some_and(|at| index > at),
-                            })
-                            .collect(),
-                        outputs: found.outputs.unwrap_or(&[]).iter().map(|output| (*output).to_owned()).collect(),
-                    })
-                }
-                None => Lookup::Unknown(self.nearest(call)),
-            };
+            return self.primitive_lookup(library_of, library, name, call);
         }
         if let Some(found) = self.checked().and_then(|(checked, names)| find_in(checked, names, file, &segments)) {
             return Lookup::Found(found);
@@ -771,7 +805,12 @@ impl SessionJudge<'_> {
 
     /// The name of a call nearest to `call`.
     fn nearest(&self, call: &str) -> Vec<String> {
-        let mut known: Vec<String> = PRIMITIVES.iter().map(|found| format!("{}.{}", found.library.as_str(), found.name)).collect();
+        let checked = self.checked().map(|(checked, _)| checked);
+        let mut known: Vec<String> = PRIMITIVES
+            .iter()
+            .filter(|found| !checked.is_some_and(|checked| checked.replaces(found.library)))
+            .map(|found| format!("{}.{}", found.library.as_str(), found.name))
+            .collect();
         if let Some((checked, names)) = self.checked() {
             for library in &checked.libraries {
                 for name in library.functions.keys().chain(library.types.keys()) {

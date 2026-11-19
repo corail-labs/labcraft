@@ -459,3 +459,30 @@ fn a_free_lock_on_the_disk_goes_with_the_partial_beside_it() {
     assert!(!partial.exists() && !runs.join(".4000000003.lock").exists(), "the lock is free: that process ended");
     assert!(!runs.join(".4000000004.lock").exists(), "a free lock with no `.partial`, left by a process that ended");
 }
+
+/// `bytes` runs the same in deterministic mode and in real time: a request of Modbus TCP (`docs/io.md`, 10) built field by
+/// field, then read back.
+#[test]
+fn a_frame_of_bytes_is_the_same_in_both_modes() {
+    let scratch = Scratch::new("bytes");
+    let folder = scratch.0.join("p");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(
+        folder.join("frame.lcf"),
+        "labcraft 1\n\nuse bytes\n\n/// A request to read two holding registers.\nfn frame(address: i32) -> (request: bytes, length: i32, read_back: u16, err: error) {\n    transaction, e1 = bytes.from_u16(1)\n    protocol, e2 = bytes.from_u16(0, err: e1)\n    size, e3 = bytes.from_u16(6, err: e2)\n    unit, e4 = bytes.from_u8(17, err: e3)\n    function, e5 = bytes.from_u8(3, err: e4)\n    first, e6 = bytes.from_u16(address, err: e5)\n    count, e7 = bytes.from_u16(2, err: e6)\n    request = bytes.concat(transaction, protocol, size, unit, function, first, count)\n    length = bytes.len(request)\n    read_back, err = bytes.read_u16(request, 8, err: e7)\n}\n",
+    )
+    .unwrap();
+    for mode in [&[][..], &["--real-time"][..]] {
+        let mut args = vec!["run", "--json", "--no-trace"];
+        args.extend_from_slice(mode);
+        args.extend_from_slice(&["--arg", "address=107", "p", "frame"]);
+        let report = report_of(&cli_in(&scratch.0, &args));
+        let value = |name: &str| report["outputs"].as_array().unwrap().iter().find(|output| output["name"] == name).unwrap()["value"].clone();
+        // By hand: 0001 0000 0006 11 03 006b 0002, 12 bytes (107 is 0x6b), whose base64 Python's `base64.b64encode` gives;
+        // the two bytes at 8 are 006b again; `bytes` and `none` as commands.md, section 5, writes them.
+        assert_eq!(value("request"), json!({ "base64": "AAEAAAAGEQMAawAC" }), "{mode:?}: {report}");
+        assert_eq!(value("length"), 12, "{mode:?}");
+        assert_eq!(value("read_back"), 107, "{mode:?}");
+        assert_eq!(value("err"), Value::Null, "{mode:?}: {report}");
+    }
+}

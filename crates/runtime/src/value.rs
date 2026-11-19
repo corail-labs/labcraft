@@ -237,7 +237,8 @@ impl Value {
 /// What each value costs, before what it holds (cli.md 6.2).
 pub const VALUE_COST: u64 = 16;
 
-fn text_cost(bytes: usize) -> u64 {
+/// The logical size of a text or of bytes of this length (cli.md 6.2).
+pub(crate) fn text_cost(bytes: usize) -> u64 {
     VALUE_COST.saturating_add(u64::try_from(bytes).unwrap_or(u64::MAX))
 }
 

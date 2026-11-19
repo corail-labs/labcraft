@@ -318,6 +318,12 @@ fn add(counts: &mut FileCounts, more: FileCounts) {
 }
 
 impl Checked {
+    /// Whether a library this check read replaces the primitive library `library`: only one that gives way can be
+    /// replaced, by a library of its name (`docs/cli.md`, section 3, rule 1).
+    pub fn replaces(&self, library: PrimitiveLibrary) -> bool {
+        library.gives_way() && self.libraries.iter().any(|found| found.name == library.as_str())
+    }
+
     /// [`CheckedFile::counts`] of the file at this index of `files`.
     pub fn counts_of(&self, file: usize) -> FileCounts {
         self.files.get(file).map_or_else(FileCounts::default, |file| file.counts)

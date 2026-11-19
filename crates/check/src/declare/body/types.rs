@@ -2320,20 +2320,34 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     fn concrete(&mut self, ty: PrimitiveTy) -> Option<TyId> {
         let one = Unit::ONE;
+        if let Some(kind) = ty.number_kind() {
+            return Some(self.number(kind, one));
+        }
         Some(match ty {
             PrimitiveTy::Bool => self.plain(Ty::Bool),
-            PrimitiveTy::I32 => self.number(NumberKind::I32, one),
-            PrimitiveTy::F32 => self.number(NumberKind::F32, one),
-            PrimitiveTy::F64 => self.number(NumberKind::F64, one),
             PrimitiveTy::Text => self.plain(Ty::String),
+            PrimitiveTy::Bytes => self.plain(Ty::Bytes),
             PrimitiveTy::Texts => {
                 let element = self.plain(Ty::String);
+                self.plain(Ty::Array { element, dimensions: 1 })
+            }
+            PrimitiveTy::U8s => {
+                let element = self.number(NumberKind::U8, one);
                 self.plain(Ty::Array { element, dimensions: 1 })
             }
             PrimitiveTy::Timestamp => self.plain(Ty::Timestamp),
             PrimitiveTy::Duration => self.plain(Ty::Duration),
             PrimitiveTy::Error => self.plain(Ty::ErrorValue),
-            PrimitiveTy::Var(_)
+            // The numbers, above; the rest has a type variable or none.
+            PrimitiveTy::I32
+            | PrimitiveTy::F32
+            | PrimitiveTy::F64
+            | PrimitiveTy::U8
+            | PrimitiveTy::U16
+            | PrimitiveTy::I16
+            | PrimitiveTy::U32
+            | PrimitiveTy::I64
+            | PrimitiveTy::Var(_)
             | PrimitiveTy::ArrayOf(_)
             | PrimitiveTy::Rows(_)
             | PrimitiveTy::Rectangle(_)

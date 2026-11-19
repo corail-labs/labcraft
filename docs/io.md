@@ -277,7 +277,7 @@ Each library adds its own: `net.host_not_found`, `net.connection_refused`, `net.
 `serial.port_not_found`, `serial.port_busy`; `file.not_found`, `file.exists`, `file.denied`, `file.not_empty`; and
 `visa.resource_not_found`, `visa.invalid_session` (since M0); `scpi.unexpected_response` (spec, appendix A.3), beside
 `scpi.instrument_error`. `bytes.out_of_range` and `bytes.invalid_text` are those of the primitive `bytes` (spec,
-appendix A.5).
+appendix A.2).
 
 ## 9. In the IDE
 

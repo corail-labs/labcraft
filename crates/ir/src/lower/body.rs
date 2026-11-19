@@ -822,6 +822,7 @@ impl<'f> Walk<'_, '_, 'f> {
         let (ty, value) = match default {
             PrimitiveDefault::NoError => (self.lowering.plain(Ty::ErrorValue, self.file)?, ConstValue::NoError),
             PrimitiveDefault::EmptyText => (self.lowering.plain(Ty::String, self.file)?, ConstValue::Text("".into())),
+            PrimitiveDefault::False => (self.lowering.plain(Ty::Bool, self.file)?, ConstValue::Bool(false)),
             PrimitiveDefault::Zero => match form {
                 PrimitiveTy::I32 => (self.lowering.number(NumberKind::I32, self.file)?, ConstValue::Int(0)),
                 PrimitiveTy::F32 => (self.lowering.number(NumberKind::F32, self.file)?, ConstValue::Float(0.0)),
