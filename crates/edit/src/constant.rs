@@ -105,7 +105,7 @@ fn refuse_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) 
 
 /// Whether the end is the template of a `string.format`, which only `node.set_template` writes: the argument that gives
 /// it, or the first parameter of a call that does not give it yet.
-fn is_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> bool {
+pub(crate) fn is_template(edit: &Edit, function: &labcraft_graph::Function, end: &End) -> bool {
     let (loc, at) = match end {
         End::Slot(loc, Slot::Arg(index)) => (loc, Some(*index)),
         End::NewArg { loc, param: 0, variadic: None } => (loc, None),

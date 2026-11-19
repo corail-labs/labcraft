@@ -513,6 +513,31 @@ fn an_order_wire_goes_to_after() {
     refused(before, connect("#beep", "output t"), "params.invalid");
 }
 
+#[test]
+fn the_template_of_a_format_takes_no_wire() {
+    // Visual notation 2.6 and spec 5.4: the template is text written in the call, never a wire, whether the call gives it by
+    // position, by name, or not yet.
+    let by_position = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(\"{v}\", v: x)\n    y = text\n}\n";
+    let by_name = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format(v: x, template: \"{v}\")\n    y = text\n}\n";
+    let missing = "use string\n\nfn f(x: f64) -> (y: string) {\n    text = string.format()\n    y = text\n}\n";
+    for before in [by_position, by_name, missing] {
+        for replace in [false, true] {
+            let op = Op::WireConnect {
+                file: FILE.to_owned(),
+                from: "x".to_owned(),
+                to: "text.template".to_owned(),
+                replace,
+                accept_mismatch: false,
+                arm: None,
+                through: None,
+            };
+            let error = refused(before, op, "params.invalid");
+            assert_eq!(error.parameter, Some("to"), "{error:?}");
+            assert!(error.message.contains("template") && error.message.contains("node.set_template"), "{error:?}");
+        }
+    }
+}
+
 // wire.disconnect
 
 #[test]
