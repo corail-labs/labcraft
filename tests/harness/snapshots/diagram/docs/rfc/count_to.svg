@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="374" height="268" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="19" y="16" width="336" height="236" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn count_to</text>
 <g data-wire="n" data-from="n.n" data-to="fn.n">
@@ -60,14 +63,14 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="268.02" y="211.65" font-size="10" style="fill: var(--node-title)">until</text>
 </g>
 <g data-node="done"><title>core.ge</title>
-<polygon points="201.24,152 225.24,152 233.24,160 233.24,176 225.24,184 201.24,184" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="201.24" y="152" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="214.23" y="171.65" font-size="10" style="fill: var(--node-title)">≥</text>
 <circle cx="201.24" cy="160" r="3" style="fill: var(--wire-data)"/>
 <circle cx="201.24" cy="176" r="3" style="fill: var(--wire-data)"/>
 <polygon points="233.24,165 236.24,168 233.24,171 230.24,168" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="@9"><title>core.add</title>
-<polygon points="201.24,96 225.24,96 233.24,104 233.24,120 225.24,128 201.24,128" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="201.24" y="96" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="214.23" y="115.65" font-size="10" style="fill: var(--node-title)">+</text>
 <circle cx="201.24" cy="104" r="3" style="fill: var(--wire-data)"/>
 <circle cx="201.24" cy="120" r="3" style="fill: var(--wire-data)"/>

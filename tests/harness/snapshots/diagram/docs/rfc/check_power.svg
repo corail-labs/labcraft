@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1198" height="392" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="19" y="16" width="1160" height="360" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn check_power</text>
 <g data-wire="resource" data-from="fn.resource" data-to="supply.resource">
@@ -158,7 +161,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="385.68" y="323.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:C…</text>
 </g>
 <g data-node="current"><title>core.with_unit</title>
-<polygon points="526.84,224.36 550.84,224.36 558.84,232.36 558.84,248.36 550.84,256.36 526.84,256.36" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="526.84" y="224.36" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="533.81" y="244.01" font-size="10" style="fill: var(--node-title)">[A]</text>
 <circle cx="526.84" cy="240.36" r="3" style="fill: var(--wire-data)"/>
 <circle cx="558.84" cy="240.36" r="3" style="fill: var(--wire-data)"/>
@@ -178,20 +181,20 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="526.84" y="289.83" font-size="10" style="fill: var(--ink-muted)">#close:</text>
 </g>
 <g data-node="voltage"><title>core.with_unit</title>
-<polygon points="448.84,240 472.84,240 480.84,248 480.84,264 472.84,272 448.84,272" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="448.84" y="240" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="455.81" y="259.65" font-size="10" style="fill: var(--node-title)">[V]</text>
 <circle cx="448.84" cy="256" r="3" style="fill: var(--wire-data)"/>
 <circle cx="480.84" cy="256" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="power"><title>core.mul</title>
-<polygon points="596.84,256 620.84,256 628.84,264 628.84,280 620.84,288 596.84,288" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="596.84" y="256" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="609.83" y="275.65" font-size="10" style="fill: var(--node-title)">×</text>
 <circle cx="596.84" cy="264" r="3" style="fill: var(--wire-data)"/>
 <circle cx="596.84" cy="280" r="3" style="fill: var(--wire-data)"/>
 <circle cx="628.84" cy="272" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="below"><title>core.lt</title>
-<polygon points="658.84,256 682.84,256 690.84,264 690.84,280 682.84,288 658.84,288" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="658.84" y="256" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="671.83" y="275.65" font-size="10" style="fill: var(--node-title)">&lt;</text>
 <circle cx="658.84" cy="264" r="3" style="fill: var(--wire-data)"/>
 <circle cx="658.84" cy="280" r="3" style="fill: var(--wire-data)"/>

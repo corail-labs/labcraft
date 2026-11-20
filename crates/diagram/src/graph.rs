@@ -1044,15 +1044,9 @@ impl<'a> Builder<'a> {
                     (Some(sign), _) => Some(Glyph::Sign(sign)),
                     (None, _) => None,
                 };
-                Kind::Call {
-                    qualified,
-                    short,
-                    library: signature.band.clone(),
-                    glyph,
-                    icon: signature.icon,
-                    block: signature.block.clone(),
-                    file: signature.file.clone(),
-                }
+                // A primitive whose glyph does not read (a unit that is not written) has the ordinary block.
+                let block = if signature.glyph.is_some() && glyph.is_none() { None } else { signature.block.clone() };
+                Kind::Call { qualified, short, library: signature.band.clone(), glyph, icon: signature.icon, block, file: signature.file.clone() }
             }
         };
         (kind, inputs, outputs, signature.always, after)
@@ -1136,20 +1130,17 @@ impl<'a> Builder<'a> {
                     })
                 });
                 // Its outline, likewise (spec 11.4): a block with one is placed by the rules of 11.2, its section or none.
-                let outline = function
-                    .and_then(|function| {
-                        function.outline.as_ref().or_else(|| {
-                            function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.outline.as_ref())
-                        })
-                    })
-                    .map(|outline| labcraft_check::outline::read(outline, self.names).0)
-                    .filter(|read| *read != labcraft_check::outline::Read::Block);
+                let outline = function.and_then(|function| {
+                    function
+                        .outline
+                        .as_ref()
+                        .or_else(|| function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.outline.as_ref()))
+                });
                 if let Some(function) = function
                     && (section.is_some() || outline.is_some())
                 {
                     let inputs: Vec<Name> = function.params.iter().map(|param| param.name).collect();
                     let outputs: Vec<Name> = function.outputs.iter().map(|output| output.name).collect();
-                    let read = labcraft_check::places::section_of(section, &inputs, &outputs, self.names);
                     let optional = function
                         .params
                         .iter()
@@ -1157,7 +1148,11 @@ impl<'a> Builder<'a> {
                         .filter(|(_, default)| default.is_some())
                         .map(|(param, _)| self.text(param.name))
                         .collect();
-                    found.block = Some(Rc::new(Block { outline, ..Block::of(&read, self.names, optional) }));
+                    let block = Block::read(section, outline, (&inputs, &outputs), self.names, optional);
+                    // `template block` alone is the ordinary block.
+                    if section.is_some() || block.outline.is_some() {
+                        found.block = Some(Rc::new(block));
+                    }
                 }
             }
             Meaning::Primitive { library, name } => {
@@ -1213,6 +1208,10 @@ impl<'a> Builder<'a> {
                     found.outputs = primitive.outputs.map_or_else(Vec::new, |outputs| outputs.iter().map(|&output| output.to_owned()).collect());
                 }
                 found.glyph = (library == PrimitiveLibrary::Core).then(|| sign_of(self.names.resolve(name))).flatten();
+                // Its block, from its file of `libs/core` (spec A.1): the D is drawn by the rules of every block.
+                if found.glyph.is_some() {
+                    found.block = labcraft_check::core_blocks::block(self.names.resolve(name)).map(|block| Rc::new(block.clone()));
+                }
             }
             Meaning::Variant { ty, variant } => {
                 found.params = self
@@ -1545,7 +1544,7 @@ fn path_text(path: &labcraft_graph::Path, names: &Interner) -> String {
 }
 
 /// The glyph of a primitive of `core` drawn as a D (notation 3.2); `unit` for those that show a unit.
-fn sign_of(name: &str) -> Option<&'static str> {
+pub(crate) fn sign_of(name: &str) -> Option<&'static str> {
     Some(match name {
         "add" => "+",
         "sub" | "neg" => "\u{2212}",

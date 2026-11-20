@@ -97,7 +97,6 @@ numbers! {
     label_padding: "node"."label_padding" = 200, Length, 0..=3600, "3.2", "Inside an oblong label, on each side.";
     square: "node"."square" = 4000, Length, 1600..=16000, "3.2", "The width of a compact block, and its least height.";
     compact_pitch: "node"."pitch" = 800, Length, 800..=4800, "3.2", "Between two lines of terminals of a compact block.";
-    primitive: "node"."primitive" = 3200, Length, 1600..=12800, "3.2", "The least width and height of a primitive.";
     chamfer: "node"."chamfer" = 800, Length, 0..=3200, "3.2", "The right corners of a primitive, cut.";
     icon: "node"."icon" = 2800, Length, 1200..=11200, "3.2", "An icon in a block.";
     outline: "node"."outline" = 100, Length, 0..=400, "3", "The outline of a node.";

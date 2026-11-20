@@ -71,13 +71,17 @@ pub fn load(ws: &dyn Workspace, shipped: &Shipped, folder: &Path, lib_paths: &[P
     let Some(root) = roots(ws, &folders, current).into_iter().next() else {
         return Loaded { report, counts: CheckCounts::default(), checked: None, names, functions: Vec::new(), root: None, hashes: Vec::new() };
     };
-    let functions = functions_of(&root.real, &walked);
+    let mut functions = functions_of(&root.real, &walked);
     let has_types = walked.files.iter().any(|found| found.path.extension().is_some_and(|extension| extension == "lct"));
     let mut counts = CheckCounts::default();
     let mut hashes = Vec::new();
     let checked = match library_of(ws, &root.real, &root.shown, &mut walked, limits, None) {
         Some(source) => {
             crate::folders::hash_files(&source, &mut hashes);
+            // The blocks of the primitives of `libs/core` are no program (spec A.1): nothing to draw of them.
+            let mut blocks = HashSet::new();
+            block_files(&source, &mut blocks);
+            functions.retain(|function| !blocks.contains(&function.shown));
             let work = || check(source, &host, &mut names, limits);
             match panic::catch_unwind(AssertUnwindSafe(work)) {
                 Ok(mut checked) => {
@@ -118,6 +122,21 @@ fn functions_of(root: &Path, walked: &walk::Walked) -> Vec<Function> {
         .collect();
     functions.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.shown.cmp(&b.shown)));
     functions
+}
+
+/// The files of a folder and its sub-libraries that `check` reads as the blocks of the primitives, by their name in
+/// reports.
+fn block_files(source: &labcraft_check::LibrarySource, found: &mut HashSet<String>) {
+    for file in &source.files {
+        if let labcraft_check::Content::Bytes(bytes) = &file.content
+            && labcraft_check::core_blocks::is_block_file(&file.shown, bytes)
+        {
+            found.insert(file.shown.clone());
+        }
+    }
+    for sub in &source.sub_libraries {
+        block_files(sub, found);
+    }
 }
 
 /// The index of each file in `Checked::files`, by its name in reports.

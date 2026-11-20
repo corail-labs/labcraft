@@ -277,6 +277,19 @@ pub struct Block {
 }
 
 impl Block {
+    /// The block of a function from the sections of its file (spec 11.2, 11.4): its outline none for `template block`.
+    pub fn read(
+        terminals: Option<&TerminalsSection>,
+        outline: Option<&labcraft_graph::Outline>,
+        (inputs, outputs): (&[Name], &[Name]),
+        names: &Interner,
+        optional: HashSet<String>,
+    ) -> Block {
+        let section = section_of(terminals, inputs, outputs, names);
+        let outline = outline.map(|outline| crate::outline::read(outline, names).0).filter(|read| *read != Read::Block);
+        Block { outline, ..Block::of(&section, names, optional) }
+    }
+
     pub fn of(section: &Section, names: &Interner, optional: HashSet<String>) -> Block {
         let lines = section
             .lines

@@ -1,6 +1,8 @@
 //! `cargo xtask libs`: no crate of `crates/` depends on `libs/`, nor on a native crate of `examples/`; only the apps and the
 //! harness link the libraries shipped with LabCraft and those of the examples (`docs/roadmap.md`, architecture 7). The
-//! boundary that packages will use is tried from M0.
+//! boundary that packages will use is tried from M0. One exception, read here: `crates/check/src/core_blocks.rs` embeds the
+//! files of `libs/core`, the blocks of the primitives of `core` (spec A.1), which no library holds; no other source file
+//! of `crates/` embeds a file of `libs/` or `examples/`.
 
 use std::path::{Path, PathBuf};
 
@@ -45,6 +47,47 @@ pub fn check(root: &Path, packages: &[Package]) -> Vec<String> {
     violations
 }
 
+/// The one source file of `crates/` that may embed a file of `libs/`, and only of `libs/core`.
+const CORE_BLOCKS: &str = "crates/check/src/core_blocks.rs";
+
+/// The embeddings (`include!`, `include_str!`, `include_bytes!`) of a file of `libs/` or `examples/` by a source file of
+/// `crates/`: `files` gives each file by its path from the root, with its text. The path is the text from the macro to
+/// its `)`, over several lines if need be; `CORE_BLOCKS` may name `libs/core/` only, with no `..` after it.
+pub fn embeddings(files: &[(String, String)]) -> Vec<String> {
+    let mut violations = Vec::new();
+    for (path, text) in files {
+        for (start, _) in text.match_indices("include") {
+            let Some(rest) = text.get(start..) else { continue };
+            if !(rest.starts_with("include!(") || rest.starts_with("include_str!(") || rest.starts_with("include_bytes!(")) {
+                continue;
+            }
+            let argument = rest.split(')').next().unwrap_or(rest);
+            for folder in ["libs/", "examples/"] {
+                if !argument.contains(&format!("../{folder}")) {
+                    continue;
+                }
+                let core = argument.split("../libs/core/").nth(1);
+                let allowed = path == CORE_BLOCKS && folder == "libs/" && core.is_some_and(|after| !after.contains(".."));
+                if !allowed {
+                    violations.push(format!("{path}: embeds a file of {folder}: {}", argument.split_whitespace().collect::<Vec<_>>().join(" ")));
+                }
+            }
+        }
+    }
+    violations
+}
+
+/// The source files of `crates/`, by their path from `root` with `/`, and their text.
+pub fn sources(root: &Path) -> Result<Vec<(String, String)>, String> {
+    let files = crate::clean_room::repository_files(root, "libs")?;
+    files
+        .into_iter()
+        // A file deleted but not yet committed is still listed.
+        .filter(|path| path.starts_with("crates/") && path.ends_with(".rs") && root.join(path).is_file())
+        .map(|path| std::fs::read_to_string(root.join(&path)).map(|text| (path.clone(), text)).map_err(|error| format!("{path}: {error}")))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +130,18 @@ mod tests {
         let packages = from_metadata(&metadata).unwrap();
         assert_eq!(packages[0].dependencies.len(), 1);
         assert_eq!(check(Path::new("/repo"), &packages).len(), 1);
+    }
+    #[test]
+    fn only_core_blocks_embeds_libs_core() {
+        let line = |path: &str, line: &str| vec![(path.to_owned(), format!("const A: &str = {line};\n"))];
+        assert!(embeddings(&line(CORE_BLOCKS, r#"include_str!("../../../libs/core/add.lcf")"#)).is_empty());
+        assert_eq!(embeddings(&line(CORE_BLOCKS, r#"include_str!("../../../libs/visa/close.lcf")"#)).len(), 1);
+        assert_eq!(embeddings(&line("crates/diagram/src/a.rs", r#"include_str!("../../../libs/core/add.lcf")"#)).len(), 1);
+        assert_eq!(embeddings(&line("crates/engine/src/a.rs", r#"include_bytes!("../../../examples/x.lcf")"#)).len(), 1);
+        assert!(embeddings(&line("crates/engine/src/a.rs", r#"include_str!("../../../docs/cli.md")"#)).is_empty());
+        // Over two lines, through `include!`, or out of `libs/core` by `..`.
+        assert_eq!(embeddings(&line("crates/diagram/src/a.rs", "include_str!(\n    \"../../../libs/visa/close.lcf\"\n)")).len(), 1);
+        assert_eq!(embeddings(&line("crates/diagram/src/a.rs", r#"include!("../../../libs/visa/x.rs")"#)).len(), 1);
+        assert_eq!(embeddings(&line(CORE_BLOCKS, r#"include_str!("../../../libs/core/../scpi/a.lcf")"#)).len(), 1);
     }
 }

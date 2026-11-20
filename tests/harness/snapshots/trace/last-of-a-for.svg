@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="507" height="484" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="21.5" y="16" width="464" height="452" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="33.5" y="31.65" font-size="10" style="fill: var(--node-title)">fn last_of_for</text>
 <g data-wire="xs" data-from="fn.xs" data-to="any.y largest.x">
@@ -137,13 +140,13 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="347.77" y="135.65" font-size="10" style="fill: var(--node-title)">nothing</text>
 </g>
 <g data-node="a"><title>core.abs</title>
-<polygon points="246.93,224 270.93,224 278.93,232 278.93,248 270.93,256 246.93,256" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="246.93" y="224" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="253.9" y="243.65" font-size="10" style="fill: var(--node-title)">|x|</text>
 <circle cx="246.93" cy="240" r="3" style="fill: var(--wire-data)"/>
 <circle cx="278.93" cy="240" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="b"><title>core.mul</title>
-<polygon points="280.99,100 304.99,100 312.99,108 312.99,124 304.99,132 280.99,132" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="280.99" y="100" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="293.98" y="119.65" font-size="10" style="fill: var(--node-title)">×</text>
 <circle cx="280.99" cy="108" r="3" style="fill: var(--wire-data)"/>
 <circle cx="280.99" cy="124" r="3" style="fill: var(--wire-data)"/>

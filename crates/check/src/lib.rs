@@ -21,6 +21,7 @@ use labcraft_format::{BodyOrders, canonical_orders};
 use labcraft_graph::{Decl, File, SourceMap, UnitExpr};
 use labcraft_types::{CheckCounts, Diagnostic, FileCounts, Interner, Limits, Report, TypeTable, Unit, UnitError};
 
+pub mod core_blocks;
 mod declare;
 mod file_name;
 mod load;

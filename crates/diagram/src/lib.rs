@@ -311,7 +311,7 @@ fn sizes(
         })
         .collect();
     // Each outline once, however many calls show it.
-    *outlines_drawn = sizer.outlines_drawn.take();
+    *outlines_drawn = sizer.take_outlines();
     // The pill of a wire stands left of its reader, as the pill of an inline constant does (notation 3.2).
     for (&(body, wire), pill) in &graph.pills {
         let Some(graph::End::Node { node, .. }) = graph.bodies.get(body).and_then(|of| of.wires.get(wire)).map(|wire| wire.to) else { continue };
