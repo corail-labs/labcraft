@@ -46,6 +46,7 @@ use labcraft_engine::view::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+mod block;
 pub mod catalog;
 mod clipboard;
 pub mod host;
@@ -256,6 +257,8 @@ pub struct Ide {
     /// The project is in memory (`StartList::in_memory`): the status bar says so, not "saved".
     in_memory: bool,
     drawn: HashMap<String, Drawn>,
+    /// The view `Block` of each function, what it keeps between two frames (ide.md 3).
+    blocks: HashMap<String, block::BlockPane>,
     texts: HashMap<String, text::Kept>,
     callables: panels::Callables,
     problems: panels::ProblemsFilter,
@@ -365,6 +368,7 @@ impl Ide {
             generation: 0,
             in_memory: false,
             drawn: HashMap::new(),
+            blocks: HashMap::new(),
             texts: HashMap::new(),
             callables: panels::Callables::default(),
             problems: panels::ProblemsFilter::default(),
@@ -706,6 +710,7 @@ impl Ide {
         self.project.clone_from(&snapshot.project);
         self.session = snapshot.session;
         self.drawn.clear();
+        self.blocks.clear();
         self.texts.clear();
         self.callables = panels::Callables::default();
         self.asking_show = None;
@@ -989,6 +994,7 @@ impl Ide {
         for pane in gone {
             if let Some(function) = pane.function() {
                 self.drawn.remove(function);
+                self.blocks.remove(function);
             }
             let _ = self.workspace.apply(Action::Close { panel: pane }, self.permissions());
         }
@@ -2620,9 +2626,7 @@ impl Content<'_> {
                     ui.label(RichText::new("This function has no file").weak());
                 }
             },
-            ViewKind::Block => {
-                ui.label(RichText::new("The view Block, the terminals and the icon of the function, comes with step 6 of M1.").weak());
-            }
+            ViewKind::Block => self.block(ui, function, file, theme),
         }
     }
 
@@ -2830,6 +2834,29 @@ impl Content<'_> {
                 "view.set_state".to_owned(),
                 json!({ "function": function, "state": { "iterations": { looped: iteration } } }),
             ));
+        }
+    }
+
+    /// The view `Block` (ide.md 3): the block of the drawing of the function, and the commands of the block it sends.
+    fn block(&mut self, ui: &mut egui::Ui, function: &str, file: Option<&str>, theme: Theme) {
+        let Some(drawing) = self.ide.drawn.get(function).and_then(|drawn| drawn.canvas.drawing().cloned()) else {
+            ui.centered_and_justified(|ui| ui.label(RichText::new("Click to show this function").weak()));
+            return;
+        };
+        let Some(own) = drawing.block.as_deref() else {
+            ui.centered_and_justified(|ui| ui.label(RichText::new("This function has no block to show now: see Problems").weak()));
+            return;
+        };
+        let diagnostics = match (&self.view.report, file) {
+            (Some(report), Some(file)) => block::diagnostics_of(report.diagnostics(), file, &own.manifest),
+            _ => Vec::new(),
+        };
+        let pane = self.ide.blocks.entry(function.to_owned()).or_default();
+        for asked in pane.show(ui, &drawing, theme, &diagnostics) {
+            match asked {
+                block::Asked::Command(id, params) => self.ide.send_edit(self.host, self.view, function, id, params),
+                block::Asked::Say(text) => self.ide.say(text),
+            }
         }
     }
 

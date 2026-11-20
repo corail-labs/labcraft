@@ -340,7 +340,9 @@ below.
   drag starts moves the terminal; the setting "replace only with Alt" reads Alt when a wire is dropped, so the two
   never meet. The free places
   light up while dragging. A function that the project does not hold (a library shipped with LabCraft or found with
-  `--lib-path`) refuses the drop, and says why. "Reset the terminals of this block" removes the section.
+  `--lib-path`) refuses the drop, and says why. "Reset the terminals of this block" removes the section. In the view
+  `Block` of the function ([ide.md](ide.md) 3), a plain drag moves a terminal of its own block, and a drag of an edge
+  changes its size.
 - **A wire to an input already wired** replaces the old one, visibly: the old wire retracts. Setting: "replace only with
   Alt".
 - **A wire of the wrong type** is refused by default, and the reason is shown where it is dropped. Setting: "accept
@@ -504,6 +506,7 @@ in progress writes nothing (2.4).
 | Drag | a terminal of the frame | `terminal.move`, at the drop, on the grid of 8 and at least 24 from the other terminals of its edge (2.4); a mark across the edge shows where it goes. Escape during the drag puts it back |
 | Drop | a wire from a terminal of a node that holds nothing, on the left edge of the frame (from an input) or its right edge (from an output) | Makes it an input or an output of the function, as "Make an input of the function" does (below) |
 | Alt+drag | a terminal of a block | `block.set_terminal` on the function called, to the place where it is dropped (2.4); the same setting as for a wire |
+| Drag | a terminal, the right edge, the bottom edge or their corner, of the block in the view `Block` | `block.set_terminal`, or `block.set_size`, on the function shown ([ide.md](ide.md) 3). Escape during the drag puts it back |
 | Double-click, or F2 | the name of a node, its label | A field in place: `value.rename` on Enter, nothing on Escape. F2 on a node with no name opens the field of its label above it (`node.set_label`), as "Label…" of its context menu does for any node (decision of the owner, 2026-11-17) |
 | Double-click | a pill of a constant, a dot of a default, a hole | A field in place: `input.set_constant` on Enter. An empty field on Enter clears a constant (`input.clear_constant`), and does nothing on a dot or a hole. On a dot, the field opens with the default, all of it selected; on the template of a `string.format`, `node.set_template` |
 | Double-click, or F2 | the name of a terminal of the frame | A field in place: `signature.rename` on Enter, which also renames the calls that name an input (decision of the owner, 2026-11-19) |

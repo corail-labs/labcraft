@@ -25,6 +25,7 @@ use labcraft_diagram::style;
 use labcraft_diagram::{COARSE_NODE, Choice, Drawing, Overlay, Series, Shape, TabKind, Trace};
 
 mod blockdrag;
+mod blockview;
 mod clip;
 mod edge;
 mod fields;
@@ -44,6 +45,7 @@ mod sizing;
 pub(crate) mod view;
 pub(crate) mod wiring;
 
+pub use blockview::{BlockIntent, BlockView, MAX_ENLARGED, enlarged_zoom, swatch};
 pub use fields::FieldKind;
 pub use fonts::{FAMILY, HACK, family, has_family, install_fonts};
 pub use frames::{InFrame, STRUCTURES, Seen};

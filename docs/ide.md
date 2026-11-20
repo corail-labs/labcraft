@@ -81,13 +81,36 @@ The **views** of a tab are the parts of its file, each its own way:
 |---|---|---|
 | `Diagram` | The body of the function and its `layout` (the canvas, notation 2) | Yes, the default |
 | `Text` | The whole file (section 7) | Yes |
-| `Block` | What a caller sees: the `terminals`, `outline` and `icon` sections and the band (spec 11.1 to 11.4) | A live preview; terminals dragged along their side; the template and the band chosen from a list. Drawing the icon by hand comes later |
+| `Block` | What a caller sees: the `terminals`, `outline` and `icon` sections and the band (spec 11.1 to 11.4) | Yes: the block enlarged and at its real size, its terminals and its edges dragged, its outline, band, size and colours chosen beside it. Drawing the icon by hand comes later |
 | `Panel` | The front panel of the function (D-06) | Planned (M3) |
 
 **Split** shows two views of one function side by side, each with its own scroll: `Text` and `Diagram`, `Text` and
 `Block`. A change in one is in the other as soon as the text reads (commands.md 9.1). `Text` with `Block` is how a
 developer writes an icon or an outline in M1: the block redraws at real size and enlarged while they type, with the
 warnings of `check` under the text.
+
+**The view `Block`** (decisions of the owner, 2026-11-20) shows the block of the function as a call to it from another
+library draws it, each input unwired and a variadic parameter with one value: enlarged, at the largest whole zoom up to 8
+that its room holds; under it, at its real size in the light theme and in the dark one, side by side; then the warnings of
+`check` on the block (spec 11.1 to 11.4), of its file and of the manifest of its library. On the enlarged block, a drag on
+a terminal moves it onto a free place of a side, as Alt+drag does on a call (notation 2.4), and a drag of the right edge,
+the bottom edge or their corner changes `top`, `left` or both, a place at a time, and stops at the least size that holds
+its terminals: every line of the section still applies, and the left and right sides hold the terminals that no line
+places, which a smaller block would grow back to hold (spec 11.2). Escape during a drag puts it back. Beside it:
+
+- the outline: the one of the mask of its library, or the ordinary block without one; the ordinary block under a mask
+  that gives an outline (`template block`); the D (`template d`). An outline drawn by its points is shown, and changed in
+  `Text`;
+- the band: the mask's, `hidden`, `inside` or `above`; none for a function of the root library or of a library of
+  primitives (spec 11.2);
+- `top` and `left`, a field each, and "Auto", which removes the size;
+- `color`, `fill` and `stroke`: a swatch that opens a picker, written when the picker closes; "None" removes the line,
+  "Follow the mask" when the mask gives that colour;
+- "Reset the block" (`block.reset`).
+
+A value that the function does not write and the mask of its library gives is marked, with the name of the library.
+Each change is one command of [commands.md](commands.md) 9.4, one step of undo: the view has no command of its own. A
+function that the project does not hold, or an `extern`, is shown read only, with a line that says why.
 
 The view of each tab, and its split, are view state (spec 11): kept for the user, never in the file.
 

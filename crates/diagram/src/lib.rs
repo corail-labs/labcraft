@@ -28,6 +28,7 @@ mod colour;
 mod graph;
 mod marks;
 mod names;
+mod own;
 mod place;
 mod ports;
 mod preview;
@@ -42,9 +43,10 @@ pub mod values;
 
 pub use block::PITCH as PLACE_PITCH;
 pub use labcraft_check::{PathSegment, path_segments};
-pub use labcraft_graph::BlockSide;
+pub use labcraft_graph::{BlockSide, MAX_PLACES};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
+pub use own::{BlockFields, OutlineChoice, OwnBlock, written_rgb};
 pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
 pub use preview::{Preview, preview, square};
 pub use route::{on_segment, prefix_to, simplify};
@@ -147,6 +149,13 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
             counts.nodes, limits.max_nodes
         )),
     }
+}
+
+/// The block of the function of `checked.files[file]`, alone, as its callers see it, for the view `Block` (ide.md 3): what
+/// a session puts in [`Drawing::block`] of the function that a window shows. Never computed by [`draw`], which the CLI and
+/// the exports call: they never show it.
+pub fn own_block(checked: &Checked, file: usize, names: &Interner, limits: &DiagramLimits) -> Option<OwnBlock> {
+    own::of(checked, checked.files.get(file)?, names, limits)
 }
 
 /// A data wire between two nodes of one body, by where its reader reads it: where the figure of stability puts a
@@ -592,35 +601,7 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
     // A node that the file places left of the frame or above it moves the whole drawing.
     let (dx, dy) = ((style::margin() - left).max(0), (style::margin() - top).max(0));
     if dx > 0 || dy > 0 {
-        drawing.loose = std::mem::take(&mut drawing.loose).into_iter().map(|shape| moved(shape, dx, dy)).collect();
-        for group in &mut drawing.groups {
-            group.shapes = std::mem::take(&mut group.shapes).into_iter().map(|shape| moved(shape, dx, dy)).collect();
-            for (_, points) in group.wire.iter_mut().flat_map(|wire| wire.readers.iter_mut()) {
-                points.iter_mut().for_each(|point| *point = (point.0 + dx, point.1 + dy));
-            }
-        }
-        for placed in &mut drawing.placed {
-            (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
-        }
-        for hint in &mut drawing.hints {
-            (hint.x, hint.y) = (hint.x + dx, hint.y + dy);
-        }
-        for port in &mut drawing.ports {
-            (port.x, port.y) = (port.x + dx, port.y + dy);
-        }
-        for anchor in &mut drawing.trace.anchors {
-            *anchor = (anchor.0 + dx, anchor.1 + dy);
-        }
-        for node in &mut drawing.trace.nodes {
-            if let values::PlanKind::Loop { counter, .. } = &mut node.kind {
-                *counter = (counter.0 + dx, counter.1 + dy, counter.2 + dx);
-            }
-        }
-        for tab in &mut drawing.tabs {
-            (tab.x, tab.y) = (tab.x + dx, tab.y + dy);
-            tab.shown = std::mem::take(&mut tab.shown).into_iter().map(|shape| moved(shape, dx, dy)).collect();
-            tab.other = std::mem::take(&mut tab.other).into_iter().map(|shape| moved(shape, dx, dy)).collect();
-        }
+        shift(drawing, dx, dy);
     }
     drawing.bodies = placement
         .frames
@@ -643,6 +624,39 @@ fn extent_and_margin(placement: &place::Placement, drawing: &mut Drawing) {
         .collect();
     drawing.width = right + dx + style::margin();
     drawing.height = bottom + dy + style::margin();
+}
+
+/// Moves everything that the drawing draws by `dx` and `dy`, in hundredths.
+pub(crate) fn shift(drawing: &mut Drawing, dx: i64, dy: i64) {
+    drawing.loose = std::mem::take(&mut drawing.loose).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+    for group in &mut drawing.groups {
+        group.shapes = std::mem::take(&mut group.shapes).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+        for (_, points) in group.wire.iter_mut().flat_map(|wire| wire.readers.iter_mut()) {
+            points.iter_mut().for_each(|point| *point = (point.0 + dx, point.1 + dy));
+        }
+    }
+    for placed in &mut drawing.placed {
+        (placed.x, placed.y) = (placed.x + dx, placed.y + dy);
+    }
+    for hint in &mut drawing.hints {
+        (hint.x, hint.y) = (hint.x + dx, hint.y + dy);
+    }
+    for port in &mut drawing.ports {
+        (port.x, port.y) = (port.x + dx, port.y + dy);
+    }
+    for anchor in &mut drawing.trace.anchors {
+        *anchor = (anchor.0 + dx, anchor.1 + dy);
+    }
+    for node in &mut drawing.trace.nodes {
+        if let values::PlanKind::Loop { counter, .. } = &mut node.kind {
+            *counter = (counter.0 + dx, counter.1 + dy, counter.2 + dx);
+        }
+    }
+    for tab in &mut drawing.tabs {
+        (tab.x, tab.y) = (tab.x + dx, tab.y + dy);
+        tab.shown = std::mem::take(&mut tab.shown).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+        tab.other = std::mem::take(&mut tab.other).into_iter().map(|shape| moved(shape, dx, dy)).collect();
+    }
 }
 
 /// The label of a structure, above its frame (notation 3.1).
