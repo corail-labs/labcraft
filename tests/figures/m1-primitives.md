@@ -3,7 +3,7 @@
 Written once by the code of #264 (`1e03b74`, M1 step 6, the D of the primitives 24 × 32 and 24 × 16): `cargo xtask
 figures`, on 2026-11-20, on the decision of the owner. Those sizes change the figures of stability by design: the neutral
 node `core.select(true, v, v)`, 32 high, now stands higher than a primitive of one value in, 16 high, so that the
-frame grows upward and the whole drawing moves down, and `projectile` reorders more of its columns. They replace
+frame grows upward and the whole drawing moves down. They replace
 `v0.3.0-m0.md` as the threshold of scenario 5 of `docs/acceptance-m1.md`, point 2: `cargo xtask figures --against
 tests/figures/m1-primitives.md` fails when a figure of stability of an example is worse now. Never written again from
 the code under test.
@@ -13,7 +13,7 @@ the code under test.
 | `bench_selftest` | 2 | 406 × 172 | 100 % | 0 | – / 0 | – / 0 |
 | `channel_voltage` | 1 | 406 × 416 | 100 % | 0 | – / 0 | – / 0 |
 | `check_voltage` | 9 | 1062 × 392 | 100 % | 6 | 4.5 / 7 | 1.3 / 2 |
-| `projectile` | 24 | 1422 × 631 | 88 % | 17 | 8.0 / 23 | 6.9 / 15 |
+| `projectile` | 24 | 1422 × 640 | 87 % | 17 | 10.6 / 22 | 5.3 / 11 |
 | `read_voltage` | 4 | 526 × 191 | 100 % | 1 | 4.0 / 4 | 2.0 / 2 |
 | `run_step` | 7 | 1078 × 268 | 100 % | 6 | 3.5 / 7 | 1.0 / 2 |
 | `settle` | 11 | 1062 × 360 | 100 % | 7 | 3.4 / 7 | 1.4 / 5 |
