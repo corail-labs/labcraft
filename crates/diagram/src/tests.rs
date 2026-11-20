@@ -2153,14 +2153,24 @@ const H: &str = "fn h(a: f64, err: error = none) -> (n: i64, err: error) {\n    
 
 /// The size of the only call of `main` to `callee` (a function of `main.lcf`'s folder), with `terminals` added to it.
 fn block_sized(callee: &str, call: &str, terminals: &str) -> crate::size::Sized {
+    call_sized(callee, call, terminals, None, true)
+}
+
+/// The same, under `band` when given, and whatever `check` says of the section unless `clean`.
+fn call_sized(callee: &str, call: &str, terminals: &str, band: Option<&str>, clean: bool) -> crate::size::Sized {
     let callee = format!("labcraft 1\n\n{callee}{terminals}");
     let main = format!("labcraft 1\n\nfn main(v: f64, e: error) -> (r: i64, err: error) {{\n    {call}\n    err = e\n}}\n");
-    let file = if callee.contains("fn g(") { "g.lcf" } else { "h.lcf" };
-    let (checked, names) = checked(&[("main.lcf", &main), (file, &callee)]);
-    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    // The file of the function, by its name.
+    let name = callee.split("fn ").nth(1).and_then(|rest| rest.split(['(', '<']).next()).unwrap();
+    let file = format!("{name}.lcf");
+    let (checked, names) = checked(&[("main.lcf", &main), (&file, &callee)]);
+    if clean {
+        assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    }
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
-    Sizer::new(&names, false).size(node, None, None)
+    let band = band.map(labcraft_types::text::ShownText::plain);
+    Sizer::new(&names, false).size(node, band.as_ref(), None)
 }
 
 fn g_sized(terminals: &str) -> crate::size::Sized {
@@ -2231,6 +2241,98 @@ fn the_err_pair_takes_the_last_place_of_its_sides() {
     // A line that moves `a` leaves the pair where it is.
     let sized = h_sized("\nterminals {\n    top 5\n    top 3 a\n}\n");
     assert_eq!(sized.inputs, [(2400, 0), (0, 3200)]);
+}
+
+/// The size of the call to `g` with `terminals` added to it, under a band, whatever `check` says of the section.
+fn g_banded(terminals: &str) -> crate::size::Sized {
+    call_sized(G, "r = g(v)", terminals, Some("dev"), false)
+}
+
+/// The rectangle of the band of a block, if it has one: its top and its height.
+fn band_rect(sized: &crate::size::Sized) -> Option<(i64, i64)> {
+    sized.shapes.iter().find_map(|shape| match shape {
+        Shape::Rect { y, height, paint, .. } if paint.fill == Some("band.fill") => Some((*y, *height)),
+        _ => None,
+    })
+}
+
+#[test]
+fn a_side_of_one_place_gives_a_block_of_16() {
+    // Spec 11.2: `top 1` and `left 1`, (1 + 1) × 8 = 16 each way; the input and the output on the one place, 8 down.
+    let sized = g_sized("\nterminals {\n    top 1\n    left 1\n}\n");
+    assert_eq!((sized.width, sized.height), (1600, 1600));
+    assert_eq!((sized.inputs, sized.outputs), (vec![(0, 800)], vec![(1600, 800)]));
+    // `top 2`, `left 2`: 24 × 24; `a` on the first place, the `err` pair on the last (notation 3.2).
+    let sized = h_sized("\nterminals {\n    top 2\n    left 2\n}\n");
+    assert_eq!((sized.width, sized.height), (2400, 2400));
+    assert_eq!(sized.inputs, [(0, 800), (0, 1600)]);
+    assert_eq!(sized.outputs, [(2400, 800), (2400, 1600)]);
+    // Two lines on `left 1` grow it by two places, as any side that does not hold its terminals: 3 places, 32 high.
+    assert_eq!(h_sized("\nterminals {\n    left 1\n}\n").height, 3200);
+}
+
+#[test]
+fn a_left_side_of_no_place_holds_a_block_of_top_terminals() {
+    // Spec 11.2: `top 3`, `left 0`, both terminals on the top: (3 + 1) × 8 = 32 wide, (0 + 1) × 8 = 8 high, `x` on place
+    // 2 (16) and `n` on place 3 (24), on the top edge.
+    let sized = g_sized("\nterminals {\n    top 3\n    left 0\n    top 2 x\n    top 3 n\n}\n");
+    assert_eq!((sized.width, sized.height), (3200, 800));
+    assert_eq!((sized.inputs, sized.outputs), (vec![(1600, 0)], vec![(2400, 0)]));
+    // Without the lines, its one line of terminals has no place: it grows by two places, 24 high, `x` and `n` on place 1.
+    let sized = g_sized("\nterminals {\n    left 0\n}\n");
+    assert_eq!(sized.height, 2400);
+    assert_eq!((sized.inputs, sized.outputs), (vec![(0, 800)], vec![(4000, 800)]));
+}
+
+#[test]
+fn a_size_outside_1_to_64_is_drawn_at_the_nearest_bound() {
+    // `top 0` is drawn as `top 1`, `left 99` as `left 64`: 16 wide, (64 + 1) × 8 = 520 high.
+    let sized = g_banded("\nterminals {\n    top 0\n    left 99\n}\n");
+    assert_eq!((sized.width, sized.height), (1600, 52000));
+}
+
+#[test]
+fn a_narrow_or_low_block_cuts_its_band_and_its_name_to_it() {
+    let texts = |sized: &crate::size::Sized, token: &str| -> Vec<i64> {
+        sized
+            .shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Text { width, runs, .. } if runs.iter().any(|run| run.token == token) => Some(*width),
+                _ => None,
+            })
+            .collect()
+    };
+    // A band of 11 letters, cut to 40 by the graph, is cut again to a block of 16: what it shows is no wider than it.
+    let sized = call_sized(G, "r = g(v)", "\nterminals {\n    top 1\n    left 1\n}\n", Some("development"), true);
+    let band = texts(&sized, "band.text");
+    assert!(band.len() == 1 && band.iter().all(|width| *width <= 1600), "{band:?}");
+    // 8 high holds no line of the name, 10.48 high (notation 3.2): it is left out; 16 holds one.
+    assert!(texts(&g_sized("\nterminals {\n    top 3\n    left 0\n    top 2 x\n    top 3 n\n}\n"), "node.title").is_empty());
+    assert_eq!(texts(&g_sized("\nterminals {\n    top 3\n    left 1\n}\n"), "node.title").len(), 1);
+    // `gh_ij` would take two lines, `gh` and `ij`; 24 × 16 holds one, so it is cut on one.
+    let callee = "fn gh_ij(x: f64) -> (n: i64) {\n    n = 1\n}\n";
+    let sized = call_sized(callee, "r = gh_ij(v)", "\nterminals {\n    top 2\n    left 1\n}\n", None, true);
+    let lines: Vec<String> = sized
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, .. } if runs.iter().all(|run| run.token == "node.title") => Some(runs.iter().map(|run| run.text.as_str()).collect()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+}
+
+#[test]
+fn a_block_too_low_for_its_band_draws_it_above() {
+    // Notation 3.2: 16 high is lower than twice the band of 12, which goes above, 12 high from -12.
+    assert_eq!(band_rect(&g_banded("\nterminals {\n    left 1\n}\n")).map(|rect| rect.0), Some(-1200));
+    // 24 high keeps it inside, at the top.
+    assert_eq!(band_rect(&g_banded("\nterminals {\n    left 2\n}\n")), Some((0, 1200)));
+    // `band hidden` stays hidden; a top side keeps it inside.
+    assert_eq!(band_rect(&g_banded("\nterminals {\n    left 1\n    band hidden\n}\n")), None);
+    assert_eq!(band_rect(&g_banded("\nterminals {\n    top 3\n    left 1\n    top 2 x\n}\n")).map(|rect| rect.0), Some(0));
 }
 
 #[test]

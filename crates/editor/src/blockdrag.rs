@@ -45,8 +45,11 @@ fn counts(width: f32, height: f32) -> (u32, u32) {
 fn nearest(drawing: &Drawing, placed: usize, at: Pos2) -> Option<(Side, u32)> {
     let (x, y, width, height) = area(drawing, placed)?;
     let (top, left) = counts(width, height);
+    // Only the sides that have a place a terminal can take: none on the left and right of `left 0`, none on the top of
+    // `top 1`, whose one place is `after:`'s (spec 11.2).
     let distances = [(Side::Left, (at.x - x).abs()), (Side::Right, (at.x - x - width).abs()), (Side::Top, (at.y - y).abs())];
-    let side = distances.iter().min_by(|a, b| a.1.total_cmp(&b.1)).map(|found| found.0)?;
+    let open = |side: Side| if side == Side::Top { top >= 2 } else { left >= 1 };
+    let side = distances.iter().filter(|found| open(found.0)).min_by(|a, b| a.1.total_cmp(&b.1)).map(|found| found.0)?;
     let along = |from: f32, length: u32, least: u32| {
         let place = ((from / PITCH).round() as i64).clamp(i64::from(least), i64::from(length.max(least)));
         place as u32

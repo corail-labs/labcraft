@@ -603,22 +603,38 @@ fn a_clean_terminals_section_says_nothing() {
 }
 
 #[test]
-fn two_sizes_for_one_side_two_bands_two_lines_for_one_terminal_or_a_size_outside_3_to_64_are_an_error() {
+fn two_sizes_for_one_side_two_bands_two_lines_for_one_terminal_or_a_size_outside_its_range_are_an_error() {
     for lines in [
         "top 4\ntop 5",
         "left 3\nleft 4",
         "band above\nband hidden",
         "left 3 a\nleft 4 a",
         "left 2 err\ntop 3 err",
-        "top 2",
+        "top 0",
         "top 65",
-        "left 2",
+        "left 65",
         "left 0_65",
+        "left 99999999999",
     ] {
         assert_eq!(block(lines), ["LC5015"], "{lines}");
     }
-    // 3 and 64 are in the range.
-    assert_eq!(block("top 3\nleft 64"), NOTHING);
+    // 1 and 64 are in the range, and 2 too; the left side may have no place.
+    assert_eq!(block("top 1\nleft 64"), NOTHING);
+    assert_eq!(block("top 5\nleft 0\ntop 3 a"), NOTHING);
+    assert_eq!(block("top 64\nleft 1"), NOTHING);
+    assert_eq!(block("top 2\nleft 2"), NOTHING);
+}
+
+#[test]
+fn a_size_outside_the_range_counts_at_the_nearest_bound() {
+    // `top 0` counts as `top 1`, whose only place is that of `after:`: a terminal put on place 2 is past the side.
+    assert_eq!(block("top 0\ntop 2 a"), ["LC5015", "LC5014"]);
+    // `top 99` counts as `top 64`, which holds place 64; `left 70` as `left 64`, which does not hold place 65.
+    assert_eq!(block("top 99\ntop 64 a"), ["LC5015"]);
+    assert_eq!(block("left 70\nleft 65 a"), ["LC5015", "LC5014"]);
+    // Digits are read whole, as `fmt` reads them: 300 zeros then 2 is `left 2`, which holds place 2.
+    let zeros = "0".repeat(300);
+    assert_eq!(block(&format!("left {zeros}2\nleft {zeros}2 a")), NOTHING);
 }
 
 #[test]
