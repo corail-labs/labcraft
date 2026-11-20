@@ -100,7 +100,7 @@ numbers! {
     chamfer: "node"."chamfer" = 800, Length, 0..=3200, "3.2", "The right corners of a primitive, cut.";
     icon: "node"."icon" = 2800, Length, 1200..=11200, "3.2", "An icon in a block.";
     outline: "node"."outline" = 100, Length, 0..=400, "3", "The outline of a node.";
-    radius: "node"."radius" = 200, Length, 0..=1600, "3", "The corners of a node.";
+    radius: "node"."radius" = 200, Length, 0..=1600, "3", "The corners of a node; not of the D of a primitive, rounded by 2 (spec 11.4).";
 
     standard_header: "standard"."header" = 2400, Length, 1200..=9600, "3.1", "The title of a node in standard view.";
     first_line: "standard"."first_line" = 4000, Length, 1600..=16000, "3.1", "From its top to its first line of terminals.";

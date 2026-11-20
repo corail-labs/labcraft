@@ -386,8 +386,8 @@ type t =
 }
 
 /// `LC7005` (notation 2.1, cli.md 5): `y` placed over `ab` and `cd`, which do not touch each other. `core.add` is a
-/// D of 32 (notation 10): `y` spans 100 to 132 across and 40 to 72 down, `ab` 110 to 142 and 20 to 52, `cd` 110 to
-/// 142 and 60 to 92. From the left, `y` comes first; `ab` overlaps it, and so does `cd` (60 is above 72), and neither
+/// D of 24 × 32 (spec A.1): `y` spans 100 to 124 across and 40 to 72 down, `ab` 110 to 134 and 20 to 52, `cd` 110 to
+/// 134 and 60 to 92. From the left, `y` comes first; `ab` overlaps it, and so does `cd` (60 is above 72), and neither
 /// overlaps the other (52 is above 60): two warnings, at the entries of `ab` and `cd`, lines 12 and 13 (1 `labcraft`,
 /// 3 `use`, 5 `fn`, 6 to 8 the body, 9 `}`, 11 `layout {`, 12 `ab`, 13 `cd`, 14 `y`). Warnings: the function is drawn,
 /// exit 0.

@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "or")
 fn or(a: bool, b: bool) -> (result: bool)
 
 terminals {
-    top 3
+    top 2
     left 3
     left 1 a
     left last b

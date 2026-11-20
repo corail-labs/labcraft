@@ -7,8 +7,8 @@ extern rust(crate: "labcraft-runtime", function: "neg")
 fn neg<N: Number>(x: N) -> (result: N)
 
 terminals {
-    top 3
-    left 3
+    top 2
+    left 1
     left middle x
     right middle result
 }

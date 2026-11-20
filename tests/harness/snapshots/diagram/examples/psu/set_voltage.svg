@@ -6,19 +6,19 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="462" height="180" style="fill: var(--canvas-fill)"/>
 <defs>
-<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+<polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 23.17,0 23.94,0.15 24.59,0.59 30.59,6.59 31.02,7.23 31.17,8 31.02,8.77 30.59,9.41 24.59,15.41 23.94,15.85 23.17,16 2,16 1.23,15.85 0.59,15.41 0.15,14.77 0,14"/>
 </defs>
 <rect x="19" y="16" width="424" height="148" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn psu.set_voltage</text>
 <g data-wire="voltage" data-from="fn.voltage" data-to="volts.x">
-<path d="M19 112 L111.18 112 Q117.18 112 117.18 106 L117.18 86 Q117.18 80 123.18 80 L136.18 80" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M19 112 L119.18 112 Q125.18 112 125.18 106 L125.18 93.5 Q125.18 88 130.68 88 L136.18 88" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="volts" data-from="volts.result" data-to="command.volts">
-<path d="M168.18 80 L175.18 80 Q179.18 80 179.18 76 L179.18 76 Q179.18 72 183.18 72 L254.34 72" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M167.35 88 L173.27 88 Q179.18 88 179.18 82.09 L179.18 78 Q179.18 72 185.18 72 L254.34 72" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="source" data-from="fn.source" data-to="s.session">
-<path d="M19 88 L119.18 88 Q125.18 88 125.18 94 L125.18 122 Q125.18 128 131.18 128 L299.34 128 Q305.34 128 305.34 122 L305.34 118 Q305.34 112 311.34 112 L324.34 112" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
-<text x="197.2" y="125" font-size="10" style="fill: var(--ink-muted)">source</text>
+<path d="M19 88 L111.18 88 Q117.18 88 117.18 94 L117.18 122 Q117.18 128 123.18 128 L299.34 128 Q305.34 128 305.34 122 L305.34 118 Q305.34 112 311.34 112 L324.34 112" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
+<text x="193.2" y="125" font-size="10" style="fill: var(--ink-muted)">source</text>
 </g>
 <g data-wire="command" data-from="command.text" data-to="s.command">
 <path d="M294.34 64 L307.34 64 Q313.34 64 313.34 70 L313.34 114.5 Q313.34 120 318.84 120 L324.34 120" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
@@ -57,11 +57,11 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="412.94" y="139.65" font-size="10" style="fill: var(--node-title)">err</text>
 </g>
 <g data-node="volts"><title>core.unitless</title>
-<use href="#outline-0" x="136.18" y="64" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="143.15" y="83.65" font-size="10" style="fill: var(--node-title)">[V]</text>
-<polyline points="143.15,80 161.21,80" style="fill: none; stroke: var(--node-title); stroke-width: 1"/>
-<circle cx="136.18" cy="80" r="3" style="fill: var(--wire-data)"/>
-<circle cx="168.18" cy="80" r="3" style="fill: var(--wire-data)"/>
+<use href="#outline-0" x="136.18" y="80" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="143.15" y="91.65" font-size="10" style="fill: var(--node-title)">[V]</text>
+<polyline points="143.15,88 161.21,88" style="fill: none; stroke: var(--node-title); stroke-width: 1"/>
+<circle cx="136.18" cy="88" r="3" style="fill: var(--wire-data)"/>
+<circle cx="167.35" cy="88" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="command"><title>string.format</title>
 <rect x="254.34" y="56" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>

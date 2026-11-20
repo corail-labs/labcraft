@@ -826,15 +826,17 @@ impl<'a> Sizer<'a> {
             Kind::Call { glyph, .. } => glyph.as_ref(),
             _ => None,
         };
+        if let Some(Glyph::Unit { unit, .. }) = glyph {
+            // `with_unit` and `unitless`: as wide as their unit and 3 on each side, in whole places (spec 11.2); a sign
+            // keeps the width of the section.
+            let text = Text::new(unit, any_text(), large());
+            let wide = (text.width + 600 + crate::block::PITCH - 1) / crate::block::PITCH - 1;
+            places.top = places.top.max(u32::try_from(wide).unwrap_or(u32::MAX));
+        }
         let glyph = glyph.map(|glyph| match glyph {
             Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
             Glyph::Unit { unit, struck } => (Text::new(unit, any_text(), large()), *struck),
         });
-        if let Some((text, _)) = &glyph {
-            // As wide as the glyph and 3 on each side, in whole places.
-            let wide = (text.width + 600 + crate::block::PITCH - 1) / crate::block::PITCH - 1;
-            places.top = places.top.max(u32::try_from(wide).unwrap_or(u32::MAX));
-        }
         let (width, height) = (places.width(), places.height());
         let top_side = places.has_top_side();
         // Its outline at the size of this call: the ordinary block where a guard breaks there (11.4), which `check` says.

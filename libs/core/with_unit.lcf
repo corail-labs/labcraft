@@ -7,8 +7,8 @@ extern rust(crate: "labcraft-runtime", function: "with_unit")
 fn with_unit(x: f64) -> (result: f64)
 
 terminals {
-    top 3
-    left 3
+    top 2
+    left 1
     left middle x
     right middle result
 }
