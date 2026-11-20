@@ -2173,6 +2173,23 @@ fn a_terminal_goes_to_the_nearest_side_and_place_of_the_pointer() {
 }
 
 #[test]
+fn a_side_without_a_free_place_is_never_offered() {
+    // `top 1`: the only place of the top side is `after:`'s (spec 11.2), so a pointer on the top edge goes to the nearest
+    // side that has one. The block is 16 wide and, its left side keeping the 4 places of a small block, 40 high.
+    let callee = format!("{BLOCK_CALLEE}\nterminals {{\n    top 1\n}}\n");
+    let drawing = drawing_of(&[("main.lcf", BLOCK_MAIN), ("g.lcf", &callee)], &ViewState::default());
+    let placed = drawing.placed.iter().position(|node| !node.callee.is_empty()).expect("the call");
+    let port = drawing.ports.iter().position(|port| port.placed == Some(placed) && port.caption == "x" && port.input).expect("x");
+    let origin = Pos2::new(drawing.placed[placed].x as f32 / 100.0, drawing.placed[placed].y as f32 / 100.0);
+    let mut drag = blockdrag::BlockDrag::new(&drawing, port, origin).expect("a block of the project");
+    // On the top edge, 12 along: nearer the right edge (4 away) than the left (12): right, place 0 taken as 1.
+    drag.set_at(&drawing, origin + Vec2::new(12.0, 0.0));
+    assert_eq!(drag.to, (blockdrag::Side::Right, 1));
+    drag.set_at(&drawing, origin + Vec2::new(3.0, 0.0));
+    assert_eq!(drag.to, (blockdrag::Side::Left, 1));
+}
+
+#[test]
 fn the_free_places_are_all_but_its_own_and_the_first_of_the_top() {
     let (drawing, _, drag, _) = block_drag();
     // A place held by default is free (commands.md 9.4): only the place of `x` itself, left 1, is left out, and top 1, which

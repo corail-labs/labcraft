@@ -3,7 +3,7 @@
 //! caller. `fmt` puts the lines in their order.
 
 use labcraft_format::block::{Problem, Which, named, read};
-use labcraft_graph::{Attached, BandPlace, BlockPlace, BlockSide, MAX_PLACES, MIN_PLACES, Place, Terminals, TerminalsItem, TerminalsKind};
+use labcraft_graph::{Attached, BandPlace, BlockPlace, BlockSide, Place, Terminals, TerminalsItem, TerminalsKind, places_range};
 use std::collections::HashSet;
 
 use labcraft_graph::Id;
@@ -115,11 +115,13 @@ pub(crate) fn set_terminal(edit: &mut Edit, terminal: &Terminal, at: Option<Bloc
 
 /// `block.set_size`: `top N` and `left N`, each when given; `Some(None)` removes one.
 pub(crate) fn set_size(edit: &mut Edit, top: Option<Option<u32>>, left: Option<Option<u32>>) -> Result<(), EditError> {
-    for (key, value) in [("top", top), ("left", left)] {
+    for (key, value, side) in [("top", top, BlockSide::Top), ("left", left, BlockSide::Left)] {
+        let range = places_range(side);
         if let Some(Some(places)) = value
-            && !(MIN_PLACES..=MAX_PLACES).contains(&places)
+            && !range.contains(&places)
         {
-            return Err(EditError::invalid(key, format!("a side has {MIN_PLACES} to {MAX_PLACES} places")));
+            let (least, most) = range.into_inner();
+            return Err(EditError::invalid(key, format!("this side has {least} to {most} places")));
         }
     }
     // A line that applied before and no longer does: the size cannot hold it.
@@ -132,7 +134,8 @@ pub(crate) fn set_size(edit: &mut Edit, top: Option<Option<u32>>, left: Option<O
         if worse(edit)? {
             // The smallest size that holds the lines, as `check` counts them.
             let mut least = None;
-            for places in value.unwrap_or(MIN_PLACES)..=MAX_PLACES {
+            let range = places_range(which);
+            for places in value.unwrap_or(*range.start())..=*range.end() {
                 write_size(edit, which, Some(places));
                 if !worse(edit)? {
                     least = Some(places);

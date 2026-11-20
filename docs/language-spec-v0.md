@@ -1499,8 +1499,12 @@ terminals {
   counts in places. `top N` gives the top side `N` places and the block a width of (N + 1) × 8; `left N` gives the
   left side `N` places and the block a height of (N + 1) × 8 (`top 5`, `left 3`: 48 × 32). The right side has as
   many places as the left; the bottom side has none. A place is counted from 1, from the top on the left and right
-  sides, from the left on the top side. A size is between 3 and 64 *(proposed)*, so that a block is never smaller
-  than a primitive, 32 × 32; the center of a small block fits as visual notation 3.2 says. Without `top`, the top
+  sides, from the left on the top side. A size is between 1 and 64 on the top side, and between 0 and 64 on
+  the left *(proposed)*: `top 1` leaves the top side only the place of `after:`, and `left 0` gives the left and right
+  sides no place, for a block whose terminals are all on its top side (`top 5`, `left 0`: 48 × 8), which grows as any
+  other when a terminal has no place; a block is 16 × 8 at the least. The center of a small block, and its band, fit
+  as visual notation 3.2 says, and whether a small block still reads is the choice of its author, as for an outline
+  (11.4). A size outside its range is drawn at the nearest bound. Without `top`, the top
   side has the places of the width that visual notation 3.2 gives, rounded down (4 in a block of 40); without `left`, the left and right sides have the places that their terminals need (3.2).
 - **The first place of the top side is kept for `after:`** (R-15), which any call can wire and which visual notation
   3.2 draws there.
@@ -1531,13 +1535,14 @@ terminals {
 - **`band hidden`, `band inside` or `band above`** sets the band of this function, when it differs from the mask of
   its library (11.3); `inside` is the default (visual notation 3.2). A block with a top side, one whose section puts a
   terminal there (an `after:` does not count), draws a band `above` inside, so that the terminals of that side stay on
-  the grid. The functions of `core` and of the other primitive
+  the grid; a block too low for its band (with the default style, `left 1` or `left 0`) and without a top side draws a band
+  `inside` above (visual notation 3.2). The functions of `core` and of the other primitive
   libraries have no band, whatever the line says.
 - **Lines that cannot apply.** A line that names no terminal of the signature, a place outside its side (past the
   last), a place that another line took, or the place of `after:` (`top 1`) is a warning, and its terminal keeps
   its default place. Lines take their places in the order of the signature, the inputs then the outputs, the order
   that `fmt` writes (5.2): of two lines on one place, the second in that order does not apply, whatever their written
-  order (decision of the owner, 2026-11-19). Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside 3 to 64
+  order (decision of the owner, 2026-11-19). Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside its range
   are an error. The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section 5,
   lists only those).
 - **The standard view does not follow the section** (visual notation 3.1): it lists the terminals by name, in

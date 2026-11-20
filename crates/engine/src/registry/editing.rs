@@ -174,6 +174,13 @@ pub(super) fn position(description: &str) -> Value {
     json!({ "type": "array", "description": description, "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 })
 }
 
+/// The size of a side of a block (`block.set_size`), in the range that `check` reads (spec 11.2).
+fn places(side: labcraft_graph::BlockSide) -> Value {
+    let (least, most) = labcraft_graph::places_range(side).into_inner();
+    let description = format!("The places on the {} side, {least} to {most}; `null` removes the line.", side.word());
+    json!({ "type": ["integer", "null"], "description": description, "minimum": least, "maximum": most })
+}
+
 pub(super) fn names(description: &str) -> Value {
     json!({ "type": "array", "description": description, "items": { "type": "string" }, "minItems": 1 })
 }
@@ -691,14 +698,8 @@ pub(super) fn catalog() -> Vec<Command> {
             object(
                 &[
                     ("file", string(FILE)),
-                    (
-                        "top",
-                        json!({ "type": ["integer", "null"], "description": "The places on the top side, 3 to 64; `null` removes the line.", "minimum": 3, "maximum": 64 }),
-                    ),
-                    (
-                        "left",
-                        json!({ "type": ["integer", "null"], "description": "The places on the left side, 3 to 64; `null` removes the line.", "minimum": 3, "maximum": 64 }),
-                    ),
+                    ("top", places(labcraft_graph::BlockSide::Top)),
+                    ("left", places(labcraft_graph::BlockSide::Left)),
                     ("expected_revision", revision()),
                 ],
                 &["file"],

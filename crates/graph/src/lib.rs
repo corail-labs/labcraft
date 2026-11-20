@@ -829,7 +829,7 @@ pub enum BlockSide {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TerminalsKind {
-    /// `top N` or `left N`: the number of places of a side, its digits as written (`check` judges 3 to 64).
+    /// `top N` or `left N`: the number of places of a side, its digits as written (`check` judges 1 to 64 on the top, 0 to 64 on the left).
     Size { side: BlockSide, places: Name },
     /// `left middle x`, `right 2 output err`: a terminal on a place. `output` is `Some(true)` for `output x`, `Some(false)`
     /// for `input x`, `None` for the name alone.
@@ -894,9 +894,15 @@ impl BandPlace {
     }
 }
 
-/// The least and the most places of a side (spec 11.2, *proposed*): a block is never smaller than a primitive.
-pub const MIN_PLACES: u32 = 3;
+/// The least and the most places of a side (spec 11.2, *proposed*): the top side keeps the place of `after:`, so 1 at
+/// the least; the left and right sides may have none, for a block whose terminals are all on its top side (16 × 8 at
+/// the least).
 pub const MAX_PLACES: u32 = 64;
+
+/// The places that a size of a side, `top` or `left`, may give (11.2).
+pub fn places_range(side: BlockSide) -> std::ops::RangeInclusive<u32> {
+    if side == BlockSide::Top { 1..=MAX_PLACES } else { 0..=MAX_PLACES }
+}
 
 /// The places of the top side of a block of 40 without `top` (visual notation 3.2: its width over 8, rounded down, less
 /// one).

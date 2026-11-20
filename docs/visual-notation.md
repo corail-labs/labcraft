@@ -807,7 +807,11 @@ When the function comes from another library, a **band** at the top of the block
   (spec 11.2). A band `above` lies on the block, 12 high, without moving the block: its top-left corner, its size and
   its lines stay. A block with a top side (a terminal that its `terminals` section puts there; an `after:` does not
   count) keeps its band inside, so that the terminals of that side, on its top edge, stay on the grid; the text of
-  the band then goes in the widest gap between them, cut to it, and is not drawn when not one cell holds there. How the rounding of the block joins a band above
+  the band then goes in the widest gap between them, cut to it, and is not drawn when not one cell holds there. A
+  block too low for its band, lower than twice its height (with the default style, `left 1`, 16 high, and `left 0`, 8),
+  draws a band `inside` above, as it leaves no room under it; `hidden` stays hidden, and a block with a top side keeps
+  it inside, as above, where a block of 8 shows only its colour *(proposed)*.
+  How the rounding of the block joins a band above
   (A4c) is judged on renders.
 - **Block** *(proposed)*: `node.square` wide, 40 units, whatever its label, its band or its lines, so that a node
   reads as an icon and the blocks of a column line up; as tall as its places need (below), with 8 above
@@ -859,7 +863,9 @@ When the function comes from another library, a **band** at the top of the block
   bottom 8 above the edge, centred on the terminal; two neighbouring pills step upward, as those of the left side step
   outward. A block with a top side (as above, `after:` aside) draws its label 4 below the block instead of above
   it, clear of those wires. In a block that a section makes smaller than 40, the icon is scaled down to the room that
-  its band leaves, never up, and a label that does not hold on two lines is cut on one. A
+  its band leaves, never up, and left out when none is left, and a label that does not hold on two lines is cut on one,
+  to the cells that hold, down to none, and to one line or none when the height that the band leaves holds no more
+  (the tooltip keeps the name); a block is 16 × 8 at the least (spec 11.2). A
   terminal off its default side, an input on the right or an output on the left or the top, carries a **mark of
   direction**: a chevron in `ink.muted`, 2 outside the block, pointing the way the data go, into the block for an
   input and out of it for an output, since the shape of a terminal tells its family, not its direction *(proposed)*.

@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use labcraft_graph::{BandPlace, BlockPlace, BlockSide, Id, Terminals, TerminalsKind};
-pub use labcraft_graph::{DEFAULT_TOP, MAX_PLACES, MIN_PLACES, Place, odd_when_middle, place_number};
+pub use labcraft_graph::{DEFAULT_TOP, MAX_PLACES, Place, odd_when_middle, place_number, places_range};
 
 use crate::canonicalize::coordinate_value;
 use labcraft_types::{Code, Interner, Name, cut_text};
@@ -94,14 +94,17 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
                     continue;
                 }
                 let digits = text(places);
-                match coordinate_value(&digits).filter(|value| (MIN_PLACES..=MAX_PLACES).contains(value)) {
-                    Some(value) if side == BlockSide::Top => top = Some(value),
-                    Some(value) => left = Some(value),
-                    None => {
-                        let message = format!("`{word} {digits}`: a side has {MIN_PLACES} to {MAX_PLACES} places (11.2)");
-                        problems.push((Code::Lc5015, message, item.id));
-                    }
+                // A size out of the range is drawn at the nearest bound (11.2): digits too large for a coordinate are past
+                // the most.
+                // Read whole, as `fmt` reads them (leading zeros past the cut of the message included); only the message is cut.
+                let (range, written) = (places_range(side), coordinate_value(names.resolve(places)));
+                let value = written.map_or(*range.end(), |value| value.clamp(*range.start(), *range.end()));
+                if written != Some(value) {
+                    let (least, most) = range.into_inner();
+                    let message = format!("`{word} {digits}`: this side has {least} to {most} places, so it is drawn with {value} (11.2)");
+                    problems.push((Code::Lc5015, message, item.id));
                 }
+                *(if side == BlockSide::Top { &mut top } else { &mut left }) = Some(value);
             }
             TerminalsKind::Band(place) => {
                 if band.is_some() {
@@ -139,7 +142,7 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
         }
         named.insert(terminal, item.id);
         let place = match place {
-            BlockPlace::Number(digits) => match coordinate_value(&text(digits)) {
+            BlockPlace::Number(digits) => match coordinate_value(names.resolve(digits)) {
                 Some(number) => Place::Number(number),
                 None => Place::Number(0),
             },

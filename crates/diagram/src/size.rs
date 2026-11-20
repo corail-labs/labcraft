@@ -856,10 +856,21 @@ impl<'a> Sizer<'a> {
             found
         });
         let start = |index: usize| drawn.as_ref().and_then(|(drawn, _)| drawn.starts.get(index).copied());
-        let band = band.map(|band| Text::measured(band.clone(), small()));
+        // The band was cut to a block of 40 (`band_room`): a block that the section makes narrower cuts it to its own width.
+        let band = band.map(|band| {
+            let text = Text::measured(band.clone(), small());
+            let cells = band_cells(width, band_insets(node));
+            if text.shown.cells > cells { Text::new(&text.shown.text(), cells, small()) } else { text }
+        });
         let mut shapes = Vec::new();
         let mut above = 0;
-        let top = match (band, block.band.unwrap_or(BandPlace::Inside)) {
+        // A block too low for its band, lower than twice its height, draws a band `inside` above, unless a top side keeps
+        // it inside (notation 3.2).
+        let place = match block.band.unwrap_or(BandPlace::Inside) {
+            BandPlace::Inside if height < 2 * style::band_height() && !top_side => BandPlace::Above,
+            place => place,
+        };
+        let top = match (band, place) {
             (None, _) | (Some(_), BandPlace::Hidden) => body_of(drawn.as_ref(), None, (0, 0), width, height, &mut shapes),
             // On the block, 12 high, without moving it: its corner, its size and its lines stay.
             (Some(text), BandPlace::Above) if !top_side => {
@@ -920,12 +931,23 @@ impl<'a> Sizer<'a> {
                 } else {
                     style::icon().min(width.min(height - top) - (style::square() - style::icon())).max(0)
                 };
-                shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
+                // Left out when no room is left.
+                if side > 0 {
+                    shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
+                }
             }
             (None, None) => {
                 let cells = cells_in(width - style::terminal(), label_size());
-                let label = if node.always { vec![Text::new(short, cells, label_size())] } else { label_lines(short, cells) };
                 let line = line_height(label_size());
+                // As many lines as what the band leaves holds: two cut on one, or none in a block too low (notation 3.2).
+                let rows = (height - top) / line;
+                let label = if rows <= 0 || cells == 0 {
+                    Vec::new()
+                } else if node.always || rows == 1 {
+                    vec![Text::new(short, cells, label_size())]
+                } else {
+                    label_lines(short, cells)
+                };
                 let centre = if node.always { (top + always_top(height)) / 2 } else { centre };
                 let first = centre - line * label.len() as i64 / 2;
                 for (row, text) in label.iter().enumerate() {

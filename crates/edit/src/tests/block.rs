@@ -93,12 +93,15 @@ fn a_place_that_another_line_holds_is_refused() {
 }
 
 #[test]
-fn a_size_is_between_3_and_64_and_holds_the_places_that_the_lines_name() {
+fn a_size_is_between_1_or_0_and_64_and_holds_the_places_that_the_lines_name() {
     gives(HEAD, size(Some(Some(5)), Some(Some(3))), &with("    top 5\n    left 3\n"));
-    for places in [2, 65] {
+    for places in [0, 65] {
         assert_eq!(refused(HEAD, size(Some(Some(places)), None), "params.invalid").parameter, Some("top"));
-        assert_eq!(refused(HEAD, size(None, Some(Some(places))), "params.invalid").parameter, Some("left"));
     }
+    assert_eq!(refused(HEAD, size(None, Some(Some(65))), "params.invalid").parameter, Some("left"));
+    gives(HEAD, size(Some(Some(1)), None), &with("    top 1\n"));
+    gives(HEAD, size(None, Some(Some(0))), &with("    left 0\n"));
+    gives(HEAD, size(Some(Some(2)), Some(Some(1))), &with("    top 2\n    left 1\n"));
     gives(HEAD, size(Some(Some(3)), None), &with("    top 3\n"));
     gives(HEAD, size(Some(Some(64)), None), &with("    top 64\n"));
     // A line names place 7 on the top: the smallest size is 7.
