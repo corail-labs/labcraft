@@ -368,7 +368,7 @@ fn band_row(ui: &mut egui::Ui, own: &OwnBlock, asked: &mut Vec<Asked>) {
     }
 }
 
-fn capital(word: &str) -> String {
+pub(crate) fn capital(word: &str) -> String {
     let mut chars = word.chars();
     chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
 }

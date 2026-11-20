@@ -43,6 +43,10 @@ impl Host for Fake {
     fn set_zoom(&self, function: &str, zoom: f32) {
         self.session.borrow_mut().set_zoom(function, zoom);
     }
+
+    fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
+        self.session.borrow_mut().set_user_settings(keys);
+    }
 }
 
 fn fake() -> Fake {
@@ -101,6 +105,13 @@ struct State {
 
 fn harness(host: Fake) -> Harness<'static, State> {
     harness_with(host, Prefs::default())
+}
+
+/// The settings of the window with one key of the user (commands.md 9.7).
+fn prefs_with(key: &str, value: Value) -> Prefs {
+    let mut prefs = Prefs::default();
+    prefs.settings.insert(key.to_owned(), value);
+    prefs
 }
 
 fn harness_with(host: Fake, prefs: Prefs) -> Harness<'static, State> {
@@ -337,7 +348,7 @@ fn reset_layout_docks_the_detached_tabs() {
 #[test]
 fn f5_runs_the_function_shown_and_its_values_come_when_recorded() {
     for record in [true, false] {
-        let mut harness = harness_with(fake(), Prefs { record_values: record, ..Prefs::default() });
+        let mut harness = harness_with(fake(), prefs_with(labcraft_engine::settings::RECORD_VALUES, json!(record)));
         let answer = "labcraft 1
 
 use core
@@ -408,7 +419,7 @@ fn a_planned_workspace_opens_its_card() {
 
 #[test]
 fn a_run_without_record_says_that_the_trace_shown_is_of_an_earlier_run() {
-    let mut harness = harness_with(fake(), Prefs { record_values: true, ..Prefs::default() });
+    let mut harness = harness_with(fake(), prefs_with(labcraft_engine::settings::RECORD_VALUES, json!(true)));
     let answer = "labcraft 1
 
 use core
@@ -743,7 +754,7 @@ layout {
 /// With autopatch turned off, Space on a node selected inserts the node unwired (notation 2.6).
 #[test]
 fn without_autopatch_space_on_a_node_inserts_it_unwired() {
-    let mut harness = harness_with(fake(), Prefs { autopatch: false, ..Prefs::default() });
+    let mut harness = harness_with(fake(), prefs_with(labcraft_engine::settings::AUTOPATCH, json!(false)));
     harness.run_steps(4);
     let (on_a, _) = canvas_element(&harness, "a, core.mul");
     click_at(&mut harness, on_a, Modifiers::NONE);
@@ -895,4 +906,90 @@ fn reset_in_the_view_block_removes_the_sections() {
     harness.run_steps(6);
     let text = text_of(&harness, "/p/psu/set.lcf");
     assert!(!text.contains("terminals {"), "{text}");
+}
+
+/// Runs a command of the palette, by its id and its JSON.
+fn from_palette(harness: &mut Harness<'_, State>, text: &str) {
+    harness.key_press(Key::F1);
+    harness.run_steps(3);
+    palette_field(harness).type_text(text);
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(4);
+}
+
+/// The `Settings` dialog (ide.md 2): a choice and a toggle write the store shown, the user's or the project's, by
+/// `settings.set`; the window keeps the keys of the user, which its app writes.
+#[test]
+fn the_settings_dialog_writes_the_store_of_the_user_or_of_the_project() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    // The gear of the top bar.
+    harness.get_by_label("Settings").click();
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Block fill").is_some(), "open");
+    shot(&mut harness, "settings");
+    harness.get_by_label("Neutral").click();
+    harness.run_steps(4);
+    let settings = harness.state().host.snapshot().view.settings.clone();
+    assert_eq!(settings.user.get("appearance.block_fill"), Some(&json!("neutral")));
+    assert_eq!(harness.state().ide.prefs().settings.get("appearance.block_fill"), Some(&json!("neutral")), "kept by the window");
+    assert!(harness.state_mut().ide.take_prefs_changed());
+    // The switch of the dialog, drawn after the tab `Project` of the dock.
+    harness.query_all_by_label("Project").last().unwrap().click();
+    harness.run_steps(3);
+    // Below the fold of the dialog: clicked through accesskit, as a screen reader would.
+    harness.get_by_label("Drag on the empty canvas pans").click_accesskit();
+    harness.run_steps(4);
+    let written = harness.state().host.memory.get("/p/.labcraft/config.toml").map(|bytes| String::from_utf8(bytes).unwrap());
+    assert_eq!(written.as_deref(), Some("[editor]\ndrag_pans = true\n"));
+    assert!(!harness.state().ide.prefs().settings.contains_key("editor.drag_pans"), "the user's store is not written");
+    shot(&mut harness, "settings-project");
+    // `Reset` takes the key out of the store shown.
+    harness.get_by_label("Reset").click_accesskit();
+    harness.run_steps(4);
+    let written = harness.state().host.memory.get("/p/.labcraft/config.toml").map(|bytes| String::from_utf8(bytes).unwrap());
+    assert_eq!(written.as_deref(), Some(""));
+    harness.get_by_label("Close").click();
+    harness.run_steps(3);
+    assert!(harness.query_by_label("Block fill").is_none(), "closed");
+}
+
+/// A toggle of the menus writes the key of the user (commands.md 9.7), through the session when a project is open.
+#[test]
+fn a_toggle_of_the_menus_writes_the_key_of_the_user() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    from_palette(&mut harness, "ide.dark");
+    let settings = harness.state().host.snapshot().view.settings.clone();
+    assert_eq!(settings.user.get("appearance.theme"), Some(&json!("dark")));
+    assert_eq!(harness.state().ide.prefs().settings.get("appearance.theme"), Some(&json!("dark")));
+    from_palette(&mut harness, "ide.dark");
+    assert_eq!(harness.state().host.snapshot().view.settings.user.get("appearance.theme"), Some(&json!("light")));
+}
+
+/// A toggle whose key the project holds shows the project's value and is not enabled: the dialog changes it (ide.md 2).
+#[test]
+fn a_toggle_whose_key_the_project_holds_is_not_enabled() {
+    let mut harness = harness(fake_with(&[(
+        "/p/.labcraft/config.toml",
+        "[editor]
+drag_pans = true
+",
+    )]));
+    harness.run_steps(4);
+    from_palette(&mut harness, "Drag on the empty canvas pans");
+    let settings = harness.state().host.snapshot().view.settings.clone();
+    assert_eq!(settings.user.get("editor.drag_pans"), None, "the user's store is not written");
+    assert_eq!(settings.project.get("editor.drag_pans"), Some(&json!(true)));
+}
+
+/// The keys that the window keeps reach a session that does not hold them (`Stores::given`).
+#[test]
+fn the_keys_of_the_user_reach_the_session() {
+    let mut harness = harness_with(fake(), prefs_with("editor.drag_pans", json!(true)));
+    harness.run_steps(4);
+    let settings = harness.state().host.snapshot().view.settings.clone();
+    assert!(settings.given);
+    assert_eq!(settings.user.get("editor.drag_pans"), Some(&json!(true)));
 }

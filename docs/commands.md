@@ -430,7 +430,7 @@ watches the files says so.
 | `diagram.svg` | The options of `labcraft-cli diagram` ([cli.md](cli.md), section 7), less the file it writes to and the folders of `--lib-path`, which are the session's: `folder`, *`functions`* (all by default), *`theme`* (`both`), *`max_diagram_nodes`* (20,000), *`trace`* (a trace of the project, with exactly one function in `functions`: its values on the wires, [cli.md](cli.md), 7.3), *`max_trace_size`* (536,870,912) | The SVG of each function asked for, the same as `labcraft-cli diagram --svg` writes, in the field `image` of its entry, and its report `labcraft-diagram/1` without `svg`, since no file is written, with its `trace` part when `trace` is given, so that an agent sees the drawing of what it wrote (D-18). When the result would pass the bound of a result (section 2), the SVGs give way from the last function to the first, each `image` as `{ "$cut": true }`, until it fits, and the result says `truncated` (decision of the owner, 2026-11-11): an agent can ask for one function at a time, or use `labcraft-cli diagram`, which writes files and has no such bound |
 | `view.open` | `folder` (a library folder of the project, as the `folder` of `library.check`: `.` for its root) | The functions of the folder, each with its file and whether it is drawable, and the report of `check` (`labcraft-check/1`). The viewer shows it in place of the folder open before, and watches its files |
 | `view.show_function` | `function` (a function of the open folder, named as the `FUNCTION` of `diagram`, cli.md 7), *`preview`* (`false`) (its tab is a preview, which the next preview replaces, ide.md 3; shown again without it, the tab stays) | Draws it in the viewer, as its file gives it (cli.md 7.1); returns its entry of `diagrams` in `labcraft-diagram/1` (function, file, drawn, nodes, codes). A function in a window of its own (ide.md 9) stays there: no tab opens, `preview` does nothing, and its entry is returned as its window last drew it. An unknown function is an error of the command |
-| `view.set_standard_view` | `on` (boolean) | The preference of the IDE that shows every node in standard view (notation 3), kept with the preferences; returns the value it had, as `{ "before": false }`. Changes no file |
+| `view.set_standard_view` | `on` (boolean) | Writes `view.standard_everywhere` in the settings of the user (9.7), which shows every node in standard view (notation 3); returns the value it had, as `{ "before": false }`. Changes no file of the project; a store of the user that cannot be written is `file.unwritable` |
 | `view.set_state` | `function`, `state`: the view state of notation 2.1 that the file does not hold, in part, as `{ "arms": { KEY: N }, "unfolded": { KEY: true }, "standard": { KEY: false }, "iterations": { KEY: N } }`, each part optional, `KEY` the key of a node of the drawing that follows it across a change of the file (per structure: the branch shown in tabs or unfolded; per construction: folded or not; per node: standard view or not; per loop: the iteration chosen, from 0, kept across runs and bounded by the last of each, the last following the last of the runs to come, the loops inside going to their last unless the same call chooses theirs, notation 6.1). Choosing an iteration also gives the tabs back to the arms that the run took | The drawing's entry of `diagrams` in `labcraft-diagram/1`. A click on a tab, a fold or an iteration selector goes through it |
 | `view.open_trace` | *`file`* (a trace of the project, `labcraft-trace/1`), *`function`* (the one the window of the project shows) | Shows the values of that run on the function shown in a window (notation 6.1), read with the limits of cli.md 7.4, until that window shows another function; without `file`, those of its last run again (cli.md 8; decisions of the owner, 2026-11-13). The window is the one that shows `function` (ide.md 9: the IDE names the function of the window that has focus), else `params.invalid`; without it, the window of the project. Returns the `trace` part of `labcraft-diagram/1` (file, events, status, cut, stale, ignored), or `null` when the function has no trace. A file that does not exist or does not read is `LC7101` in that part, not an error of the command |
 
@@ -544,8 +544,8 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
 | `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
 | `commands.batch` | `commands`, *`label`* (the labels of its commands), *`expected_revision`* | Runs a list of `{ "id", "params" }` in order, as one step of undo (9.1). If one fails, nothing is written, and the command returns its error with its `index`. Otherwise it returns, for each command, its `names` and `renamed`, and, for all, one `step`, one `files`, and the `diagnostics` and `summary` of one check of the root, made at the end. It takes the commands of 6.7 that edit, and at most 1,000 *(proposed)*: `history.*`, `settings.*`, `fragment.copy`, the commands of the window, `function.create`, `function.rename`, `type.create` and `type.rename`, which make or rename a file, `library.set_mask`, which writes a manifest, and `commands.batch` itself are `params.invalid`. The `expected_revision` of the batch is judged once, before its first command; its commands do not take one (`params.unknown`). Before its commands, each node that they name by its line (`@N`, 9.2) and that the `layout` section cannot name gets its label, as `node.move` gives it, in one pass over the text before the batch, and each `@N` is read as that label: a label that a command gives can move lines (spec 5.2), and a later `@N` would name another node (decision of the owner, 2026-11-17). The `renamed` of the first command that names it says so. In a parameter that names a node, a wire or an input (9.2), `$i` names the node that the earlier command `i` of the batch named, its `names.node`: `[{ "id": "node.add", "params": { "file": "f.lcf", "call": "core.abs" } }, { "id": "wire.connect", "params": { "file": "f.lcf", "from": "reading", "to": "$0.x" } }]` is quick insertion from a wire (notation 2.6), one step; a node renamed later in the batch (folded into an output, given a label) keeps its `$i` under its new name. A `$i` is a whole name, at the start of the parameter or of the end of a wire after its arrow, followed by `.`, a space or nothing, its number without a leading zero (`$0`, `$0.x`, `reading -> $0.x`; not `$0x`, `$01`), and the `$i` of one command bring at most 1 MiB *(proposed)*; otherwise, or for a `$i` of a command that is not earlier, or that named no node, it is `params.invalid` (decision of the owner, 2026-11-17) |
-| `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from" }] }`; `from` is `project`, `user` or `default` (9.1) |
-| `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project, and returns `{ "before": …, "scope": "user" }`. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid` |
+| `settings.get` | *`key`* (all) | `{ "settings": [{ "key", "value", "from", "project" }] }`, in the order of the table of 9.7; `from` is `project`, `user` or `default`, and `project` says whether a project may hold the key. An unknown key is `params.invalid` |
+| `settings.set` | `key`, `value`, *`scope`* (`user`) | Writes the setting in the store of the user or of the project (9.7), and returns `{ "before": …, "scope": "user" }`, `before` being what that store held, `null` for nothing. `value: null` takes the key out of the store: the other store or the default gives it again (`Reset`). A setting is not a program, so this is not a step of history. An unknown key, a value of the wrong type, or `scope: "project"` for a key that a project may not hold, is `params.invalid` |
 
 **The window**
 
@@ -686,8 +686,9 @@ The example leaves lines out, and files from the first line.
   not the root (decision of the owner, 2026-11-10), so two functions never share a file. The folder starts with `.`, so no walk reads
   it as a library, and LabCraft writes a `.gitignore` holding `*` in `.labcraft/` when it creates that folder, so that runs
   leave nothing for git to see. From M1, that `.gitignore` holds `*`, `!.gitignore` and `!config.toml`, so that it and the settings of
-  the project are versioned (section 9), and LabCraft writes it whenever it is missing or lacks those lines,
-  not only when it creates the folder: a clone has `.labcraft/` already. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
+  the project are versioned (section 9). A run or the journal that finds `.labcraft/` leaves its `.gitignore` as it is;
+  a write of the settings of the project adds the lines it lacks, those there kept: a project made before has
+  `.labcraft/` already. The run writes `<function>.trace.jsonl.<id>.partial` as it goes, where
   `<id>` is unique to the run (the process, the session and the run), which can be followed, and renames it over the
   last trace when it ends, so the trace of the last finished run is always whole, and two runs of one
   function at once never write the same file: the one that ends last stays. A run first removes the
@@ -762,7 +763,7 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   of the user in the folder of the user (`craft-settings`); a key of the project wins over the same key of the
   user. The commands `settings.get` and `settings.set` read and write them, for the IDE, the agent and the
   command line; `labcraft.toml` stays the manifest of the libraries (D-25). In `.labcraft/`, git sees `config.toml`
-  and the `.gitignore` only; the runs and the traces stay out of it (section 8).
+  and the `.gitignore` only; the runs and the traces stay out of it (section 8). Section 9.7 lists the keys.
 
 ### 9.2 Naming what a command edits
 
@@ -917,6 +918,54 @@ saying so (decision of the owner, 2026-11-15).
   the carry. That carry stops a `loop` on an error (spec 6.3); a `for` runs to its end.
 - `names.structure` gives the name of the structure as a command names it (a label when it gives nothing: `#match_node`,
   spec 11), and `names.outputs` its outputs, in order.
+
+### 9.7 The settings
+
+- **Two stores.** The project's is `.labcraft/config.toml` (9.1). The user's is `settings.toml`, in the folder that
+  `craft-settings` gives LabCraft on that computer, beside the `config.toml` where the window keeps its layout and
+  the projects opened last; on the web, the storage of the page (architecture 12.9). A key of the project wins over the same key of
+  the user; a key in neither has its default. The session reads both when it opens; a store changed by another
+  process meanwhile is read at the next opening. A write changes only its key, in the file as it is then: what another
+  process wrote there stays.
+- **A key is `group.name`**, and in a file, the key `name` of the table `[group]`: `[editor]` then `drag_pans = true`.
+  What else a file holds (comments, keys LabCraft does not know) stays as written. A key of the table below whose
+  value has the wrong type, or that a project may not hold, is ignored where it is written. A project's file that does
+  not read as TOML gives no key, and `settings.set` does not write it (`file.unparsed`) until it is mended.
+- **What a project may hold** is said by each key (decision of the owner, 2026-11-20): what one person sees (the
+  theme, the colours, motion, what the canvas shows) is theirs, and a project never imposes it; how the editor reacts
+  to a gesture can be a rule of the team, so a project may fix it.
+- **Who follows them.** The window, and what it draws: a drawing that a command gives (`diagram`, 6.5) is that of the
+  code, whatever the settings. An agent reads and writes them as the window does; `settings.set` is an edit for its
+  policy (ide.md 8). `labcraft-cli exec` and `mcp` read and write the store of the user, but do not follow it: what
+  they draw, and the places their edits write, start from the defaults and follow only the keys of the user that a
+  command of that process sets, so that a command gives the same file on every computer (decision of the owner,
+  2026-11-20).
+- **Bounds** *(proposed)*: a store holds at most 1 MiB, and one that holds more gives no key and is not written;
+  `appearance.library_colors` names at most 1,000 libraries, each name of 1 to 256 bytes. Taking out the last key of a
+  table takes the table out, unless a comment stands above it.
+
+| Key | Values | Default | Project | What it does |
+|---|---|---|---|---|
+| `appearance.theme` | `light`, `dark` | `light` | no | The theme of the window and of the canvas (ide.md 2) |
+| `appearance.look` | `studio`, `lab` | `studio` | no | The look of the window (ide.md 2) |
+| `appearance.reduced_motion` | boolean | `false` | no | No glide (visual notation 2.1) |
+| `appearance.block_fill` | `code`, `neutral` | `code` | no | `neutral` draws every block in the neutral tokens, whatever its `color`, `fill` and `stroke` (spec 11.2) |
+| `appearance.library_colors` | a table: library → `"#RRGGBB"` | `{}` | no | The `color` of a library's blocks, in place of that of its mask (spec 11.3), from which the theme derives the band and the tint in both themes, as for a `color` written; a function's own `color` stays |
+| `view.standard_everywhere` | boolean | `false` | no | Every node in standard view (visual notation 3); `view.set_standard_view` writes it |
+| `view.values_shown` | boolean | `true` | no | The values of the last run on the wires (visual notation 6.1) |
+| `view.preview_tabs` | boolean | `true` | no | A single click on a file opens it as a preview (ide.md 3) |
+| `editor.drag_pans` | boolean | `false` | yes | A drag on the empty canvas pans; off, it selects with a rectangle (visual notation 2.6) |
+| `editor.fix_every_node` | boolean | `false` | yes | A move fixes every free node of the function (visual notation 2.4) |
+| `editor.mark_fixed` | boolean | `true` | no | A pin on each fixed node (visual notation 2.4) |
+| `editor.replace_with_alt` | boolean | `false` | yes | A wire dropped on an input that holds something replaces it only with Alt down (visual notation 2.4) |
+| `editor.accept_mismatch` | boolean | `false` | yes | A wire of the wrong type is written, and `check` gives `LC3001` (visual notation 2.4) |
+| `editor.route_with_shift_alt` | boolean | `false` | yes | Shift+Alt and a drag move a segment of a wire, in place of Alt (visual notation 2.6) |
+| `editor.autopatch` | boolean | `true` | yes | Autopatch from the keyboard (visual notation 2.6) |
+| `editor.into_wire` | boolean | `true` | yes | Inserting into a wire (visual notation 2.6) |
+| `run.record_values` | boolean | `false` | no | A run records its values, its trace, for the wires (ide.md 3) |
+
+The settings of AI and of the agents (ide.md 8) come with the agent attached (architecture 12.11, step 8). Where the
+panels are, the detached windows and the insertions of the user are the state of the window, kept with it, not keys.
 
 ## 10. Left for later
 

@@ -32,7 +32,10 @@ pub enum ToWorker {
     /// Opens a folder in a new session, with the preference of the window. `skipped`: the functions whose drawing
     /// trapped a worker before, which this one never draws. `show`: the function to show once it is open, the one shown
     /// before a restart. `detached`: the functions in a window of their own before a restart, which have it again.
-    Open { folder: Arc<Folder>, standard_everywhere: bool, skipped: Vec<String>, show: Option<String>, detached: Vec<String> },
+    /// `user_settings`: the keys of the store of the user (commands.md 9.7), as a JSON object.
+    Open { folder: Arc<Folder>, user_settings: String, skipped: Vec<String>, show: Option<String>, detached: Vec<String> },
+    /// The keys of the store of the user, as a JSON object, for a session that does not hold them.
+    UserSettings(String),
     /// A command of the session (`docs/commands.md`), its parameters as JSON; `request` names its answer.
     Command { request: u64, id: String, params: String },
     /// The zoom of the canvas of the window that shows the function, which `view.get_state` returns: no command.
@@ -106,6 +109,8 @@ pub struct Seen {
     pub detached: Vec<SeenWindow>,
     pub opened: Vec<String>,
     pub standard_everywhere: bool,
+    /// The settings of the session (`engine::settings::Stores`), as JSON: `{ "user", "project", "given" }`.
+    pub settings: String,
     /// The view of each tab whose view is not the diagram alone: the function, its view, the second view of a split.
     pub tabs: Vec<(String, String, Option<String>)>,
     pub preview: Option<String>,

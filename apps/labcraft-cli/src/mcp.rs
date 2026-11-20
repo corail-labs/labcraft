@@ -69,7 +69,11 @@ pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, Str
         clock: Arc::new(crate::clock::Real::new()),
         process: std::process::id(),
     };
-    Session::new(Arc::new(Disk), config, background).map_err(|error| error.message)
+    let mut session = Session::new(Arc::new(Disk), config, background).map_err(|error| error.message)?;
+    if let Some(problem) = crate::user_settings::give(&mut session) {
+        let _ = writeln!(std::io::stderr(), "warning: {problem}");
+    }
+    Ok(session)
 }
 
 /// Serves the session until stdin closes, then lets go of the locks of this process (`engine::runs::let_go`): one

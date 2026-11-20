@@ -44,7 +44,7 @@ impl Ide {
     pub(crate) fn copy(&mut self, host: &dyn Host, view: &Published, function: &str, clip: Clip) {
         let Some(file) = file_of(view, function) else { return };
         let Some(window) = view.window_of(function) else { return };
-        let selection = canvas_shown(window, &self.prefs).selection;
+        let selection = canvas_shown(window, &self.settings).selection;
         if selection.nodes.is_empty() {
             self.say("Copy, cut and duplicate take the nodes selected: select one or more nodes");
             return;
@@ -73,7 +73,7 @@ impl Ide {
     pub(crate) fn paste(&mut self, host: &dyn Host, view: &Published, function: &str, text: &str, pointer: Option<egui::Pos2>) {
         let Some(file) = file_of(view, function) else { return };
         let Some(window) = view.window_of(function) else { return };
-        let shown = canvas_shown(window, &self.prefs);
+        let shown = canvas_shown(window, &self.settings);
         let Some((within, (x, y))) = self.drawn.get(function).and_then(|drawn| drawn.canvas.paste_at(&shown, pointer)) else {
             self.say("Paste: the function is not drawn yet");
             return;

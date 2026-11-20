@@ -482,10 +482,9 @@ fn an_unknown_command_or_parameter_names_the_nearest() {
 #[test]
 fn a_planned_command_is_listed_greyed_with_its_reason_and_refused() {
     let (mut session, _) = session();
-    // A command of a later step of M1 says why it is not enabled, and is refused.
-    let planned = crate::registry::command("settings.get").unwrap();
-    assert_eq!(session.not_enabled(planned).as_deref(), Some("it is planned, and comes with M1 step 6 (#165)"));
-    assert_eq!(error(&mut session, "settings.get", json!({})).code, "command.not_enabled");
+    // A command of a later step says why it is not enabled. None is planned now: one made for the test.
+    let planned = crate::registry::Command { planned: Some("M1 step 8"), ..crate::registry::command("settings.get").unwrap().clone() };
+    assert_eq!(session.not_enabled(&planned).as_deref(), Some("it is planned, and comes with M1 step 8"));
     let listed = ok(&mut session, "commands.list", json!({ "filter": "run." }));
     let commands = listed["commands"].as_array().unwrap();
     let of = |id: &str| commands.iter().find(|command| command["id"] == id).unwrap();
@@ -1563,4 +1562,122 @@ fn a_tab_detaches_into_a_window_of_its_own_and_docks_back() {
     counting.memory.remove_file(Path::new("/p/c.lcf")).unwrap();
     session.files_changed();
     assert!(session.view().detached.is_empty() && session.view().opened == ["double"]);
+}
+
+/// `settings.get` and `settings.set` (commands.md 9.7): the project first for a key it may hold, `null` takes a key out,
+/// a key of the user is refused to the project, and the project's file keeps what else it holds.
+#[test]
+fn the_settings_of_the_project_win_and_are_written_key_by_key() {
+    let memory = Arc::new(project());
+    memory.put("/p/.labcraft/config.toml", "# the team\n[editor]\ndrag_pans = true\n[appearance]\ntheme = \"dark\"\n");
+    let mut session = session_on(memory.clone());
+    let mut user = serde_json::Map::new();
+    user.insert("editor.drag_pans".to_owned(), json!(false));
+    user.insert("appearance.theme".to_owned(), json!("light"));
+    session.set_user_settings(&user);
+    let got = ok(&mut session, "settings.get", json!({ "key": "editor.drag_pans" }));
+    assert_eq!(got, json!({ "settings": [{ "key": "editor.drag_pans", "value": true, "from": "project", "project": true }] }));
+    // The theme is the user's: a project's file that writes it is not read.
+    let got = ok(&mut session, "settings.get", json!({ "key": "appearance.theme" }));
+    assert_eq!(got["settings"][0]["from"], "user");
+    let all = ok(&mut session, "settings.get", json!({}));
+    assert_eq!(all["settings"].as_array().map(Vec::len), Some(crate::settings::KEYS.len()));
+    assert_eq!(all["settings"][0]["key"], "appearance.theme", "in the order of the table");
+    let set = ok(&mut session, "settings.set", json!({ "key": "editor.fix_every_node", "value": true, "scope": "project" }));
+    assert_eq!(set, json!({ "before": null, "scope": "project" }));
+    let text = String::from_utf8(memory.get("/p/.labcraft/config.toml").unwrap()).unwrap();
+    assert!(text.starts_with("# the team\n[editor]\ndrag_pans = true\n"), "{text}");
+    assert!(text.contains("fix_every_node = true"), "{text}");
+    assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(crate::runs::LABCRAFT_GITIGNORE), "git sees `config.toml`");
+    let reset = ok(&mut session, "settings.set", json!({ "key": "editor.drag_pans", "value": null, "scope": "project" }));
+    assert_eq!(reset["before"], true);
+    let text = String::from_utf8(memory.get("/p/.labcraft/config.toml").unwrap()).unwrap();
+    assert!(!text.contains("drag_pans"), "{text}");
+    assert_eq!(ok(&mut session, "settings.get", json!({ "key": "editor.drag_pans" }))["settings"][0]["from"], "user");
+    assert!(session.view().settings.values().fix_every_node, "published");
+    let refused = error(&mut session, "settings.set", json!({ "key": "appearance.theme", "value": "dark", "scope": "project" }));
+    assert_eq!((refused.code, refused.parameter.as_deref()), ("params.invalid", Some("scope")));
+    assert_eq!(error(&mut session, "settings.set", json!({ "key": "editor.drag_pans", "value": "yes" })).code, "params.invalid");
+    let unknown = error(&mut session, "settings.get", json!({ "key": "editor.drag_pan" }));
+    assert_eq!((unknown.code, unknown.expected.as_slice()), ("params.invalid", ["editor.drag_pans".to_owned()].as_slice()));
+}
+
+/// A key of the user changes the store of the user only, which the host keeps: a host that cannot write it changes
+/// nothing (`file.unwritable`).
+#[test]
+fn a_key_of_the_user_is_kept_by_the_host_or_not_changed() {
+    let memory = Arc::new(project());
+    let mut session = session_on(memory.clone());
+    let kept = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = kept.clone();
+    session.on_user_settings(Box::new(move |_, keys| {
+        seen.lock().unwrap().push(keys.clone());
+        if keys.contains_key("run.record_values") { Err(crate::CommandError::new("file.unwritable", "the disk is full")) } else { Ok(()) }
+    }));
+    let set = ok(&mut session, "settings.set", json!({ "key": "appearance.block_fill", "value": "neutral" }));
+    assert_eq!(set, json!({ "before": null, "scope": "user" }));
+    assert_eq!(kept.lock().unwrap().last().and_then(|keys| keys.get("appearance.block_fill")), Some(&json!("neutral")));
+    assert!(memory.get("/p/.labcraft/config.toml").is_none(), "the project's store is not written");
+    let failed = error(&mut session, "settings.set", json!({ "key": "run.record_values", "value": true }));
+    assert_eq!(failed.code, "file.unwritable");
+    assert_eq!(ok(&mut session, "settings.get", json!({ "key": "run.record_values" }))["settings"][0]["from"], "default");
+    assert!(session.view().settings.values().neutral_blocks);
+}
+
+/// A write of the project's store reads its file again: what another process wrote meanwhile stays, and is read.
+#[test]
+fn a_project_file_changed_meanwhile_keeps_what_was_written() {
+    let memory = Arc::new(project());
+    let mut session = session_on(memory.clone());
+    ok(&mut session, "settings.set", json!({ "key": "editor.drag_pans", "value": true, "scope": "project" }));
+    memory.put("/p/.labcraft/config.toml", "[editor]\ndrag_pans = true\n# pulled\nautopatch = false\n");
+    ok(&mut session, "settings.set", json!({ "key": "editor.into_wire", "value": false, "scope": "project" }));
+    let text = memory.get("/p/.labcraft/config.toml").map(|bytes| String::from_utf8(bytes).unwrap()).unwrap();
+    assert!(text.starts_with("[editor]\ndrag_pans = true\n# pulled\nautopatch = false\n"), "{text}");
+    assert_eq!(ok(&mut session, "settings.get", json!({ "key": "editor.autopatch" }))["settings"][0]["from"], "project");
+}
+
+/// A session that does not follow the store of the user (the command line) draws with the defaults, and with the keys
+/// its own commands set (commands.md 9.7).
+#[test]
+fn a_session_of_the_command_line_draws_without_the_keys_of_the_user() {
+    let memory = Arc::new(project());
+    let mut session = session_on(memory.clone());
+    let user = serde_json::Map::from_iter([("view.standard_everywhere".to_owned(), json!(true))]);
+    session.set_user_settings(&user);
+    session.draw_without_user_settings();
+    assert!(!session.view().standard_everywhere, "the store of the user is not followed");
+    assert_eq!(ok(&mut session, "settings.get", json!({ "key": "view.standard_everywhere" }))["settings"][0]["from"], "user");
+    ok(&mut session, "settings.set", json!({ "key": "view.standard_everywhere", "value": false }));
+    ok(&mut session, "view.set_standard_view", json!({ "on": true }));
+    assert!(session.view().standard_everywhere, "a key that a command of the session sets is followed");
+}
+
+/// A project's file that does not read gives no key and is not written over (commands.md 9.7).
+#[test]
+fn a_project_file_that_does_not_read_is_not_written_over() {
+    let memory = Arc::new(project());
+    memory.put("/p/.labcraft/config.toml", "[editor\ndrag_pans = true\n");
+    let mut session = session_on(memory.clone());
+    assert_eq!(ok(&mut session, "settings.get", json!({ "key": "editor.drag_pans" }))["settings"][0]["from"], "default");
+    let refused = error(&mut session, "settings.set", json!({ "key": "editor.drag_pans", "value": true, "scope": "project" }));
+    assert_eq!(refused.code, "file.unparsed");
+    assert_eq!(memory.get("/p/.labcraft/config.toml").as_deref(), Some(&b"[editor\ndrag_pans = true\n"[..]));
+}
+
+/// `.labcraft/.gitignore` gets the lines it lacks, those of the user kept, so that git sees `config.toml` in a clone
+/// made before M1 (commands.md 8).
+#[test]
+fn the_gitignore_of_labcraft_gets_the_lines_it_lacks() {
+    for (before, after) in [
+        ("*\n", "*\n!.gitignore\n!config.toml\n"),
+        ("!keep.txt", "*\n!keep.txt\n!.gitignore\n!config.toml\n"),
+        ("*\n!.gitignore\n!config.toml\nmine\n", "*\n!.gitignore\n!config.toml\nmine\n"),
+    ] {
+        let memory = Arc::new(project());
+        memory.put("/p/.labcraft/.gitignore", before);
+        let mut session = session_on(memory.clone());
+        ok(&mut session, "settings.set", json!({ "key": "editor.autopatch", "value": false, "scope": "project" }));
+        assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(after.as_bytes()), "{before:?}");
+    }
 }

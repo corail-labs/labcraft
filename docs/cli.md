@@ -1145,6 +1145,9 @@ It is how a script, or an agent without MCP, edits a project from the command li
   IDE as external writes (commands.md 9.1).
 - **Journal:** the command is a line of `.labcraft/journal/cli.jsonl`, which the processes of the command line share
   ([architecture.md](architecture.md), 12.5).
+- **Settings:** `settings.get` and `settings.set` read and write those of the project (`.labcraft/config.toml`) and
+  of the user (`settings.toml` in the folder of LabCraft, which `LABCRAFT_CONFIG_DIR` chooses; empty, none is read or
+  written) ([commands.md](commands.md), 9.7). `mcp` reads and writes them the same way.
 - **Exit codes:** 0 when the command succeeds, whatever the diagnostics it returns; 1 when it returns an error; 2 for
   wrong usage (no id, parameters that are not one JSON object, an unknown option), with the reason and the usage on
   stderr, nothing written.
@@ -1161,9 +1164,6 @@ other: a folder over the bounds of section 1 gives `LC0010` even if it holds no 
 For `run`, besides what [commands.md](commands.md), section 10 lists: setting a panel element live from
 the command line (the first Ctrl-C as a press of a Stop switch, the second as an abort), arguments from a
 JSON file read from stdin (`--args -`).
-
-From M1: the settings of a project (`.labcraft/config.toml`) and of the user are read and written by `labcraft-cli exec
-settings.get` and `exec settings.set` (section 9), once those commands are built ([commands.md](commands.md), 6.7).
 
 For `diagram`: other formats (`--png`), an SVG on stdout, the view state from the command line (every
 node in standard view, as the preference of the IDE, folded constructions, the branch of a `match` in

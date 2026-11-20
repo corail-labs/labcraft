@@ -40,6 +40,7 @@ enum Request {
     Open,
     Command { request: u64, id: String, params: Value },
     Zoom(String, f32),
+    UserSettings(String),
     Trap,
 }
 
@@ -81,7 +82,9 @@ struct Counts {
 #[derive(Default)]
 pub struct Supervisor {
     folder: Option<Arc<Folder>>,
-    standard_everywhere: bool,
+    /// The keys of the store of the user, as a JSON object (commands.md 9.7): what a worker opens with, and what the
+    /// session holds once it said, so that a worker that starts again takes them.
+    user_settings: String,
     pending: VecDeque<Request>,
     waiting: Waiting,
     /// Where the answer of each command goes.
@@ -111,8 +114,20 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn new(standard_everywhere: bool) -> Supervisor {
-        Supervisor { standard_everywhere, ..Supervisor::default() }
+    /// `user_settings`: the keys of the store of the user, as a JSON object.
+    pub fn new(user_settings: String) -> Supervisor {
+        Supervisor { user_settings, ..Supervisor::default() }
+    }
+
+    /// The keys of the store of the user, for a session that does not hold them (`Host::set_user_settings`).
+    pub fn user_settings(&mut self, keys: &serde_json::Map<String, Value>) -> Vec<Action> {
+        self.user_settings = Value::Object(keys.clone()).to_string();
+        if self.refused().is_some() {
+            return Vec::new();
+        }
+        self.pending.retain(|request| !matches!(request, Request::UserSettings(_)));
+        self.pending.push_back(Request::UserSettings(self.user_settings.clone()));
+        self.next()
     }
 
     /// A folder read by the page: in a new worker, in place of the folder open; the traps of the files before are
@@ -124,7 +139,7 @@ impl Supervisor {
         let mut counts = self.counts;
         counts.generation += 1;
         counts.opened += 1;
-        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function, counts, ..Supervisor::new(self.standard_everywhere) };
+        *self = Supervisor { folder: Some(Arc::new(folder)), asked: function, counts, ..Supervisor::new(std::mem::take(&mut self.user_settings)) };
         self.publish();
         self.pending.push_back(Request::Open);
         self.start()
@@ -249,8 +264,13 @@ impl Supervisor {
                 if self.missing.as_ref().is_some_and(|(_, instead)| *instead != answer.seen.main.function) {
                     self.missing = None;
                 }
-                // The preference is the session's: a worker that starts again takes the one it had.
-                self.standard_everywhere = answer.seen.standard_everywhere;
+                // The settings of the user are the session's once it holds them: a worker that starts again takes them.
+                if let Ok(settings) = serde_json::from_str::<Value>(&answer.seen.settings)
+                    && settings.get("given") == Some(&Value::Bool(true))
+                    && let Some(user) = settings.get("user")
+                {
+                    self.user_settings = user.to_string();
+                }
                 self.seen = answer.seen;
                 if changed {
                     self.counts.generation += 1;
@@ -344,7 +364,7 @@ impl Supervisor {
                 Some(folder) => (
                     ToWorker::Open {
                         folder: Arc::clone(folder),
-                        standard_everywhere: self.standard_everywhere,
+                        user_settings: self.user_settings.clone(),
                         skipped: self.trapped.iter().cloned().collect(),
                         show: self.seen.main.function.clone().or_else(|| self.asked.clone()),
                         detached: self.seen.detached.iter().filter_map(|window| window.function.clone()).collect(),
@@ -355,6 +375,7 @@ impl Supervisor {
             },
             Request::Command { request, id, params } => (ToWorker::Command { request, id, params: params.to_string() }, Some(request)),
             Request::Zoom(function, zoom) => (ToWorker::Zoom(function, zoom), None),
+            Request::UserSettings(keys) => (ToWorker::UserSettings(keys), None),
             Request::Trap => (ToWorker::Trap, None),
         };
         match encode(&message) {
@@ -439,6 +460,7 @@ impl Supervisor {
             opened: seen.opened.clone(),
             standard_everywhere: seen.standard_everywhere,
             tabs,
+            settings: Arc::new(stores_of(&seen.settings)),
             preview: seen.preview.clone(),
             workspace,
         });
@@ -570,6 +592,21 @@ impl Host for Shared {
     fn set_zoom(&self, function: &str, zoom: f32) {
         self.with(|supervisor| supervisor.zoom(function, zoom));
     }
+
+    fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
+        self.with(|supervisor| supervisor.user_settings(keys));
+    }
+}
+
+/// The settings that `Seen` carries, as JSON; what does not read is none, not given.
+fn stores_of(json: &str) -> labcraft_engine::settings::Stores {
+    let Ok(Value::Object(mut settings)) = serde_json::from_str::<Value>(json) else { return Default::default() };
+    let mut map = |name: &str| match settings.remove(name) {
+        Some(Value::Object(keys)) => keys,
+        _ => serde_json::Map::new(),
+    };
+    let (user, project) = (map("user"), map("project"));
+    labcraft_engine::settings::Stores { user, project, given: settings.get("given") == Some(&Value::Bool(true)) }
 }
 
 #[cfg(test)]

@@ -129,6 +129,9 @@ pub struct Published {
     pub preview: Option<String>,
     /// The workspace of the window (`view.set_workspace`).
     pub workspace: window::WorkspaceId,
+    /// The settings of the user and of the project (commands.md 9.7): the window reads what they give, and the host
+    /// keeps those of the user.
+    pub settings: Arc<crate::settings::Stores>,
 }
 
 impl Published {
@@ -217,6 +220,8 @@ pub struct View {
     counted: u64,
     /// The values of the notation in force (notation 10): those of `--style`, given by the app.
     style: Arc<Style>,
+    /// What the settings of `now` change of the colours of the blocks, computed when they change.
+    appearance: labcraft_diagram::Appearance,
     /// A command wrote files since the folder was read.
     pub(crate) stale: bool,
     /// The functions never drawn, whose drawing stopped a worker of the web viewer before (architecture 11.5).
@@ -240,6 +245,7 @@ impl View {
             tabs: true,
             unfolded: of.unfolded,
             standard: of.standard,
+            appearance: self.appearance.clone(),
         };
         (state, self.style.clone())
     }
@@ -453,18 +459,31 @@ pub fn show_function(session: &mut Session, params: &Params) -> Result<Value, Co
     Ok(draw(view, &Which::Main, false))
 }
 
-/// `view.set_standard_view`: returns the value it had, as `{ "before": … }`.
+/// `view.set_standard_view`: the setting `view.standard_everywhere` of the user (commands.md 9.7). Returns the value it
+/// had, as `{ "before": … }`.
 pub fn set_standard_view(session: &mut Session, params: &Params) -> Result<Value, CommandError> {
     let on = params.bool("on");
-    read_again_if_stale(session);
-    let view = &mut session.view;
-    let before = std::mem::replace(&mut view.now.standard_everywhere, on);
-    if before == on {
-        view.publish();
-    } else {
-        draw_all(view, false);
-    }
+    let before = session.view.now.standard_everywhere;
+    crate::settings::write_user(session, crate::settings::STANDARD_EVERYWHERE, Some(Value::Bool(on)))?;
+    settings_changed(session);
     Ok(json!({ "before": before }))
+}
+
+/// The settings changed, or were read: published, and the windows drawn again when what they draw changed.
+pub(crate) fn settings_changed(session: &mut Session) {
+    let values = session.settings.drawn().values();
+    let standard = values.standard_everywhere;
+    let appearance = labcraft_diagram::Appearance { neutral_blocks: values.neutral_blocks, library_colors: values.library_colors };
+    let drawn_again = standard != session.view.now.standard_everywhere || appearance != session.view.appearance;
+    session.view.now.settings = Arc::new(session.settings.stores.clone());
+    session.view.now.standard_everywhere = standard;
+    session.view.appearance = appearance;
+    if drawn_again {
+        read_again_if_stale(session);
+        draw_all(&mut session.view, false);
+    } else {
+        session.view.publish();
+    }
 }
 
 /// `view.set_state`: all of it, or nothing.

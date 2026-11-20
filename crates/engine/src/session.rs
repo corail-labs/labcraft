@@ -72,6 +72,8 @@ pub struct Session {
     pub(crate) agents: Allowed,
     /// The files that the command going wrote, with their revisions, for its line of the journal.
     pub(crate) wrote_now: Vec<(String, Option<String>)>,
+    /// The settings of the user and of the project (commands.md 9.7).
+    pub(crate) settings: crate::settings::Held,
 }
 
 impl Session {
@@ -86,6 +88,7 @@ impl Session {
         }
         let runs = Runs::default();
         let journal = crate::journal::Journal::new(config.process, runs.session_number());
+        let settings = crate::settings::Held::read(&*ws, &root);
         let mut session = Session {
             ws,
             root,
@@ -102,7 +105,10 @@ impl Session {
             journal,
             wrote_now: Vec::new(),
             agents: Allowed::default(),
+            settings,
         };
+        crate::view::settings_changed(&mut session);
+        session.view.settle();
         if background {
             session.start_first_check();
         }
@@ -160,6 +166,34 @@ impl Session {
     /// The workspace, shared: for [`Runs::execute`] on a thread that does not hold the session.
     pub fn shared_workspace(&self) -> Arc<dyn Workspace> {
         Arc::clone(&self.ws)
+    }
+
+    /// The keys of the store of the user, which its host keeps (commands.md 9.7): the app of the window, the page on the
+    /// web, the command line. Those it does not know, or whose value is wrong, are left out.
+    pub fn set_user_settings(&mut self, keys: &serde_json::Map<String, Value>) {
+        self.settings.stores.user = crate::settings::valid_keys(keys);
+        self.settings.stores.given = true;
+        crate::view::settings_changed(self);
+        self.view.settle();
+    }
+
+    /// What keeps the keys of the user each time a command changes them (commands.md 9.7): the command line writes them
+    /// in `settings.toml`; a window reads them in what the session publishes instead.
+    pub fn on_user_settings(&mut self, keep: crate::settings::KeepUser) {
+        self.settings.keep = Some(keep);
+    }
+
+    /// The view does not follow the store of the user, only the keys that the commands of the session set: what the
+    /// command line draws and writes starts from the defaults on every computer (commands.md 9.7).
+    pub fn draw_without_user_settings(&mut self) {
+        self.settings.drawn = Some(serde_json::Map::new());
+        crate::view::settings_changed(self);
+        self.view.settle();
+    }
+
+    /// The settings of the two stores, as they are now: after `settings.set` of the user's, its host writes them.
+    pub fn settings(&self) -> &crate::settings::Stores {
+        &self.settings.stores
     }
 
     pub fn config(&self) -> &Config {
@@ -407,6 +441,8 @@ impl Session {
             "view.open" => crate::view::open(self, params),
             "view.show_function" => crate::view::show_function(self, params),
             "view.set_standard_view" => crate::view::set_standard_view(self, params),
+            "settings.get" => crate::settings::get(self, params),
+            "settings.set" => crate::settings::set(self, params),
             "view.set_state" => crate::view::set_state(self, params),
             "view.open_trace" => crate::view::open_trace(self, params),
             "view.close_function" => crate::view::window::close_function(self, params),

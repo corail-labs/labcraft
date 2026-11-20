@@ -70,4 +70,8 @@ pub trait Host {
     /// The zoom of the canvas of the window that shows `function`, which `view.get_state` returns: given by the window,
     /// not a command.
     fn set_zoom(&self, function: &str, zoom: f32);
+
+    /// The keys of the store of the user (commands.md 9.7), which the window keeps, for a session that does not hold them
+    /// yet (`Stores::given`): not a command, as the zoom.
+    fn set_user_settings(&self, keys: &serde_json::Map<String, Value>);
 }

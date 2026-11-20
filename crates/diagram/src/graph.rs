@@ -492,6 +492,8 @@ pub struct Builder<'a> {
     own_id: Option<LibraryId>,
     /// Whether a construction whose fields are all constants is folded (notation 3.1): never in an exported image.
     fold: bool,
+    /// What the settings of the reader change of the colours of the blocks: never in an exported image.
+    appearance: crate::Appearance,
     callees: HashMap<CalleeKey, Rc<Callee<'a>>>,
     /// The type before each conversion that `check` puts where a line binds a value (spec 3.3), by the target.
     converted: HashMap<Id, TyId>,
@@ -503,12 +505,18 @@ impl<'a> Builder<'a> {
         let own = declared.map_or("", |library| library.name.as_str());
         let own_id = declared.map(|library| library.id);
         let converted = file.resolved.coercions().iter().map(|coercion| (coercion.at, coercion.from)).collect();
-        Builder { checked, file, names, own, own_id, fold: false, callees: HashMap::new(), converted }
+        Builder { checked, file, names, own, own_id, fold: false, appearance: crate::Appearance::default(), callees: HashMap::new(), converted }
     }
 
     /// Folds the constructions whose fields are all constants, as the viewer does by default (notation 3.1).
     pub fn folding(mut self, fold: bool) -> Self {
         self.fold = fold;
+        self
+    }
+
+    /// Paints the blocks as the settings of the reader ask (commands.md 9.7).
+    pub fn appearing(mut self, appearance: &crate::Appearance) -> Self {
+        self.appearance.clone_from(appearance);
         self
     }
 
@@ -1244,8 +1252,13 @@ impl<'a> Builder<'a> {
                 });
                 // And the mask of its library (11.3), whose fields the sections take when they do not write their own.
                 let mask = declared.map(|declared| &declared.mask).filter(|mask| !mask.says_nothing_of_blocks());
+                // And the colour that the reader gives its library, in place of that of its mask (commands.md 9.7).
+                let reader = declared
+                    .filter(|_| !self.appearance.neutral_blocks)
+                    .and_then(|declared| self.appearance.library_colors.get(&declared.name))
+                    .copied();
                 if let Some(function) = function
-                    && (section.is_some() || outline.is_some() || mask.is_some())
+                    && (section.is_some() || outline.is_some() || mask.is_some() || reader.is_some())
                 {
                     let inputs: Vec<Name> = function.params.iter().map(|param| param.name).collect();
                     let outputs: Vec<Name> = function.outputs.iter().map(|output| output.name).collect();
@@ -1256,9 +1269,18 @@ impl<'a> Builder<'a> {
                         .filter(|(_, default)| default.is_some())
                         .map(|(param, _)| self.text(param.name))
                         .collect();
-                    let block = Block::read(section, outline, mask, (&inputs, &outputs), self.names, optional);
+                    let mut block = Block::read(section, outline, mask, (&inputs, &outputs), self.names, optional);
+                    if self.appearance.neutral_blocks {
+                        block.colours = labcraft_format::block::Colours::default();
+                    } else if let Some(colour) = reader {
+                        // A function's own `color` stays: the section alone says whether it writes one.
+                        let own = Block::read(section, None, None, (&inputs, &outputs), self.names, HashSet::new()).colours.color;
+                        if own.is_none() {
+                            block.colours.color = Some(colour);
+                        }
+                    }
                     // `template block` alone is the ordinary block.
-                    if section.is_some() || block.outline.is_some() || mask.is_some() {
+                    if section.is_some() || block.outline.is_some() || mask.is_some() || reader.is_some() {
                         found.block = Some(Rc::new(block));
                     }
                 }

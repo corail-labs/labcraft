@@ -52,6 +52,8 @@ pub enum Icon {
     Record,
     /// Two windows side by side: every function in a window of its own.
     DetachedMode,
+    /// A gear: the `Settings` dialog (ide.md 2).
+    Settings,
     /// A sun: the light theme.
     Sun,
     /// A crescent moon: the dark theme.
@@ -155,6 +157,7 @@ const LUCIDE: &[(&str, &[u8])] = &[
     ("square-arrow-down-left", include_bytes!("../../../assets/icons/lucide/square-arrow-down-left.svg")),
     ("square-arrow-out-up-right", include_bytes!("../../../assets/icons/lucide/square-arrow-out-up-right.svg")),
     ("square-function", include_bytes!("../../../assets/icons/lucide/square-function.svg")),
+    ("settings", include_bytes!("../../../assets/icons/lucide/settings.svg")),
     ("sun", include_bytes!("../../../assets/icons/lucide/sun.svg")),
     ("text", include_bytes!("../../../assets/icons/lucide/text.svg")),
     ("undo-2", include_bytes!("../../../assets/icons/lucide/undo-2.svg")),
@@ -190,6 +193,7 @@ impl Icon {
             Icon::Watch => "eye",
             Icon::Record => "activity",
             Icon::DetachedMode => "app-window",
+            Icon::Settings => "settings",
             Icon::Sun => "sun",
             Icon::Moon => "moon",
             Icon::Folder => "folder",

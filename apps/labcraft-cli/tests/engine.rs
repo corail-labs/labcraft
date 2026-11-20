@@ -167,7 +167,7 @@ fn a_run_on_the_disk_writes_its_trace_and_replaces_one_being_read() {
     assert!(second["trace"].get("error").is_none(), "renamed over the trace held open: {second}");
     let trace = std::fs::read_to_string(folder.join(".labcraft/runs/check_voltage.trace.jsonl")).unwrap();
     assert!(trace.starts_with("{\"schema\":\"labcraft-trace/1\",\"run\":\"r2\""), "the last run's trace");
-    assert_eq!(std::fs::read_to_string(folder.join(".labcraft/.gitignore")).unwrap(), "*\n");
+    assert_eq!(std::fs::read_to_string(folder.join(".labcraft/.gitignore")).unwrap(), "*\n!.gitignore\n!config.toml\n");
     // The process holds its lock beside the trace until it lets it go, as the command line does as it ends.
     let lock = format!(".{}.lock", std::process::id());
     assert!(folder.join(".labcraft/runs").join(&lock).is_file(), "{lock}");
