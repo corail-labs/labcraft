@@ -6,7 +6,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="782" height="372" style="fill: var(--canvas-fill)"/>
 <defs>
-<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+<polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 15.17,0 15.94,0.15 16.59,0.59 23.41,7.41 23.85,8.06 24,8.83 24,23.17 23.85,23.94 23.41,24.59 16.59,31.41 15.94,31.85 15.17,32 2,32 1.23,31.85 0.59,31.41 0.15,30.77 0,30"/>
 </defs>
 <rect x="19" y="16" width="744" height="340" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn last_session</text>
@@ -85,8 +85,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <path d="M222.45 108 L351.67 108" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-wire="n" data-from="@14.result" data-to="next.n">
-<path d="M383.67 116 L398.67 116 Q402.67 116 402.67 112 L402.67 112 Q402.67 108 406.67 108 L470.45 108" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
-<text x="387.67" y="113" font-size="10" style="fill: var(--ink-muted)">n</text>
+<path d="M375.67 116 L398.67 116 Q402.67 116 402.67 112 L402.67 112 Q402.67 108 406.67 108 L470.45 108" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="379.67" y="113" font-size="10" style="fill: var(--ink-muted)">n</text>
 </g>
 <g data-wire="session" data-from="session.session" data-to="last.0">
 <path d="M391.67 164 L470.45 164" style="fill: none; stroke: var(--wire-resource); stroke-width: 2.5"/>
@@ -173,10 +173,10 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </g>
 <g data-node="@14"><title>core.add</title>
 <use href="#outline-0" x="351.67" y="100" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="364.66" y="119.65" font-size="10" style="fill: var(--node-title)">+</text>
+<text x="360.66" y="119.65" font-size="10" style="fill: var(--node-title)">+</text>
 <circle cx="351.67" cy="108" r="3" style="fill: var(--wire-data)"/>
 <circle cx="351.67" cy="124" r="3" style="fill: var(--wire-data)"/>
-<circle cx="383.67" cy="116" r="3" style="fill: var(--wire-data)"/>
+<circle cx="375.67" cy="116" r="3" style="fill: var(--wire-data)"/>
 <rect x="326.65" y="117" width="14.02" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
 <text x="330.65" y="127.65" font-size="10" style="fill: var(--pill-text)">1</text>
 </g>
@@ -204,9 +204,9 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="399.67" y="155.65" font-size="10" style="fill: var(--node-title)">SIM::DMM0</text>
 </g>
 <g data-value="n"><title>1</title>
-<rect x="387.67" y="105.71" width="6.02" height="9.65" style="fill: var(--frame-fill-1)"/>
-<rect x="387.67" y="96" width="14.02" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
-<text x="391.67" y="107.65" font-size="10" style="fill: var(--node-title)">1</text>
+<rect x="379.67" y="105.71" width="6.02" height="9.65" style="fill: var(--frame-fill-1)"/>
+<rect x="379.67" y="96" width="14.02" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="383.67" y="107.65" font-size="10" style="fill: var(--node-title)">1</text>
 </g>
 <g data-value="voltage"><title>230.071217</title>
 </g>

@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "select")
 fn select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
 terminals {
-    top 3
+    top 2
     left 3
     right middle result
 }

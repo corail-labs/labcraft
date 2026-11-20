@@ -25,10 +25,14 @@ fn codes(problems: &[Problem]) -> Vec<Code> {
 
 const U: i64 = 100;
 
+/// A terminal that anchors, at `along` units on its side.
+fn at(side: BlockSide, along: i64, name: &str, output: bool) -> At<'_> {
+    At { side, along: along * U, name, output, anchor: true }
+}
+
 /// `fn split(x: f64[V]) -> (a, b, c)` with `top 5` and `left middle x` (spec 11.4): 48 × 48, `x` at the middle place 3
 /// (24), `a`, `b`, `c` on the right at 8, 16 and 24.
 fn split<'t>() -> Frame<'t> {
-    let at = |side, along: i64, name, output| At { side, along: along * U, name, output, anchor: true };
     Frame {
         width: 48 * U,
         height: 48 * U,
@@ -100,10 +104,39 @@ fn the_funnel_of_the_spec_is_its_body_with_a_piece_at_each_right_terminal() {
 }
 
 #[test]
-fn the_d_cuts_its_right_corners_by_the_chamfer() {
+fn the_d_cuts_its_right_corners_by_the_chamfer_and_rounds_its_six_corners_by_2() {
+    // The path of spec 11.4, written out: the D is that path at every size.
+    let path = "    path (0, 0) round 2 (w - 8, 0) round 2 (w, 8) round 2 (w, h - 8) round 2 (w - 8, h) round 2 (0, h) round 2";
     let found = drawn("    template d", &split());
-    assert_eq!(units(&found.points), [(0, 0), (40, 0), (48, 8), (48, 40), (40, 48), (0, 48)]);
-    assert_eq!(units(&found.starts), [(0, 24), (48, 8), (48, 16), (48, 24)]);
+    assert_eq!(found, drawn(path, &split()));
+    // Rounded: no point on a corner, the box still 48 × 48.
+    for corner in [(0, 0), (40 * U, 0), (48 * U, 8 * U), (48 * U, 40 * U), (40 * U, 48 * U), (0, 48 * U)] {
+        assert!(!found.points.contains(&corner), "{corner:?}");
+    }
+    let xs = found.points.iter().map(|point| point.0);
+    let ys = found.points.iter().map(|point| point.1);
+    assert_eq!((xs.clone().min(), xs.max(), ys.clone().min(), ys.max()), (Some(0), Some(48 * U), Some(0), Some(48 * U)));
+    // `x` on the straight left edge; `b` and `c` on the straight right edge, from 8.83 to 39.17. `a`, at 8, on the arc of
+    // the corner (48, 8), drawn in 2 segments for its 45° (4 a quarter turn): from its tangent point (47.41, 7.41) to its
+    // middle (47.85, 8.06), both rounded to the hundredth, 8 crosses it at 47.81.
+    assert_eq!(found.starts, [(0, 24 * U), (4781, 8 * U), (48 * U, 16 * U), (48 * U, 24 * U)]);
+}
+
+#[test]
+fn the_d_at_twice_the_chamfer_high_has_one_tip() {
+    // A unary primitive, 24 × 16 (visual notation 3.2): the two cuts meet at (w, 8).
+    let unary = Frame {
+        width: 24 * U,
+        height: 16 * U,
+        terminals: vec![at(BlockSide::Left, 8, "x", false), at(BlockSide::Right, 8, "result", true)],
+        chamfer: 8 * U,
+    };
+    let tip = "    path (0, 0) round 2 (w - 8, 0) round 2 (w, 8) round 2 (w - 8, h) round 2 (0, h) round 2";
+    assert_eq!(drawn("    template d", &unary), drawn(tip, &unary));
+    // With no chamfer, the D is the box, its four corners rounded.
+    let square = Frame { chamfer: 0, ..unary };
+    let rect = "    path (0, 0) round 2 (w, 0) round 2 (w, h) round 2 (0, h) round 2";
+    assert_eq!(drawn("    template d", &square), drawn(rect, &square));
 }
 
 #[test]
@@ -254,7 +287,6 @@ fn two_pieces_in_a_row_that_fold_back_on_each_other_cross() {
 fn the_pieces_of_the_left_and_the_right_sides_in_one_row_are_judged_together() {
     // A block 8 wide, from 12 to 20, whose two pieces at the height 24 reach across it: the left one from 12 out to 4 and
     // in to 19, the right one from 20 out to 28 and in to 13. Each is in its bounds, and they cross.
-    let at = |side, along: i64, name, output| At { side, along: along * U, name, output, anchor: true };
     let frame = Frame {
         width: 48 * U,
         height: 48 * U,

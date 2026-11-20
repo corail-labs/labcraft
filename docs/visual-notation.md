@@ -898,10 +898,10 @@ When the function comes from another library, a **band** at the top of the block
   not an error.
 
 **Primitives.** The compact view of the `core` operations is a **D** with a glyph, unnamed terminals (name in the
-tooltip): a block whose left edge is straight and whose right corners are cut by 8, a quarter of its least height, the output
+tooltip): a block whose left edge is straight and whose right corners are cut by 8, half its least height, the output
 at the middle of the right edge, so that its shape says which way the data go (decided 2026-11-12, A3 of the review of
-M0v). The cut is moderate, so that it reads as a block with cut corners, not as an arrow; and unlike a compact block,
-its corners are cut and not rounded, and it shows a glyph and not an icon. The list is closed (N-4):
+M0v). The cut is moderate, so that it reads as a block with cut corners, not as an arrow; like a block, its corners
+are rounded by 2, those of the cut too, and unlike a compact block it shows a glyph and not an icon. The list is closed (N-4):
 
 | Glyph | Primitives |
 |---|---|
@@ -914,12 +914,12 @@ its corners are cut and not rounded, and it shows a glyph and not an icon. The l
 | `?` | `select` (condition on the upper input, then value if true, value if false) |
 | `[V]` | `with_unit` (shows the added unit); `unitless`: the requested unit, struck through |
 
-**Size** *(decided 2026-11-13)*: 32 × 32 (`top 3`, `left 3` in its file of `libs/core`, spec A.1, from M1), the right corners cut by 8 (`node.chamfer`), which a D that grows keeps (at most half its height and its width, for a value tried with `--style`). A unit too
-long for it (`[kg/(m*s)]`) makes it wider, as wide as the unit needs with 3 on each side, rounded up to the grid; it
-keeps its height. The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the ordinary compact
+**Size** *(decided 2026-11-13; sizes and rounding 2026-11-20)*: 24 × 32 for two values in and for `select` (`top 2`, `left 3` in its file of `libs/core`, spec A.1, from M1), 24 × 16 for one value in (`top 2`, `left 1`). The right corners are cut by 8 (`node.chamfer`), so that a D 16 high has a single tip, at the middle of its right edge, and its six corners, those of the cut too, are rounded by 2. A D that grows keeps them (the cut at most half its height and its width, for a value tried with `--style`). A unit too
+long for it (`[V]` already, 32 × 16; `[kg/(m*s)]`, 72 × 16) makes it wider, as wide as the unit needs with 3 on each
+side, rounded up to the grid; it keeps its height. A sign never widens it (`|x|` holds in 24). The other `core` functions (`min`, `max`, `pow`, the conversions, `call`) have the ordinary compact
 view (block, no band).
 
-**Terminals of a D**: on its straight left edge, all on the grid of 8. One input at the middle (16); two on the first
+**Terminals of a D**: on its straight left edge, all on the grid of 8. One input at the middle (8); two on the first
 and last places (8 and 24); three on the first, the middle and the last (8, 16, 24), `select` with its condition on
 the first; the output at the middle of the right edge. From M1, its file in `libs/core` places them
 (spec A.1), by the rules of every block (spec 11.2): more inputs (an argument too many that `check` refuses and the
@@ -927,7 +927,7 @@ drawing still shows; no primitive drawn as a D is variadic, spec A.1) take the f
 by two places (16) each time they no longer hold, and `last` and `middle` follow the grown side. Targets too many for
 its one value (`y, z = core.add(a, b)`, which `check` refuses and the drawing still shows) give it as many outputs, its
 own on the middle and the others on the free places of the right side from the top (8 for two), so that no two wires
-leave from one point. A terminal that the D does not meet (a cut tried with `--style` that leaves no straight part
+leave from one point. A terminal where the outline lies more than 4 inside the box (a cut tried with `--style` too deep
 there) breaks a guard of its outline, and the block is drawn ordinary (spec 11.4): no terminal leaves the outline.
 
 **Constant on a primitive input**: the pill lies where a wire would, 8 left of the terminal, as on a block (`◂ 0.5` in
@@ -1505,7 +1505,7 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `node.chamfer` | 8 units | 0 to 32 | 3.2 | The right corners of a primitive, cut. |
 | `node.icon` | 28 units | 12 to 112 | 3.2 | An icon in a block. |
 | `node.outline` | 1 units | 0 to 4 | 3 | The outline of a node. |
-| `node.radius` | 2 units | 0 to 16 | 3 | The corners of a node. |
+| `node.radius` | 2 units | 0 to 16 | 3 | The corners of a node; not of the D of a primitive, rounded by 2 (spec 11.4). |
 | `standard.header` | 24 units | 12 to 96 | 3.1 | The title of a node in standard view. |
 | `standard.first_line` | 40 units | 16 to 160 | 3.1 | From its top to its first line of terminals. |
 | `standard.pitch` | 24 units | 12 to 96 | 3.1 | Between two lines of terminals. |

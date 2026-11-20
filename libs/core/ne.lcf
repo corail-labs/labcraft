@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "ne")
 fn ne<T>(a: T, b: T) -> (result: bool)
 
 terminals {
-    top 3
+    top 2
     left 3
     left 1 a
     left last b

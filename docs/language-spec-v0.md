@@ -1636,8 +1636,9 @@ outline {
   (11.2) never gets a piece.
 - **Templates.** `template d` or `template block`, alone in the section, names an outline that LabCraft gives: `d` is
   the D of the primitives (visual notation 3.2),
-  `path (0, 0) (w - 8, 0) (w, 8) (w, h - 8) (w - 8, h) (0, h)`, its 8 being `node.chamfer` of the style (`check`
-  judges it with that of the default style); `block` is
+  `path (0, 0) round 2 (w - 8, 0) round 2 (w, 8) round 2 (w, h - 8) round 2 (w - 8, h) round 2 (0, h) round 2`, its 8
+  being `node.chamfer` of the style (`check` judges it with that of the default style), and a corner that falls on the
+  one before it counted once: 16 high, the D has one tip, `(w, 8)`; `block` is
   the ordinary block of visual notation 3.2, which brings it back under the outline of a mask. A template names no
   terminal, and does not place one: `terminals` does.
 - **Where a terminal starts.** On its place, at the outermost point of the outline, pieces included, on its side,
@@ -2300,11 +2301,11 @@ no file writes (a type variable stands for them, and `unit`, which is no termina
 library: `use core` names the primitives, and `check` says nothing of them, since a file of `libs/core` as LabCraft
 embeds it, by its name and its bytes, is the block of a primitive and no program; changed in any way, it is judged as
 any program (decisions of the owner, 2026-11-20). Two values in, on the first and the last
-place, for `add`, `sub`, `mul`, `div`, the comparisons, `and` and `or`:
+place, for `add`, `sub`, `mul`, `div`, the comparisons, `and` and `or`, a block of 24 × 32:
 
 ```text
 terminals {
-    top 3
+    top 2
     left 3
     left 1 a
     left last b
@@ -2316,12 +2317,12 @@ outline {
 }
 ```
 
-One value in, in the middle, for `abs`, `neg` and `sqrt` (`not` names its input `a`):
+One value in, in the middle, for `abs`, `neg` and `sqrt` (`not` names its input `a`), a block of 24 × 16:
 
 ```text
 terminals {
-    top 3
-    left 3
+    top 2
+    left 1
     left middle x
     right middle result
 }
@@ -2331,11 +2332,11 @@ outline {
 }
 ```
 
-`select` keeps its inputs on the three places from the top, its condition first, as the defaults put them:
+`select` keeps its inputs on the three places from the top, its condition first, as the defaults put them, 24 × 32:
 
 ```text
 terminals {
-    top 3
+    top 2
     left 3
     right middle result
 }
@@ -2345,8 +2346,8 @@ outline {
 }
 ```
 
-`with_unit` and `unitless` are a D as wide as their unit (visual notation 3.2), the only blocks whose width a
-`terminals` section does not give.
+`with_unit` and `unitless` have the section of one value in, 16 high, and are a D as wide as their unit (visual
+notation 3.2), the only blocks whose width a `terminals` section does not give.
 
 ### A.2 `array`, `string`, `time`, `errors`, `ui`, `bytes`
 

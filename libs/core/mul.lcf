@@ -7,7 +7,7 @@ extern rust(crate: "labcraft-runtime", function: "mul")
 fn mul<A: Number, B: Number, R: Number>(a: A, b: B) -> (result: R)
 
 terminals {
-    top 3
+    top 2
     left 3
     left 1 a
     left last b

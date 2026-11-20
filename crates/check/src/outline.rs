@@ -21,6 +21,8 @@ const MAX_PIECE_POINTS: usize = 16;
 const MAX_ROUND: u32 = 16;
 /// The cut of `template d`, `node.chamfer` of the default style: what `check` judges it at (11.4).
 pub const CHAMFER: i64 = 8 * UNIT;
+/// The rounding of every corner of `template d`, the corners of its cut included (11.4).
+const D_ROUND: i64 = 2 * UNIT;
 /// A unit, in hundredths.
 const UNIT: i64 = 100;
 /// How far a piece reaches out or in, and along its place, in units.
@@ -297,8 +299,11 @@ pub fn draw(read: &Read, frame: &Frame<'_>) -> Result<Option<Drawn>, Vec<Problem
         Read::Block => return Ok(None),
         Read::D(id) => {
             let cut = frame.chamfer.min(h / 2).min(w / 2);
+            // One point where the two cuts meet, at twice the chamfer high, and none where the chamfer is 0.
             let corners = [(0, 0), (w - cut, 0), (w, cut), (w, h - cut), (w - cut, h), (0, h)];
-            (*id, corners.into_iter().map(|corner| (corner, 0)).collect(), &[])
+            let mut body: Vec<Rounded> = corners.into_iter().map(|corner| (corner, D_ROUND)).collect();
+            body.dedup();
+            (*id, body, &[])
         }
         Read::Path { id, corners, pieces } => {
             let mut problems = Vec::new();

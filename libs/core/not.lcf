@@ -7,8 +7,8 @@ extern rust(crate: "labcraft-runtime", function: "not")
 fn not(a: bool) -> (result: bool)
 
 terminals {
-    top 3
-    left 3
+    top 2
+    left 1
     left middle a
     right middle result
 }
