@@ -1,0 +1,16 @@
+labcraft 1
+
+/// Opens the port, endpoint `serial:PORT`, with its settings; waits `settle`, then empties the input. The port
+/// keeps `timeout` for each of its reads and writes.
+extern rust(crate: "labcraft-serial", function: "open")
+fn open(
+    port: string,
+    baud: u32 = 9600,
+    data_bits: u8 = 8,
+    parity: Parity = Parity.None,
+    stop_bits: StopBits = StopBits.One,
+    flow: Flow = Flow.None,
+    timeout: duration = 2 s,
+    settle: duration = 0 s,
+    err: error = none,
+) -> (port: port, err: error)

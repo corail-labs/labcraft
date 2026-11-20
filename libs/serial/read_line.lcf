@@ -1,0 +1,10 @@
+labcraft 1
+
+/// `read_until` on the UTF-8 bytes of `terminator`, then without it and, for `"\n"`, one `"\r"` before it.
+extern rust(crate: "labcraft-serial", function: "read_line")
+fn read_line(
+    port: port,
+    terminator: string = "\n",
+    max: i32 = 65536,
+    err: error = none,
+) -> (text: string, port: port, err: error)

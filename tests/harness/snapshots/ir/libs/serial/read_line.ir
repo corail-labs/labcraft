@@ -1,0 +1,2 @@
+fn serial.read_line(port: port, terminator: string = "\n", max: i32 = 65536, err: error = none) -> (text: string, port: port, err: error)
+  native read_line  skip(err: 3)

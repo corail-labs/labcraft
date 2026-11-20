@@ -1,7 +1,7 @@
 # `serial`: serial ports
 
-*Status: specified for release 0.5.0 (M4, [docs/io.md](../../docs/io.md)), not built yet: its declarations and its
-crate `labcraft-serial` come with its Rust. Values marked (proposed) are starting points.*
+*Status: built for release 0.5.0 (M4, [docs/io.md](../../docs/io.md)): its declarations are in this folder, and its native
+bodies in the crate `labcraft-serial` (`src/`). Values marked (proposed) are starting points.*
 
 `serial` talks to a device on a serial port in raw bytes: an Arduino or an ESP32 board, a USB-serial adapter, an
 instrument with a protocol of its own. Its functions are native (`extern rust`, spec 4.1), over the crate `serial2`
@@ -46,8 +46,10 @@ instead of a connection.
 - **`list`** gives the ports the system has, sorted in code point order, each once: `COM3` on Windows, a path elsewhere.
   On macOS, only the `/dev/cu.*` ports, the ones to open, not their `/dev/tty.*` twins. The list may hold ports with
   nothing behind them, virtual ones among them: the system does not say which. It gives no USB information (VID, PID),
-  which `serial2` does not read (io.md 11). Listing reaches no device, and needs no consent. Under `--sim`, the serial
-  endpoints of the file (io.md 6).
+  which `serial2` does not read (io.md 11). Listing reaches no device, and needs no consent. Without `--sim` it gives the
+  ports of the system, in deterministic mode too (decision of the owner, 2026-11-20); under `--sim`, the serial endpoints
+  of the file, never the system's (io.md 6). On a host without serial ports (the browser) it gives `io.unsupported`, with
+  `--sim` too, as `open` does; so does a system that cannot list its ports, code 0.
 - **`open`** opens the port, endpoint `serial:PORT` (io.md 2), with its settings; `data_bits` is 5 to 8, `baud` above 0,
   any rate the system takes. The port keeps `timeout` for each of its reads and writes. It fails with
   `serial.port_not_found`, `serial.port_busy` (open elsewhere, or already open in this run), `io.invalid_argument` (a
@@ -84,4 +86,7 @@ with the settings it expects if any, in the format of [io.md 6](../../docs/io.md
 | `serial:S007` | error | A request that equals another request of the same device, or is the start of one (io.md 6) |
 | `serial:S008` | error | More than 256 devices, or 10,000 exchanges in one device *(proposed)* |
 
-`parity` is `"none"`, `"odd"` or `"even"`, `stop_bits` 1 or 2, `flow` `"none"`, `"software"` or `"hardware"`.
+`parity` is `"none"`, `"odd"` or `"even"`, `stop_bits` 1 or 2, `flow` `"none"`, `"software"` or `"hardware"`. A device
+has one fault, `hang_ms` (decision of the owner, 2026-11-20): `refused` and `close_ms` are `net`'s, and `serial:S001`
+here. An open with settings the device does not expect gets no response from it, and the report says so in the field
+`settings` of its endpoint in `instruments` ([commands.md](../../docs/commands.md) 7).

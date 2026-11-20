@@ -10,6 +10,11 @@ publish.workspace = true
 [dependencies]
 labcraft-check = { workspace = true }
 labcraft-engine = { workspace = true }
+labcraft-net = { workspace = true }
+labcraft-results-log = { workspace = true }
+labcraft-runtime = { workspace = true }
+labcraft-serial = { workspace = true }
+labcraft-visa = { workspace = true }
 
 [lints]
 workspace = true

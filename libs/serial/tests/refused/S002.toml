@@ -1,0 +1,4 @@
+# serial:S002: a value of the wrong TOML type (`baud` as a text).
+[[serial.device]]
+endpoint = "serial:COM3"
+baud = "9600"

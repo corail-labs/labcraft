@@ -1,0 +1,3 @@
+# serial:S003: an endpoint that is not `serial:PORT`.
+[[serial.device]]
+endpoint = "tcp:10.0.0.7:502"

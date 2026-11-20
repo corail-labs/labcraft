@@ -26,6 +26,7 @@ pub mod primitives;
 pub mod report;
 pub mod run;
 pub mod simulation;
+pub mod stream;
 mod text;
 pub mod trace;
 mod value;

@@ -262,6 +262,9 @@ pub struct Context {
     /// The folder given to `run`, the root of the MCP server, the project of the window; none for a run of a test.
     pub project: Option<PathBuf>,
     pub started_by: StartedBy,
+    /// The endpoints of io.md 2 that the simulation file describes, every library's together (`NativeLibrary::endpoints`),
+    /// sorted in code point order, each once; none without a file.
+    pub endpoints: Arc<[String]>,
 }
 
 /// Whether a run may reach an endpoint or a path (io.md 4).

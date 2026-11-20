@@ -238,6 +238,11 @@ version = "0.4.0-dev"
 dependencies = [
  "labcraft-check",
  "labcraft-engine",
+ "labcraft-net",
+ "labcraft-results-log",
+ "labcraft-runtime",
+ "labcraft-serial",
+ "labcraft-visa",
 ]
 
 [[package]]
@@ -248,6 +253,22 @@ dependencies = [
  "labcraft-format",
  "labcraft-types",
  "serde_json",
+]
+
+[[package]]
+name = "labcraft-net"
+version = "0.4.0-dev"
+dependencies = [
+ "labcraft-runtime",
+ "labcraft-types",
+ "toml",
+]
+
+[[package]]
+name = "labcraft-results-log"
+version = "0.4.0-dev"
+dependencies = [
+ "labcraft-runtime",
 ]
 
 [[package]]
@@ -262,6 +283,16 @@ dependencies = [
  "labcraft-types",
  "toml",
  "toml_parser",
+]
+
+[[package]]
+name = "labcraft-serial"
+version = "0.4.0-dev"
+dependencies = [
+ "labcraft-runtime",
+ "labcraft-types",
+ "serial2",
+ "toml",
 ]
 
 [[package]]
@@ -391,6 +422,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serial2"
+version = "0.2.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c924c7ef58d1fb741cfecb65b9b38a9e049841edd1e419544089f0cbb5a127e7"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-sys",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -506,6 +548,21 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "windows-link"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
+
+[[package]]
+name = "windows-sys"
+version = "0.61.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
+dependencies = [
+ "windows-link",
+]
 
 [[package]]
 name = "winnow"

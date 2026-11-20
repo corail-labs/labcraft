@@ -376,11 +376,11 @@ fn the_entries_of_a_stream_say_which_way_they_went_and_whether_they_are_hexadeci
         CommandLog { at: 0, sent: sent.map(logged), answer: answer.map(logged) }
     };
     end.instruments = vec![
-        InstrumentLog { resource: "SIM::DMM0".to_owned(), commands: vec![entry(Some("*IDN?"), Some("SIM"), false)], more: 0 },
+        InstrumentLog { resource: "SIM::DMM0".to_owned(), commands: vec![entry(Some("*IDN?"), Some("SIM"), false)], ..InstrumentLog::default() },
         InstrumentLog {
             resource: "tcp:10.0.0.7:502".to_owned(),
             commands: vec![entry(Some("000100000006010300000002"), None, true), entry(None, Some("OK\r\n"), false)],
-            more: 0,
+            ..InstrumentLog::default()
         },
     ];
     let text = report_of(&end, &checked, &program, &names);
@@ -390,4 +390,73 @@ fn the_entries_of_a_stream_say_which_way_they_went_and_whether_they_are_hexadeci
         ),
         "{text}"
     );
+}
+
+/// Decision of the owner (2026-11-20): an open whose settings the simulated device does not expect is said on the entry of
+/// its resource in `instruments`, as `settings`, one item per open, each with its `t_ms` and only the settings that differ,
+/// `{"expected": X, "opened": Y}`; a resource with no command is listed for it. By hand: an open at 1.5 ms at 9,600 bauds
+/// and odd parity of a device that expects 115,200 and none.
+#[test]
+fn an_open_with_settings_the_device_does_not_expect_is_said_on_its_resource() {
+    use crate::native::{InstrumentLog, Setting, SettingDiff, SettingsLog};
+    let mut names = Interner::new();
+    let (checked, program) = checked(
+        &[(
+            "f.lcf",
+            "labcraft 1
+
+fn f() -> (x: i32) {
+    x = 1
+}
+",
+        )],
+        &mut names,
+    );
+    let given = Run {
+        program: &program,
+        names: &names,
+        files: &checked.files,
+        natives: &[],
+        inputs: vec![],
+        settings: Settings::default(),
+        context: Context::default(),
+    };
+    let mut end = run(given, &mut Still, &mut Unobserved);
+    let differ = vec![
+        SettingDiff { name: "baud", expected: Setting::Integer(115_200), opened: Setting::Integer(9600) },
+        SettingDiff { name: "parity", expected: Setting::Text("none"), opened: Setting::Text("odd") },
+    ];
+    end.instruments = vec![InstrumentLog {
+        resource: "serial:COM3".to_owned(),
+        settings: vec![SettingsLog { at: 1_500_000, differ }],
+        settings_more: 2,
+        ..InstrumentLog::default()
+    }];
+    let text = report_of(&end, &checked, &program, &names);
+    assert!(
+        text.contains(
+            r#""instruments":[{"resource":"serial:COM3","commands":[],"settings":[{"t_ms":1.5,"baud":{"expected":115200,"opened":9600},"parity":{"expected":"none","opened":"odd"}}],"truncated":true,"settings_more":2}]"#
+        ),
+        "{text}"
+    );
+}
+
+/// Code review: when the list of `settings` of a resource does not fit, after commands cut (`said`), only
+/// `,"settings_more":N` is written, within the room; with less room than it and the `}]` that close the resource, nothing.
+/// By hand: the list needs its head, 13 bytes, and 57 to close it: 70; the tail `,"settings_more":1` is 18 bytes, and 20
+/// with `}]`. In 40 bytes the tail is written; in 19, nothing; both say that something was left out.
+#[test]
+fn settings_that_do_not_fit_are_counted_within_the_room() {
+    use crate::native::{InstrumentLog, Setting, SettingDiff, SettingsLog};
+    let differ = vec![SettingDiff { name: "baud", expected: Setting::Integer(115_200), opened: Setting::Integer(9600) }];
+    let log = InstrumentLog { settings: vec![SettingsLog { at: 0, differ }], ..InstrumentLog::default() };
+    let mut out = String::new();
+    assert!(super::settings(&mut out, &log, 0, 40, true));
+    assert_eq!(out, r#","settings_more":1"#);
+    let mut out = String::new();
+    assert!(super::settings(&mut out, &log, 0, 19, true));
+    assert_eq!(out, "");
+    let mut out = String::new();
+    assert!(super::settings(&mut out, &log, 0, 40, false));
+    assert_eq!(out, r#","truncated":true,"settings_more":1"#, "35 bytes and two to close: 37, within 40");
 }

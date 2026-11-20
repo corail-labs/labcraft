@@ -67,6 +67,14 @@ pub trait NativeLibrary: Send + Sync {
         let _ = simulation;
         Vec::new()
     }
+    /// The endpoints of io.md 2 that its judged section describes (`serial:COM3`, `tcp:10.0.0.7:502`), for every library of
+    /// the run: the host gives their union to each one (`Context::endpoints`), so that `serial.list` under `--sim` gives the
+    /// serial endpoints of the whole file (io.md 6). None by default. Apart from [`NativeLibrary::resources`], which names
+    /// what a file defines as a program opens it: for `visa` its `SIM::` names, which are no endpoints.
+    fn endpoints(&self, simulation: &Simulation) -> Vec<String> {
+        let _ = simulation;
+        Vec::new()
+    }
     /// What one run of it holds, from what [`Start`] gives it.
     fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun>;
 }
@@ -172,12 +180,41 @@ pub struct HandleInfo {
 }
 
 /// The commands a simulated instrument received, for the report (commands.md 7, `instruments`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct InstrumentLog {
     pub resource: String,
     pub commands: Vec<CommandLog>,
     /// Commands past the ones kept.
     pub more: u64,
+    /// The opens of a simulated endpoint with settings its device does not expect (`serial`, io.md 6), in order.
+    pub settings: Vec<SettingsLog>,
+    /// Opens past the ones kept.
+    pub settings_more: u64,
+}
+
+/// An open of a simulated endpoint whose settings its device does not expect, for the report (commands.md 7,
+/// `instruments`, `settings`): when, and each setting that differs.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingsLog {
+    /// When the port was opened, in nanoseconds on the clock of the run.
+    pub at: i64,
+    /// Only the settings that differ, in the order of the library.
+    pub differ: Vec<SettingDiff>,
+}
+
+/// A setting that differs: its name (`baud`), what the device expects and what the open gave.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettingDiff {
+    pub name: &'static str,
+    pub expected: Setting,
+    pub opened: Setting,
+}
+
+/// The value of a setting in the report: a number (`9600`, `2`) or a word (`"even"`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    Integer(i64),
+    Text(&'static str),
 }
 
 /// A command as the report shows it (commands.md 7): when it was handled, what was sent and what was answered. An entry of a
@@ -203,7 +240,8 @@ pub struct LogText {
     pub hex: bool,
 }
 
-/// How many entries the log of one resource keeps for the report *(proposed)*.
+/// How many entries the log of one resource keeps for the report, of its commands and of its opens with settings its device
+/// does not expect *(proposed)*.
 pub const KEPT_ENTRIES: usize = 1000;
 /// How much of a text the report shows (commands.md 5).
 pub const KEPT_TEXT: usize = 1000;
@@ -282,37 +320,123 @@ impl Written<'_> {
     }
 }
 
-/// The log of one resource for the report (commands.md 7, `instruments`): the start of what it saw, then a count. Each entry
-/// kept costs its texts, at most four bytes a code point kept, and 64 bytes, from the budget of the run: from the first entry
-/// that does not fit, or past [`KEPT_ENTRIES`], entries are counted, not kept, so that the log is the start of what it saw.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ResourceLog {
-    pub entries: Vec<CommandLog>,
-    /// Entries counted, not kept.
+/// The start of what a log was given, then a count: from the first item that does not fit the budget of the run, or past
+/// [`KEPT_ENTRIES`], items are counted, not kept.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bounded<T> {
+    pub items: Vec<T>,
+    /// Items counted, not kept.
     pub more: u64,
 }
 
-impl ResourceLog {
-    pub fn entry(&mut self, budget: &LogBudget, at: i64, sent: Option<Logged<'_>>, answer: Option<Logged<'_>>) {
-        if self.more > 0 || self.entries.len() >= KEPT_ENTRIES {
+impl<T> Default for Bounded<T> {
+    fn default() -> Self {
+        Bounded { items: Vec::new(), more: 0 }
+    }
+}
+
+impl<T> Bounded<T> {
+    /// Keeps the item `item` makes, at `cost` bytes from `budget`, or counts it.
+    pub fn push(&mut self, budget: &LogBudget, cost: u64, item: impl FnOnce() -> T) {
+        if self.full() || !budget.take(cost) {
             self.more = self.more.saturating_add(1);
             return;
         }
-        let (sent, answer) = (sent.map(Logged::written), answer.map(Logged::written));
-        if !budget.take(sent.map_or(0, Written::cost) + answer.map_or(0, Written::cost) + 64) {
-            self.more = self.more.saturating_add(1);
-            return;
-        }
-        self.entries.push(CommandLog { at, sent: sent.map(Written::kept), answer: answer.map(Written::kept) });
+        self.items.push(item());
+    }
+
+    /// Whether it keeps no more: it counted one already, or holds [`KEPT_ENTRIES`].
+    pub fn full(&self) -> bool {
+        self.more > 0 || self.items.len() >= KEPT_ENTRIES
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty() && self.more == 0
+        self.items.is_empty() && self.more == 0
+    }
+}
+
+/// The log of one resource for the report (commands.md 7, `instruments`): the start of what it saw, then a count. Each entry
+/// kept costs its texts, at most four bytes a code point kept, and 64 bytes, from the budget of the run; each open with
+/// settings its device does not expect, 64 bytes and 64 a setting.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ResourceLog {
+    pub entries: Bounded<CommandLog>,
+    /// The opens with settings the device does not expect.
+    pub settings: Bounded<SettingsLog>,
+}
+
+impl ResourceLog {
+    /// An open with settings the device does not expect.
+    pub fn settings(&mut self, budget: &LogBudget, at: i64, differ: Vec<SettingDiff>) {
+        let cost = 64_u64.saturating_add(64_u64.saturating_mul(differ.len() as u64));
+        self.settings.push(budget, cost, || SettingsLog { at, differ });
+    }
+
+    pub fn entry(&mut self, budget: &LogBudget, at: i64, sent: Option<Logged<'_>>, answer: Option<Logged<'_>>) {
+        // Full, it counts the entry without looking at its texts.
+        if self.entries.full() {
+            self.entries.more = self.entries.more.saturating_add(1);
+            return;
+        }
+        let (sent, answer) = (sent.map(Logged::written), answer.map(Logged::written));
+        let cost = sent.map_or(0, Written::cost) + answer.map_or(0, Written::cost) + 64;
+        self.entries.push(budget, cost, || CommandLog { at, sent: sent.map(Written::kept), answer: answer.map(Written::kept) });
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty() && self.settings.is_empty()
     }
 
     /// For the report, by the name of its resource.
     pub fn instrument(&self, resource: &str) -> InstrumentLog {
-        InstrumentLog { resource: resource.to_owned(), commands: self.entries.clone(), more: self.more }
+        InstrumentLog {
+            resource: resource.to_owned(),
+            commands: self.entries.items.clone(),
+            more: self.entries.more,
+            settings: self.settings.items.clone(),
+            settings_more: self.settings.more,
+        }
+    }
+}
+
+/// What a library of raw streams (`net`, `serial`) keeps for the report (commands.md 7, `instruments`; io.md 6): for each
+/// endpoint reached, simulated or real, one entry per write and one per read, in order, and each open with settings its
+/// simulated device does not expect.
+#[derive(Debug)]
+pub struct EndpointLogs {
+    endpoints: std::collections::BTreeMap<String, ResourceLog>,
+    budget: LogBudget,
+}
+
+impl EndpointLogs {
+    pub fn new(budget: LogBudget) -> Self {
+        EndpointLogs { endpoints: std::collections::BTreeMap::new(), budget }
+    }
+
+    /// Gives the log of `endpoint`, made at its first use, and the budget.
+    fn with(&mut self, endpoint: &str, write: impl FnOnce(&mut ResourceLog, &LogBudget)) {
+        let EndpointLogs { endpoints, budget } = self;
+        match endpoints.get_mut(endpoint) {
+            Some(log) => write(log, budget),
+            None => write(endpoints.entry(endpoint.to_owned()).or_default(), budget),
+        }
+    }
+
+    /// One write (`sent`) or one read, at `at` on the clock of the run.
+    pub fn entry(&mut self, endpoint: &str, at: i64, sent: bool, bytes: &[u8]) {
+        let logged = Some(Logged::Bytes(bytes));
+        let (sent, answer) = if sent { (logged, None) } else { (None, logged) };
+        self.with(endpoint, |log, budget| log.entry(budget, at, sent, answer));
+    }
+
+    /// An open at `at` with settings the device does not expect.
+    pub fn settings(&mut self, endpoint: &str, at: i64, differ: Vec<SettingDiff>) {
+        self.with(endpoint, |log, budget| log.settings(budget, at, differ));
+    }
+
+    /// In code point order of the endpoints; one that saw nothing is not listed.
+    pub fn instruments(&self) -> Vec<InstrumentLog> {
+        self.endpoints.iter().filter(|(_, log)| !log.is_empty()).map(|(endpoint, log)| log.instrument(endpoint)).collect()
     }
 }
 
@@ -417,12 +541,12 @@ mod tests {
         for (budget, kept) in [(4063, 0), (4064, 1)] {
             let mut log = ResourceLog::default();
             log.entry(&LogBudget::new(budget), 0, Some(Logged::Text(&text)), None);
-            assert_eq!((log.entries.len(), log.more), (kept, 1 - kept as u64), "{budget}");
+            assert_eq!((log.entries.items.len(), log.entries.more), (kept, 1 - kept as u64), "{budget}");
         }
         let budget = LogBudget::new(70);
         let mut log = ResourceLog::default();
         log.entry(&budget, 0, None, Some(Logged::Bytes(&[0, 255, 7])));
-        let answer = log.entries[0].answer.as_ref().unwrap();
+        let answer = log.entries.items[0].answer.as_ref().unwrap();
         assert_eq!((answer.kept.as_str(), answer.length, answer.hex, budget.left()), ("00ff07", 6, true, 0));
     }
 }

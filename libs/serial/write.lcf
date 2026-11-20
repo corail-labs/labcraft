@@ -1,0 +1,5 @@
+labcraft 1
+
+/// Sends all the bytes, or fails.
+extern rust(crate: "labcraft-serial", function: "write")
+fn write(port: port, data: bytes, err: error = none) -> (port: port, err: error)

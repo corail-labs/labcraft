@@ -82,7 +82,7 @@ fuzz_target!(|bytes: &[u8]| {
             lib_paths: Vec::new(),
             limits: Limits::default(),
             shipped: shipped(),
-            natives: vec![Arc::new(labcraft_visa::Visa)],
+            natives: labcraft_libs::natives(),
             clock: Arc::new(Still),
             process: 0,
         };

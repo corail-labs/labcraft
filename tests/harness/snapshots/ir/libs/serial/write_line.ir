@@ -1,0 +1,2 @@
+fn serial.write_line(port: port, text: string, terminator: string = "\n", err: error = none) -> (port: port, err: error)
+  native write_line  skip(err: 3)

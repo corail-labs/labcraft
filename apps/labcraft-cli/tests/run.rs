@@ -74,7 +74,7 @@ fn engine_report(params: &Value) -> Value {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_net::Net), Arc::new(labcraft_results_log::ResultsLog)],
+                    natives: labcraft_libs::natives(),
                     clock: if real_time {
                         #[expect(clippy::disallowed_methods, reason = "a test of real time, natively")]
                         let now = std::time::Instant::now();

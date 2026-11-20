@@ -44,6 +44,9 @@ mod routing;
 mod runs;
 
 #[cfg(test)]
+mod serial;
+
+#[cfg(test)]
 mod scenario3;
 
 #[cfg(test)]

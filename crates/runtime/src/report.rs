@@ -32,7 +32,8 @@ mod tests;
 /// The name and version of the schema.
 pub const SCHEMA: &str = "labcraft-run/1";
 
-/// Resources and commands of each shown in a report *(proposed)*: past them, `truncated`.
+/// Resources, and commands and opens with settings their device does not expect of each, shown in a report *(proposed)*: past
+/// them, `truncated`.
 pub const INSTRUMENTS_MAX: usize = 64;
 pub const COMMANDS_MAX: usize = 1000;
 /// Resources still open, and leaked, shown in a report *(proposed)*: past them, `truncated`.
@@ -418,12 +419,48 @@ fn resource_entry(
     out.push('}');
 }
 
+/// The digits of the largest count a report writes, a `u64`.
+const COUNT_DIGITS: usize = 20;
+/// What closes the commands of an instrument at most, the instrument and the list of instruments: `],"truncated":true,"more":N}]`.
+const COMMANDS_CLOSE: usize = "],\"truncated\":true,\"more\":".len() + COUNT_DIGITS + "}]".len();
+/// What closes its settings at most, the instrument and the list: `],"truncated":true,"settings_more":N}]`.
+const SETTINGS_CLOSE: usize = "],\"truncated\":true,\"settings_more\":".len() + COUNT_DIGITS + "}]".len();
+/// What the commands of an instrument with settings keep besides for them: `,"settings_more":N`, which is all that is said
+/// of its settings when the list of them does not fit.
+const SETTINGS_TAIL: usize = ",\"settings_more\":".len() + COUNT_DIGITS;
+
+/// The items of a bounded list of an instrument, after its `[`, at most `max` and while what is written since `start`, with
+/// `close` bytes left for what closes it, stays within `room`; then its `]`. How many it leaves out, `more` included.
+fn bounded<T>(
+    out: &mut String,
+    items: &[T],
+    more: u64,
+    max: usize,
+    (start, room, close): (usize, usize, usize),
+    write: impl Fn(&mut String, &T),
+) -> u64 {
+    let mut kept = 0_usize;
+    for item in items.iter().take(max) {
+        let mut entry = String::new();
+        if kept > 0 {
+            entry.push(',');
+        }
+        write(&mut entry, item);
+        if out.len() - start + entry.len() + close > room {
+            break;
+        }
+        out.push_str(&entry);
+        kept += 1;
+    }
+    out.push(']');
+    more.saturating_add((items.len() - kept) as u64)
+}
+
 /// The commands each instrument received, within `left` bytes, their brackets and names included; whether some were left
 /// out. An instrument that does not fit is counted in `instruments_more`.
 fn instruments(out: &mut String, end: &RunEnd, left: &mut usize) -> bool {
-    // `,"instruments":[` … `],"instruments_more":N`, and what closes an instrument, `],"truncated":true,"more":N}`.
+    // `,"instruments":[` … `],"instruments_more":N`.
     const FRAME: usize = 64;
-    const CLOSE: usize = 48;
     if end.instruments.is_empty() {
         return false;
     }
@@ -441,40 +478,32 @@ fn instruments(out: &mut String, end: &RunEnd, left: &mut usize) -> bool {
             head.push(',');
         }
         let _ = write!(head, "{{\"resource\":{},\"commands\":[", quoted(&cut(&log.resource)));
-        if out.len() - start + head.len() + CLOSE > room {
+        let close = if log.settings.is_empty() && log.settings_more == 0 { COMMANDS_CLOSE } else { COMMANDS_CLOSE + SETTINGS_TAIL };
+        if out.len() - start + head.len() + close > room {
             break;
         }
         out.push_str(&head);
-        let mut kept = 0_usize;
-        for command in log.commands.iter().take(COMMANDS_MAX) {
-            let mut entry = String::new();
-            if kept > 0 {
-                entry.push(',');
-            }
+        let more = bounded(out, &log.commands, log.more, COMMANDS_MAX, (start, room, close), |entry, command| {
             let _ = write!(entry, "{{\"t_ms\":{},\"sent\":", ms(command.at));
             match &command.sent {
-                Some(sent) => text(&mut entry, &sent.kept, sent.length),
+                Some(sent) => text(entry, &sent.kept, sent.length),
                 None => entry.push_str("null"),
             }
             entry.push_str(",\"answer\":");
             match &command.answer {
-                Some(answer) => text(&mut entry, &answer.kept, answer.length),
+                Some(answer) => text(entry, &answer.kept, answer.length),
                 None => entry.push_str("null"),
             }
             if command.sent.iter().chain(&command.answer).any(|logged| logged.hex) {
                 entry.push_str(",\"hex\":true");
             }
             entry.push('}');
-            if out.len() - start + entry.len() + CLOSE > room {
-                break;
-            }
-            out.push_str(&entry);
-            kept += 1;
-        }
-        out.push(']');
-        let more = log.more.saturating_add((log.commands.len() - kept) as u64);
+        });
         if more > 0 {
             let _ = write!(out, ",\"truncated\":true,\"more\":{more}");
+            truncated = true;
+        }
+        if settings(out, log, start, room, more > 0) {
             truncated = true;
         }
         out.push('}');
@@ -487,6 +516,38 @@ fn instruments(out: &mut String, end: &RunEnd, left: &mut usize) -> bool {
     }
     *left = left.saturating_sub(out.len() - start);
     truncated
+}
+
+/// `,"settings":[…]` of an instrument (decision of the owner, 2026-11-20): each open with settings its device does not
+/// expect, at most [`COMMANDS_MAX`] and within what is left of `room` since `start`, then `"settings_more": N` and
+/// `"truncated": true` when `said` has not said it already; whether some were left out. Absent when there are none.
+fn settings(out: &mut String, log: &crate::native::InstrumentLog, start: usize, room: usize, said: bool) -> bool {
+    if log.settings.is_empty() && log.settings_more == 0 {
+        return false;
+    }
+    let head = ",\"settings\":[";
+    let more = if out.len() - start + head.len() + SETTINGS_CLOSE > room {
+        log.settings_more.saturating_add(log.settings.len() as u64)
+    } else {
+        out.push_str(head);
+        bounded(out, &log.settings, log.settings_more, COMMANDS_MAX, (start, room, SETTINGS_CLOSE), |entry, open| {
+            let _ = write!(entry, "{{\"t_ms\":{}", ms(open.at));
+            for differ in &open.differ {
+                let value = |setting: crate::native::Setting| match setting {
+                    crate::native::Setting::Integer(number) => number.to_string(),
+                    crate::native::Setting::Text(text) => quoted(text),
+                };
+                let _ = write!(entry, ",{}:{{\"expected\":{},\"opened\":{}}}", quoted(differ.name), value(differ.expected), value(differ.opened));
+            }
+            entry.push('}');
+        })
+    };
+    // The room for it is kept: by the commands, `SETTINGS_TAIL`, when they said `truncated`; by the list, otherwise.
+    let tail = format!("{},\"settings_more\":{more}", if said { "" } else { ",\"truncated\":true" });
+    if more > 0 && out.len() - start + tail.len() + "}]".len() <= room {
+        out.push_str(&tail);
+    }
+    more > 0
 }
 
 /// What the libraries kept of the values the run gave them, in the order of `t_ms`, then of the libraries, within `left`

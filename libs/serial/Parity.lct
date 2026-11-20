@@ -1,0 +1,4 @@
+labcraft 1
+
+/// The parity bit of a serial port.
+type Parity = enum { None, Odd, Even }

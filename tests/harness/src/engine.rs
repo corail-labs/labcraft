@@ -43,7 +43,7 @@ fn a_session_in_memory_checks_the_examples_and_lists_what_they_declare() {
             lib_paths: Vec::new(),
             limits: Limits::default(),
             shipped: shipped(),
-            natives: vec![Arc::new(labcraft_visa::Visa)],
+            natives: labcraft_libs::natives(),
             clock: Arc::new(labcraft_engine::Still),
             process: 0,
         };
