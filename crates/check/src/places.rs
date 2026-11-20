@@ -11,6 +11,7 @@ use labcraft_graph::{BandPlace, BlockSide, Terminals as TerminalsSection};
 use labcraft_types::{Interner, LibraryId, Name, Ty, TyId, TypeTable};
 
 use crate::declare::{DeclaredFunction, DeclaredLibrary};
+use crate::mask::Mask;
 use crate::outline::Read;
 
 /// The places are 8 apart on every block (spec 11.2): a constant of the notation, never a value of the style.
@@ -279,17 +280,26 @@ pub struct Block {
 }
 
 impl Block {
-    /// The block of a function from the sections of its file (spec 11.2, 11.4): its outline none for `template block`.
+    /// The block of a function from the sections of its file (spec 11.2, 11.4) and the mask of its library (11.3), whose
+    /// fields each section takes when it does not write its own: its outline none for `template block`.
     pub fn read(
         terminals: Option<&TerminalsSection>,
         outline: Option<&labcraft_graph::Outline>,
+        mask: Option<&Mask>,
         (inputs, outputs): (&[Name], &[Name]),
         names: &Interner,
         optional: HashSet<String>,
     ) -> Block {
         let section = section_of(terminals, inputs, outputs, names);
-        let outline = outline.map(|outline| crate::outline::read(outline, names).0).filter(|read| *read != Read::Block);
-        Block { outline, ..Block::of(&section, names, optional) }
+        let outline = mask
+            .map_or(outline, |mask| mask.outline_of(outline))
+            .map(|outline| crate::outline::read(outline, names).0)
+            .filter(|read| *read != Read::Block);
+        let block = Block { outline, ..Block::of(&section, names, optional) };
+        match mask {
+            None => block,
+            Some(mask) => Block { band: block.band.or(mask.band_place), colours: block.colours.or(mask.colours), ..block },
+        }
     }
 
     pub fn of(section: &Section, names: &Interner, optional: HashSet<String>) -> Block {

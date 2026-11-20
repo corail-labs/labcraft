@@ -1,7 +1,7 @@
 //! From the bytes of a file to its model and what there is to say about it.
 
 use labcraft_graph::{File, Outline, SourceMap};
-use labcraft_types::{Interner, Limits, Report};
+use labcraft_types::{Interner, Limits, Report, Span};
 
 use crate::decode::decode;
 use crate::parser::parse_file;
@@ -14,15 +14,28 @@ pub const STACK_SIZE: usize = if cfg!(target_arch = "wasm32") { 8 * 1024 * 1024 
 /// The items of an `outline` section, one per line, read as the section of a file of their own whose names go to `names`
 /// (spec 11.4): what `block.set_outline` writes. The message of the first diagnostic when they do not read.
 pub fn read_outline(items: &str, names: &mut Interner) -> Result<Outline, String> {
+    read_outline_mapped(items, names).map(|(outline, _)| outline).map_err(|(message, _)| message)
+}
+
+/// The line on which [`read_outline_mapped`] puts the first line of the items.
+pub const OUTLINE_FIRST_LINE: u32 = 8;
+
+/// As [`read_outline`], with where each item is: its first line on [`OUTLINE_FIRST_LINE`], its columns as written; and,
+/// when they do not read, where the first diagnostic is, counted in the same way.
+pub fn read_outline_mapped(items: &str, names: &mut Interner) -> Result<(Outline, SourceMap), (String, Option<Span>)> {
     let text = format!("labcraft 1\n\nfn f(x: f64) -> (y: f64) {{\n    y = x\n}}\n\noutline {{\n{items}\n}}\n");
     let found = read(text.as_bytes(), names, &Limits::default());
     match found.file {
         // Items that close the section and open another one are not items of it.
         Some(file) if file.panel.is_some() || file.layout.is_some() || file.terminals.is_some() || file.icon.is_some() || !file.end.is_empty() => {
-            Err("the items close the `outline` section".to_owned())
+            Err(("the items close the `outline` section".to_owned(), None))
         }
-        Some(File { outline: Some(outline), .. }) => Ok(outline),
-        _ => Err(found.report.diagnostics().first().map_or_else(|| "the items do not read".to_owned(), |diagnostic| diagnostic.message.clone())),
+        Some(File { outline: Some(outline), .. }) => Ok((outline, found.source_map)),
+        _ => Err(found
+            .report
+            .diagnostics()
+            .first()
+            .map_or_else(|| ("the items do not read".to_owned(), None), |diagnostic| (diagnostic.message.clone(), diagnostic.span))),
     }
 }
 

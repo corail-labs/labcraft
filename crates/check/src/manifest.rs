@@ -1,8 +1,10 @@
 //! The `labcraft.toml` of a library (spec, sections 1 and 9). That of a library shipped with LabCraft is read whole; of
-//! any other, only `name`, `always` and `resources` until M2 (`docs/cli.md`, section 3), its other keys ignored.
+//! any other, only `name`, `always`, `resources` and `[mask]` until M2 (`docs/cli.md`, section 3), its other keys ignored.
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use toml::{Table, Value};
+
+use crate::mask::Mask;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -23,6 +25,22 @@ pub struct Manifest {
     /// Categories of errors (spec 7.1).
     #[serde(default)]
     pub categories: Vec<String>,
+    /// The table `[mask]` (spec 11.3), read apart with its places (`Mask::read`): named here so that it is a field known.
+    #[serde(default, rename = "mask")]
+    pub(crate) mask_table: Ignored,
+    /// What its `[mask]` says, read by `check` for every library.
+    #[serde(skip)]
+    pub mask: Mask,
+}
+
+/// A field read apart.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Ignored;
+
+impl<'de> Deserialize<'de> for Ignored {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Ignored, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer).map(|_| Ignored)
+    }
 }
 
 impl Manifest {
@@ -70,6 +88,15 @@ fn strings(table: &Table, key: &str, wrong: &mut Vec<String>) -> Vec<String> {
         wrong.push(format!("`{key}` must be an array of strings"));
         Vec::new()
     })
+}
+
+/// The manifest of a library as reports show it, as a host shows a file of the folder: `labcraft.toml` alone in the
+/// current folder.
+pub fn shown(folder: &str) -> String {
+    match folder.strip_prefix("./").unwrap_or(folder) {
+        "" | "." => "labcraft.toml".to_owned(),
+        folder => format!("{}/labcraft.toml", folder.trim_end_matches('/')),
+    }
 }
 
 #[cfg(test)]

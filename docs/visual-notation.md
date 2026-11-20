@@ -803,7 +803,8 @@ When the function comes from another library, a **band** at the top of the block
   count in the position: `node x at (40, 80)` places the top-left corner of the block (spec 11). In v0 every band has
   the colours of `band.fill` and `band.text`. From M1 the mask of a library (spec 11.3) gives its band a shorter text,
   a place, `inside`, `above` or `hidden`, and a colour it proposes, from which the theme derives the fill and the text
-  of that band, 4.5:1 in both themes; the developer can change that colour, and a function can set its own place
+  of that band, 4.5:1 in both themes, and a `fill`, a `stroke` and an outline for the blocks of its functions
+  (decided 2026-11-20); the developer can change that colour, and a function can set its own place
   (spec 11.2), and its own `color`, `fill` and `stroke` (spec 11.2, decided 2026-11-20): the band takes the colours
   that section 8 derives from `color`; the body takes `fill` as written, else the tint of `color`, else `node.fill`;
   the outline takes `stroke` as written, else `node.stroke`; on a body that `color` or `fill` colours, the label and the

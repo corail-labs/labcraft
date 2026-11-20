@@ -835,3 +835,41 @@ fn a_line_on_a_side_that_grows_is_judged_at_the_size_of_each_call() {
     let five = "fn five(x: f64) -> (y: f64, z: f64) {\n    y = g(x, x, x, x, x, x, x)\n    z = g(x, x, 1.0, 2.0, 3.0, 4.0, 5.0)\n}";
     assert_eq!(judged_files(&[("g.lcf", g), ("five.lcf", five)]), [("g.lcf".to_owned(), "LC5014")]);
 }
+
+/// The diagnostics (file, line of the span, code) of a library of several files and a manifest.
+fn judged_with_manifest(manifest: &str, files: &[(&str, &str)]) -> Vec<(String, u32, &'static str)> {
+    let mut names = Interner::new();
+    let files = files
+        .iter()
+        .map(|(shown, text)| SourceFile {
+            shown: (*shown).to_owned(),
+            content: Content::Bytes(Cow::Owned(format!("labcraft 1\n\nuse core\n\n{text}\n").into_bytes())),
+        })
+        .collect();
+    let source =
+        LibrarySource { files, manifest: Some(Ok(manifest.to_owned())), ..LibrarySource::new(String::new(), String::new(), Origin::Project) };
+    let mut report = check(source, &Nothing, &mut names, &Limits::default()).report;
+    report.finish();
+    report
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| (diagnostic.file.clone(), diagnostic.span.map_or(0, |span| span.start.line), diagnostic.code().as_str()))
+        .collect()
+}
+
+#[test]
+fn a_mask_outline_that_breaks_a_guard_is_said_once_in_the_manifest_on_its_item() {
+    // Line 1 `[mask]`, line 2 `outline = '''`, line 3 the item: `zz` names no terminal of any function (11.4, guards).
+    // Both functions break it; the item is said once whatever the number of functions (11.4).
+    let manifest = "[mask]\noutline = '''\npath (0, 0) (w, zz) (w, h) (0, h)\n'''\n";
+    let f = "fn f(a: f64) -> (y: f64) {\n    y = a\n}";
+    let g = "fn g(a: f64) -> (y: f64) {\n    y = a\n}";
+    assert_eq!(judged_with_manifest(manifest, &[("f.lcf", f), ("g.lcf", g)]), [("labcraft.toml".to_owned(), 3, "LC5017")]);
+}
+
+#[test]
+fn a_function_with_its_own_outline_is_not_judged_against_the_mask_outline() {
+    let manifest = "[mask]\noutline = '''\npath (0, 0) (w, zz) (w, h) (0, h)\n'''\n";
+    let own = "fn f(a: f64) -> (y: f64) {\n    y = a\n}\n\noutline {\n    template block\n}";
+    assert_eq!(judged_with_manifest(manifest, &[("f.lcf", own)]), []);
+}

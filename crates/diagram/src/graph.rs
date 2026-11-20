@@ -356,6 +356,8 @@ pub struct Graph<'a> {
     pub frame_size: Option<(i64, i64)>,
     /// The heights of the terminals of the frame of the function that `input x at y` and `output x at y` set (spec 11).
     pub terminals_at: TerminalsAt,
+    /// The text that the mask of a library gives its band (spec 11.3), by the name of the library as a band names it.
+    pub band_texts: HashMap<String, String>,
 }
 
 /// The heights that the `layout` section sets for terminals of the frame of the function (spec 11), in hundredths, in
@@ -530,7 +532,16 @@ impl<'a> Builder<'a> {
         let frame_size = self.frame_entries(&self.file.file).0;
         // An entry of an `extern` names nothing (`LC5004`): its terminals keep their places.
         let terminals_at = TerminalsAt::default();
-        Graph { bodies: vec![body], function, nodes: Vec::new(), pills: HashMap::new(), vias: HashMap::new(), frame_size, terminals_at }
+        Graph {
+            bodies: vec![body],
+            function,
+            nodes: Vec::new(),
+            pills: HashMap::new(),
+            vias: HashMap::new(),
+            frame_size,
+            terminals_at,
+            band_texts: HashMap::new(),
+        }
     }
 
     /// From the root, as `run` names it.
@@ -552,6 +563,12 @@ impl<'a> Builder<'a> {
             vias: HashMap::new(),
             frame_size: None,
             terminals_at: self.terminal_entries(&self.file.file, &function.signature),
+            band_texts: self
+                .checked
+                .libraries
+                .iter()
+                .filter_map(|library| Some((cut_text(&library.name).into_owned(), library.mask.band.clone()?)))
+                .collect(),
         };
         let entries = self.layout_entries(&self.file.file);
         let (frame_size, sizes) = self.frame_entries(&self.file.file);
@@ -1136,8 +1153,10 @@ impl<'a> Builder<'a> {
                         .as_ref()
                         .or_else(|| function.file.and_then(|file| self.checked.files.get(file as usize)).and_then(|file| file.file.outline.as_ref()))
                 });
+                // And the mask of its library (11.3), whose fields the sections take when they do not write their own.
+                let mask = declared.map(|declared| &declared.mask).filter(|mask| !mask.says_nothing_of_blocks());
                 if let Some(function) = function
-                    && (section.is_some() || outline.is_some())
+                    && (section.is_some() || outline.is_some() || mask.is_some())
                 {
                     let inputs: Vec<Name> = function.params.iter().map(|param| param.name).collect();
                     let outputs: Vec<Name> = function.outputs.iter().map(|output| output.name).collect();
@@ -1148,9 +1167,9 @@ impl<'a> Builder<'a> {
                         .filter(|(_, default)| default.is_some())
                         .map(|(param, _)| self.text(param.name))
                         .collect();
-                    let block = Block::read(section, outline, (&inputs, &outputs), self.names, optional);
+                    let block = Block::read(section, outline, mask, (&inputs, &outputs), self.names, optional);
                     // `template block` alone is the ordinary block.
-                    if section.is_some() || block.outline.is_some() {
+                    if section.is_some() || block.outline.is_some() || mask.is_some() {
                         found.block = Some(Rc::new(block));
                     }
                 }

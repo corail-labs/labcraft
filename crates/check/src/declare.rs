@@ -46,6 +46,8 @@ pub struct DeclaredLibrary {
     pub always: Vec<Name>,
     pub resources: Vec<Name>,
     pub categories: Vec<String>,
+    /// What the `[mask]` of its manifest says (spec 11.3).
+    pub mask: crate::mask::Mask,
     /// A file of it did not read, or a bug stopped one: a name that it does not seem to have may still be its own, and
     /// that has its diagnostic.
     pub broken: bool,
@@ -1061,6 +1063,7 @@ impl<'a> Pass<'a> {
             always,
             resources,
             categories: source.manifest.categories.iter().map(|category| normalize(category).into_owned()).collect(),
+            mask: source.manifest.mask.clone(),
             broken: broken_names.any(),
             broken_names,
         }

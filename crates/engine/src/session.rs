@@ -384,6 +384,7 @@ impl Session {
             "commands.batch" => crate::edits::batch(self, author, params),
             "function.create" => crate::edits::create_function(self, author, command, params),
             "type.create" => crate::edits::create_type(self, author, command, params),
+            "library.set_mask" => crate::edits::set_mask(self, author, command, params),
             "function.rename" | "type.rename" => crate::edits::rename_declaration(self, author, command, params),
             "fragment.copy" => crate::edits::copy(self, params),
             "commands.execute" => crate::edits::execute(self, author, params),

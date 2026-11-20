@@ -84,6 +84,18 @@ pub struct Piece {
     pub points: Vec<(i64, i64)>,
 }
 
+/// The items of an `outline` section, one per line, when they read and 11.4 refuses none as an error (`LC5016`): what
+/// `block.set_outline` and `library.set_mask` write. `Err` says why not.
+pub fn read_items(items: &str, names: &mut Interner) -> Result<Outline, String> {
+    let section =
+        labcraft_format::read_outline(items, names).map_err(|message| format!("the items do not read as an `outline` section: {message}"))?;
+    let (_, problems) = read(&section, names);
+    match problems.into_iter().find(|(code, _, _)| *code == Code::Lc5016) {
+        Some((_, message, _)) => Err(message.trim_end_matches(" (11.4)").to_owned()),
+        None => Ok(section),
+    }
+}
+
 /// Reads a section: its errors (`LC5016`), and the warnings that do not depend on the size, a piece outside its bounds
 /// (`LC5017`). Either leaves the ordinary block.
 pub fn read(section: &Outline, names: &Interner) -> (Read, Vec<Problem>) {

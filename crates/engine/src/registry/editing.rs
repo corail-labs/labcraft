@@ -799,33 +799,32 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            editing(
-                "library.set_mask",
-                "Set Library Mask",
-                "Write fields of the `[mask]` table of a library manifest",
-                "Writes these fields of the table `[mask]` of the manifest of the library in `folder` (spec 11.3), and makes the manifest, holding the table alone, when the library has none; `null` removes one, and the table when nothing is left in it. The rest of the manifest is kept as written. A value that the mask refuses (a colour that is not `#RRGGBB`, an `outline` that `block.set_outline` would refuse) is `params.invalid`.",
-                object(
-                    &[
-                        ("folder", string("The folder of the library, from the root of the project.")),
-                        (
-                            "band",
-                            json!({ "type": ["string", "null"], "description": "The band of the library; `null` removes it.", "enum": ["hidden", "inside", "above", null] }),
-                        ),
-                        ("band_place", json!({ "type": ["integer", "string", "null"], "description": "The place of the band; `null` removes it." })),
-                        ("color", json!({ "type": ["string", "null"], "description": "The colour, `#RRGGBB`; `null` removes it." })),
-                        (
-                            "outline",
-                            json!({ "type": ["string", "null"], "description": "The outline, written as a multi-line TOML string; `null` removes it." }),
-                        ),
-                        ("expected_revision", revision()),
-                    ],
-                    &["folder"],
-                ),
-                EDIT_ERRORS,
-                false,
+        editing(
+            "library.set_mask",
+            "Set Library Mask",
+            "Write fields of the `[mask]` table of a library manifest",
+            "Writes these fields of the table `[mask]` of the manifest of the library in `folder` (spec 11.3), and makes the manifest, holding the table alone, when the library has none; `null` removes one, the table when nothing is left in it, and the manifest when nothing else is left in it either. The rest of the manifest, its comments and its order are kept as written. A value that the mask refuses (a colour that is not `#RRGGBB`, a `band` that 11.3 refuses, an `outline` that `block.set_outline` would refuse) is `params.invalid`; `outline` is written as a multi-line literal TOML string.",
+            object(
+                &[
+                    ("folder", string("The folder of the library, from the root of the project.")),
+                    (
+                        "band",
+                        json!({ "type": ["string", "null"], "description": "The text of the band, one line of 64 characters at most; `null` removes it." }),
+                    ),
+                    (
+                        "band_place",
+                        json!({ "type": ["string", "null"], "description": "The place of the band; `null` removes it.", "enum": ["hidden", "inside", "above", null] }),
+                    ),
+                    ("color", json!({ "type": ["string", "null"], "description": "The colour of the band, `#RRGGBB`; `null` removes it." })),
+                    ("fill", json!({ "type": ["string", "null"], "description": "The fill of the body, `#RRGGBB`; `null` removes it." })),
+                    ("stroke", json!({ "type": ["string", "null"], "description": "The colour of the outline, `#RRGGBB`; `null` removes it." })),
+                    ("outline", json!({ "type": ["string", "null"], "description": "The items of the outline, one per line; `null` removes it." })),
+                    ("expected_revision", revision()),
+                ],
+                &["folder"],
             ),
+            EDIT_ERRORS,
+            false,
         ),
         editing(
             "structure.surround",
