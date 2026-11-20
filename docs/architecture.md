@@ -1386,7 +1386,10 @@ pub fn svg_not_drawn(function: &FunctionRef, diagnostics: &[Diagnostic], theme: 
   computes no placement. `values` makes the short forms of 6.1 from the
   text that the reader kept and the type of each wire.
 - **The theme**: the values of the tokens, light and dark, are data here, and the test of the contrasts of
-  notation 8 reads them. The canvas maps each token to a colour; the SVG writes them as CSS variables.
+  notation 8 reads them. The canvas maps each token to a colour; the SVG writes them as CSS variables. A colour that a
+  file writes (`color`, `fill`, `stroke`, spec 11.2) is a `Colour::Written` with its value in each theme, which
+  `colour` derives by the rules of notation 8; the SVG gives it a variable named after its two values
+  (`--rgb-64748B-64748B`).
 - **Bounded on purpose.** Every step is near linear: a fixed number of sweeps to lower crossings, intervals
   sorted once for channels and tracks, no search whose cost grows with the square of the nodes: the search for a
   lane between the nodes (notation 2.2) reads at most 4,096 items and 64 more for each node and wire of its body, past

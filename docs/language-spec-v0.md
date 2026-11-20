@@ -584,7 +584,8 @@ has one text:
   the range (section 11) is written in plain decimal: `1_000` becomes `1000`, `-0` becomes `0`.
   Any other coordinate (`5.0`, `1e3`) is an error for `check` and keeps its spelling.
 - **Items of `terminals`** (M1): `top`, then `left`, then the lines of the terminals in signature order, the inputs
-  then the outputs (a line that names no terminal after them, in written order), then `band`.
+  then the outputs (a line that names no terminal after them, in written order), then `band`, `color`, `fill` and
+  `stroke`.
 - **Items of `outline`** (M1): `template` or `path`, then the pieces of the `top`, `left` and `right` sides, in that
   order, as in `terminals`; each item on one line, a piece with one space inside its braces (`right terminal { path (0, -2) (8, -2) (8, 2) (0, 2) }`).
 - **Items of `icon`** keep their written order: a shape is drawn over the ones before it.
@@ -1450,7 +1451,10 @@ icon 32 {
 - **Shapes**: `rect` (two corners, optional radius), `circle` (center, radius), `line`, `path` (SVG
   path syntax: `M L H V C S Q T A Z`, absolute or relative), `text` (`at`: middle of the baseline), set in the font of the visual notation, Hack, at its `size`
   (notation 2.3), 10 when it is not written.
-  Fixed stroke width chosen by the IDE; `fill` fills the shape. Numbers are decimals without a unit;
+  The stroke is 1.5 units of the grid wide, with round ends and joins, unless `width` gives the shape its own, from
+  0.25 to 8 units *(proposed; decision of the owner, 2026-11-20: wide bounds)*: a stroke outside them is a warning
+  (`LC5019`), drawn at the nearest bound. Like every number of the icon, it scales with the icon (`width 4` is 2 on an
+  icon drawn 16 units wide); on a `text`, which has no stroke, it changes nothing. `fill` fills the shape. Numbers are decimals without a unit;
   a radius or a size is above zero. The radius of a `rect` larger than half a side is reduced to it,
   as in SVG.
 - **Leaving the grid** is a warning: what a shape draws, stroke aside, goes below 0 or above 32. A
@@ -1491,6 +1495,7 @@ terminals {
     left 3
     top 3 config
     left middle x
+    color "#2F6F9F"
 }
 ```
 
@@ -1538,20 +1543,35 @@ terminals {
   the grid; a block too low for its band (with the default style, `left 1` or `left 0`) and without a top side draws a band
   `inside` above (visual notation 3.2). The functions of `core` and of the other primitive
   libraries have no band, whatever the line says.
+- **`color`, `fill` and `stroke`** colour the block of this function, each on a line of its own, each optional and
+  independent of the others (decision of the owner, 2026-11-20): a string `"#RRGGBB"`, in either case, one value for
+  both themes. The author chooses; no rule ties one to another.
+  - **`color "#2F6F9F"`** is the colour of its band, in place of the `color` of the mask of its library (11.3). From it
+    visual notation 8 derives the fill and the text of the band, and, when no `fill` is written, the tint of the body,
+    in each theme, every text keeping 4.5:1. Without a `color` here or in the mask, the band and the body are neutral
+    (`band.fill`, `node.fill`).
+  - **`fill "#64748B"`** is the fill of its body, as written, in both themes, in place of the tint of `color`;
+    **`stroke "#…"`** is the colour of its outline, as written, in both themes, in place of `node.stroke`.
+  - **The ink follows the fill.** On a body that a `fill` colours, the label and the icon are drawn in the light ink or
+    the dark ink, the one with the more contrast on it; on the tint of `color`, in `node.title`, which the tint keeps at
+    4.5:1 (visual notation 8). Whether a `fill` or a `stroke`
+    stands out from the canvas is the choice of the author: `check` does not judge it.
+  - **The developer decides on their screen**: a setting of the IDE shows every block in the neutral colours (M1).
+  - A value that is not `"#RRGGBB"` is a warning (`LC5018`), and the line does not apply.
 - **Lines that cannot apply.** A line that names no terminal of the signature, a place outside its side (past the
   last), a place that another line took, or the place of `after:` (`top 1`) is a warning, and its terminal keeps
   its default place. Lines take their places in the order of the signature, the inputs then the outputs, the order
   that `fmt` writes (5.2): of two lines on one place, the second in that order does not apply, whatever their written
-  order (decision of the owner, 2026-11-19). Two sizes for one side, two `band` lines, two lines for one terminal, or a size outside its range
-  are an error. The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section 5,
+  order (decision of the owner, 2026-11-19). Two sizes for one side, two `band`, `color`, `fill` or `stroke` lines, two
+  lines for one terminal, or a size outside its range are an error. The codes of these diagnostics come with the program that gives them ([cli.md](cli.md), section 5,
   lists only those).
 - **The standard view does not follow the section** (visual notation 3.1): it lists the terminals by name, in
   signature order.
 - **Reading by an agent**: like `layout` and `icon`, the section says nothing about running; the CLI and the MCP
   server leave it out by default, and an agent writes it only on request. In the editor, a terminal of a call moved
   to a place writes the line in the file of the function called (visual notation 2.4).
-- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside` and `above` mean
-  something only in the section, and stay names everywhere else (14.1).
+- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`, `color`, `fill`
+  and `stroke` mean something only in the section, and stay names everywhere else (14.1).
 
 ### 11.3 Library mask (`[mask]` of the manifest, M1)
 
@@ -1971,10 +1991,11 @@ Contextual words, reserved only where the syntax expects them and ordinary ident
 - `opaque`: the whole type of a `type` declaration (3.2);
 - `control`, `indicator`: a `panel` item;
 - `node`, `wire`, `at`, `via`, `view`, `standard`, `compact`, `frame`, `size`, `input`, `output`: a `layout` item;
-- `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `fill`, `accent`: an `icon` item;
+- `rect`, `circle`, `line`, `path`, `text`, `at`, `radius`, `size`, `width`, `fill`, `accent`: an `icon` item;
 - `terminals`: the start of a section, after the declaration (M1, 11.2). It came after the first release, so it is
   contextual, unlike `panel`, `layout` and `icon` (above);
-- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`: a `terminals` item;
+- `top`, `left`, `right`, `last`, `middle`, `input`, `output`, `band`, `hidden`, `inside`, `above`, `color`, `fill`,
+  `stroke`: a `terminals` item;
 - `outline`: the start of a section, after the declaration and the sections before it (M1, 11.4), contextual for the
   same reason;
 - `path`, `round`, `template`, `terminal`, `top`, `left`, `right`: an `outline` item. `w` and `h` are names, which an
@@ -2146,7 +2167,8 @@ terminals_section = "terminals" "{" { terminals_item } "}" ;        (* M1, 11.2 
 terminals_item = ( "top" | "left" ) INT                  (* the number of places of a side *)
                | ( "top" | "left" | "right" ) place [ "input" | "output" ] IDENT
                                                          (* a terminal on a place *)
-               | "band" ( "hidden" | "inside" | "above" ) ;
+               | "band" ( "hidden" | "inside" | "above" )
+               | ( "color" | "fill" | "stroke" ) STRING ;  (* "#RRGGBB", 11.2 *)
 place          = INT | "last" | "middle" ;
 
 outline_section = "outline" "{" { outline_item } "}" ;           (* M1, 11.4 *)
@@ -2164,7 +2186,7 @@ icon_item      = ( "rect" point point [ "radius" number ]
                  | "line" point point
                  | "path" STRING
                  | "text" STRING "at" point [ "size" number ] ) icon_style ;
-icon_style     = [ "fill" ] [ "accent" path ] ;
+icon_style     = [ "width" number ] [ "fill" ] [ "accent" path ] ;
 ```
 
 ### 14.7 Rules outside the grammar
@@ -2294,7 +2316,9 @@ fn core.call(function: fn(…) -> (…), …) -> (…)
 **Blocks of the primitives (M1).** The D of visual notation 3.2 is written in the grammar that every library uses
 (11.2, 11.4), so that a primitive is drawn by the same rules as any block. With the program of M1, each primitive drawn
 as a D has its file in `libs/core`, holding these sections; its glyph stays in the closed list of visual notation 3.2
-(N-4); the other functions of `core` have the ordinary block. The file declares the terminals of the primitive,
+(N-4), drawn by the `icon` section of the file (11.1) in the manner of Tabler Icons 3.19.0 (MIT), white on a
+`fill "#64748B"` (decisions of the owner, 2026-11-20), except the unit of `with_unit` and `unitless`, which the call gives
+and which stays a text; the other functions of `core` have the ordinary block. The file declares the terminals of the primitive,
 `extern rust(crate: "labcraft-runtime", function: "add")` then `fn add<N: Number>(a: N, b: N) -> (result: N)`, with the
 types that the grammar writes: the signature that counts is the one above, whose `A·B`, `√N` and `unit: kind unit`
 no file writes (a type variable stands for them, and `unit`, which is no terminal, is left out). These files are no
@@ -2310,6 +2334,7 @@ terminals {
     left 1 a
     left last b
     right middle result
+    fill "#64748B"
 }
 
 outline {
@@ -2325,6 +2350,7 @@ terminals {
     left 1
     left middle x
     right middle result
+    fill "#64748B"
 }
 
 outline {
@@ -2339,6 +2365,7 @@ terminals {
     top 2
     left 3
     right middle result
+    fill "#64748B"
 }
 
 outline {
@@ -2347,7 +2374,8 @@ outline {
 ```
 
 `with_unit` and `unitless` have the section of one value in, 16 high, and are a D as wide as their unit (visual
-notation 3.2), the only blocks whose width a `terminals` section does not give.
+notation 3.2), the only blocks whose width a `terminals` section does not give. Each file but those two ends with the
+`icon` section of its glyph (11.1), drawn so that the glyph has the same size on a block of 16 as on one of 32.
 
 ### A.2 `array`, `string`, `time`, `errors`, `ui`, `bytes`
 

@@ -10,6 +10,7 @@ use labcraft_types::text::{self, ShownText};
 use labcraft_types::{Interner, cut_text};
 
 use crate::block::Block;
+use crate::colour::Inks;
 use crate::graph::{Base, Family, Glyph, Kind, Node, Terminal};
 use crate::shape::{Detail, IconDrawing, IconDrawn, IconItem, IconShape, Paint, Run, Shape, Token, token_of};
 use crate::style;
@@ -497,52 +498,60 @@ struct AtPlaces {
 
 /// The body of a compact block (notation 3.2): its fill, the band of its library inside, at its top, its outline over
 /// both. Where what the band leaves starts: 0 without a band.
-fn body(band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+fn body(inks: &Inks, band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
     let radius = style::radius();
     let outline = |paint| Shape::Rect { x: 0, y: 0, width, height, radius, paint };
     let Some(band) = band else {
-        shapes.push(outline(Paint::both("node.fill", "node.stroke", style::outline())));
+        shapes.push(outline(Paint::inks(Some(inks.body), Some(inks.stroke), style::outline())));
         return 0;
     };
     let band_height = style::band_height().min(height);
-    shapes.push(outline(Paint::fill("node.fill")));
+    shapes.push(outline(Paint::inks(Some(inks.body), None, 0)));
     // Rounded at the top with the block, square at the bottom.
-    shapes.push(Shape::Rect { x: 0, y: 0, width, height: band_height, radius, paint: Paint::fill("band.fill") });
+    shapes.push(Shape::Rect { x: 0, y: 0, width, height: band_height, radius, paint: Paint::inks(Some(inks.band), None, 0) });
     let square = radius.min(band_height / 2);
     if square > 0 {
-        shapes.push(Shape::Rect { x: 0, y: band_height - square, width, height: square, radius: 0, paint: Paint::fill("band.fill") });
+        shapes.push(Shape::Rect { x: 0, y: band_height - square, width, height: square, radius: 0, paint: Paint::inks(Some(inks.band), None, 0) });
     }
     shapes.push(Shape::Poly {
         points: vec![(0, band_height), (width, band_height)],
         closed: false,
-        paint: Paint::stroke("node.stroke", style::outline()),
+        paint: Paint::inks(None, Some(inks.stroke), style::outline()),
     });
-    shapes.push(band.centred((left + width - right) / 2, band_height / 2, "band.text"));
-    shapes.push(outline(Paint::stroke("node.stroke", style::outline())));
+    shapes.push(band.centred((left + width - right) / 2, band_height / 2, inks.band_text));
+    shapes.push(outline(Paint::inks(None, Some(inks.stroke), style::outline())));
     band_height
 }
 
 /// The body of a compact block whose function gives it an outline (spec 11.4): the outline filled, the band cut to it,
 /// its divider across it, the outline stroked over both. Where what the band leaves starts: 0 without a band.
-fn shaped((drawn, index): &(Drawn, usize), band: Option<&Text>, (left, right): (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+fn shaped(
+    inks: &Inks,
+    (drawn, index): &(Drawn, usize),
+    band: Option<&Text>,
+    (left, right): (i64, i64),
+    width: i64,
+    height: i64,
+    shapes: &mut Vec<Shape>,
+) -> i64 {
     let extent = drawn.points.iter().fold((i64::MAX, i64::MAX, i64::MIN, i64::MIN), |(a, b, c, d), &(x, y)| (a.min(x), b.min(y), c.max(x), d.max(y)));
     let outline = |paint| Shape::Outline { x: 0, y: 0, outline: *index, extent, paint };
     let Some(band) = band else {
-        shapes.push(outline(Paint::both("node.fill", "node.stroke", style::outline())));
+        shapes.push(outline(Paint::inks(Some(inks.body), Some(inks.stroke), style::outline())));
         return 0;
     };
     let band_height = style::band_height().min(height);
-    shapes.push(outline(Paint::fill("node.fill")));
+    shapes.push(outline(Paint::inks(Some(inks.body), None, 0)));
     let cut = above_line(&drawn.points, band_height);
     if cut.len() >= 3 {
-        shapes.push(Shape::Poly { points: cut, closed: true, paint: Paint::fill("band.fill") });
+        shapes.push(Shape::Poly { points: cut, closed: true, paint: Paint::inks(Some(inks.band), None, 0) });
     }
     let across = (crossing(drawn, BlockSide::Left, band_height), crossing(drawn, BlockSide::Right, band_height));
     if let (Some(from), Some(to)) = across {
-        shapes.push(Shape::Poly { points: vec![from, to], closed: false, paint: Paint::stroke("node.stroke", style::outline()) });
+        shapes.push(Shape::Poly { points: vec![from, to], closed: false, paint: Paint::inks(None, Some(inks.stroke), style::outline()) });
     }
-    shapes.push(band.centred((left + width - right) / 2, band_height / 2, "band.text"));
-    shapes.push(outline(Paint::stroke("node.stroke", style::outline())));
+    shapes.push(band.centred((left + width - right) / 2, band_height / 2, inks.band_text));
+    shapes.push(outline(Paint::inks(None, Some(inks.stroke), style::outline())));
     band_height
 }
 
@@ -564,10 +573,29 @@ fn above_line(points: &[(i64, i64)], limit: i64) -> Vec<(i64, i64)> {
 }
 
 /// The body of a compact block: its outline when it has one, else the block of notation 3.2.
-fn body_of(drawn: Option<&(Drawn, usize)>, band: Option<&Text>, insets: (i64, i64), width: i64, height: i64, shapes: &mut Vec<Shape>) -> i64 {
+fn body_of(
+    inks: &Inks,
+    drawn: Option<&(Drawn, usize)>,
+    band: Option<&Text>,
+    insets: (i64, i64),
+    width: i64,
+    height: i64,
+    shapes: &mut Vec<Shape>,
+) -> i64 {
     match drawn {
-        Some(drawn) => shaped(drawn, band, insets, width, height, shapes),
-        None => body(band, insets, width, height, shapes),
+        Some(drawn) => shaped(inks, drawn, band, insets, width, height, shapes),
+        None => body(inks, band, insets, width, height, shapes),
+    }
+}
+
+/// The icon of a block (notation 3.2), in the middle of what its band leaves, in all that room: the least of its width and
+/// of its height under the band, in every block; the margin is the author's, in the grid of the icon (decided
+/// 2026-11-20). Left out when no room is left.
+fn centred_icon(icon: usize, width: i64, height: i64, top: i64, shapes: &mut Vec<Shape>) {
+    let side = width.min(height - top);
+    if side > 0 {
+        let centre = top + (height - top) / 2;
+        shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
     }
 }
 
@@ -618,8 +646,7 @@ fn lead(family: Family, from: (i64, i64), to: (i64, i64)) -> Shape {
 /// A block, by the address of the section of its function, and the places of its terminals and its sides.
 type OutlineKey = (usize, Vec<(BlockSide, u32)>, u32, u32);
 
-pub struct Sizer<'a> {
-    pub names: &'a Interner,
+pub struct Sizer {
     pub standard_everywhere: bool,
     /// The outlines drawn, by the block of their function and the places of their terminals: the calls of one function at
     /// one size share one, so that drawing them costs one outline, not one per call (spec 11.4).
@@ -631,10 +658,9 @@ pub struct Sizer<'a> {
     pub outline_index: RefCell<HashMap<Vec<(i64, i64)>, usize>>,
 }
 
-impl<'a> Sizer<'a> {
-    pub fn new(names: &'a Interner, standard_everywhere: bool) -> Sizer<'a> {
+impl Sizer {
+    pub fn new(standard_everywhere: bool) -> Sizer {
         Sizer {
-            names,
             standard_everywhere,
             outlines: RefCell::new(HashMap::new()),
             outlines_drawn: RefCell::new(Vec::new()),
@@ -660,7 +686,7 @@ impl<'a> Sizer<'a> {
                 } else if let Some(block) = block {
                     self.sectioned(node, short, band, icon, block)
                 } else {
-                    self.square(node, short, band, icon)
+                    self.square(node, short, band, icon, &Inks::default())
                 }
             }
             Kind::Construction { ty, .. } => {
@@ -781,7 +807,7 @@ impl<'a> Sizer<'a> {
 
     /// A compact block (notation 3.2): `node.square` wide, as tall as its places need and at least as tall as wide, the
     /// icon or the name in its centre. Neither the name nor the band makes it larger.
-    fn square(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>) -> Sized {
+    fn square(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>, inks: &Inks) -> Sized {
         let width = block_width();
         let places = places(node, style::square());
         let side = places.height;
@@ -793,22 +819,22 @@ impl<'a> Sizer<'a> {
         };
         let band = band.map(|band| Text::measured(band.clone(), small()));
         let mut shapes = Vec::new();
-        let top = body(band.as_ref(), band_insets(node), width, side, &mut shapes);
+        let top = body(inks, band.as_ref(), band_insets(node), width, side, &mut shapes);
         // In the centre of what the band leaves.
         let centre = top + (side - top) / 2;
         match icon {
-            Some(icon) => shapes.push(Shape::Icon { x: width / 2 - style::icon() / 2, y: centre - style::icon() / 2, side: style::icon(), icon }),
+            Some(icon) => centred_icon(icon, width, side, top, &mut shapes),
             None => {
                 let height = line_height(label_size());
                 let centre = if node.always { (top + always_top(side)) / 2 } else { centre };
                 let top = centre - height * label.len() as i64 / 2;
                 for (row, line) in label.iter().enumerate() {
-                    shapes.push(line.centred(width / 2, top + height * row as i64 + height / 2, "node.title"));
+                    shapes.push(line.centred(width / 2, top + height * row as i64 + height / 2, inks.ink));
                 }
             }
         }
         let drawn = self.terminals(node, &places, width, &mut shapes);
-        let order = self.compact_marks(node, width, side, &mut shapes);
+        let order = self.compact_marks(node, width, side, inks.ink, &mut shapes);
         compact(width, side, shapes, drawn, order)
     }
 
@@ -820,7 +846,8 @@ impl<'a> Sizer<'a> {
     fn sectioned(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>, block: &Block) -> Sized {
         let mut places = crate::block::places(block, node);
         if places.inputs.len() != node.inputs.len() || places.outputs.len() != node.outputs.len() {
-            return self.square(node, short, band, icon);
+            // The block of 40, in the colours of its file all the same: its icon was drawn in their ink.
+            return self.square(node, short, band, icon, &Inks::of(&block.colours));
         }
         let glyph = match &node.kind {
             Kind::Call { glyph, .. } => glyph.as_ref(),
@@ -833,11 +860,14 @@ impl<'a> Sizer<'a> {
             let wide = (text.width + 600 + crate::block::PITCH - 1) / crate::block::PITCH - 1;
             places.top = places.top.max(u32::try_from(wide).unwrap_or(u32::MAX));
         }
-        let glyph = glyph.map(|glyph| match glyph {
-            Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
-            Glyph::Unit { unit, struck } => (Text::new(unit, any_text(), large()), *struck),
+        // A sign is drawn by the icon of its file (spec A.1), and stays a text only without one; a unit is a text.
+        let glyph = glyph.and_then(|glyph| match glyph {
+            Glyph::Sign(_) if icon.is_some() => None,
+            Glyph::Sign(sign) => Some((Text::new(sign, any_text(), large()), false)),
+            Glyph::Unit { unit, struck } => Some((Text::new(unit, any_text(), large()), *struck)),
         });
         let (width, height) = (places.width(), places.height());
+        let inks = Inks::of(&block.colours);
         let top_side = places.has_top_side();
         // Its outline at the size of this call: the ordinary block where a guard breaks there (11.4), which `check` says.
         let drawn = block.outline.as_ref().and_then(|read| {
@@ -873,7 +903,7 @@ impl<'a> Sizer<'a> {
             place => place,
         };
         let top = match (band, place) {
-            (None, _) | (Some(_), BandPlace::Hidden) => body_of(drawn.as_ref(), None, (0, 0), width, height, &mut shapes),
+            (None, _) | (Some(_), BandPlace::Hidden) => body_of(&inks, drawn.as_ref(), None, (0, 0), width, height, &mut shapes),
             // On the block, 12 high, without moving it: its corner, its size and its lines stay.
             (Some(text), BandPlace::Above) if !top_side => {
                 let band_height = style::band_height();
@@ -884,11 +914,11 @@ impl<'a> Sizer<'a> {
                     width,
                     height: band_height + radius,
                     radius,
-                    paint: Paint::both("band.fill", "node.stroke", style::outline()),
+                    paint: Paint::inks(Some(inks.band), Some(inks.stroke), style::outline()),
                 });
-                shapes.push(text.centred(width / 2, -band_height / 2, "band.text"));
+                shapes.push(text.centred(width / 2, -band_height / 2, inks.band_text));
                 above = band_height;
-                body_of(drawn.as_ref(), None, (0, 0), width, height, &mut shapes)
+                body_of(&inks, drawn.as_ref(), None, (0, 0), width, height, &mut shapes)
             }
             (Some(text), _) if top_side => {
                 // In the widest gap between the terminals of the top side, cut to it.
@@ -908,35 +938,26 @@ impl<'a> Sizer<'a> {
                     });
                 let cells = cells_in(to - from, small());
                 let cut = if cells == 0 { Text::new("", 1, small()) } else { Text::new(&text.shown.text(), cells, small()) };
-                body_of(drawn.as_ref(), Some(&cut), (from, width - to), width, height, &mut shapes)
+                body_of(&inks, drawn.as_ref(), Some(&cut), (from, width - to), width, height, &mut shapes)
             }
-            (Some(text), _) => body_of(drawn.as_ref(), Some(&text), band_insets(node), width, height, &mut shapes),
+            (Some(text), _) => body_of(&inks, drawn.as_ref(), Some(&text), band_insets(node), width, height, &mut shapes),
         };
         // The centre: the icon, scaled down to what a small block leaves, never up; else the name, cut to the width.
         let centre = top + (height - top) / 2;
         match (glyph, icon) {
             // The glyph of a primitive, struck through for `unitless` (notation 3.2).
             (Some((text, struck)), _) => {
-                shapes.push(text.centred(width / 2, centre, "node.title"));
+                shapes.push(text.centred(width / 2, centre, inks.ink));
                 if struck {
                     shapes.push(Shape::Poly {
                         points: vec![(width / 2 - text.width / 2, centre), (width / 2 + text.width / 2, centre)],
                         closed: false,
-                        paint: Paint::stroke("node.title", style::outline()),
+                        paint: Paint::stroke(inks.ink, style::outline()),
                     });
                 }
             }
             (None, Some(icon)) => {
-                // A block that the section makes smaller than 40 scales its icon down to what its band leaves, never up.
-                let side = if width >= style::square() && height >= style::square() {
-                    style::icon()
-                } else {
-                    style::icon().min(width.min(height - top) - (style::square() - style::icon())).max(0)
-                };
-                // Left out when no room is left.
-                if side > 0 {
-                    shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
-                }
+                centred_icon(icon, width, height, top, &mut shapes);
             }
             (None, None) => {
                 let cells = cells_in(width - style::terminal(), label_size());
@@ -953,7 +974,7 @@ impl<'a> Sizer<'a> {
                 let centre = if node.always { (top + always_top(height)) / 2 } else { centre };
                 let first = centre - line * label.len() as i64 / 2;
                 for (row, text) in label.iter().enumerate() {
-                    shapes.push(text.centred(width / 2, first + line * row as i64 + line / 2, "node.title"));
+                    shapes.push(text.centred(width / 2, first + line * row as i64 + line / 2, inks.ink));
                 }
             }
         }
@@ -1019,7 +1040,7 @@ impl<'a> Sizer<'a> {
         let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
         // The `after:` terminal starts where the outline crosses its place, wherever that is (11.4).
         let after = drawn.as_ref().and_then(|(drawn, _)| crossing(drawn, BlockSide::Top, style::grid()));
-        let order = self.compact_marks_at(node, width, height, after, &mut shapes);
+        let order = self.compact_marks_at(node, width, height, after, inks.ink, &mut shapes);
         // A lane above the block for each wire of a terminal off its default side: the outputs first, then the inputs.
         let (mut lane, mut beside_left, mut beside_right) = (0_i64, 0_i64, 0_i64);
         let gap = style::wire_gap();
@@ -1081,17 +1102,25 @@ impl<'a> Sizer<'a> {
         AtPlaces { left, inputs, outputs, reaches }
     }
 
-    /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, the `after:` terminal, whose
-    /// centre it gives.
-    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
-        self.compact_marks_at(node, width, height, None, shapes)
+    /// What the compact view never hides (notation 3.2): `always` as `▴` at the bottom, in the ink of the body, the
+    /// `after:` terminal, whose centre it gives.
+    fn compact_marks(&self, node: &Node<'_>, width: i64, height: i64, ink: Token, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
+        self.compact_marks_at(node, width, height, None, ink, shapes)
     }
 
     /// The same, the `after:` terminal at `after` when an outline moves it, else on the top edge 8 from the left.
-    fn compact_marks_at(&self, node: &Node<'_>, width: i64, height: i64, after: Option<(i64, i64)>, shapes: &mut Vec<Shape>) -> Option<(i64, i64)> {
+    fn compact_marks_at(
+        &self,
+        node: &Node<'_>,
+        width: i64,
+        height: i64,
+        after: Option<(i64, i64)>,
+        ink: Token,
+        shapes: &mut Vec<Shape>,
+    ) -> Option<(i64, i64)> {
         if node.always {
             let mark = Text::new("\u{25B4}", 1, medium());
-            shapes.push(mark.centred(width / 2, always_top(height) + line_height(medium()) / 2, "node.title"));
+            shapes.push(mark.centred(width / 2, always_top(height) + line_height(medium()) / 2, ink));
         }
         if !node.after {
             return None;
@@ -1110,14 +1139,14 @@ impl<'a> Sizer<'a> {
         let places = places(node, up(style::square().max(band_height + label_height(&label) + 2 * style::grid())));
         let height = places.height;
         let mut shapes = Vec::new();
-        let below = body(band.as_ref(), band_insets(node), width, height, &mut shapes);
+        let below = body(&Inks::default(), band.as_ref(), band_insets(node), width, height, &mut shapes);
         let row = line_height(label_size());
         let top = below + (height - below) / 2 - row * label.len() as i64 / 2;
         for (index, line) in label.iter().enumerate() {
             shapes.push(line.centred(width / 2, top + row * index as i64 + row / 2, "node.title"));
         }
         let drawn = self.terminals(node, &places, width, &mut shapes);
-        let order = self.compact_marks(node, width, height, &mut shapes);
+        let order = self.compact_marks(node, width, height, "node.title", &mut shapes);
         compact(width, height, shapes, drawn, order)
     }
 
@@ -1239,11 +1268,12 @@ impl<'a> Sizer<'a> {
     }
 
     /// The icon of the function, in the numbers its file writes (spec 11.1); its texts cut at 40 cells (decided at
-    /// step 2 of M0v), the grid cutting the rest when it is drawn.
-    pub fn icon(&self, icon: &labcraft_graph::Icon) -> IconDrawing {
+    /// step 2 of M0v), the grid cutting the rest when it is drawn. `names` are those of its file, which for a primitive are
+    /// not those of the program; `ink` is that of the shapes without an `accent`, which a `fill` of the block may change.
+    pub fn icon(icon: &labcraft_graph::Icon, names: &Interner, ink: Token) -> IconDrawing {
         let number = |numeral: &Numeral| -> i64 {
             match numeral.kind {
-                NumeralKind::Int(name) | NumeralKind::Float(name) => icon_number(self.names.resolve(name), numeral.negative),
+                NumeralKind::Int(name) | NumeralKind::Float(name) => icon_number(names.resolve(name), numeral.negative),
                 NumeralKind::Inf | NumeralKind::Nan => 0,
             }
         };
@@ -1254,7 +1284,9 @@ impl<'a> Sizer<'a> {
             .items
             .iter()
             .map(|item| {
-                let token = item.accent.as_ref().and_then(|path| accent(path, self.names)).unwrap_or("node.title");
+                let token = item.accent.as_ref().and_then(|path| accent(path, names)).unwrap_or(ink);
+                // In hundredths of a unit of its grid: `check` held it within its bounds (`LC5019`).
+                let width = (labcraft_check::icon_width(item, names).unwrap_or(labcraft_check::ICON_STROKE) * 100.0).round() as i64;
                 let (shape, drawn) = match &item.shape {
                     Written::Rect { from, to, radius } => {
                         // A rect is written by its corners, the SVG wants a corner and a size.
@@ -1310,10 +1342,10 @@ impl<'a> Sizer<'a> {
                         )
                     }
                 };
-                IconItem { shape, drawn, fill: item.fill, token }
+                IconItem { shape, drawn, width, fill: item.fill, token }
             })
             .collect();
-        let grid = text_of(icon_number(self.names.resolve(icon.grid), false));
+        let grid = text_of(icon_number(names.resolve(icon.grid), false));
         IconDrawing { grid, items }
     }
 }
@@ -1330,7 +1362,7 @@ fn accent(path: &labcraft_graph::Path, names: &Interner) -> Option<Token> {
 }
 
 /// The decimals of a number of an icon, those of every number of the SVG (cli.md 7.2): a hundredth of a grid of 32
-/// drawn 28 wide is less than a hundredth of a unit.
+/// drawn as wide as a block of 40 is little more than a hundredth of a unit.
 const ICON_DECIMALS: u32 = 2;
 /// A million, in hundredths. Beyond it a coordinate is far off a grid of 32 (`LC5009`) and is drawn as a million: the
 /// icon is cut to its grid, so nothing that it shows changes, and no number of the SVG needs an exponent (cli.md 7.2).

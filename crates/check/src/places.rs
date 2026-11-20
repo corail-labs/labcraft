@@ -269,6 +269,8 @@ pub struct Block {
     pub left: Option<u32>,
     pub middle_sides: bool,
     pub band: Option<BandPlace>,
+    /// Its `color`, `fill` and `stroke` (spec 11.2).
+    pub colours: labcraft_format::block::Colours,
     pub lines: Vec<Placed>,
     /// The inputs with a default, which go to the top side when the left one is full.
     pub optional: HashSet<String>,
@@ -307,6 +309,7 @@ impl Block {
             left: section.left_places,
             middle_sides: section.middle_sides,
             band: section.band,
+            colours: section.colours,
             lines,
             optional,
             outline: None,

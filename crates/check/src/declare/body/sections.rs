@@ -24,7 +24,7 @@ use crate::resolved::{Meaning, Resolved, Terminal};
 
 mod icon;
 
-pub use icon::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
+pub use icon::{ICON_STROKE, ICON_WIDTHS, MAX_ICON_SHAPES, PathSegment, icon_refused, icon_width, path_segments};
 #[cfg(test)]
 mod tests;
 
@@ -57,6 +57,8 @@ pub(in crate::declare) fn only_this_pass(code: Code) -> bool {
             | Code::Lc5015
             | Code::Lc5016
             | Code::Lc5017
+            | Code::Lc5018
+            | Code::Lc5019
     )
 }
 

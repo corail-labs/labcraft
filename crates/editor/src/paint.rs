@@ -276,8 +276,8 @@ fn add_mesh(painter: &egui::Painter, mesh: &Mesh, origin: Pos2, scale: f32) {
 
 /// A node as a plain rectangle (notation 7).
 pub fn coarse_rect(rect: Rect, paint: Paint, theme: Theme, zoom: f32) -> Painted2 {
-    let fill = paint.fill.map_or(Color32::TRANSPARENT, |token| theme.color(token));
-    let stroke = paint.stroke.map_or(Stroke::NONE, |token| Stroke::new(paint.width as f32 / 100.0 * zoom, theme.color(token)));
+    let fill = paint.fill.map_or(Color32::TRANSPARENT, |colour| theme.colour(colour));
+    let stroke = paint.stroke.map_or(Stroke::NONE, |colour| Stroke::new(paint.width as f32 / 100.0 * zoom, theme.colour(colour)));
     Painted2::Rect(RectShape::new(rect, CornerRadius::ZERO, fill, stroke, StrokeKind::Middle))
 }
 
@@ -292,8 +292,8 @@ fn length(value: i64, step: f32) -> f32 {
 /// The colours of a paint, a veil at its opacity (notation 6.1), as the SVG paints it.
 fn fill_and_stroke(paint: &Paint, theme: Theme, step: f32) -> (Color32, Stroke) {
     let veiled = |color: Color32| if paint.opacity < 100 { color.gamma_multiply(f32::from(paint.opacity) / 100.0) } else { color };
-    let fill = paint.fill.map_or(Color32::TRANSPARENT, |token| veiled(theme.color(token)));
-    let stroke = paint.stroke.map_or(Stroke::NONE, |token| Stroke::new(length(paint.width, step), veiled(theme.color(token))));
+    let fill = paint.fill.map_or(Color32::TRANSPARENT, |colour| veiled(theme.colour(colour)));
+    let stroke = paint.stroke.map_or(Stroke::NONE, |colour| Stroke::new(length(paint.width, step), veiled(theme.colour(colour))));
     (fill, stroke)
 }
 
@@ -427,7 +427,15 @@ const MAX_ICON_TEXT: f64 = 2.0;
 /// A filled path of more points is filled as epaint fills, convex, rather than cut into triangles one ear at a time.
 const MAX_EAR_POINTS: usize = 512;
 
-/// An icon tessellated at the step, from the corner of its square: its items in the numbers of its grid, a stroke of 1.5.
+/// The most points of a subpath of an icon that gets a dot at each, for round joins.
+const ROUND_POINTS: usize = 64;
+
+/// The most dots of one icon: past them, its strokes keep the ends and joins of epaint, so that a hostile icon (4,096
+/// segments) costs no more mesh than before.
+const MAX_DOTS: usize = 512;
+
+/// An icon tessellated at the step, from the corner of its square: its items in the numbers of its grid, each with its
+/// stroke (1.5 without a `width`), ends and joins rounded (spec 11.1) by a dot of the stroke at each point of a line or a path.
 fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon: &IconDrawing, theme: Theme, step: f32) -> Icon {
     let mut mesh = Mesh::default();
     let mut texts = Vec::new();
@@ -437,10 +445,12 @@ fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon:
         return Icon { area, mesh: Arc::new(mesh), texts };
     }
     let k = side / grid as f32;
+    let mut dots = 0;
     let at = |(x, y): (f64, f64)| Pos2::new(x as f32 * k, y as f32 * k);
     for item in &icon.items {
         let color = theme.color(item.token);
-        let stroke = Stroke::new(1.5 * k, color);
+        let stroke = Stroke::new(item.width as f32 / 100.0 * k, color);
+        let dot = |center: Pos2| Painted2::Circle(CircleShape { center, radius: stroke.width / 2.0, fill: color, stroke: Stroke::NONE });
         let fill = if item.fill { color } else { Color32::TRANSPARENT };
         let shapes: Vec<Painted2> = match &item.drawn {
             IconDrawn::Rect { x, y, width, height, radius } => {
@@ -450,7 +460,14 @@ fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon:
             IconDrawn::Circle { x, y, radius } => {
                 vec![Painted2::Circle(CircleShape { center: at((*x, *y)), radius: *radius as f32 * k, fill, stroke })]
             }
-            IconDrawn::Line { from, to } => vec![Painted2::line_segment([at(*from), at(*to)], stroke)],
+            IconDrawn::Line { from, to } => {
+                let mut shapes = vec![Painted2::line_segment([at(*from), at(*to)], stroke)];
+                if dots + 2 <= MAX_DOTS {
+                    dots += 2;
+                    shapes.extend([dot(at(*from)), dot(at(*to))]);
+                }
+                shapes
+            }
             IconDrawn::Path(segments) => {
                 let mut shapes = Vec::new();
                 for (points, closed) in subpaths(segments) {
@@ -458,6 +475,17 @@ fn icon_of(ctx: &egui::Context, tessellator: &mut Tessellator, area: Rect, icon:
                     // As the SVG fills: every subpath closed for its fill, convex or not; the stroke as written.
                     if item.fill {
                         fill_polygon(&points, color, tessellator, &mut mesh);
+                    }
+                    // A dot at each point of a polyline; past `ROUND_POINTS`, a curve flattened, at its ends only, its joins
+                    // being smooth already: a hostile icon costs no more.
+                    let ends: Vec<Pos2> = if points.len() <= ROUND_POINTS {
+                        points.clone()
+                    } else {
+                        points.first().into_iter().chain(points.last()).copied().collect()
+                    };
+                    if dots + ends.len() <= MAX_DOTS {
+                        dots += ends.len();
+                        shapes.extend(ends.into_iter().map(dot));
                     }
                     shapes.push(Painted2::Path(PathShape { points, closed, fill: Color32::TRANSPARENT, stroke: PathStroke::from(stroke) }));
                 }

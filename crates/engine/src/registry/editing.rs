@@ -727,6 +727,54 @@ pub(super) fn catalog() -> Vec<Command> {
             false,
         ),
         editing(
+            "block.set_color",
+            "Set Block Color",
+            "Write the colour of the band of the block, which tints its body",
+            "Writes the line `color \"#RRGGBB\"` of the `terminals` section (spec 11.2): the colour of the band and, without `fill`, the tint of the body; `null` removes it, and the function follows the mask of its library. A colour that is not `#RRGGBB` is `params.invalid`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("color", json!({ "type": ["string", "null"], "description": "The colour, `#RRGGBB`; `null` removes it." })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "color"],
+            ),
+            EDIT_ERRORS,
+            false,
+        ),
+        editing(
+            "block.set_fill",
+            "Set Block Fill",
+            "Write the fill of the body of the block",
+            "Writes the line `fill \"#RRGGBB\"` of the `terminals` section (spec 11.2): the fill of the body, as written, in both themes; `null` removes it. A colour that is not `#RRGGBB` is `params.invalid`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("fill", json!({ "type": ["string", "null"], "description": "The fill, `#RRGGBB`; `null` removes it." })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "fill"],
+            ),
+            EDIT_ERRORS,
+            false,
+        ),
+        editing(
+            "block.set_stroke",
+            "Set Block Stroke",
+            "Write the colour of the outline of the block",
+            "Writes the line `stroke \"#RRGGBB\"` of the `terminals` section (spec 11.2): the colour of the outline, as written, in both themes; `null` removes it. A colour that is not `#RRGGBB` is `params.invalid`.",
+            object(
+                &[
+                    ("file", string(FILE)),
+                    ("stroke", json!({ "type": ["string", "null"], "description": "The colour of the outline, `#RRGGBB`; `null` removes it." })),
+                    ("expected_revision", revision()),
+                ],
+                &["file", "stroke"],
+            ),
+            EDIT_ERRORS,
+            false,
+        ),
+        editing(
             "block.set_outline",
             "Set Block Outline",
             "Write the `outline` section of the block",

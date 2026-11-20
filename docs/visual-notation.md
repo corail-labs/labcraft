@@ -804,7 +804,10 @@ When the function comes from another library, a **band** at the top of the block
   the colours of `band.fill` and `band.text`. From M1 the mask of a library (spec 11.3) gives its band a shorter text,
   a place, `inside`, `above` or `hidden`, and a colour it proposes, from which the theme derives the fill and the text
   of that band, 4.5:1 in both themes; the developer can change that colour, and a function can set its own place
-  (spec 11.2). A band `above` lies on the block, 12 high, without moving the block: its top-left corner, its size and
+  (spec 11.2), and its own `color`, `fill` and `stroke` (spec 11.2, decided 2026-11-20): the band takes the colours
+  that section 8 derives from `color`; the body takes `fill` as written, else the tint of `color`, else `node.fill`;
+  the outline takes `stroke` as written, else `node.stroke`; on a body that `color` or `fill` colours, the label and the
+  icon take the ink of section 8. A band `above` lies on the block, 12 high, without moving the block: its top-left corner, its size and
   its lines stay. A block with a top side (a terminal that its `terminals` section puts there; an `after:` does not
   count) keeps its band inside, so that the terminals of that side, on its top edge, stay on the grid; the text of
   the band then goes in the widest gap between them, cut to it, and is not drawn when not one cell holds there. A
@@ -827,7 +830,9 @@ When the function comes from another library, a **band** at the top of the block
   variant, or an argument too many for a function, which `check` refuses, still has its input, named by its position
   (`1`), so that the drawing shows where.
 - **Center** of the block, in the middle of what the band leaves: the function's icon (`icon` section,
-  spec 11.1), alone, drawn 28 × 28 units and cut to its grid, so that a shape that leaves it (`LC5009`) never covers
+  spec 11.1), alone, in a square as large as all the room that the band leaves, the least of the width of the block
+  and of its height under the band (40 in a block of 40 without a band, 28 under one), with no margin of the
+  notation: the margin is the author's, in the grid of the icon (decided 2026-11-20); cut to its grid, so that a shape that leaves it (`LC5009`) never covers
   the block, a terminal or a wire, each of its texts cut at 40 cells (2.3) to bound what is drawn; otherwise a
   short label: the last segment of the name (`visa.open` → `open`), in `text.label` (9), on two lines at most, each
   as wide as the block less a terminal (6 cells in a block of 40 with terminals of 6) *(proposed)*. A label that holds
@@ -862,8 +867,8 @@ When the function comes from another library, a **band** at the top of the block
   coming down to it; the first place is the `after:` terminal's (below). A constant on it is a pill above it, its
   bottom 8 above the edge, centred on the terminal; two neighbouring pills step upward, as those of the left side step
   outward. A block with a top side (as above, `after:` aside) draws its label 4 below the block instead of above
-  it, clear of those wires. In a block that a section makes smaller than 40, the icon is scaled down to the room that
-  its band leaves, never up, and left out when none is left, and a label that does not hold on two lines is cut on one,
+  it, clear of those wires. A block that a section makes smaller gives its icon the room that is left, as any block
+  does (16 in a D of 16), and leaves it out when none is left, and a label that does not hold on two lines is cut on one,
   to the cells that hold, down to none, and to one line or none when the height that the band leaves holds no more
   (the tooltip keeps the name); a block is 16 × 8 at the least (spec 11.2). A
   terminal off its default side, an input on the right or an output on the left or the top, carries a **mark of
@@ -901,7 +906,10 @@ When the function comes from another library, a **band** at the top of the block
 tooltip): a block whose left edge is straight and whose right corners are cut by 8, half its least height, the output
 at the middle of the right edge, so that its shape says which way the data go (decided 2026-11-12, A3 of the review of
 M0v). The cut is moderate, so that it reads as a block with cut corners, not as an arrow; like a block, its corners
-are rounded by 2, those of the cut too, and unlike a compact block it shows a glyph and not an icon. The list is closed (N-4):
+are rounded by 2, those of the cut too. Its glyph is the icon of its file (spec A.1, from M1), white on the `fill` that the
+file gives, `#64748B`, a slate neutral in both themes, far from the colours that say something (`wire.resource`,
+`mark.invalid`, `select.stroke`, `node.active`) (decided 2026-11-20); the unit of `with_unit` and `unitless` stays a text, in
+the same ink. The list is closed (N-4):
 
 | Glyph | Primitives |
 |---|---|
@@ -1364,7 +1372,8 @@ M0v (1340 × 560 units *(proposed)*), as it reports the figure of stability (2.1
 real diagrams (with the throwaway `tools/lcf-figcraft`, retired after M0): `ink.muted`, `ink.faint` (secondary text), `node.divider`,
 `frame.divider`, `pill.fill`, `pill.stroke`, `pill.text` (inline constants, fields),
 `coercion.fill`, `badge.fill`, `badge.text`, `tab.fill`, `band.fill`, `band.text` (library band of the
-compact view, 3.2), `select.stroke` (the node or wire selected in the viewer, 6.1). Their values are LabCraft's own, in a light theme and a dark theme (the table
+compact view, 3.2), `select.stroke` (the node or wire selected in the viewer, 6.1), `ink.light`, `ink.dark` (the two inks of a
+text or an icon on a colour that a file writes, the same in both themes, M1). Their values are LabCraft's own, in a light theme and a dark theme (the table
 below), with no reference to another editor's palette (D-23). Whatever library draws the panels of the
 IDE, the diagram takes its colors from this table.
 
@@ -1401,6 +1410,24 @@ IDE, the diagram takes its colors from this table.
   in the light theme, `#F0820D` in the dark one, *(proposed)*, 4.7:1 at worst on `canvas.fill`, each `frame.fill`,
   `node.fill` and `probe.fill`, and as far as an amber can be from `wire.error` and from the struct of 4.3. The tokens of
   the families (4.3) come with the mode. They join the table below, and its test, when the Rust draws them.
+- **The colours of a block (M1).** A function or the mask of its library writes `color`, `fill` and `stroke` as
+  `#RRGGBB`, one value for both themes (spec 11.2, 11.3); the theme derives the rest, by integer steps where it can,
+  so that platforms draw the same colours but for a value a hair from a bound of contrast, where the last bit of a
+  float may differ (decided 2026-11-20, the owner's rule "faithful"):
+  - **Two inks**, the same in both themes: the light ink `ink.light`, `#FFFFFF`, and the dark ink `ink.dark`, `#1F2328`. On a colour that the
+    author wrote, a text or an icon takes the one with the more contrast, the light one on a tie.
+  - **The band of `color`** is that colour as written, in both themes, its text in the ink with the more contrast.
+    When neither ink holds 4.5:1, the lightness of the colour (OKLCH) moves toward the nearer end, white from 0.5 up,
+    by steps of 0.01, its chroma and hue kept and each channel rounded and held within 0 to 255, until one ink holds it.
+  - **The tint of the body**, when `color` is written and `fill` is not: `node.fill` of the theme mixed with the colour
+    at 16 % *(proposed)*, channel by channel (`round(f + (c − f) × a)` on 0 to 255), the share lowered by steps of 1 %
+    while `node.title` holds less than 4.5:1 on it, down to none. On the tint, the label and the icon stay in
+    `node.title`.
+  - **`fill` and `stroke`** are drawn as written, in both themes: on a `fill`, the label, the icon and the unit of a
+    primitive take the ink with the more contrast. Whether they stand out from the canvas is their author's choice, not
+    a rule of this table: a dark `fill` reads in the dark theme by `node.stroke` around it.
+  - **The reader decides on their screen**: a setting of the IDE draws every block in the neutral tokens (M1, the
+    setting "Block fill").
 - **Where the values come from.** The light values of the first list of tokens come from the board
   `design/visual-notation-v0.figcraft`; the light values of the supporting tokens and all the dark ones
   from `build_notation.py` of `tools/lcf-figcraft` (retired after M0); `band.fill`, `band.text` and `probe.stroke` (the value of `node.stroke`) are new, and `select.stroke` (2026-11-13), a cyan told apart from the blue of `wire.resource` and the green of `node.active`. Changed on
@@ -1445,6 +1472,8 @@ IDE, the diagram takes its colors from this table.
 | `band.fill` | `#E1E4E8` | `#2B3038` |
 | `band.text` | `#1F2328` | `#ECEFF3` |
 | `select.stroke` | `#0E7490` | `#22D3EE` |
+| `ink.light` | `#FFFFFF` | `#FFFFFF` |
+| `ink.dark` | `#1F2328` | `#1F2328` |
 
 ## 9. Open questions
 
@@ -1503,7 +1532,6 @@ always draws with the defaults. Only the colours may become a choice of the deve
 | `node.square` | 40 units | 16 to 160 | 3.2 | The width of a compact block, and its least height. |
 | `node.pitch` | 8 units | 8 to 48 | 3.2 | Between two lines of terminals of a compact block. |
 | `node.chamfer` | 8 units | 0 to 32 | 3.2 | The right corners of a primitive, cut. |
-| `node.icon` | 28 units | 12 to 112 | 3.2 | An icon in a block. |
 | `node.outline` | 1 units | 0 to 4 | 3 | The outline of a node. |
 | `node.radius` | 2 units | 0 to 16 | 3 | The corners of a node; not of the D of a primitive, rounded by 2 (spec 11.4). |
 | `standard.header` | 24 units | 12 to 96 | 3.1 | The title of a node in standard view. |

@@ -17,6 +17,21 @@ const TEXT_SIZE: f64 = 10.0;
 /// What rounding may add to a shape that touches an edge.
 const SLACK: f64 = 1e-9;
 
+/// The stroke of a shape that writes no `width`, in units of the grid (11.1).
+pub const ICON_STROKE: f64 = 1.5;
+
+/// The strokes that `width` may give, in units of the grid (11.1, *proposed*): outside, `LC5019`, drawn at the nearest bound.
+pub const ICON_WIDTHS: std::ops::RangeInclusive<f64> = 0.25..=8.0;
+
+/// The stroke of a shape, in units of the grid: its `width` held within [`ICON_WIDTHS`], or [`ICON_STROKE`]. `None` for a
+/// `width` that is not a finite number, which refuses the icon (`LC5008`).
+pub fn icon_width(item: &IconItem, names: &Interner) -> Option<f64> {
+    match item.width {
+        None => Some(ICON_STROKE),
+        Some(numeral) => number_of(numeral, names).map(|width| width.clamp(*ICON_WIDTHS.start(), *ICON_WIDTHS.end())),
+    }
+}
+
 /// The tokens of the theme that `accent` can name: those of the visual notation, section 8, whose parts are names. A test compares them.
 pub(super) const TOKENS: &[&str] = &[
     "badge.fill",
@@ -28,7 +43,9 @@ pub(super) const TOKENS: &[&str] = &[
     "coercion.fill",
     "frame.divider",
     "frame.stroke",
+    "ink.dark",
     "ink.faint",
+    "ink.light",
     "ink.muted",
     "mark.coercion",
     "mark.invalid",
@@ -118,6 +135,9 @@ pub fn icon_refused(icon: &Icon, names: &Interner) -> Option<String> {
                 return Some("an accent that is not a token of the theme".to_owned());
             }
         }
+        if icon_width(item, names).is_none() {
+            return Some("a `width` that is not a finite number".to_owned());
+        }
         shape_extent(names, &item.shape).err()
     })
 }
@@ -159,6 +179,23 @@ fn judge_item(sections: &mut Sections<'_, '_>, item: &IconItem) {
             let token = cut_text(&token).into_owned();
             let message = format!("`accent {token}`: an accent is a token of the theme, of the visual notation (section 8), such as `wire.error`");
             sections.say(Code::Lc5008, message, accent.id, Vec::new());
+        }
+    }
+    if let Some(numeral) = item.width {
+        let text = numeral_text(numeral, sections.names());
+        match number_of(numeral, sections.names()) {
+            None => {
+                let message = format!("`width {text}` is not a number of the grid: an icon takes finite numbers (11.1)");
+                sections.say(Code::Lc5008, message, item.id, Vec::new());
+                return;
+            }
+            Some(width) if !ICON_WIDTHS.contains(&width) => {
+                let (least, most) = (shown(*ICON_WIDTHS.start()), shown(*ICON_WIDTHS.end()));
+                let drawn = shown(width.clamp(*ICON_WIDTHS.start(), *ICON_WIDTHS.end()));
+                let message = format!("`width {text}`: a stroke is {least} to {most} units of the grid, so it is drawn {drawn} wide (11.1)");
+                sections.say(Code::Lc5019, message, item.id, Vec::new());
+            }
+            Some(_) => {}
         }
     }
     let extent = match shape_extent(sections.names(), &item.shape) {

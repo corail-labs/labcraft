@@ -22,7 +22,7 @@ use crate::load::{Target, at, cycles, last_resort};
 
 use crate::primitives::{PRIMITIVES, ParamKind, Primitive, PrimitiveLibrary};
 use crate::resolved::{Meaning, Resolved, ResolvedCall, Terminal};
-pub use sections::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
+pub use sections::{ICON_STROKE, ICON_WIDTHS, MAX_ICON_SHAPES, PathSegment, icon_refused, icon_width, path_segments};
 
 pub(super) mod flow;
 mod outlines;

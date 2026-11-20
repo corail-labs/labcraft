@@ -35,7 +35,7 @@ mod resolved;
 mod terminals;
 
 pub use declare::{Align, DeclaredFunction, DeclaredLibrary, DeclaredOutput, DeclaredParam, DeclaredType, Format as FieldFormat, Piece};
-pub use declare::{MAX_ICON_SHAPES, PathSegment, icon_refused, path_segments};
+pub use declare::{ICON_STROKE, ICON_WIDTHS, MAX_ICON_SHAPES, PathSegment, icon_refused, icon_width, path_segments};
 pub use file_name::{case_key, kept_by_windows};
 pub use passed_in::{MAX_PASSED_IN, PassedIn, passed_in};
 pub use reach::{Reach, Unresolved};

@@ -836,6 +836,58 @@ pub enum TerminalsKind {
     Place { side: BlockSide, place: BlockPlace, output: Option<bool>, name: Name },
     /// `band hidden`, `band inside` or `band above`.
     Band(BandPlace),
+    /// `color "#2F6F9F"`, `fill "#…"`, `stroke "#…"`: the string as read, which `check` judges (`LC5018`).
+    Colour { role: ColourRole, text: Name },
+}
+
+/// What a colour line of a `terminals` section colours (spec 11.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ColourRole {
+    /// The band, and the tint of the body without `fill`.
+    Color,
+    /// The body, as written.
+    Fill,
+    /// The outline, as written.
+    Stroke,
+}
+
+impl ColourRole {
+    pub const ALL: [ColourRole; 3] = [ColourRole::Color, ColourRole::Fill, ColourRole::Stroke];
+
+    /// As the section writes it.
+    pub fn word(self) -> &'static str {
+        match self {
+            ColourRole::Color => "color",
+            ColourRole::Fill => "fill",
+            ColourRole::Stroke => "stroke",
+        }
+    }
+
+    pub fn from_word(word: &str) -> Option<ColourRole> {
+        ColourRole::ALL.into_iter().find(|role| role.word() == word)
+    }
+}
+
+/// A colour that a file writes, `"#RRGGBB"` in either case (spec 11.2): one value for both themes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Rgb(pub [u8; 3]);
+
+impl Rgb {
+    /// `#RRGGBB`, in either case, and nothing else.
+    pub fn parse(text: &str) -> Option<Rgb> {
+        let digits = text.strip_prefix('#')?;
+        if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        let channel = |at: usize| digits.get(at..at + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        Some(Rgb([channel(0)?, channel(2)?, channel(4)?]))
+    }
+
+    /// `0xRRGGBB`.
+    pub fn value(self) -> u32 {
+        let [r, g, b] = self.0;
+        (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b)
+    }
 }
 
 /// A place on a side, counted from 1 (spec 11.2).
@@ -945,6 +997,8 @@ pub struct IconItem {
     pub id: Id,
     pub comments: Attached,
     pub shape: IconShape,
+    /// `width 3`: the stroke of the shape, in units of the grid (spec 11.1); `check` judges it (`LC5019`).
+    pub width: Option<Numeral>,
     pub fill: bool,
     pub accent: Option<Path>,
 }

@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 
-use crate::shape::{Corner, Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons, corners};
+use crate::shape::{Colour, Corner, Drawing, IconItem, IconShape, Paint, Pattern, Run, Shape, WireStyle, chevrons, corners};
 use crate::style;
 use crate::theme::{TOKENS, variable};
 use crate::values::Overlay;
@@ -12,8 +12,6 @@ use crate::values::Overlay;
 pub const SCHEMA: &str = "labcraft-diagram/1";
 /// Notation 2.3: the font named once, on the root, not embedded.
 pub const FONT_FAMILY: &str = "Hack, DejaVu Sans Mono, Menlo, monospace";
-/// The stroke of an icon, in units of its grid: chosen by the IDE (spec 11.1).
-const ICON_STROKE: &str = "1.5";
 
 /// Which theme an SVG holds: both, under `prefers-color-scheme`, or one (`--theme`, cli.md 7.2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,10 +81,39 @@ fn attribute(name: &str, value: &str, out: &mut String) {
     out.push('"');
 }
 
+/// The CSS variable of a colour: that of its token, or one named after the two values of a colour that a file writes
+/// (spec 11.2), which the `<style>` of the SVG defines in each theme.
+fn colour_variable(colour: Colour) -> String {
+    match colour {
+        Colour::Token(token) => variable(token),
+        Colour::Written(light, dark) => format!("--rgb-{light:06X}-{dark:06X}"),
+    }
+}
+
+/// The colours that files write, which the shapes of a drawing and of its overlay paint, each once, in order.
+fn written_colours(drawing: &Drawing, overlay: Option<&Overlay>) -> std::collections::BTreeSet<(style::Rgb, style::Rgb)> {
+    let mut found = std::collections::BTreeSet::new();
+    let over = overlay.into_iter().flat_map(|overlay| {
+        let under = overlay.under.iter().flat_map(|layer| &layer.shapes);
+        under.chain(&overlay.banner).chain(overlay.bubbles.iter().flat_map(|bubble| &bubble.layer.shapes))
+    });
+    let shapes = drawing.loose.iter().chain(drawing.groups.iter().flat_map(|group| &group.shapes));
+    for shape in shapes.chain(drawing.marks.iter().flat_map(|mark| &mark.shapes)).chain(over) {
+        if let Shape::Rect { paint, .. } | Shape::Circle { paint, .. } | Shape::Poly { paint, .. } | Shape::Outline { paint, .. } = shape {
+            for colour in [paint.fill, paint.stroke].into_iter().flatten() {
+                if let Colour::Written(light, dark) = colour {
+                    found.insert((light, dark));
+                }
+            }
+        }
+    }
+    found
+}
+
 fn style(paint: &Paint) -> String {
-    let fill = paint.fill.map_or_else(|| "none".to_owned(), |token| format!("var({})", variable(token)));
+    let fill = paint.fill.map_or_else(|| "none".to_owned(), |colour| format!("var({})", colour_variable(colour)));
     let mut style = match paint.stroke {
-        Some(stroke) => format!("fill: {fill}; stroke: var({}); stroke-width: {}", variable(stroke), n(paint.width)),
+        Some(stroke) => format!("fill: {fill}; stroke: var({}); stroke-width: {}", colour_variable(stroke), n(paint.width)),
         None => format!("fill: {fill}"),
     };
     if paint.dashed && paint.stroke.is_some() {
@@ -98,12 +125,15 @@ fn style(paint: &Paint) -> String {
     style
 }
 
-/// The values of the tokens of a drawing (`crate::style`), light or dark.
-fn values(style: &style::Style, dark: bool) -> String {
+/// The values of the tokens of a drawing (`crate::style`), light or dark, then those of the colours that its files write.
+fn values(style: &style::Style, written: &std::collections::BTreeSet<(style::Rgb, style::Rgb)>, dark: bool) -> String {
     TOKENS
         .iter()
         .zip(&style.colors)
         .map(|(token, (light, night))| format!("{}: {};", variable(token.name), style::written(if dark { *night } else { *light })))
+        .chain(written.iter().map(|&(light, night)| {
+            format!("{}: {};", colour_variable(Colour::Written(light, night)), style::written(if dark { night } else { light }))
+        }))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -131,16 +161,17 @@ pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> S
         attribute("data-drawn", "false", &mut out);
     }
     out.push_str(">\n<style>\n");
+    let written = written_colours(drawing, overlay);
     match theme {
         Theme::Both => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, false));
-            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(&drawing.style, true));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false));
+            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(&drawing.style, &written, true));
         }
         Theme::Light => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, false));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false));
         }
         Theme::Dark => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, true));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, true));
         }
     }
     out.push_str("text { direction: ltr; unicode-bidi: isolate; white-space: pre; }\n</style>\n");
@@ -418,11 +449,9 @@ fn wire(points: &[(i64, i64)], style: &WireStyle, out: &mut String) {
 
 fn icon_item(item: &IconItem, out: &mut String) {
     let token = variable(item.token);
-    let paint = if item.fill {
-        format!("fill: var({token}); stroke: var({token}); stroke-width: {ICON_STROKE}")
-    } else {
-        format!("fill: none; stroke: var({token}); stroke-width: {ICON_STROKE}")
-    };
+    // Round ends and joins, its own `width` or 1.5 units of its grid (spec 11.1).
+    let fill = if item.fill { format!("var({token})") } else { "none".to_owned() };
+    let paint = format!("fill: {fill}; stroke: var({token}); stroke-width: {}; stroke-linecap: round; stroke-linejoin: round", n(item.width));
     match &item.shape {
         IconShape::Rect { x, y, width, height, radius } => {
             out.push_str("<rect");

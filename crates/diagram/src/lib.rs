@@ -24,6 +24,7 @@ use labcraft_types::text::{ShownText, cut_middle};
 use labcraft_types::{Code, Diagnostic, Interner};
 
 mod block;
+mod colour;
 mod graph;
 mod marks;
 mod names;
@@ -48,8 +49,8 @@ pub use ports::{Refusal, Verdict, occupied, passage_refusal, wiring};
 pub use preview::{Preview, preview, square};
 pub use route::{on_segment, prefix_to, simplify};
 pub use shape::{
-    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem, IconShape,
-    Mark, Paint, Pattern, Placed, Port, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
+    ArmOf, BodyDrawn, CHEVRON_STROKE, COARSE_NODE, Colour, Corner, Detail, Drawing, Ground, Group, Hint, Holds, IconDrawing, IconDrawn, IconItem,
+    IconShape, Mark, Paint, Pattern, Placed, Port, Run, Shape, Tab, TabKind, TerminalsOf, Token, WireOf, WireStyle, chevrons, corners,
 };
 pub use svg::{FONT_FAMILY, SCHEMA, Theme, svg, svg_with};
 pub use values::{
@@ -289,21 +290,30 @@ fn sizes(
     icons_drawn: &mut Vec<IconDrawing>,
     outlines_drawn: &mut Vec<Vec<(i64, i64)>>,
 ) -> Vec<size::Sized> {
-    let sizer = Sizer::new(names, view.standard_everywhere);
+    let sizer = Sizer::new(view.standard_everywhere);
     let bands = bands(graph);
     // Each icon once in the drawing, however many calls show it.
-    let mut icons: HashMap<*const labcraft_graph::Icon, usize> = HashMap::new();
+    let mut icons: HashMap<(*const labcraft_graph::Icon, Token), usize> = HashMap::new();
     let mut sized: Vec<size::Sized> = graph
         .nodes
         .iter()
         .enumerate()
         .map(|(index, node)| {
+            // The icon of the function, or of the glyph of a primitive (spec A.1), in the ink of the block (notation 8).
             let icon = match &node.kind {
-                Kind::Call { glyph: None, icon: Some(icon), .. } if !(view.standard_everywhere || node.standard) => {
-                    Some(*icons.entry(std::ptr::from_ref(*icon)).or_insert_with(|| {
-                        icons_drawn.push(sizer.icon(icon));
-                        icons_drawn.len() - 1
-                    }))
+                Kind::Call { glyph, icon, block, short, .. } if !(view.standard_everywhere || node.standard) => {
+                    let found = match (glyph, icon) {
+                        (Some(graph::Glyph::Sign(_)), _) => labcraft_check::core_blocks::icon(short),
+                        (None, Some(icon)) => Some((*icon, names)),
+                        _ => None,
+                    };
+                    found.map(|(icon, names)| {
+                        let ink = block.as_ref().map_or("node.title", |block| colour::Inks::of(&block.colours).ink);
+                        *icons.entry((std::ptr::from_ref(icon), ink)).or_insert_with(|| {
+                            icons_drawn.push(size::Sizer::icon(icon, names, ink));
+                            icons_drawn.len() - 1
+                        })
+                    })
                 }
                 _ => None,
             };

@@ -281,7 +281,7 @@ fn canonicalize_terminals(file: &mut File, names: &mut Interner) {
                     *output = None;
                 }
             }
-            TerminalsKind::Band(_) => {}
+            TerminalsKind::Band(_) | TerminalsKind::Colour { .. } => {}
         }
     }
     section.items.sort_by_key(|item| match item.kind {
@@ -298,6 +298,7 @@ fn canonicalize_terminals(file: &mut File, names: &mut Interner) {
             }
         }
         TerminalsKind::Band(_) => (4, 0),
+        TerminalsKind::Colour { role, .. } => (5, role as usize),
     });
     if section.items.is_empty() && section.end.is_empty() && nothing_attached(&section.comments) {
         file.terminals = None;
