@@ -1004,3 +1004,178 @@ fn an_outline_is_written_and_null_removes_it() {
     assert_eq!((error.code, error.parameter.as_deref()), ("params.invalid", Some("outline")));
     assert_eq!(text(&memory, "/p/f.lcf"), START);
 }
+
+// `library.set_mask` (commands.md 6.7, spec 11.3). The texts expected are written by hand from them.
+
+#[test]
+fn set_mask_makes_the_manifest_with_the_table_alone() {
+    let (mut session, memory) = session();
+    assert_eq!(memory.get("/p/labcraft.toml"), None);
+    let result = ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "DMM", "color": "#2F6F9F" }));
+    let manifest = "[mask]\nband = \"DMM\"\ncolor = \"#2F6F9F\"\n";
+    assert_eq!(text(&memory, "/p/labcraft.toml"), manifest);
+    assert_eq!(result["step"], 1);
+    assert_eq!(result["files"], json!([{ "file": "labcraft.toml", "revision": sha(manifest) }]));
+    // In a sub-folder, the manifest is that folder's.
+    memory.put("/p/sub/h.lcf", START);
+    ok(&mut session, "library.set_mask", json!({ "folder": "sub", "band_place": "above" }));
+    assert_eq!(text(&memory, "/p/sub/labcraft.toml"), "[mask]\nband_place = \"above\"\n");
+}
+
+#[test]
+fn set_mask_writes_a_field_into_an_existing_manifest_and_keeps_the_rest() {
+    let (mut session, memory) = session();
+    memory.put("/p/labcraft.toml", "# the driver\nname = \"p\"\n\n[mask]\nband = \"D\" # short\n");
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "DMM", "stroke": "#1e4f73" }));
+    // The field written again keeps its place and its comment, the new one goes at the end; the case of a colour is kept.
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "# the driver\nname = \"p\"\n\n[mask]\nband = \"DMM\" # short\nstroke = \"#1e4f73\"\n");
+}
+
+#[test]
+fn set_mask_writes_an_outline_as_a_literal_multi_line_string() {
+    let (mut session, memory) = session();
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "outline": "template d" }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "[mask]\noutline = '''\ntemplate d\n'''\n");
+}
+
+#[test]
+fn set_mask_removes_a_field_with_null_and_the_table_when_it_is_empty() {
+    let (mut session, memory) = session();
+    memory.put("/p/labcraft.toml", "name = \"p\"\n\n[mask]\nband = \"D\"\ncolor = \"#2F6F9F\"\n");
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": null }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "name = \"p\"\n\n[mask]\ncolor = \"#2F6F9F\"\n");
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "color": null }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "name = \"p\"\n");
+}
+
+/// commands.md 6.7: a manifest with nothing left in it goes; one that the command made goes with its last field.
+#[test]
+fn set_mask_removes_a_manifest_left_empty() {
+    let (mut session, memory) = session();
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "A" }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "[mask]\nband = \"A\"\n");
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": null }));
+    assert_eq!(memory.get("/p/labcraft.toml"), None);
+}
+
+/// commands.md 6.7: the rest of the manifest is kept as written, its byte order mark too; a `band` with a control
+/// character is refused (spec 11.3).
+#[test]
+fn set_mask_keeps_a_byte_order_mark_and_refuses_a_control_character_in_band() {
+    let (mut session, memory) = session();
+    memory.put("/p/labcraft.toml", "\u{feff}name = \"p\"\n");
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "A" }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "\u{feff}name = \"p\"\n\n[mask]\nband = \"A\"\n");
+    for band in ["a\u{7}", "a\u{85}b", "a\u{2028}b"] {
+        let error = refused(&mut session, &Author::User, "library.set_mask", json!({ "folder": ".", "band": band }));
+        assert_eq!(error.code, "params.invalid", "{band:?}");
+    }
+}
+
+/// commands.md 6.7: `library.set_mask` writes a manifest, and does not go in a batch.
+#[test]
+fn set_mask_does_not_go_in_a_batch() {
+    let (mut session, memory) = session();
+    let batch = json!({ "commands": [{ "id": "library.set_mask", "params": { "folder": ".", "band": "A" } }] });
+    assert_eq!(refused(&mut session, &Author::User, "commands.batch", batch).code, "params.invalid");
+    assert_eq!(memory.get("/p/labcraft.toml"), None);
+}
+
+/// A control character other than a tab cannot be in a literal TOML string (TOML 1.0, "Literal strings"): refused as
+/// a value, not as a manifest that cannot be written.
+#[test]
+fn set_mask_refuses_an_outline_that_a_literal_string_cannot_hold() {
+    let (mut session, _) = session();
+    let params = json!({ "folder": ".", "outline": "template d // \u{7}" });
+    assert_eq!(refused(&mut session, &Author::User, "library.set_mask", params).code, "params.invalid");
+}
+
+#[test]
+fn set_mask_refuses_what_the_mask_refuses() {
+    let (mut session, memory) = session();
+    let long = "x".repeat(65);
+    let cases = [
+        json!({ "folder": ".", "color": "#12345" }),
+        json!({ "folder": ".", "fill": "red" }),
+        json!({ "folder": ".", "stroke": 5 }),
+        json!({ "folder": ".", "band_place": "left" }),
+        json!({ "folder": ".", "band": "" }),
+        json!({ "folder": ".", "band": long }),
+        json!({ "folder": ".", "band": "a\nb" }),
+        // What `block.set_outline` refuses: two templates, a `round` outside 1 to 16, text that does not read.
+        json!({ "folder": ".", "outline": "template d\ntemplate block" }),
+        json!({ "folder": ".", "outline": "path (0, 0) (w, 0) round 17 (w, h)" }),
+        json!({ "folder": ".", "outline": "nonsense here" }),
+    ];
+    for params in cases {
+        let error = refused(&mut session, &Author::User, "library.set_mask", params.clone());
+        assert_eq!(error.code, "params.invalid", "{params}: {}", error.message);
+        assert_eq!(memory.get("/p/labcraft.toml"), None, "nothing written for {params}");
+    }
+    // The same outline is refused by `block.set_outline` too.
+    let error = refused(&mut session, &Author::User, "block.set_outline", json!({ "file": "f.lcf", "outline": "template d\ntemplate block" }));
+    assert_eq!(error.code, "params.invalid");
+}
+
+#[test]
+fn set_mask_honours_an_expected_revision_naming_the_manifest() {
+    let (mut session, memory) = session();
+    let manifest = "name = \"p\"\n";
+    memory.put("/p/labcraft.toml", manifest);
+    let error = refused(
+        &mut session,
+        &Author::User,
+        "library.set_mask",
+        json!({ "folder": ".", "band": "A", "expected_revision": { "labcraft.toml": sha("old") } }),
+    );
+    assert_eq!(error.code, "file.stale");
+    assert!(error.message.contains(&sha(manifest)), "{}", error.message);
+    assert_eq!(text(&memory, "/p/labcraft.toml"), manifest);
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "A", "expected_revision": { "labcraft.toml": sha(manifest) } }));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "name = \"p\"\n\n[mask]\nband = \"A\"\n");
+}
+
+#[test]
+fn set_mask_needs_a_folder_that_exists_and_inside_the_project() {
+    let (mut session, _) = session();
+    let missing = refused(&mut session, &Author::User, "library.set_mask", json!({ "folder": "nowhere", "band": "A" }));
+    assert_eq!((missing.code, missing.parameter.as_deref()), ("path.not_found", Some("folder")));
+    let outside = refused(&mut session, &Author::User, "library.set_mask", json!({ "folder": "../q", "band": "A" }));
+    assert_eq!(outside.code, "path.outside_project");
+}
+
+#[test]
+fn undo_of_set_mask_restores_the_manifest_and_redo_writes_it_again() {
+    let (mut session, memory) = session();
+    let before = "name = \"p\"\n";
+    memory.put("/p/labcraft.toml", before);
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "A" }));
+    let after = text(&memory, "/p/labcraft.toml");
+    assert_eq!(after, "name = \"p\"\n\n[mask]\nband = \"A\"\n");
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), before);
+    ok(&mut session, "history.redo", json!({}));
+    assert_eq!(text(&memory, "/p/labcraft.toml"), after);
+    // Made from nothing, undo removes the manifest again.
+    let (mut session, memory) = self::session();
+    ok(&mut session, "library.set_mask", json!({ "folder": ".", "band": "A" }));
+    ok(&mut session, "history.undo", json!({}));
+    assert_eq!(memory.get("/p/labcraft.toml"), None);
+}
+
+#[test]
+fn another_command_still_refuses_the_manifest_as_a_file() {
+    let (mut session, memory) = session();
+    memory.put("/p/labcraft.toml", "name = \"p\"\n");
+    let error = refused(&mut session, &Author::User, "node.add", json!({ "file": "labcraft.toml", "call": "core.add" }));
+    assert_eq!(error.code, "path.outside_project");
+    // Nor can `expected_revision` of another command name it.
+    let error = refused(
+        &mut session,
+        &Author::User,
+        "node.add",
+        json!({ "file": "f.lcf", "call": "core.add", "expected_revision": { "labcraft.toml": sha("name = \"p\"\n") } }),
+    );
+    assert_eq!(error.code, "path.outside_project");
+    assert_eq!(text(&memory, "/p/labcraft.toml"), "name = \"p\"\n");
+}

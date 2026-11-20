@@ -55,6 +55,7 @@ serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }
 toml_parser = { version = "1", default-features = false }
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
 unicode-normalization = "0.1"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 

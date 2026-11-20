@@ -71,7 +71,7 @@ fn read(text: &str) -> Option<Read> {
     let (mut file, names) = parse(text)?;
     let (_, signature) = declared(&file)?;
     let (inputs, outputs) = terminals(signature);
-    let block = Block::read(file.terminals.as_ref(), file.outline.as_ref(), (&inputs, &outputs), &names, HashSet::new());
+    let block = Block::read(file.terminals.as_ref(), file.outline.as_ref(), None, (&inputs, &outputs), &names, HashSet::new());
     let icon = file.icon.take().filter(|icon| crate::icon_refused(icon, &names).is_none());
     Some(Read { block, icon, names })
 }

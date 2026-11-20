@@ -16,8 +16,9 @@ follows (events, panel widgets, timed loops, PLC mode).
   version, dependencies: the basis of the package, D-25). In M0 only the libraries shipped with
   LabCraft have one (section 9), with the fields `name`, `version`, `description`, `dependencies`,
   `always` (native functions, 7.2), `resources` (opaque types, 8.1) and `categories` (of errors,
-  7.1); see `libs/visa`. From M1, `mask` gives the band and the colour of the blocks of its functions (11.3). From
-  0.5.0, `check` also reads `name`, `always` and `resources` in the manifest of a user library (cli.md 3).
+  7.1); see `libs/visa`. From M1, the table `[mask]` gives the band, the colours and the outline of the blocks of its
+  functions (11.3). From 0.5.0, `check` also reads `name`, `always` and `resources` in the manifest of a user library,
+  and from M1 its `[mask]` (cli.md 3).
 - A library contains **functions** and **types**, **one per file** (D-07).
 - A **function** = a signature (inputs, outputs) + a **diagram**. A **panel** can be attached to it
   (D-06).
@@ -1584,14 +1585,17 @@ in a row look alike. The table is read for every library from M1, before the res
 band = "DMM"
 band_place = "inside"
 color = "#2F6F9F"
+stroke = "#1E4F73"
 outline = '''
 path (0, 0) (w, 0) round 4 (w, h) round 4 (0, h)
 right terminal { path (0, -4) (-4, 0) (0, 4) }
 '''
 ```
 
-- **`band`**: the text of its band, in place of its name (`DMM` for `dmm_driver`), cut as visual notation 3.2 cuts a
-  name; the full name stays in the tooltip.
+- **`band`**: the text of its band, in place of its name (`DMM` for `dmm_driver`), wherever the band of the library
+  is drawn, cut as visual notation 3.2 cuts a name; the full name stays in the tooltip. One line of 64 characters at
+  most *(proposed)*, not empty: a longer one, or one that holds a line break or another control character, is refused
+  (decision of the owner, 2026-11-20); `band_place = "hidden"` hides the band.
 - **`band_place`**: `inside` (the default), `above`, or `hidden`; a function sets its own with a `band` line (11.2).
   A helper hides its band; a function that talks to an instrument shows it by its session wire.
 - **`color`**: a colour that the library proposes for its band, `#RRGGBB` in either case, from which the theme
@@ -1599,15 +1603,23 @@ right terminal { path (0, -4) (-4, 0) (0, 4) }
   rule of visual notation 8, written with the program of M1, that gives the same colours on every platform. The
   developer can change it in the settings of the IDE: the library proposes, the developer decides. Without it, the
   band has the neutral `band.fill`.
+- **`fill`** and **`stroke`**: the fill of the body and the colour of the outline of the blocks of its functions, as
+  the lines `fill` and `stroke` of 11.2 give them (decision of the owner, 2026-11-20), with the same ink.
 - **`outline`**: the outline of the blocks of its functions, the items of an `outline` section (11.4), one per line,
   in a literal TOML string (`'''`, which reads no escape); here a block with its right corners rounded and a notch at
   each terminal of its right side. A function that has an `outline` section keeps its own; `template block` brings
   back the ordinary block. The items are judged as those of a section, and a diagnostic gives its line in the
   manifest.
+- **The function decides, field by field.** Each field of the mask holds for a function whose own sections do not
+  write it: a `band` line (11.2) in place of `band_place`, a `color`, `fill` or `stroke` line in place of that field,
+  an `outline` section in place of `outline`; a `fill` of the mask counts as written, so a `color` line of the function
+  colours the band and leaves the body to it. The text of `band` also names the library on the band of its types (a
+  construction, a variant), which take nothing else of the mask.
 - **Each library has its own mask**: a sub-library does not take the mask of the library that holds it, since its
   band names it and not its parent.
 - `check` of the library judges the table: a field that the mask does not know, or a value that it refuses (a colour
-  that is not `#RRGGBB`, an unknown place), is a warning, and the field keeps its default. A manifest that is not
+  that is not `#RRGGBB`, an unknown place, a `band` refused above, an `outline` that does not read or that 11.4 refuses
+  as an error), is a warning (`LC0107`) on its line of the manifest, and the field keeps its default. A manifest that is not
   TOML, or larger than `--max-file-size`, gives a warning (`LC0106`) and no mask. A library without a manifest gets one, holding
   the table alone, from `library.set_mask` ([commands.md](commands.md), 9.4); what else the manifest of a user library
   holds, beyond `always` and `resources`, comes with M2. Like a `terminals` section, the mask says nothing about running.

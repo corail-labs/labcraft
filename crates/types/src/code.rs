@@ -64,6 +64,7 @@ codes! {
     Lc0104 = "LC0104" Error,
     Lc0105 = "LC0105" Error,
     Lc0106 = "LC0106" Warning,
+    Lc0107 = "LC0107" Warning,
     Lc1001 = "LC1001" Error,
     Lc1002 = "LC1002" Error,
     Lc1003 = "LC1003" Error,

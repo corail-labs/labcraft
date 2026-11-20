@@ -42,6 +42,8 @@ pub enum Wanted {
     Folder,
     /// The trace of a run, which is only read: any file.
     Trace,
+    /// The manifest `labcraft.toml` of a library, which only `library.set_mask` writes (commands.md 6.7).
+    Manifest,
 }
 
 fn outside(parameter: &str, message: impl Into<String>) -> CommandError {
@@ -234,10 +236,12 @@ fn judge_extension(path: &Path, shown: &str, exists: bool, is_folder: bool, para
     let program = matches!(extension.as_deref(), Some("lcf" | "lct"));
     let simulation = extension.as_deref() == Some("toml");
     let manifest = path.file_name().is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("labcraft.toml"));
-    if manifest {
+    if manifest && wanted != Wanted::Manifest {
         return Err(outside(parameter, "`labcraft.toml` is the manifest of a library, which no command writes or reads"));
     }
     match wanted {
+        Wanted::Manifest if manifest && !is_folder => Ok(()),
+        Wanted::Manifest => Err(invalid(parameter, format!("`{shown}` is not the manifest `labcraft.toml` of a library"))),
         Wanted::Folder if exists && !is_folder => Err(invalid(parameter, format!("`{shown}` is a file, not a library folder"))),
         Wanted::Folder => Ok(()),
         Wanted::FileOrFolder if is_folder || program => Ok(()),

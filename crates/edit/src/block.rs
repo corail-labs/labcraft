@@ -242,12 +242,7 @@ pub(crate) fn set_outline(edit: &mut Edit, items: Option<&str>) -> Result<(), Ed
         edit.file.outline = None;
         return Ok(());
     };
-    let mut section = labcraft_format::read_outline(items, &mut edit.names)
-        .map_err(|message| EditError::invalid("outline", format!("the items do not read as an `outline` section: {message}")))?;
-    let (_, problems) = labcraft_check::outline::read(&section, &edit.names);
-    if let Some((_, message, _)) = problems.iter().find(|(code, _, _)| *code == labcraft_types::Code::Lc5016) {
-        return Err(EditError::invalid("outline", message.trim_end_matches(" (11.4)").to_owned()));
-    }
+    let mut section = labcraft_check::outline::read_items(items, &mut edit.names).map_err(|message| EditError::invalid("outline", message))?;
     section.id = edit.id();
     for item in &mut section.items {
         item.id = edit.id();

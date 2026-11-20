@@ -137,7 +137,8 @@ and, from M1, its `[mask]` table, which `check` judges and `diagram` reads to dr
 a warning, `LC0106`, and none of it is read; in a library that declares a native function, which only it may mark
 `always`, it is the error `LC0105` instead, so that a run that reaches that library never goes on without its
 `always` and without a word, even as a dependency. One that reads and says something wrong of `name`, `always` or
-`resources` is `LC0105`, as for a library shipped with LabCraft. Its `name` is that of its folder, whatever the path
+`resources` is `LC0105`, as for a library shipped with LabCraft; what its `[mask]` cannot say is the warning `LC0107`,
+and the blocks keep that field's default. Its `name` is that of its folder, whatever the path
 that finds it (`visa` for `libs/visa`, which the folder given names `libs.visa`); it may be left out (a manifest that
 holds a mask alone has none), and that of the folder given to `check` is not compared, since no `use` can name it. In M0a
 a file bears the name of what it declares, and the names of files and folders are names that every system can hold (spec, R-22:
@@ -383,6 +384,7 @@ section 3), not a diagnostic.
 | `LC0104` | error | `panel`, `layout` or `icon` section in a type file, and `terminals` and `outline` from M1 | R-19 |
 | `LC0105` | error | Manifest of a shipped library, or of a library that declares a native function, that cannot be read; manifest of any library that names another library than its folder, gives `name`, `always` or `resources` of the wrong kind (`name = 1`, `always = "close"`), an `always` on something other than a native function of the library, or a resource that is not an opaque type of it | 1, 7.2, 8.1 |
 | `LC0106` | warning | Manifest of a user library without a native function that cannot be read (not TOML, not UTF-8, larger than `--max-file-size`, a symbolic link, an error of the system): none of it is read, neither `always`, nor `resources`, nor `[mask]` | 1, 7.2, 11.3 |
+| `LC0107` | warning | Table `[mask]` of a manifest that cannot say something: `mask` that is not a table, a field that the mask does not know, a value that it refuses (a colour that is not `#RRGGBB`, a `band_place` other than `inside`, `above` or `hidden`, a `band` empty, of more than 64 characters, or holding a line break or another control character, an `outline` that does not read or that is an error as a section, `LC5016`); the field keeps its default | 11.3 |
 
 ### Syntax: `LC10`
 
@@ -503,7 +505,7 @@ section 3), not a diagnostic.
 | `LC5014` | warning | Line of a `terminals` section that cannot apply, whose terminal keeps its default place: it names no terminal of the signature (`input x` where `x` is no input), a place outside its side (0, or past the last of a side whose size the section gives), a place that another line took, or the place of `after:` (`top 1`) | 11.2 |
 | `LC5015` | error | `terminals` section that cannot be read as one: two sizes for one side, two `band`, `color`, `fill` or `stroke` lines, two lines for one terminal, or a size outside 1 to 64 (`top`) or 0 to 64 (`left`), drawn at the nearest bound | 11.2 |
 | `LC5016` | error | `outline` section that cannot be read as one: two `path` items, two pieces for one side, a piece without a `path`, a `template` with another item, a template that is not `d` or `block`, a `round` outside 1 to 16, an integer outside 0 to 1,024, more than 64 corners in the body or 16 points in a piece *(proposed)*. The block is drawn ordinary | 11.4 |
-| `LC5017` | warning | Outline that breaks a guard at a size that the block takes, in its section or at a call: it crosses itself, the body or a piece; a corner outside the box `w` × `h`; a piece outside its bounds; a side with a piece and a terminal with no straight edge 4 on each side of it; a terminal that the outline does not meet within 4 of the box; an anchor that names no terminal it can. Once for the item, whatever the number of calls; the block is drawn ordinary at that size | 11.4 |
+| `LC5017` | warning | Outline that breaks a guard at a size that the block takes, in its section or at a call: it crosses itself, the body or a piece; a corner outside the box `w` × `h`; a piece outside its bounds; a side with a piece and a terminal with no straight edge 4 on each side of it; a terminal that the outline does not meet within 4 of the box; an anchor that names no terminal it can. On the item, in the file of the function or in the manifest of the mask of its library, once whatever the number of calls and functions; the block is drawn ordinary at that size | 11.4 |
 | `LC5018` | warning | Colour of a `terminals` section whose string is not `"#RRGGBB"` (`color`, `fill` or `stroke`): the line does not apply | 11.2 |
 | `LC5019` | warning | Icon `width` outside 0.25 to 8: drawn at the nearest bound | 11.1 |
 

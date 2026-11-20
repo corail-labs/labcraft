@@ -10,7 +10,8 @@ use labcraft_graph::{Decl, File, Id, SourceMap, TypeExpr};
 use labcraft_types::{Code, Diagnostic, Interner, Limits, Name, Related, Report, Severity, cut_text, normalize};
 
 use crate::file_name::{case_key, kept_by_windows};
-use crate::manifest::{Manifest, UserManifest};
+use crate::manifest::{Manifest, UserManifest, shown as manifest_shown};
+use crate::mask::Mask;
 use crate::primitives::PrimitiveLibrary;
 use crate::{Content, DependencyReport, Found, Libraries, LibrarySource, Origin, SourceFile};
 
@@ -25,14 +26,14 @@ pub(crate) struct Library {
     /// In the folder given: everything in it is checked. A dependency is read for what it declares.
     pub(crate) checked: bool,
     pub(crate) files: Vec<LoadedFile>,
-    shown: String,
+    pub(crate) shown: String,
     pub(crate) origin: Origin,
     uses: Vec<LibraryUse>,
     /// The errors of a dependency, kept apart: several folders given can read one dependency.
     pub(crate) report: Report,
     pub(crate) checked_elsewhere: bool,
-    /// What its manifest says, once read: all of it for a shipped library, only `always` and `resources` for another one
-    /// before M2, and nothing for a manifest that does not read.
+    /// What its manifest says, once read: all of it for a shipped library, only `always`, `resources` and `[mask]` for
+    /// another one before M2, and nothing for a manifest that does not read.
     pub(crate) manifest: Manifest,
 }
 
@@ -125,15 +126,6 @@ fn say(sink: &mut Report, checked: bool, diagnostic: Diagnostic) {
     }
 }
 
-/// The manifest of a library as reports show it, as a host shows a file of the folder: `labcraft.toml` alone in the
-/// current folder.
-fn manifest_shown(shown: &str) -> String {
-    match shown.strip_prefix("./").unwrap_or(shown) {
-        "" | "." => "labcraft.toml".to_owned(),
-        folder => format!("{}/labcraft.toml", folder.trim_end_matches('/')),
-    }
-}
-
 fn over_the_limit(limits: &Limits) -> String {
     format!("files left out: over the limit of {} bytes in a folder", limits.max_library_size)
 }
@@ -217,7 +209,7 @@ impl Loader<'_> {
             let files: Vec<LoadedFile> = files.into_iter().map(|file| self.read_file(file, checked, origin, budget, &mut sink)).collect();
             let read = match (origin, manifest) {
                 (_, None) => Manifest::default(),
-                (Origin::Shipped, Some(Ok(text))) => self.read_manifest(&text, &shown, &name, &files, &mut sink),
+                (Origin::Shipped, Some(Ok(text))) => self.read_manifest(&text, &shown, (&name, checked), &files, &mut sink),
                 (Origin::Shipped, Some(Err(why))) => {
                     sink.push(Diagnostic::new(Code::Lc0105, format!("cannot read this manifest: {why}"), manifest_shown(&shown)));
                     Manifest::default()
@@ -296,7 +288,7 @@ impl Loader<'_> {
     }
 
     /// What it says, or nothing when it does not read.
-    fn read_manifest(&mut self, text: &str, shown: &str, name: &str, files: &[LoadedFile], sink: &mut Report) -> Manifest {
+    fn read_manifest(&mut self, text: &str, shown: &str, (name, checked): (&str, bool), files: &[LoadedFile], sink: &mut Report) -> Manifest {
         let path = manifest_shown(shown);
         let manifest = match Manifest::parse(text) {
             Ok(manifest) => manifest,
@@ -310,7 +302,18 @@ impl Loader<'_> {
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
         self.judge_the_marks(&manifest.always, &manifest.resources, &path, files, sink);
-        manifest
+        Manifest { mask: self.read_mask(text, &path, checked, sink), ..manifest }
+    }
+
+    /// The `[mask]` of a manifest that reads (spec 11.3), and what it cannot say, on its lines.
+    fn read_mask(&mut self, text: &str, path: &str, checked: bool, sink: &mut Report) -> Mask {
+        let (mask, problems) = Mask::read(text, self.names);
+        for (code, message, span) in problems {
+            let mut diagnostic = Diagnostic::new(code, message, path);
+            diagnostic.span = span;
+            say(sink, checked, diagnostic);
+        }
+        mask
     }
 
     /// What `check` reads of the manifest of a user library (`docs/cli.md`, section 3): `name`, `always` and
@@ -354,7 +357,8 @@ impl Loader<'_> {
             sink.push(Diagnostic::new(Code::Lc0105, message, path.as_str()));
         }
         self.judge_the_marks(&read.always, &read.resources, &path, files, sink);
-        Manifest { always: read.always, resources: read.resources, ..Manifest::default() }
+        let mask = text.map_or_else(|_| Mask::default(), |text| self.read_mask(text, &path, checked, sink));
+        Manifest { always: read.always, resources: read.resources, mask, ..Manifest::default() }
     }
 
     /// `always` marks native functions of the library, and `resources` names opaque types of it, each an `LC0105`
@@ -732,6 +736,47 @@ mod tests {
 
     fn codes_of_files(files: Vec<SourceFile>) -> Vec<&'static str> {
         codes(library("", files), &Nothing, &Limits::default())
+    }
+
+    /// The diagnostics of the library given only, not of its dependencies, as (code, file, line).
+    fn own_diagnostics(root: LibrarySource, libraries: &dyn Libraries) -> Vec<(&'static str, String, u32)> {
+        let mut checked = check(root, libraries, &mut Interner::new(), &Limits::default());
+        checked.report.finish();
+        checked
+            .report
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| (diagnostic.code().as_str(), diagnostic.file.clone(), diagnostic.span.map_or(0, |span| span.start.line)))
+            .collect()
+    }
+
+    #[test]
+    fn a_user_library_with_a_faulty_mask_gets_lc0107_on_the_lines_of_its_manifest() {
+        // Lines: 1 `[mask]`, 2 `band` (fine), 3 `color`, 4 `nonsense`, 5 `band_place`.
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        root.manifest = Some(Ok("[mask]\nband = \"A\"\ncolor = \"blue\"\nnonsense = 1\nband_place = \"left\"\n".to_owned()));
+        let manifest = "labcraft.toml".to_owned();
+        let expected = [("LC0107", manifest.clone(), 3), ("LC0107", manifest.clone(), 4), ("LC0107", manifest, 5)];
+        assert_eq!(own_diagnostics(root, &Nothing), expected);
+    }
+
+    #[test]
+    fn a_clean_mask_says_nothing() {
+        let mut root = library("", vec![file("f.lcf", FUNCTION)]);
+        root.manifest = Some(Ok("[mask]\nband = \"A\"\ncolor = \"#2F6F9F\"\nband_place = \"hidden\"\n".to_owned()));
+        assert_eq!(own_diagnostics(root, &Nothing), []);
+    }
+
+    #[test]
+    fn the_mask_warnings_of_a_dependency_are_not_said() {
+        let root = || library("", vec![file("f.lcf", &uses(&["dep"]))]);
+        let libraries = user_dependency("[mask]\ncolor = \"blue\"\nnonsense = 1\n");
+        assert_eq!(own_diagnostics(root(), &libraries), []);
+    }
+
+    #[test]
+    fn a_shipped_manifest_with_a_mask_table_is_read_without_lc0105() {
+        assert_eq!(codes_of_manifest("name = \"dep\"\nversion = \"1\"\n\n[mask]\nband = \"D\"\ncolor = \"#2F6F9F\"\n"), Vec::<&str>::new());
     }
 
     #[test]

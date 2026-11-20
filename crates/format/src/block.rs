@@ -57,6 +57,11 @@ pub struct Colours {
 }
 
 impl Colours {
+    /// Each colour of `self`, else that of `other`.
+    pub fn or(self, other: Colours) -> Colours {
+        Colours { color: self.color.or(other.color), fill: self.fill.or(other.fill), stroke: self.stroke.or(other.stroke) }
+    }
+
     pub fn slot(&mut self, role: ColourRole) -> &mut Option<Rgb> {
         match role {
             ColourRole::Color => &mut self.color,

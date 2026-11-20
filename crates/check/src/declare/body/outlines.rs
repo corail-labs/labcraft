@@ -2,8 +2,9 @@
 //! of each call of the project, whose variadic parameters take a place per value. There, the lines of a `terminals`
 //! section whose left and right sides grow (spec 11.2: `middle` and `last` are counted on the grown side, so whether two
 //! lines end on one place is known only at the size the block takes, `LC5014`), and the guards of an `outline` (11.4,
-//! `LC5017`). A warning goes on the item, in the file of the function, once for that item whatever the number of calls.
-//! Done once every body is resolved, since a call can be in any file of the run.
+//! `LC5017`), its own or that of the mask of its library (11.3). A warning goes on the item, in the file of the function
+//! or in the manifest of the mask, once for that item whatever the number of calls. Done once every body is resolved,
+//! since a call can be in any file of the run.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -14,6 +15,7 @@ use labcraft_types::{Code, Name, cut_text};
 use super::super::Pass;
 use crate::declare::{DeclaredFunction, DeclaredLibrary};
 use crate::load::at;
+use crate::manifest::shown as manifest_shown;
 use crate::outline::{CHAMFER, Frame, Problem, Read, draw, read};
 use crate::places::{Block, places, section_of, signed};
 use crate::resolved::{Meaning, Resolved, Terminal};
@@ -22,6 +24,8 @@ use crate::resolved::{Meaning, Resolved, Terminal};
 /// size (a `terminals` section without `left`), and its variadic parameters, by index.
 struct Judged {
     outline: Option<Read>,
+    /// The outline is that of the mask of its library.
+    masked: bool,
     section: Section,
     lines_grow: bool,
     variadic: Vec<u32>,
@@ -37,11 +41,15 @@ impl<'a> Pass<'a> {
             for file in &source.files {
                 let Some(model) = &file.model else { continue };
                 let Decl::Function(function) = &model.file.decl else { continue };
-                if model.file.outline.is_none() && model.file.terminals.is_none() {
+                let mask = &source.manifest.mask;
+                if model.file.outline.is_none() && model.file.terminals.is_none() && mask.outline.is_none() {
                     continue;
                 }
                 let Some(found) = declared.get(library).and_then(|found| found.functions.get(&function.name)) else { continue };
-                let outline = model.file.outline.as_ref().map(|outline| read(outline, self.names).0).filter(|outline| *outline != Read::Block);
+                // Its own outline, else that of the mask (11.4).
+                let masked = model.file.outline.is_none() && mask.outline.is_some();
+                let outline =
+                    mask.outline_of(model.file.outline.as_ref()).map(|outline| read(outline, self.names).0).filter(|outline| *outline != Read::Block);
                 let inputs: Vec<Name> = function.signature.params.iter().map(|param| param.name).collect();
                 let outputs: Vec<Name> = function.signature.outputs.iter().map(|output| output.name).collect();
                 let section = section_of(model.file.terminals.as_ref(), &inputs, &outputs, self.names);
@@ -51,7 +59,7 @@ impl<'a> Pass<'a> {
                 }
                 let variadic: Vec<u32> =
                     found.params.iter().enumerate().filter(|(_, param)| param.variadic).filter_map(|(at, _)| u32::try_from(at).ok()).collect();
-                judged.insert((index, function.name), Judged { outline, section, lines_grow, variadic });
+                judged.insert((index, function.name), Judged { outline, masked, section, lines_grow, variadic });
             }
         }
         // The values that each call gives to their variadic parameters: one walk of the arguments of each call to one of them.
@@ -78,6 +86,9 @@ impl<'a> Pass<'a> {
         }
         for (library, source) in loaded.iter().enumerate().filter(|(_, source)| source.checked) {
             let Ok(index) = u32::try_from(library) else { continue };
+            // An item of the mask is said once, whatever the number of its functions.
+            let mut said_of_mask: HashSet<Id> = HashSet::new();
+            let manifest = manifest_shown(&source.shown);
             for file in &source.files {
                 let Some(model) = &file.model else { continue };
                 let Decl::Function(function) = &model.file.decl else { continue };
@@ -92,7 +103,15 @@ impl<'a> Pass<'a> {
                 let mut said: HashSet<Id> = HashSet::new();
                 for values in counts {
                     for (code, message, id) in self.block_at(block, found, declared, &values) {
-                        if said.insert(id) {
+                        let mask = source.manifest.mask.outline.as_ref().filter(|_| block.masked && code == Code::Lc5017);
+                        if let Some(mask) = mask {
+                            if said_of_mask.insert(id) {
+                                let mut diagnostic = labcraft_types::Diagnostic::new(code, message, manifest.as_str());
+                                diagnostic.span = mask.span(id);
+                                diagnostic.function = Some(cut_text(self.names.resolve(function.name)).into_owned());
+                                self.push(library, diagnostic);
+                            }
+                        } else if said.insert(id) {
                             let mut diagnostic = at(code, message, &file.shown, &model.source_map, id);
                             diagnostic.function = Some(cut_text(self.names.resolve(function.name)).into_owned());
                             self.push(library, diagnostic);

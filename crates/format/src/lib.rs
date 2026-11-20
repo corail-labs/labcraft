@@ -30,5 +30,5 @@ pub use canonicalize::{Formatted, canonicalize, coordinate_value, format};
 pub use decode::decode;
 pub use lexer::{Keyword, Lexer, Token, TokenKind, is_fill, is_invisible, is_name};
 pub use order::{BodyOrders, Unorderable, canonical_order, canonical_orders};
-pub use read::{Read, STACK_SIZE, read, read_outline};
+pub use read::{OUTLINE_FIRST_LINE, Read, STACK_SIZE, read, read_outline, read_outline_mapped};
 pub use write::{TooLarge, write, write_constant, write_declaration, write_line, write_operand, write_pattern, write_type, write_unit};

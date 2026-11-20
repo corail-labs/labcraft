@@ -2539,3 +2539,144 @@ fn color_gives_the_band_as_written_and_tints_the_body() {
     assert_eq!(fills(&sized).first(), Some(&Colour::Written(0xDE_E8F0, 0x22_303D)));
     assert!(fills(&sized).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&sized));
 }
+
+// The mask of a library (spec 11.3). `lib.g(x) -> (n)` is called by `main`; the manifest of `lib` is `manifest`, and `sections`
+// follows the function. The block is 40 × 40 (11.2), the band 12 high (notation 3.2).
+
+type Masked = (crate::size::Sized, Vec<Vec<(i64, i64)>>, Option<String>);
+
+/// The block of the call to `lib.g`, its outlines and the text of its band, when `lib` has `manifest` and `g` `sections`.
+fn masked(manifest: Option<&str>, sections: &str) -> Masked {
+    let callee = format!("labcraft 1\n\n{G}{sections}");
+    let main = "labcraft 1\n\nuse lib\n\nfn main(v: f64, e: error) -> (r: i64, err: error) {\n    r = lib.g(v)\n    err = e\n}\n";
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    root.files.push(source("main.lcf", main));
+    let mut lib = LibrarySource::new("lib".to_owned(), "lib".to_owned(), Origin::Project);
+    lib.files.push(source("g.lcf", &callee));
+    lib.manifest = manifest.map(|text| Ok(text.to_owned()));
+    root.sub_libraries.push(lib);
+    let mut names = Interner::new();
+    let checked = check(root, &Nothing, &mut names, &Limits::default());
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands = crate::bands(&graph);
+    let index = graph.nodes.iter().position(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
+    let sizer = Sizer::new(false);
+    let sized = sizer.size(&graph.nodes[index], bands[index].as_ref(), None);
+    let text = bands[index].as_ref().map(|band| band.text());
+    (sized, sizer.take_outlines(), text)
+}
+
+#[test]
+fn the_band_text_of_a_mask_replaces_the_name_of_the_library_and_is_cut_as_a_name() {
+    assert_eq!(masked(None, "").2.as_deref(), Some("lib"));
+    assert_eq!(masked(Some("[mask]\nband = \"DMM\"\n"), "").2.as_deref(), Some("DMM"));
+    // 11 letters in a block of 40: 40 less 5 on each side, 30, 5 cells at 9: `meas…`, as for the name `measurement` of a
+    // library (`bands_that_read_the_same_show_more` gives the cells).
+    assert_eq!(masked(Some("[mask]\nband = \"measurement\"\n"), "").2.as_deref(), Some("meas\u{2026}"));
+    // A refused band (empty) keeps the name of the library.
+    assert_eq!(masked(Some("[mask]\nband = \"\"\n"), "").2.as_deref(), Some("lib"));
+}
+
+#[test]
+fn the_band_text_of_a_mask_names_the_library_on_the_band_of_its_types() {
+    let ty = "labcraft 1\n\ntype StepResult = struct { name: string, ok: bool }\n";
+    let main = "labcraft 1\n\nuse lib\n\nfn main(s: string, b: bool) -> (r: lib.StepResult) {\n    r = lib.StepResult { name: s, ok: b }\n}\n";
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    root.files.push(source("main.lcf", main));
+    let mut lib = LibrarySource::new("lib".to_owned(), "lib".to_owned(), Origin::Project);
+    lib.files.push(source("StepResult.lct", ty));
+    lib.manifest = Some(Ok("[mask]\nband = \"DMM\"\n".to_owned()));
+    root.sub_libraries.push(lib);
+    let mut names = Interner::new();
+    let checked = check(root, &Nothing, &mut names, &Limits::default());
+    assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
+    let graph = graph(&checked, &names, "main.lcf");
+    let bands: Vec<String> = crate::bands(&graph).into_iter().flatten().map(|band| band.text()).collect();
+    assert_eq!(bands, ["DMM"]);
+}
+
+#[test]
+fn the_colour_of_a_mask_gives_the_band_and_tints_the_body_as_a_color_line_does() {
+    use crate::shape::Colour;
+    let from_mask = masked(Some("[mask]\ncolor = \"#2F6F9F\"\n"), "").0;
+    let from_line = masked(None, "\nterminals {\n    color \"#2F6F9F\"\n}\n").0;
+    // The values are those worked out for the `color` line (`color_gives_the_band_as_written_and_tints_the_body`).
+    assert_eq!(fills(&from_mask).first(), Some(&Colour::Written(0xDE_E8F0, 0x22_303D)));
+    assert!(fills(&from_mask).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&from_mask));
+    assert_eq!(fills(&from_mask), fills(&from_line));
+}
+
+#[test]
+fn the_fill_and_the_stroke_of_a_mask_are_drawn_as_written() {
+    use crate::shape::Colour;
+    let sized = masked(Some("[mask]\nfill = \"#64748B\"\nstroke = \"#102030\"\n"), "").0;
+    assert_eq!(fills(&sized).first(), Some(&Colour::Written(0x64_748B, 0x64_748B)));
+    let stroked =
+        sized.shapes.iter().any(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.stroke == Some(Colour::Written(0x10_2030, 0x10_2030))));
+    assert!(stroked);
+}
+
+#[test]
+fn the_band_place_of_a_mask_is_followed_and_a_band_line_of_the_function_wins() {
+    // Above a block of 40: 12 high from -12 (notation 3.2); inside: at the top, 12 high from 0.
+    // (Its height is 12 and the 2 of its rounded corner that it overlaps with the block: only its top is checked.)
+    assert_eq!(band_rect(&masked(Some("[mask]\nband_place = \"above\"\n"), "").0).map(|rect| rect.0), Some(-1200));
+    assert_eq!(band_rect(&masked(Some("[mask]\nband_place = \"hidden\"\n"), "").0), None);
+    assert_eq!(band_rect(&masked(Some("[mask]\nband_place = \"above\"\n"), "\nterminals {\n    band inside\n}\n").0), Some((0, 1200)));
+    assert_eq!(band_rect(&masked(Some("[mask]\nband_place = \"inside\"\n"), "\nterminals {\n    band hidden\n}\n").0), None);
+}
+
+#[test]
+fn the_outline_of_a_mask_is_drawn_and_a_function_with_its_own_keeps_it() {
+    let items =
+        "path (0, 0) (w, 0) (w, h) (0, h)\nleft terminal { path (0, -4) (-4, 0) (0, 4) }\nright terminal { path (0, -2) (4, -2) (4, 2) (0, 2) }";
+    let manifest = format!("[mask]\noutline = '''\n{items}\n'''\n");
+    let (sized, outlines, _) = masked(Some(&manifest), "");
+    assert_eq!((sized.width, sized.height), (4000, 4000));
+    assert_eq!((sized.inputs.clone(), sized.outputs.clone()), (vec![(400, 800)], vec![(4400, 800)]));
+    // The polygon worked out by hand in `a_block_with_an_outline_draws_it_and_its_terminals_start_on_it`.
+    let expected =
+        vec![(0, 0), (4000, 0), (4000, 600), (4400, 600), (4400, 1000), (4000, 1000), (4000, 4000), (0, 4000), (0, 1200), (400, 800), (0, 400)];
+    assert!(outline_polygons(&(sized, outlines)).contains(&expected));
+    // The own `outline` section wins: `template block` is the ordinary block.
+    let own = masked(Some(&manifest), "\noutline {\n    template block\n}\n");
+    assert!(outline_polygons(&(own.0.clone(), own.1)).is_empty());
+    assert_eq!((own.0.inputs, own.0.outputs), (vec![(0, 800)], vec![(4000, 800)]));
+    // The D of the primitives, by the template of the mask.
+    let d = masked(Some("[mask]\noutline = \"template d\"\n"), "");
+    let polygons = outline_polygons(&(d.0, d.1));
+    // With a band, the outline is drawn twice, the fill under the band and the stroke over it (`shaped`): the same points.
+    assert_eq!(polygons.len(), 2, "{polygons:?}");
+    assert_eq!(polygons[0], polygons[1]);
+    for point in d_tangents(4000, 4000) {
+        assert!(polygons[0].contains(&point), "{point:?}");
+    }
+}
+
+#[test]
+fn each_field_of_the_function_wins_alone_and_the_others_come_from_the_mask() {
+    use crate::shape::Colour;
+    // Mask `color`, function `fill`: the body is the fill of the function, the band the colour of the mask.
+    let sized = masked(Some("[mask]\ncolor = \"#2F6F9F\"\n"), "\nterminals {\n    fill \"#64748B\"\n}\n").0;
+    assert_eq!(fills(&sized).first(), Some(&Colour::Written(0x64_748B, 0x64_748B)));
+    assert!(fills(&sized).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&sized));
+    // Mask `fill`, function `color`: the reverse.
+    let sized = masked(Some("[mask]\nfill = \"#64748B\"\n"), "\nterminals {\n    color \"#2F6F9F\"\n}\n").0;
+    assert_eq!(fills(&sized).first(), Some(&Colour::Written(0x64_748B, 0x64_748B)));
+    assert!(fills(&sized).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&sized));
+    // The same field: the function wins.
+    let sized = masked(Some("[mask]\nfill = \"#000000\"\n"), "\nterminals {\n    fill \"#64748B\"\n}\n").0;
+    assert_eq!(fills(&sized).first(), Some(&Colour::Written(0x64_748B, 0x64_748B)));
+}
+
+#[test]
+fn a_mask_with_only_the_default_band_place_draws_the_same_shapes_as_no_mask() {
+    // Spec 11.4: a block with no `terminals` section has the places of an empty one; `inside` is the default (11.3).
+    let plain = masked(None, "");
+    let same = masked(Some("[mask]\nband_place = \"inside\"\n"), "");
+    // `lanes` (the wires off their side) holds `None` for each terminal when a section exists, empty without one: not a shape.
+    assert_eq!(plain.0.shapes, same.0.shapes);
+    assert_eq!((plain.0.width, plain.0.height, &plain.0.inputs, &plain.0.outputs), (same.0.width, same.0.height, &same.0.inputs, &same.0.outputs));
+    assert_eq!(plain.1, same.1);
+}

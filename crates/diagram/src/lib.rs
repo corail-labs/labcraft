@@ -192,9 +192,10 @@ pub fn count_nodes(checked: &Checked, file: usize, names: &Interner) -> Option<u
     Some(graph::count_nodes(function, &graph::orders_of(checked_file, function, names), &checked_file.resolved))
 }
 
-/// The band of each node (notation 3.2): the last segment of its library, cut to the width of its block; the full path
-/// when two libraries of the drawing would read the same at that width; cut in the middle when they still do. A width
-/// is that of a compact block or of an oblong, whose label is cut: few widths, each worked out once.
+/// The band of each node (notation 3.2): the text that the mask of its library gives (spec 11.3), else the last segment
+/// of its library, cut to the width of its block; the full path when two libraries of the drawing would read the same
+/// at that width; cut in the middle when they still do. A width is that of a compact block or of an oblong, whose label
+/// is cut: few widths, each worked out once.
 fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
     let library_of = |kind: &Kind<'_>| match kind {
         Kind::Call { library, glyph: None, .. } | Kind::Construction { library, .. } | Kind::Variant { library, .. } => library.clone(),
@@ -217,7 +218,7 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
     let mut at: BTreeMap<u64, BTreeMap<&String, String>> = BTreeMap::new();
     for (library, &cells) in libraries.iter().zip(&cells) {
         if library.is_some() && !at.contains_key(&cells) {
-            at.insert(cells, bands_at(&distinct, cells));
+            at.insert(cells, bands_at(&distinct, &graph.band_texts, cells));
         }
     }
     libraries
@@ -227,9 +228,12 @@ fn bands(graph: &Graph<'_>) -> Vec<Option<ShownText>> {
         .collect()
 }
 
-/// The band of each library at `cells` (notation 3.2).
-fn bands_at<'a>(distinct: &[&'a String], cells: u64) -> BTreeMap<&'a String, String> {
-    let short = |library: &str| labcraft_types::text::cut(library.rsplit('.').next().unwrap_or(library), cells).into_owned();
+/// The band of each library at `cells` (notation 3.2), `texts` those that masks give.
+fn bands_at<'a>(distinct: &[&'a String], texts: &HashMap<String, String>, cells: u64) -> BTreeMap<&'a String, String> {
+    let short = |library: &String| {
+        let text = texts.get(library).map_or_else(|| library.rsplit('.').next().unwrap_or(library), String::as_str);
+        labcraft_types::text::cut(text, cells).into_owned()
+    };
     let mut drawn: BTreeMap<&String, String> = distinct.iter().map(|&library| (library, short(library))).collect();
     for pass in 0..2 {
         let mut readers: BTreeMap<String, Vec<&String>> = BTreeMap::new();

@@ -26,6 +26,7 @@ mod declare;
 mod file_name;
 mod load;
 pub mod manifest;
+pub mod mask;
 pub mod outline;
 mod passed_in;
 pub mod places;

@@ -17,6 +17,9 @@ use labcraft_edit::{
 use labcraft_types::{Diagnostic, Interner, Severity, Ty};
 use serde_json::{Map, Value, json};
 
+mod mask;
+pub(crate) use mask::set_mask;
+
 use crate::error::CommandError;
 use crate::files::{bytes_of, text_of};
 use crate::folders::FoldersChecked;
@@ -124,6 +127,11 @@ fn held_now(session: &Session, path: &Path, missing: bool) -> Result<Option<Vec<
 
 /// `expected_revision`: each file it names must have that revision, or the command changes nothing (`file.stale`).
 fn judge_revisions(session: &Session, params: &Params) -> Result<(), CommandError> {
+    judge_revisions_of(session, params, false)
+}
+
+/// As [`judge_revisions`]; `manifests`: a manifest `labcraft.toml` may be named, for `library.set_mask`.
+fn judge_revisions_of(session: &Session, params: &Params, manifests: bool) -> Result<(), CommandError> {
     let Some(expected) = params.get("expected_revision") else { return Ok(()) };
     if expected.is_null() {
         return Ok(());
@@ -135,7 +143,10 @@ fn judge_revisions(session: &Session, params: &Params) -> Result<(), CommandErro
         let Some(wanted) = wanted.as_str() else {
             return Err(CommandError::of("params.invalid", "expected_revision", format!("the revision of `{file}` is a text")));
         };
-        let (path, shown) = paths::existing_in_project(&*session.ws, &session.root, file, "expected_revision", Wanted::File)?;
+        let manifest =
+            manifests && Path::new(file).file_name().is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case(crate::walk::MANIFEST));
+        let kind = if manifest { Wanted::Manifest } else { Wanted::File };
+        let (path, shown) = paths::existing_in_project(&*session.ws, &session.root, file, "expected_revision", kind)?;
         let now = bytes_now(session, &path)?.map(|bytes| revision(&bytes)).unwrap_or_default();
         if now != wanted {
             return Err(CommandError::of("file.stale", "expected_revision", format!("`{shown}` changed since that revision: it is now `{now}`")));
@@ -1319,7 +1330,7 @@ pub(crate) fn batch(session: &mut Session, author: &Author, params: &Params) -> 
             registry::command(id).ok_or_else(|| at(CommandError::of("command.unknown", "commands", format!("no command has the id `{id}`"))))?;
         // The commands that edit, built or planned; a planned one is not enabled yet. The commands of files make steps too,
         // but write the disk at once: they are not commands of 6.7.
-        let alone = ["commands.batch", "function.create", "function.rename", "type.create", "type.rename"];
+        let alone = ["commands.batch", "function.create", "function.rename", "type.create", "type.rename", "library.set_mask"];
         if !command.undoable || alone.contains(&id) || id.starts_with("file.") {
             return Err(at(CommandError::of(
                 "params.invalid",
