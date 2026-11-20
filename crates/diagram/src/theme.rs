@@ -48,6 +48,8 @@ pub const TOKENS: &[TokenValue] = &[
     token("band.fill", "#E1E4E8", "#2B3038"),
     token("band.text", "#1F2328", "#ECEFF3"),
     token("select.stroke", "#0E7490", "#22D3EE"),
+    token("ink.light", "#FFFFFF", "#FFFFFF"),
+    token("ink.dark", "#1F2328", "#1F2328"),
 ];
 
 /// The name of the CSS variable of a token: `wire.error` gives `--wire-error` (notation 8).
@@ -95,15 +97,15 @@ pub fn contrasts() -> Vec<(&'static str, &'static str, f64)> {
     pairs
 }
 
+/// The linear value of the channel in the low byte of `channel`, from its sRGB value (WCAG 2, OKLab).
+pub fn linear(channel: u32) -> f64 {
+    let c = f64::from(channel & 0xFF) / 255.0;
+    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+}
+
 /// The WCAG 2 contrast ratio of two colours `0xRRGGBB`, from its definition.
 pub fn contrast(a: crate::style::Rgb, b: crate::style::Rgb) -> f64 {
-    let luminance = |rgb: crate::style::Rgb| {
-        let channel = |shift: u32| {
-            let c = f64::from((rgb >> shift) & 0xFF) / 255.0;
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-        };
-        0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
-    };
+    let luminance = |rgb: crate::style::Rgb| 0.2126 * linear(rgb >> 16) + 0.7152 * linear(rgb >> 8) + 0.0722 * linear(rgb);
     let (a, b) = (luminance(a), luminance(b));
     let (light, dark) = if a > b { (a, b) } else { (b, a) };
     (light + 0.05) / (dark + 0.05)

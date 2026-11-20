@@ -1030,7 +1030,7 @@ impl Obstacles {
                 }
             }
         }
-        let pill = |shape: &Shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill == Some("pill.fill"));
+        let pill = |shape: &Shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill_token() == Some("pill.fill"));
         for group in &drawing.groups {
             for shape in &group.shapes {
                 if pill(shape) || group.terminals.is_some() && !matches!(shape, Shape::Wire { .. }) {

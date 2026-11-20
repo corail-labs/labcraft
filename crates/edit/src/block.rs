@@ -1,9 +1,9 @@
-//! `block.set_terminal`, `block.set_size`, `block.set_band`, `block.set_outline` and `block.reset` (commands.md 9.4): the
+//! `block.set_terminal`, `block.set_size`, `block.set_band`, `block.set_color`, `block.set_fill`, `block.set_stroke`, `block.set_outline` and `block.reset` (commands.md 9.4): the
 //! `terminals` and `outline` sections of the function whose block they change (spec 11.2, 11.4), never the file of a
 //! caller. `fmt` puts the lines in their order.
 
 use labcraft_format::block::{Problem, Which, named, read};
-use labcraft_graph::{Attached, BandPlace, BlockPlace, BlockSide, Place, Terminals, TerminalsItem, TerminalsKind, places_range};
+use labcraft_graph::{Attached, BandPlace, BlockPlace, BlockSide, ColourRole, Place, Terminals, TerminalsItem, TerminalsKind, places_range};
 use std::collections::HashSet;
 
 use labcraft_graph::Id;
@@ -209,6 +209,25 @@ pub(crate) fn set_band(edit: &mut Edit, band: Option<BandPlace>) -> Result<(), E
     if let Some(band) = band {
         let id = edit.id();
         section(edit).items.push(TerminalsItem { id, comments: Attached::default(), kind: TerminalsKind::Band(band) });
+    }
+    drop_if_empty(edit);
+    Ok(())
+}
+
+/// `block.set_color`, `block.set_fill` and `block.set_stroke`: the line `color "#RRGGBB"`, as given (spec 11.2); `None`
+/// removes it. A colour that is not `#RRGGBB` is refused.
+pub(crate) fn set_colour(edit: &mut Edit, role: ColourRole, colour: Option<&str>) -> Result<(), EditError> {
+    if let Some(colour) = colour
+        && labcraft_graph::Rgb::parse(colour).is_none()
+    {
+        return Err(EditError::invalid(role.word(), format!("`{}` is no colour `#RRGGBB`", crate::cut(colour))));
+    }
+    if let Some(section) = &mut edit.file.terminals {
+        section.items.retain(|item| !matches!(item.kind, TerminalsKind::Colour { role: written, .. } if written == role));
+    }
+    if let Some(colour) = colour {
+        let (id, text) = (edit.id(), edit.names.intern(colour));
+        section(edit).items.push(TerminalsItem { id, comments: Attached::default(), kind: TerminalsKind::Colour { role, text } });
     }
     drop_if_empty(edit);
     Ok(())

@@ -2205,6 +2205,9 @@ const EDITS: &[&str] = &[
     "block.set_terminal",
     "block.set_size",
     "block.set_band",
+    "block.set_color",
+    "block.set_fill",
+    "block.set_stroke",
     "block.reset",
 ];
 

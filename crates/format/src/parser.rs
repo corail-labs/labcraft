@@ -14,12 +14,12 @@
 //! recursive step. Tokens are read one at a time, since a file of 16 MiB can hold 8 million of them.
 
 use labcraft_graph::{
-    Anchor, Arg, Arm, ArrayType, Attached, BandPlace, Binding, BlockPlace, BlockSide, Body, Branching, Call, Carry, Clause, ClauseKind, Comment,
-    CommentKind, Constant, Coordinate, Corner, Decl, EnumType, Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn, Function, Gather,
-    Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral, NumeralKind, Offset,
-    Operand, OrderRef, Outline, OutlineItem, OutlineKind, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point, Rhs, Signature,
-    Signed, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals, TerminalsItem, TerminalsKind, TypeDecl,
-    TypeExpr, UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
+    Anchor, Arg, Arm, ArrayType, Attached, BandPlace, Binding, BlockPlace, BlockSide, Body, Branching, Call, Carry, Clause, ClauseKind, ColourRole,
+    Comment, CommentKind, Constant, Coordinate, Corner, Decl, EnumType, Exponent, Extern, Field, FieldInit, File, FnArg, FnType, For, ForIn,
+    Function, Gather, Generic, Icon, IconItem, IconShape, Id, IntBound, Label, Layout, LayoutItem, LayoutKind, Loop, NamedType, NodeRef, Numeral,
+    NumeralKind, Offset, Operand, OrderRef, Outline, OutlineItem, OutlineKind, Output, Panel, PanelDirection, PanelItem, Param, Path, Pattern, Point,
+    Rhs, Signature, Signed, SourceMap, Statement, StatementKind, StructLit, StructType, Target, TerminalRef, Terminals, TerminalsItem, TerminalsKind,
+    TypeDecl, TypeExpr, UnitExpr, UnitOp, UnitTerm, Use, VariantDecl, View, Yield,
 };
 use labcraft_types::{Code, Diagnostic, Fix, Interner, Limits, Name, Position, Report, Span};
 
@@ -1962,18 +1962,30 @@ impl<'a> Parser<'a, '_> {
         let (before, start) = self.section_start()?;
         self.bump();
         self.open_section()?;
-        let (items, end) = self.section_items("`top`, `left`, `right`, `band` or `}`", Self::terminals_item)?;
+        let (items, end) = self.section_items("`top`, `left`, `right`, `band`, `color`, `fill`, `stroke` or `}`", Self::terminals_item)?;
         self.bump();
         let id = self.place(start);
         let comments = self.end_item(before)?;
         Ok(Terminals { id, comments, items, end })
     }
 
-    /// `top 5`, `left middle x`, `right 2 output err`, `band hidden` (14.6).
+    /// `top 5`, `left middle x`, `right 2 output err`, `band hidden`, `fill "#64748B"` (14.6).
     fn terminals_item(&mut self) -> Parse<TerminalsItem> {
         let before = self.begin_item();
         let start = self.start()?;
-        let kind = if self.eat_word("band")? {
+        let role = match self.peek_kind()? {
+            Some(T::Name(word)) => ColourRole::from_word(self.resolve(word)),
+            _ => None,
+        };
+        let kind = if let Some(role) = role {
+            self.bump();
+            let text = match self.peek_kind()? {
+                Some(T::String(text)) => self.intern(text),
+                _ => return Err(self.unexpected("a colour, `\"#RRGGBB\"`")),
+            };
+            self.bump();
+            TerminalsKind::Colour { role, text }
+        } else if self.eat_word("band")? {
             let word = match self.peek_kind()? {
                 Some(T::Name(word)) => Some(word),
                 _ => None,
@@ -1989,7 +2001,7 @@ impl<'a> Parser<'a, '_> {
                 _ => None,
             };
             let Some(side) = word.and_then(|word| BlockSide::from_word(self.resolve(word))) else {
-                return Err(self.unexpected("`top`, `left`, `right` or `band`"));
+                return Err(self.unexpected("`top`, `left`, `right`, `band`, `color`, `fill` or `stroke`"));
             };
             self.bump();
             let place = match self.peek_kind()? {
@@ -2163,11 +2175,12 @@ impl<'a> Parser<'a, '_> {
         let before = self.begin_item();
         let start = self.start()?;
         let shape = self.icon_shape()?;
+        let width = if self.eat_word("width")? { Some(self.numeral()?) } else { None };
         let fill = self.eat_word("fill")?;
         let accent = if self.eat_word("accent")? { Some(self.path("a token of the theme")?) } else { None };
         let id = self.place(start);
         let comments = self.end_item(before)?;
-        Ok(IconItem { id, comments, shape, fill, accent })
+        Ok(IconItem { id, comments, shape, width, fill, accent })
     }
 
     fn icon_shape(&mut self) -> Parse<IconShape> {

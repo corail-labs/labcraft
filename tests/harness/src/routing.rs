@@ -277,7 +277,9 @@ fn node_boxes(placed: &labcraft_diagram::Placed, group: &Group) -> Vec<Box> {
             }
             // A pill of an inline constant, a band, a badge: not a terminal, such as the box of a register.
             Shape::Rect { x, y, width, height, paint, .. }
-                if !inside(*x, *y, x + width, y + height) && matches!(paint.fill, Some("pill.fill" | "band.fill" | "badge.fill")) =>
+                if !inside(*x, *y, x + width, y + height)
+                    && (matches!(paint.fill_token(), Some("pill.fill" | "band.fill" | "badge.fill"))
+                        || matches!(paint.fill, Some(labcraft_diagram::Colour::Written(..)))) =>
             {
                 boxes.push(Box { x0: *x, y0: *y, x1: x + width, y1: y + height, net: None, what: "a pill or a band", grounded: None, edges: false })
             }

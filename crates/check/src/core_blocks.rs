@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use labcraft_graph::{Decl, File, Signature};
+use labcraft_graph::{Decl, File, Icon, Signature};
 use labcraft_types::{Interner, Limits, Name};
 
 use crate::places::Block;
@@ -42,19 +42,38 @@ pub fn is_block_file(shown: &str, bytes: &[u8]) -> bool {
     FILES.iter().any(|&(listed, text)| listed == stem && text.as_bytes() == bytes)
 }
 
+/// What a file of `libs/core` gives: its block, and the icon of its glyph with the names of its file.
+struct Read {
+    block: Block,
+    icon: Option<Icon>,
+    names: Interner,
+}
+
+fn read_all() -> &'static HashMap<&'static str, Read> {
+    static BLOCKS: OnceLock<HashMap<&'static str, Read>> = OnceLock::new();
+    BLOCKS.get_or_init(|| FILES.iter().filter_map(|&(name, text)| Some((name, read(text)?))).collect())
+}
+
 /// The block of the primitive `core.name`, when `libs/core` gives it one: read once, for every drawing.
 pub fn block(name: &str) -> Option<&'static Block> {
-    static BLOCKS: OnceLock<HashMap<&'static str, Block>> = OnceLock::new();
-    BLOCKS.get_or_init(|| FILES.iter().filter_map(|&(name, text)| Some((name, read(text)?))).collect()).get(name)
+    read_all().get(name).map(|read| &read.block)
+}
+
+/// The icon of the glyph of the primitive `core.name` (spec A.1), with the names of its file, which its numbers are
+/// written in; none for `with_unit` and `unitless`, whose unit is a text, or for an icon that `check` would refuse.
+pub fn icon(name: &str) -> Option<(&'static Icon, &'static Interner)> {
+    read_all().get(name).and_then(|read| read.icon.as_ref().map(|icon| (icon, &read.names)))
 }
 
 /// The block of a file of `libs/core`, read with names of its own: its outline names no terminal, a template (the tests
 /// of this module hold it), so nothing of it is read against the names of a check.
-fn read(text: &str) -> Option<Block> {
-    let (file, names) = parse(text)?;
+fn read(text: &str) -> Option<Read> {
+    let (mut file, names) = parse(text)?;
     let (_, signature) = declared(&file)?;
     let (inputs, outputs) = terminals(signature);
-    Some(Block::read(file.terminals.as_ref(), file.outline.as_ref(), (&inputs, &outputs), &names, HashSet::new()))
+    let block = Block::read(file.terminals.as_ref(), file.outline.as_ref(), (&inputs, &outputs), &names, HashSet::new());
+    let icon = file.icon.take().filter(|icon| crate::icon_refused(icon, &names).is_none());
+    Some(Read { block, icon, names })
 }
 
 fn parse(text: &str) -> Option<(File, Interner)> {

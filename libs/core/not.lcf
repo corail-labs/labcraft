@@ -11,8 +11,13 @@ terminals {
     left 1
     left middle a
     right middle result
+    fill "#64748B"
 }
 
 outline {
     template d
+}
+
+icon 32 {
+    path "M7.833 16h16.333v4.667" width 3.5
 }

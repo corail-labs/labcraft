@@ -98,7 +98,6 @@ numbers! {
     square: "node"."square" = 4000, Length, 1600..=16000, "3.2", "The width of a compact block, and its least height.";
     compact_pitch: "node"."pitch" = 800, Length, 800..=4800, "3.2", "Between two lines of terminals of a compact block.";
     chamfer: "node"."chamfer" = 800, Length, 0..=3200, "3.2", "The right corners of a primitive, cut.";
-    icon: "node"."icon" = 2800, Length, 1200..=11200, "3.2", "An icon in a block.";
     outline: "node"."outline" = 100, Length, 0..=400, "3", "The outline of a node.";
     radius: "node"."radius" = 200, Length, 0..=1600, "3", "The corners of a node; not of the D of a primitive, rounded by 2 (spec 11.4).";
 
@@ -217,11 +216,7 @@ pub fn factor(percent: i64) -> f32 {
 
 /// `#RRGGBB`.
 pub fn hex(text: &str) -> Option<Rgb> {
-    let digits = text.strip_prefix('#')?;
-    if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return None;
-    }
-    u32::from_str_radix(digits, 16).ok()
+    labcraft_graph::Rgb::parse(text).map(labcraft_graph::Rgb::value)
 }
 
 /// `#RRGGBB`, in capitals as notation 8 writes them.

@@ -196,7 +196,7 @@ fn titles(sized: &crate::size::Sized) -> Vec<String> {
 fn a_compact_block_has_the_width_of_the_square() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let band = labcraft_types::text::ShownText::plain("dev");
     let size_of = |key: &str| {
         let node = graph.nodes.iter().find(|node| node.key == key).unwrap();
@@ -213,7 +213,7 @@ fn a_compact_block_has_the_width_of_the_square() {
     assert_eq!(titles(&raw), ["query", "f64"]);
     // The band of `dev`: 12 high, inside the block, at its top: nothing above it.
     assert_eq!(raw.above, 0);
-    let band = raw.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill == Some("band.fill"))).unwrap();
+    let band = raw.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill_token() == Some("band.fill"))).unwrap();
     assert!(matches!(band, Shape::Rect { x: 0, y: 0, width: 4000, height: 1200, .. }), "{band:?}");
     // The two lines of the name in the middle of what the band leaves, 12 to 40: around 26.
     let middles: Vec<i64> = raw
@@ -245,7 +245,7 @@ fn a_name_holds_on_two_lines_of_the_block() {
         let callee = format!("labcraft 1\n\nfn {name}(x: f64) -> (y: f64) {{\n    y = x\n}}\n");
         let (checked, names) = checked(&[("main.lcf", &source), (&format!("{name}.lcf"), &callee)]);
         let graph = graph(&checked, &names, "main.lcf");
-        titles(&Sizer::new(&names, false).size(&graph.nodes[0], None, None))
+        titles(&Sizer::new(false).size(&graph.nodes[0], None, None))
     };
     assert_eq!(cut_of("open"), ["open"]);
     assert_eq!(cut_of("a_b"), ["a_b"]);
@@ -284,7 +284,7 @@ fn a_primitive_has_its_size_whatever_a_call_wires() {
     let source = "labcraft 1\n\nuse errors\nuse time\n\nfn main(e: error) -> (a: error, b: error, c: error) {\n    a = time.wait(1 s)\n    b = time.wait(1 s, err: e)\n    c = errors.merge()\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let of = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
     for key in ["a", "b"] {
         assert_eq!(of(key).inputs.iter().map(|input| input.family.base).collect::<Vec<_>>(), [Base::Number, Base::Error], "{key}");
@@ -306,7 +306,7 @@ fn a_block_grows_by_its_lines_only() {
         let source = format!("labcraft 1\n\nfn main(x: f64) -> (y: f64) {{\n    y = many({})\n}}\n", vec!["x"; count].join(", "));
         let (checked, names) = checked(&[("main.lcf", &source), ("many.lcf", &callee)]);
         let graph = graph(&checked, &names, "main.lcf");
-        Sizer::new(&names, false).size(&graph.nodes[0], None, None)
+        Sizer::new(false).size(&graph.nodes[0], None, None)
     };
     let four = size_of(4);
     // Four lines 8 apart need 8 + 24 + 8 = 40: the square.
@@ -338,7 +338,7 @@ fn a_block_of_five_lines_grows_by_two_places() {
         let (checked, names) = checked(&[("main.lcf", source), ("wide.lcf", callee)]);
         assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
         let graph = graph(&checked, &names, "main.lcf");
-        let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
+        let sized = Sizer::new(false).size(&graph.nodes[0], None, None);
         // 8, 16, 24, 32 for `a` (with `y`), `b`, `c`, `d`; 56 - 8 = 48 for the `err` pair.
         assert_eq!((sized.width, sized.height), (4000, 5600));
         assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4800)]);
@@ -355,7 +355,7 @@ fn an_oblong_takes_the_places_of_a_square() {
     let (checked, names) = checked(&[("main.lcf", source), ("Five.lct", ty)]);
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(false).size(&graph.nodes[0], None, None);
     assert_eq!(sized.height, 5600);
     assert_eq!(sized.inputs, [(0, 800), (0, 1600), (0, 2400), (0, 3200), (0, 4000)]);
 }
@@ -368,7 +368,7 @@ fn neighbouring_pills_step_outward() {
     let source = "labcraft 1\n\nfn main() -> (y: f64) {\n    y = three(1.0, 2.0, 3.0)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source), ("three.lcf", callee)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(false).size(&graph.nodes[0], None, None);
     // Lines at 8, 16 and 24. A pill of 3 cells at 10, 3 × 1233 × 10 / 2048 = 18.06, and 4 on each side: 26.06. Its right
     // end 8 left of the half terminal of 6: -11; it starts at -37.06. The second, 8 lower, under 14, ends 8 left of that,
     // -45.06, and starts at -71.12. The third is 8 below the second, whose right end is 8 left of its own start: it keeps
@@ -415,7 +415,7 @@ fn a_primitive_is_a_d() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64, ok: bool) -> (y: f64, z: f64, w: f64) {\n    y = core.add(a, b)\n    z = core.select(ok, 1.0, 0.0)\n    w = core.neg(a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let node = |key: &str| graph.nodes.iter().find(|node| node.key == key).unwrap();
     let add = sizer.size(node("y"), None, None);
     assert_eq!((add.width, add.height), (2400, 3200));
@@ -449,7 +449,7 @@ fn a_long_unit_widens_the_d() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[kg/(m*s)]) {\n    y = core.with_unit(a, [kg/(m*s)])\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(false).size(&graph.nodes[0], None, None);
     // `[kg/(m*s)]`, 10 cells at 10: 10 × 1233 × 10 / 2048 = 60.21, and 3 on each side, 66.21: 72 on the grid.
     // One value in: 16 high, the output on the tip, 0.83 inside the box.
     assert_eq!((sized.width, sized.height), (7200, 1600));
@@ -463,7 +463,7 @@ fn a_unit_widens_the_d_and_a_sign_never_does() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[V], z: f64) {\n    y = core.with_unit(a, [V])\n    z = core.abs(a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let size = |key: &str| {
         let sized = sizer.size(graph.nodes.iter().find(|node| node.key == key).unwrap(), None, None);
         (sized.width, sized.height)
@@ -477,7 +477,7 @@ fn a_unit_widens_the_d_and_a_sign_never_does() {
 fn a_standard_block_has_the_numbers_of_step_2() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, true);
+    let sizer = Sizer::new(true);
     let raw = graph.nodes.iter().find(|node| node.key == "raw").unwrap();
     let sized = sizer.size(raw, None, None);
     // Four lines: 40 + 3 × 24 + 16 = 128.
@@ -500,7 +500,7 @@ fn a_constant_shows_its_controls_by_their_signs() {
     let graph = graph(&checked, &names, "main.lcf");
     let node = &graph.nodes[0];
     assert_eq!(node.inputs[1].constant.as_deref(), Some("\"x\ny\""));
-    let sized = Sizer::new(&names, false).size(node, None, None);
+    let sized = Sizer::new(false).size(node, None, None);
     let pills: Vec<String> = sized
         .shapes
         .iter()
@@ -586,7 +586,7 @@ fn a_name_is_centred_on_its_block() {
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| node.key == "dmm").unwrap();
     let wide = labcraft_types::text::ShownText::plain("dmm_driver");
-    let sized = Sizer::new(&names, false).size(node, Some(&wide), None);
+    let sized = Sizer::new(false).size(node, Some(&wide), None);
     // 40 wide; `open`, 4 cells at 9, 4 × 1233 × 9 / 2048 = 21.674, 2167 hundredths: it starts at 2000 - 2167 / 2, 917.
     let starts: Vec<i64> = sized
         .shapes
@@ -733,7 +733,7 @@ fn a_d_holds_all_its_inputs() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = core.add(a, b, a, b, a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
+    let sized = Sizer::new(false).size(&graph.nodes[0], None, None);
     // Five inputs on three places: two more, five, 48 high; `b` on the last, 40.
     assert_eq!(sized.height, 4800);
     let ys: Vec<i64> = sized.inputs.iter().map(|&(_, y)| y).collect();
@@ -751,7 +751,7 @@ fn the_outputs_too_many_of_a_d_take_places() {
             format!("labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> ({}) {{\n    {targets} = core.add(a, b)\n}}\n", outputs.join(", "));
         let (checked, names) = checked(&[("main.lcf", &source)]);
         let graph = graph(&checked, &names, "main.lcf");
-        let sizer = Sizer::new(&names, false);
+        let sizer = Sizer::new(false);
         crate::style::scope(&std::sync::Arc::new(style.clone()), || sizer.size(&graph.nodes[0], None, None))
     };
     let defaults = crate::style::Style::default();
@@ -780,7 +780,7 @@ fn the_outputs_too_many_of_a_d_take_places() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64) -> (y: f64[kg/(m*s)], z: f64[kg/(m*s)]) {\n    y, z = core.with_unit(a, [kg/(m*s)])\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let wide = crate::style::scope(&std::sync::Arc::new(tried), || sizer.size(&graph.nodes[0], None, None));
     assert_eq!((wide.width, wide.height), (7200, 3200));
     assert!(!wide.shapes.iter().any(|shape| matches!(shape, Shape::Outline { .. })), "{:?}", wide.outputs);
@@ -798,7 +798,7 @@ fn the_band_of_an_oblong_is_inside() {
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
     let bands = crate::bands(&graph);
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let sized = |key: &str| {
         let index = graph.nodes.iter().position(|node| node.key == key).unwrap();
         sizer.size(&graph.nodes[index], bands[index].as_ref(), None)
@@ -806,7 +806,7 @@ fn the_band_of_an_oblong_is_inside() {
     let construction = sized("r");
     // 12 of band, a line of 9 (2384 × 9 / 2048 = 10.48) with 8 above and below: 38.48, so the square of 40.
     assert_eq!((construction.height, construction.above), (4000, 0));
-    let band = construction.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill == Some("band.fill")));
+    let band = construction.shapes.iter().find(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.fill_token() == Some("band.fill")));
     assert!(matches!(band, Some(Shape::Rect { x: 0, y: 0, height: 1200, .. })), "{band:?}");
     // The label in the middle of what the band leaves, 12 to 40: at 26.
     let label = construction.shapes.iter().find_map(|shape| match shape {
@@ -850,7 +850,7 @@ fn the_band_keeps_clear_of_the_chevron_of_after() {
     // 40 less 5 on each side, 30: 5 cells at 9 (27.09), `resu…`. With `after:`, 40 less 13 and 5, 22: 4 cells (21.67).
     assert_eq!(bands[index("y")].as_ref().unwrap().text(), "resu\u{2026}");
     assert_eq!(bands[index("w")].as_ref().unwrap().text(), "res\u{2026}");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let sized = sizer.size(&graph.nodes[index("w")], bands[index("w")].as_ref(), None);
     assert_eq!(sized.order, Some((800, 0)));
     // `res…`, 4 cells, centred between 13 and 35: from 24 - 21.67 / 2 = 13.17 to 34.84, past the chevron, which ends at
@@ -879,7 +879,7 @@ fn the_band_keeps_clear_of_the_brackets_of_an_array() {
     let bands = crate::bands(&graph);
     // 40 less 21.2 is 18.8: 3 cells at 9 (16.25), `re…`.
     assert_eq!(bands[0].as_ref().unwrap().text(), "re\u{2026}");
-    let sized = Sizer::new(&names, false).size(&graph.nodes[0], bands[0].as_ref(), None);
+    let sized = Sizer::new(false).size(&graph.nodes[0], bands[0].as_ref(), None);
     // Centred at 20: from 20 - 8.13 = 11.87 to 28.13, between 10.6 and 29.4.
     assert_eq!(band_span(&sized), Some((1187, 2813)));
 }
@@ -890,7 +890,7 @@ fn the_band_keeps_clear_of_the_brackets_of_an_array() {
 fn the_name_of_an_always_node_is_on_one_line() {
     let (checked, names) = bench();
     let graph = graph(&checked, &names, "main.lcf");
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let band = labcraft_types::text::ShownText::plain("dev");
     let mut node = graph.nodes.iter().find(|node| node.key == "raw").unwrap().clone();
     node.always = true;
@@ -1618,7 +1618,7 @@ fn the_frame_of_the_function_has_no_fill_and_its_wires_leave_the_centre_of_its_t
     let drawing = drawing_of(main);
     // Its outline, with no fill, then its title.
     assert!(
-        matches!(drawing.loose.first(), Some(Shape::Rect { paint, .. }) if paint.fill.is_none() && paint.stroke == Some("frame.stroke")),
+        matches!(drawing.loose.first(), Some(Shape::Rect { paint, .. }) if paint.fill.is_none() && paint.stroke_token() == Some("frame.stroke")),
         "{:?}",
         drawing.loose
     );
@@ -1928,7 +1928,7 @@ fn header_of(shapes: &[Shape]) -> (i64, i64, Vec<(usize, &'static str)>) {
             Shape::Poly { points, closed: false, paint }
                 if points.iter().all(|&(x, y)| x > frame + 900 && x < title && y > top - 1000 && y < top + 2400) =>
             {
-                Some((points.len(), paint.stroke.unwrap()))
+                Some((points.len(), paint.stroke_token().unwrap()))
             }
             _ => None,
         })
@@ -2223,7 +2223,7 @@ fn call_sized(callee: &str, call: &str, terminals: &str, band: Option<&str>, cle
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
     let band = band.map(labcraft_types::text::ShownText::plain);
-    Sizer::new(&names, false).size(node, band.as_ref(), None)
+    Sizer::new(false).size(node, band.as_ref(), None)
 }
 
 fn g_sized(terminals: &str) -> crate::size::Sized {
@@ -2304,7 +2304,7 @@ fn g_banded(terminals: &str) -> crate::size::Sized {
 /// The rectangle of the band of a block, if it has one: its top and its height.
 fn band_rect(sized: &crate::size::Sized) -> Option<(i64, i64)> {
     sized.shapes.iter().find_map(|shape| match shape {
-        Shape::Rect { y, height, paint, .. } if paint.fill == Some("band.fill") => Some((*y, *height)),
+        Shape::Rect { y, height, paint, .. } if paint.fill_token() == Some("band.fill") => Some((*y, *height)),
         _ => None,
     })
 }
@@ -2434,7 +2434,7 @@ fn g_outlined(sections: &str) -> (crate::size::Sized, Vec<Vec<(i64, i64)>>) {
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
     let graph = graph(&checked, &names, "main.lcf");
     let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
-    let sizer = Sizer::new(&names, false);
+    let sizer = Sizer::new(false);
     let sized = sizer.size(node, None, None);
     (sized, sizer.take_outlines())
 }
@@ -2499,4 +2499,43 @@ fn every_primitive_with_a_glyph_has_its_block() {
         let glyph = crate::graph::sign_of(primitive.name).is_some();
         assert_eq!(glyph, labcraft_check::core_blocks::block(primitive.name).is_some(), "{}", primitive.name);
     }
+}
+
+/// The fills of the shapes of a block, in order.
+fn fills(sized: &crate::size::Sized) -> Vec<crate::shape::Colour> {
+    sized
+        .shapes
+        .iter()
+        .filter_map(|shape| match shape {
+            Shape::Rect { paint, .. } | Shape::Outline { paint, .. } | Shape::Poly { paint, .. } => paint.fill,
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn fill_and_stroke_are_drawn_as_written_and_the_label_takes_the_ink_with_the_more_contrast() {
+    use crate::shape::Colour;
+    let sized = g_sized("\nterminals {\n    fill \"#64748B\"\n    stroke \"#102030\"\n}\n");
+    assert_eq!(fills(&sized), [Colour::Written(0x64_748B, 0x64_748B)]);
+    let stroked =
+        sized.shapes.iter().any(|shape| matches!(shape, Shape::Rect { paint, .. } if paint.stroke == Some(Colour::Written(0x10_2030, 0x10_2030))));
+    assert!(stroked);
+    // White has 4.76:1 on `#64748B`, `#1F2328` 3.32:1 (notation 8).
+    let label = sized.shapes.iter().find_map(|shape| match shape {
+        Shape::Text { runs, .. } => runs.first().map(|run| run.token),
+        _ => None,
+    });
+    assert_eq!(label, Some("ink.light"));
+}
+
+#[test]
+fn color_gives_the_band_as_written_and_tints_the_body() {
+    use crate::shape::Colour;
+    let sized = g_banded("\nterminals {\n    color \"#2F6F9F\"\n}\n");
+    // The body: `node.fill` mixed with 16 % of the colour, worked out in `colour::tests` for the light theme
+    // (`#DEE8F0`); in the dark theme `#20242A` with 16 %: 32 + 15 × 0.16 = 34.4 → 34, 36 + 75 × 0.16 = 48, 42 + 117 × 0.16
+    // = 60.72 → 61.
+    assert_eq!(fills(&sized).first(), Some(&Colour::Written(0xDE_E8F0, 0x22_303D)));
+    assert!(fills(&sized).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&sized));
 }

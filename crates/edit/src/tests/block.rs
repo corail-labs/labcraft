@@ -4,7 +4,7 @@
 
 use super::{FILE, gives, refused};
 use crate::{BlockAt, Op, Terminal};
-use labcraft_graph::BandPlace;
+use labcraft_graph::{BandPlace, ColourRole};
 
 const HEAD: &str = "use core\n\nfn f(a: f64, err: error, b: f64) -> (y: f64, err: error) {\n    y = core.add(a, b)\n}\n";
 
@@ -124,6 +124,56 @@ fn the_band_is_one_line_and_null_removes_it() {
     gives(&with("    band above\n"), band(Some(BandPlace::Hidden)), &with("    band hidden\n"));
     gives(&with("    left 3 a\n    band above\n"), band(None), &with("    left 3 a\n"));
     gives(&with("    band above\n"), band(None), HEAD);
+}
+
+#[test]
+fn a_colour_is_one_line_as_given_and_null_removes_it() {
+    let colour = |role, colour: Option<&str>| Op::BlockSetColour { file: FILE.to_owned(), role, colour: colour.map(str::to_owned) };
+    gives(
+        HEAD,
+        colour(ColourRole::Fill, Some("#64748b")),
+        &with(
+            "    fill \"#64748b\"
+",
+        ),
+    );
+    gives(
+        &with(
+            "    fill \"#000000\"
+",
+        ),
+        colour(ColourRole::Fill, Some("#FFFFFF")),
+        &with(
+            "    fill \"#FFFFFF\"
+",
+        ),
+    );
+    // Each in its place after the band, whatever the order of the commands.
+    gives(
+        &with(
+            "    band above
+    stroke \"#000000\"
+",
+        ),
+        colour(ColourRole::Color, Some("#2F6F9F")),
+        &with(
+            "    band above
+    color \"#2F6F9F\"
+    stroke \"#000000\"
+",
+        ),
+    );
+    gives(
+        &with(
+            "    color \"#2F6F9F\"
+",
+        ),
+        colour(ColourRole::Color, None),
+        HEAD,
+    );
+    for wrong in ["red", "#12345", "#1234567", "#GGGGGG", "2F6F9F"] {
+        assert_eq!(refused(HEAD, colour(ColourRole::Stroke, Some(wrong)), "params.invalid").parameter, Some("stroke"), "{wrong}");
+    }
 }
 
 #[test]

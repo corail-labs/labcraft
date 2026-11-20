@@ -373,6 +373,12 @@ pub enum Op {
         file: String,
         band: Option<labcraft_graph::BandPlace>,
     },
+    /// `block.set_color`, `block.set_fill` and `block.set_stroke`: `#RRGGBB` as given; `None` removes the line.
+    BlockSetColour {
+        file: String,
+        role: labcraft_graph::ColourRole,
+        colour: Option<String>,
+    },
     /// `block.set_outline`: the items of the section, one per line; `None` removes it.
     BlockSetOutline {
         file: String,
@@ -479,6 +485,7 @@ impl Op {
             | Op::BlockSetTerminal { file, .. }
             | Op::BlockSetSize { file, .. }
             | Op::BlockSetBand { file, .. }
+            | Op::BlockSetColour { file, .. }
             | Op::BlockSetOutline { file, .. }
             | Op::BlockReset { file } => file,
         }
@@ -838,6 +845,7 @@ pub fn apply(files: &Files, op: &Op, judge: &dyn Judge, limits: &Limits) -> Resu
         Op::BlockSetTerminal { terminal, at, .. } => block::set_terminal(&mut edit, terminal, *at, &mut edited)?,
         Op::BlockSetSize { top, left, .. } => block::set_size(&mut edit, *top, *left)?,
         Op::BlockSetBand { band, .. } => block::set_band(&mut edit, *band)?,
+        Op::BlockSetColour { role, colour, .. } => block::set_colour(&mut edit, *role, colour.as_deref())?,
         Op::BlockSetOutline { outline, .. } => block::set_outline(&mut edit, outline.as_deref())?,
         Op::BlockReset { .. } => block::reset(&mut edit)?,
     }

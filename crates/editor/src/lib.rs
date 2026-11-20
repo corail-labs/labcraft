@@ -76,6 +76,13 @@ impl Theme {
         let [_, red, green, blue] = rgb.to_be_bytes();
         Color32::from_rgb(red, green, blue)
     }
+
+    /// The colour of a token, or of a colour that a file writes (spec 11.2) in this theme.
+    pub fn colour(self, colour: labcraft_diagram::Colour) -> Color32 {
+        let Some(rgb) = colour.value(self == Theme::Dark) else { return Color32::from_rgb(255, 0, 255) };
+        let [_, red, green, blue] = rgb.to_be_bytes();
+        Color32::from_rgb(red, green, blue)
+    }
 }
 
 /// What the host shows of a drawing without drawing it again (architecture 11.4, 12.6): the arm shown of each structure

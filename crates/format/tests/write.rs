@@ -1198,6 +1198,28 @@ fn terminals_go_top_left_the_lines_in_signature_order_and_band() {
 }
 
 #[test]
+fn colours_go_after_the_band_color_fill_stroke_each_as_written() {
+    // The case of a colour is kept, and a colour that is not one too: `check` says it (`LC5018`).
+    let messy = block(
+        "    stroke \"#000000\"
+    fill \"#64748b\"
+    band above
+    color \"red\"
+    top 5
+",
+    );
+    let canonical = block(
+        "    top 5
+    band above
+    color \"red\"
+    fill \"#64748b\"
+    stroke \"#000000\"
+",
+    );
+    assert_canonical(&messy, &canonical);
+}
+
+#[test]
 fn input_and_output_go_where_the_name_alone_means_the_same_terminal() {
     // On the right a name that is both means the output; on the left or the top, the input. Kept otherwise.
     assert_canonical(&block("    left 2 input a\n"), &block("    left 2 a\n"));

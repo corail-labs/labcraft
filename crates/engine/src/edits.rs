@@ -72,6 +72,9 @@ pub const EDITING: &[&str] = &[
     "block.set_terminal",
     "block.set_size",
     "block.set_band",
+    "block.set_color",
+    "block.set_fill",
+    "block.set_stroke",
     "block.set_outline",
     "block.reset",
 ];
@@ -414,6 +417,19 @@ fn op_of(session: &Session, id: &str, params: &Params) -> Result<(Op, Target), C
                 })?),
             };
             Op::BlockSetBand { file, band }
+        }
+        "block.set_color" | "block.set_fill" | "block.set_stroke" => {
+            // The word after `block.set_` is that of the line.
+            let Some(role) = id.strip_prefix("block.set_").and_then(labcraft_graph::ColourRole::from_word) else {
+                return Err(CommandError::internal(format!("`{id}` is no colour of a block")));
+            };
+            let key = role.word();
+            let colour = match params.get(key) {
+                None if params.is_null(key) => None,
+                Some(Value::String(colour)) => Some(colour.clone()),
+                _ => return Err(CommandError::of("params.invalid", key, format!("`{key}` is a colour `#RRGGBB`, or `null`"))),
+            };
+            Op::BlockSetColour { file, role, colour }
         }
         "block.set_outline" => match params.get("outline") {
             None if params.is_null("outline") => Op::BlockSetOutline { file, outline: None },

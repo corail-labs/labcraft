@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use labcraft_graph::{BandPlace, BlockPlace, BlockSide, Id, Terminals, TerminalsKind};
+use labcraft_graph::{BandPlace, BlockPlace, BlockSide, ColourRole, Id, Rgb, Terminals, TerminalsKind};
 pub use labcraft_graph::{DEFAULT_TOP, MAX_PLACES, Place, odd_when_middle, place_number, places_range};
 
 use crate::canonicalize::coordinate_value;
@@ -41,7 +41,29 @@ pub struct Section {
     /// A line puts a terminal on the `middle` of the left or the right side, which keeps them odd as they grow.
     pub middle_sides: bool,
     pub band: Option<BandPlace>,
+    pub colours: Colours,
     pub lines: Vec<Placed>,
+}
+
+/// The colours that a section writes (11.2), each optional and independent of the others.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Colours {
+    /// The band, and the tint of the body without `fill`.
+    pub color: Option<Rgb>,
+    /// The body, as written.
+    pub fill: Option<Rgb>,
+    /// The outline, as written.
+    pub stroke: Option<Rgb>,
+}
+
+impl Colours {
+    pub fn slot(&mut self, role: ColourRole) -> &mut Option<Rgb> {
+        match role {
+            ColourRole::Color => &mut self.color,
+            ColourRole::Fill => &mut self.fill,
+            ColourRole::Stroke => &mut self.stroke,
+        }
+    }
 }
 
 /// The terminal that a line of the section names, if it names one of the signature (11.2): `input x`, `output x`, or the
@@ -84,6 +106,7 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
     let mut read = Section::default();
     let (mut top, mut left) = (None, None);
     let (mut sizes, mut band): (HashMap<BlockSide, Id>, Option<Id>) = (HashMap::new(), None);
+    let mut colours: HashSet<ColourRole> = HashSet::new();
     // First the sizes and the band, which the places are judged against, whatever the order of the lines.
     for item in &section.items {
         match item.kind {
@@ -112,6 +135,21 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
                 } else {
                     band = Some(item.id);
                     read.band = Some(place);
+                }
+            }
+            TerminalsKind::Colour { role, text } => {
+                let word = role.word();
+                if !colours.insert(role) {
+                    problems.push((Code::Lc5015, format!("a second `{word}` line: a block has one (11.2)"), item.id));
+                    continue;
+                }
+                match Rgb::parse(names.resolve(text)) {
+                    Some(rgb) => *read.colours.slot(role) = Some(rgb),
+                    None => {
+                        let shown = cut_text(names.resolve(text)).into_owned();
+                        let message = format!("`{word} \"{shown}\"` is no colour `\"#RRGGBB\"`, so this line does not apply (11.2)");
+                        problems.push((Code::Lc5018, message, item.id));
+                    }
                 }
             }
             TerminalsKind::Place { .. } => {}

@@ -12,14 +12,40 @@ mod serial;
 /// A token of the theme (notation 8), by its name: `node.fill`.
 pub type Token = &'static str;
 
+/// A colour of a fill or an outline: a token of the theme, or a colour that a file writes (spec 11.2), with the value
+/// that notation 8 gives it in each theme.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Colour {
+    Token(#[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::token"))] Token),
+    /// Its light and its dark value, `0xRRGGBB`.
+    Written(style::Rgb, style::Rgb),
+}
+
+impl Colour {
+    /// Its value in a theme, from the current style for a token.
+    pub fn value(self, dark: bool) -> Option<style::Rgb> {
+        match self {
+            Colour::Token(token) => style::color(token, dark),
+            Colour::Written(light, night) => Some(if dark { night } else { light }),
+        }
+    }
+
+    /// The token, when it is one.
+    pub fn token(self) -> Option<Token> {
+        match self {
+            Colour::Token(token) => Some(token),
+            Colour::Written(..) => None,
+        }
+    }
+}
+
 /// How a shape is painted: a fill, an outline and its width, each optional.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Paint {
-    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::option_token"))]
-    pub fill: Option<Token>,
-    #[cfg_attr(feature = "serde", serde(with = "crate::shape::serial::option_token"))]
-    pub stroke: Option<Token>,
+    pub fill: Option<Colour>,
+    pub stroke: Option<Colour>,
     /// In hundredths of a unit.
     pub width: i64,
     /// The outline dashed: a value of a trace that no longer matches its files (notation 6.1).
@@ -30,15 +56,30 @@ pub struct Paint {
 
 impl Paint {
     pub const fn fill(token: Token) -> Paint {
-        Paint { fill: Some(token), stroke: None, width: 0, dashed: false, opacity: 100 }
+        Paint::inks(Some(Colour::Token(token)), None, 0)
     }
 
     pub const fn stroke(token: Token, width: i64) -> Paint {
-        Paint { fill: None, stroke: Some(token), width, dashed: false, opacity: 100 }
+        Paint::inks(None, Some(Colour::Token(token)), width)
     }
 
     pub const fn both(fill: Token, stroke: Token, width: i64) -> Paint {
-        Paint { fill: Some(fill), stroke: Some(stroke), width, dashed: false, opacity: 100 }
+        Paint::inks(Some(Colour::Token(fill)), Some(Colour::Token(stroke)), width)
+    }
+
+    /// A fill and an outline of any colour, each optional.
+    pub const fn inks(fill: Option<Colour>, stroke: Option<Colour>, width: i64) -> Paint {
+        Paint { fill, stroke, width, dashed: false, opacity: 100 }
+    }
+
+    /// The token of its fill, when it is one.
+    pub fn fill_token(&self) -> Option<Token> {
+        self.fill.and_then(Colour::token)
+    }
+
+    /// The token of its outline, when it is one.
+    pub fn stroke_token(&self) -> Option<Token> {
+        self.stroke.and_then(Colour::token)
     }
 
     pub const fn dashed(self) -> Paint {
@@ -290,6 +331,8 @@ pub struct IconDrawing {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IconItem {
     pub shape: IconShape,
+    /// Its stroke, in hundredths of a unit of its grid (spec 11.1).
+    pub width: i64,
     /// The same shape in numbers of its grid, a path in segments: what a canvas draws (decided at step 2 of M0v).
     pub drawn: IconDrawn,
     pub fill: bool,

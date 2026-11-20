@@ -177,10 +177,14 @@ fn a_click_on_a_tab_asks_for_its_arm() {
     let (_, clicked) = frame(&ctx, &mut canvas, &Shown::default(), press(false, 0.25));
     let structure = tabs.arms[1].structure.clone();
     assert_eq!(clicked, Some((structure.clone(), 1)));
-    // The host shows it: two nodes more than the arm of a single `yield`.
+    // The host shows it: two nodes more than the arm of a single `yield`, primitives whose icons are meshes of their own.
     let shown = Shown { arms: [(structure, 1)].into(), ..Shown::default() };
     let (shapes, _) = frame(&ctx, &mut canvas, &shown, input(0.4));
-    assert_eq!(count(&shapes, |shape| matches!(shape, Painted::Mesh(_))), first_count + 4, "two nodes and their two wires");
+    assert_eq!(
+        count(&shapes, |shape| matches!(shape, Painted::Mesh(_))),
+        first_count + 6,
+        "two nodes, the icons of their primitives and their two wires"
+    );
 }
 
 #[test]
@@ -354,7 +358,8 @@ fn a_hostile_icon_is_drawn_quickly_and_cut_to_its_square() {
                 _ => None,
             })
             .fold(0.0f32, f32::max);
-        assert!(largest > 0.0 && largest <= 64.0 * 28.0 / 32.0 * zoom + 0.01, "{largest}");
+        // Its square is the whole block of 40, which has no band (notation 3.2).
+        assert!(largest > 0.0 && largest <= 64.0 * 40.0 / 32.0 * zoom + 0.01, "{largest}");
     }
 }
 

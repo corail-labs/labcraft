@@ -626,6 +626,42 @@ fn two_sizes_for_one_side_two_bands_two_lines_for_one_terminal_or_a_size_outside
 }
 
 #[test]
+fn a_colour_is_a_string_hash_rrggbb_in_either_case_once_for_each_line() {
+    assert_eq!(
+        block(
+            "color \"#2F6F9F\"
+fill \"#64748b\"
+stroke \"#000000\""
+        ),
+        NOTHING
+    );
+    for lines in ["color \"#2F6F9\"", "fill \"64748B\"", "stroke \"#GGGGGG\"", "color \"red\"", "fill \"#64748B \"", "stroke \"\""] {
+        assert_eq!(block(lines), ["LC5018"], "{lines}");
+    }
+    for lines in [
+        "color \"#2F6F9F\"
+color \"#2F6F9F\"",
+        "fill \"#000000\"
+fill \"#FFFFFF\"",
+        "stroke \"#000000\"
+stroke \"x\"",
+    ] {
+        assert_eq!(block(lines), ["LC5015"], "{lines}");
+    }
+}
+
+#[test]
+fn a_width_outside_its_bounds_is_drawn_at_the_nearest_and_one_that_is_no_number_refuses_the_icon() {
+    for item in ["line (4, 4) (28, 28) width 0.25", "line (4, 4) (28, 28) width 8", "circle (16, 16) 4 width 1.5 fill"] {
+        assert_eq!(icon(item), NOTHING, "{item}");
+    }
+    for item in ["line (4, 4) (28, 28) width 0.2", "line (4, 4) (28, 28) width 9", "line (4, 4) (28, 28) width 0", "line (4, 4) (28, 28) width -1"] {
+        assert_eq!(icon(item), ["LC5019"], "{item}");
+    }
+    assert_eq!(icon("line (4, 4) (28, 28) width inf"), ["LC5008"]);
+}
+
+#[test]
 fn a_size_outside_the_range_counts_at_the_nearest_bound() {
     // `top 0` counts as `top 1`, whose only place is that of `after:`: a terminal put on place 2 is past the side.
     assert_eq!(block("top 0\ntop 2 a"), ["LC5015", "LC5014"]);

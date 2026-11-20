@@ -1,10 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1246 668" width="1246" height="668" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="two_benches">
 <style>
-svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; }
-@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; } }
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; } }
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1246" height="668" style="fill: var(--canvas-fill)"/>
+<defs>
+<symbol id="icon-ccb93dd6fa6af779" viewBox="0 0 32 32" overflow="hidden">
+<circle cx="16" cy="11.33" r="0.78" style="fill: var(--ink-light); stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<circle cx="16" cy="20.67" r="0.78" style="fill: var(--ink-light); stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<path d="M10.556 16l10.889 0" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+<symbol id="icon-a464ab62d3482605" viewBox="0 0 32 32" overflow="hidden">
+<path d="M16 10.556l0 10.889" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<path d="M10.556 16l10.889 0" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+<symbol id="icon-bd615852e60351e8" viewBox="0 0 32 32" overflow="hidden">
+<path d="M10.556 20.667l10.889 -3.111" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<path d="M10.556 17.556l10.889 -3.111l-10.889 -3.111" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+<symbol id="icon-beefa4ce14f1b38c" viewBox="0 0 32 32" overflow="hidden">
+<path d="M11.333 12.111l4.667 7.778l4.667 -7.778" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+</defs>
 <defs>
 <polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 15.17,0 15.94,0.15 16.59,0.59 23.41,7.41 23.85,8.06 24,8.83 24,23.17 23.85,23.94 23.41,24.59 16.59,31.41 15.94,31.85 15.17,32 2,32 1.23,31.85 0.59,31.41 0.15,30.77 0,30"/>
 </defs>
@@ -270,8 +288,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="1028.65" y="611.65" font-size="10" style="fill: var(--node-title)">▴</text>
 </g>
 <g data-node="mean_a"><title>core.div</title>
-<use href="#outline-0" x="1011.66" y="520" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="1020.65" y="539.65" font-size="10" style="fill: var(--node-title)">÷</text>
+<use href="#outline-0" x="1011.66" y="520" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-ccb93dd6fa6af779" x="1011.66" y="524" width="24" height="24"/>
 <circle cx="1011.66" cy="528" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1011.66" cy="544" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1035.66" cy="536" r="3" style="fill: var(--wire-data)"/>
@@ -402,15 +420,15 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polygon points="1086.66,557 1092.66,560 1086.66,563 1088.66,560" style="fill: var(--wire-error)"/>
 </g>
 <g data-node="mean_b"><title>core.div</title>
-<use href="#outline-0" x="1011.66" y="400" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="1020.65" y="419.65" font-size="10" style="fill: var(--node-title)">÷</text>
+<use href="#outline-0" x="1011.66" y="400" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-ccb93dd6fa6af779" x="1011.66" y="404" width="24" height="24"/>
 <circle cx="1011.66" cy="408" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1011.66" cy="424" r="3" style="fill: var(--wire-data)"/>
 <circle cx="1035.66" cy="416" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="m"><title>core.add</title>
-<use href="#outline-0" x="571.94" y="520" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="580.93" y="539.65" font-size="10" style="fill: var(--node-title)">+</text>
+<use href="#outline-0" x="571.94" y="520" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-a464ab62d3482605" x="571.94" y="524" width="24" height="24"/>
 <circle cx="571.94" cy="528" r="3" style="fill: var(--wire-data)"/>
 <circle cx="571.94" cy="544" r="3" style="fill: var(--wire-data)"/>
 <circle cx="595.94" cy="536" r="3" style="fill: var(--wire-data)"/>
@@ -418,8 +436,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="538.88" y="547.65" font-size="10" style="fill: var(--pill-text)">1.0</text>
 </g>
 <g data-node="full"><title>core.ge</title>
-<use href="#outline-0" x="665.94" y="520" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="674.93" y="539.65" font-size="10" style="fill: var(--node-title)">≥</text>
+<use href="#outline-0" x="665.94" y="520" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-bd615852e60351e8" x="665.94" y="524" width="24" height="24"/>
 <circle cx="665.94" cy="528" r="3" style="fill: var(--wire-data)"/>
 <circle cx="665.94" cy="544" r="3" style="fill: var(--wire-data)"/>
 <polygon points="689.94,533 692.94,536 689.94,539 686.94,536" style="fill: var(--wire-data)"/>
@@ -457,22 +475,22 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polyline points="740.94,525 746.94,528 740.94,531" style="fill: none; stroke: var(--wire-order); stroke-width: 1.5"/>
 </g>
 <g data-node="halt"><title>core.or</title>
-<use href="#outline-0" x="829.94" y="536" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="838.93" y="555.65" font-size="10" style="fill: var(--node-title)">∨</text>
+<use href="#outline-0" x="829.94" y="536" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-beefa4ce14f1b38c" x="829.94" y="540" width="24" height="24"/>
 <polygon points="829.94,541 832.94,544 829.94,547 826.94,544" style="fill: var(--wire-data)"/>
 <polygon points="829.94,557 832.94,560 829.94,563 826.94,560" style="fill: var(--wire-data)"/>
 <polygon points="853.94,549 856.94,552 853.94,555 850.94,552" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="@29"><title>core.add</title>
-<use href="#outline-0" x="665.94" y="464" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="674.93" y="483.65" font-size="10" style="fill: var(--node-title)">+</text>
+<use href="#outline-0" x="665.94" y="464" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-a464ab62d3482605" x="665.94" y="468" width="24" height="24"/>
 <circle cx="665.94" cy="472" r="3" style="fill: var(--wire-data)"/>
 <circle cx="665.94" cy="488" r="3" style="fill: var(--wire-data)"/>
 <circle cx="689.94" cy="480" r="3" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="m"><title>core.add</title>
-<use href="#outline-0" x="579.94" y="244" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="588.93" y="263.65" font-size="10" style="fill: var(--node-title)">+</text>
+<use href="#outline-0" x="579.94" y="244" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-a464ab62d3482605" x="579.94" y="248" width="24" height="24"/>
 <circle cx="579.94" cy="252" r="3" style="fill: var(--wire-data)"/>
 <circle cx="579.94" cy="268" r="3" style="fill: var(--wire-data)"/>
 <circle cx="603.94" cy="260" r="3" style="fill: var(--wire-data)"/>
@@ -480,8 +498,8 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="546.88" y="271.65" font-size="10" style="fill: var(--pill-text)">1.0</text>
 </g>
 <g data-node="full"><title>core.ge</title>
-<use href="#outline-0" x="673.94" y="244" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="682.93" y="263.65" font-size="10" style="fill: var(--node-title)">≥</text>
+<use href="#outline-0" x="673.94" y="244" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-bd615852e60351e8" x="673.94" y="248" width="24" height="24"/>
 <circle cx="673.94" cy="252" r="3" style="fill: var(--wire-data)"/>
 <circle cx="673.94" cy="268" r="3" style="fill: var(--wire-data)"/>
 <polygon points="697.94,257 700.94,260 697.94,263 694.94,260" style="fill: var(--wire-data)"/>
@@ -519,15 +537,15 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polyline points="748.94,249 754.94,252 748.94,255" style="fill: none; stroke: var(--wire-order); stroke-width: 1.5"/>
 </g>
 <g data-node="halt"><title>core.or</title>
-<use href="#outline-0" x="837.94" y="260" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="846.93" y="279.65" font-size="10" style="fill: var(--node-title)">∨</text>
+<use href="#outline-0" x="837.94" y="260" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-beefa4ce14f1b38c" x="837.94" y="264" width="24" height="24"/>
 <polygon points="837.94,265 840.94,268 837.94,271 834.94,268" style="fill: var(--wire-data)"/>
 <polygon points="837.94,281 840.94,284 837.94,287 834.94,284" style="fill: var(--wire-data)"/>
 <polygon points="861.94,273 864.94,276 861.94,279 858.94,276" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="@43"><title>core.add</title>
-<use href="#outline-0" x="673.94" y="188" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
-<text x="682.93" y="207.65" font-size="10" style="fill: var(--node-title)">+</text>
+<use href="#outline-0" x="673.94" y="188" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-a464ab62d3482605" x="673.94" y="192" width="24" height="24"/>
 <circle cx="673.94" cy="196" r="3" style="fill: var(--wire-data)"/>
 <circle cx="673.94" cy="212" r="3" style="fill: var(--wire-data)"/>
 <circle cx="697.94" cy="204" r="3" style="fill: var(--wire-data)"/>

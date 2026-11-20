@@ -23,7 +23,7 @@ use crate::{Libraries, Origin};
 
 mod body;
 
-pub use self::body::{Align, Format, MAX_ICON_SHAPES, PathSegment, Piece, icon_refused, path_segments};
+pub use self::body::{Align, Format, ICON_STROKE, ICON_WIDTHS, MAX_ICON_SHAPES, PathSegment, Piece, icon_refused, icon_width, path_segments};
 pub(crate) use self::body::{read_escapes, template_fields, template_pieces, template_read};
 #[cfg(test)]
 mod tests;

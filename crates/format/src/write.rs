@@ -1243,6 +1243,12 @@ impl<'a> Writer<'a> {
                 self.push("band ");
                 self.push(place.word());
             }
+            TerminalsKind::Colour { role, text } => {
+                self.push(role.word());
+                self.push(" ");
+                let text = self.names.resolve(text).to_owned();
+                self.string(&text);
+            }
         }
         self.end_line(item.comments.line.as_deref());
     }
@@ -1291,6 +1297,7 @@ impl<'a> Writer<'a> {
                 self.keyword_number(" size ", *size);
             }
         }
+        self.keyword_number(" width ", item.width);
         if item.fill {
             self.push(" fill");
         }
