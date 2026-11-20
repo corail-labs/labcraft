@@ -35,16 +35,22 @@ fuzz_target!(|bytes: &[u8]| {
     let first = read(bytes, &mut names, &limits);
     let Some(file) = first.file else { return };
     let mut report = first.report;
-    // Ordering its lines is all that `canonicalize` may do to a declaration: none is lost, and none is invented.
+    // Ordering its lines is all that `canonicalize` may do to a declaration: none is lost, and none is invented. The
+    // sections whose numbers it writes in plain decimal (spec 5.2: `layout`, `terminals`, `outline`, where `01` becomes
+    // `1`) are left out of that comparison; the second reading below still holds them.
     let mut as_read = file.clone();
     as_read.uses.clear();
     as_read.panel = None;
     as_read.layout = None;
+    as_read.terminals = None;
+    as_read.outline = None;
     let once = canonicalize(file, &first.source_map, &mut names, &mut report);
     let mut canonical = once.clone();
     canonical.uses.clear();
     canonical.panel = None;
     canonical.layout = None;
+    canonical.terminals = None;
+    canonical.outline = None;
     if let (Ok(as_read), Ok(canonical)) = (write(&as_read, &names, &limits), write(&canonical, &names, &limits)) {
         let mut as_read: Vec<&str> = as_read.lines().collect();
         let mut canonical: Vec<&str> = canonical.lines().collect();
