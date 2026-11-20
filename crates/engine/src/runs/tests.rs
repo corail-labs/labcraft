@@ -88,7 +88,7 @@ fn a_run_gives_its_report_and_its_trace_in_the_folder_of_runs() {
     assert!(trace.starts_with("{\"schema\":\"labcraft-trace/1\",\"run\":\"r1\",\"function\":\"double\""), "{trace}");
     assert!(trace.contains("\"file\":\"double.lcf\""), "the first line names the file the run read: {trace}");
     assert_eq!(trace.lines().count() as u64, report["trace"]["events"].as_u64().unwrap() + 1);
-    assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(&b"*\n"[..]), "made with `.labcraft`");
+    assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(crate::runs::LABCRAFT_GITIGNORE), "made with `.labcraft`");
     let mut names = Vec::new();
     memory.read_dir(std::path::Path::new("/p/.labcraft/runs"), &mut |entry| names.push(entry.unwrap().name)).unwrap();
     names.sort();

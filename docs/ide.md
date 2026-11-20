@@ -66,7 +66,19 @@ the layout above.
 **The look of the window** (its bars, panels, tabs and widgets; not the canvas, whose colours are the notation's, 8):
 colour tokens, radii, spacing and type that every widget reads, in a light and a dark theme. Two looks: **Studio**,
 neutral graphite with an indigo accent, the default; **Lab**, blue slate with a teal accent, a setting of the user
-(`View > Lab look`) *(proposed)*. They are only defaults: the user changes them. The window opens at 1,280 × 800 at least *(proposed)*; under 1,000 pixels of width, the side
+(`View > Lab look`) *(proposed)*. They are only defaults: the user changes them.
+
+**The `Settings` dialog**, opened by the gear of the top bar, `File > Settings` and the start page, is modal over the
+window (decision of the owner, 2026-11-20). It shows the keys of [commands.md](commands.md) 9.7, one section per group
+(`Appearance`, `View`, `Editor`, `Run`), and a field that keeps the keys whose name or help holds what is typed. A
+switch at its top chooses the store it writes, `User` or `Project` (with a project open); in `Project`, a key that a
+project may not hold is greyed, with “User only”. Each key shows its control (a toggle, a choice, a colour), a line of
+help, where its value comes from (`project`, `user` or `default`) and `Reset`, which takes it out of the store shown.
+`Library colors` lists the libraries that the project can call (those of `Palette`), each with the colour the user
+picked, with `Reset`, or “From the code” until they pick one. A change applies at once, by `settings.set`;
+`Close` or Escape closes the dialog. The menu items that toggle a setting (`View > Dark theme`, `View > Drag on the empty
+canvas pans`, `Run > Record values` and the others) write the same keys, in the store of the user; one whose key the project
+holds shows the project's value, greyed, and the dialog changes it. The window opens at 1,280 × 800 at least *(proposed)*; under 1,000 pixels of width, the side
 panels fold first.
 
 ## 3. The tabs of a function

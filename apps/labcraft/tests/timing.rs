@@ -136,7 +136,7 @@ fn a_file_of_values_saved_is_drawn_within_200_ms() {
 
 /// The session of a project on its thread, opened.
 fn spawn(folder: &std::path::Path, lib_paths: Vec<std::path::PathBuf>, style: Option<std::path::PathBuf>) -> Handle {
-    let opening = Opening { folder: folder.to_path_buf(), lib_paths, standard_everywhere: false, style, new: false };
+    let opening = Opening { folder: folder.to_path_buf(), lib_paths, user_settings: serde_json::Map::new(), style, new: false };
     let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
     let opened = reply.wait(Duration::from_secs(30)).unwrap();
     assert!(opened.is_ok(), "{opened:?}");

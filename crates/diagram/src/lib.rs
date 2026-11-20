@@ -43,7 +43,7 @@ pub mod values;
 
 pub use block::PITCH as PLACE_PITCH;
 pub use labcraft_check::{PathSegment, path_segments};
-pub use labcraft_graph::{BlockSide, MAX_PLACES};
+pub use labcraft_graph::{BlockSide, MAX_PLACES, Rgb};
 pub use labcraft_trace::Trace;
 pub use marks::{MAX_LINES, mark, undrawn};
 pub use own::{BlockFields, OutlineChoice, OwnBlock, written_rgb};
@@ -82,6 +82,18 @@ pub struct ViewState {
     pub unfolded: BTreeSet<String>,
     /// The nodes drawn in standard view besides those that their file puts in it, by their key.
     pub standard: BTreeSet<String>,
+    /// How the reader asks for the blocks to be painted: the window's, never an export's.
+    pub appearance: Appearance,
+}
+
+/// What the settings of the reader change of the colours of the blocks (commands.md 9.7).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Appearance {
+    /// `appearance.block_fill` is `neutral`: every block in the neutral tokens, whatever its file writes (spec 11.2).
+    pub neutral_blocks: bool,
+    /// `appearance.library_colors`: the `color` of the blocks of a library, by its name, in place of that of its mask
+    /// (spec 11.3); a function's own `color` stays.
+    pub library_colors: BTreeMap<String, labcraft_graph::Rgb>,
 }
 
 /// `--max-diagram-nodes` (`docs/cli.md`, 7.6).
@@ -131,7 +143,7 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
         return too_large(format!("the function is too large to draw: {nodes} nodes, for at most {} (--max-diagram-nodes)", limits.max_nodes));
     }
     let max_terminals = limits.max_nodes.saturating_mul(5);
-    let mut builder = Builder::new(checked, checked_file, names).folding(view.fold_constructions);
+    let mut builder = Builder::new(checked, checked_file, names).folding(view.fold_constructions).appearing(&view.appearance);
     match builder.graph(function, &orders, max_terminals) {
         Ok(mut graph) => {
             for node in &mut graph.nodes {

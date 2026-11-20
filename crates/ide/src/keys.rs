@@ -14,6 +14,8 @@ pub const PALETTE: &str = "ide.palette";
 pub const HOME: &str = "ide.home";
 pub const FIT: &str = "ide.fit";
 pub const DARK: &str = "ide.dark";
+/// The `Settings` dialog (ide.md 2).
+pub const SETTINGS: &str = "ide.settings";
 /// The look Lab (slate, teal) instead of Studio (graphite, indigo), the default.
 pub const LAB: &str = "ide.look_lab";
 pub const REDUCED_MOTION: &str = "ide.reduced_motion";
@@ -116,6 +118,27 @@ pub fn part_asked(id: &str) -> Option<labcraft_editor::PartAsked> {
     }
 }
 pub const INTO_WIRE: &str = "ide.into_wire";
+/// The key of commands.md 9.7 that a toggle of the menus writes.
+pub fn setting_of(id: &str) -> Option<&'static str> {
+    use labcraft_engine::settings as keyed;
+    Some(match id {
+        DARK => keyed::THEME,
+        LAB => keyed::LOOK,
+        REDUCED_MOTION => keyed::REDUCED_MOTION,
+        VALUES => keyed::VALUES_SHOWN,
+        RECORD => keyed::RECORD_VALUES,
+        DRAG_PANS => keyed::DRAG_PANS,
+        FIX_EVERY_NODE => keyed::FIX_EVERY_NODE,
+        MARK_FIXED => keyed::MARK_FIXED,
+        REPLACE_WITH_ALT => keyed::REPLACE_WITH_ALT,
+        ACCEPT_MISMATCH => keyed::ACCEPT_MISMATCH,
+        ROUTE_WITH_SHIFT_ALT => keyed::ROUTE_WITH_SHIFT_ALT,
+        AUTOPATCH => keyed::AUTOPATCH,
+        INTO_WIRE => keyed::INTO_WIRE,
+        _ => return None,
+    })
+}
+
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
 
@@ -124,6 +147,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (PALETTE, "Command palette"),
     (HOME, "Start page"),
     (FIT, "Fit the diagram to the view"),
+    (SETTINGS, "Settings…"),
     (DARK, "Dark theme"),
     (LAB, "Lab look (slate, teal)"),
     (REDUCED_MOTION, "Reduced motion"),
@@ -242,6 +266,7 @@ pub fn menus() -> MenuBar {
             item("project.open", "Open folder…"),
             Node::Separator,
             item(HOME, "Start page"),
+            item(SETTINGS, "Settings…"),
             item("view.close_function", "Close the tab"),
         ],
     )

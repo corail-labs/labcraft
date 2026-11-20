@@ -52,8 +52,12 @@ impl Host {
         let mut request = None;
         let zoom = matches!(message, ToWorker::Zoom(..));
         let result = match message {
-            ToWorker::Open { folder, standard_everywhere, skipped, show, detached } => {
-                self.open(folder, standard_everywhere, skipped, show, detached)
+            ToWorker::Open { folder, user_settings, skipped, show, detached } => self.open(folder, &user_settings, skipped, show, detached),
+            ToWorker::UserSettings(keys) => {
+                if let Some(session) = &mut self.session {
+                    session.set_user_settings(&keys_of(&keys));
+                }
+                Ok(Value::Null)
             }
             ToWorker::Command { request: asked, id, params } => {
                 request = Some(asked);
@@ -76,7 +80,7 @@ impl Host {
     fn open(
         &mut self,
         folder: Arc<Folder>,
-        standard_everywhere: bool,
+        user_settings: &str,
         skipped: Vec<String>,
         show: Option<String>,
         detached: Vec<String>,
@@ -109,7 +113,7 @@ impl Host {
         session.with_window();
         session.skip_drawing(skipped.into_iter().collect());
         session.before_drawing(self.before_drawing);
-        session.execute("view.set_standard_view", &json!({ "on": standard_everywhere }))?;
+        session.set_user_settings(&keys_of(user_settings));
         // The function shown before a restart, or that the address names, when the folder has it: the only one drawn.
         session.open_on(show.clone());
         let opened = session.execute("view.open", &json!({ "folder": "." }));
@@ -216,10 +220,21 @@ fn seen(view: &Published) -> Seen {
         detached: view.detached.iter().map(seen_window).collect(),
         opened: view.opened.clone(),
         standard_everywhere: view.standard_everywhere,
+        settings: settings_json(&view.settings).to_string(),
         tabs,
         preview: view.preview.clone(),
         workspace: view.workspace.0.to_owned(),
     }
+}
+
+/// The keys of the user as the page sends them, a JSON object; what does not read is no key.
+fn keys_of(json: &str) -> serde_json::Map<String, Value> {
+    serde_json::from_str::<serde_json::Map<String, Value>>(json).unwrap_or_default()
+}
+
+/// The settings of the session, as `Seen` carries them.
+pub fn settings_json(stores: &labcraft_engine::settings::Stores) -> Value {
+    json!({ "user": stores.user, "project": stores.project, "given": stores.given })
 }
 
 fn seen_window(shown: &Shown) -> SeenWindow {
@@ -297,7 +312,7 @@ mod tests {
     }
 
     fn open(folder: Arc<Folder>) -> ToWorker {
-        ToWorker::Open { folder, standard_everywhere: false, skipped: Vec::new(), show: None, detached: Vec::new() }
+        ToWorker::Open { folder, user_settings: String::new(), skipped: Vec::new(), show: None, detached: Vec::new() }
     }
 
     fn command(id: &str, params: Value) -> ToWorker {
@@ -415,7 +430,7 @@ mod tests {
         let mut host = Host::new(None);
         let answer = host.handle(ToWorker::Open {
             folder: folder(),
-            standard_everywhere: false,
+            user_settings: String::new(),
             skipped: vec!["double".to_owned()],
             show: None,
             detached: Vec::new(),

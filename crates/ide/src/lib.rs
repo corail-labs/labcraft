@@ -39,6 +39,7 @@ use kit_shell::top_bar::{self, Answer, Bar, Tool};
 use kit_shell::workspaces::Asked as WorkspaceAsked;
 use kit_shell::{Card, Planned};
 use labcraft_editor::{Canvas, Intent, Selection, Shown, Step, Theme};
+use labcraft_engine::settings::{self as keyed, Stores, Values};
 use labcraft_engine::view::{
     Published, Shown as WindowShown, Tab, ViewKind,
     window::{file_of_tab, tab_of},
@@ -55,6 +56,7 @@ pub mod keys;
 pub mod pane;
 pub mod panels;
 mod running;
+mod settings_dialog;
 pub mod text;
 mod types;
 mod values;
@@ -62,83 +64,103 @@ mod values;
 pub use host::{Host, Reply, Snapshot};
 pub use pane::Pane;
 
-/// The settings of the user that the window keeps (ide.md 1: the layout is the user's), which the app stores.
+/// What the window keeps for the user (ide.md 1: the layout is the user's), which the app stores: the keys of the store
+/// of the user (commands.md 9.7), and the state of the window.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Where the panels are, without the tabs of functions; none, the layout of ide.md 2.
     pub layout: Option<Workspace<Pane>>,
-    pub dark: bool,
-    /// The look of the window: `studio` (graphite, indigo), the default, or `lab` (slate, teal).
-    pub look: String,
-    /// Every node in standard view (notation 3).
-    pub standard_everywhere: bool,
-    /// No glide (notation 2.1).
-    pub reduced_motion: bool,
-    /// A single click on a file opens it as a preview (ide.md 3), on by default.
-    pub preview_tabs: bool,
-    /// The values of the last run on the wires (notation 6.1).
-    pub values_shown: bool,
+    /// The keys of the store of the user, `group.name` → value (commands.md 9.7).
+    #[serde(skip_serializing_if = "Map::is_empty")]
+    pub settings: Map<String, Value>,
     /// Where the last detached window was: the next one opens there (decision of the owner, 2026-11-16).
     pub detached: Option<Place>,
     /// A detached window shows its inspector beside its canvas, and its palette of functions on the other side (decision
     /// of the owner, 2026-11-16: the inspector shown, the palette hidden, until the user changes them).
     pub detached_inspector: bool,
     pub detached_palette: bool,
-    /// A run records its values, its trace, for the wires (decision of the owner, 2026-11-16: off by default).
-    pub record_values: bool,
-    /// The setting "drag on the empty canvas pans" (notation 2.6): off, a drag on the empty canvas selects with a
-    /// rectangle (decision of the owner, 2026-11-17).
-    pub drag_pans: bool,
-    /// The setting "fix every node at the first move" (notation 2.4): a move fixes every free node of the function where
-    /// it is, in the same step. Off by default.
-    pub fix_every_node: bool,
-    /// The setting "mark the fixed nodes" (notation 2.4): a pin on each fixed node. On by default.
-    pub mark_fixed: bool,
-    /// The setting "replace only with Alt" (notation 2.4): a wire dropped on an input that holds something replaces it
-    /// only with Alt down. Off by default.
-    #[serde(default)]
-    pub replace_with_alt: bool,
-    /// The setting "accept it" (notation 2.4): a wire of the wrong type is written, and `check` gives `LC3001`. Off by
-    /// default.
-    #[serde(default)]
-    pub accept_mismatch: bool,
-    /// The modifier of a wire moved by hand (notation 2.6): Shift+Alt and a drag on a segment instead of Alt. Off by
-    /// default.
-    #[serde(default)]
-    pub route_with_shift_alt: bool,
-    /// The settings "autopatch from the keyboard" and "inserting into a wire" (notation 2.6). On by default.
-    pub autopatch: bool,
-    pub into_wire: bool,
     /// The insertions of this user, the most recent first, which order quick insertion (notation 2.6): kept on their
     /// machine, with their settings.
     pub recent: Vec<String>,
+    /// The settings that an earlier LabCraft kept as fields of its own, read once into `settings` and never written.
+    #[serde(flatten, skip_serializing)]
+    pub fields: Fields,
+    /// `fields` were read into `settings`: they are never read again.
+    pub fields_taken: bool,
+}
+
+/// The settings as an earlier LabCraft kept them, before the keys of commands.md 9.7.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Fields {
+    pub dark: Option<bool>,
+    pub look: Option<String>,
+    pub standard_everywhere: Option<bool>,
+    pub reduced_motion: Option<bool>,
+    pub preview_tabs: Option<bool>,
+    pub values_shown: Option<bool>,
+    pub record_values: Option<bool>,
+    pub drag_pans: Option<bool>,
+    pub fix_every_node: Option<bool>,
+    pub mark_fixed: Option<bool>,
+    pub replace_with_alt: Option<bool>,
+    pub accept_mismatch: Option<bool>,
+    pub route_with_shift_alt: Option<bool>,
+    pub autopatch: Option<bool>,
+    pub into_wire: Option<bool>,
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
         Prefs {
             layout: None,
-            dark: false,
-            look: "studio".to_owned(),
-            standard_everywhere: false,
-            reduced_motion: false,
-            preview_tabs: true,
-            values_shown: true,
+            settings: Map::new(),
             detached: None,
             detached_inspector: true,
             detached_palette: false,
-            record_values: false,
-            drag_pans: false,
-            fix_every_node: false,
-            mark_fixed: true,
-            replace_with_alt: false,
-            accept_mismatch: false,
-            route_with_shift_alt: false,
-            autopatch: true,
-            into_wire: true,
             recent: Vec::new(),
+            fields: Fields::default(),
+            fields_taken: false,
         }
+    }
+}
+
+impl Prefs {
+    /// The settings that an earlier LabCraft kept as fields go into `settings`, once; a key already there wins, and a
+    /// value that is the default is not written. Whether anything changed.
+    pub fn take_fields(&mut self) -> bool {
+        if self.fields_taken {
+            return false;
+        }
+        self.fields_taken = true;
+        let fields = std::mem::take(&mut self.fields);
+        let theme = fields.dark.map(|dark| json!(if dark { "dark" } else { "light" }));
+        let given = [
+            (keyed::THEME, theme),
+            (keyed::LOOK, fields.look.map(Value::String)),
+            (keyed::STANDARD_EVERYWHERE, fields.standard_everywhere.map(Value::Bool)),
+            (keyed::REDUCED_MOTION, fields.reduced_motion.map(Value::Bool)),
+            (keyed::PREVIEW_TABS, fields.preview_tabs.map(Value::Bool)),
+            (keyed::VALUES_SHOWN, fields.values_shown.map(Value::Bool)),
+            (keyed::RECORD_VALUES, fields.record_values.map(Value::Bool)),
+            (keyed::DRAG_PANS, fields.drag_pans.map(Value::Bool)),
+            (keyed::FIX_EVERY_NODE, fields.fix_every_node.map(Value::Bool)),
+            (keyed::MARK_FIXED, fields.mark_fixed.map(Value::Bool)),
+            (keyed::REPLACE_WITH_ALT, fields.replace_with_alt.map(Value::Bool)),
+            (keyed::ACCEPT_MISMATCH, fields.accept_mismatch.map(Value::Bool)),
+            (keyed::ROUTE_WITH_SHIFT_ALT, fields.route_with_shift_alt.map(Value::Bool)),
+            (keyed::AUTOPATCH, fields.autopatch.map(Value::Bool)),
+            (keyed::INTO_WIRE, fields.into_wire.map(Value::Bool)),
+        ];
+        for (id, value) in given {
+            let Some(value) = value else { continue };
+            let Some(key) = keyed::find(id) else { continue };
+            if value != key.default_value() && key.refuses(&value).is_none() && !self.settings.contains_key(id) {
+                self.settings.insert(id.to_owned(), value);
+            }
+        }
+        true
     }
 }
 
@@ -235,6 +257,13 @@ struct Drawn {
 pub struct Ide {
     prefs: Prefs,
     prefs_changed: bool,
+    /// What the settings give now (commands.md 9.7): those of the session with a project, else those the window keeps.
+    settings: Values,
+    /// The settings of the session last read.
+    settings_seen: Option<Arc<Stores>>,
+    /// The keys of the user that `settings` was computed from on the start page.
+    settings_kept: Option<Map<String, Value>>,
+    settings_dialog: settings_dialog::Dialog,
     workspace: Workspace<Pane>,
     platform: Platform,
     keymap: Keymap,
@@ -244,7 +273,7 @@ pub struct Ide {
     palette_in: Option<String>,
     card: Card,
     frame: craft_window::Frame,
-    /// The look given to egui last (`Prefs::look`).
+    /// The look given to egui last (`appearance.look`).
     installed_look: String,
     /// The `movable` flag last given to AppKit (`craft_window::title_bar::sync_movable`).
     #[cfg(target_os = "macos")]
@@ -342,15 +371,21 @@ fn dock_id() -> egui::Id {
 
 impl Ide {
     /// The window, with the settings of the user. `frame`: who draws the frame of the window (`craft-window`).
-    pub fn new(ctx: &egui::Context, prefs: Prefs, frame: craft_window::Frame) -> Ide {
+    pub fn new(ctx: &egui::Context, mut prefs: Prefs, frame: craft_window::Frame) -> Ide {
         let platform = craft_keymap::egui::platform(ctx);
         let workspace = pane::restored(prefs.layout.clone());
-        ctx.set_theme(if prefs.dark { egui::Theme::Dark } else { egui::Theme::Light });
-        kit_shell::theme::install(ctx, kit_shell::theme::Look::named(&prefs.look).unwrap_or_default());
+        let prefs_changed = prefs.take_fields();
+        let settings = Stores::of_user(&prefs.settings).values();
+        ctx.set_theme(if settings.dark { egui::Theme::Dark } else { egui::Theme::Light });
+        kit_shell::theme::install(ctx, kit_shell::theme::Look::named(&settings.look).unwrap_or_default());
         Ide {
-            installed_look: prefs.look.clone(),
+            installed_look: settings.look.clone(),
+            settings,
+            settings_seen: None,
+            settings_kept: None,
+            settings_dialog: settings_dialog::Dialog::default(),
             prefs,
-            prefs_changed: false,
+            prefs_changed,
             workspace,
             platform,
             keymap: keys::keymap(platform),
@@ -442,13 +477,102 @@ impl Ide {
         self.failures.drain(..excess);
     }
 
+    /// What the settings give, from the session with a project, else from those the window keeps: the canvases follow
+    /// them, and the keys of the user that the session changed are kept (commands.md 9.7).
+    fn follow_settings(&mut self, view: &Published, host: Option<&dyn Host>) {
+        let settings = match host {
+            Some(host) => {
+                if self.settings_seen.as_ref().is_some_and(|seen| Arc::ptr_eq(seen, &view.settings)) {
+                    return;
+                }
+                self.settings_seen = Some(view.settings.clone());
+                self.settings_kept = None;
+                if view.settings.given {
+                    if view.settings.user != self.prefs.settings {
+                        self.prefs.settings.clone_from(&view.settings.user);
+                        self.prefs_changed = true;
+                    }
+                    view.settings.values()
+                } else {
+                    // A session that does not hold the keys of the user yet, a new one or a worker started again: given.
+                    host.set_user_settings(&self.prefs.settings);
+                    self.window_stores(view).values()
+                }
+            }
+            None => {
+                // The start page: the keys change only by `write_setting`.
+                if self.settings_kept.as_ref() == Some(&self.prefs.settings) {
+                    return;
+                }
+                self.settings_seen = None;
+                self.settings_kept = Some(self.prefs.settings.clone());
+                Stores::of_user(&self.prefs.settings).values()
+            }
+        };
+        if settings == self.settings {
+            return;
+        }
+        for drawn in self.drawn.values_mut() {
+            drawn.canvas.set_reduced_motion(settings.reduced_motion);
+            drawn.canvas.set_values_shown(settings.values_shown);
+        }
+        self.settings = settings;
+    }
+
+    /// The keys the window keeps, with those of the project the session read.
+    fn window_stores(&self, view: &Published) -> Stores {
+        Stores { project: view.settings.project.clone(), ..Stores::of_user(&self.prefs.settings) }
+    }
+
+    /// Writes a setting in the store of the user: by `settings.set` with a project, in the settings the window keeps
+    /// without one (the start page).
+    fn set_setting(&mut self, key: &str, value: Value, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
+        // A toggle whose key the project holds is not enabled, from the menus, the palette or a shortcut (ide.md 2).
+        if host.is_some() && view.settings.project.contains_key(key) {
+            self.say(format!("The project holds `{key}`: change it in Settings"));
+            return;
+        }
+        self.write_setting(key, value, false, host, view, outward);
+    }
+
+    fn write_setting(&mut self, key: &str, value: Value, project: bool, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
+        if host.is_some() {
+            let scope = if project { "project" } else { "user" };
+            self.run(CommandRef::with_params("settings.set", json!({ "key": key, "value": value, "scope": scope })), host, view, outward);
+            return;
+        }
+        let value = if value.is_null() { None } else { Some(value) };
+        match keyed::set_user(&mut self.prefs.settings, key, value) {
+            Ok(_) => self.prefs_changed = true,
+            Err(why) => self.say(format!("Settings: {why}")),
+        }
+    }
+
+    /// The `Settings` dialog, when it is open (ide.md 2).
+    fn show_settings(&mut self, ctx: &egui::Context, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
+        if !self.settings_dialog.is_open() {
+            return;
+        }
+        let stores = match host {
+            Some(_) if view.settings.given => Stores::clone(&view.settings),
+            _ => self.window_stores(view),
+        };
+        let mut libraries: Vec<String> =
+            self.callables.list.iter().map(|callable| callable.library.clone()).filter(|library| !library.is_empty()).collect();
+        libraries.sort();
+        libraries.dedup();
+        for set in self.settings_dialog.show(ctx, &stores, host.is_some(), &libraries) {
+            self.write_setting(set.key, set.value, set.project, host, view, outward);
+        }
+    }
+
     fn theme(&self) -> Theme {
-        if self.prefs.dark { Theme::Dark } else { Theme::Light }
+        if self.settings.dark { Theme::Dark } else { Theme::Light }
     }
 
     /// The look of the preferences; a name it does not know is the default.
     fn look(&self) -> kit_shell::theme::Look {
-        kit_shell::theme::Look::named(&self.prefs.look).unwrap_or_default()
+        kit_shell::theme::Look::named(&self.settings.look).unwrap_or_default()
     }
 
     /// What the window that has focus shows: its detached window, else the window of the project.
@@ -490,11 +614,13 @@ impl Ide {
     /// Draws the window in `ui`, the whole of the viewport: with no host, the start page alone.
     pub fn show(&mut self, ui: &mut egui::Ui, host: Option<&dyn Host>, start: &StartList) -> Vec<Outward> {
         let mut outward = Vec::new();
-        if self.installed_look != self.prefs.look {
-            self.installed_look = self.prefs.look.clone();
+        let snapshot = host.map(Host::snapshot).unwrap_or_default();
+        self.follow_settings(&snapshot.view, host);
+        if self.installed_look != self.settings.look {
+            self.installed_look = self.settings.look.clone();
             kit_shell::theme::install(ui.ctx(), self.look());
         }
-        let theme = if self.prefs.dark { egui::Theme::Dark } else { egui::Theme::Light };
+        let theme = if self.settings.dark { egui::Theme::Dark } else { egui::Theme::Light };
         if ui.ctx().theme() != theme {
             ui.ctx().set_theme(theme);
         }
@@ -509,7 +635,6 @@ impl Ide {
         if !std::mem::replace(&mut self.loaders, true) {
             kit_shell::icon::install(ui.ctx());
         }
-        let snapshot = host.map(Host::snapshot).unwrap_or_default();
         self.new_project(&snapshot);
         let view = snapshot.view.clone();
         self.follow_focus(ui.ctx());
@@ -545,7 +670,8 @@ impl Ide {
         let right: Vec<Segment> = host.iter().map(|_| Segment::new("No agent").hover("Connecting an AI agent comes with step 8 of M1")).collect();
         // The interface of the window (decisions of the owner, 2026-11-16): the theme, then the detached mode to come.
         let tools = [
-            if self.prefs.dark {
+            Tool { icon: Icon::Settings, hover: "Settings".to_owned(), command: keys::SETTINGS.to_owned(), planned: false },
+            if self.settings.dark {
                 Tool { icon: Icon::Sun, hover: "Light theme".to_owned(), command: keys::DARK.to_owned(), planned: false }
             } else {
                 Tool { icon: Icon::Moon, hover: "Dark theme".to_owned(), command: keys::DARK.to_owned(), planned: false }
@@ -661,6 +787,7 @@ impl Ide {
         if let Some(link) = self.card.show(ui.ctx()) {
             outward.push(Outward::OpenLink(link));
         }
+        self.show_settings(ui.ctx(), host, &view, &mut outward);
         // The content reaches under the title bar of macOS: a drag that starts on a control of the top bar must not
         // move the window.
         #[cfg(target_os = "macos")]
@@ -1095,8 +1222,8 @@ impl Ide {
 
     /// The drawing and the values of the function of each window, to its canvas.
     fn take_drawing(&mut self, view: &Published) {
-        let reduced = self.prefs.reduced_motion;
-        let values_shown = self.prefs.values_shown;
+        let reduced = self.settings.reduced_motion;
+        let values_shown = self.settings.values_shown;
         for shown in view.windows() {
             let Some(function) = &shown.function else { continue };
             if !self.drawn.contains_key(function) {
@@ -1158,18 +1285,20 @@ impl Ide {
                 | keys::ROUTE_WITH_SHIFT_ALT
                 | keys::ABOUT => {
                     let checked = match id {
-                        keys::DARK => Some(self.prefs.dark),
+                        keys::DARK => Some(self.settings.dark),
                         keys::LAB => Some(self.look() == kit_shell::theme::Look::Lab),
-                        keys::REDUCED_MOTION => Some(self.prefs.reduced_motion),
-                        keys::DRAG_PANS => Some(self.prefs.drag_pans),
-                        keys::FIX_EVERY_NODE => Some(self.prefs.fix_every_node),
-                        keys::MARK_FIXED => Some(self.prefs.mark_fixed),
-                        keys::REPLACE_WITH_ALT => Some(self.prefs.replace_with_alt),
-                        keys::ACCEPT_MISMATCH => Some(self.prefs.accept_mismatch),
-                        keys::ROUTE_WITH_SHIFT_ALT => Some(self.prefs.route_with_shift_alt),
+                        keys::REDUCED_MOTION => Some(self.settings.reduced_motion),
+                        keys::DRAG_PANS => Some(self.settings.drag_pans),
+                        keys::FIX_EVERY_NODE => Some(self.settings.fix_every_node),
+                        keys::MARK_FIXED => Some(self.settings.mark_fixed),
+                        keys::REPLACE_WITH_ALT => Some(self.settings.replace_with_alt),
+                        keys::ACCEPT_MISMATCH => Some(self.settings.accept_mismatch),
+                        keys::ROUTE_WITH_SHIFT_ALT => Some(self.settings.route_with_shift_alt),
                         _ => None,
                     };
-                    ItemState { enabled: true, checked }
+                    // A key that the project holds is changed in the dialog (ide.md 2).
+                    let held = keys::setting_of(id).is_some_and(|key| view.settings.project.contains_key(key));
+                    ItemState { enabled: !held, checked }
                 }
                 keys::PLANNED_AGENT
                 | keys::PLANNED_INSTRUMENTS
@@ -1178,7 +1307,8 @@ impl Ide {
                 | keys::PLANNED_WATCH
                 | keys::PLANNED_BUILD
                 | keys::PLANNED_DETACHED_MODE => ItemState { enabled: true, checked: None },
-                keys::RECORD => ItemState { enabled: true, checked: Some(self.prefs.record_values) },
+                keys::RECORD => ItemState { enabled: true, checked: Some(self.settings.record_values) },
+                keys::SETTINGS => ItemState { enabled: true, checked: None },
                 keys::RUN => ItemState { enabled: self.can_run(view, shown).is_ok(), checked: None },
                 keys::STOP => ItemState { enabled: self.running.as_ref().is_some_and(|running| !running.stopping()), checked: None },
                 "view.toggle_panel" => {
@@ -1191,7 +1321,7 @@ impl Ide {
                     ItemState { enabled: shown.is_some(), checked: Some(asked == now) }
                 }
                 "view.set_standard_view" => ItemState { enabled: project, checked: Some(view.standard_everywhere) },
-                keys::VALUES => ItemState { enabled: project, checked: Some(self.prefs.values_shown) },
+                keys::VALUES => ItemState { enabled: project, checked: Some(self.settings.values_shown) },
                 "history.undo" => ItemState { enabled: self.history.undo.is_some(), checked: None },
                 "history.redo" => ItemState { enabled: self.history.redo.is_some(), checked: None },
                 "view.close_function" | keys::FIT | "view.open_trace" | keys::OPEN_TRACE => ItemState { enabled: shown.is_some(), checked: None },
@@ -1218,8 +1348,12 @@ impl Ide {
                 | keys::CONTINUE_ON_ERROR
                 | keys::PARALLEL
                 | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
-                keys::AUTOPATCH => ItemState { enabled: true, checked: Some(self.prefs.autopatch) },
-                keys::INTO_WIRE => ItemState { enabled: true, checked: Some(self.prefs.into_wire) },
+                keys::AUTOPATCH => {
+                    ItemState { enabled: !view.settings.project.contains_key(keyed::AUTOPATCH), checked: Some(self.settings.autopatch) }
+                }
+                keys::INTO_WIRE => {
+                    ItemState { enabled: !view.settings.project.contains_key(keyed::INTO_WIRE), checked: Some(self.settings.into_wire) }
+                }
                 _ => ItemState { enabled: project, checked: None },
             }
         });
@@ -1511,7 +1645,7 @@ impl Ide {
         let Some(file) = file_of(view, function) else { return };
         let moving = json!({ "file": file, "nodes": nodes, "by": [by.0, by.1] });
         let drawing = view.window_of(function).and_then(|window| window.drawing.clone());
-        let fixing: Vec<Value> = match (&drawing, self.prefs.fix_every_node) {
+        let fixing: Vec<Value> = match (&drawing, self.settings.fix_every_node) {
             (Some(drawing), true) => drawing
                 .placed
                 .iter()
@@ -1548,7 +1682,7 @@ impl Ide {
     fn open_quick(&mut self, view: &Published, function: &str, quick: labcraft_editor::Quick) {
         let Some(file) = file_of(view, function) else { return };
         let canvas = self.canvas_focus.as_ref().filter(|(focused, _)| focused == function).map(|(_, id)| *id);
-        let shown = view.window_of(function).map(|window| canvas_shown(window, &self.prefs)).unwrap_or_default();
+        let shown = view.window_of(function).map(|window| canvas_shown(window, &self.settings)).unwrap_or_default();
         // The values a structure could look at: only quick insertion on the empty canvas lists the structures.
         let seen = match quick.source {
             labcraft_editor::Source::Nothing => {
@@ -1565,7 +1699,7 @@ impl Ide {
     fn surround(&mut self, host: &dyn Host, view: &Published, function: &str, kind: &'static str, nodes: Option<Vec<String>>) {
         let Some(file) = file_of(view, function) else { return };
         let Some(window) = view.window_of(function) else { return };
-        let shown = canvas_shown(window, &self.prefs);
+        let shown = canvas_shown(window, &self.settings);
         let selection = match nodes {
             Some(nodes) => Selection { nodes, ..Selection::default() },
             None => shown.selection.clone(),
@@ -1602,7 +1736,7 @@ impl Ide {
     fn add_clause(&mut self, view: &Published, function: &str, structure: String) {
         let Some(file) = file_of(view, function) else { return };
         let Some(window) = view.window_of(function) else { return };
-        let shown = canvas_shown(window, &self.prefs);
+        let shown = canvas_shown(window, &self.settings);
         let Some(drawn) = self.drawn.get(function) else { return };
         let selection = Selection { nodes: vec![structure.clone()], ..Selection::default() };
         let seen = drawn.canvas.values_seen(&shown, &selection, None);
@@ -1720,7 +1854,7 @@ impl Ide {
     fn delete(&mut self, host: &dyn Host, view: &Published, function: &str) {
         let Some(file) = file_of(view, function) else { return };
         let Some(window) = view.window_of(function) else { return };
-        let selection = canvas_shown(window, &self.prefs).selection;
+        let selection = canvas_shown(window, &self.settings).selection;
         let Some(drawn) = self.drawn.get(function) else { return };
         let mut wires: Vec<String> = selection.wires.clone();
         for terminal in &selection.terminals {
@@ -1772,8 +1906,9 @@ impl Ide {
             Value::Object(map) => map,
             _ => Map::new(),
         };
-        // `null` of `signature.set_default` makes the input required: it is a value there.
-        if id != "signature.set_default" {
+        // `null` of `signature.set_default` makes the input required, and that of `settings.set` takes the key out: it
+        // is a value there.
+        if id != "signature.set_default" && id != "settings.set" {
             params.retain(|_, value| !value.is_null());
         }
         let shown = self.target(view).function.clone();
@@ -1827,15 +1962,13 @@ impl Ide {
                     Ok(()) => {
                         if let Some(function) = function {
                             self.outcomes.remove(&function);
-                            self.running = Some(running::Running::start(host, &function, self.now, self.prefs.record_values));
+                            self.running = Some(running::Running::start(host, &function, self.now, self.settings.record_values));
                         }
                     }
                 }
             }
-            keys::RECORD => {
-                self.prefs.record_values = !self.prefs.record_values;
-                self.prefs_changed = true;
-            }
+            keys::RECORD => self.set_setting(keyed::RECORD_VALUES, json!(!self.settings.record_values), host, view, outward),
+            keys::SETTINGS => self.settings_dialog.open(),
             keys::STOP => match &mut self.running {
                 Some(running) => running.stop(),
                 None => self.say("Stop: no run going"),
@@ -1847,28 +1980,15 @@ impl Ide {
                 link: Some(catalog::REPOSITORY.to_owned()),
             }),
             keys::DARK => {
-                self.prefs.dark = !self.prefs.dark;
-                self.prefs_changed = true;
+                let theme = if self.settings.dark { "light" } else { "dark" };
+                self.set_setting(keyed::THEME, json!(theme), host, view, outward);
             }
             keys::LAB => {
                 let look = if self.look() == kit_shell::theme::Look::Lab { kit_shell::theme::Look::Studio } else { kit_shell::theme::Look::Lab };
-                self.prefs.look = look.name().to_owned();
-                self.prefs_changed = true;
+                self.set_setting(keyed::LOOK, json!(look.name()), host, view, outward);
             }
-            keys::REDUCED_MOTION => {
-                self.prefs.reduced_motion = !self.prefs.reduced_motion;
-                self.prefs_changed = true;
-                for drawn in self.drawn.values_mut() {
-                    drawn.canvas.set_reduced_motion(self.prefs.reduced_motion);
-                }
-            }
-            keys::VALUES => {
-                self.prefs.values_shown = !self.prefs.values_shown;
-                self.prefs_changed = true;
-                for drawn in self.drawn.values_mut() {
-                    drawn.canvas.set_values_shown(self.prefs.values_shown);
-                }
-            }
+            keys::REDUCED_MOTION => self.set_setting(keyed::REDUCED_MOTION, json!(!self.settings.reduced_motion), host, view, outward),
+            keys::VALUES => self.set_setting(keyed::VALUES_SHOWN, json!(!self.settings.values_shown), host, view, outward),
             keys::FIT => {
                 if let Some(drawn) = shown.as_ref().and_then(|function| self.drawn.get_mut(function)) {
                     drawn.canvas.fit();
@@ -1878,54 +1998,32 @@ impl Ide {
                 self.prefs.detached_inspector = !self.prefs.detached_inspector;
                 self.prefs_changed = true;
             }
-            keys::DRAG_PANS => {
-                self.prefs.drag_pans = !self.prefs.drag_pans;
-                self.prefs_changed = true;
-            }
-            keys::FIX_EVERY_NODE => {
-                self.prefs.fix_every_node = !self.prefs.fix_every_node;
-                self.prefs_changed = true;
-            }
-            keys::MARK_FIXED => {
-                self.prefs.mark_fixed = !self.prefs.mark_fixed;
-                self.prefs_changed = true;
-            }
-            keys::REPLACE_WITH_ALT => {
-                self.prefs.replace_with_alt = !self.prefs.replace_with_alt;
-                self.prefs_changed = true;
-            }
-            keys::ACCEPT_MISMATCH => {
-                self.prefs.accept_mismatch = !self.prefs.accept_mismatch;
-                self.prefs_changed = true;
-            }
+            keys::DRAG_PANS => self.set_setting(keyed::DRAG_PANS, json!(!self.settings.drag_pans), host, view, outward),
+            keys::FIX_EVERY_NODE => self.set_setting(keyed::FIX_EVERY_NODE, json!(!self.settings.fix_every_node), host, view, outward),
+            keys::MARK_FIXED => self.set_setting(keyed::MARK_FIXED, json!(!self.settings.mark_fixed), host, view, outward),
+            keys::REPLACE_WITH_ALT => self.set_setting(keyed::REPLACE_WITH_ALT, json!(!self.settings.replace_with_alt), host, view, outward),
+            keys::ACCEPT_MISMATCH => self.set_setting(keyed::ACCEPT_MISMATCH, json!(!self.settings.accept_mismatch), host, view, outward),
             keys::ROUTE_WITH_SHIFT_ALT => {
-                self.prefs.route_with_shift_alt = !self.prefs.route_with_shift_alt;
-                self.prefs_changed = true;
+                self.set_setting(keyed::ROUTE_WITH_SHIFT_ALT, json!(!self.settings.route_with_shift_alt), host, view, outward);
             }
             // W (notation 2.6): a wire from the terminal that has the focus, on the canvas that has the keyboard.
             keys::WIRE => {
                 let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
-                let canvas_shown = view.window_of(&function).map(|window| canvas_shown(window, &self.prefs)).unwrap_or_default();
+                let canvas_shown = view.window_of(&function).map(|window| canvas_shown(window, &self.settings)).unwrap_or_default();
                 let started = self.drawn.get_mut(&function).is_some_and(|drawn| drawn.canvas.start_wire(&canvas_shown));
                 if !started {
                     self.say("W starts a wire from the terminal in focus: select a node, then Enter goes to its terminals");
                 }
             }
-            keys::AUTOPATCH => {
-                self.prefs.autopatch = !self.prefs.autopatch;
-                self.prefs_changed = true;
-            }
-            keys::INTO_WIRE => {
-                self.prefs.into_wire = !self.prefs.into_wire;
-                self.prefs_changed = true;
-            }
+            keys::AUTOPATCH => self.set_setting(keyed::AUTOPATCH, json!(!self.settings.autopatch), host, view, outward),
+            keys::INTO_WIRE => self.set_setting(keyed::INTO_WIRE, json!(!self.settings.into_wire), host, view, outward),
             // Space (notation 2.6): quick insertion from what the canvas that has the keyboard holds.
             keys::QUICK_INSERT => {
                 let Some(function) = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown) else { return };
                 let Some(window) = view.window_of(&function) else { return };
-                let canvas_shown = canvas_shown(window, &self.prefs);
+                let canvas_shown = canvas_shown(window, &self.settings);
                 let pointer = self.pointer;
-                let autopatch = self.prefs.autopatch;
+                let autopatch = self.settings.autopatch;
                 let quick = self.drawn.get_mut(&function).and_then(|drawn| drawn.canvas.quick_insert(&canvas_shown, autopatch, pointer));
                 if let Some(quick) = quick {
                     self.open_quick(view, &function, quick);
@@ -1949,7 +2047,7 @@ impl Ide {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(function), Some(asked)) = (function, keys::part_asked(&id)) else { return };
                 let Some(window) = view.window_of(&function) else { return };
-                let canvas_shown = canvas_shown(window, &self.prefs);
+                let canvas_shown = canvas_shown(window, &self.settings);
                 let said = self.drawn.get_mut(&function).map(|drawn| drawn.canvas.ask_part(&canvas_shown, asked));
                 if let Some(Err(why)) = said {
                     self.say(why);
@@ -1995,7 +2093,7 @@ impl Ide {
                 let mut params = Map::new();
                 params.insert("file".to_owned(), json!(file));
                 if let Some(window) = view.window_of(&function) {
-                    let selection = canvas_shown(window, &self.prefs).selection;
+                    let selection = canvas_shown(window, &self.settings).selection;
                     for (name, list) in [("nodes", selection.nodes), ("wires", selection.wires), ("terminals", selection.terminals)] {
                         if !list.is_empty() {
                             params.insert(name.to_owned(), json!(list));
@@ -2017,7 +2115,7 @@ impl Ide {
                 let function = self.canvas_focus.as_ref().map(|(function, _)| function.clone()).or(shown);
                 let (Some(host), Some(function)) = (host, function) else { return };
                 let Some(window) = view.window_of(&function) else { return };
-                let canvas_shown = canvas_shown(window, &self.prefs);
+                let canvas_shown = canvas_shown(window, &self.settings);
                 let Some(selection) = self.drawn.get(&function).and_then(|drawn| drawn.canvas.step_selection(step, &canvas_shown)) else { return };
                 self.ask_select(host, &function, selection);
             }
@@ -2069,8 +2167,6 @@ impl Ide {
                 if id == "view.set_standard_view" {
                     let on = params.get("on").and_then(Value::as_bool).unwrap_or(!view.standard_everywhere);
                     params.insert("on".to_owned(), json!(on));
-                    self.prefs.standard_everywhere = on;
-                    self.prefs_changed = true;
                 }
                 // An editing command: its function, from its file, for what follows its result.
                 let edited = EDITS
@@ -2238,7 +2334,7 @@ fn renamed_nodes(result: &Value) -> Vec<(String, String)> {
 
 /// What the canvas of a window shows without drawing again: its arms, its selection when it is of its function, and the
 /// setting of the drag (notation 2.6).
-fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
+fn canvas_shown(window: &WindowShown, settings: &Values) -> Shown {
     let selection = &window.selection;
     let selection = if window.function.as_deref() == Some(selection.function.as_str()) {
         Selection { nodes: selection.nodes.clone(), wires: selection.wires.clone(), terminals: selection.terminals.clone() }
@@ -2248,12 +2344,12 @@ fn canvas_shown(window: &WindowShown, prefs: &Prefs) -> Shown {
     Shown {
         arms: window.arms.clone(),
         selection,
-        drag_pans: prefs.drag_pans,
-        mark_fixed: prefs.mark_fixed,
-        replace_with_alt: prefs.replace_with_alt,
-        accept_mismatch: prefs.accept_mismatch,
-        route_with_shift_alt: prefs.route_with_shift_alt,
-        into_wire: prefs.into_wire,
+        drag_pans: settings.drag_pans,
+        mark_fixed: settings.mark_fixed,
+        replace_with_alt: settings.replace_with_alt,
+        accept_mismatch: settings.accept_mismatch,
+        route_with_shift_alt: settings.route_with_shift_alt,
+        into_wire: settings.into_wire,
     }
 }
 
@@ -2304,7 +2400,7 @@ fn start_actions(keymap: &Keymap) -> Vec<palette::Entry> {
             .map(|planned| palette::Entry { state: palette::State::Planned(planned.clone()), ..palette::Entry::new(id, planned.label) })
     };
     let mut actions = vec![entry("project.new", "New project…"), entry("project.open", "Open folder…")];
-    actions.extend(planned("ide.planned.settings"));
+    actions.push(entry(keys::SETTINGS, "Settings…"));
     actions.extend(planned(keys::PLANNED_AGENT));
     actions
 }
@@ -2421,7 +2517,7 @@ impl Content<'_> {
                 ui,
                 view,
                 focused.function.as_deref(),
-                self.ide.prefs.preview_tabs,
+                self.ide.settings.preview_tabs,
                 &mut self.ide.new_function,
                 &mut self.ide.renaming,
             ),
@@ -2433,7 +2529,7 @@ impl Content<'_> {
             Pane::Problems => panels::problems(ui, view, focused, &mut self.ide.problems),
             Pane::Run => {
                 let said = self.ide.run_said(focused.function.as_deref(), ui.input(|input| input.time));
-                panels::run(ui, focused, self.ide.prefs.values_shown, said.as_ref())
+                panels::run(ui, focused, self.ide.settings.values_shown, said.as_ref())
             }
             Pane::Start => {
                 if let Some(chosen) = self.ide.start_page(ui, self.start) {
@@ -2500,7 +2596,7 @@ impl Content<'_> {
             if icon::button(ui, Icon::Stop, stoppable, &format!("Stop the run{}", key(keys::STOP))).clicked() {
                 asked = Some(panels::Asked::Window(keys::STOP));
             }
-            let record = self.ide.prefs.record_values;
+            let record = self.ide.settings.record_values;
             let record_hover = if record {
                 "Record values: on. The next run writes its trace, and its values show on the wires"
             } else {
@@ -2642,7 +2738,7 @@ impl Content<'_> {
             ui.centered_and_justified(|ui| ui.label(RichText::new(text).weak()));
             return;
         }
-        let shown = window.map(|window| canvas_shown(window, &self.ide.prefs)).unwrap_or_default();
+        let shown = window.map(|window| canvas_shown(window, &self.ide.settings)).unwrap_or_default();
         let response = drawn.canvas.show(ui, theme, &shown);
         if response.response.has_focus() {
             self.ide.canvas_focus = Some((function.to_owned(), response.response.id));
@@ -2812,7 +2908,7 @@ impl Content<'_> {
                 // A field in place written (notation 2.6).
                 Intent::Field { kind, text } => match file_of(view, function) {
                     Some(file) => {
-                        let (id, params) = field_command(&file, kind, &text, self.ide.prefs.accept_mismatch);
+                        let (id, params) = field_command(&file, kind, &text, self.ide.settings.accept_mismatch);
                         let reply = self.host.send(id, params);
                         self.ide.field_edits.push((function.to_owned(), reply));
                     }
@@ -2956,5 +3052,28 @@ mod field_tests {
         assert_eq!(quoted("say \"hi\""), "\"say \\\"hi\\\"\"");
         assert_eq!(quoted("kept \\\" and \\n"), "\"kept \\\" and \\n\"");
         assert_eq!(quoted("end \\"), "\"end \\\\\"");
+    }
+}
+
+#[cfg(test)]
+mod prefs_tests {
+    use super::{Prefs, keyed};
+    use serde_json::json;
+
+    /// The settings of an earlier LabCraft, kept as fields, go into the keys once: a value that is the default is not
+    /// written, and a key already there wins (commands.md 9.7).
+    #[test]
+    fn the_fields_of_an_earlier_labcraft_become_keys_once() {
+        let earlier = r#"{ "dark": true, "look": "studio", "drag_pans": true, "mark_fixed": false, "preview_tabs": true }"#;
+        let mut prefs: Prefs = serde_json::from_str(earlier).unwrap();
+        prefs.settings.insert(keyed::DRAG_PANS.to_owned(), json!(false));
+        assert!(prefs.take_fields());
+        assert_eq!(prefs.settings.get(keyed::THEME), Some(&json!("dark")));
+        assert_eq!(prefs.settings.get(keyed::MARK_FIXED), Some(&json!(false)));
+        assert_eq!(prefs.settings.get(keyed::DRAG_PANS), Some(&json!(false)), "the key already there");
+        assert!(!prefs.settings.contains_key(keyed::LOOK) && !prefs.settings.contains_key(keyed::PREVIEW_TABS), "defaults");
+        assert!(!prefs.take_fields(), "once");
+        let written = serde_json::to_value(&prefs).unwrap();
+        assert!(written.get("dark").is_none() && written.get("fields_taken") == Some(&json!(true)), "{written}");
     }
 }

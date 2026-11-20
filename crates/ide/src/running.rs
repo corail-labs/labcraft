@@ -191,6 +191,8 @@ mod tests {
         }
 
         fn set_zoom(&self, _function: &str, _zoom: f32) {}
+
+        fn set_user_settings(&self, _keys: &serde_json::Map<String, Value>) {}
     }
 
     fn going(run: &str) -> Result<Value, CommandError> {

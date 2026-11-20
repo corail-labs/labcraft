@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 craft-atomic = { workspace = true }
+craft-settings = { workspace = true }
 ctrlc = { workspace = true }
 labcraft-check = { workspace = true }
 labcraft-diagram = { workspace = true }

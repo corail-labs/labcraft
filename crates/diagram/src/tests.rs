@@ -55,9 +55,14 @@ fn index_of(checked: &Checked, shown: &str) -> usize {
 }
 
 fn graph<'a>(checked: &'a Checked, names: &'a Interner, shown: &str) -> Graph<'a> {
+    graph_appearing(checked, names, shown, &crate::Appearance::default())
+}
+
+/// [`graph`], with the blocks painted as the settings of the reader ask (commands.md 9.7).
+fn graph_appearing<'a>(checked: &'a Checked, names: &'a Interner, shown: &str, appearance: &crate::Appearance) -> Graph<'a> {
     let file = &checked.files[index_of(checked, shown)];
     let function = function_of(file).unwrap();
-    Builder::new(checked, file, names).graph(function, &orders_of(file, function, names), u64::MAX).unwrap()
+    Builder::new(checked, file, names).appearing(appearance).graph(function, &orders_of(file, function, names), u64::MAX).unwrap()
 }
 
 const SESSION: &str = "labcraft 1\n\ntype session = opaque\n";
@@ -2547,6 +2552,11 @@ type Masked = (crate::size::Sized, Vec<Vec<(i64, i64)>>, Option<String>);
 
 /// The block of the call to `lib.g`, its outlines and the text of its band, when `lib` has `manifest` and `g` `sections`.
 fn masked(manifest: Option<&str>, sections: &str) -> Masked {
+    masked_appearing(manifest, sections, &crate::Appearance::default())
+}
+
+/// [`masked`], with the blocks painted as the settings of the reader ask.
+fn masked_appearing(manifest: Option<&str>, sections: &str, appearance: &crate::Appearance) -> Masked {
     let callee = format!("labcraft 1\n\n{G}{sections}");
     let main = "labcraft 1\n\nuse lib\n\nfn main(v: f64, e: error) -> (r: i64, err: error) {\n    r = lib.g(v)\n    err = e\n}\n";
     let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
@@ -2558,7 +2568,7 @@ fn masked(manifest: Option<&str>, sections: &str) -> Masked {
     let mut names = Interner::new();
     let checked = check(root, &Nothing, &mut names, &Limits::default());
     assert_eq!(checked.report.errors(), 0, "{:?}", checked.report.diagnostics());
-    let graph = graph(&checked, &names, "main.lcf");
+    let graph = graph_appearing(&checked, &names, "main.lcf", appearance);
     let bands = crate::bands(&graph);
     let index = graph.nodes.iter().position(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
     let sizer = Sizer::new(false);
@@ -2605,6 +2615,23 @@ fn the_colour_of_a_mask_gives_the_band_and_tints_the_body_as_a_color_line_does()
     assert_eq!(fills(&from_mask).first(), Some(&Colour::Written(0xDE_E8F0, 0x22_303D)));
     assert!(fills(&from_mask).contains(&Colour::Written(0x2F_6F9F, 0x2F_6F9F)), "{:?}", fills(&from_mask));
     assert_eq!(fills(&from_mask), fills(&from_line));
+}
+
+/// The reader's colour of a library (commands.md 9.7) is drawn as a `color` of its mask would be; a function's own
+/// `color` stays; `neutral` draws the block as one with no colour at all.
+#[test]
+fn the_reader_colours_a_library_or_draws_every_block_neutral() {
+    let colour = |hex: &str| labcraft_graph::Rgb::parse(hex).unwrap();
+    let reader = crate::Appearance { neutral_blocks: false, library_colors: [("lib".to_owned(), colour("#2F6F9F"))].into() };
+    let mask = Some("[mask]\ncolor = \"#9F2F2F\"\n");
+    let coloured = masked_appearing(mask, "", &reader).0;
+    assert_eq!(fills(&coloured), fills(&masked(Some("[mask]\ncolor = \"#2F6F9F\"\n"), "").0), "in place of the mask's");
+    assert_eq!(fills(&masked_appearing(None, "", &reader).0), fills(&coloured), "a library with no mask too");
+    let own = "\nterminals {\n    color \"#123456\"\n}\n";
+    assert_eq!(fills(&masked_appearing(mask, own, &reader).0), fills(&masked(None, own).0), "the function's own `color` stays");
+    let neutral = crate::Appearance { neutral_blocks: true, ..reader };
+    let filled = Some("[mask]\ncolor = \"#9F2F2F\"\nfill = \"#64748B\"\nstroke = \"#102030\"\n");
+    assert_eq!(fills(&masked_appearing(filled, own, &neutral).0), fills(&masked(None, "").0));
 }
 
 #[test]

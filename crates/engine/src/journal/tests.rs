@@ -88,7 +88,11 @@ fn every_command_is_a_line_with_its_author_its_result_and_its_files() {
         (json!("user"), json!("path.not_found"), json!([]))
     );
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert_eq!(memory.get("/p/.labcraft/.gitignore").as_deref(), Some(&b"*\n"[..]), "made with `.labcraft`: git does not see the journal");
+    assert_eq!(
+        memory.get("/p/.labcraft/.gitignore").as_deref(),
+        Some(crate::runs::LABCRAFT_GITIGNORE),
+        "made with `.labcraft`: git sees only it and `config.toml`"
+    );
     assert!(names(&memory).contains(&".7.lock".to_owned()), "the lock of the process, which tells another that it runs: {:?}", names(&memory));
 }
 

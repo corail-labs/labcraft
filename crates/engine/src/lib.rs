@@ -39,6 +39,7 @@ mod project;
 pub mod registry;
 pub mod runs;
 pub mod session;
+pub mod settings;
 pub mod shipped;
 mod simulations;
 pub mod view;

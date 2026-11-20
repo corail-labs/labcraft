@@ -47,7 +47,13 @@ pub struct Session {
 impl Session {
     /// The session of the project at `folder`, which looks for libraries in `lib_paths` (`--lib-path`), with the
     /// window that shows it. `changes`: where a watcher of the folder sends what it sees; none, no watching.
-    pub fn new(folder: &Path, lib_paths: Vec<PathBuf>, standard_everywhere: bool, changes: Option<Sender<Message>>) -> Result<Session, CommandError> {
+    /// `user_settings`: the keys of the store of the user (commands.md 9.7), which the window keeps.
+    pub fn new(
+        folder: &Path,
+        lib_paths: Vec<PathBuf>,
+        user_settings: &serde_json::Map<String, Value>,
+        changes: Option<Sender<Message>>,
+    ) -> Result<Session, CommandError> {
         // The home folder and the root of a disk are no project (mcp.md 1): the session would write its journal there and
         // watch all of it.
         if let Some(why) = labcraft_cli::mcp::too_wide_folder(folder) {
@@ -66,7 +72,7 @@ impl Session {
         let mut engine = labcraft_engine::Session::new(Arc::new(Disk), config, false)
             .map_err(|error| CommandError { parameter: Some("folder".to_owned()), ..error })?;
         engine.with_window();
-        engine.execute("view.set_standard_view", &json!({ "on": standard_everywhere }))?;
+        engine.set_user_settings(user_settings);
         let mut session = Session {
             engine,
             folder: folder.to_path_buf(),
@@ -178,6 +184,8 @@ pub enum Message {
     OpenTrace(Option<String>, PathBuf),
     /// The zoom of the canvas shown.
     Zoom(String, f32),
+    /// The keys of the store of the user, which the window keeps (commands.md 9.7).
+    UserSettings(serde_json::Map<String, Value>),
     /// A file watched changed.
     Changed,
     /// The file of `--style` changed.
@@ -189,7 +197,8 @@ pub enum Message {
 pub struct Opening {
     pub folder: PathBuf,
     pub lib_paths: Vec<PathBuf>,
-    pub standard_everywhere: bool,
+    /// The keys of the store of the user (commands.md 9.7).
+    pub user_settings: serde_json::Map<String, Value>,
     pub style: Option<PathBuf>,
     /// A new project: `main.lcf` is written before it opens.
     pub new: bool,
@@ -218,7 +227,7 @@ impl Handle {
                 if opening.new {
                     write_first_function(&opening.folder, opening.lib_paths.clone())?;
                 }
-                let mut session = Session::new(&opening.folder, opening.lib_paths, opening.standard_everywhere, Some(changes))?;
+                let mut session = Session::new(&opening.folder, opening.lib_paths, &opening.user_settings, Some(changes))?;
                 if let Some(path) = opening.style {
                     session.watch_style(path);
                 }
@@ -262,6 +271,10 @@ impl Host for Handle {
 
     fn set_zoom(&self, function: &str, zoom: f32) {
         let _ = self.sender.send(Message::Zoom(function.to_owned(), zoom));
+    }
+
+    fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
+        let _ = self.sender.send(Message::UserSettings(keys.clone()));
     }
 }
 
@@ -325,6 +338,10 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
                 session.set_zoom(&function, zoom);
                 continue;
             }
+            Message::UserSettings(keys) => {
+                session.engine.set_user_settings(&keys);
+                publish(&session, shared, wake);
+            }
             first @ (Message::Changed | Message::StyleChanged) => {
                 // The changes of the 50 ms after the first one, with it: a window that does not move, so that a file
                 // written without end still lets the folder be checked. A command that comes meanwhile waits for the
@@ -362,7 +379,7 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
 
 /// Writes `main.lcf` in the folder of a new project that another window will open, by `file.write` as the window does.
 pub fn write_first_function(folder: &Path, lib_paths: Vec<PathBuf>) -> Result<(), CommandError> {
-    let mut session = Session::new(folder, lib_paths, false, None)?;
+    let mut session = Session::new(folder, lib_paths, &serde_json::Map::new(), None)?;
     let (path, text) = NEW_MAIN;
     session.execute("file.write", &json!({ "path": path, "text": text, "check": false })).map(|_| ())
 }

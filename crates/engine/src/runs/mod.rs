@@ -17,7 +17,7 @@ mod prepare;
 mod read;
 mod task;
 
-pub(crate) use task::{LABCRAFT_GITIGNORE, hold, in_place, lock_of, trace_path};
+pub(crate) use task::{LABCRAFT_GITIGNORE, hold, in_place, labcraft_folder, lock_of, trace_path};
 #[cfg(test)]
 mod tests;
 

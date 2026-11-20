@@ -17,7 +17,9 @@ use craft_ui::fonts::{Family, I18nScripts, UiFonts};
 use egui::{FontData, FontFamily};
 use js_sys::Uint8Array;
 use labcraft_diagram::Drawing;
+use labcraft_engine::settings;
 use labcraft_ide::{Host, Ide, Outward, Prefs, StartList};
+use serde_json::{Value, json};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::{Closure, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -196,7 +198,7 @@ impl Page {
         let ctx = creation.egui_ctx.clone();
         install_fonts(&ctx);
         let prefs = read_prefs();
-        let standard_everywhere = prefs.standard_everywhere;
+        let user_settings = Value::Object(prefs.settings.clone()).to_string();
         let backend = creation.wgpu_render_state.as_ref().map(|state| format!("{:?}", state.adapter.get_info().backend)).unwrap_or_default();
         let inbox = Inbox { queue: Rc::default(), ctx: ctx.clone() };
         listen_to_drops(&inbox);
@@ -205,7 +207,7 @@ impl Page {
         let mut page = Page {
             // The browser draws the frame of its window.
             ide: Ide::new(&ctx, prefs, craft_window::Frame::Desktop),
-            shared: Shared::new(Supervisor::new(standard_everywhere)),
+            shared: Shared::new(Supervisor::new(user_settings)),
             inbox,
             running: None,
             started: 0,
@@ -445,15 +447,22 @@ fn read_prefs() -> Prefs {
     if let Some(prefs) = stored(PREFS_KEY).and_then(|json| serde_json::from_str::<Prefs>(&json).ok()) {
         return prefs;
     }
-    let mut prefs =
-        Prefs { dark: prefers("(prefers-color-scheme: dark)"), reduced_motion: prefers("(prefers-reduced-motion: reduce)"), ..Prefs::default() };
+    let mut prefs = Prefs::default();
+    let mut dark = prefers("(prefers-color-scheme: dark)");
     match stored(VIEWER_THEME_KEY).as_deref() {
-        Some("dark") => prefs.dark = true,
-        Some("light") => prefs.dark = false,
+        Some("dark") => dark = true,
+        Some("light") => dark = false,
         _ => {}
     }
-    if let Some(standard) = stored(VIEWER_STANDARD_KEY) {
-        prefs.standard_everywhere = standard == "true";
+    let keys = &mut prefs.settings;
+    if dark {
+        keys.insert(settings::THEME.to_owned(), json!("dark"));
+    }
+    if prefers("(prefers-reduced-motion: reduce)") {
+        keys.insert(settings::REDUCED_MOTION.to_owned(), json!(true));
+    }
+    if stored(VIEWER_STANDARD_KEY).as_deref() == Some("true") {
+        keys.insert(settings::STANDARD_EVERYWHERE.to_owned(), json!(true));
     }
     prefs
 }

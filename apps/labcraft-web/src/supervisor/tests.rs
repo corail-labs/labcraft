@@ -122,7 +122,7 @@ fn drawn_function(supervisor: &Supervisor) -> Option<String> {
 }
 
 fn opened(folder: Folder, function: Option<&str>) -> (Supervisor, Worker) {
-    let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+    let (mut supervisor, mut worker) = (Supervisor::new(String::new()), Worker::default());
     let actions = supervisor.open(folder, function.map(str::to_owned));
     drive(&mut supervisor, &mut worker, actions);
     (supervisor, worker)
@@ -182,7 +182,7 @@ fn the_diagnostics_come_as_a_report() {
 fn a_folder_opens_on_the_function_asked_for_when_it_has_it() {
     poison(&[]);
     for (asked, expected) in [(Some("beta"), "beta"), (Some("gamma"), "alpha"), (None, "alpha")] {
-        let (mut supervisor, mut worker) = (Supervisor::new(false), Worker::default());
+        let (mut supervisor, mut worker) = (Supervisor::new(String::new()), Worker::default());
         let actions = supervisor.open(folder(), asked.map(str::to_owned));
         // Nothing is drawn before the worker answers, whatever was asked, and nothing is said yet.
         assert!(shown(&supervisor).main.drawing.is_none() && supervisor.busy() && supervisor.notices().is_empty());
@@ -288,16 +288,19 @@ fn a_folder_that_traps_twice_shows_lc0099_until_another_is_opened() {
 #[test]
 fn a_trap_restarts_the_worker_on_the_same_files_and_the_function_shown() {
     poison(&[]);
-    let (mut supervisor, mut worker) = (Supervisor::new(true), Worker::default());
+    let (mut supervisor, mut worker) = (Supervisor::new(r#"{ "view.standard_everywhere": true }"#.to_owned()), Worker::default());
     let actions = supervisor.open(folder(), None);
     drive(&mut supervisor, &mut worker, actions);
     command(&mut supervisor, &mut worker, "view.show_function", json!({ "function": "beta" })).unwrap();
+    // A key that the worker set: the next one is given it.
+    command(&mut supervisor, &mut worker, "settings.set", json!({ "key": "appearance.block_fill", "value": "neutral" })).unwrap();
     let actions = supervisor.trap();
     drive(&mut supervisor, &mut worker, actions);
     assert_eq!(worker.started, 2);
     let view = shown(&supervisor);
     assert_eq!(view.main.function.as_deref(), Some("beta"), "the function shown before");
     assert!(view.standard_everywhere, "the preference");
+    assert_eq!(view.settings.user.get("appearance.block_fill"), Some(&json!("neutral")), "set before the trap");
     assert!(supervisor.notices().is_empty() && view.main.drawing.is_some());
 }
 
@@ -328,7 +331,7 @@ fn a_file_written_survives_a_trap() {
 
 #[test]
 fn a_command_before_a_folder_fails_at_once() {
-    let mut supervisor = Supervisor::new(false);
+    let mut supervisor = Supervisor::new(String::new());
     let (sender, reply) = Reply::channel();
     assert!(supervisor.command("view.show_function", json!({}), sender).is_empty());
     assert_eq!(reply.take().unwrap().unwrap_err().code, "command.not_enabled");
@@ -336,7 +339,7 @@ fn a_command_before_a_folder_fails_at_once() {
 
 #[test]
 fn a_worker_that_does_not_load_is_said_and_not_blamed_on_the_folder() {
-    let mut supervisor = Supervisor::new(false);
+    let mut supervisor = Supervisor::new(String::new());
     assert_eq!(supervisor.open(folder(), None), [Action::Start]);
     let (sender, reply) = Reply::channel();
     assert!(supervisor.command("view.show_function", json!({ "function": "beta" }), sender).is_empty(), "it waits for the worker");
@@ -360,7 +363,7 @@ fn a_failure_goes_to_its_reply_with_its_code() {
 
 #[test]
 fn nothing_goes_to_a_worker_before_it_listens_and_one_message_at_a_time() {
-    let mut supervisor = Supervisor::new(false);
+    let mut supervisor = Supervisor::new(String::new());
     assert_eq!(supervisor.open(folder(), None), [Action::Start]);
     assert!(supervisor.busy());
     let (sender, _reply) = Reply::channel();

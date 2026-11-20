@@ -129,7 +129,8 @@ const MAKING_ERRORS: &[&str] = &[
     "internal",
 ];
 
-const SETTINGS_ERRORS: &[&str] = &["command.not_enabled", "params.unknown", "params.missing", "params.invalid", "file.unwritable", "internal"];
+pub(super) const SETTINGS_ERRORS: &[&str] =
+    &["command.not_enabled", "params.unknown", "params.missing", "params.invalid", "file.unparsed", "file.unwritable", "internal"];
 
 const WINDOW_ERRORS: &[&str] =
     &["command.not_enabled", "agent.not_allowed", "params.unknown", "params.missing", "params.invalid", "edit.unknown", "internal"];
@@ -1196,40 +1197,34 @@ pub(super) fn catalog() -> Vec<Command> {
             EDIT_ERRORS,
             false,
         ),
-        planned(
-            STEP_6,
-            plain(
-                "settings.get",
-                "Get Settings",
-                "Read the settings, with where each comes from",
-                "Returns `{ \"settings\": [{ \"key\", \"value\", \"from\" }] }`; `from` is `project`, `user` or `default`. Without `key`, it returns all of them.",
-                object(&[("key", string("The key of one setting; without it, all."))], &[]),
+        plain(
+            "settings.get",
+            "Get Settings",
+            "Read the settings, with where each comes from",
+            "Returns `{ \"settings\": [{ \"key\", \"value\", \"from\", \"project\" }] }`; `from` is `project`, `user` or `default`, and `project` says whether a project may hold the key. Without `key`, it returns all of them.",
+            object(&[("key", string("The key of one setting; without it, all."))], &[]),
+            SETTINGS_ERRORS,
+            &[],
+        ),
+        Command {
+            result: "`{ \"before\": …, \"scope\": \"user\" }`",
+            ..plain(
+                "settings.set",
+                "Set Setting",
+                "Write a setting in the store of the user or of the project",
+                "Writes the setting in the store of the user or of the project, and returns what that store held, `null` for nothing. `value: null` takes the key out of the store: the other store or the default gives it again. A setting is not a program, so this is not a step of history. An unknown key, a value of the wrong type, or `scope: \"project\"` for a key that a project may not hold, is `params.invalid`.",
+                object(
+                    &[
+                        ("key", string("The key of the setting, `group.name` (`editor.drag_pans`).")),
+                        ("value", json!({ "description": "Its value; `null` takes the key out of the store." })),
+                        ("scope", one_of("Where to write it.", &["user", "project"], "user")),
+                    ],
+                    &["key", "value"],
+                ),
                 SETTINGS_ERRORS,
-                &[],
-            ),
-        ),
-        planned(
-            STEP_6,
-            Command {
-                result: "`{ \"before\": …, \"scope\": \"user\" }`",
-                ..plain(
-                    "settings.set",
-                    "Set Setting",
-                    "Write a setting in the store of the user or of the project",
-                    "Writes the setting in the store of the user or of the project, and returns the value it had. A setting is not a program, so this is not a step of history. An unknown key, or a value of the wrong type, is `params.invalid`.",
-                    object(
-                        &[
-                            ("key", string("The key of the setting.")),
-                            ("value", json!({ "description": "Its value." })),
-                            ("scope", one_of("Where to write it.", &["user", "project"], "user")),
-                        ],
-                        &["key", "value"],
-                    ),
-                    SETTINGS_ERRORS,
-                    &[Effect::Files],
-                )
-            },
-        ),
+                &[Effect::Files],
+            )
+        },
         Command {
             effects: &[Effect::Files],
             ..window(
@@ -1353,13 +1348,6 @@ pub(super) fn catalog() -> Vec<Command> {
             WINDOW_ERRORS,
         ),
     ]
-}
-
-const STEP_6: &str = "M1 step 6 (#165)";
-
-/// A command that a later step of M1 builds.
-fn planned(step: &'static str, command: Command) -> Command {
-    Command { planned: Some(step), ..command }
 }
 
 /// A command that is not a step of history: it reads, or it writes something that is not the program.

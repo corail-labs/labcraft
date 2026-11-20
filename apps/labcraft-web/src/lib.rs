@@ -75,7 +75,7 @@ mod tests {
             let mut host = Host::new(None);
             let open = ToWorker::Open {
                 folder: std::sync::Arc::new(bundled.folder()),
-                standard_everywhere: false,
+                user_settings: String::new(),
                 skipped: Vec::new(),
                 show: None,
                 detached: Vec::new(),
@@ -111,7 +111,7 @@ mod tests {
         let bundled = BUNDLED.iter().find(|bundled| bundled.name == DEFAULT_FOLDER).unwrap();
         let open = ToWorker::Open {
             folder: std::sync::Arc::new(bundled.folder()),
-            standard_everywhere: false,
+            user_settings: String::new(),
             skipped: Vec::new(),
             show: Some(DEFAULT_FUNCTION.to_owned()),
             detached: Vec::new(),

@@ -391,8 +391,65 @@ pub(crate) fn in_place(ws: &dyn Workspace, root: &Path, shown: &str) -> bool {
     ws.canonicalize(&expected).is_ok_and(|real| real == expected)
 }
 
-/// What `.labcraft/.gitignore` holds when a run or the journal makes `.labcraft`: git sees nothing of it.
-pub(crate) const LABCRAFT_GITIGNORE: &[u8] = b"*\n";
+/// What `.labcraft/.gitignore` holds when LabCraft makes it: git sees only it and the settings of the project
+/// (commands.md 8).
+pub(crate) const LABCRAFT_GITIGNORE: &[u8] = b"*\n!.gitignore\n!config.toml\n";
+
+/// The lines of [`LABCRAFT_GITIGNORE`], `*` first.
+const GITIGNORE_LINES: [&str; 3] = ["*", "!.gitignore", "!config.toml"];
+
+/// Writes `.labcraft/.gitignore` when it is missing or lacks one of its lines, the lines already there kept: a project
+/// made before its settings has `.labcraft/` already (commands.md 8). A missing `*` goes first, so that the lines after
+/// it still let git see `config.toml`. Only a write of the settings of the project does it: a run and the journal make
+/// the file only with `.labcraft`, and leave one that is there as it is.
+fn gitignore(ws: &dyn Workspace, labcraft: &Path) -> io::Result<()> {
+    let path = labcraft.join(".gitignore");
+    let text = match ws.read(&path, 1 << 16) {
+        Ok(crate::workspace::Read::Bytes(bytes)) => match String::from_utf8(bytes) {
+            Ok(text) => text,
+            // Not one that LabCraft wrote: the user's, left as it is.
+            Err(_) => return Ok(()),
+        },
+        Ok(crate::workspace::Read::TooLarge(_)) => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
+    };
+    if text.is_empty() {
+        return ws.write(&path, LABCRAFT_GITIGNORE);
+    }
+    let has = |line: &str| text.lines().any(|written| written.trim_end() == line);
+    let missing: Vec<&str> = GITIGNORE_LINES.into_iter().filter(|line| !has(line)).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let mut new = String::new();
+    if missing.first() == Some(&"*") {
+        new.push_str("*\n");
+    }
+    new.push_str(&text);
+    if !new.is_empty() && !new.ends_with('\n') {
+        new.push('\n');
+    }
+    for line in missing.into_iter().filter(|line| *line != "*") {
+        new.push_str(line);
+        new.push('\n');
+    }
+    ws.write(&path, new.as_bytes())
+}
+
+/// Makes `.labcraft` under the root, never through a link that leads out of the project, and its `.gitignore`: for
+/// the settings of the project (commands.md 9.7).
+pub(crate) fn labcraft_folder(ws: &dyn Workspace, root: &Path) -> Result<(), String> {
+    let labcraft = root.join(".labcraft");
+    if ws.link_metadata(&labcraft).is_ok() {
+        if !in_place(ws, root, ".labcraft") {
+            return Err("`.labcraft` leads out of the project through a link".to_owned());
+        }
+    } else if let Err(error) = ws.create_folders(&labcraft) {
+        return Err(format!("`.labcraft` cannot be made: {}", io_text(&error)));
+    }
+    gitignore(ws, &labcraft).map_err(|error| format!("`.labcraft/.gitignore` cannot be written: {}", io_text(&error)))
+}
 
 /// Makes the folder of the trace (and `.labcraft/.gitignore` holding `*` when it makes `.labcraft`), refuses one that a link
 /// leads elsewhere, holds the lock of the process there, and removes the `.partial` files of the function that this

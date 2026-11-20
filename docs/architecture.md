@@ -994,7 +994,7 @@ As in the Craft apps: a **session** and a **registry** of commands (D-18).
   `.labcraft/runs/<function>.trace.jsonl`, or `.labcraft/runs/<folder>/<function>.trace.jsonl` for a folder that is not
   the root (decision of the owner, 2026-11-10), through `Workspace::create`, then is renamed over the last trace; the
   session is numbered in its process, so two sessions never write one `.partial`. `.labcraft/.gitignore` is written when
-  `.labcraft` is made. A folder of traces that a link leads elsewhere is refused, for writing and for `run.trace`
+  `.labcraft` is made, and given the lines it lacks when the settings of the project are written (commands.md 8). A folder of traces that a link leads elsewhere is refused, for writing and for `run.trace`
   (commands.md 2), and the report says so in `trace.error`. A run removes the `.partial` of its function that its own
   session left, and those of a process that no longer runs: a process holds the lock of `.<process>.lock` in each
   folder where it writes a `.partial` (`Workspace::try_lock`), kept in a table of the process until `runs::let_go`, and
@@ -1856,9 +1856,17 @@ fuzzing looks for (12.10).
 - **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under
   the path of its file, and removed when the text parses again. When the project opens and a recovery file is newer
   than its file, the window says so and offers to take it back.
-- **The settings** are two stores of `craft-settings`, the user's and the project's (`SettingsStore::open_at` on
-  `.labcraft/`), merged key by key by `engine`, the project first; `settings.set` says which one it writes. On the web
-  the store of the user is held by the page (12.9).
+- **The settings** are two stores (commands.md 9.7), merged key by key by `engine::settings`, the project first;
+  `settings.set` says which one it writes. Both are TOML that `toml_edit` writes key by key, comments and unknown keys
+  kept: a store of `craft-settings` merges a table into its file and never takes a key out, so a `Reset` would come
+  back. A write changes only the keys that changed, in the file as it is then, read again: what another process wrote
+  stays. The project's, `.labcraft/config.toml`, the session reads and writes through its `Workspace`. The user's is the
+  host's: `settings.toml` in the folder that `craft-settings` resolves (`labcraft_cli::user_settings`), or the storage of
+  the page on the web (12.9). The host gives its keys to the session (`Session::set_user_settings`); the command line
+  writes them back at each change (`Session::on_user_settings`) and does not draw with them
+  (`Session::draw_without_user_settings`), and a window reads them in what the session publishes
+  (`Published::settings`), keeps them with its own settings, and its app writes them. A session whose keys the host
+  has not given (`Stores::given`, a worker started again) gets them from the window.
 - **The state of the view**, which M0v holds twice (the state, and what is published of it). `engine::view::View`
   is the only state; what the window
   reads is a snapshot, `Arc<Published>`, made from it after each command that changed it, and kept nowhere else. It

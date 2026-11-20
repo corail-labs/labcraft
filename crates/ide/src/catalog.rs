@@ -98,7 +98,6 @@ pub fn planned(id: &str) -> Option<Planned> {
             issue(167),
         )),
         "ide.planned.panel_view" => Some(card("Panel", "The front panel of the function: its controls and indicators", "M3", ROADMAP.to_owned())),
-        "ide.planned.settings" => Some(card("Settings", "The settings of the user and of the project, and the keys", "M1, step 6", issue(165))),
         _ => None,
     }
 }

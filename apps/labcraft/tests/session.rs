@@ -19,7 +19,7 @@ const BROKEN: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n 
 
 /// The session of the project at `folder`, opened: what `view.open` returned.
 fn open(folder: &Path) -> (Session, Value) {
-    let mut session = Session::new(folder, Vec::new(), false, None).unwrap();
+    let mut session = Session::new(folder, Vec::new(), &serde_json::Map::new(), None).unwrap();
     let opened = session.open(false).unwrap();
     (session, opened)
 }
@@ -49,7 +49,7 @@ fn the_commands_of_the_viewer_answer_as_commands_md_says() {
     assert_eq!(code(session.execute("view.show_function", &json!({ "function": "nowhere" }))), "params.invalid");
     // A folder of the session's root, named from it (commands.md 2); the viewer opens one anywhere through `open`.
     assert_eq!(code(session.execute("view.open", &json!({ "folder": "no-such" }))), "path.not_found");
-    assert_eq!(code(Session::new(&folder.0.join("no-such"), Vec::new(), false, None).map(|_| Value::Null)), "path.not_found");
+    assert_eq!(code(Session::new(&folder.0.join("no-such"), Vec::new(), &serde_json::Map::new(), None).map(|_| Value::Null)), "path.not_found");
     // The libraries are those of `--lib-path`, given to the session (decision of the owner, 2026-11-11).
     assert_eq!(code(session.execute("view.open", &json!({ "folder": ".", "lib_path": [] }))), "params.unknown");
     assert_eq!(code(session.execute("view.set_state", &json!({ "function": "main", "state": { "colour": { "a": 1 } } }))), "params.invalid");
@@ -230,7 +230,7 @@ fn a_file_of_values_starts_as_the_defaults_and_draws_again_with_what_it_says() {
     let values = Folder::new(&[]);
     let path = values.0.join("notation.toml");
     let (plain, _) = open(&folder.0);
-    let mut session = Session::new(&folder.0, Vec::new(), false, None).unwrap();
+    let mut session = Session::new(&folder.0, Vec::new(), &serde_json::Map::new(), None).unwrap();
     session.watch_style(path.clone());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), file_of(&Style::default()));
     assert!(session.snapshot().notices.is_empty());
@@ -327,7 +327,7 @@ fn a_new_run_shows_its_values_within_a_second_and_a_trace_draws_nothing_again() 
 
 /// The session of a project on its thread, opened.
 pub fn spawn(folder: &Path, lib_paths: Vec<PathBuf>, style: Option<PathBuf>, new: bool) -> Handle {
-    let opening = Opening { folder: folder.to_path_buf(), lib_paths, standard_everywhere: false, style, new };
+    let opening = Opening { folder: folder.to_path_buf(), lib_paths, user_settings: serde_json::Map::new(), style, new };
     let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
     reply.wait(Duration::from_secs(30)).unwrap().unwrap();
     handle

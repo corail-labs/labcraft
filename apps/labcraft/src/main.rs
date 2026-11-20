@@ -31,8 +31,10 @@ use labcraft::frames::{self, Frames};
 use labcraft::session::{self, Handle, Opening};
 use labcraft_diagram::style;
 use labcraft_editor::Canvas;
+use labcraft_engine::settings as keyed;
 use labcraft_ide::{Host, Ide, Outward, Reply, StartList};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 
 /// Exit code of wrong usage, as for `labcraft-cli` (`docs/cli.md`, section 1).
 const WRONG_USAGE: u8 = 2;
@@ -43,14 +45,15 @@ const MAX_RECENT: usize = 12;
 /// Inter 4.1 Regular, the face of the panels (architecture 11.5; `ATTRIBUTION.md`).
 static INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 
-/// The settings of the user, on disk: those the window keeps, and the projects opened last.
+/// The settings of the user, on disk: what the window keeps, and the projects opened last. The keys of commands.md 9.7
+/// are in `settings.toml` beside it (`labcraft_cli::user_settings`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 struct Prefs {
     window: labcraft_ide::Prefs,
     /// The folders of the projects opened last, the newest first.
     recent: Vec<String>,
-    /// The preferences of the viewer of M0v, read once into `window`. craft-settings keeps in the file the keys that the
+    /// The preferences of the viewer of M0v, read once into the keys. craft-settings keeps in the file the keys that the
     /// app no longer writes, so they stay there: `viewer_taken` says they were read, and they are never read again.
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<String>,
@@ -67,24 +70,24 @@ impl Settings for Prefs {
 }
 
 impl Prefs {
-    /// The preferences of the viewer of M0v go into those of the window, once; whether there is anything to write. When
-    /// the window has kept settings of its own already, they are the newer ones, and win.
-    fn take_those_of_the_viewer(&mut self) -> bool {
+    /// The preferences of the viewer of M0v go into `keys`, once; whether there is anything to write. When the window
+    /// kept settings already, as keys or as the fields of an earlier LabCraft, they are the newer ones, and win.
+    fn take_those_of_the_viewer(&mut self, keys: &mut Map<String, Value>) -> bool {
         if self.viewer_taken {
             return false;
         }
         self.viewer_taken = true;
-        if self.window != labcraft_ide::Prefs::default() {
+        if !keys.is_empty() || self.window.fields != labcraft_ide::Fields::default() {
             return true;
         }
         if let Some(theme) = self.theme.take() {
-            self.window.dark = theme == "dark";
+            keys.insert(keyed::THEME.to_owned(), json!(if theme == "dark" { "dark" } else { "light" }));
         }
         if let Some(on) = self.standard_everywhere.take() {
-            self.window.standard_everywhere = on;
+            keys.insert(keyed::STANDARD_EVERYWHERE.to_owned(), json!(on));
         }
         if let Some(on) = self.reduced_motion.take() {
-            self.window.reduced_motion = on;
+            keys.insert(keyed::REDUCED_MOTION.to_owned(), json!(on));
         }
         true
     }
@@ -92,26 +95,34 @@ impl Prefs {
 
 #[cfg(test)]
 mod tests {
-    use super::Prefs;
+    use super::{Prefs, keyed};
+    use serde_json::{Map, json};
 
     /// craft-settings keeps the keys of the viewer of M0v in the file: read once, then never again, and never over the
     /// settings that the window kept.
     #[test]
     fn the_settings_of_the_viewer_are_read_once_and_never_over_those_of_the_window() {
         let mut first = Prefs { theme: Some("dark".to_owned()), ..Prefs::default() };
-        assert!(first.take_those_of_the_viewer());
-        assert!(first.window.dark && first.viewer_taken);
+        let mut keys = Map::new();
+        assert!(first.take_those_of_the_viewer(&mut keys));
+        assert_eq!(keys.get(keyed::THEME), Some(&json!("dark")));
+        assert!(first.viewer_taken);
         // The user turns the dark theme off; the file still has `theme = "dark"`.
-        first.window.dark = false;
+        keys.remove(keyed::THEME);
         first.theme = Some("dark".to_owned());
-        assert!(!first.take_those_of_the_viewer());
-        assert!(!first.window.dark);
-        // A file of an earlier LabCraft: the window kept its settings, and the key of the viewer stayed.
+        assert!(!first.take_those_of_the_viewer(&mut keys));
+        assert!(keys.is_empty());
+        // A file of an earlier LabCraft: the window kept its settings as fields, and the key of the viewer stayed.
         let mut kept = Prefs { theme: Some("dark".to_owned()), ..Prefs::default() };
-        kept.window.preview_tabs = false;
-        assert!(kept.take_those_of_the_viewer());
-        assert!(!kept.window.dark && kept.viewer_taken);
+        kept.window.fields.preview_tabs = Some(false);
+        assert!(kept.take_those_of_the_viewer(&mut keys));
+        assert!(keys.is_empty() && kept.viewer_taken);
     }
+}
+
+/// The value of `appearance.theme` for a theme.
+fn theme_name(theme: labcraft_diagram::Theme) -> &'static str {
+    if theme == labcraft_diagram::Theme::Dark { "dark" } else { "light" }
 }
 
 fn main() -> ExitCode {
@@ -187,6 +198,9 @@ struct App {
     project: Option<Handle>,
     opening: Option<Pending>,
     prefs: SettingsStore<Prefs>,
+    /// The keys of the user as `settings.toml` held them when read, then as this window last wrote them: a write
+    /// changes only those that differ, and keeps those another process wrote.
+    kept: Map<String, Value>,
     dialogs: Dialogs<Ask>,
     start: StartList,
     /// Whether each recent project is still there, looked at off the thread of the window.
@@ -199,15 +213,19 @@ impl App {
     fn new(ctx: &egui::Context, options: Options, frame: craft_window::Frame) -> App {
         install_fonts(ctx);
         let (mut prefs, _) = SettingsStore::<Prefs>::open(Location::Auto);
-        if prefs.get().clone().take_those_of_the_viewer() {
-            prefs.update(|prefs| {
-                prefs.take_those_of_the_viewer();
-            });
+        let (mut keys, problem) = labcraft_cli::user_settings::read();
+        let mut taken = prefs.get().clone();
+        let viewer = taken.take_those_of_the_viewer(&mut keys);
+        if viewer {
+            prefs.set(taken);
         }
-        let mut window = prefs.get().window.clone();
+        let mut window = labcraft_ide::Prefs { settings: keys.clone(), ..prefs.get().window.clone() };
+        // The fields of an earlier LabCraft, once: written with the keys when the window is saved.
+        let fields = window.take_fields();
+        let kept = keys;
         // `--theme` is for this window: not kept.
         if let Some(theme) = options.theme {
-            window.dark = theme == labcraft_diagram::Theme::Dark;
+            window.settings.insert(keyed::THEME.to_owned(), json!(theme_name(theme)));
         }
         let wake = ctx.clone();
         let dialogs = Dialogs::new(Arc::new(move || wake.request_repaint()));
@@ -218,11 +236,18 @@ impl App {
             project: None,
             opening: None,
             prefs,
+            kept,
             dialogs,
             start: StartList { recent: Vec::new(), examples, problem: None, in_memory: false },
             found: None,
             timing: std::env::var_os(frames::VARIABLE).is_some().then(Timing::new),
         };
+        if let Some(problem) = problem {
+            app.say_on_start(problem);
+        }
+        if fields || viewer {
+            app.save_window();
+        }
         app.recent_changed(ctx);
         if let Some(folder) = app.options.folder.clone() {
             app.open(ctx, &folder, false);
@@ -243,7 +268,7 @@ impl App {
         let opening = Opening {
             folder: folder.to_path_buf(),
             lib_paths: self.options.lib_paths.clone(),
-            standard_everywhere: self.prefs.get().window.standard_everywhere,
+            user_settings: self.ide.prefs().settings,
             style: self.options.style.clone(),
             new,
         };
@@ -377,13 +402,31 @@ impl App {
     /// unless the user changed the theme here.
     fn save_window(&mut self) {
         let mut window = self.ide.prefs();
-        let saved = self.prefs.get().window.dark;
+        let mut keys = std::mem::take(&mut window.settings);
         if let Some(theme) = self.options.theme
-            && window.dark == (theme == labcraft_diagram::Theme::Dark)
+            && keys.get(keyed::THEME) == Some(&json!(theme_name(theme)))
         {
-            window.dark = saved;
+            match self.kept.get(keyed::THEME) {
+                Some(saved) => keys.insert(keyed::THEME.to_owned(), saved.clone()),
+                None => keys.remove(keyed::THEME),
+            };
         }
-        self.prefs.update(|prefs| prefs.window = window);
+        if self.kept != keys {
+            match labcraft_cli::user_settings::write(&self.kept, &keys) {
+                Ok(()) => self.kept = keys,
+                Err(error) => {
+                    self.say_on_start(error.message);
+                    // The fields of an earlier LabCraft stay in its file until they are in `settings.toml`.
+                    if !self.prefs.get().window.fields_taken {
+                        return;
+                    }
+                }
+            }
+        }
+        self.prefs.update(|prefs| {
+            prefs.window = window;
+            prefs.window.fields_taken = true;
+        });
     }
 
     fn say_on_start(&mut self, problem: String) {
