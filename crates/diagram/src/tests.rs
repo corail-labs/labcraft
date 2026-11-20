@@ -2680,3 +2680,95 @@ fn a_mask_with_only_the_default_band_place_draws_the_same_shapes_as_no_mask() {
     assert_eq!((plain.0.width, plain.0.height, &plain.0.inputs, &plain.0.outputs), (same.0.width, same.0.height, &same.0.inputs, &same.0.outputs));
     assert_eq!(plain.1, same.1);
 }
+
+// The block of the function drawn, alone, for the view `Block` (ide.md 3). Values worked out from spec 11.2: a block of
+// `top 5` is (5 + 1) × 8 = 48 wide; without `left`, a small block keeps the 4 places of notation 3.2, 40 high.
+
+/// The block of the function of `shown` among `files`.
+fn own_of(files: &[(&str, &str)], manifest: Option<&str>, shown: &str) -> crate::OwnBlock {
+    let mut names = Interner::new();
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    let mut lib = LibrarySource::new("lib".to_owned(), "lib".to_owned(), Origin::Project);
+    for (path, text) in files {
+        match path.strip_prefix("lib/") {
+            Some(file) => lib.files.push(source(file, text)),
+            None => root.files.push(source(path, text)),
+        }
+    }
+    lib.manifest = manifest.map(|text| Ok(text.to_owned()));
+    root.sub_libraries.push(lib);
+    let checked = check(root, &Nothing, &mut names, &Limits::default());
+    let index = index_of(&checked, shown);
+    // An export never has it: only a session asks for it.
+    let Drawn::Drawing(drawing) = draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) else { panic!("not drawn") };
+    assert!(drawing.block.is_none());
+    crate::own_block(&checked, index, &names, &DiagramLimits::default()).expect("the block of the function")
+}
+
+#[test]
+fn the_block_of_a_function_is_drawn_alone_with_what_its_section_writes() {
+    let g = "labcraft 1\n\nfn g(x: f64, y: f64) -> (n: i64) {\n    n = 1\n}\n\nterminals {\n    top 5\n    top 3 y\n    color \"#2f6f9f\"\n}\n";
+    let own = own_of(&[("g.lcf", g)], None, "g.lcf");
+    // One node, its box 48 × 40, inside the drawing, with a margin around what it draws.
+    assert_eq!(own.drawing.placed.len(), 1);
+    let placed = &own.drawing.placed[0];
+    assert_eq!((placed.width, placed.height), (4800, 4000));
+    assert_eq!(placed.callee, "g.lcf");
+    assert!(own.drawing.loose.is_empty(), "no frame");
+    for shape in own.drawing.groups.iter().flat_map(|group| group.shapes.iter()) {
+        let (left, top, right, bottom) = crate::extent(shape);
+        assert!(left >= 0 && top >= 0 && right <= own.drawing.width && bottom <= own.drawing.height, "{shape:?}");
+    }
+    let captions: Vec<&str> = own.drawing.ports.iter().filter(|port| !port.order).map(|port| port.caption.as_str()).collect();
+    assert_eq!(captions, ["x", "y", "n"]);
+    // The sizes in force; `top` written, `left` not. The line `top 3 y` needs 3 places on the top side; on the left and
+    // the right, `x` and `n` need a place each, and a side grows by two places from 0 to hold them: 2.
+    assert_eq!((own.top, own.left), (5, 4));
+    assert_eq!((own.written.top, own.written.left), (Some(5), None));
+    assert_eq!(own.least, (3, 2));
+    assert_eq!(own.written.color.as_deref(), Some("#2F6F9F"));
+    assert_eq!((own.written.fill.as_deref(), own.written.band.as_deref(), own.written.outline.as_ref()), (None, None, None));
+    // The root library has no band, and the commands can change it.
+    assert_eq!(own.library, "");
+    assert_eq!(own.manifest, "labcraft.toml");
+    assert_eq!(own.fixed, "");
+    assert_eq!(own.mask, crate::BlockFields::default());
+}
+
+#[test]
+fn the_block_of_a_function_says_what_the_mask_of_its_library_gives() {
+    let g = format!("labcraft 1\n\n{G}\nterminals {{\n    band hidden\n}}\n\noutline {{\n    template block\n}}\n");
+    let manifest = "[mask]\nband_place = \"above\"\ncolor = \"#B45309\"\nstroke = \"#78350f\"\noutline = '''\ntemplate d\n'''\n";
+    let own = own_of(&[("lib/g.lcf", &g)], Some(manifest), "g.lcf");
+    assert_eq!(own.library, "lib");
+    assert_eq!(own.mask.band.as_deref(), Some("above"));
+    assert_eq!((own.mask.color.as_deref(), own.mask.fill.as_deref(), own.mask.stroke.as_deref()), (Some("#B45309"), None, Some("#78350F")));
+    assert_eq!(own.mask.outline, Some(crate::OutlineChoice::Template("d".to_owned())));
+    assert_eq!((own.mask.top, own.mask.left), (None, None));
+    // Its own lines: the band, and the ordinary block in place of the D of the mask.
+    assert_eq!(own.written.band.as_deref(), Some("hidden"));
+    assert_eq!(own.written.outline, Some(crate::OutlineChoice::Template("block".to_owned())));
+    assert_eq!(own.written.color, None);
+}
+
+#[test]
+fn the_block_of_an_extern_or_of_a_drawn_outline_says_so() {
+    let f = "labcraft 1\n\nextern rust(crate: \"some\", function: \"f\")\nfn f(a: f64) -> (b: f64)\n\noutline {\n    path (0, 0) (w, 0) (w, h) (0, h)\n}\n";
+    let own = own_of(&[("f.lcf", f)], None, "f.lcf");
+    assert!(own.fixed.contains("`extern`"), "{}", own.fixed);
+    assert_eq!(own.written.outline, Some(crate::OutlineChoice::Path));
+}
+
+#[test]
+fn the_least_left_side_holds_the_terminals_that_no_line_places() {
+    // No section: six inputs on the left, grown by two places from 0 (spec 11.2): 6. No line asks for the top side: 1.
+    let f = "labcraft 1
+
+fn f(a: f64, b: f64, c: f64, d: f64, e: f64, g: f64) -> (n: i64) {
+    n = 1
+}
+";
+    let own = own_of(&[("f.lcf", f)], None, "f.lcf");
+    assert_eq!(own.least, (1, 6));
+    assert_eq!((own.written.top, own.written.left), (None, None));
+}

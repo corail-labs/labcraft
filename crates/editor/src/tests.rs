@@ -2202,3 +2202,109 @@ fn the_free_places_are_all_but_its_own_and_the_first_of_the_top() {
     use blockdrag::Side::{Left, Right, Top};
     assert_eq!(drag.free(&drawing), [(Top, 2), (Top, 3), (Top, 4), (Right, 1), (Left, 2), (Right, 2), (Left, 3), (Right, 3), (Left, 4), (Right, 4)]);
 }
+
+// The block of the view `Block` (ide.md 3): a drag on a terminal moves it to a place, a drag of an edge changes the size,
+// in places of 8 (spec 11.2). The block is shown in the rectangle `VIEW`, at the largest whole zoom that holds it.
+
+const VIEW: Rect = Rect { min: Pos2::new(0.0, 0.0), max: Pos2::new(600.0, 400.0) };
+
+/// The block of `g`, as the view shows it, in a drawing that holds it.
+fn own_block(sections: &str) -> Arc<Drawing> {
+    let callee = format!("{BLOCK_CALLEE}\nterminals {{\n{sections}}}\n");
+    let mut names = Interner::new();
+    let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
+    root.files.push(SourceFile { shown: "g.lcf".to_owned(), content: Content::Bytes(Cow::Owned(callee.into_bytes())) });
+    let checked = check(root, &Nothing, &mut names, &Limits::default());
+    let own = labcraft_diagram::own_block(&checked, 0, &names, &DiagramLimits::default()).expect("the block");
+    Arc::new(Drawing { block: Some(Box::new(own)), ..Drawing::default() })
+}
+
+/// Where a point of the block, in units, is on the screen.
+fn on_view(drawing: &Drawing, unit: Pos2) -> Pos2 {
+    let own = own_of(drawing);
+    let zoom = enlarged_zoom(&own.drawing, VIEW.size());
+    let size = Vec2::new(own.drawing.width as f32, own.drawing.height as f32) / 100.0 * zoom;
+    VIEW.center() - size / 2.0 + unit.to_vec2() * zoom
+}
+
+/// The box of the block, in units.
+fn block_box(drawing: &Drawing) -> Rect {
+    let placed = &own_of(drawing).drawing.placed[0];
+    Rect::from_min_size(Pos2::new(placed.x as f32, placed.y as f32) / 100.0, Vec2::new(placed.width as f32, placed.height as f32) / 100.0)
+}
+
+fn own_of(drawing: &Drawing) -> &labcraft_diagram::OwnBlock {
+    drawing.block.as_deref().expect("the block")
+}
+
+/// A drag from `from` to `to`, on the screen, over a few frames: what the view asks for.
+fn drag_block(own: &Arc<Drawing>, editable: bool, from: Pos2, to: Pos2) -> Vec<BlockIntent> {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut view = BlockView::new();
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let mut asked = Vec::new();
+    let steps = [
+        vec![],
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+        vec![egui::Event::PointerMoved(from + (to - from) / 2.0)],
+        vec![egui::Event::PointerMoved(to)],
+        vec![egui::Event::PointerMoved(to), button(to, false)],
+    ];
+    for (step, events) in steps.into_iter().enumerate() {
+        let mut raw = input(step as f64 * 0.1);
+        raw.events = events;
+        let output = ctx.run_ui(raw, |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(VIEW), |ui| asked.extend(view.show(ui, own, Theme::Light, editable)));
+        });
+        output.drop_without_applying_deltas();
+    }
+    asked
+}
+
+#[test]
+fn a_drag_of_the_right_edge_of_the_block_writes_its_top_side() {
+    let own = own_block("    top 5\n");
+    let block = block_box(&own);
+    assert_eq!(block.width(), 48.0);
+    // From the middle of the right edge, 16 units right: 64 from the left edge, 64 / 8 - 1 = 7 places.
+    let from = on_view(&own, Pos2::new(block.max.x, block.center().y));
+    let to = on_view(&own, Pos2::new(block.max.x + 16.0, block.center().y));
+    assert_eq!(drag_block(&own, true, from, to), [BlockIntent::Size { top: Some(7), left: None }]);
+}
+
+#[test]
+fn a_drag_of_the_bottom_edge_stops_at_the_least_size_that_holds_the_lines() {
+    // `left 4 z` needs 4 places on the left: dragged up to 8 below the top, the side keeps 4.
+    let own = own_block("    left 6\n    left 4 z\n");
+    let block = block_box(&own);
+    assert_eq!((own_of(&own).left, own_of(&own).least.1), (6, 4));
+    let from = on_view(&own, Pos2::new(block.center().x, block.max.y));
+    let to = on_view(&own, Pos2::new(block.center().x, block.min.y + 8.0));
+    assert_eq!(drag_block(&own, true, from, to), [BlockIntent::Size { top: None, left: Some(4) }]);
+}
+
+#[test]
+fn a_terminal_dragged_on_the_block_goes_to_a_place_of_a_side() {
+    let own = own_block("    top 5\n");
+    let block = block_box(&own);
+    let x = own_of(&own).drawing.ports.iter().find(|port| port.caption == "x" && port.input).expect("x");
+    let from = on_view(&own, Pos2::new(x.x as f32, x.y as f32) / 100.0);
+    // On the right edge, 16 down: place 2 of the right side.
+    let to = on_view(&own, Pos2::new(block.max.x, block.min.y + 16.0));
+    assert_eq!(drag_block(&own, true, from, to), [BlockIntent::Terminal { terminal: "input x".to_owned(), side: "right", place: 2 }]);
+}
+
+#[test]
+fn a_block_that_the_commands_cannot_change_says_why_and_asks_for_nothing() {
+    let mut drawing = (*own_block("    top 5\n")).clone();
+    if let Some(own) = drawing.block.as_mut() {
+        own.fixed = "kept".to_owned();
+    }
+    let own = Arc::new(drawing);
+    let block = block_box(&own);
+    let from = on_view(&own, Pos2::new(block.max.x, block.center().y));
+    let to = on_view(&own, Pos2::new(block.max.x + 16.0, block.center().y));
+    assert_eq!(drag_block(&own, false, from, to), [BlockIntent::Say("kept".to_owned())]);
+}

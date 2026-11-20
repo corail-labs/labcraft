@@ -544,6 +544,95 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The graph of the block of the function `name` of the file, alone, as a call to it from another library draws it
+    /// (the view `Block`, ide.md 3): its inputs unwired, a variadic parameter with one value, the band of its library.
+    pub fn own_block(&mut self, name: Name, statement: Id) -> Graph<'a> {
+        let library = self.file.library;
+        let callee = self.callee(Meaning::Function { library, name });
+        let declared = self.checked.libraries.get(library as usize).and_then(|declared| declared.functions.get(&name));
+        let mut inputs = Vec::new();
+        for &position in &callee.wires {
+            match callee.params.get(position) {
+                Some(param) if param.variadic => {
+                    let mut terminal = self.of_param(param);
+                    terminal.place = Some(0);
+                    inputs.push(terminal);
+                }
+                _ => self.unwired(&callee, position, &mut inputs),
+            }
+        }
+        let outputs = callee
+            .outputs
+            .iter()
+            .enumerate()
+            .map(|(index, output)| {
+                let ty = declared.and_then(|declared| declared.outputs.get(index)).map_or(TyId::ERROR, |output| output.ty);
+                self.terminal(output.clone(), ty, None, false)
+            })
+            .collect();
+        // The band that a caller of another library sees: none for the root library, nor for a primitive one (11.2).
+        let band = Some(cut_text(self.own).into_owned()).filter(|own| !own.is_empty() && PrimitiveLibrary::from_name(own).is_none());
+        let short = self.text(name);
+        let kind = Kind::Call {
+            qualified: self.qualified(name),
+            short: short.clone(),
+            library: band,
+            glyph: None,
+            icon: callee.icon,
+            block: callee.block.clone(),
+            file: callee.file.clone(),
+        };
+        let node = Node {
+            kind,
+            key: short.clone(),
+            stable: short,
+            body: 0,
+            statement,
+            line: 0,
+            bodies: Vec::new(),
+            at: None,
+            placed_by: None,
+            size: None,
+            label: None,
+            always: callee.always,
+            after: false,
+            standard: false,
+            view: None,
+            inputs,
+            outputs,
+            values: Vec::new(),
+        };
+        let body = BodyOf {
+            caption: String::new(),
+            pattern: String::new(),
+            traced: String::new(),
+            arm: None,
+            nodes: vec![0],
+            owner: None,
+            key: String::new(),
+            left: Vec::new(),
+            right: Vec::new(),
+            slots: Vec::new(),
+            pair: (None, None),
+            wires: Vec::new(),
+        };
+        Graph {
+            function: self.qualified(name),
+            bodies: vec![body],
+            nodes: vec![node],
+            pills: HashMap::new(),
+            vias: HashMap::new(),
+            frame_size: None,
+            terminals_at: TerminalsAt::default(),
+            band_texts: self
+                .checked
+                .libraries
+                .iter()
+                .filter_map(|library| Some((cut_text(&library.name).into_owned(), library.mask.band.clone()?)))
+                .collect(),
+        }
+    }
+
     /// From the root, as `run` names it.
     fn qualified(&self, name: Name) -> String {
         let qualified = match self.own {
@@ -1322,6 +1411,11 @@ impl<'a> Builder<'a> {
     /// variadic parameter given no value has none, since it has the inputs that the call gives (notation 3.2).
     fn unwired(&self, callee: &Callee<'_>, position: usize, inputs: &mut Vec<Terminal>) {
         let Some(param) = callee.params.get(position).filter(|param| !param.variadic) else { return };
+        inputs.push(self.of_param(param));
+    }
+
+    /// The terminal of a parameter that no argument wires: of its type, or of the family of its table for a primitive.
+    fn of_param(&self, param: &Param) -> Terminal {
         let mut terminal = self.terminal(param.name.clone(), param.ty.unwrap_or(TyId::ERROR), None, false);
         if let (None, Some(family)) = (param.ty, param.family) {
             terminal.family = family;
@@ -1335,7 +1429,7 @@ impl<'a> Builder<'a> {
             Some(_) => Expects::Any,
         };
         terminal.default.clone_from(&param.default);
-        inputs.push(terminal);
+        terminal
     }
 
     /// An input: its type is that of the parameter, when the signature gives one, so that the terminal shows its unit

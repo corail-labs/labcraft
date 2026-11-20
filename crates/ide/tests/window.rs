@@ -46,10 +46,18 @@ impl Host for Fake {
 }
 
 fn fake() -> Fake {
+    fake_with(&[])
+}
+
+/// [`fake`], with more files.
+fn fake_with(files: &[(&str, &str)]) -> Fake {
     let memory = Arc::new(Memory::new());
     memory.put("/p/main.lcf", MAIN);
     memory.put("/p/helper.lcf", HELPER);
     memory.put("/p/broken.lcf", BROKEN);
+    for (path, text) in files {
+        memory.put(path, *text);
+    }
     let config = Config {
         root: PathBuf::from("/p"),
         lib_paths: Vec::new(),
@@ -812,4 +820,79 @@ fn a_function_dragged_from_the_palette_is_added_where_it_falls_or_into_a_wire() 
     drag_from(&mut harness, start, from + egui::vec2(40.0, 200.0));
     let text = text_of(&harness, "/p/main.lcf");
     assert!(text.contains("    abs = core.abs()\n") && text.contains("\nlayout {\n    node abs at ("), "{text}");
+}
+
+/// A function of a library with a mask (spec 11.3), whose block the view `Block` shows (ide.md 3).
+const SET: &str = "labcraft 1
+
+use core
+
+fn set(x: f64, n: f64) -> (y: f64) {
+    y = core.add(x, n)
+}
+
+terminals {
+    top 5
+    top 3 n
+}
+";
+const PSU: &str = "[mask]
+band = \"PSU\"
+color = \"#B45309\"
+";
+
+fn block_harness() -> Harness<'static, State> {
+    let mut harness = harness(fake_with(&[("/p/psu/set.lcf", SET), ("/p/psu/labcraft.toml", PSU)]));
+    let host = &harness.state().host;
+    host.send("view.show_function", json!({ "function": "psu.set" })).take().unwrap().unwrap();
+    host.send("view.set_view", json!({ "function": "psu.set", "view": "block" })).take().unwrap().unwrap();
+    harness.run_steps(6);
+    harness
+}
+
+#[test]
+fn the_view_block_shows_the_block_and_what_comes_from_the_mask() {
+    let mut harness = block_harness();
+    for label in ["Outline", "Band", "Top", "Left", "Colour", "Fill", "Stroke", "Reset the block", "Real size"] {
+        assert!(harness.query_by_label_contains(label).is_some(), "no `{label}`");
+    }
+    // The colour of the mask, said to come from it.
+    assert!(harness.query_by_label_contains("#B45309").is_some());
+    assert!(harness.query_by_label_contains("from the mask of psu").is_some());
+    shot(&mut harness, "block");
+}
+
+#[test]
+fn the_template_chosen_in_the_view_block_writes_the_outline() {
+    let mut harness = block_harness();
+    // The first list of the view: the outline.
+    harness.query_all_by_role(egui::accesskit::Role::ComboBox).next().expect("the list of the outline").click();
+    harness.run_steps(3);
+    harness.get_by_label("D").click();
+    harness.run_steps(6);
+    let text = text_of(&harness, "/p/psu/set.lcf");
+    assert!(
+        text.contains(
+            "outline {
+    template d
+}"
+        ),
+        "{text}"
+    );
+    // The drawing that the session publishes holds the block as the file now says it.
+    harness.state().host.session.borrow_mut().files_changed();
+    harness.run_steps(4);
+    let view = harness.state().host.snapshot().view;
+    let own = view.main.drawing.as_ref().and_then(|drawing| drawing.block.as_ref()).expect("the block of the drawing");
+    assert_eq!(own.written.outline, Some(labcraft_diagram::OutlineChoice::Template("d".to_owned())));
+    shot(&mut harness, "block-d");
+}
+
+#[test]
+fn reset_in_the_view_block_removes_the_sections() {
+    let mut harness = block_harness();
+    harness.get_by_label("Reset the block").click();
+    harness.run_steps(6);
+    let text = text_of(&harness, "/p/psu/set.lcf");
+    assert!(!text.contains("terminals {"), "{text}");
 }

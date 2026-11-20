@@ -702,6 +702,9 @@ pub struct Drawing {
     /// the SVG, nor sent to the web viewer, which shows no trace in M0 (architecture 11.5).
     #[cfg_attr(feature = "serde", serde(skip))]
     pub trace: crate::values::TracePlan,
+    /// The block of the function, alone, as its callers see it, for the view `Block` (ide.md 3). Not in the SVG.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub block: Option<Box<crate::own::OwnBlock>>,
 }
 
 impl Drawing {

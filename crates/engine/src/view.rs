@@ -269,6 +269,11 @@ impl View {
     }
 
     /// The window that shows this function.
+    /// Whether the tab of `function` shows the view `Block`, alone or beside `Text` (ide.md 3).
+    pub(crate) fn shows_block(&self, function: &str) -> bool {
+        self.now.tabs.get(function).is_some_and(|tab| tab.view == window::ViewKind::Block || tab.split == Some(window::ViewKind::Block))
+    }
+
     pub(crate) fn which_shows(&self, function: &str) -> Option<Which> {
         if self.main.shown.function.as_deref() == Some(function) {
             return Some(Which::Main);
@@ -941,8 +946,22 @@ fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Va
     style::scope(&view.style, || {
         let mut added = Report::new(usize::MAX);
         let keeping = loaded.report.keeping_from_drawing(&function.shown);
-        let (drawing, nodes, codes) =
+        let (mut drawing, nodes, codes) =
             drawings::drawing_apart(function, loaded.checked.as_ref(), &files, &loaded.names, &state, &DiagramLimits::default(), keeping, &mut added);
+        // The block of the function alone, for a tab that shows the view `Block` (ide.md 3); an export never has it.
+        if let (true, Some(drawing), Some(checked), Some(&index)) =
+            (view.shows_block(name), drawing.as_mut(), loaded.checked.as_ref(), files.get(file))
+        {
+            // A bug of the tool there leaves the view without its block, and says so; never the session without its drawing.
+            let work = || labcraft_diagram::own_block(checked, index, &loaded.names, &DiagramLimits::default());
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+                Ok(block) => drawing.block = block.map(Box::new),
+                Err(_) => {
+                    let message = format!("internal error, which is a bug of the tool: {}", crate::panics::last_panic());
+                    added.push(labcraft_types::Diagnostic::new(Code::Lc0099, message, function.shown.as_str()));
+                }
+            }
+        }
         let drawn = drawing.is_some();
         let picture = if is_empty(&added) {
             drawings::picture(function, drawing, &loaded.report)

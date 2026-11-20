@@ -95,6 +95,47 @@ pub type Problem = (Code, String, Id);
 
 /// Reads a section against the inputs and the outputs of a signature, by name.
 pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Interner) -> (Section, Vec<Problem>) {
+    read_sized(section, inputs, outputs, names, (None, None))
+}
+
+/// The smallest `top` and `left` at which every line of the section that applies still applies (11.2), as `block.set_size`
+/// counts them: where a drag of an edge of the block stops in the view `Block` (ide.md 3).
+pub fn least_sizes(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Interner) -> (u32, u32) {
+    let (read_now, problems) = read(section, inputs, outputs, names);
+    let before: HashSet<(Id, Code)> = problems.into_iter().map(|problem| (problem.2, problem.0)).collect();
+    let least = |side: BlockSide| {
+        let range = places_range(side);
+        let sized = |places: u32| if side == BlockSide::Top { (Some(places), None) } else { (None, Some(places)) };
+        // No size below the highest place that a line of this side gives holds it: the search starts there, so that a
+        // section of many lines is read a few times, not once per size.
+        let on_side = |line: &&Placed| if side == BlockSide::Top { line.side == BlockSide::Top } else { line.side != BlockSide::Top };
+        let highest = read_now
+            .lines
+            .iter()
+            .filter(on_side)
+            .filter_map(|line| match line.place {
+                Place::Number(number) => Some(number),
+                Place::Last | Place::Middle => None,
+            })
+            .max()
+            .unwrap_or(0);
+        (highest.max(*range.start())..=*range.end())
+            .find(|&places| {
+                read_sized(section, inputs, outputs, names, sized(places)).1.iter().all(|problem| before.contains(&(problem.2, problem.0)))
+            })
+            .unwrap_or(*range.end())
+    };
+    (least(BlockSide::Top), least(BlockSide::Left))
+}
+
+/// [`read`], with the size of the top side or of the left one, when given, in place of the one that the section writes.
+fn read_sized(
+    section: &Terminals,
+    inputs: &[Name],
+    outputs: &[Name],
+    names: &Interner,
+    given: (Option<u32>, Option<u32>),
+) -> (Section, Vec<Problem>) {
     // The place of each terminal in the signature, for the order in which lines take their places.
     let rank = |list: &[Name]| -> HashMap<Name, usize> {
         let mut found = HashMap::with_capacity(list.len());
@@ -197,6 +238,7 @@ pub fn read(section: &Terminals, inputs: &[Name], outputs: &[Name], names: &Inte
     }
     // A `middle` makes its side odd when its line names a terminal: one that names none does not count, as for the drawing.
     let middle_on = |sides: &[BlockSide]| lines.iter().any(|(_, side, place, ..)| *place == Place::Middle && sides.contains(side));
+    let (top, left) = (given.0.or(top), given.1.or(left));
     let top = odd_when_middle(top.unwrap_or(DEFAULT_TOP), middle_on(&[BlockSide::Top]));
     read.middle_sides = middle_on(&[BlockSide::Left, BlockSide::Right]);
     let left = left.map(|left| odd_when_middle(left, read.middle_sides));

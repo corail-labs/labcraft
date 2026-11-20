@@ -287,8 +287,15 @@ pub fn set_view(session: &mut Session, params: &Params) -> Result<Value, Command
     }
     let tab = Tab { view: first, split: second };
     // `tabs` holds only the tabs whose view is not the diagram alone.
+    let block_before = view.shows_block(name);
     let before = if tab == Tab::default() { view.now.tabs.remove(name) } else { view.now.tabs.insert(name.to_owned(), tab) }.unwrap_or_default();
-    if before != tab {
+    // The drawing holds the block alone only for a tab that shows it: drawn again when the tab comes to it.
+    if !block_before
+        && view.shows_block(name)
+        && let Some(which) = view.which_shows(name)
+    {
+        draw(view, &which, false);
+    } else if before != tab {
         view.publish();
     }
     Ok(json!({ "before": { "view": before.view.as_str(), "split": before.split.map(ViewKind::as_str) } }))
