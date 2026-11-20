@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1408.5" height="1316" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="21.5" y="16" width="1368" height="1284" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="33.5" y="31.65" font-size="10" style="fill: var(--node-title)">fn station</text>
 <g data-wire="steps" data-from="fn.steps" data-to="n.array err_out.steps">
@@ -759,7 +762,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="521.12" y="511.65" font-size="10" style="fill: var(--pill-text)">30 s</text>
 </g>
 <g data-node="s"><title>core.select</title>
-<polygon points="738.48,452 762.48,452 770.48,460 770.48,476 762.48,484 738.48,484" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="738.48" y="452" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="751.47" y="471.65" font-size="10" style="fill: var(--node-title)">?</text>
 <polygon points="738.48,457 741.48,460 738.48,463 735.48,460" style="fill: var(--wire-data)"/>
 <polygon points="735.48,465 741.48,468 735.48,471" style="fill: var(--wire-data)"/>
@@ -772,7 +775,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polyline points="669.34,476 735.48,476" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-node="i2"><title>core.add</title>
-<polygon points="580.16,704 604.16,704 612.16,712 612.16,728 604.16,736 580.16,736" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="580.16" y="704" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="593.15" y="723.65" font-size="10" style="fill: var(--node-title)">+</text>
 <circle cx="580.16" cy="712" r="3" style="fill: var(--wire-data)"/>
 <circle cx="580.16" cy="728" r="3" style="fill: var(--wire-data)"/>
@@ -781,7 +784,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="559.14" y="731.65" font-size="10" style="fill: var(--pill-text)">1</text>
 </g>
 <g data-node="more"><title>core.lt</title>
-<polygon points="658.16,704 682.16,704 690.16,712 690.16,728 682.16,736 658.16,736" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="658.16" y="704" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="671.15" y="723.65" font-size="10" style="fill: var(--node-title)">&lt;</text>
 <circle cx="658.16" cy="712" r="3" style="fill: var(--wire-data)"/>
 <circle cx="658.16" cy="728" r="3" style="fill: var(--wire-data)"/>
@@ -828,14 +831,14 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <circle cx="786.3" cy="672" r="1.5" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="go_on"><title>core.and</title>
-<polygon points="786.3,720 810.3,720 818.3,728 818.3,744 810.3,752 786.3,752" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="786.3" y="720" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="799.29" y="739.65" font-size="10" style="fill: var(--node-title)">∧</text>
 <polygon points="786.3,725 789.3,728 786.3,731 783.3,728" style="fill: var(--wire-data)"/>
 <polygon points="786.3,741 789.3,744 786.3,747 783.3,744" style="fill: var(--wire-data)"/>
 <polygon points="818.3,733 821.3,736 818.3,739 815.3,736" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="s"><title>core.select</title>
-<polygon points="958.56,720 982.56,720 990.56,728 990.56,744 982.56,752 958.56,752" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="958.56" y="720" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="971.55" y="739.65" font-size="10" style="fill: var(--node-title)">?</text>
 <polygon points="958.56,725 961.56,728 958.56,731 955.56,728" style="fill: var(--wire-data)"/>
 <polygon points="955.56,733 961.56,736 955.56,739" style="fill: var(--wire-data)"/>
@@ -864,7 +867,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polygon points="613.2,1005 619.2,1008 613.2,1011 615.2,1008" style="fill: var(--wire-error)"/>
 </g>
 <g data-node="t2"><title>core.add</title>
-<polygon points="576.2,920 600.2,920 608.2,928 608.2,944 600.2,952 576.2,952" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="576.2" y="920" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="589.19" y="939.65" font-size="10" style="fill: var(--node-title)">+</text>
 <circle cx="576.2" cy="928" r="3" style="fill: var(--wire-data)"/>
 <circle cx="576.2" cy="944" r="3" style="fill: var(--wire-data)"/>
@@ -873,14 +876,14 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="555.18" y="947.65" font-size="10" style="fill: var(--pill-text)">1</text>
 </g>
 <g data-node="again"><title>core.lt</title>
-<polygon points="646.2,936 670.2,936 678.2,944 678.2,960 670.2,968 646.2,968" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="646.2" y="936" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="659.19" y="955.65" font-size="10" style="fill: var(--node-title)">&lt;</text>
 <circle cx="646.2" cy="944" r="3" style="fill: var(--wire-data)"/>
 <circle cx="646.2" cy="960" r="3" style="fill: var(--wire-data)"/>
 <polygon points="678.2,949 681.2,952 678.2,955 675.2,952" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="s"><title>core.select</title>
-<polygon points="798.42,936 822.42,936 830.42,944 830.42,960 822.42,968 798.42,968" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="798.42" y="936" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="811.41" y="955.65" font-size="10" style="fill: var(--node-title)">?</text>
 <polygon points="798.42,941 801.42,944 798.42,947 795.42,944" style="fill: var(--wire-data)"/>
 <polygon points="795.42,949 801.42,952 795.42,955" style="fill: var(--wire-data)"/>

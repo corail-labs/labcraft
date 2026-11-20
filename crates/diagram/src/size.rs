@@ -626,19 +626,34 @@ pub struct Sizer<'a> {
     pub outlines: RefCell<HashMap<OutlineKey, Option<(Drawn, usize)>>>,
     /// The points of each outline drawn, by the index that `Shape::Outline` gives: what `Drawing::outlines` holds.
     pub outlines_drawn: RefCell<Vec<Vec<(i64, i64)>>>,
+    /// The index of each outline drawn, by its points: two functions with one outline at one size, the D of `core.add` and
+    /// of `core.lt`, share it.
+    pub outline_index: RefCell<HashMap<Vec<(i64, i64)>, usize>>,
 }
 
 impl<'a> Sizer<'a> {
     pub fn new(names: &'a Interner, standard_everywhere: bool) -> Sizer<'a> {
-        Sizer { names, standard_everywhere, outlines: RefCell::new(HashMap::new()), outlines_drawn: RefCell::new(Vec::new()) }
+        Sizer {
+            names,
+            standard_everywhere,
+            outlines: RefCell::new(HashMap::new()),
+            outlines_drawn: RefCell::new(Vec::new()),
+            outline_index: RefCell::new(HashMap::new()),
+        }
     }
+    /// The outlines drawn, which the drawing keeps: the caches that point into them go with them.
+    pub fn take_outlines(&self) -> Vec<Vec<(i64, i64)>> {
+        self.outlines.borrow_mut().clear();
+        self.outline_index.borrow_mut().clear();
+        self.outlines_drawn.take()
+    }
+
     /// The node in its view: its band already chosen for the whole drawing (notation 3.2).
     /// `icon`: the index in `Drawing::icons` of the icon of what it calls, when it shows one.
     pub fn size(&self, node: &Node<'_>, band: Option<&ShownText>, icon: Option<usize>) -> Sized {
         let standard = self.standard_everywhere || node.standard;
         let mut sized = match &node.kind {
             Kind::Constant { name, value } => self.constant(name, value),
-            Kind::Call { glyph: Some(glyph), .. } if !standard => self.primitive(node, glyph),
             Kind::Call { qualified, short, block, .. } => {
                 if standard {
                     self.standard(node, qualified)
@@ -800,10 +815,25 @@ impl<'a> Sizer<'a> {
     /// A compact block whose function places its terminals (spec 11.2, notation 3.2): as large as its places, each
     /// terminal on its own, a mark of direction on one off its default side, the band inside or above, the label below
     /// when the top side holds a terminal.
+    /// A primitive of `core` is one, from its file of `libs/core` (spec A.1): its glyph in the centre, and `with_unit` and
+    /// `unitless` as wide as their unit, whose width no section gives.
     fn sectioned(&self, node: &Node<'_>, short: &str, band: Option<&ShownText>, icon: Option<usize>, block: &Block) -> Sized {
-        let places = crate::block::places(block, node);
+        let mut places = crate::block::places(block, node);
         if places.inputs.len() != node.inputs.len() || places.outputs.len() != node.outputs.len() {
             return self.square(node, short, band, icon);
+        }
+        let glyph = match &node.kind {
+            Kind::Call { glyph, .. } => glyph.as_ref(),
+            _ => None,
+        };
+        let glyph = glyph.map(|glyph| match glyph {
+            Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
+            Glyph::Unit { unit, struck } => (Text::new(unit, any_text(), large()), *struck),
+        });
+        if let Some((text, _)) = &glyph {
+            // As wide as the glyph and 3 on each side, in whole places.
+            let wide = (text.width + 600 + crate::block::PITCH - 1) / crate::block::PITCH - 1;
+            places.top = places.top.max(u32::try_from(wide).unwrap_or(u32::MAX));
         }
         let (width, height) = (places.width(), places.height());
         let top_side = places.has_top_side();
@@ -816,8 +846,11 @@ impl<'a> Sizer<'a> {
             let frame = Frame::of(&places, &node.inputs, &node.outputs, style::chamfer());
             let found = draw(read, &frame).ok().flatten().map(|drawn| {
                 let mut list = self.outlines_drawn.borrow_mut();
-                list.push(drawn.points.clone());
-                (drawn, list.len() - 1)
+                let index = *self.outline_index.borrow_mut().entry(drawn.points.clone()).or_insert_with(|| {
+                    list.push(drawn.points.clone());
+                    list.len() - 1
+                });
+                (drawn, index)
             });
             self.outlines.borrow_mut().insert(key, found.clone());
             found
@@ -868,8 +901,19 @@ impl<'a> Sizer<'a> {
         };
         // The centre: the icon, scaled down to what a small block leaves, never up; else the name, cut to the width.
         let centre = top + (height - top) / 2;
-        match icon {
-            Some(icon) => {
+        match (glyph, icon) {
+            // The glyph of a primitive, struck through for `unitless` (notation 3.2).
+            (Some((text, struck)), _) => {
+                shapes.push(text.centred(width / 2, centre, "node.title"));
+                if struck {
+                    shapes.push(Shape::Poly {
+                        points: vec![(width / 2 - text.width / 2, centre), (width / 2 + text.width / 2, centre)],
+                        closed: false,
+                        paint: Paint::stroke("node.title", style::outline()),
+                    });
+                }
+            }
+            (None, Some(icon)) => {
                 // A block that the section makes smaller than 40 scales its icon down to what its band leaves, never up.
                 let side = if width >= style::square() && height >= style::square() {
                     style::icon()
@@ -878,7 +922,7 @@ impl<'a> Sizer<'a> {
                 };
                 shapes.push(Shape::Icon { x: width / 2 - side / 2, y: centre - side / 2, side, icon });
             }
-            None => {
+            (None, None) => {
                 let cells = cells_in(width - style::terminal(), label_size());
                 let label = if node.always { vec![Text::new(short, cells, label_size())] } else { label_lines(short, cells) };
                 let line = line_height(label_size());
@@ -1051,65 +1095,6 @@ impl<'a> Sizer<'a> {
         let drawn = self.terminals(node, &places, width, &mut shapes);
         let order = self.compact_marks(node, width, height, &mut shapes);
         compact(width, height, shapes, drawn, order)
-    }
-
-    /// A primitive of `core` with a glyph (notation 3.2): a D with its right corners chamfered, 32 × 32, its terminals on
-    /// the grid. A unit that does not hold makes it wider; more than three inputs, or more than one output, make it
-    /// taller, by two places at a time.
-    fn primitive(&self, node: &Node<'_>, glyph: &Glyph) -> Sized {
-        let (text, struck) = match glyph {
-            Glyph::Sign(sign) => (Text::new(sign, any_text(), large()), false),
-            Glyph::Unit { unit, struck } => (Text::new(unit, any_text(), large()), *struck),
-        };
-        let width = style::primitive().max(up(text.width + 600));
-        let (grid, pitch) = (style::grid(), style::compact_pitch());
-        let count = node.inputs.len();
-        // More than one output (targets too many, an error of `check` that is still drawn) on the straight part of the right
-        // edge, one per place from its top, so that no two wires leave from one point and none leaves the outline.
-        let many = node.outputs.len() as i64;
-        let first = up(style::chamfer().max(grid));
-        let mut height = grown(count, style::primitive());
-        if many > 1 {
-            height = grown_to(first.saturating_add((many - 1).saturating_mul(pitch)).saturating_add(style::chamfer()), height);
-        }
-        let middle = height / 2;
-        // One input at the middle, two on the first and last places, three on the first, the middle and the last; more
-        // from the top, one per place, including free inputs from an error of `check` that is still drawn.
-        let ys: Vec<i64> = match count {
-            0 => Vec::new(),
-            1 => vec![middle],
-            2 => vec![grid, height - grid],
-            3 => vec![grid, middle, height - grid],
-            _ => (0..count as i64).map(|index| grid + index * pitch).collect(),
-        };
-        let chamfer = style::chamfer().min(height / 2).min(width / 2);
-        let mut shapes = vec![Shape::Poly {
-            points: vec![(0, 0), (width - chamfer, 0), (width, chamfer), (width, height - chamfer), (width - chamfer, height), (0, height)],
-            closed: true,
-            paint: Paint::both("node.fill", "node.stroke", style::outline()),
-        }];
-        shapes.push(text.centred(width / 2, middle, "node.title"));
-        if struck {
-            shapes.push(Shape::Poly {
-                points: vec![(width / 2 - text.width / 2, middle), (width / 2 + text.width / 2, middle)],
-                closed: false,
-                paint: Paint::stroke("node.title", style::outline()),
-            });
-        }
-        let mut pills = Vec::new();
-        let mut inputs = Vec::new();
-        for (index, (terminal_of, &y)) in node.inputs.iter().zip(&ys).enumerate() {
-            shapes.extend(terminal(terminal_of.family, 0, y, 100, false));
-            pills.push((index, 0, y));
-            inputs.push((0, y));
-        }
-        let outputs: Vec<(i64, i64)> = if many > 1 { (0..many).map(|index| (width, first + index * pitch)).collect() } else { vec![(width, middle)] };
-        for (output, &(x, y)) in node.outputs.iter().zip(&outputs) {
-            shapes.extend(terminal(output.family, x, y, 100, output.ignored));
-        }
-        let (left, reaches) = self.outside_pills(node, &pills, &mut shapes);
-        let order = self.compact_marks(node, width, height, &mut shapes);
-        Sized { left, right: style::terminal() / 2, inputs, outputs, order, reaches, ..Sized::new(width, height, shapes) }
     }
 
     /// A block in standard view (notation 3.1, with the numbers decided at step 2 of M0v): the name as a header, the

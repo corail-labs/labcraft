@@ -12,16 +12,7 @@ pub const EXTENSIONS: &[&str] = &["vi", "ctl", "lvproj", "lvlib", "vit", "ctt", 
 /// The files that git tracks, and those it would add (untracked, not ignored), so that the local gate sees a file
 /// before its commit. A nested repository, such as a worktree, is not walked into.
 pub fn check(root: &Path) -> Result<(), String> {
-    let output = Command::new("git")
-        .current_dir(root)
-        .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
-        .output()
-        .map_err(|error| format!("clean-room: git, which lists the files of the repository, did not run: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("clean-room: git ls-files: {}\n{}", output.status, String::from_utf8_lossy(&output.stderr)));
-    }
-    let listing = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<&str> = listing.split('\0').filter(|path| !path.is_empty()).collect();
+    let files = repository_files(root, "clean-room")?;
     let found: Vec<String> = files
         .iter()
         .filter(|path| is_labview(path))
@@ -38,6 +29,20 @@ fn is_labview(path: &str) -> bool {
         return false;
     };
     EXTENSIONS.iter().any(|known| known.eq_ignore_ascii_case(extension))
+}
+
+/// The files of the repository, by their path from `root` with `/`: those that git tracks, and those it would add
+/// (untracked, not ignored). A nested repository, such as a worktree, is not walked into. `who` names the check in errors.
+pub fn repository_files(root: &Path, who: &str) -> Result<Vec<String>, String> {
+    let output = Command::new("git")
+        .current_dir(root)
+        .args(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
+        .output()
+        .map_err(|error| format!("{who}: git, which lists the files of the repository, did not run: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("{who}: git ls-files: {}\n{}", output.status, String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).split('\0').filter(|path| !path.is_empty()).map(str::to_owned).collect())
 }
 
 #[cfg(test)]

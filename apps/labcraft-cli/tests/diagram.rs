@@ -108,7 +108,8 @@ fn every_function_of_the_repository_is_drawn_as_its_snapshot() {
         let output = run_in(&repository, &["--svg", "--out", target.to_str().unwrap(), root]);
         assert_eq!(output.status.code(), Some(0), "{root}: {}", String::from_utf8_lossy(&output.stdout));
         let written = svgs_under(&target);
-        let functions = walk_lcf(&repository.join(root));
+        // `libs/core` gives the blocks of the primitives of `core` and no program (spec A.1): nothing is drawn of it.
+        let functions = walk_lcf(&repository.join(root)) - if root == "libs" { walk_lcf(&repository.join("libs/core")) } else { 0 };
         assert_eq!(written.len(), functions, "{root}: one SVG per function");
         for svg in written {
             let relative = svg.strip_prefix(&target).unwrap();

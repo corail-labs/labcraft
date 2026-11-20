@@ -1,0 +1,18 @@
+labcraft 1
+
+/// `x` as a number of the unit given, of the dimension of `x`; the unit, `unit: kind unit`, is no terminal (appendix A.1).
+/// The block of a primitive of `core` (appendix A.1): this file gives its terminals and its outline; its signature
+/// is that of appendix A.1, which this one follows as far as the grammar writes it.
+extern rust(crate: "labcraft-runtime", function: "unitless")
+fn unitless<N: Number>(x: N) -> (result: f64)
+
+terminals {
+    top 3
+    left 3
+    left middle x
+    right middle result
+}
+
+outline {
+    template d
+}

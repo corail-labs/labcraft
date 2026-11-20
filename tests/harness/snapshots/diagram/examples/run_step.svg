@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="1094" height="268" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="19" y="16" width="1056" height="236" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn run_step</text>
 <g data-wire="bench" data-from="fn.bench" data-to="e1.bank e2.source v.dmm">
@@ -167,21 +170,21 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <polyline points="601.98,216 656.08,216" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
 </g>
 <g data-node="above"><title>core.ge</title>
-<polygon points="775.18,96 799.18,96 807.18,104 807.18,120 799.18,128 775.18,128" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="775.18" y="96" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="788.17" y="115.65" font-size="10" style="fill: var(--node-title)">≥</text>
 <circle cx="775.18" cy="104" r="3" style="fill: var(--wire-data)"/>
 <circle cx="775.18" cy="120" r="3" style="fill: var(--wire-data)"/>
 <polygon points="807.18,109 810.18,112 807.18,115 804.18,112" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="below"><title>core.le</title>
-<polygon points="775.18,152 799.18,152 807.18,160 807.18,176 799.18,184 775.18,184" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="775.18" y="152" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="788.17" y="171.65" font-size="10" style="fill: var(--node-title)">≤</text>
 <circle cx="775.18" cy="160" r="3" style="fill: var(--wire-data)"/>
 <circle cx="775.18" cy="176" r="3" style="fill: var(--wire-data)"/>
 <polygon points="807.18,165 810.18,168 807.18,171 804.18,168" style="fill: var(--wire-data)"/>
 </g>
 <g data-node="passed"><title>core.and</title>
-<polygon points="829.18,152 853.18,152 861.18,160 861.18,176 853.18,184 829.18,184" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="829.18" y="152" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="842.17" y="171.65" font-size="10" style="fill: var(--node-title)">∧</text>
 <polygon points="829.18,157 832.18,160 829.18,163 826.18,160" style="fill: var(--wire-data)"/>
 <polygon points="829.18,173 832.18,176 829.18,179 826.18,176" style="fill: var(--wire-data)"/>

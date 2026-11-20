@@ -400,8 +400,9 @@ fn a_primitive_is_a_d() {
     assert_eq!((add.width, add.height), (3200, 3200));
     assert_eq!(add.inputs, [(0, 800), (0, 2400)]);
     assert_eq!(add.outputs, [(3200, 1600)]);
+    // The D of `template d`, from the file of `core.add` in `libs/core` (spec A.1, 11.4).
     let outline = add.shapes.iter().find_map(|shape| match shape {
-        Shape::Poly { points, closed: true, .. } => Some(points.clone()),
+        Shape::Outline { outline, .. } => sizer.outlines_drawn.borrow().get(*outline).cloned(),
         _ => None,
     });
     assert_eq!(outline, Some(vec![(0, 0), (2400, 0), (3200, 800), (3200, 2400), (2400, 3200), (0, 3200)]));
@@ -682,24 +683,24 @@ fn an_icon_number_has_no_exponent() {
     assert_eq!(crate::size::icon_number("0.006", false), 1);
 }
 
-/// Above three inputs, a D draws every input from the top, one per place, including extra inputs that `check` refuses.
-/// The D grows by two places at a time, with its output at the middle, on the grid.
+/// Extra inputs that `check` refuses are drawn by the rules of 11.2, as on any block with a section: `a` on the first
+/// place, `b` on the last, the others on the free places from the top. The D grows by two places at a time, `last` and
+/// `middle` counted on the grown side.
 #[test]
 fn a_d_holds_all_its_inputs() {
     let source = "labcraft 1\n\nuse core\n\nfn main(a: f64, b: f64) -> (y: f64) {\n    y = core.add(a, b, a, b, a)\n}\n";
     let (checked, names) = checked(&[("main.lcf", source)]);
     let graph = graph(&checked, &names, "main.lcf");
     let sized = Sizer::new(&names, false).size(&graph.nodes[0], None, None);
-    // Five inputs 8 apart from 8: 8 + 32 + 8 = 48, two places more than 32.
+    // Five inputs on three places: two more, five, 48 high; `b` on the last, 40.
     assert_eq!(sized.height, 4800);
     let ys: Vec<i64> = sized.inputs.iter().map(|&(_, y)| y).collect();
-    assert_eq!(ys, [800, 1600, 2400, 3200, 4000]);
+    assert_eq!(ys, [800, 4000, 1600, 2400, 3200]);
     assert_eq!(sized.outputs, [(3200, 2400)]);
 }
 
 /// Notation 3.2: targets too many for the one value of a primitive, an error that is still drawn, give it outputs on the
-/// places of the straight part of its right edge from the top, never two on one point (a case of the fuzzing of
-/// `diagram`).
+/// free places of its right side, by the rules of 11.2, never two on one point (a case of the fuzzing of `diagram`).
 #[test]
 fn the_outputs_too_many_of_a_d_take_places() {
     let size_of = |targets: &str, style: &crate::style::Style| {
@@ -714,19 +715,22 @@ fn the_outputs_too_many_of_a_d_take_places() {
     let defaults = crate::style::Style::default();
     let two = size_of("y, z", &defaults);
     assert_eq!((two.width, two.height), (3200, 3200));
-    assert_eq!(two.outputs, [(3200, 800), (3200, 1600)]);
+    // `result` on the middle, the other on the first free place.
+    assert_eq!(two.outputs, [(3200, 1600), (3200, 800)]);
     assert_eq!(two.inputs, [(0, 800), (0, 2400)]);
-    // Four targets: 8 + 3 × 8 + 8 = 40 do not hold in 32: two places more, 48; the outputs at 8, 16, 24, 32.
+    // Four targets on three places: two more, five, 48 high; `result` on the middle, 24, the others on 8, 16 and 32.
     let four = size_of("w, x, y, z", &defaults);
     assert_eq!(four.height, 4800);
-    assert_eq!(four.outputs, [(3200, 800), (3200, 1600), (3200, 2400), (3200, 3200)]);
-    // A cut of 16, tried with `--style`: the straight edge starts at 16, so two outputs at 16 and 24, and 16 + 8 + 16 = 40
-    // needs 48.
+    assert_eq!(four.outputs, [(3200, 2400), (3200, 800), (3200, 1600), (3200, 3200)]);
+    // A cut of 16, tried with `--style`: never two outputs on one point, whatever the outline does.
     let mut tried = defaults.clone();
     tried.numbers.chamfer = 1600;
     let cut = size_of("y, z", &tried);
-    assert_eq!(cut.height, 4800);
-    assert_eq!(cut.outputs, [(3200, 1600), (3200, 2400)]);
+    assert_ne!(cut.outputs.first(), cut.outputs.get(1));
+    // No straight part of the right edge holds the output at 8: a guard of 11.4 breaks, and the block is drawn ordinary,
+    // its outputs on its right edge, none off the block.
+    assert!(!cut.shapes.iter().any(|shape| matches!(shape, Shape::Outline { .. })), "{:?}", cut.outputs);
+    assert!(cut.outputs.iter().all(|&(x, _)| x == cut.width), "{:?}", cut.outputs);
 }
 
 /// Notation 3.2: the band of a construction is inside it, at its top, and its label in the middle of what the band
@@ -1491,7 +1495,7 @@ fn a_name_of_a_terminal_shows_from_75_percent_and_a_title_always() {
 }
 
 /// `LC7005` (notation 2.1): two nodes that the file places one over the other, in one body. `core.add` is a D of
-/// `node.primitive`, 32 across (notation 10), so its block spans x to x + 32: at 100 and 131 the blocks share one unit
+/// 32 across (its file of `libs/core`, `top 3`), so its block spans x to x + 32: at 100 and 131 the blocks share one unit
 /// across and all their height; at 100 and 132 they only touch.
 #[test]
 fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
@@ -2277,7 +2281,7 @@ fn g_outlined(sections: &str) -> (crate::size::Sized, Vec<Vec<(i64, i64)>>) {
     let node = graph.nodes.iter().find(|node| matches!(node.kind, Kind::Call { .. })).unwrap();
     let sizer = Sizer::new(&names, false);
     let sized = sizer.size(node, None, None);
-    (sized, sizer.outlines_drawn.take())
+    (sized, sizer.take_outlines())
 }
 
 /// The outlines that a block draws, as their points.
@@ -2325,4 +2329,15 @@ fn the_after_terminal_starts_where_the_outline_crosses_its_place() {
     assert_eq!(sized.order, Some((800, 200)));
     // Without an outline, on the top edge.
     assert_eq!(block_sized(G, "r = g(v, after: e)", "").order, Some((800, 0)));
+}
+
+/// Every primitive of `core` with a glyph has its file in `libs/core`, which gives its D (spec A.1): without one, it
+/// would lose its glyph and be drawn as an ordinary block.
+#[test]
+fn every_primitive_with_a_glyph_has_its_block() {
+    use labcraft_check::primitives::{PRIMITIVES, PrimitiveLibrary};
+    for primitive in PRIMITIVES.iter().filter(|primitive| primitive.library == PrimitiveLibrary::Core) {
+        let glyph = crate::graph::sign_of(primitive.name).is_some();
+        assert_eq!(glyph, labcraft_check::core_blocks::block(primitive.name).is_some(), "{}", primitive.name);
+    }
 }

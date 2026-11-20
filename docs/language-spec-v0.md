@@ -2286,9 +2286,15 @@ fn core.call(function: fn(…) -> (…), …) -> (…)
 ```
 
 **Blocks of the primitives (M1).** The D of visual notation 3.2 is written in the grammar that every library uses
-(11.2, 11.4), so that a primitive is drawn by the same rules as any block. With the program of M1, each primitive has
-its file in `core`, holding its signature above and these sections; its glyph stays in the closed list of visual
-notation 3.2 (N-4); the other functions of `core` have the ordinary block. Two values in, on the first and the last
+(11.2, 11.4), so that a primitive is drawn by the same rules as any block. With the program of M1, each primitive drawn
+as a D has its file in `libs/core`, holding these sections; its glyph stays in the closed list of visual notation 3.2
+(N-4); the other functions of `core` have the ordinary block. The file declares the terminals of the primitive,
+`extern rust(crate: "labcraft-runtime", function: "add")` then `fn add<N: Number>(a: N, b: N) -> (result: N)`, with the
+types that the grammar writes: the signature that counts is the one above, whose `A·B`, `√N` and `unit: kind unit`
+no file writes (a type variable stands for them, and `unit`, which is no terminal, is left out). These files are no
+library: `use core` names the primitives, and `check` says nothing of them, since a file of `libs/core` as LabCraft
+embeds it, by its name and its bytes, is the block of a primitive and no program; changed in any way, it is judged as
+any program (decisions of the owner, 2026-11-20). Two values in, on the first and the last
 place, for `add`, `sub`, `mul`, `div`, the comparisons, `and` and `or`:
 
 ```text

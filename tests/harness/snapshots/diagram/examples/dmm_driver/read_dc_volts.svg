@@ -5,6 +5,9 @@ svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --no
 text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 </style>
 <rect width="398" height="172" style="fill: var(--canvas-fill)"/>
+<defs>
+<polygon id="outline-0" points="0,0 24,0 32,8 32,24 24,32 0,32"/>
+</defs>
 <rect x="19" y="16" width="360" height="140" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
 <text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn dmm_driver.read_dc_volts</text>
 <g data-wire="session" data-from="fn.session" data-to="raw.session">
@@ -68,7 +71,7 @@ text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
 <text x="129.18" y="123.65" font-size="10" style="fill: var(--pill-text)">&quot;MEAS:V…</text>
 </g>
 <g data-node="volts"><title>core.with_unit</title>
-<polygon points="254.34,56 278.34,56 286.34,64 286.34,80 278.34,88 254.34,88" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#outline-0" x="254.34" y="56" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
 <text x="261.31" y="75.65" font-size="10" style="fill: var(--node-title)">[V]</text>
 <circle cx="254.34" cy="72" r="3" style="fill: var(--wire-data)"/>
 <circle cx="286.34" cy="72" r="3" style="fill: var(--wire-data)"/>

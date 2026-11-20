@@ -34,7 +34,8 @@ commands:
   test      the tests of the workspace, through cargo-nextest when it is installed, then the doctests
   layers    a crate depends only on lower layers
   licences  no GPL, LGPL or AGPL dependency (D-23)
-  libs      no crate of crates/ depends on libs/ or on a native crate of examples/
+  libs      no crate of crates/ depends on libs/ or on a native crate of examples/, and none embeds their files but
+            crates/check/src/core_blocks.rs those of libs/core
   codes     the enumeration Code equals the tables of docs/cli.md, section 5, labcraft_visa::CODES those of simulation.md, 7, and labcraft_net::CODES that of libs/net
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required, their defaults
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
@@ -306,7 +307,9 @@ fn check_libs() -> Result<(), String> {
     let metadata = metadata(false)?;
     let root = metadata["workspace_root"].as_str().ok_or("metadata: no workspace_root")?;
     let packages = libs::from_metadata(&metadata)?;
-    report("libs", packages.len(), "packages", libs::check(Path::new(root), &packages))
+    let mut violations = libs::check(Path::new(root), &packages);
+    violations.extend(libs::embeddings(&libs::sources(Path::new(root))?));
+    report("libs", packages.len(), "packages", violations)
 }
 
 fn check_codes() -> Result<(), String> {

@@ -200,6 +200,11 @@ impl Loader<'_> {
     /// `None` for a folder without files of its own, which is no library, though its sub-folders can be.
     fn add(&mut self, source: LibrarySource, name: String, checked: bool, budget: &mut Budget) -> Option<usize> {
         let LibrarySource { name: folder, shown, files, manifest, origin, report: met, checked_elsewhere, .. } = source;
+        // The blocks of the primitives of `libs/core` (spec A.1) are no program: they say nothing here.
+        let files: Vec<SourceFile> = files
+            .into_iter()
+            .filter(|file| !matches!(&file.content, Content::Bytes(bytes) if crate::core_blocks::is_block_file(&file.shown, bytes)))
+            .collect();
         let mut sink = Report::for_limits(self.limits);
         if checked {
             sink.merge(met);
