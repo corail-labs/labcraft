@@ -32,6 +32,8 @@ labcraft-results-log = { path = "examples/results_log" }
 
 # kit: the pieces of the window for any IDE (ide.md 11)
 kit-shell = { path = "kit/kit-shell" }
+kit-text = { path = "kit/kit-text" }
+kit-text-egui = { path = "kit/kit-text-egui" }
 
 # Every crate of craft-libs comes from one revision, as in the Craft apps.
 craft-atomic = { git = "https://github.com/corail-labs/craft-libs", rev = "5ee3df0f6a9b0fbb55718515bce9d5eb5ab8d1db" }
@@ -51,6 +53,9 @@ eframe = { version = "0.37", default-features = false, features = ["accesskit", 
 ctrlc = "3.4"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
+# The text of the `Text` panel (kit-text; decision of the owner, 2026-11-21). Lines end at LF only, as `format` reads
+# them: no `unicode_lines`, no `cr_lines`.
+ropey = { version = "1.6", default-features = false, features = ["simd"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
 toml = { version = "1", default-features = false, features = ["parse", "serde"] }

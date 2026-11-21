@@ -571,6 +571,21 @@ what the window shows are `agent.not_allowed` too (ide.md 8).
 | `view.reset_layout` | | Puts the panels back where ide.md 2 says, and docks every detached tab |
 | `view.set_workspace` | `workspace` | Changes the workspace of the window (ide.md 6); a planned one is `command.not_enabled`, and the message gives its milestone |
 
+**The `Text` panel**
+
+The commands of the `Text` panel (9.1; decisions of the owner, 2026-11-21). They are commands of the window: in
+`labcraft-cli` and in the MCP server alone they are `command.not_enabled`, and to an attached agent
+`agent.not_allowed`, since an agent writes a text with `file.write`. Each takes a `.lcf` or `.lct` file of the project
+(`path.invalid` otherwise); the recovery folder is `.labcraft/recovery/`, where the copy of a file has the path of the
+file ([architecture.md](architecture.md), 12.6), and a folder of it that a link leads elsewhere is neither written nor
+read.
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `text.save` | `path` (a file that exists), `text`, *`expected_revision`* (none), *`keep`* (`false`) | Reads the text as `check` reads a file (CR LF made LF, at most 4 MiB, as `file.write`). When it parses (spec 14: its grammar is right, whatever its errors of types or of `check`), writes it as `file.write` does, one step of history labelled `Edit Text` (none when the bytes are those of the file), removes its copy in the recovery folder, and returns `{ "written": true, "revision" }`, the revision of the text written. When it does not parse, writes nothing in the project, keeps the text in the recovery folder, and returns `{ "written": false, "kept", "error" }`, `error` being the diagnostic that stops the reading, as `labcraft-check/1` writes one, and `kept` whether the copy could be written. `expected_revision` is the revision of the file that the text was made from, a text: when the file has another one, nothing is written either, the text is kept, and it returns `{ "written": false, "kept", "stale": true, "revision" }`, the revision the file has (decision of the owner, 2026-11-21). With `keep`, it only keeps the text in the recovery folder, and returns `{ "written": false, "kept" }`: the window keeps so a text that the file changed under |
+| `text.recovered` | | The texts of the recovery folder whose file exists and changed before them (a time that the system does not give counts as before): `{ "texts": [{ "path", "text", "modified" }], "truncated": false }`, `modified` in nanoseconds since 1970, by path. A copy over 4 MiB, or that is not UTF-8, is not given; at most 16 MiB of text in all and 1,000 entries of the folder looked at *(proposed)*, then `truncated`. The window calls it when the project opens |
+| `text.discard` | `path` | Removes the copy of the file in the recovery folder: `{ "discarded": true }`, `false` when there was none |
+
 ## 7. The report of a run: `labcraft-run/1`
 
 What `run.start`, `run.wait`, `run.status` and `run.abort` return, and what `labcraft-cli run --json`
@@ -741,8 +756,12 @@ What all editing commands share, decided with the owner on 2026-11-14 (spec, sec
   `expected_revision` then refuses it as above. It waits at most 30 s *(proposed)*, then is `gesture.busy`.
 - **The `Text` panel.** The text of a function, edited by hand in the IDE, is written when it parses (grammar
   correct, with or without errors of types or of `check`, which the diagram shows), after about 0.5 s without a
-  key or when the panel loses the focus; each such pause is one step. A text that does not parse stays in the
-  IDE, with a banner, and in the recovery folder; the file keeps the last text that parsed.
+  key or when the panel loses the focus; each such pause is one step (`text.save`, 6.7). A text that does not parse
+  stays in the IDE, with a banner, and in the recovery folder; the file keeps the last text that parsed, and its
+  diagram cannot be edited until the text parses again. When the file changes while the panel holds a text not yet
+  written, the text stays in the panel and in the recovery folder, and a banner offers the file or the text; with no
+  such text, the panel follows the file, and the change is one step of the undo of the panel (decisions of the owner,
+  2026-11-21).
 - **Incomplete is normal.** A node added without its required inputs writes a file that has `LC2101`: the
   diagram shows it, and wiring it removes the error. **Where the text cannot leave a place out** (a selector, an
   `until`, a `yield`, `collect`, `last`, `next x`, the initial value of a carry, a bound of a range, a value of a variant,

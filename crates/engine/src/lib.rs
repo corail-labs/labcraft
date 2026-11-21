@@ -42,6 +42,7 @@ pub mod session;
 pub mod settings;
 pub mod shipped;
 mod simulations;
+pub mod text;
 pub mod view;
 pub mod walk;
 pub mod workspace;
