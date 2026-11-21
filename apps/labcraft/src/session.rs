@@ -186,6 +186,15 @@ pub enum Message {
     Zoom(String, f32),
     /// The keys of the store of the user, which the window keeps (commands.md 9.7).
     UserSettings(serde_json::Map<String, Value>),
+    /// A call of an agent attached to the window (ide.md 8), signed by it, and where to send its result.
+    Agent {
+        author: labcraft_engine::Author,
+        id: String,
+        params: Value,
+        reply: Sender<Result<Value, CommandError>>,
+    },
+    /// What the session serves to an agent: its tools, and its runs.
+    Served(Sender<labcraft_mcp::Served>),
     /// A file watched changed.
     Changed,
     /// The file of `--style` changed.
@@ -251,6 +260,16 @@ impl Handle {
         Ok((Handle { sender, snapshot, thread: Some(thread) }, reply))
     }
 
+    /// Where the thread of the session receives: the agents send their calls there.
+    pub fn sender(&self) -> Sender<Message> {
+        self.sender.clone()
+    }
+
+    /// What the session serves to an agent, once it has answered; none when it ended.
+    pub fn served(&self) -> Option<labcraft_mcp::Served> {
+        served(&self.sender)
+    }
+
     /// Shows the values of a trace chosen in the window, over the function of the window that shows `function`; what
     /// it changes shows in what is published.
     pub fn open_trace(&self, function: Option<String>, path: &Path) {
@@ -285,6 +304,13 @@ impl Drop for Handle {
             let _ = thread.join();
         }
     }
+}
+
+/// What the session whose thread receives on `sender` serves to an agent, once it has answered; none when it ended.
+pub fn served(sender: &Sender<Message>) -> Option<labcraft_mcp::Served> {
+    let (reply, served) = mpsc::channel();
+    sender.send(Message::Served(reply)).ok()?;
+    served.recv_timeout(Duration::from_secs(30)).ok()
 }
 
 /// A bug of the app, out of a command (`engine` catches those of its commands), must not end the session.
@@ -330,6 +356,15 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
                 if let Some(reply) = reply {
                     let _ = reply.send(result);
                 }
+            }
+            Message::Agent { author, id, params, reply } => {
+                let result = caught(|| session.engine.execute_as(&author, &id, &params));
+                publish(&session, shared, wake);
+                let _ = reply.send(result);
+            }
+            Message::Served(reply) => {
+                let _ = reply.send(labcraft_mcp::Served::of(&session.engine, true));
+                continue;
             }
             Message::OpenTrace(function, path) => {
                 let _ = caught(|| session.open_trace_at(function.as_deref(), path));

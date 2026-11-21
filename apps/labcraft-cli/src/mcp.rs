@@ -32,6 +32,34 @@ pub fn too_wide_folder(folder: &Path) -> Option<&'static str> {
     too_wide(&root, home.as_deref())
 }
 
+/// What `mcp` serves: the window of its project, when one shows it (ide.md 8), else a session of its own.
+pub enum Started {
+    Attached(std::net::TcpStream),
+    /// What took the connection refused it, or did not prove it holds the token: why (exit 2), not a wrong usage.
+    Refused(String),
+    Headless(Box<Session>),
+}
+
+/// Attaches to the window of the project of `--project` or the current folder (ide.md 8; mcp.md 1), else starts a
+/// session of its own on it, checked as it starts; the message of a wrong usage otherwise (exit 2), and of a window
+/// that refuses the connection.
+pub fn start(options: &McpOptions) -> Result<Started, String> {
+    let root = root_of(options)?;
+    if let Some(entry) = crate::attach::find(&root) {
+        match crate::attach::connect(&entry) {
+            Ok(stream) => return Ok(Started::Attached(stream)),
+            Err(crate::attach::NotAttached::Refused(why)) => {
+                let file = crate::attach::folder().map(|folder| crate::attach::file_of(&folder, &root));
+                let file = file.map_or_else(String::new, |file| format!(" (if no window of LabCraft shows it, remove `{}`)", file.display()));
+                return Ok(Started::Refused(format!("the window of LabCraft that shows `{}` refused the connection: {why}{file}", root.display())));
+            }
+            // A file left over from a window that did not close: no process takes its port.
+            Err(crate::attach::NotAttached::NoWindow) => {}
+        }
+    }
+    session_at(options, root, true).map(|session| Started::Headless(Box::new(session)))
+}
+
 /// The session on the root, checked as it starts; the message of a wrong usage otherwise (exit 2).
 pub fn session(options: &McpOptions) -> Result<Session, String> {
     session_on(options, true)
@@ -40,6 +68,12 @@ pub fn session(options: &McpOptions) -> Result<Session, String> {
 /// The session on the root of `--project` or the current folder, checked in the background as it starts when
 /// `background` is: that of `mcp`, and of `exec`, which runs one command.
 pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, String> {
+    let root = root_of(options)?;
+    session_at(options, root, background)
+}
+
+/// The canonical root of `--project` or the current folder, which may not be too wide.
+fn root_of(options: &McpOptions) -> Result<PathBuf, String> {
     let given = match &options.project {
         Some(project) => project.clone(),
         None => std::env::current_dir().map_err(|error| format!("the current folder cannot be read: {}", crate::walk::io_text(&error)))?,
@@ -55,6 +89,10 @@ pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, Str
             given.display()
         ));
     }
+    Ok(root)
+}
+
+fn session_at(options: &McpOptions, root: PathBuf, background: bool) -> Result<Session, String> {
     for folder in &options.lib_paths {
         if std::fs::metadata(folder).is_ok_and(|metadata| !metadata.is_dir()) {
             return Err(format!("`{}` is a file, and --lib-path takes a folder", folder.display()));
@@ -74,6 +112,28 @@ pub fn session_on(options: &McpOptions, background: bool) -> Result<Session, Str
         let _ = writeln!(std::io::stderr(), "warning: {problem}");
     }
     Ok(session)
+}
+
+/// Serves what `mcp` started until stdin closes: relayed to the window, or a session of its own.
+pub fn serve_started(started: Started) -> ExitCode {
+    match started {
+        Started::Headless(session) => serve(*session),
+        Started::Refused(why) => {
+            let _ = writeln!(std::io::stderr(), "error: {why}");
+            ExitCode::from(2)
+        }
+        Started::Attached(stream) => {
+            let mut output = std::io::stdout();
+            match crate::attach::relay(stream, Box::new(std::io::stdin()), &mut output) {
+                Ok(()) => ExitCode::SUCCESS,
+                // The window closed while the agent was attached: the client starts the server again.
+                Err(error) => {
+                    let _ = writeln!(std::io::stderr(), "error: the window of LabCraft closed the connection: {error}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+    }
 }
 
 /// Serves the session until stdin closes, then lets go of the locks of this process (`engine::runs::let_go`): one

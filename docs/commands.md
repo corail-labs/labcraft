@@ -877,7 +877,8 @@ saying so (decision of the owner, 2026-11-15).
 - **The author of a call** is its client. A command from the window of the IDE is the user's. A command from an MCP
   client, attached to the IDE or not, is the agent's; two MCP clients are two authors, each its own. A client is
   named by the `clientInfo.name` it gives at `initialize`; one with no name, or named `user` or `external`, is
-  `agent`, so that a step of an agent is never shown as the user's.
+  `agent`, so that a step of an agent is never shown as the user's. Two clients of one name attached to a window at
+  once are numbered: the second is `agent 2` (or `claude 2`), the third `agent 3`.
 - **Undo.** Called by an agent, `history.undo` undoes the last step only when that step is its own. Otherwise it is
   `history.not_yours`, and the message names the author and the label of that step. Called by an agent,
   `history.redo` redoes only a step that this agent undid, so that it never brings back what the user chose to
@@ -983,8 +984,10 @@ saying so (decision of the owner, 2026-11-15).
 | `editor.autopatch` | boolean | `true` | yes | Autopatch from the keyboard (visual notation 2.6) |
 | `editor.into_wire` | boolean | `true` | yes | Inserting into a wire (visual notation 2.6) |
 | `run.record_values` | boolean | `false` | no | A run records its values, its trace, for the wires (ide.md 3) |
+| `ai.policies` | a table: MCP client → canonical folder of a project → `ask`, `edits` or `all` | `{}` | no | The policy the user kept for a client on a project, which answers its first connection without asking (ide.md 8) |
 
-The settings of AI and of the agents (ide.md 8) come with the agent attached (architecture 12.11, step 8). Where the
+The settings of AI and of the agents (`ai.*`, ide.md 8) are the user's: an agent neither reads nor writes them
+(`agent.not_allowed`), and `settings.get` without a key leaves them out for it. Where the
 panels are, the detached windows and the insertions of the user are the state of the window, kept with it, not keys.
 
 ## 10. Left for later

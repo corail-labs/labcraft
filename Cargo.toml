@@ -51,6 +51,10 @@ eframe = { version = "0.37", default-features = false, features = ["accesskit", 
 
 # foundation
 ctrlc = "3.4"
+# The folder of the control channel of the IDE, in the local data of the user (ide.md 8).
+dirs = "7"
+# The token of the control channel, new at each launch (ide.md 8).
+getrandom = "0.3"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 # The text of the `Text` panel (kit-text; decision of the owner, 2026-11-21). Lines end at LF only, as `format` reads

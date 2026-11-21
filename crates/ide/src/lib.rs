@@ -47,6 +47,7 @@ use labcraft_engine::view::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+pub mod agents;
 mod block;
 pub mod catalog;
 mod clipboard;
@@ -265,6 +266,8 @@ pub struct Ide {
     /// The keys of the user that `settings` was computed from on the start page.
     settings_kept: Option<Map<String, Value>>,
     settings_dialog: settings_dialog::Dialog,
+    /// What the app asks the user about the agents attached (ide.md 8).
+    agent_questions: agents::Questions,
     workspace: Workspace<Pane>,
     platform: Platform,
     keymap: Keymap,
@@ -391,6 +394,7 @@ impl Ide {
             settings_seen: None,
             settings_kept: None,
             settings_dialog: settings_dialog::Dialog::default(),
+            agent_questions: agents::Questions::default(),
             prefs,
             prefs_changed,
             workspace,
@@ -478,6 +482,16 @@ impl Ide {
     /// The detached function whose window has focus, if it still is detached: the window of the project otherwise.
     pub fn focused(&self, view: &Published) -> Option<String> {
         self.focus.clone().filter(|function| view.is_detached(function))
+    }
+
+    /// The questions about the agents attached that wait for the user, as the app holds them (ide.md 8).
+    pub fn set_agent_questions(&mut self, questions: Vec<agents::Question>) {
+        self.agent_questions.set(questions);
+    }
+
+    /// The user's answers to the questions about the agents, since the last call.
+    pub fn take_agent_answers(&mut self) -> Vec<(u64, agents::Answer)> {
+        self.agent_questions.take_answers()
     }
 
     /// Says a problem that the app met, as a failure of a command is said.
@@ -808,6 +822,10 @@ impl Ide {
             outward.push(Outward::OpenLink(link));
         }
         self.show_settings(ui.ctx(), host, &view, &mut outward);
+        // Over everything, the settings included: the agent waits for the answer.
+        if let Some(policies) = self.agent_questions.show(ui.ctx(), &self.prefs.settings) {
+            self.write_setting(keyed::AI_POLICIES, policies, false, host, &view, &mut outward);
+        }
         // The content reaches under the title bar of macOS: a drag that starts on a control of the top bar must not
         // move the window.
         #[cfg(target_os = "macos")]

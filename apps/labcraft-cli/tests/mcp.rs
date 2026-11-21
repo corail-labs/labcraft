@@ -47,6 +47,8 @@ struct Client {
 impl Client {
     fn start(folder: &Path, args: &[&str]) -> Client {
         let mut child = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"))
+            // No window of the user is found (architecture 12.8).
+            .env("LABCRAFT_ATTACH_DIR", "")
             .current_dir(folder)
             .arg("mcp")
             .args(args)
@@ -228,8 +230,10 @@ fn a_request_of_100_mb_is_refused_unread_and_the_server_goes_on() {
 #[test]
 fn wrong_usage_is_exit_2_with_nothing_on_stdout() {
     let scratch = Scratch::new("usage");
-    let cli =
-        |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_labcraft-cli")).current_dir(&scratch.0).args(args).stdin(Stdio::null()).output().unwrap();
+    let cli = |args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_labcraft-cli"));
+        command.env("LABCRAFT_ATTACH_DIR", "").current_dir(&scratch.0).args(args).stdin(Stdio::null()).output().unwrap()
+    };
     let home = std::env::home_dir().unwrap();
     let home = home.to_str().unwrap();
     let root = if cfg!(windows) { "C:\\" } else { "/" };

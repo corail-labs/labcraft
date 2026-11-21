@@ -25,6 +25,7 @@ use craft_settings::{Location, Settings, SettingsStore};
 use craft_ui::fonts::{Family, I18nScripts, SystemFonts, UiFonts};
 use egui::{FontData, FontFamily};
 use kit_shell::start::Recent;
+use labcraft::agents::{Agents, Channel};
 use labcraft::args::{self, Asked, Options};
 use labcraft::examples;
 use labcraft::frames::{self, Frames};
@@ -194,6 +195,13 @@ struct Pending {
 struct App {
     ide: Ide,
     options: Options,
+    /// The agents attached to the project, and the channel they come by (ide.md 8): before `project`, so that it is
+    /// dropped first.
+    channel: Option<Channel>,
+    /// The channel being opened, off the thread of the window: what it gives once open.
+    channel_opening: Option<Receiver<Result<Option<Channel>, String>>>,
+    /// The window shows a question about an agent, whose seconds go down.
+    agent_asking: bool,
     /// The session of the project the window shows.
     project: Option<Handle>,
     opening: Option<Pending>,
@@ -233,6 +241,9 @@ impl App {
         let mut app = App {
             ide: Ide::new(ctx, window, frame),
             options,
+            channel: None,
+            channel_opening: None,
+            agent_asking: false,
             project: None,
             opening: None,
             prefs,
@@ -314,6 +325,7 @@ impl App {
                     "{} — LabCraft",
                     pending.folder.file_name().map_or(folder.clone(), |name| name.to_string_lossy().into_owned())
                 )));
+                self.open_channel(ctx, &pending.folder, &pending.handle);
                 self.project = Some(pending.handle);
                 self.prefs.update(|prefs| {
                     prefs.recent.retain(|recent| *recent != folder);
@@ -323,6 +335,61 @@ impl App {
                 self.recent_changed(ctx);
             }
             Err(error) => self.start.problem = Some(format!("{}: {}", pending.folder.display(), error.message)),
+        }
+    }
+
+    /// Opens the channel of the agents of the project at `folder` (ide.md 8), off the thread of the window: it waits for
+    /// the session, and on Windows for `icacls`. What fails is said, and the window works without it.
+    fn open_channel(&mut self, ctx: &egui::Context, folder: &Path, handle: &Handle) {
+        let root = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+        let sender = handle.sender();
+        let wake = ctx.clone();
+        let (opened, receiver) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("labcraft-channel".to_owned()).spawn(move || {
+            let repaint = wake.clone();
+            let agents = Arc::new(Agents::new(&root, Box::new(move || repaint.request_repaint())));
+            let channel = match session::served(&sender) {
+                Some(served) => Channel::open(&root, sender, served, agents),
+                None => Err("the session did not answer".to_owned()),
+            };
+            let _ = opened.send(channel);
+            wake.request_repaint();
+        });
+        match spawned {
+            Ok(_) => self.channel_opening = Some(receiver),
+            Err(error) => self.ide.say(format!("No AI agent can attach to this window: {error}")),
+        }
+    }
+
+    /// The channel once open; the questions about the agents to the window, when they changed or one is shown, and its
+    /// answers to them.
+    fn ask_about_agents(&mut self) {
+        if let Some(opened) = self.channel_opening.as_ref().and_then(|receiver| receiver.try_recv().ok()) {
+            self.channel_opening = None;
+            match opened {
+                Ok(channel) => {
+                    self.channel = channel;
+                    self.keep_policies();
+                }
+                Err(why) => self.ide.say(format!("No AI agent can attach to this window: {why}")),
+            }
+        }
+        let Some(channel) = &self.channel else { return };
+        let agents = channel.agents();
+        for (id, answer) in self.ide.take_agent_answers() {
+            agents.answer(id, answer);
+        }
+        if let Some(questions) = agents.questions(self.agent_asking) {
+            self.agent_asking = !questions.is_empty();
+            self.ide.set_agent_questions(questions);
+        }
+    }
+
+    /// The policies the user kept (`ai.policies`), to the agents.
+    fn keep_policies(&self) {
+        if let Some(channel) = &self.channel {
+            let policies = self.ide.prefs().settings.get(keyed::AI_POLICIES).cloned().unwrap_or_else(|| json!({}));
+            channel.agents().keep(policies);
         }
     }
 
@@ -473,8 +540,11 @@ impl eframe::App for App {
                 self.ide.ask_canvas_move(project, function, &nodes, by);
             }
         }
+        self.ask_about_agents();
         let host = self.project.as_ref().map(|project| project as &dyn Host);
         let outward = self.ide.show(ui, host, &self.start);
+        // An answer given in this frame reaches the agent now.
+        self.ask_about_agents();
         if let (Some(timing), Some(rect)) = (&self.timing, self.timing.as_ref().and_then(|timing| timing.canvas)) {
             timing.corner(&ctx, rect, now);
         }
@@ -483,6 +553,7 @@ impl eframe::App for App {
         }
         if self.ide.take_prefs_changed() {
             self.save_window();
+            self.keep_policies();
         }
         self.prefs.tick(Instant::now());
         self.dialogs.show_pending(Some(&*frame));
@@ -500,6 +571,8 @@ impl eframe::App for App {
         }
         self.save_window();
         let _ = self.prefs.flush();
+        // The agents go first: their file goes, and nothing more reaches the session.
+        self.channel = None;
     }
 }
 

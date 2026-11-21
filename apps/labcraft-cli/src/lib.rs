@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 pub mod args;
+pub mod attach;
 pub mod check;
 pub mod clock;
 pub mod diagram;

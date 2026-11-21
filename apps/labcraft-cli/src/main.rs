@@ -123,8 +123,8 @@ fn main() -> ExitCode {
             Ok(options) => run_run(&options),
             Err(message) => usage_error(&message),
         },
-        (Some("mcp"), _) => match args::parse_mcp(rest).and_then(|options| mcp::session(&options)) {
-            Ok(session) => on_the_stack_of_the_work(|| mcp::serve(session), mcp::internal_failure),
+        (Some("mcp"), _) => match args::parse_mcp(rest).and_then(|options| mcp::start(&options)) {
+            Ok(started) => on_the_stack_of_the_work(|| mcp::serve_started(started), mcp::internal_failure),
             Err(message) => usage_error(&message),
         },
         (Some("exec"), _) => match args::parse_exec(rest) {

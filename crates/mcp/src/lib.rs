@@ -9,6 +9,10 @@
 //!
 //! **The end.** When the input closes, what waits in the queue is dropped, the request going stops waiting, a run still
 //! going is aborted, and [`serve`] returns once its final report is written: its resources are released (spec 8.2).
+//!
+//! **Whose session.** The server does not own a session (architecture 12.8): an [`Executor`] runs each call, a session of
+//! its own when headless ([`serve`]), the session of the window when attached to the IDE ([`serve_with`]), and a
+//! [`Gate`] says whether the policy the user gave the client lets a call run (ide.md 8).
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -26,13 +30,13 @@ mod tools;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
-use labcraft_engine::registry;
+use labcraft_engine::registry::{self, Effect};
 use labcraft_engine::workspace::Workspace;
-use labcraft_engine::{Author, JsonProblem, Runs, Session, Waiter};
+use labcraft_engine::{Author, CommandError, JsonProblem, Runs, Session, Waiter};
 use serde_json::{Map, Value as Json, json};
 
 use lines::{Line, read_line};
@@ -72,6 +76,109 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Options {
         Options { viewer: false, version: String::new(), max_request: MAX_REQUEST }
+    }
+}
+
+/// What runs the calls of a client (architecture 12.8): a session of its own, headless, or the session of the window,
+/// reached through the control channel. It runs on the worker of the server, one call at a time.
+pub trait Executor: Send {
+    /// Runs a call of `author`; `waiter` waits for a run in `run.start` and `run.wait`.
+    fn execute(&mut self, author: &Author, id: &str, params: &Json, waiter: &dyn Waiter) -> Result<Json, CommandError>;
+
+    /// The input closed and nothing more runs: what the client started is stopped, and its final report waited for.
+    fn closed(&mut self, served: &Served);
+}
+
+impl Executor for Session {
+    fn execute(&mut self, author: &Author, id: &str, params: &Json, waiter: &dyn Waiter) -> Result<Json, CommandError> {
+        self.execute_waiting_as(author, id, params, waiter)
+    }
+
+    /// A session of its own: a run still going is the client's, and is aborted.
+    fn closed(&mut self, served: &Served) {
+        let _ = served.runs.execute(&*served.ws, &served.root, "run.abort", &json!({}));
+    }
+}
+
+/// Whether a call may run now (ide.md 8): headless, every call ([`Open`]); attached to the IDE, by the policy the user
+/// gave the client, which may wait for the user's answer. Refused, the call is `agent.not_allowed`.
+pub trait Gate: Sync {
+    /// The client named itself at `initialize`: the author of its calls from now on, which the gate may change (two
+    /// clients of one name attached to a window are `agent` and `agent 2`), and the first connection asks (ide.md 8).
+    fn introduce(&self, author: Author) -> Author {
+        author
+    }
+
+    /// Whether a call that waits its turn may run: it may wait for the user's answer, as long as `waiter` still waits
+    /// (a cancelled request, or the end of the input, stops it).
+    fn allow(&self, author: &Author, id: &str, params: &Json, waiter: &dyn Waiter) -> Result<(), CommandError>;
+
+    /// Whether a call that the server answers at once (`run.status`, `run.abort`, `run.set_element`) may run: judged
+    /// without waiting, so that an agent can always stop what it started (`docs/mcp.md`, 5).
+    fn allow_at_once(&self, author: &Author, id: &str, params: &Json) -> Result<(), CommandError>;
+}
+
+/// The gate of a server with a session of its own: the agent started it, every call runs (D-18).
+pub struct Open;
+
+impl Gate for Open {
+    fn allow(&self, _: &Author, _: &str, _: &Json, _: &dyn Waiter) -> Result<(), CommandError> {
+        Ok(())
+    }
+
+    fn allow_at_once(&self, _: &Author, _: &str, _: &Json) -> Result<(), CommandError> {
+        Ok(())
+    }
+}
+
+/// The effects of a call (commands.md 1), by which a policy judges it (ide.md 8): those of the command, of the one that
+/// `commands.execute` runs, of each one of `commands.batch`. `history.undo` and `history.redo` count as `files`. A
+/// command that is not known has none: it will fail without running.
+pub fn effects_of(id: &str, params: &Json) -> Vec<Effect> {
+    let mut effects = Vec::new();
+    let mut add = |id: &str| {
+        if matches!(id, "history.undo" | "history.redo") {
+            effects.push(Effect::Files);
+        }
+        if let Some(command) = registry::command(id) {
+            effects.extend_from_slice(command.effects);
+        }
+    };
+    match id {
+        "commands.execute" => add(params.get("id").and_then(Json::as_str).unwrap_or_default()),
+        "commands.batch" => {
+            for item in params.get("commands").and_then(Json::as_array).into_iter().flatten() {
+                add(item.get("id").and_then(Json::as_str).unwrap_or_default());
+            }
+        }
+        other => add(other),
+    }
+    effects.sort_by_key(|effect| effect.as_str());
+    effects.dedup();
+    effects
+}
+
+/// What the server reads of the session before it serves, and keeps: the tools, the bound of nesting, and what answers
+/// the calls on a run that need no session.
+#[derive(Clone)]
+pub struct Served {
+    tools: Vec<Tool>,
+    max_nesting: u32,
+    pub runs: Runs,
+    pub ws: Arc<dyn Workspace>,
+    pub root: PathBuf,
+}
+
+impl Served {
+    /// What `session` serves; `viewer`: a window serves it, and its commands are tools too (`Options::viewer`).
+    pub fn of(session: &Session, viewer: bool) -> Served {
+        Served {
+            tools: tools::tools_of(session, viewer),
+            max_nesting: session.config().limits.max_nesting().saturating_add(NESTING_OF_THE_ENVELOPE),
+            runs: session.runs(),
+            ws: session.shared_workspace(),
+            root: session.root().to_path_buf(),
+        }
     }
 }
 
@@ -165,25 +272,44 @@ impl Waiter for Client<'_, '_> {
 /// Serves `session` on `input` and `output` until the input closes. The caller runs it on a thread of
 /// `format::STACK_SIZE`, the stack that reading a request as deep as `--max-nesting` allows takes.
 pub fn serve(mut session: Session, input: &mut dyn BufRead, output: Box<dyn Write + Send + '_>, options: &Options) {
-    let tools = tools::tools_of(&session, options.viewer);
-    let instructions = tools::instructions(&tools);
-    let max_nesting = session.config().limits.max_nesting().saturating_add(NESTING_OF_THE_ENVELOPE);
-    let ws = session.shared_workspace();
-    let root: PathBuf = session.root().to_path_buf();
+    let served = Served::of(&session, options.viewer);
+    serve_with(&mut session, &served, &Open, input, output, options);
+}
+
+/// Serves the calls of a client through `executor`, each first allowed by `gate`, until the input closes; then
+/// [`Executor::closed`]. On a thread of `format::STACK_SIZE`, as [`serve`].
+pub fn serve_with(
+    executor: &mut dyn Executor,
+    served: &Served,
+    gate: &dyn Gate,
+    input: &mut dyn BufRead,
+    output: Box<dyn Write + Send + '_>,
+    options: &Options,
+) {
+    let instructions = tools::instructions(&served.tools);
     let shared = Shared {
         out: Mutex::new(output),
         broken: AtomicBool::new(false),
         queue: Mutex::new(Queue::default()),
         ready: Condvar::new(),
-        runs: session.runs(),
+        runs: served.runs.clone(),
         author: Mutex::new(author_of(None)),
     };
     std::thread::scope(|scope| {
         let worker = std::thread::Builder::new()
             .name("mcp session".to_owned())
             .stack_size(labcraft_format::STACK_SIZE)
-            .spawn_scoped(scope, || work(&mut session, &shared, max_nesting, options.viewer));
-        let reader = Reader { shared: &shared, tools: &tools, instructions: &instructions, max_nesting, ws: &*ws, root: &root, options };
+            .spawn_scoped(scope, || work(&mut *executor, gate, &shared, served.max_nesting, options.viewer));
+        let reader = Reader {
+            shared: &shared,
+            tools: &served.tools,
+            instructions: &instructions,
+            max_nesting: served.max_nesting,
+            ws: &*served.ws,
+            root: &served.root,
+            gate,
+            options,
+        };
         // Closed even if reading panics, so that the worker ends and the scope can join it.
         let closer = Closer(&shared);
         if worker.is_ok() {
@@ -193,9 +319,9 @@ pub fn serve(mut session: Session, input: &mut dyn BufRead, output: Box<dyn Writ
         if let Ok(worker) = worker {
             let _ = worker.join();
         }
-        // The call going has ended: a run it started, or one that goes on, is aborted, and its final report waited for.
-        let _ = shared.runs.execute(&*ws, &root, "run.abort", &json!({}));
     });
+    // The call going has ended: what the client started is stopped, and its final report waited for.
+    executor.closed(served);
 }
 
 /// Closes the server as it goes away.
@@ -222,7 +348,7 @@ fn close(shared: &Shared<'_>) {
 }
 
 /// The worker: the calls of the queue, in order, on the session.
-fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32, viewer: bool) {
+fn work(executor: &mut dyn Executor, gate: &dyn Gate, shared: &Shared<'_>, max_nesting: u32, viewer: bool) {
     loop {
         let job = {
             let mut queue = shared.queue();
@@ -243,9 +369,11 @@ fn work(session: &mut Session, shared: &Shared<'_>, max_nesting: u32, viewer: bo
         let outcome = match arguments_of(&job.line, max_nesting) {
             Some(arguments) => match not_a_tool(&arguments, job.command, viewer) {
                 Some(refused) => Err(refused),
-                None => session.execute_waiting_as(&author, job.command, &arguments, &client),
+                None => {
+                    gate.allow(&author, job.command, &arguments, &client).and_then(|()| executor.execute(&author, job.command, &arguments, &client))
+                }
             },
-            None => Err(labcraft_engine::CommandError::internal("a request read once did not read again")),
+            None => Err(CommandError::internal("a request read once did not read again")),
         };
         shared.queue().current = None;
         // A cancelled request gets no answer (MCP).
@@ -294,7 +422,8 @@ struct Reader<'r, 'a> {
     instructions: &'r str,
     max_nesting: u32,
     ws: &'r dyn Workspace,
-    root: &'r std::path::Path,
+    root: &'r Path,
+    gate: &'r dyn Gate,
     options: &'r Options,
 }
 
@@ -387,7 +516,7 @@ impl Reader<'_, '_> {
         match method {
             "initialize" => {
                 let name = params.get("clientInfo").and_then(|info| info.get("name")).and_then(Json::as_str);
-                *self.shared.author.lock().unwrap_or_else(PoisonError::into_inner) = author_of(name);
+                *self.shared.author.lock().unwrap_or_else(PoisonError::into_inner) = self.gate.introduce(author_of(name));
                 let asked = params.get("protocolVersion").and_then(Json::as_str);
                 let [latest, _] = PROTOCOLS;
                 let version = PROTOCOLS.into_iter().find(|version| Some(*version) == asked).unwrap_or(latest);
@@ -426,7 +555,11 @@ impl Reader<'_, '_> {
         // (`docs/mcp.md`, 5): the registry says which (architecture 12.5). They wait on the run, never on the session.
         if at_once {
             let arguments = arguments.unwrap_or_else(|| Json::Object(Map::new()));
-            let outcome = self.shared.runs.execute(self.ws, self.root, command, &arguments);
+            let author = self.shared.author.lock().unwrap_or_else(PoisonError::into_inner).clone();
+            let outcome = self
+                .gate
+                .allow_at_once(&author, command, &arguments)
+                .and_then(|()| self.shared.runs.execute(self.ws, self.root, command, &arguments));
             return self.shared.answer(id, tools::result_of(outcome));
         }
         // The worker reads the request again: what was read here goes before the request waits.

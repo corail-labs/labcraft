@@ -128,7 +128,8 @@ impl Dialog {
                             }
                         }
                     }
-                    Kind::LibraryColors => {
+                    // The policies of the agents are listed with the switch of AI, not here (ide.md 8).
+                    Kind::LibraryColors | Kind::Policies => {
                         ui.label(key.title);
                     }
                 }
