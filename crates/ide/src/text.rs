@@ -326,6 +326,13 @@ impl Editing {
         self.base.as_ref().is_some_and(|base| base.field != self.code.field.revision())
     }
 
+    /// It holds a text typed and not written to the file: changed since it was read or written, or on its way. A text
+    /// that does not parse holds it too, until it is written or the file is shown again (the gesture lock,
+    /// architecture 12.5; decision of the owner, 2026-11-21).
+    pub fn typing(&self) -> bool {
+        self.dirty() || self.saving.is_some()
+    }
+
     /// The diagram of the function cannot be edited: its text does not parse (commands.md 9.1).
     pub fn locks_diagram(&self) -> bool {
         matches!(self.status, Status::Unparsed { .. }) || (self.status == Status::Stale && self.unparsed)

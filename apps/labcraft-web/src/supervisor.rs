@@ -523,6 +523,7 @@ impl Supervisor {
             project: self.folder_name().map(str::to_owned),
             notices: self.notices(),
             session: self.counts.opened,
+            waiting: None,
         }
     }
 }
@@ -596,6 +597,9 @@ impl Host for Shared {
     fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
         self.with(|supervisor| supervisor.user_settings(keys));
     }
+
+    /// No agent attaches to the page (ide.md 8): no command of an agent waits for a gesture.
+    fn set_gesture(&self, _gesture: Option<labcraft_engine::Gesture>) {}
 }
 
 /// The settings that `Seen` carries, as JSON; what does not read is none, not given.

@@ -61,6 +61,12 @@ pub struct NewFunction {
 }
 
 impl NewFunction {
+    /// It holds a name or a definition typed and not written yet (the gesture lock, architecture 12.5).
+    pub fn typing(&self) -> bool {
+        self.folder.is_some()
+            && (self.pending || !self.name.trim().is_empty() || self.definition.as_ref().is_some_and(|text| !text.trim().is_empty()))
+    }
+
     /// Opens the field in `folder` (`""` for the root).
     pub fn open(&mut self, folder: &str) {
         *self = NewFunction { folder: Some(folder.to_owned()), ..NewFunction::default() };
@@ -188,12 +194,19 @@ pub struct Renaming {
     /// Sent, and the answer not back yet.
     pub pending: bool,
     focused: bool,
+    /// The name it opened with.
+    old: String,
 }
 
 impl Renaming {
     /// Opens the field on the line of `file`, with the name it has.
     pub fn open(&mut self, file: &str, name: &str) {
-        *self = Renaming { file: Some(file.to_owned()), name: name.to_owned(), ..Renaming::default() };
+        *self = Renaming { file: Some(file.to_owned()), name: name.to_owned(), old: name.to_owned(), ..Renaming::default() };
+    }
+
+    /// It holds a name typed and not written yet (the gesture lock, architecture 12.5).
+    pub fn typing(&self) -> bool {
+        self.file.is_some() && (self.pending || self.name.trim() != self.old)
     }
 
     pub fn close(&mut self) {

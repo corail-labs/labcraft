@@ -1356,7 +1356,7 @@ fn the_commands_of_the_window_keep_the_tabs_their_views_and_the_selection() {
     assert_eq!(
         state,
         json!({ "workspace": "edit", "windows": [{ "tabs": [{ "function": "b", "file": "b.lcf", "view": "diagram", "split": null }],
-                "shown": 0, "selection": { "nodes": [], "wires": [], "terminals": [] }, "zoom": null }], "truncated": false })
+                "shown": 0, "selection": { "nodes": [], "wires": [], "terminals": [] }, "zoom": null }], "gesture": null, "truncated": false })
     );
     // A preview takes the place of the preview before it; shown without `preview`, it stays.
     ok(&mut session, "view.show_function", json!({ "function": "c", "preview": true }));

@@ -37,7 +37,7 @@ impl Host for Fake {
     }
 
     fn snapshot(&self) -> Snapshot {
-        Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0 }
+        Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0, waiting: None }
     }
 
     fn set_zoom(&self, function: &str, zoom: f32) {
@@ -46,6 +46,10 @@ impl Host for Fake {
 
     fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
         self.session.borrow_mut().set_user_settings(keys);
+    }
+
+    fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>) {
+        self.session.borrow_mut().set_gesture(gesture);
     }
 }
 
@@ -1352,4 +1356,50 @@ fn the_first_connection_of_an_agent_asks_for_a_policy() {
     harness.get_by_label("Refuse").click();
     harness.run_steps(3);
     assert_eq!(harness.state_mut().ide.take_agent_answers(), vec![(3, Answer::Refuse)]);
+}
+
+fn gesture(harness: &Harness<'_, State>) -> Option<labcraft_engine::Gesture> {
+    harness.state().host.session.borrow().gesture()
+}
+
+/// The window tells the session when a gesture starts and ends (architecture 12.5): a drag of a node while it goes, a
+/// text typed until it is written (decision of the owner, 2026-11-21).
+#[test]
+fn the_window_says_a_drag_and_a_text_typed_while_they_go() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let (on_a, _) = canvas_element(&harness, "a, core.mul");
+    let button =
+        |at, pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    let to = on_a + egui::vec2(60.0, 40.0);
+    harness.input_mut().events.extend([egui::Event::PointerMoved(on_a), button(on_a, true)]);
+    harness.run_steps(1);
+    harness.input_mut().events.push(egui::Event::PointerMoved(on_a + egui::vec2(30.0, 20.0)));
+    harness.run_steps(1);
+    assert_eq!(gesture(&harness), Some(labcraft_engine::Gesture::Move));
+    harness.input_mut().events.extend([egui::Event::PointerMoved(to), button(to, false)]);
+    harness.run_steps(4);
+    assert_eq!(gesture(&harness), None);
+    // A text: from the first key not written to its writing.
+    let mut harness = text_of_main();
+    assert_eq!(gesture(&harness), None, "a field with the focus holds nothing");
+    harness.get_by_label("Text of main.lcf").type_text("\n// a note\n");
+    harness.run_steps(1);
+    assert_eq!(gesture(&harness), Some(labcraft_engine::Gesture::Field));
+    harness.run_steps(4);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}\n// a note\n")));
+    assert_eq!(gesture(&harness), None);
+}
+
+/// A text that does not parse holds the lock while its tab is open (decision of the owner, 2026-11-21); its tab closed,
+/// no field shows it, and it holds nothing.
+#[test]
+fn a_text_that_does_not_parse_holds_the_lock_until_its_tab_closes() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("fn (");
+    harness.run_steps(5);
+    assert_eq!(gesture(&harness), Some(labcraft_engine::Gesture::Field));
+    harness.state().host.session.borrow_mut().execute("view.close_function", &json!({ "function": "main" })).unwrap();
+    harness.run_steps(4);
+    assert_eq!(gesture(&harness), None);
 }

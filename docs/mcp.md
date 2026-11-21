@@ -135,7 +135,9 @@ second of real time that it waits *(proposed)*: `progress` counts them from 1, a
 and where each loop is, its iteration counted from 1 as the command line shows it (cli.md 6.7). A
 cancellation (`notifications/cancelled`) of a `run_start` or a `run_wait` stops the wait, not the run, which
 `run_abort` stops. A cancelled request gets no answer, whether it waited its turn or ran; one that waited is
-dropped unrun.
+dropped unrun. Attached to the IDE, an editing command that waits for the end of a gesture of the user (architecture
+12.5) gets the same notification each second, its `message` `waiting for the user`, and a cancellation drops it
+unrun.
 
 ## 5. Bounds
 

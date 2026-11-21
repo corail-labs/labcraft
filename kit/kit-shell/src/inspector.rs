@@ -140,6 +140,23 @@ pub fn show(ui: &mut egui::Ui, title: &str, sections: &[Section]) -> Option<Answ
 #[derive(Clone, Default)]
 struct Typed(String);
 
+/// Where a field of the inspector says that it holds a text changed and not given yet, until the host takes it.
+fn typing_id() -> egui::Id {
+    egui::Id::unique("kit-shell-inspector-typing")
+}
+
+/// A field of the inspector held, since the last call, a text typed that differs from its value and that it has not
+/// given yet: for a host that must know when the user is in the middle of an edit. The host calls it once in each
+/// frame, after [`show`], in whichever window the inspector was drawn.
+pub fn take_typing(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|data| data.remove_temp::<bool>(typing_id())).unwrap_or(false)
+}
+
+/// The field holds a text that differs from its value: said for [`take_typing`].
+fn typed(ui: &egui::Ui) {
+    ui.data_mut(|data| data.insert_temp(typing_id(), true));
+}
+
 /// A field that edits; what the user did to it.
 fn edit(ui: &mut egui::Ui, control: &Control) -> Option<Answer> {
     match control {
@@ -148,6 +165,9 @@ fn edit(ui: &mut egui::Ui, control: &Control) -> Option<Answer> {
             let mut text = ui.data(|data| data.get_temp::<Typed>(id)).map_or_else(|| value.to_string(), |typed| typed.0);
             let response = ui.add(egui::TextEdit::singleline(&mut text).desired_width(72.0).font(egui::TextStyle::Monospace));
             if response.has_focus() {
+                if text.trim() != value.to_string() {
+                    typed(ui);
+                }
                 ui.data_mut(|data| data.insert_temp(id, Typed(text.clone())));
                 return None;
             }
@@ -184,6 +204,9 @@ fn edit(ui: &mut egui::Ui, control: &Control) -> Option<Answer> {
             // Ctrl+Enter writes a text of several lines, Enter one of one line.
             let written = *lines && response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter) && input.modifiers.command);
             if response.has_focus() && !written {
+                if text.trim_end() != value.trim_end() {
+                    typed(ui);
+                }
                 ui.data_mut(|data| data.insert_temp(id, Typed(text.clone())));
                 return None;
             }

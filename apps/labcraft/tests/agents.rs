@@ -1,6 +1,7 @@
-//! An agent attached to the window (ide.md 8; scenario 2 of acceptance-m1.md, points 1, 4 and 5): the session of a
+//! An agent attached to the window (ide.md 8; scenario 2 of acceptance-m1.md, points 1, 3, 4 and 5): the session of a
 //! project on its thread, as the app runs it, its channel open, and clients that speak MCP to it over the loopback as
-//! `labcraft-cli mcp` relays them. The answers of the user are given by the test, as the window would give them.
+//! `labcraft-cli mcp` relays them. The answers and the gestures of the user are given by the test, as the window would
+//! give them.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -56,8 +57,14 @@ struct Window {
 impl Window {
     /// Opens the project; `answer` is what the user answers to each question, as it comes.
     fn open(scratch: &Scratch, answer: impl Fn(&Asks, &str) -> Answer + Send + 'static) -> Window {
+        Window::open_waiting(scratch, answer, labcraft_engine::gesture::WAIT)
+    }
+
+    /// As [`Window::open`], an editing command of an agent waiting at most `gesture_wait` for the end of a gesture.
+    fn open_waiting(scratch: &Scratch, answer: impl Fn(&Asks, &str) -> Answer + Send + 'static, gesture_wait: Duration) -> Window {
         let root = scratch.project();
-        let opening = Opening { folder: root.clone(), lib_paths: Vec::new(), user_settings: serde_json::Map::new(), style: None, new: false };
+        let opening =
+            Opening { folder: root.clone(), lib_paths: Vec::new(), user_settings: serde_json::Map::new(), style: None, new: false, gesture_wait };
         let (handle, reply) = Handle::spawn(opening, Box::new(|| {})).unwrap();
         reply.wait(Duration::from_secs(60)).expect("the project opens").unwrap();
         let agents = Arc::new(Agents::new(&root, Box::new(|| {})));
@@ -103,6 +110,8 @@ struct Client {
     stream: TcpStream,
     lines: BufReader<TcpStream>,
     next: i64,
+    /// The ids of the answers that came to no request waited for.
+    strays: Vec<Value>,
 }
 
 impl Client {
@@ -110,7 +119,7 @@ impl Client {
         let entry = attach::read_entry(&window.channel.as_ref().unwrap().file()).unwrap();
         let stream = attach::connect(&entry).unwrap();
         let lines = BufReader::new(stream.try_clone().unwrap());
-        let mut client = Client { stream, lines, next: 0 };
+        let mut client = Client { stream, lines, next: 0, strays: Vec::new() };
         let init = client
             .request("initialize", json!({ "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": { "name": name, "version": "1" } }));
         assert_eq!(init["result"]["serverInfo"]["name"], "labcraft", "{init}");
@@ -118,16 +127,28 @@ impl Client {
     }
 
     fn request(&mut self, method: &str, params: Value) -> Value {
+        self.request_told(method, params).0
+    }
+
+    /// As [`Client::request`]: the answer, and the messages of the notifications that came before it.
+    fn request_told(&mut self, method: &str, params: Value) -> (Value, Vec<String>) {
         self.next += 1;
         let id = self.next;
         writeln!(self.stream, "{}", json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })).unwrap();
         self.stream.flush().unwrap();
+        let mut told = Vec::new();
         loop {
             let mut line = String::new();
             assert_ne!(self.lines.read_line(&mut line).unwrap(), 0, "the window answers");
             let message: Value = serde_json::from_str(&line).unwrap();
             if message.get("id") == Some(&json!(id)) {
-                return message;
+                return (message, told);
+            }
+            if let Some(stray) = message.get("id") {
+                self.strays.push(stray.clone());
+            }
+            if let Some(text) = message["params"]["message"].as_str() {
+                told.push(text.to_owned());
             }
         }
     }
@@ -329,5 +350,114 @@ fn a_wait_through_commands_execute_does_not_hold_the_window_and_an_agent_stops_i
     // `run_abort` is answered at once: its own run, under `Edits`.
     let aborted = agent.ok("run_abort", json!({}));
     assert_eq!(aborted["status"], "aborted", "{aborted}");
+    window.close();
+}
+
+fn revision_of(path: &Path) -> String {
+    labcraft_engine::revision(&std::fs::read(path).unwrap())
+}
+
+/// Waits until the session publishes that `agent` waits for the end of the gesture, by its name, or that none does: it
+/// publishes once it has answered.
+#[expect(clippy::disallowed_methods, reason = "a test of the desktop app, never built for WASM")]
+fn wait_until_waiting(window: &Window, agent: Option<&str>) {
+    let since = std::time::Instant::now();
+    while window.handle().snapshot().waiting.as_deref() != agent {
+        assert!(since.elapsed() < Duration::from_secs(10), "the session publishes that {agent:?} waits");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Scenario 2, point 3: while the user draws a wire, an editing command of the agent waits, told so, and runs when the
+/// gesture ends; a read does not wait; a command whose `expected_revision` is stale by then is `file.stale`.
+#[test]
+fn an_edit_of_the_agent_waits_for_the_end_of_a_gesture_and_is_judged_then() {
+    let scratch = Scratch::new("gesture");
+    let file = scratch.project().join("f.lcf");
+    std::fs::write(&file, START).unwrap();
+    let window = Window::open(&scratch, edits);
+    let mut agent = Client::attach(&window, "claude");
+    window.handle().set_gesture(Some(labcraft_engine::Gesture::Wire));
+    // A read does not wait, and says the gesture.
+    assert_eq!(agent.ok("view_get_state", json!({}))["gesture"], "wire");
+    let before = read(&file);
+    let adding = std::thread::spawn(move || {
+        let told = agent.request_told(
+            "tools/call",
+            json!({ "name": "node_add", "arguments": { "file": "f.lcf", "call": "core.not" }, "_meta": { "progressToken": "t" } }),
+        );
+        (agent, told)
+    });
+    wait_until_waiting(&window, Some("claude"));
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(read(&file), before, "nothing is written during the gesture");
+    // The window's own commands go on meanwhile.
+    window.user("history.list", json!({}));
+    window.handle().set_gesture(None);
+    let (mut agent, (answer, told)) = adding.join().unwrap();
+    assert_ne!(answer["result"]["isError"], true, "{answer}");
+    assert!(told.iter().any(|text| text == "waiting for the user"), "{told:?}");
+    assert_ne!(read(&file), before);
+    wait_until_waiting(&window, None);
+    // Stale by the end of the gesture: the user changed the file during it.
+    let revision = revision_of(&file);
+    window.handle().set_gesture(Some(labcraft_engine::Gesture::Field));
+    let stale = std::thread::spawn(move || {
+        let code = agent.code("node_add", json!({ "file": "f.lcf", "call": "core.not", "expected_revision": { "f.lcf": revision } }));
+        (agent, code)
+    });
+    wait_until_waiting(&window, Some("claude"));
+    window.user("node.add", json!({ "file": "f.lcf", "call": "core.add" }));
+    let by_the_user = read(&file);
+    window.handle().set_gesture(None);
+    let (_agent, code) = stale.join().unwrap();
+    assert_eq!(code, "file.stale");
+    assert_eq!(read(&file), by_the_user, "the stale command changed nothing");
+    window.close();
+}
+
+/// Scenario 2, point 3: a gesture that lasts longer than the wait gives the agent `gesture.busy`, and nothing changes.
+#[test]
+fn a_gesture_longer_than_the_wait_gives_gesture_busy() {
+    let scratch = Scratch::new("busy");
+    let file = scratch.project().join("f.lcf");
+    std::fs::write(&file, START).unwrap();
+    let window = Window::open_waiting(&scratch, edits, Duration::from_millis(500));
+    let mut agent = Client::attach(&window, "claude");
+    window.handle().set_gesture(Some(labcraft_engine::Gesture::Move));
+    assert_eq!(agent.code("node_add", json!({ "file": "f.lcf", "call": "core.not" })), "gesture.busy");
+    assert_eq!(read(&file), START);
+    wait_until_waiting(&window, None);
+    // The gesture ends: nothing that waited runs then.
+    window.handle().set_gesture(None);
+    let listed = window.user("history.list", json!({}));
+    assert_eq!(listed["steps"].as_array().unwrap().len(), 0, "{listed}");
+    window.close();
+}
+
+/// An editing command that waits for the end of a gesture and that its client cancels never runs, and gets no answer
+/// (mcp.md 4).
+#[test]
+fn an_edit_cancelled_while_it_waits_for_a_gesture_never_runs() {
+    let scratch = Scratch::new("cancel");
+    let file = scratch.project().join("f.lcf");
+    std::fs::write(&file, START).unwrap();
+    let window = Window::open(&scratch, edits);
+    let mut agent = Client::attach(&window, "claude");
+    window.handle().set_gesture(Some(labcraft_engine::Gesture::Field));
+    let call = json!({ "jsonrpc": "2.0", "id": 100, "method": "tools/call", "params": { "name": "node_add", "arguments": { "file": "f.lcf", "call": "core.not" } } });
+    writeln!(agent.stream, "{call}").unwrap();
+    wait_until_waiting(&window, Some("claude"));
+    let cancel = json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 100 } });
+    writeln!(agent.stream, "{cancel}").unwrap();
+    agent.stream.flush().unwrap();
+    // The next call is answered once the cancelled one is dropped.
+    let state = agent.request("tools/call", json!({ "name": "view_get_state", "arguments": {} }));
+    assert_eq!(state["result"]["structuredContent"]["gesture"], "field", "{state}");
+    window.handle().set_gesture(None);
+    let listed = agent.ok("commands_execute", json!({ "id": "history.list", "params": {} }));
+    assert_eq!(listed["steps"].as_array().unwrap().len(), 0, "{listed}");
+    assert_eq!(read(&file), START);
+    assert!(agent.strays.is_empty(), "the cancelled request got an answer: {:?}", agent.strays);
     window.close();
 }

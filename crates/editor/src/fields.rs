@@ -170,6 +170,12 @@ impl Canvas {
         self.field = None;
     }
 
+    /// A field holds a text typed and not written yet: changed from what it opened with, or written and its answer not
+    /// back. Open and unchanged, it holds nothing (the gesture lock, architecture 12.5).
+    pub fn typing(&self) -> bool {
+        self.field.as_ref().is_some_and(|field| field.pending || field.text.trim() != field.original.trim())
+    }
+
     /// A field written whose answer has not come: no other opens before it, so that the answer is its own.
     fn waiting(&self) -> bool {
         self.field.as_ref().is_some_and(|field| field.pending)

@@ -68,6 +68,9 @@ pub trait Waiter: Sync {
 
     /// Each second of the wait, where the run is: the report `running` of `run.status`.
     fn progress(&self, _report: &Json) {}
+
+    /// Each second that a call of an agent waits for the end of a gesture of the user (architecture 12.5).
+    fn waiting_for_the_user(&self) {}
 }
 
 /// A caller that waits to the end of `wait`, and is told nothing.

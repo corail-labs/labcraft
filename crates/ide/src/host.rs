@@ -20,6 +20,8 @@ pub struct Snapshot {
     /// Which session of the app this is: another one, even of a project of the same name, is a new project for the
     /// window. The desktop opens one project per window, and gives 0.
     pub session: u64,
+    /// The agent whose editing command waits for the end of the gesture of the user, by its name (architecture 12.5).
+    pub waiting: Option<String>,
 }
 
 /// The result of a command, when it comes.
@@ -74,4 +76,8 @@ pub trait Host {
     /// The keys of the store of the user (commands.md 9.7), which the window keeps, for a session that does not hold them
     /// yet (`Stores::given`): not a command, as the zoom.
     fn set_user_settings(&self, keys: &serde_json::Map<String, Value>);
+
+    /// The gesture of the user in progress, or none: said as it starts and as it ends, so that an editing command of an
+    /// agent waits for its end (architecture 12.5). Not a command, as the zoom.
+    fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>);
 }

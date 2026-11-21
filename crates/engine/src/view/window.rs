@@ -406,5 +406,6 @@ pub fn get_state(session: &Session) -> Value {
         let zoom = view.zooms.get(function);
         windows.push(json!({ "tabs": [tab_entry(function)], "shown": 0, "selection": selection_of(window), "zoom": zoom }));
     }
-    json!({ "workspace": now.workspace.0, "windows": windows, "truncated": false })
+    let gesture = view.gesture.map(crate::Gesture::as_str);
+    json!({ "workspace": now.workspace.0, "windows": windows, "gesture": gesture, "truncated": false })
 }

@@ -347,6 +347,11 @@ pub struct Ide {
     /// The function whose canvas had the keyboard, and the widget of that canvas: the keys of the canvas act on it while
     /// egui still gives it the focus (notation 2.6).
     canvas_focus: Option<(String, egui::Id)>,
+    /// The gesture of a canvas in this frame, and the gesture last said to the host (architecture 12.5).
+    canvas_gesture: Option<labcraft_engine::Gesture>,
+    gesture_said: Option<labcraft_engine::Gesture>,
+    /// The agent whose editing command waits for the end of the gesture, as the session last published it.
+    waiting: Option<String>,
     /// The file whose view `Text` has the keyboard: its keys act on it (F12, Shift+Alt+F).
     text_focus: Option<String>,
     /// Where the pointer was last, on the screen: quick insertion opens under it (notation 2.6).
@@ -444,6 +449,9 @@ impl Ide {
             failures: Vec::new(),
             canvas_rect: None,
             canvas_focus: None,
+            canvas_gesture: None,
+            gesture_said: None,
+            waiting: None,
             text_focus: None,
             pointer: None,
             quick: None,
@@ -670,6 +678,8 @@ impl Ide {
         }
         self.new_project(&snapshot);
         let view = snapshot.view.clone();
+        self.canvas_gesture = None;
+        self.waiting.clone_from(&snapshot.waiting);
         self.follow_focus(ui.ctx());
         if let Some(host) = host {
             self.take_replies(host, &view);
@@ -830,7 +840,33 @@ impl Ide {
         // move the window.
         #[cfg(target_os = "macos")]
         craft_window::title_bar::sync_movable(ui.ctx(), &mut self.movable);
+        self.say_gesture(ui.ctx(), host, &view);
         outward
+    }
+
+    /// Tells the host when a gesture of the user starts and ends, from what the frame drew: a canvas in a gesture, or a
+    /// field that holds a text typed and not written (architecture 12.5; decision of the owner, 2026-11-21).
+    fn say_gesture(&mut self, ctx: &egui::Context, host: Option<&dyn Host>, view: &Published) {
+        // The text of a tab closed is kept, but no field shows it: it holds nothing.
+        let open = |file: &str| {
+            let detached = view.detached.iter().filter_map(|shown| shown.function.as_deref());
+            view.opened.iter().map(String::as_str).chain(detached).any(|function| file_of_tab(view, function) == Some(file))
+        };
+        // Taken in every frame, so that what a field said in one frame never counts in the next.
+        let inspector = kit_shell::inspector::take_typing(ctx);
+        let typing = self.drawn.values().any(|drawn| drawn.canvas.typing())
+            || self.texts.iter().any(|(file, editing)| editing.typing() && open(file))
+            || self.blocks.values().any(block::BlockPane::typing)
+            || self.renaming.typing()
+            || self.new_function.typing()
+            || inspector;
+        let gesture = self.canvas_gesture.or(typing.then_some(labcraft_engine::Gesture::Field));
+        if let Some(host) = host
+            && gesture != self.gesture_said
+        {
+            host.set_gesture(gesture);
+            self.gesture_said = gesture;
+        }
     }
 
     /// The window of the project takes focus back from a detached one: a press in it, out of a detached window that
@@ -872,6 +908,8 @@ impl Ide {
         if self.project == snapshot.project && self.session == snapshot.session && !again {
             return;
         }
+        // A new session knows of no gesture.
+        self.gesture_said = None;
         self.project.clone_from(&snapshot.project);
         self.session = snapshot.session;
         self.drawn.clear();
@@ -1471,6 +1509,13 @@ impl Ide {
         }
         if let Some(last) = &self.history.last {
             left.push(Segment::new(last.clone()).hover("The last step of the history"));
+        }
+        // Until the pill of the agent (ide.md 8; decision of the owner, 2026-11-21).
+        if let Some(agent) = &self.waiting {
+            left.push(Segment::new(format!("{agent} waits for the end of your gesture")).hover(format!(
+                "Its edit runs when your gesture ends, on what it gives; after {} s it gives up and changes nothing",
+                labcraft_engine::gesture::WAIT.as_secs()
+            )));
         }
         let mut right = Vec::new();
         if shown.is_some() {
@@ -2951,6 +2996,9 @@ impl Content<'_> {
         } else {
             drawn.canvas.show(ui, theme, &shown)
         };
+        if let Some(gesture) = response.gesture {
+            self.ide.canvas_gesture = Some(engine_gesture(gesture));
+        }
         if response.response.has_focus() {
             self.ide.canvas_focus = Some((function.to_owned(), response.response.id));
         } else if self.ide.canvas_focus.as_ref().is_some_and(|(focused, _)| focused == function) {
@@ -3251,6 +3299,17 @@ mod field_tests {
         assert_eq!(quoted("say \"hi\""), "\"say \\\"hi\\\"\"");
         assert_eq!(quoted("kept \\\" and \\n"), "\"kept \\\" and \\n\"");
         assert_eq!(quoted("end \\"), "\"end \\\\\"");
+    }
+}
+
+/// A gesture of the canvas, as the session names it (architecture 12.5).
+fn engine_gesture(gesture: labcraft_editor::Gesture) -> labcraft_engine::Gesture {
+    match gesture {
+        labcraft_editor::Gesture::Rectangle => labcraft_engine::Gesture::Rectangle,
+        labcraft_editor::Gesture::Move => labcraft_engine::Gesture::Move,
+        labcraft_editor::Gesture::Wire => labcraft_engine::Gesture::Wire,
+        labcraft_editor::Gesture::Route => labcraft_engine::Gesture::Route,
+        labcraft_editor::Gesture::Resize => labcraft_engine::Gesture::Resize,
     }
 }
 

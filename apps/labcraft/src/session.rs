@@ -11,11 +11,12 @@ use std::time::{Duration, Instant};
 
 use labcraft_cli::disk::Disk;
 use labcraft_diagram::style::Style;
-use labcraft_engine::Config;
+use labcraft_engine::{Config, gesture};
 use labcraft_ide::{Host, Reply, Snapshot};
 use labcraft_types::Limits;
 use serde_json::{Value, json};
 
+use crate::held::{Call, Held};
 use crate::watch::Watching;
 
 pub use labcraft_engine::CommandError;
@@ -42,6 +43,8 @@ pub struct Session {
     style_path: Option<PathBuf>,
     style_watching: Option<notify::RecommendedWatcher>,
     style_notice: Option<String>,
+    /// The agent whose editing command waits the longest for the end of a gesture, which the status bar names.
+    waiting: Option<String>,
 }
 
 impl Session {
@@ -83,6 +86,7 @@ impl Session {
             style_path: None,
             style_watching: None,
             style_notice: None,
+            waiting: None,
         };
         // Watched before it is read: a change made while it is read is seen.
         if let Some(changes) = &session.changes {
@@ -135,6 +139,7 @@ impl Session {
             project: Some(self.folder.display().to_string()),
             session: 0,
             notices: self.notices.iter().chain(self.style_notice.iter()).cloned().collect(),
+            waiting: self.waiting.clone(),
         }
     }
 
@@ -187,12 +192,9 @@ pub enum Message {
     /// The keys of the store of the user, which the window keeps (commands.md 9.7).
     UserSettings(serde_json::Map<String, Value>),
     /// A call of an agent attached to the window (ide.md 8), signed by it, and where to send its result.
-    Agent {
-        author: labcraft_engine::Author,
-        id: String,
-        params: Value,
-        reply: Sender<Result<Value, CommandError>>,
-    },
+    Agent(Call),
+    /// The gesture of the user in progress, or none: it started or ended (architecture 12.5).
+    Gesture(Option<labcraft_engine::Gesture>),
     /// What the session serves to an agent: its tools, and its runs.
     Served(Sender<labcraft_mcp::Served>),
     /// A file watched changed.
@@ -211,6 +213,8 @@ pub struct Opening {
     pub style: Option<PathBuf>,
     /// A new project: `main.lcf` is written before it opens.
     pub new: bool,
+    /// How long an editing command of an agent waits for the end of a gesture: `gesture::WAIT`, shorter in the tests.
+    pub gesture_wait: Duration,
 }
 
 /// The window's hold on the session of a project, which runs on its thread.
@@ -254,7 +258,7 @@ impl Handle {
             let failed = opened.is_err();
             let _ = answer.send(opened);
             if !failed {
-                run(session, &receiver, &shared, &*wake);
+                run(session, &receiver, &shared, &*wake, opening.gesture_wait);
             }
         })?;
         Ok((Handle { sender, snapshot, thread: Some(thread) }, reply))
@@ -295,6 +299,10 @@ impl Host for Handle {
     fn set_user_settings(&self, keys: &serde_json::Map<String, Value>) {
         let _ = self.sender.send(Message::UserSettings(keys.clone()));
     }
+
+    fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>) {
+        let _ = self.sender.send(Message::Gesture(gesture));
+    }
 }
 
 impl Drop for Handle {
@@ -328,17 +336,23 @@ fn publish(session: &Session, shared: &Mutex<Snapshot>, wake: &dyn Fn()) {
 /// each, what it drew is published, then the trace of the function shown is read and its values published (`docs/cli.md`,
 /// 7.4); and every [`TRACE_POLL`], the trace is looked at again.
 #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
-fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapshot>, wake: &dyn Fn()) {
+fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapshot>, wake: &dyn Fn(), gesture_wait: Duration) {
     let mut waiting: Option<Message> = None;
+    let mut held = Held::new(gesture_wait);
     let look = |session: &mut Session| {
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| session.look_at_trace())).unwrap_or(false) {
             publish(session, shared, wake);
         }
     };
     loop {
+        if held.expire(Instant::now()) {
+            session.waiting = held.waiting();
+            publish(&session, shared, wake);
+        }
+        let poll = held.next(Instant::now()).map_or(TRACE_POLL, |next| next.min(TRACE_POLL));
         let message = match waiting.take() {
             Some(message) => message,
-            None => match receiver.recv_timeout(TRACE_POLL) {
+            None => match receiver.recv_timeout(poll) {
                 Ok(message) => message,
                 Err(RecvTimeoutError::Timeout) => {
                     look(&mut session);
@@ -357,10 +371,31 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
                     let _ = reply.send(result);
                 }
             }
-            Message::Agent { author, id, params, reply } => {
-                let result = caught(|| session.engine.execute_as(&author, &id, &params));
+            Message::Agent(call) => {
+                // During a gesture, an editing command waits for its end, behind those that wait already.
+                if (session.engine.gesture().is_some() || !held.is_empty()) && gesture::waits(&call.id, &call.params) {
+                    held.hold(call, Instant::now());
+                    session.waiting = held.waiting();
+                    publish(&session, shared, wake);
+                    continue;
+                }
+                run_call(&mut session, call);
                 publish(&session, shared, wake);
-                let _ = reply.send(result);
+            }
+            Message::Gesture(gesture) => {
+                session.engine.set_gesture(gesture);
+                if gesture.is_some() {
+                    continue;
+                }
+                let released = held.release();
+                if released.is_empty() {
+                    continue;
+                }
+                // Each in turn, on the result of the gesture: its `expected_revision` is judged now (commands.md 9.1).
+                for call in released {
+                    run_call(&mut session, call);
+                }
+                session.waiting = None;
             }
             Message::Served(reply) => {
                 let _ = reply.send(labcraft_mcp::Served::of(&session.engine, true));
@@ -410,6 +445,15 @@ fn run(mut session: Session, receiver: &Receiver<Message>, shared: &Mutex<Snapsh
         publish(&session, shared, wake);
         look(&mut session);
     }
+}
+
+/// Runs a call of an agent and answers it, unless its client cancelled it first.
+fn run_call(session: &mut Session, call: Call) {
+    if !call.flags.start() {
+        return;
+    }
+    let result = caught(|| session.engine.execute_as(&call.author, &call.id, &call.params));
+    let _ = call.reply.send(result);
 }
 
 /// Writes `main.lcf` in the folder of a new project that another window will open, by `file.write` as the window does.

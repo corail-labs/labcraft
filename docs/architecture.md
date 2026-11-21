@@ -1860,7 +1860,8 @@ fuzzing looks for (12.10).
   editing command of an agent waits, with the progress `waiting for the user` that its MCP call sees, and runs when
   the gesture ends; its `expected_revision` is judged then. Its client can cancel it while it waits. It waits at most
   30 s *(proposed)*, then is `gesture.busy` and changes nothing (commands.md 3), so that a field left in the middle of
-  a word never holds the queue of the server (mcp.md 5) for long. A command with no effect does not wait.
+  a word never holds the queue of the server (mcp.md 5) for long; after that, until the gesture ends, the next ones
+  are `gesture.busy` at once. A command that changes no file does not wait: a read, `run.start`.
 - **The journal.** Every command that a session runs that can change something, from any author, is a line of JSON in
   `.labcraft/journal/<process>-<session>.jsonl`, or, for `labcraft-cli`, whose processes run one command each, in
   `.labcraft/journal/cli.jsonl`, the process holding the lock of that folder (10.8), and `cli.lock` while it appends to
