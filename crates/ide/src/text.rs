@@ -67,7 +67,7 @@ fn class_of(kind: &TokenKind) -> Class {
     match kind {
         TokenKind::Keyword(_) => Class::Keyword,
         TokenKind::Name(_) | TokenKind::DegreeName(_) => Class::Name,
-        TokenKind::Int(_) | TokenKind::Float(_) => Class::Number,
+        TokenKind::Int(_) | TokenKind::Based(_) | TokenKind::Float(_) => Class::Number,
         TokenKind::String(_) => Class::Text,
         TokenKind::Comment(_) => Class::Comment,
         TokenKind::Doc(_) => Class::Doc,

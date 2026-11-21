@@ -194,7 +194,7 @@ impl<'a> Parser<'a, '_> {
         match kind {
             T::Name(name) | T::DegreeName(name) => format!("`{}`", self.resolve(name)),
             T::Keyword(keyword) => format!("`{}`", keyword.as_str()),
-            T::Int(text) | T::Float(text) => format!("`{text}`"),
+            T::Int(text) | T::Float(text) | T::Based(text) => format!("`{text}`"),
             T::String(_) => "a string".to_owned(),
             T::Comment(_) | T::Newline => "the end of the line".to_owned(),
             T::Doc(_) => "a documentation comment".to_owned(),
@@ -940,7 +940,7 @@ impl<'a> Parser<'a, '_> {
 
     // Values.
 
-    /// `[ "-" ] ( INT | FLOAT | "inf" ) | "nan"`, with no space after the minus.
+    /// `[ "-" ] ( INT | BASED | FLOAT | "inf" ) | "nan"`, with no space after the minus. A `BASED` is an `Int` with its prefix.
     fn numeral(&mut self) -> Parse<Numeral> {
         let mut negative = false;
         if let Some(Token { kind: T::Minus, span }) = self.peek()? {
@@ -953,7 +953,7 @@ impl<'a> Parser<'a, '_> {
             }
         }
         let kind = match self.peek_kind()? {
-            Some(T::Int(text)) => NumeralKind::Int(self.intern(text)),
+            Some(T::Int(text) | T::Based(text)) => NumeralKind::Int(self.intern(text)),
             Some(T::Float(text)) => NumeralKind::Float(self.intern(text)),
             Some(T::Keyword(K::Inf)) => NumeralKind::Inf,
             Some(T::Keyword(K::Nan)) if !negative => NumeralKind::Nan,
@@ -973,7 +973,7 @@ impl<'a> Parser<'a, '_> {
     fn literal(&mut self, expected: &str) -> Parse<Operand> {
         let start = self.start()?;
         match self.peek_kind()? {
-            Some(T::Minus | T::Int(_) | T::Float(_) | T::Keyword(K::Inf | K::Nan)) => {
+            Some(T::Minus | T::Int(_) | T::Based(_) | T::Float(_) | T::Keyword(K::Inf | K::Nan)) => {
                 let numeral = self.numeral()?;
                 self.number_with_unit(numeral, start)
             }
@@ -1031,9 +1031,15 @@ impl<'a> Parser<'a, '_> {
                 let path = self.path("a value")?;
                 self.path_operand(path)
             }
-            Some(T::Minus | T::Int(_) | T::Float(_) | T::String(_) | T::LeftBracket | T::Keyword(K::Inf | K::Nan | K::True | K::False | K::None)) => {
-                self.literal("a value")
-            }
+            Some(
+                T::Minus
+                | T::Int(_)
+                | T::Based(_)
+                | T::Float(_)
+                | T::String(_)
+                | T::LeftBracket
+                | T::Keyword(K::Inf | K::Nan | K::True | K::False | K::None),
+            ) => self.literal("a value"),
             Some(T::Question) => {
                 let start = self.start()?;
                 self.word_literal(start, Operand::Hole)
@@ -1287,6 +1293,7 @@ impl<'a> Parser<'a, '_> {
                 T::Name(_)
                     | T::Minus
                     | T::Int(_)
+                    | T::Based(_)
                     | T::Float(_)
                     | T::String(_)
                     | T::LeftBracket
@@ -1603,14 +1610,14 @@ impl<'a> Parser<'a, '_> {
                 let bindings = if self.at(T::LeftParen)? { self.bindings()? } else { Vec::new() };
                 Ok(Pattern::Variant { id: self.place(start), path, bindings })
             }
-            Some(T::Minus | T::Int(_) | T::Float(_) | T::Keyword(K::Inf | K::Nan)) => {
+            Some(T::Minus | T::Int(_) | T::Based(_) | T::Float(_) | T::Keyword(K::Inf | K::Nan)) => {
                 let numeral = self.numeral()?;
                 if let NumeralKind::Int(digits) = numeral.kind
                     && self.eat(T::DotDot)?
                 {
                     let low = IntBound { negative: numeral.negative, digits };
                     let inclusive = self.eat(T::Equals)?;
-                    let high = self.int_bound()?;
+                    let high = self.int_bound(true)?;
                     return Ok(Pattern::Range { id: self.place(start), low, high, inclusive });
                 }
                 Ok(Pattern::Literal(self.number_with_unit(numeral, start)?))
@@ -1620,13 +1627,18 @@ impl<'a> Parser<'a, '_> {
         }
     }
 
-    /// `[ "-" ] INT`, with no space after the minus.
-    fn int_bound(&mut self) -> Parse<IntBound> {
+    /// `[ "-" ] whole` with no space after the minus: `INT`, or `BASED` when `based` (a range, not the `code` of a `handle`,
+    /// which stays decimal, spec 3.4).
+    fn int_bound(&mut self, based: bool) -> Parse<IntBound> {
         let start = self.start()?;
         let numeral = self.numeral()?;
+        let span = Span { start, end: self.last_end };
         match numeral.kind {
+            NumeralKind::Int(digits) if !based && !labcraft_types::integer::is_decimal(self.resolve(digits)) => {
+                Err(failure(Code::Lc1001, "a `code` is written in decimal (3.4)".to_owned(), span))
+            }
             NumeralKind::Int(digits) => Ok(IntBound { negative: numeral.negative, digits }),
-            _ => Err(failure(Code::Lc1001, "expected an integer here".to_owned(), Span { start, end: self.last_end })),
+            _ => Err(failure(Code::Lc1001, "expected an integer here".to_owned(), span)),
         }
     }
 
@@ -1675,8 +1687,8 @@ impl<'a> Parser<'a, '_> {
                 if is_ok && self.at(T::FatArrow)? {
                     return Ok(Pattern::Ok { id: self.place(start) });
                 }
-                if is_code && matches!(self.peek_kind()?, Some(T::Minus | T::Int(_))) {
-                    let code = self.int_bound()?;
+                if is_code && matches!(self.peek_kind()?, Some(T::Minus | T::Int(_) | T::Based(_))) {
+                    let code = self.int_bound(false)?;
                     let binding = self.optional_binding()?;
                     return Ok(Pattern::Code { id: self.place(start), code, binding });
                 }

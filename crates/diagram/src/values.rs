@@ -403,7 +403,10 @@ fn literal(text: &str) -> Option<String> {
         return Some(text.to_owned());
     }
     let (number, unit) = text.split_once(' ').unwrap_or((text, ""));
-    let digits = number.trim_start_matches('-').replace('_', "");
+    let written = number.trim_start_matches('-');
+    // A `BASED` integer is written in decimal in JSON (spec 3.4).
+    let based = !labcraft_types::integer::is_decimal(written);
+    let digits = if based { labcraft_types::integer::magnitude(written)?.to_string() } else { written.replace('_', "") };
     if digits.starts_with(|c: char| c.is_ascii_digit()) && digits.parse::<f64>().is_ok() {
         let number = if number.starts_with('-') { format!("-{digits}") } else { digits };
         return Some(if unit.is_empty() { number } else { format!("\"{number} {unit}\"") });
@@ -1666,6 +1669,9 @@ mod tests {
         assert_eq!(literal("230 V").as_deref(), Some("\"230 V\""));
         assert_eq!(literal("-3 mV").as_deref(), Some("\"-3 mV\""));
         assert_eq!(literal("1_000").as_deref(), Some("1000"));
+        assert_eq!(literal("0x00FF").as_deref(), Some("255"), "JSON writes it in decimal (#228)");
+        assert_eq!(literal("-0b1000_0000").as_deref(), Some("-128"));
+        assert_eq!(literal("0xFF V").as_deref(), Some("\"255 V\""));
         assert_eq!(literal("\"SIM::DMM0\"").as_deref(), Some("\"SIM::DMM0\""));
         assert_eq!(literal("true").as_deref(), Some("true"));
         assert_eq!(literal("Verdict.Pass").as_deref(), Some("\"Verdict.Pass\""));

@@ -230,6 +230,9 @@ fn shape_extent(names: &Interner, shape: &IconShape) -> Result<Option<Extent>, S
     let number = |numeral: Numeral| -> Result<f64, String> {
         number_of(numeral, names).ok_or_else(|| {
             let text = numeral_text(numeral, names);
+            if matches!(numeral.kind, NumeralKind::Int(digits) if !labcraft_types::integer::is_decimal(names.resolve(digits))) {
+                return format!("`{text}` is not a number of the grid: the numbers of an icon are written in decimal (3.4, 11.1)");
+            }
             format!("`{text}` is not a number of the grid: an icon takes finite numbers (11.1)")
         })
     };

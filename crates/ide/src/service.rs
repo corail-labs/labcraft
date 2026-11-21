@@ -471,7 +471,7 @@ impl Scan {
 fn kind_of(kind: &TokenKind<'_>) -> Kind {
     match kind {
         TokenKind::String(_) | TokenKind::Comment(_) | TokenKind::Doc(_) => Kind::Prose,
-        TokenKind::Int(_) | TokenKind::Float(_) => Kind::Number,
+        TokenKind::Int(_) | TokenKind::Based(_) | TokenKind::Float(_) => Kind::Number,
         TokenKind::Newline => Kind::Newline,
         TokenKind::Dot => Kind::Dot,
         TokenKind::Comma => Kind::Comma,

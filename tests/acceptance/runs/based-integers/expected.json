@@ -1,0 +1,44 @@
+{
+  "how": "Based integers are integer literals typed like any other (spec 3.4, hexadecimal and binary integers; 14.1, `BASED`), so each value is the number its digits give. `byte` takes its default, 0x37 = 55, which fits a `u8`. `digit`: the selector 55 is in the range 0x30..=0x39, 48 to 57 inclusive (spec 6.1), so the first arm yields 1, an `i32` by the type of the output (spec 3.4, R-2). `high`: 0xFF00 = 65280, an `i32` by its signature; it is read back as a wire (R-2). `word`: `core.add(high, 0x0034)` is 65280 + 52 = 65332, an `i32`, the literal taking the type of `high` (spec 3.4; A.1), no overflow. `flags`: 0b1010_0001, underscore ignored, = 128 + 32 + 1 = 161. `low`: 0x00FF = 255, fits a `u16`. `lowest`: `-0x80` is a minus and a based integer (14.4, `number`), -128, which keeps its value in an `i8` (spec 3.4). Integers are exact JSON numbers (commands.md 5); outputs in the order of the signature (commands.md 7). Nothing waits, so the simulated clock stays at 0 ms (spec 8), and nothing opens a resource; no simulation, so no `instruments` (commands.md 7).",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "high",
+      "type": "i32",
+      "value": 65280
+    },
+    {
+      "name": "flags",
+      "type": "i32",
+      "value": 161
+    },
+    {
+      "name": "low",
+      "type": "u16",
+      "value": 255
+    },
+    {
+      "name": "lowest",
+      "type": "i8",
+      "value": -128
+    },
+    {
+      "name": "digit",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "word",
+      "type": "i32",
+      "value": 65332
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

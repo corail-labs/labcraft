@@ -228,6 +228,14 @@ fn an_empty_structure_goes_where_it_is_asked_and_gives_nothing() {
         with_over(surround(StructureKind::For, &[]), "0..10"),
         "fn f(items: [f64], ok: bool) -> () {\n    #for_node: _ = for i in 0..10 {}\n}\n",
     );
+    // Based integers are bounds too, as written (spec 3.4, #228); `0x_1` is none (14.1), and names no value.
+    refused_with(&typed(&[]), before, with_over(surround(StructureKind::For, &[]), "0x_1..10"), "params.invalid", "over");
+    gives_with(
+        &typed(&[]),
+        before,
+        with_over(surround(StructureKind::For, &[]), "0x10..-0b1"),
+        "fn f(items: [f64], ok: bool) -> () {\n    #for_node: _ = for i in 0x10..-0b1 {}\n}\n",
+    );
     gives_with(
         &typed(&[("ok", TypeKind::Bool)]),
         before,

@@ -661,9 +661,8 @@ impl<'f> Walk<'_, '_, 'f> {
     }
 
     fn bound(&self, bound: labcraft_graph::IntBound) -> Result<i128, LowerError> {
-        let digits: String = self.lowering.names.resolve(bound.digits).chars().filter(|c| *c != '_').collect();
-        let magnitude: i128 = digits.parse().map_err(|_| self.bug("a bound that is no integer"))?;
-        Ok(if bound.negative { -magnitude } else { magnitude })
+        labcraft_types::integer::value(bound.negative, self.lowering.names.resolve(bound.digits))
+            .ok_or_else(|| self.bug("a bound that is no integer"))
     }
 
     fn path_text(&self, path: &Path) -> String {

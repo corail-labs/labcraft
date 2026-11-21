@@ -9,7 +9,7 @@ use labcraft_graph::{Arm, Branching, Id, IntBound, Numeral, NumeralKind, Operand
 use labcraft_types::{Code, Edit, Fix, Name, NumberKind, Span, Ty, TyId, cut_text};
 
 use super::super::{definition_of, integer_fits};
-use super::{Details, Typer, fits_kind, integer_value};
+use super::{Details, Typer, fits_kind};
 use crate::resolved::Meaning;
 
 /// The variants that `LC3010` names.
@@ -72,7 +72,7 @@ impl<'a> Typer<'_, '_, '_, 'a> {
         if !integer_fits(bound.negative, text) {
             return None;
         }
-        integer_value(bound.negative, text)
+        labcraft_types::integer::value(bound.negative, text)
     }
 
     fn say_repeated(&mut self, code: Code, message: &str, id: Id, first: Id) {

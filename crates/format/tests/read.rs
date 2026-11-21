@@ -1026,6 +1026,17 @@ fn a_bound_that_is_no_integer_is_reported_where_it_stands() {
     assert_span(&in_body("x = handle a {\ncode -1.5 => yield 1\n}"), (4, 6), (4, 10));
 }
 
+/// Spec 3.4: a `code` of a `handle` and the dimensions of an array stay decimal; a range takes a based integer (#228).
+#[test]
+fn a_based_integer_reads_only_where_a_value_does() {
+    assert_reads(&in_body("x = match a {\n0x30..=0x39, -0b1 => yield 1\n_ => yield 0\n}"));
+    assert_reads(&in_body("x = core.and(word, 0x00FF)"));
+    for code in ["code 0x10", "code -0x10", "code 0b1"] {
+        assert_code(&in_body(&format!("x = handle a {{\n{code} => yield 1\n}}")), Code::Lc1001);
+    }
+    assert_code("labcraft 1\nfn f(a: [f64; 0x2]) -> () {}\n", Code::Lc1001);
+}
+
 #[test]
 fn every_pattern_of_a_handle_reads() {
     let text = in_body(

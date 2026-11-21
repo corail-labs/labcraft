@@ -90,6 +90,15 @@ fn assert_saved_again_changes_nothing(what: &str, bytes: &[u8]) {
     assert_eq!(comments_of(bytes), comments_of(text.as_bytes()), "{what}");
 }
 
+/// Spec 3.4 and 5.2: a based integer keeps its spelling, case and `_` included (#228).
+#[test]
+fn a_based_integer_keeps_its_spelling() {
+    let text = "labcraft 1\n\nfn f(word: u16) -> (low: u16, y: i32) {\n    low = core.and(word, 0x00FF)\n    \
+                y = match word {\n        0x30..=0x39, 0b1010_0001 => yield 0xff\n        -0x1 => yield 1\n        _ => yield 0\n    }\n}\n";
+    assert_written_back("based integers", text.as_bytes());
+    assert_saved_again_changes_nothing("based integers", text.as_bytes());
+}
+
 /// A line that moves changes the ids of what it holds, up to the last pattern of a list.
 #[test]
 fn the_default_values_are_renumbered() {

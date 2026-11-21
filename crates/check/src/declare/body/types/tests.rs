@@ -256,6 +256,44 @@ fn a_literal_has_bounds_in_its_type() {
     assert_eq!(gives("i32", "core.add(k, 40000)"), ["LC3018"], "the first is an `i16`");
 }
 
+/// Spec 3.4, "Hexadecimal and binary integers" (#228): a based literal keeps its value, not its bits. Values by hand:
+/// `0x7FFF` is 32,767, `0x8000` 32,768, `0xFF` 255, `0x80` 128, `0xFFFFFFFF` 4,294,967,295 (beyond the `i32`), and
+/// sixteen `F` are 2^64 − 1, the largest `u64`; seventeen go beyond every type.
+#[test]
+fn a_based_literal_keeps_its_value_in_its_type() {
+    assert_eq!(gives("i16", "0x7FFF"), NOTHING);
+    assert_eq!(gives("i16", "0x8000"), ["LC3018"]);
+    assert_eq!(gives("i8", "0xFF"), ["LC3018"], "as `255` is");
+    assert_eq!(gives("u8", "0xFF"), NOTHING);
+    assert_eq!(gives("i8", "-0x80"), NOTHING, "−128");
+    assert_eq!(gives("i8", "-0x81"), ["LC3018"]);
+    assert_eq!(gives("u8", "0b1111_1111"), NOTHING);
+    assert_eq!(gives("u8", "0b1_0000_0000"), ["LC3018"], "256");
+    assert_eq!(judged("", "", "x = 0xFFFFFFFF"), ["LC3018"], "an `i32` where nothing is expected, as `3000000000`");
+    assert_eq!(gives("u64", "0xFFFF_FFFF_FFFF_FFFF"), NOTHING);
+    assert_eq!(gives("u64", "0x1_0000_0000_0000_0000"), ["LC1006"]);
+    assert_eq!(gives("i32", "core.add(n, 0x00FF)"), NOTHING);
+    assert_eq!(gives("f64", "0xFF"), NOTHING, "an integer literal takes a float type");
+    assert_eq!(gives("f64[V]", "0xFF V"), NOTHING, "a unit after it, as after `255` (owner, 2026-11-21)");
+    assert_eq!(gives("i32[mV]", "0x10 V"), ["LC3003"], "an integer cannot change its scale, as `16 V`");
+    // 0x1000001 is 2^24 + 1 = 16,777,217, which an `f32` does not hold: the fix is written in decimal.
+    let text = program("", "y: f32", "y = 0x1000001");
+    let found = diagnostics(&[("f.lcf", text.as_str())]);
+    assert_eq!(found.iter().map(|diagnostic| diagnostic.code().as_str()).collect::<Vec<_>>(), ["LC3018"]);
+    assert!(found[0].message.contains("write `16777217.0`"), "{}", found[0].message);
+}
+
+/// Spec 3.4: `0x30..=0x39` is the range 48 to 57, so 57 is in it and 58 is not.
+#[test]
+fn a_based_literal_is_a_pattern() {
+    let arms = |other: &str| format!("y = match b {{\n0x30..=0x39 => yield 1\n{other} => yield 2\n_ => yield 0\n}}");
+    assert_eq!(judged("b: u8", "y: i32", &arms("58")), NOTHING);
+    assert_eq!(judged("b: u8", "y: i32", &arms("57")), ["LC3011"]);
+    assert_eq!(judged("b: u8", "y: i32", &arms("0b11_0000")), ["LC3011"], "48");
+    assert_eq!(judged("b: u8", "y: i32", "y = match b {\n0x00..=0xFF => yield 1\n_ => yield 0\n}"), NOTHING, "every `u8`");
+    assert_eq!(judged("b: u8", "y: i32", "y = match b {\n0x00..=0x100 => yield 1\n_ => yield 0\n}"), ["LC3018"]);
+}
+
 #[test]
 fn the_first_arm_that_decides_gives_the_type() {
     let two = |first: &str, second: &str| format!("x = match c {{\ntrue => yield {first}\nfalse => yield {second}\n}}");

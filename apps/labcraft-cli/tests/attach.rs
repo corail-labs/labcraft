@@ -9,24 +9,29 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use labcraft_cli::attach;
 use labcraft_engine::{Author, CommandError, Config, Session, Waiter};
 use labcraft_mcp::{Executor, Open, Served};
 use serde_json::{Value, json};
 
-/// A folder of its own for a test, empty, outside the repository.
-struct Scratch(PathBuf);
+/// Held by each test as long as its folder: the tests of this file run one at a time. In parallel, on Windows, the
+/// connection of the first one is reset as it closes (os error 10054), for a reason not found yet (#295).
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// A folder of its own for a test, empty, outside the repository; and the turn of the test.
+struct Scratch(PathBuf, #[expect(dead_code, reason = "held for its drop")] MutexGuard<'static, ()>);
 
 impl Scratch {
     fn new(name: &str) -> Scratch {
+        let turn = ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner);
         let path = std::env::temp_dir().join(format!("labcraft-attach-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(path.join("project")).unwrap();
         std::fs::create_dir_all(path.join("channel")).unwrap();
-        Scratch(path.canonicalize().unwrap())
+        Scratch(path.canonicalize().unwrap(), turn)
     }
 
     fn project(&self) -> PathBuf {

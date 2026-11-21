@@ -576,10 +576,11 @@ pub(crate) fn over_of(edit: &Edit, function: &labcraft_graph::Function, text: &s
             let mut bound = |piece: &str| -> Result<String, EditError> {
                 let piece = piece.trim();
                 let integer = piece.strip_prefix('-').unwrap_or(piece);
-                if !integer.is_empty() && integer.chars().all(|c| c.is_ascii_digit() || c == '_') && integer.starts_with(|c: char| c.is_ascii_digit())
-                {
+                // `INT` or `BASED` (spec 14.1).
+                if labcraft_types::integer::is_integer(integer) {
                     // A bound that no integer holds is no range that `check` takes (`LC1006`).
-                    if piece.replace('_', "").parse::<i64>().is_err() {
+                    let value = labcraft_types::integer::value(piece.starts_with('-'), integer);
+                    if value.is_none_or(|value| i64::try_from(value).is_err()) {
                         return Err(EditError::invalid("over", format!("`{}` is too large a bound for a range", crate::cut(piece))));
                     }
                     return Ok(piece.to_owned());

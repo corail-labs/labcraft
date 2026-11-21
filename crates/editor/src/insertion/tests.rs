@@ -265,6 +265,17 @@ fn a_wire_drawn_back_from_an_input_lists_what_gives_it() {
     assert_eq!(catalog.rows("240 V", Some(&volts), &[]).first(), Some(&Row::Typed("240 V".to_owned())));
 }
 
+/// Spec 3.4 (#228): a hexadecimal or binary integer is a constant like any other, with a unit or without one.
+#[test]
+fn a_based_integer_is_a_constant() {
+    assert_eq!(constant_type("0x00FF"), Some(SlotTy::Key(FitKey::Number(NumberKind::I32, Unit::ONE))));
+    assert_eq!(constant_type("-0b1010_0001"), Some(SlotTy::Key(FitKey::Number(NumberKind::I32, Unit::ONE))));
+    assert_eq!(constant_type("0xFF V"), constant_type("255 V"));
+    for not_one in ["0x", "0x_1", "0X10", "0b102", "0xFF parsecs of nothing"] {
+        assert_ne!(constant_type(not_one), constant_type("255"), "{not_one}");
+    }
+}
+
 #[test]
 fn a_session_goes_to_the_session_of_another_name() {
     let catalog = catalog();

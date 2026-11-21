@@ -530,7 +530,11 @@ fn plain_coordinate(numeral: &mut Numeral, names: &mut Interner) {
 pub fn coordinate_value(text: &str) -> Option<u32> {
     let mut value: u32 = 0;
     for byte in text.bytes().filter(|byte| *byte != b'_') {
-        let digit = u32::from(byte.checked_sub(b'0')?);
+        // A `BASED` integer has letters, and is no coordinate.
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        let digit = u32::from(byte - b'0');
         value = value.checked_mul(10)?.checked_add(digit)?;
         if value > COORDINATE_RANGE {
             return None;
