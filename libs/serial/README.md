@@ -55,10 +55,11 @@ instead of a connection.
   `serial.port_not_found`, `serial.port_busy` (open elsewhere, or already open in this run), `io.invalid_argument` (a
   setting out of range, or one the system refuses, such as 5 data bits with two stop bits), `io.timeout`, or the
   errors of io.md 3 and 4.
-- **`settle`**: many boards reset when their port is opened (an Arduino, an ESP32), and what they print as they start
-  is not an answer. `open` then waits `settle`, and empties the input, before it gives the port: about 2 s for an
-  Arduino Uno *(to be measured on the boards of the final trial)*. On the clock of the run, so a simulated board waits
-  too.
+- **`settle`**: many boards (an Arduino, an ESP32) reset when the DTR line of their port changes, and what they print
+  as they start is not an answer. `open` then waits `settle`, and empties the input, before it gives the port. On the
+  clock of the run, so a simulated board waits too. Whether opening a port moves DTR depends on the system: on
+  Windows it stays down, and an Arduino Uno does not reset (trial of 2026-11-21: `settle` 0 s, an answer in 17 ms);
+  on Linux the open raises it, so the Uno should restart *(to be measured: about 2 s)*.
 
 ## What `serial` guarantees
 
