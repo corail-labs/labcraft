@@ -2215,7 +2215,8 @@ fn own_block(sections: &str) -> Arc<Drawing> {
     let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
     root.files.push(SourceFile { shown: "g.lcf".to_owned(), content: Content::Bytes(Cow::Owned(callee.into_bytes())) });
     let checked = check(root, &Nothing, &mut names, &Limits::default());
-    let own = labcraft_diagram::own_block(&checked, 0, &names, &DiagramLimits::default()).expect("the block");
+    let own =
+        labcraft_diagram::own_block(&checked, 0, &names, &labcraft_diagram::Appearance::default(), &DiagramLimits::default()).expect("the block");
     Arc::new(Drawing { block: Some(Box::new(own)), ..Drawing::default() })
 }
 

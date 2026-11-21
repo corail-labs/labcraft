@@ -53,6 +53,8 @@ pub const DRAG_PANS: &str = "ide.drag_pans";
 /// the user until the card `Settings` of step 6 (decision of the owner, 2026-11-17).
 pub const FIX_EVERY_NODE: &str = "ide.fix_every_node";
 pub const MARK_FIXED: &str = "ide.mark_fixed";
+/// Color by type (notation 4.3): `View`, the status bar and the palette switch `appearance.color_by_type`.
+pub const COLOR_BY_TYPE: &str = "ide.color_by_type";
 /// Arrange (notation 2.4, 2.6): `layout.arrange` on the selection of the canvas that has the focus, or on the whole
 /// function when nothing is selected.
 pub const ARRANGE: &str = "ide.arrange";
@@ -130,6 +132,7 @@ pub fn setting_of(id: &str) -> Option<&'static str> {
         DRAG_PANS => keyed::DRAG_PANS,
         FIX_EVERY_NODE => keyed::FIX_EVERY_NODE,
         MARK_FIXED => keyed::MARK_FIXED,
+        COLOR_BY_TYPE => keyed::COLOR_BY_TYPE,
         REPLACE_WITH_ALT => keyed::REPLACE_WITH_ALT,
         ACCEPT_MISMATCH => keyed::ACCEPT_MISMATCH,
         ROUTE_WITH_SHIFT_ALT => keyed::ROUTE_WITH_SHIFT_ALT,
@@ -166,6 +169,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (DRAG_PANS, "Drag on the empty canvas pans"),
     (FIX_EVERY_NODE, "Fix every node at the first move"),
     (MARK_FIXED, "Mark the fixed nodes"),
+    (COLOR_BY_TYPE, "Color wires by type"),
     (ARRANGE, "Arrange the selection, or the whole function"),
     (WIRE, "Start a wire from the terminal in focus"),
     (REPLACE_WITH_ALT, "Replace a wire only with Alt"),
@@ -322,6 +326,7 @@ pub fn menus() -> MenuBar {
     view.push(item(PLANNED_DETACHED_MODE, "Every function in its window  ·  Planned"));
     view.push(Node::Item(Item::new(CommandRef::new("view.set_standard_view"), "Standard view everywhere").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(VALUES), "Values on the wires").check(true)));
+    view.push(Node::Item(Item::new(CommandRef::new(COLOR_BY_TYPE), "Color wires by type").check(true)));
     view.push(Node::Item(Item::new(CommandRef::new(DARK), "Dark theme").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(LAB), "Lab look (slate, teal)").check(false)));
     view.push(Node::Item(Item::new(CommandRef::new(REDUCED_MOTION), "Reduced motion").check(false)));

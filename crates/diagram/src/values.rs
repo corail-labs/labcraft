@@ -1149,15 +1149,19 @@ fn bubble_at_wire(drawing: &Drawing, group: Option<usize>, short: &Short, stale:
     Layer::default()
 }
 
+/// Whether a shape of a wire's group is its name: muted, or in the colour of its family in the mode of color by type
+/// (notation 4, 4.3), as [`size::name_token`] paints it.
+pub(crate) fn is_wire_name(shape: &Shape) -> bool {
+    matches!(shape, Shape::Text { runs, .. } if runs.first().is_some_and(|run| run.token == "ink.muted" || crate::theme::is_type(run.token)))
+}
+
 /// The name of the wire, when the bubble covers it: hidden under the fill of its frame, and written again after the
 /// bubble when the segment has room for it there (notation 6.1); else the tooltip gives it.
 fn name_after(drawing: &Drawing, group: Option<usize>, bubble: Area, end: i64, obstacles: &mut Obstacles) -> Vec<Shape> {
     let Some(group) = group.and_then(|group| drawing.groups.get(group)) else { return Vec::new() };
     let Some(wire) = &group.wire else { return Vec::new() };
     let depth = drawing.trace.bodies.get(wire.body).map_or(0, |body| body.depth);
-    let name = group.shapes.iter().find(|shape| {
-        matches!(shape, Shape::Text { runs, .. } if runs.first().is_some_and(|run| run.token == "ink.muted")) && overlaps(visible(shape), bubble)
-    });
+    let name = group.shapes.iter().find(|shape| is_wire_name(shape) && overlaps(visible(shape), bubble));
     let Some(shape @ Shape::Text { y, size, width, runs, detail, .. }) = name else { return Vec::new() };
     let (cx0, cy0, cx1, cy1) = visible(shape);
     let mut shapes =

@@ -126,10 +126,11 @@ fn style(paint: &Paint) -> String {
 }
 
 /// The values of the tokens of a drawing (`crate::style`), light or dark, then those of the colours that its files write.
-fn values(style: &style::Style, written: &std::collections::BTreeSet<(style::Rgb, style::Rgb)>, dark: bool) -> String {
+fn values(style: &style::Style, written: &std::collections::BTreeSet<(style::Rgb, style::Rgb)>, dark: bool, by_type: bool) -> String {
     TOKENS
         .iter()
         .zip(&style.colors)
+        .filter(|(token, _)| by_type || !crate::theme::is_type(token.name))
         .map(|(token, (light, night))| format!("{}: {};", variable(token.name), style::written(if dark { *night } else { *light })))
         .chain(written.iter().map(|&(light, night)| {
             format!("{}: {};", colour_variable(Colour::Written(light, night)), style::written(if dark { night } else { light }))
@@ -164,14 +165,14 @@ pub fn svg_with(drawing: &Drawing, overlay: Option<&Overlay>, theme: Theme) -> S
     let written = written_colours(drawing, overlay);
     match theme {
         Theme::Both => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false));
-            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(&drawing.style, &written, true));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false, drawing.by_type));
+            let _ = writeln!(out, "@media (prefers-color-scheme: dark) {{ svg {{ {} }} }}", values(&drawing.style, &written, true, drawing.by_type));
         }
         Theme::Light => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, false, drawing.by_type));
         }
         Theme::Dark => {
-            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, true));
+            let _ = writeln!(out, "svg {{ {} }}", values(&drawing.style, &written, true, drawing.by_type));
         }
     }
     out.push_str("text { direction: ltr; unicode-bidi: isolate; white-space: pre; }\n</style>\n");

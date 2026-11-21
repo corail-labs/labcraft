@@ -40,8 +40,8 @@ Craft family:
    white, or by a color-blind person.
 3. **Order and resources first.** On a test bench, the question is "in what order do the actions
    happen, and on which equipment?". The error wire carries the order (spec 5.3), the session
-   carries the resource: these are the only two wires drawn in color. Data is drawn in a single
-   neutral ink, unless the developer turns on color by type (4.3).
+   carries the resource: their colours are kept for them. In the editor, data takes the colour of its
+   family (4.3), on by default, which the developer can turn off; an export draws data in a single neutral ink.
 4. **The unit is visible.** A physical quantity shows its unit on its terminal and on its wire; an
    implicit conversion (`mV` to `V`) is written on the wire.
 5. **Its own identity (D-23).** A notation designed from the LabCraft spec and from the general
@@ -1008,6 +1008,8 @@ centred, when that is three times what the name needs *(proposed)*.
 | Order | `after:` | thin dotted | hollow chevron | `wire.order` (muted) |
 | Function | function references (Q-14) | dash-dot | `ƒ` | `wire.data` |
 
+The colours are those of an export; in the editor, color by type (4.3) gives each data family its own.
+
 **Nothing is drawn outside the width of a wire** (retained 2026-11-11): a pattern is cut into the wire, never drawn
 around it, so that two parallel wires 8 apart never touch and a crossing or a junction stays clear. A cut shows the
 ground: the fill of the frame the wire runs in.
@@ -1042,10 +1044,12 @@ trunk is drawn with each.
 
 ### 4.3 Color by type (M1)
 
-Principle 3 draws data in one neutral ink. **"Color wires by type"** is a mode of the editor that the developer turns on
-or off, a setting of the user, for every diagram (decided with the owner on 2026-11-15, N-1). The file never changes:
-the mode is not written in a `.lcf`. Its default, on or off, is decided at the style review at the end of M1, on
-renders, with the palette.
+Without it, data is drawn in one neutral ink, `wire.data` (4.1), as every export draws it. **"Color wires by type"** is
+a mode of the editor that the developer turns on or off, a setting of the user, for every diagram (decided with the owner
+on 2026-11-15, N-1). The file never changes: the mode is not written in a `.lcf`. It is **on by default** (decided by the owner on 2026-11-20: in time it may be the
+only way the editor draws); its palette is decided at the style review at the end of M1, on renders. It is the key
+`appearance.color_by_type` ([commands.md](commands.md) 9.7), switched from `View > Color wires by type`, the status bar
+(`Types in colour`, `Types in one ink`) and the `Settings` dialog ([ide.md](ide.md) 2).
 
 - **One color per family** (4.1), on the wire, its terminals and its name: number, boolean, text, enumeration, struct
   and function. An array takes the color of its element. The error, resource and order wires keep their tokens.
@@ -1067,26 +1071,26 @@ renders, with the palette.
   another editor's theme are the user's choice.
 - **Contrast**: 4.5:1 against `canvas.fill` and each `frame.fill`, in both themes, as every wire token (8).
 - **No yellow or olive**: at 4.5:1 on a light ground they turn to mud. And not the palette of another tool (D-23).
-- **Exports and snapshots** keep the colors of section 8, unless asked: an option of `diagram --svg` comes with the
-  mode.
+- **Exports and snapshots** keep the neutral ink of section 8: `diagram` draws the code, whatever the settings
+  ([commands.md](commands.md) 9.7). An option of `diagram --svg` that asks for the mode comes later.
 
 The proposed palette, held to 4.5:1 and at least 18 apart in CIEDE2000 among the solid wires (`wire.resource`
 included); the defaults are fixed at the style review, after other palettes have been tried in the editor. Its tokens
-join the table of section 8 when the Rust draws them.
+are at the end of the table of section 8.
 
 | Family | Token | Light | Dark |
 |---|---|---|---|
-| Number | `type.number` | `#336B5D` | `#53AC96` |
+| Number | `type.number` | `#034E41` | `#7DA695` |
 | Boolean | `type.boolean` | `#AE1395` | `#EF6CD9` |
 | Text | `type.text` | `#7F593D` | `#BE9679` |
 | Enumeration | `type.enum` | `#346D17` | `#55B326` |
 | Struct | `type.struct` | `#815A0E` | `#CF9117` |
 | Function | `type.function` | `#94476E` | `#C78CAA` |
 
-To watch at the style review, in CIEDE2000 in the light theme: number and enumeration are both green (18.2); the
-struct ochre is close to `mark.warning` (5.1, where the triangle of a warning and the sheath of a struct still differ in
-shape), and the text brown too (10.7); enumeration is close to `node.active` (9.1); and number against `select.stroke`
-(18.2) makes a selected number wire less striking than a selected plain one.
+To watch at the style review, in CIEDE2000 in the light theme: number and enumeration are both green (20.8, the
+number darker and calmer, decided by the owner on 2026-11-20 on renders); the struct ochre is close to `mark.warning`
+(5.1, where the triangle of a warning and the sheath of a struct still differ in shape), and the text brown too (10.7);
+enumeration is close to `node.active` (9.1).
 
 ## 5. Structures
 
@@ -1413,7 +1417,8 @@ IDE, the diagram takes its colors from this table.
 - **Tokens of the editor (M1).** The editor adds `mark.warning`, the amber of a warning on the drawing (2.5): `#8A5300`
   in the light theme, `#F0820D` in the dark one, *(proposed)*, 4.7:1 at worst on `canvas.fill`, each `frame.fill`,
   `node.fill` and `probe.fill`, and as far as an amber can be from `wire.error` and from the struct of 4.3. The tokens of
-  the families (4.3) come with the mode. They join the table below, and its test, when the Rust draws them.
+  the families (4.3), from `type.number` to `type.function`, end the table below: the canvas paints them in the mode, and
+  the test of contrast holds them as wire tokens. An SVG defines them only when its drawing is in the mode.
 - **The colours of a block (M1).** A function or the mask of its library writes `color`, `fill` and `stroke` as
   `#RRGGBB`, one value for both themes (spec 11.2, 11.3); the theme derives the rest, by integer steps where it can,
   so that platforms draw the same colours but for a value a hair from a bound of contrast, where the last bit of a
@@ -1478,12 +1483,18 @@ IDE, the diagram takes its colors from this table.
 | `select.stroke` | `#0E7490` | `#22D3EE` |
 | `ink.light` | `#FFFFFF` | `#FFFFFF` |
 | `ink.dark` | `#1F2328` | `#1F2328` |
+| `type.number` | `#034E41` | `#7DA695` |
+| `type.boolean` | `#AE1395` | `#EF6CD9` |
+| `type.text` | `#7F593D` | `#BE9679` |
+| `type.enum` | `#346D17` | `#55B326` |
+| `type.struct` | `#815A0E` | `#CF9117` |
+| `type.function` | `#94476E` | `#C78CAA` |
 
 ## 9. Open questions
 
 | # | Question | Lead |
 |---|---|---|
-| N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough. **Settled (2026-11-15):** a mode of the editor, a setting of the user, for M1 (4.3): one colour per family, doubling the shape, shared with the semantic tokens of the code; its default and its palette are decided at the review of style at the end of M1, on renders |
+| N-1 | A "color by type" mode for data wires? | Not in v0: shape and pattern are enough. **Settled (2026-11-15):** a mode of the editor, a setting of the user, for M1 (4.3): one colour per family, doubling the shape, shared with the semantic tokens of the code; its palette is decided at the review of style at the end of M1, on renders. **Default (2026-11-20):** on, decided by the owner |
 | N-2 | Branch displayed by default for a `match` | **Settled (2026-11-08):** the one that the last run took, at the chosen iterations, when a trace is shown (6.1); otherwise the first; a tab that the developer picks wins until an iteration selector moves or another trace arrives. The editor remembers the last one viewed (editor state, not saved in the file) |
 | N-3 | Repeated wire names: from what length? | 400 units; to tune on `station` |
 | N-4 | Primitives: closed list of glyphs or extensible by a library? | **Settled (2026-11-08):** closed, the table of 3.2; `neg` and `sqrt` added |

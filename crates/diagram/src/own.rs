@@ -82,8 +82,14 @@ fn outline_choice(outline: &Outline, names: &Interner) -> OutlineChoice {
 }
 
 /// The block of the function of `file`, alone; none for a type, a function that `check` does not declare, or one with more
-/// terminals than [`crate::draw`] draws (`LC7002`).
-pub(crate) fn of(checked: &Checked, file: &CheckedFile, names: &Interner, limits: &DiagramLimits) -> Option<OwnBlock> {
+/// terminals than [`crate::draw`] draws (`LC7002`). Drawn in the reader's `appearance`, as the canvas draws its calls.
+pub(crate) fn of(
+    checked: &Checked,
+    file: &CheckedFile,
+    names: &Interner,
+    appearance: &crate::Appearance,
+    limits: &DiagramLimits,
+) -> Option<OwnBlock> {
     let (name, id, external) = match &file.file.decl {
         Decl::Function(function) => (function.name, function.id, false),
         Decl::Extern(external) => (external.name, external.id, true),
@@ -95,8 +101,9 @@ pub(crate) fn of(checked: &Checked, file: &CheckedFile, names: &Interner, limits
     if terminals > limits.max_nodes.saturating_mul(5) {
         return None;
     }
-    let graph = Builder::new(checked, file, names).own_block(name, id);
-    let mut drawing = crate::drawing(&graph, names, &ViewState::default(), Some(&checked.types));
+    let graph = Builder::new(checked, file, names).appearing(appearance).own_block(name, id);
+    let view = ViewState { appearance: appearance.clone(), ..ViewState::default() };
+    let mut drawing = crate::drawing(&graph, names, &view, Some(&checked.types));
     // The frame around it is not the block's.
     drawing.loose.clear();
     drawing.bodies.clear();

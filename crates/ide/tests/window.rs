@@ -968,6 +968,25 @@ fn a_toggle_of_the_menus_writes_the_key_of_the_user() {
     assert_eq!(harness.state().host.snapshot().view.settings.user.get("appearance.theme"), Some(&json!("light")));
 }
 
+/// Color by type (notation 4.3) is on by default; the status bar switches it, and the drawing follows (ide.md 2).
+#[test]
+fn the_status_bar_switches_color_by_type_and_the_drawing_follows() {
+    let mut harness = harness(fake());
+    harness.run_steps(4);
+    let drawn = |harness: &Harness<'_, State>| {
+        let snapshot = harness.state().host.snapshot();
+        snapshot.view.windows().filter_map(|window| window.drawing.as_ref()).map(|drawing| drawing.by_type).collect::<Vec<_>>()
+    };
+    assert_eq!(drawn(&harness), vec![true], "on by default");
+    harness.get_by_label("Types in colour").click();
+    harness.run_steps(4);
+    assert_eq!(harness.state().host.snapshot().view.settings.user.get("appearance.color_by_type"), Some(&json!(false)));
+    assert_eq!(drawn(&harness), vec![false]);
+    harness.get_by_label("Types in one ink").click();
+    harness.run_steps(4);
+    assert_eq!(drawn(&harness), vec![true]);
+}
+
 /// A toggle whose key the project holds shows the project's value and is not enabled: the dialog changes it (ide.md 2).
 #[test]
 fn a_toggle_whose_key_the_project_holds_is_not_enabled() {

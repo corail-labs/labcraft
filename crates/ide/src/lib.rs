@@ -1280,6 +1280,7 @@ impl Ide {
                 | keys::DRAG_PANS
                 | keys::FIX_EVERY_NODE
                 | keys::MARK_FIXED
+                | keys::COLOR_BY_TYPE
                 | keys::REPLACE_WITH_ALT
                 | keys::ACCEPT_MISMATCH
                 | keys::ROUTE_WITH_SHIFT_ALT
@@ -1291,6 +1292,7 @@ impl Ide {
                         keys::DRAG_PANS => Some(self.settings.drag_pans),
                         keys::FIX_EVERY_NODE => Some(self.settings.fix_every_node),
                         keys::MARK_FIXED => Some(self.settings.mark_fixed),
+                        keys::COLOR_BY_TYPE => Some(self.settings.by_type),
                         keys::REPLACE_WITH_ALT => Some(self.settings.replace_with_alt),
                         keys::ACCEPT_MISMATCH => Some(self.settings.accept_mismatch),
                         keys::ROUTE_WITH_SHIFT_ALT => Some(self.settings.route_with_shift_alt),
@@ -1384,7 +1386,7 @@ impl Ide {
         Ok(())
     }
 
-    /// The status bar: the file shown, the last step; the agent, the zoom. Of the window that has focus.
+    /// The status bar: the file shown, the last step; the agent, color by type, the zoom. Of the window that has focus.
     fn status(&self, view: &Published) -> (Vec<Segment>, Vec<Segment>) {
         let shown = self.target(view).function.as_deref();
         let mut left = Vec::new();
@@ -1399,6 +1401,14 @@ impl Ide {
             left.push(Segment::new(last.clone()).hover("The last step of the history"));
         }
         let mut right = Vec::new();
+        if shown.is_some() {
+            let (text, hover) = if self.settings.by_type {
+                ("Types in colour", "Wires in the colour of their type: click for one ink (View › Color wires by type)")
+            } else {
+                ("Types in one ink", "Wires in one ink: click for the colour of their type (View › Color wires by type)")
+            };
+            right.push(Segment::new(text).hover(hover).command(keys::COLOR_BY_TYPE));
+        }
         if let Some(drawn) = shown.and_then(|function| self.drawn.get(function)) {
             let (zoom, _) = drawn.canvas.viewport();
             right.push(Segment::new(format!("{:.0} %", zoom * 100.0)).hover("Fit the diagram to the view").command(keys::FIT));
@@ -2001,6 +2011,7 @@ impl Ide {
             keys::DRAG_PANS => self.set_setting(keyed::DRAG_PANS, json!(!self.settings.drag_pans), host, view, outward),
             keys::FIX_EVERY_NODE => self.set_setting(keyed::FIX_EVERY_NODE, json!(!self.settings.fix_every_node), host, view, outward),
             keys::MARK_FIXED => self.set_setting(keyed::MARK_FIXED, json!(!self.settings.mark_fixed), host, view, outward),
+            keys::COLOR_BY_TYPE => self.set_setting(keyed::COLOR_BY_TYPE, json!(!self.settings.by_type), host, view, outward),
             keys::REPLACE_WITH_ALT => self.set_setting(keyed::REPLACE_WITH_ALT, json!(!self.settings.replace_with_alt), host, view, outward),
             keys::ACCEPT_MISMATCH => self.set_setting(keyed::ACCEPT_MISMATCH, json!(!self.settings.accept_mismatch), host, view, outward),
             keys::ROUTE_WITH_SHIFT_ALT => {
