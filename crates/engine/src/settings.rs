@@ -23,6 +23,9 @@ pub enum Kind {
     Choice(&'static [&'static str], &'static str),
     /// A table: the name of a library → `"#RRGGBB"` (spec 11.3).
     LibraryColors,
+    /// A table: the name of an MCP client → the canonical folder of a project → `ask`, `edits` or `all`, the policy the
+    /// user kept for it (ide.md 8).
+    Policies,
 }
 
 /// A key of the table of commands.md 9.7.
@@ -57,6 +60,10 @@ pub const ROUTE_WITH_SHIFT_ALT: &str = "editor.route_with_shift_alt";
 pub const AUTOPATCH: &str = "editor.autopatch";
 pub const INTO_WIRE: &str = "editor.into_wire";
 pub const RECORD_VALUES: &str = "run.record_values";
+pub const AI_POLICIES: &str = "ai.policies";
+
+/// The policies an agent attached to the IDE may have (ide.md 8), as `ai.policies` writes them.
+pub const POLICIES: [&str; 3] = ["ask", "edits", "all"];
 
 /// The groups, in the order of the dialog, each with its title.
 pub const GROUPS: &[(&str, &str)] = &[("appearance", "Appearance"), ("view", "View"), ("editor", "Editor"), ("run", "Run")];
@@ -103,7 +110,13 @@ pub const KEYS: &[Key] = &[
     key(AUTOPATCH, "Autopatch from the keyboard", "Quick insertion wires the new node to the selection.", Kind::Bool(true), true),
     key(INTO_WIRE, "Insert into a wire on a drop", "A node dropped on a wire goes into it.", Kind::Bool(true), true),
     key(RECORD_VALUES, "Record values", "A run records its values, its trace, for the wires.", Kind::Bool(false), false),
+    key(AI_POLICIES, "Policies of the agents", "The policy kept for an MCP client on a project.", Kind::Policies, false),
 ];
+
+/// Whether a key is one of the settings of AI and of the agents, which an agent neither reads nor writes (ide.md 8).
+pub fn of_ai(id: &str) -> bool {
+    id.starts_with("ai.")
+}
 
 /// The key `id`, if it is one.
 pub fn find(id: &str) -> Option<&'static Key> {
@@ -123,7 +136,7 @@ impl Key {
         match self.kind {
             Kind::Bool(on) => Value::Bool(on),
             Kind::Choice(_, default) => Value::String(default.to_owned()),
-            Kind::LibraryColors => Value::Object(Map::new()),
+            Kind::LibraryColors | Kind::Policies => Value::Object(Map::new()),
         }
     }
 
@@ -134,6 +147,7 @@ impl Key {
             Kind::Choice(names, _) => (!value.as_str().is_some_and(|name| names.contains(&name)))
                 .then(|| format!("`{}` is one of {}", self.id, names.iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", "))),
             Kind::LibraryColors => library_colors_refused(value).map(|why| format!("`{}`: {why}", self.id)),
+            Kind::Policies => policies_refused(value).map(|why| format!("`{}`: {why}", self.id)),
         }
     }
 }
@@ -155,6 +169,39 @@ fn library_colors_refused(value: &Value) -> Option<String> {
         }
     }
     None
+}
+
+/// At most this many clients, and projects for each, in `ai.policies` *(proposed)*.
+const MAX_POLICIES: usize = 1_000;
+
+fn policies_refused(value: &Value) -> Option<String> {
+    let Some(clients) = value.as_object() else { return Some("a table of MCP clients".to_owned()) };
+    if clients.len() > MAX_POLICIES {
+        return Some(format!("at most {MAX_POLICIES} clients"));
+    }
+    for (client, projects) in clients {
+        if client.is_empty() || client.len() > 256 {
+            return Some("the name of a client holds 1 to 256 bytes".to_owned());
+        }
+        let Some(projects) = projects.as_object() else { return Some(format!("`{client}` is a table of projects")) };
+        if projects.len() > MAX_POLICIES {
+            return Some(format!("at most {MAX_POLICIES} projects for `{client}`"));
+        }
+        for (project, policy) in projects {
+            if project.is_empty() || project.len() > 4096 {
+                return Some("the folder of a project holds 1 to 4096 bytes".to_owned());
+            }
+            if !policy.as_str().is_some_and(|policy| POLICIES.contains(&policy)) {
+                return Some(format!("the policy of `{client}` on `{project}` is `ask`, `edits` or `all`"));
+            }
+        }
+    }
+    None
+}
+
+/// The policy that `ai.policies` keeps for `client` on the project at `project`, if it keeps one.
+pub fn kept_policy<'a>(policies: &'a Value, client: &str, project: &str) -> Option<&'a str> {
+    policies.get(client)?.get(project)?.as_str().filter(|policy| POLICIES.contains(policy))
 }
 
 /// Where the value of a key comes from.
@@ -366,7 +413,12 @@ fn put(doc: &mut toml_edit::DocumentMut, key: &Key, value: Option<&Value>) -> Re
     match value {
         Some(value) => {
             let Some(item) = toml_of(value) else { return Err(format!("`{}` has no value in TOML", key.id)) };
-            let group = doc.entry(key.group()).or_insert_with(toml_edit::table);
+            // Implicit: a group of tables alone, as `ai`, has no header of its own.
+            let group = doc.entry(key.group()).or_insert_with(|| {
+                let mut table = toml_edit::Table::new();
+                table.set_implicit(true);
+                toml_edit::Item::Table(table)
+            });
             let Some(group) = group.as_table_like_mut() else {
                 return Err(format!("`{}` is not a table: mend it, then set the key again", key.group()));
             };
@@ -413,12 +465,22 @@ pub fn write_keys(text: &str, before: &Map<String, Value>, after: &Map<String, V
     Ok(doc.to_string())
 }
 
-/// A value of TOML as JSON: a boolean, a string, or a table of strings (`appearance.library_colors`).
+/// A value of TOML as JSON: a boolean, a string, a table of strings (`appearance.library_colors`), or a table of
+/// tables of strings (`ai.policies`).
 fn json_of(item: &toml_edit::Item) -> Option<Value> {
+    json_within(item, 2)
+}
+
+fn json_within(item: &toml_edit::Item, tables: u32) -> Option<Value> {
     if let Some(table) = item.as_table_like() {
+        let inner = tables.checked_sub(1)?;
         let mut map = Map::new();
         for (name, item) in table.iter() {
-            map.insert(name.to_owned(), Value::String(item.as_str()?.to_owned()));
+            let value = match item.as_str() {
+                Some(text) => Value::String(text.to_owned()),
+                None => json_within(item, inner).filter(Value::is_object)?,
+            };
+            map.insert(name.to_owned(), value);
         }
         return Some(Value::Object(map));
     }
@@ -435,8 +497,13 @@ fn toml_of(value: &Value) -> Option<toml_edit::Item> {
         Value::String(text) => Some(toml_edit::value(text.as_str())),
         Value::Object(map) => {
             let mut table = toml_edit::Table::new();
+            table.set_implicit(true);
             for (name, value) in map {
-                table.insert(name, toml_edit::value(value.as_str()?));
+                let item = match value {
+                    Value::Object(_) => toml_of(value)?,
+                    _ => toml_edit::value(value.as_str()?),
+                };
+                table.insert(name, item);
             }
             Some(toml_edit::Item::Table(table))
         }
@@ -444,8 +511,8 @@ fn toml_of(value: &Value) -> Option<toml_edit::Item> {
     }
 }
 
-/// `settings.get`.
-pub(crate) fn get(session: &Session, params: &Params) -> Result<Value, CommandError> {
+/// `settings.get`; `agent`: an agent asks, and the settings of AI are left out.
+pub(crate) fn get(session: &Session, params: &Params, agent: bool) -> Result<Value, CommandError> {
     let stores = &session.settings.stores;
     let row = |key: &Key| {
         let (value, from) = stores.get(key);
@@ -453,7 +520,7 @@ pub(crate) fn get(session: &Session, params: &Params) -> Result<Value, CommandEr
     };
     let rows: Vec<Value> = match params.get("key").and_then(Value::as_str) {
         Some(id) => vec![row(known(id)?)],
-        None => KEYS.iter().map(row).collect(),
+        None => KEYS.iter().filter(|key| !(agent && of_ai(key.id))).map(row).collect(),
     };
     Ok(json!({ "settings": rows }))
 }
@@ -550,7 +617,8 @@ mod tests {
     #[test]
     fn every_key_is_a_group_and_a_name_its_default_taken() {
         for key in KEYS {
-            assert!(GROUPS.iter().any(|(group, _)| *group == key.group()), "{}", key.id);
+            // The settings of AI are listed with the switch of AI, not in a group of the dialog (ide.md 8).
+            assert!(GROUPS.iter().any(|(group, _)| *group == key.group()) || of_ai(key.id), "{}", key.id);
             assert_eq!(key.refuses(&key.default_value()), None, "{}", key.id);
             assert_eq!(key.id.matches('.').count(), 1, "{}", key.id);
         }
@@ -615,5 +683,24 @@ mod tests {
         assert!(key.refuses(&json!({ "visa": { "light": "#2563EB" } })).is_some());
         assert!(key.refuses(&json!({ "": "#2563EB" })).is_some());
         assert!(key.refuses(&json!(["visa"])).is_some());
+    }
+
+    /// `ai.policies` (ide.md 8): a client, a project, a policy; written as tables of tables, and read back the same.
+    #[test]
+    fn the_policies_kept_are_written_and_read_back() {
+        let key = find(AI_POLICIES).unwrap();
+        let policies = json!({ "Claude Code": { "/home/ada/bench": "edits", "D:\\bench": "all" }, "cursor": { "/p": "ask" } });
+        assert_eq!(key.refuses(&policies), None);
+        assert!(key.refuses(&json!({ "claude": { "/p": "everything" } })).is_some());
+        assert!(key.refuses(&json!({ "claude": "edits" })).is_some());
+        assert!(key.refuses(&json!({ "": { "/p": "ask" } })).is_some());
+        let after = Map::from_iter([(AI_POLICIES.to_owned(), policies.clone())]);
+        let written = write_keys("[appearance]\ntheme = \"dark\"\n", &Map::new(), &after).unwrap();
+        // No header for `ai` nor `ai.policies`: tables of tables only.
+        assert!(written.starts_with("[appearance]\ntheme = \"dark\"\n\n[ai.policies.\"Claude Code\"]\n"), "{written}");
+        assert_eq!(read_keys(&written).unwrap().get(AI_POLICIES), Some(&policies), "{written}");
+        assert_eq!(kept_policy(&policies, "Claude Code", "/home/ada/bench"), Some("edits"));
+        assert_eq!(kept_policy(&policies, "Claude Code", "/elsewhere"), None);
+        assert!(of_ai(AI_POLICIES) && !of_ai(THEME));
     }
 }

@@ -248,8 +248,14 @@ on (decision of the owner, 2026-11-15).
   endpoint or folder by folder, For this run, Until the window closes, or Refuse; refused or not answered in 60 s
   *(proposed)*, the open gets `io.not_allowed`, an error of the run, not of the command ([io.md](io.md) 4). Those answers
   are never kept. The answer about the policy is
-  kept, if the user wants, for that client and that project, in the settings of the user, never of the project.
-  Refused, or not allowed by its policy, a command of the agent is `agent.not_allowed` (commands.md 3).
+  kept, if the user wants, for that client and that project, in the settings of the user, never of the project
+  (`ai.policies`, commands.md 9.7), keyed by the name the client gives (`clientInfo.name`), so that it answers the
+  next connection of that client to that project without asking. The window asks when the client gives its name
+  (`initialize`, which is answered at once); a call that comes before the answer waits for it, as long as the agent
+  waits, and a question unanswered in time goes and is a refusal. A call on a run that the server answers at once
+  (`run.status`, `run.abort`, `run.set_element`) never waits for the user: it runs on the agent's own run, or under
+  **All**; otherwise it is refused. Refused, or not allowed by its policy, a command of the agent is
+  `agent.not_allowed` (commands.md 3).
 - **Its policy is the user's.** The settings of AI and of the agents (the switch, each policy) are refused to an
   agent, whatever its policy (`agent.not_allowed`); `settings.set` of another key is an edit.
 - **What it sees.** Everything a command reads, and the state of the window: the function shown in each window, the

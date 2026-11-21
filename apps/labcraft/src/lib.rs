@@ -13,6 +13,7 @@
 )]
 #![forbid(unsafe_code)]
 
+pub mod agents;
 pub mod args;
 pub mod examples;
 pub mod frames;

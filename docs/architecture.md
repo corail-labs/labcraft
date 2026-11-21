@@ -2105,7 +2105,12 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
   as in M0b; attached, it is the session of the window, reached through the control channel. `labcraft-cli mcp`
   looks for the file of the port of the window whose project is its own, `--project DIR` or the current folder (ide.md
   8); when there is one, it connects to `127.0.0.1`, gives the token, and relays stdio both ways; otherwise it starts
-  headless, as in M0b (mcp.md 1). A test sets the folder of that file, so that it never finds a window of the user.
+  headless, as in M0b (mcp.md 1). A test sets the folder of that file (`LABCRAFT_ATTACH_DIR`), so that it never finds
+  a window of the user. The server takes an `Executor`, which runs a call (the session of its own, or the session of
+  the window, reached through a channel of its thread), and a `Gate`, which says whether the policy of the client lets
+  it run (ide.md 8). Attached, `run.start` goes to the session with `wait` `0 s`, and the wait, as every call on a
+  run that needs no session, is answered off its thread, also when it comes by `commands.execute`, so that a run of
+  the agent never holds the window.
 
 ### 12.9 The apps
 

@@ -331,6 +331,19 @@ impl Runs {
     /// The commands of runs that need no session: `run.wait`, `run.status`, `run.abort`, `run.set_element` and `run.trace`, judged against
     /// the registry and bounded as [`Session::execute`] bounds a result. `run.trace` reads through the workspace.
     pub fn execute(&self, ws: &dyn crate::workspace::Workspace, root: &std::path::Path, id: &str, params: &Json) -> Result<Json, CommandError> {
+        self.execute_waiting(ws, root, id, params, &Patient)
+    }
+
+    /// As [`Runs::execute`], with whoever waits in `run.wait`: told where the run is each second, and able to stop
+    /// waiting (`docs/mcp.md`, 4). An agent attached to the IDE waits here, off the thread of the window's session.
+    pub fn execute_waiting(
+        &self,
+        ws: &dyn crate::workspace::Workspace,
+        root: &std::path::Path,
+        id: &str,
+        params: &Json,
+        waiter: &dyn Waiter,
+    ) -> Result<Json, CommandError> {
         let Some(command) =
             registry::command(id).filter(|command| matches!(command.id, "run.wait" | "run.status" | "run.abort" | "run.trace" | "run.set_element"))
         else {
@@ -341,7 +354,7 @@ impl Runs {
         }
         let params = params::judge(command, params)?;
         // A panic is caught here as the session catches one (commands.md 3): the caller holds no session to do it.
-        crate::panics::guarded(id, || self.dispatch(ws, root, command.id, &params, 64, &Patient)).unwrap_or_else(Err)
+        crate::panics::guarded(id, || self.dispatch(ws, root, command.id, &params, 64, waiter)).unwrap_or_else(Err)
     }
 
     /// Makes every wait ask its [`Waiter`] at once whether it still waits: a request was cancelled. The lock is taken

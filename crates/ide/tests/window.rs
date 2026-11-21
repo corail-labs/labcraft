@@ -1314,3 +1314,42 @@ fn a_diagnostic_is_underlined_and_its_message_shows_on_hover() {
     assert!(harness.query_by_label_contains("error[LC").is_some(), "the message of the diagnostic, as the hover writes it");
     shot(&mut harness, "text-hover");
 }
+
+/// The first connection of an agent asks (ide.md 8): the three policies, `Connect` once one is chosen, and a policy
+/// kept for that client and that project written in `ai.policies` by `settings.set`, under the name of the client.
+#[test]
+fn the_first_connection_of_an_agent_asks_for_a_policy() {
+    use labcraft_ide::agents::{Answer, Asks, Policy, Question};
+    let mut harness = harness(fake());
+    let question = |id| Question {
+        id,
+        client: "Claude Code".to_owned(),
+        signed: "Claude Code 2".to_owned(),
+        project: "/p".to_owned(),
+        asks: Asks::Connect,
+        seconds_left: 58,
+    };
+    harness.state_mut().ide.set_agent_questions(vec![question(1)]);
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Claude Code 2 wants to connect").is_some(), "asked, by the name it signs with");
+    shot(&mut harness, "agent-connect");
+    harness.get_by_label("Edits").click();
+    harness.run_steps(2);
+    harness.get_by_label("Remember for this client and this project").click();
+    harness.run_steps(2);
+    harness.get_by_label("Connect").click();
+    harness.run_steps(4);
+    assert_eq!(harness.state_mut().ide.take_agent_answers(), vec![(1, Answer::Policy { policy: Policy::Edits, keep: true })]);
+    let kept = harness.state().host.snapshot().view.settings.user.get("ai.policies").cloned();
+    assert_eq!(kept, Some(json!({ "Claude Code": { "/p": "edits" } })));
+    // A command that the policy does not let run alone.
+    let command =
+        Question { asks: Asks::Command { label: "Start Run".to_owned(), effects: vec![labcraft_engine::registry::Effect::Run] }, ..question(3) };
+    harness.state_mut().ide.set_agent_questions(vec![command]);
+    harness.run_steps(4);
+    assert!(harness.query_by_label("Claude Code 2 asks: Start Run").is_some());
+    shot(&mut harness, "agent-command");
+    harness.get_by_label("Refuse").click();
+    harness.run_steps(3);
+    assert_eq!(harness.state_mut().ide.take_agent_answers(), vec![(3, Answer::Refuse)]);
+}

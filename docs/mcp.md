@@ -42,7 +42,21 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   ([commands.md](commands.md), section 6.2). From M1, when a window of the IDE shows the
   project, the same server attaches to it through a local control channel protected by a token, so that the human
   watches the agent work (D-18; [ide.md](ide.md) 8); otherwise it stays headless. The tools stay the same.
-- **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released.
+- **Attached** (M1). A window that shows a project listens on `127.0.0.1`, on a port the system gives, and writes a
+  file that only the user can read (mode `0600` on Unix; on Windows, the inherited rights removed and the user alone
+  given them): `<hash of the canonical folder of the project>.json` in `labcraft/attach/` of the local data of the user,
+  or in the folder of `LABCRAFT_ATTACH_DIR` (empty: no channel, the server is always headless; the tests set it, so
+  that they never find a window of the user). It holds the port, a token new at each launch, the process and the
+  project, and goes when the window closes. `mcp` reads the file of its project and connects; each side then proves
+  that it holds the token, which never goes on the connection (each sends a nonce, and the other the SHA-256 of its
+  side, that nonce and the token). Then `mcp` relays stdin and stdout to the window, whose server runs the calls on the
+  session of the window: `--lib-path` and the limits are then those of the window. A file whose port takes no
+  connection is left over from a window that did not close, and the server starts headless. What takes the connection
+  and refuses it, or does not prove it holds the token, stops the server (exit 2, the reason and the file on stderr):
+  it would otherwise edit the project of a window from a session of its own, or give the agent what another process
+  says. When the window closes the connection, `mcp` ends (exit 1).
+- **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released. Attached, only a
+  run that the agent started is aborted, not one of the user.
 
 ## 2. Tools
 
@@ -197,11 +211,8 @@ loop over real stdio ([acceptance-m0.md](acceptance-m0.md), scenario 1, verifica
 
 Taken from SolidCraft, each when what it serves exists:
 
-- **Attached to the IDE** (M1): the control channel of the desktop app, on `127.0.0.1` only, a random
-  token for each launch in a file only the user can read, a file that gives the port so that `mcp` with no
-  option finds the open app, and a `running` tool that says what the app runs for every client. The tools
-  stay those of section 2. What the window shows of the agent, and what it asks the user, are in
-  [ide.md](ide.md), section 8.
+- **A `running` tool**, taken from SolidCraft with the channel attached to the IDE (section 1): what the app runs for
+  every client. The channel came in M1 without it.
 - **`batch`** (M1): several editing commands in one call, stopped at the first failure and rolled back. It is the
   command `commands.batch` ([commands.md](commands.md), 9.4), and so the tool `commands_batch`.
 - **`crash_reports`**: the crash reports of this computer, each with the commands that led to the bug,

@@ -21,6 +21,7 @@ labcraft-editor = { workspace = true }
 labcraft-engine = { workspace = true }
 labcraft-format = { workspace = true }
 labcraft-ide = { workspace = true, features = ["native-windows"] }
+labcraft-mcp = { workspace = true }
 labcraft-types = { workspace = true }
 notify = { workspace = true }
 serde = { workspace = true }

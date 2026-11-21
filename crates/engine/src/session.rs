@@ -371,6 +371,13 @@ impl Session {
         if author.is_agent() && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
             return Err(CommandError::new("agent.not_allowed", format!("`{id}` is a command of the window: only the user calls it")));
         }
+        // The settings of AI and of the agents are the user's, whatever the policy of the agent (ide.md 8).
+        if author.is_agent()
+            && matches!(id, "settings.get" | "settings.set")
+            && let Some(key) = params.get("key").and_then(Value::as_str).filter(|key| crate::settings::of_ai(key))
+        {
+            return Err(CommandError::new("agent.not_allowed", format!("`{key}` is a setting of AI: only the user reads and sets it")));
+        }
         let params = params::judge(command, params)?;
         guarded(id, || self.dispatch(author, command, &params, waiter)).unwrap_or_else(|internal| {
             // What the command was changing may be half done: nothing kept is trusted after it.
@@ -444,7 +451,7 @@ impl Session {
             "view.open" => crate::view::open(self, params),
             "view.show_function" => crate::view::show_function(self, params),
             "view.set_standard_view" => crate::view::set_standard_view(self, params),
-            "settings.get" => crate::settings::get(self, params),
+            "settings.get" => crate::settings::get(self, params, author.is_agent()),
             "settings.set" => crate::settings::set(self, params),
             "view.set_state" => crate::view::set_state(self, params),
             "view.open_trace" => crate::view::open_trace(self, params),

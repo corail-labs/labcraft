@@ -7,6 +7,7 @@ use labcraft_engine::{CommandError, Session};
 use serde_json::{Value as Json, json};
 
 /// A tool: the command behind it, and its name.
+#[derive(Clone)]
 pub(crate) struct Tool {
     pub name: String,
     pub command: &'static Command,
