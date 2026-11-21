@@ -24,6 +24,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "view.toggle_panel",
     "view.reset_layout",
     "view.set_workspace",
+    "text.save",
+    "text.recovered",
+    "text.discard",
 ];
 
 /// The commands of the window that the window runs itself, never the session: a project is opened by the app, which

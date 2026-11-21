@@ -211,13 +211,7 @@ fn record_files(session: &mut Session, author: &Author, command: &Command, chang
 /// `file.write`: a step of history (commands.md 9.1).
 pub fn write(session: &mut Session, author: &Author, command: &Command, params: &Params) -> Result<Value, CommandError> {
     let (path, shown, exists) = project_file(session, params, "path", Wanted::File)?;
-    let text = params.text("text")?;
-    let max = session.config.limits.max_file_size;
-    if text.len() > MAX_WRITE || text.len() as u64 > max {
-        let limit = (MAX_WRITE as u64).min(max);
-        return Err(CommandError::of("file.too_large", "text", format!("the text holds {} bytes, over the limit of {limit} bytes", text.len())));
-    }
-    let text = text.replace("\r\n", "\n");
+    let text = writable_text(session, params)?;
     if is_simulation(&path) {
         if exists {
             let (bytes, _) = bytes_of(session, &Place::Project { path: path.clone(), shown: shown.clone(), exists }, "path")?;
@@ -229,6 +223,32 @@ pub fn write(session: &mut Session, author: &Author, command: &Command, params: 
             return Err(not_simulation("text", &shown, "would not read as a simulation file with this text", &why));
         }
     }
+    write_text(session, author, command, path, &shown, exists, text)?;
+    then_check(session, params.bool("check"), &shown)
+}
+
+/// The parameter `text` of a command that writes it: within [`MAX_WRITE`] and `--max-file-size`, CR LF made LF.
+pub(crate) fn writable_text(session: &Session, params: &Params) -> Result<String, CommandError> {
+    let text = params.text("text")?;
+    let max = session.config.limits.max_file_size;
+    if text.len() > MAX_WRITE || text.len() as u64 > max {
+        let limit = (MAX_WRITE as u64).min(max);
+        return Err(CommandError::of("file.too_large", "text", format!("the text holds {} bytes, over the limit of {limit} bytes", text.len())));
+    }
+    Ok(text.replace("\r\n", "\n"))
+}
+
+/// Writes the text of a file of the project, atomically, as one step of history (commands.md 9.1), with no check.
+pub(crate) fn write_text(
+    session: &mut Session,
+    author: &Author,
+    command: &Command,
+    path: PathBuf,
+    shown: &str,
+    exists: bool,
+    text: String,
+) -> Result<(), CommandError> {
+    let shown = shown.to_owned();
     if !exists {
         refuse_case_twin(session, &path, &shown, "path", None)?;
     }
@@ -243,9 +263,9 @@ pub fn write(session: &mut Session, author: &Author, command: &Command, params: 
     session.ws.write(&path, text.as_bytes()).map_err(|error| unwritable("path", &shown, &error))?;
     let after: Arc<[u8]> = Arc::from(text.into_bytes());
     note(session, &Change { path: path.clone(), shown: shown.clone(), before: None, after: Some(Arc::clone(&after)) }, false);
-    let changes = before.map(|before| vec![Change { path, shown: shown.clone(), before, after: Some(after) }]);
+    let changes = before.map(|before| vec![Change { path, shown, before, after: Some(after) }]);
     record_files(session, author, command, changes);
-    then_check(session, params.bool("check"), &shown)
+    Ok(())
 }
 
 /// An existing file of the project that a command may change: a simulation file only if it reads as one.

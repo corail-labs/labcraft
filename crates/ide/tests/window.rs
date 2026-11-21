@@ -1012,3 +1012,182 @@ fn the_keys_of_the_user_reach_the_session() {
     assert!(settings.given);
     assert_eq!(settings.user.get("editor.drag_pans"), Some(&json!(true)));
 }
+
+/// The view `Text` of `main`, its field focused at the end of the text (commands.md 9.1; step 7a).
+fn text_of_main() -> Harness<'static, State> {
+    let mut harness = harness(fake());
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "main", "view": "text" })).unwrap();
+    harness.run_steps(4);
+    harness.get_by_label("Text of main.lcf").click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::End);
+    harness.run_steps(1);
+    harness
+}
+
+fn file(harness: &Harness<'_, State>, path: &str) -> Option<String> {
+    harness.state().host.memory.get(path).map(|bytes| String::from_utf8(bytes).unwrap())
+}
+
+/// A text that parses is written after a pause of the keys, one step of history; its errors of `check` do not stop it.
+#[test]
+fn a_text_typed_is_written_after_a_pause_when_it_parses() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("\n// a note\n");
+    harness.run_steps(1);
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN), "not before the pause");
+    harness.run_steps(4);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}\n// a note\n")));
+    let history = harness.state().host.session.borrow_mut().execute("history.list", &json!({})).unwrap();
+    assert_eq!(history["steps"][0]["label"], "Edit Text", "{history}");
+    shot(&mut harness, "text-written");
+}
+
+/// A text that does not parse stays in the view with its banner, and in the recovery folder; the file keeps its text,
+/// and the diagram of the function cannot be edited until the text parses again.
+#[test]
+fn a_text_that_does_not_parse_is_kept_and_locks_the_diagram() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("fn (");
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN));
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(format!("{MAIN}fn (")));
+    assert!(harness.query_by_label_contains("The text does not read").is_some());
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "main", "view": "text", "split": "diagram" })).unwrap();
+    harness.run_steps(3);
+    assert!(harness.query_by_label_contains("fix it in the view Text").is_some(), "the diagram says why it cannot be edited");
+    shot(&mut harness, "text-unparsed");
+    // Nor does a command of the palette edit it.
+    run_in_palette(&mut harness, "node.add {\"file\": \"main.lcf\", \"call\": \"core.abs\"}");
+    harness.run_steps(3);
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN), "refused while the text does not read");
+    // Fixed: written, the copy gone, the banners gone. The split gave the field another place: it takes the focus again.
+    harness.get_by_label("Text of main.lcf").click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::End);
+    for _ in 0..4 {
+        harness.key_press(Key::Backspace);
+    }
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), None);
+    // The banner of the view goes; the notice of the refused command stays until dismissed.
+    assert!(harness.query_by_label_contains("The file keeps the last text that read").is_none());
+}
+
+/// Ctrl+Z in the view undoes in the field, not in the history of the project (notation 2.6: the focus decides).
+#[test]
+fn ctrl_z_in_the_text_undoes_the_field() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("// x");
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}// x")));
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(5);
+    // The field went back, and its text was written again: two steps, none undone by the history.
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN));
+    let history = harness.state().host.session.borrow_mut().execute("history.list", &json!({})).unwrap();
+    assert_eq!(history["steps"].as_array().map(Vec::len), Some(2), "{history}");
+}
+
+/// An edit from outside while the view holds no text of its own: the view follows the file.
+#[test]
+fn the_text_follows_a_file_changed_elsewhere() {
+    let mut harness = text_of_main();
+    let changed = MAIN.replace("2.0", "3.0");
+    {
+        // As the app does when the files it watches change.
+        let mut session = harness.state().host.session.borrow_mut();
+        session.execute("file.write", &json!({ "path": "main.lcf", "text": changed })).unwrap();
+        session.files_changed();
+    }
+    harness.run_steps(4);
+    harness.get_by_label("Text of main.lcf").type_text("// y");
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{changed}// y")));
+}
+
+/// A text of the recovery folder newer than its file is offered back when the project opens (architecture 12.6).
+#[test]
+fn a_recovered_text_is_offered_back() {
+    let fake = fake_with(&[]);
+    fake.memory.put("/p/.labcraft/recovery/main.lcf", format!("{MAIN}fn ("));
+    let mut harness = harness(fake);
+    harness.run_steps(2);
+    assert!(harness.query_by_label_contains("A text that did not read was kept for `main.lcf`").is_some());
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "main", "view": "text" })).unwrap();
+    harness.run_steps(3);
+    harness.get_by_label("Take it back").click();
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The text does not read").is_some());
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN));
+}
+
+/// The file changed while a text typed waited for its pause: the text stays, and the banner offers the file or the text
+/// (decision of the owner, 2026-11-21).
+#[test]
+fn a_file_changed_while_typing_offers_the_file_or_the_text() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("// mine");
+    harness.run_steps(1);
+    let changed = MAIN.replace("2.0", "3.0");
+    {
+        let mut session = harness.state().host.session.borrow_mut();
+        session.execute("file.write", &json!({ "path": "main.lcf", "text": changed })).unwrap();
+        session.files_changed();
+    }
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The file changed while you typed").is_some());
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(changed.clone()), "not written over");
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(format!("{MAIN}// mine")), "kept");
+    shot(&mut harness, "text-stale");
+    harness.get_by_label("Keep my text").click();
+    harness.run_steps(4);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}// mine")));
+    assert!(harness.query_by_label_contains("The file changed while you typed").is_none());
+}
+
+/// "Show the file": the view takes the file, and the text typed is one Ctrl+Z away.
+#[test]
+fn show_the_file_takes_the_file_and_keeps_the_text_in_the_undo() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("// mine");
+    harness.run_steps(1);
+    let changed = MAIN.replace("2.0", "3.0");
+    {
+        let mut session = harness.state().host.session.borrow_mut();
+        session.execute("file.write", &json!({ "path": "main.lcf", "text": changed })).unwrap();
+        session.files_changed();
+    }
+    harness.run_steps(5);
+    harness.get_by_label("Show the file").click();
+    harness.run_steps(4);
+    assert!(harness.query_by_label_contains("The file changed while you typed").is_none());
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(changed));
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(format!("{MAIN}// mine")), "kept");
+    // One Ctrl+Z in the view gives the text typed back, which is then written.
+    harness.get_by_label("Text of main.lcf").click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Z);
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}// mine")));
+}
+
+/// A file with CR LF line endings is written on the first pause, not taken for a file changed elsewhere: the revision
+/// is that of its bytes (code review of 7a).
+#[test]
+fn a_file_with_cr_lf_is_written_at_the_first_pause() {
+    let fake = fake();
+    let windows = MAIN.replace('\n', "\r\n");
+    fake.memory.put("/p/main.lcf", windows.as_str());
+    fake.session.borrow_mut().files_changed();
+    let mut harness = harness(fake);
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "main", "view": "text" })).unwrap();
+    harness.run_steps(4);
+    harness.get_by_label("Text of main.lcf").click();
+    harness.run_steps(1);
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::End);
+    harness.get_by_label("Text of main.lcf").type_text("// z");
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The file changed while you typed").is_none());
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}// z")), "written, its line endings LF");
+}

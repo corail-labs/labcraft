@@ -369,7 +369,7 @@ impl Session {
         }
         // An agent attached to the IDE reads the window and does not change what it shows (ide.md 8, commands.md 6.7).
         if author.is_agent() && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
-            return Err(CommandError::new("agent.not_allowed", format!("`{id}` changes what the window shows: only the user calls it")));
+            return Err(CommandError::new("agent.not_allowed", format!("`{id}` is a command of the window: only the user calls it")));
         }
         let params = params::judge(command, params)?;
         guarded(id, || self.dispatch(author, command, &params, waiter)).unwrap_or_else(|internal| {
@@ -434,6 +434,9 @@ impl Session {
             "file.write" => files::write(self, author, command, params),
             "file.rename" => files::rename(self, author, command, params),
             "file.delete" => files::delete(self, author, command, params),
+            "text.save" => crate::text::save(self, author, command, params),
+            "text.recovered" => crate::text::recovered(self),
+            "text.discard" => crate::text::discard(self, params),
             "project.describe" => project::describe(self),
             "functions.list" => functions::list(self, params),
             "simulation.describe" => simulations::describe(self, params),

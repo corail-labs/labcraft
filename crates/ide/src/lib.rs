@@ -288,7 +288,11 @@ pub struct Ide {
     drawn: HashMap<String, Drawn>,
     /// The view `Block` of each function, what it keeps between two frames (ide.md 3).
     blocks: HashMap<String, block::BlockPane>,
-    texts: HashMap<String, text::Kept>,
+    /// The text of each file that a view `Text` showed, edited there (ide.md 7).
+    texts: HashMap<String, text::Editing>,
+    /// `text.recovered`, asked once a project is open (architecture 12.6).
+    recovery: Option<Reply>,
+    recovery_asked: bool,
     callables: panels::Callables,
     problems: panels::ProblemsFilter,
     /// The field of "New function" in `Project`, and the answer it waits for (ide.md 4).
@@ -405,6 +409,8 @@ impl Ide {
             drawn: HashMap::new(),
             blocks: HashMap::new(),
             texts: HashMap::new(),
+            recovery: None,
+            recovery_asked: false,
             callables: panels::Callables::default(),
             problems: panels::ProblemsFilter::default(),
             new_function: panels::NewFunction::default(),
@@ -640,6 +646,7 @@ impl Ide {
         self.follow_focus(ui.ctx());
         if let Some(host) = host {
             self.take_replies(host, &view);
+            self.follow_texts(host, &view, ui.ctx());
             self.take_clips(ui.ctx(), host);
             self.follow_run(host, ui.ctx());
             self.sync_tabs(ui.ctx(), &view);
@@ -839,6 +846,8 @@ impl Ide {
         self.drawn.clear();
         self.blocks.clear();
         self.texts.clear();
+        self.recovery = None;
+        self.recovery_asked = false;
         self.callables = panels::Callables::default();
         self.asking_show = None;
         self.brought = None;
@@ -849,6 +858,37 @@ impl Ide {
         // A run of the project before is not followed into this session, whose runs count from the start again.
         self.running = None;
         self.outcomes.clear();
+    }
+
+    /// The texts of the views `Text`, shown or not: their replies, a read after a check, a write after a pause of the keys
+    /// (commands.md 9.1); and the texts of the recovery folder, once the project is open.
+    fn follow_texts(&mut self, host: &dyn Host, view: &Published, ctx: &egui::Context) {
+        if view.folder.is_some() && !std::mem::replace(&mut self.recovery_asked, true) {
+            self.recovery = Some(host.send("text.recovered", json!({})));
+        }
+        if let Some(result) = self.recovery.as_ref().and_then(Reply::take) {
+            self.recovery = None;
+            let mut kept = Vec::new();
+            for found in result.ok().as_ref().and_then(|found| found.get("texts")).and_then(Value::as_array).into_iter().flatten() {
+                let (Some(path), Some(text)) = (found.get("path").and_then(Value::as_str), found.get("text").and_then(Value::as_str)) else {
+                    continue;
+                };
+                let editing = self.texts.entry(path.to_owned()).or_insert_with(|| text::Editing::new(path));
+                editing.recovered = Some(text.to_owned());
+                kept.push(format!("`{path}`"));
+            }
+            if !kept.is_empty() {
+                self.say(format!("A text that did not read was kept for {}: its view Text offers it back", kept.join(", ")));
+            }
+        }
+        let mut waiting = false;
+        for editing in self.texts.values_mut() {
+            let focused = editing.field_id.is_some_and(|id| ctx.memory(|memory| memory.has_focus(id)));
+            waiting |= editing.update(host, view.checks, self.now, focused);
+        }
+        if waiting {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
     }
 
     /// The results that came: the failures to say, the function shown, the history.
@@ -1734,6 +1774,11 @@ impl Ide {
     /// An editing command on the file of `function`, one step: `params` with its `file`.
     fn send_edit(&mut self, host: &dyn Host, view: &Published, function: &str, id: &str, mut params: Value) {
         let Some(file) = file_of(view, function) else { return };
+        // Its text does not parse: nothing edits the function until it does (commands.md 9.1).
+        if self.texts.get(&file).is_some_and(text::Editing::locks_diagram) {
+            self.say("The text does not read: fix it in the view Text");
+            return;
+        }
         if let Some(object) = params.as_object_mut() {
             object.insert("file".to_owned(), json!(file));
         }
@@ -1922,6 +1967,38 @@ impl Ide {
             params.retain(|_, value| !value.is_null());
         }
         let shown = self.target(view).function.clone();
+        // A function whose text does not parse is not edited until it does (commands.md 9.1), whatever asks for it.
+        let edits = matches!(
+            id.as_str(),
+            keys::ARRANGE
+                | keys::WIRE
+                | keys::QUICK_INSERT
+                | keys::DELETE
+                | keys::RENAME
+                | keys::CUT
+                | keys::PASTE
+                | keys::DUPLICATE
+                | keys::AUTOPATCH
+                | keys::SURROUND_MATCH
+                | keys::SURROUND_HANDLE
+                | keys::SURROUND_FOR
+                | keys::SURROUND_LOOP
+                | keys::ADD_ARM
+                | keys::ADD_CARRY
+                | keys::ADD_CLAUSE
+                | keys::CONTINUE_ON_ERROR
+                | keys::PARALLEL
+                | keys::INTO_WIRE
+                | keys::FIX_EVERY_NODE
+                | keys::MARK_FIXED
+        ) || labcraft_engine::registry::command(&id)
+            .is_some_and(|command| command.undoable && !command.window && !command.id.starts_with("history."));
+        let target =
+            params.get("file").and_then(Value::as_str).map(str::to_owned).or_else(|| shown.as_deref().and_then(|function| file_of(view, function)));
+        if edits && target.and_then(|file| self.texts.get(&file)).is_some_and(text::Editing::locks_diagram) {
+            self.say("The text does not read: fix it in the view Text");
+            return;
+        }
         match id.as_str() {
             // From the palette or a menu, with no path: the field of "New function" or "New type" in `Project`, at the root
             // (ide.md 4); with no file, "Rename" of the function shown, there.
@@ -2740,6 +2817,8 @@ impl Content<'_> {
     fn diagram(&mut self, ui: &mut egui::Ui, function: &str, theme: Theme) {
         let view = self.view;
         let window = view.window_of(function);
+        // Its text does not parse: the diagram shows the file, and cannot be edited (commands.md 9.1).
+        let locked = file_of(view, function).and_then(|file| self.ide.texts.get(&file)).is_some_and(text::Editing::locks_diagram);
         let Some(drawn) = self.ide.drawn.get_mut(function) else {
             ui.centered_and_justified(|ui| ui.label(RichText::new("Click to show this function").weak()));
             return;
@@ -2750,13 +2829,18 @@ impl Content<'_> {
             return;
         }
         let shown = window.map(|window| canvas_shown(window, &self.ide.settings)).unwrap_or_default();
-        let response = drawn.canvas.show(ui, theme, &shown);
+        let response = if locked {
+            ui.label(RichText::new("The text does not read: fix it in the view Text").color(ui.visuals().warn_fg_color));
+            ui.add_enabled_ui(false, |ui| drawn.canvas.show(ui, theme, &shown)).inner
+        } else {
+            drawn.canvas.show(ui, theme, &shown)
+        };
         if response.response.has_focus() {
             self.ide.canvas_focus = Some((function.to_owned(), response.response.id));
         } else if self.ide.canvas_focus.as_ref().is_some_and(|(focused, _)| focused == function) {
             self.ide.canvas_focus = None;
         }
-        if window.is_none() {
+        if window.is_none() || locked {
             return;
         }
         // A gesture asks for a selection: the session holds it (`view.select`), and the canvas shows what it holds.
@@ -2972,39 +3056,17 @@ impl Content<'_> {
         // The lines of what is selected in the diagram, tinted (notation 2.5): a node, and a wire's line that gives it
         // and the lines that read it.
         let lines = self.view.window_of(function).map(selected_lines).unwrap_or_default();
-        let kept = self.ide.texts.entry(file.to_owned()).or_insert_with(|| text::Kept::new(file));
-        kept.refresh(self.host, self.view.checks);
-        if let Some(failure) = &kept.failure {
-            ui.label(RichText::new(failure).color(ui.visuals().warn_fg_color));
-            return;
+        let select = theme.color("select.stroke");
+        let tint = select.gamma_multiply(0.18);
+        let tints: Vec<(usize, egui::Color32)> =
+            lines.iter().filter_map(|&line| usize::try_from(line).ok()?.checked_sub(1)).map(|line| (line, tint)).collect();
+        let editing = self.ide.texts.entry(file.to_owned()).or_insert_with(|| text::Editing::new(file));
+        if editing.loading() {
+            editing.update(self.host, self.view.checks, self.ide.now, false);
         }
-        if kept.loading() && kept.text.is_empty() {
-            ui.label(RichText::new("Reading…").weak());
-            return;
+        if let Some(asked) = editing.show(ui, dark, select, &tints) {
+            editing.answer(self.host, asked);
         }
-        let font = FontId::new(13.0, egui::FontFamily::Monospace);
-        let galley = kept.galley(ui, dark, &font);
-        let cut = kept.cut;
-        egui::ScrollArea::both().id_salt(("ide-text", file)).auto_shrink([false, false]).show(ui, |ui| {
-            // Laid out once: a label of the galley, which the user can select and copy, read only; the tint of the lines
-            // selected under it, a row of the galley per line, since it never wraps.
-            let tint = ui.painter().add(egui::Shape::Noop);
-            let response = ui.add(egui::Label::new(galley.clone()).selectable(true).extend());
-            let color = theme.color("select.stroke").gamma_multiply(0.18);
-            let width = response.rect.x_range().max.max(ui.clip_rect().max.x);
-            let rows: Vec<egui::Shape> = lines
-                .iter()
-                .filter_map(|&line| galley.rows.get(usize::try_from(line).ok()?.checked_sub(1)?))
-                .map(|row| {
-                    let area = row.rect().translate(response.rect.min.to_vec2());
-                    egui::Shape::rect_filled(egui::Rect::from_x_y_ranges(response.rect.min.x..=width, area.y_range()), 0.0, color)
-                })
-                .collect();
-            ui.painter().set(tint, egui::Shape::Vec(rows));
-            if cut {
-                ui.label(RichText::new(format!("The rest of the file is not shown: past {} MiB", text::MAX_TEXT / 1024 / 1024)).weak());
-            }
-        });
     }
 }
 

@@ -1347,8 +1347,72 @@ pub(super) fn catalog() -> Vec<Command> {
             object(&[("workspace", string("The workspace: `edit`."))], &["workspace"]),
             WINDOW_ERRORS,
         ),
+        // The `Text` panel (commands.md 9.1; decision of the owner, 2026-11-21).
+        Command {
+            effects: &[Effect::Files],
+            undoable: true,
+            result: "`{ \"written\": true, \"revision\" }`, or `{ \"written\": false, \"kept\", \"error\" }` or `{ \"written\": false, \"kept\", \"stale\": true, \"revision\" }`",
+            ..window(
+                "text.save",
+                "Edit Text",
+                "Write the text of the Text panel when it parses, else keep it in the recovery folder",
+                "Reads the text as `check` reads a file. When it parses (its grammar is right, whatever its errors of types or of `check`), writes it as `file.write` does, one step of history, and removes its copy in `.labcraft/recovery/`. When it does not, writes nothing in the project, keeps it in `.labcraft/recovery/` under the path of its file, and returns the error that stops the reading. With `expected_revision`, a file that changed since that revision is not written either: the text is kept, and `stale` says so.",
+                object(
+                    &[
+                        ("path", string("A `.lcf` or `.lct` file of the project that exists, written with `/` from the root.")),
+                        ("text", string("The whole text of the file.")),
+                        (
+                            "expected_revision",
+                            string("The revision of the file that the text was made from; none writes over whatever the file holds."),
+                        ),
+                        ("keep", boolean("Only keep the text in the recovery folder, and write nothing in the project.", false)),
+                    ],
+                    &["path", "text"],
+                ),
+                TEXT_ERRORS,
+            )
+        },
+        Command {
+            result: "`{ \"texts\": [{ \"path\", \"text\", \"modified\" }], \"truncated\" }`",
+            ..window(
+                "text.recovered",
+                "Recovered Texts",
+                "List the texts of the recovery folder that are newer than their file",
+                "Lists the texts kept in `.labcraft/recovery/` whose file of the project exists and changed before them, with their time in nanoseconds since 1970. At most 4 MiB per text and 16 MiB in all; past that, `truncated`.",
+                object(&[], &[]),
+                TEXT_ERRORS,
+            )
+        },
+        Command {
+            effects: &[Effect::Files],
+            result: "`{ \"discarded\": true }`, false when there was no copy",
+            ..window(
+                "text.discard",
+                "Discard Recovered Text",
+                "Remove the copy of a file in the recovery folder",
+                "Removes the text that `.labcraft/recovery/` keeps for the file, if it keeps one.",
+                object(&[("path", string("A `.lcf` or `.lct` file of the project, written with `/` from the root."))], &["path"]),
+                TEXT_ERRORS,
+            )
+        },
     ]
 }
+
+/// The commands of the `Text` panel judge a path and write files.
+const TEXT_ERRORS: &[&str] = &[
+    "command.not_enabled",
+    "agent.not_allowed",
+    "params.unknown",
+    "params.missing",
+    "params.invalid",
+    "path.outside_project",
+    "path.not_found",
+    "path.invalid",
+    "file.unreadable",
+    "file.unwritable",
+    "file.too_large",
+    "internal",
+];
 
 /// A command that is not a step of history: it reads, or it writes something that is not the program.
 fn plain(

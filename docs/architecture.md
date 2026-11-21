@@ -1855,7 +1855,9 @@ fuzzing looks for (12.10).
   to draw itself never fills the journal (decision of the owner, 2026-11-16).
 - **The recovery folder** of the `Text` panel is `.labcraft/recovery/`: a text that does not parse is kept there under
   the path of its file, and removed when the text parses again. When the project opens and a recovery file is newer
-  than its file, the window says so and offers to take it back.
+  than its file, the window says so and offers to take it back. The session writes and reads it through its
+  `Workspace` (`engine::text`: `text.save`, `text.recovered`, `text.discard`, commands.md 6.7), so the web keeps it as
+  it keeps the files.
 - **The settings** are two stores (commands.md 9.7), merged key by key by `engine::settings`, the project first;
   `settings.set` says which one it writes. Both are TOML that `toml_edit` writes key by key, comments and unknown keys
   kept: a store of `craft-settings` merges a table into its file and never takes a key out, so a `Reset` would come
