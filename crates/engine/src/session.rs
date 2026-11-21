@@ -206,6 +206,12 @@ impl Session {
         self.runs.clone()
     }
 
+    /// The steps of the history that undo would take back, newest first (commands.md 9.1): the window says what an agent
+    /// did from them (ide.md 8).
+    pub fn steps_done(&self) -> impl Iterator<Item = &crate::history::Step> {
+        self.history.done()
+    }
+
     /// What the viewer shows, as the `view.*` commands last left it (`docs/architecture.md`, 11.5).
     pub fn view(&self) -> &std::sync::Arc<crate::view::Published> {
         self.view.published()
@@ -440,7 +446,7 @@ impl Session {
             "function.rename" | "type.rename" => crate::edits::rename_declaration(self, author, command, params),
             "fragment.copy" => crate::edits::copy(self, params),
             "commands.execute" => crate::edits::execute(self, author, params),
-            "history.undo" => crate::edits::undo(self, author),
+            "history.undo" => crate::edits::undo(self, author, params),
             "history.redo" => crate::edits::redo(self, author),
             "history.list" => Ok(crate::edits::list(self, params)),
             "guide.read" => crate::guide::read(params),

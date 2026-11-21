@@ -2309,3 +2309,70 @@ fn a_block_that_the_commands_cannot_change_says_why_and_asks_for_nothing() {
     let to = on_view(&own, Pos2::new(block.max.x + 16.0, block.center().y));
     assert_eq!(drag_block(&own, false, from, to), [BlockIntent::Say("kept".to_owned())]);
 }
+
+const ADD: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    y = core.add(x, 1.0)\n}\n";
+const MUL_THEN_ADD: &str = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    a = core.mul(x, 2.0)\n    y = core.add(a, 1.0)\n}\n";
+
+/// The key of the node named `name`.
+fn key_of(drawing: &Drawing, name: &str) -> String {
+    drawing.placed.iter().find(|placed| placed.name == name).map(|placed| placed.key.clone()).unwrap_or_else(|| panic!("no node {name}"))
+}
+
+#[test]
+fn an_edit_touches_the_nodes_it_adds_or_changes_and_the_wires_it_adds() {
+    let view = ViewState::default();
+    let (before, after) = (drawing(ADD, &view), drawing(MUL_THEN_ADD, &view));
+    assert!(touched(&before, &drawing(ADD, &view)).is_empty(), "the same file drawn again touches nothing");
+    let added = touched(&before, &after);
+    assert!(added.nodes.contains(&key_of(&after, "a")), "{added:?}");
+    // The wire from `x` now reaches `a`, and a new one leaves `a`.
+    let new_wires = after.groups.iter().filter_map(|group| group.wire.as_ref()).filter(|wire| wire.value == "a").count();
+    assert!(new_wires >= 1 && added.wires.iter().any(|(value, ..)| value == "a"), "{added:?}");
+    // A node added that nothing wires: the free node that the layout moved for it is not touched.
+    let lone = "labcraft 1\n\nuse core\n\nfn main(x: f64) -> (y: f64) {\n    b = core.not(true)\n    y = core.add(x, 1.0)\n}\n";
+    let lone = drawing(lone, &view);
+    assert_ne!(
+        lone.placed.iter().find(|placed| placed.key == "y").map(|placed| (placed.x, placed.y)),
+        Some((before.placed[0].x, before.placed[0].y))
+    );
+    assert_eq!(touched(&before, &lone).nodes, [key_of(&lone, "b")]);
+    // A constant set: its node changes, no wire is new.
+    let set = touched(&before, &drawing(&ADD.replace("1.0", "2.5"), &view));
+    assert!(!set.nodes.is_empty() && set.wires.is_empty(), "{set:?}");
+}
+
+#[test]
+fn a_highlight_paints_over_the_drawing_then_goes() {
+    let ctx = context();
+    install_fonts(&ctx);
+    let mut canvas = Canvas::new();
+    let view = ViewState::default();
+    let before = drawing(ADD, &view);
+    canvas.set_drawing(before.clone(), false);
+    frame(&ctx, &mut canvas, &Shown::default(), input(0.0));
+    let after = drawing(MUL_THEN_ADD, &view);
+    canvas.set_drawing(after.clone(), false);
+    let (plain, _) = frame(&ctx, &mut canvas, &Shown::default(), input(1.0));
+    canvas.highlight(touched(&before, &after), 1.0);
+    let (lit, _) = frame(&ctx, &mut canvas, &Shown::default(), input(1.1));
+    assert!(lit.len() > plain.len(), "{} shapes, {} without", lit.len(), plain.len());
+    assert!(canvas.highlighted().is_some());
+    frame(&ctx, &mut canvas, &Shown::default(), input(1.0 + HIGHLIGHT_SECONDS));
+    assert!(canvas.highlighted().is_none(), "over after its time");
+}
+
+#[test]
+fn a_highlight_fades_at_its_end_unless_motion_is_reduced() {
+    let highlight = touched::Highlight::new(Touched::default(), 10.0);
+    assert_eq!(highlight.strength(10.5, false), Some(1.0));
+    assert!(highlight.strength(10.0 + HIGHLIGHT_SECONDS - 0.1, false).is_some_and(|strength| strength < 0.5));
+    assert_eq!(highlight.strength(10.0 + HIGHLIGHT_SECONDS - 0.1, true), Some(1.0));
+    assert_eq!(highlight.strength(10.0 + HIGHLIGHT_SECONDS, false), None);
+    assert_eq!(highlight.strength(9.0, false), None);
+    // No frame is asked for until it starts to fade, but while it glides.
+    let wait = |now, gliding, reduced| highlight.next_change(now, gliding, reduced).as_secs_f64();
+    assert!((wait(10.5, false, false) - (HIGHLIGHT_SECONDS - 0.6 - 0.5)).abs() < 1e-9);
+    assert_eq!(wait(10.5, true, false), 0.0);
+    assert_eq!(wait(10.0 + HIGHLIGHT_SECONDS - 0.1, false, false), 0.0);
+    assert!((wait(10.5, false, true) - (HIGHLIGHT_SECONDS - 0.5)).abs() < 1e-9, "with reduced motion, at its end");
+}

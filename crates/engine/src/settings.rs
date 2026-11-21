@@ -60,13 +60,14 @@ pub const ROUTE_WITH_SHIFT_ALT: &str = "editor.route_with_shift_alt";
 pub const AUTOPATCH: &str = "editor.autopatch";
 pub const INTO_WIRE: &str = "editor.into_wire";
 pub const RECORD_VALUES: &str = "run.record_values";
+pub const AI_ENABLED: &str = "ai.enabled";
 pub const AI_POLICIES: &str = "ai.policies";
 
 /// The policies an agent attached to the IDE may have (ide.md 8), as `ai.policies` writes them.
 pub const POLICIES: [&str; 3] = ["ask", "edits", "all"];
 
 /// The groups, in the order of the dialog, each with its title.
-pub const GROUPS: &[(&str, &str)] = &[("appearance", "Appearance"), ("view", "View"), ("editor", "Editor"), ("run", "Run")];
+pub const GROUPS: &[(&str, &str)] = &[("appearance", "Appearance"), ("view", "View"), ("editor", "Editor"), ("run", "Run"), ("ai", "AI")];
 
 const fn key(id: &'static str, title: &'static str, help: &'static str, kind: Kind, project: bool) -> Key {
     Key { id, title, help, kind, project }
@@ -110,6 +111,7 @@ pub const KEYS: &[Key] = &[
     key(AUTOPATCH, "Autopatch from the keyboard", "Quick insertion wires the new node to the selection.", Kind::Bool(true), true),
     key(INTO_WIRE, "Insert into a wire on a drop", "A node dropped on a wire goes into it.", Kind::Bool(true), true),
     key(RECORD_VALUES, "Record values", "A run records its values, its trace, for the wires.", Kind::Bool(false), false),
+    key(AI_ENABLED, "AI agents", "Off, no agent attaches to the window, and the window shows nothing of AI.", Kind::Bool(true), false),
     key(AI_POLICIES, "Policies of the agents", "The policy kept for an MCP client on a project.", Kind::Policies, false),
 ];
 
@@ -204,6 +206,46 @@ pub fn kept_policy<'a>(policies: &'a Value, client: &str, project: &str) -> Opti
     policies.get(client)?.get(project)?.as_str().filter(|policy| POLICIES.contains(policy))
 }
 
+/// `policies`, a value of `ai.policies`, with `policy` kept for `client` on the project at `project`.
+pub fn keep_policy(policies: &Value, client: &str, project: &str, policy: &str) -> Value {
+    let mut clients = policies.as_object().cloned().unwrap_or_default();
+    let projects = clients.entry(client.to_owned()).or_insert_with(|| json!({}));
+    if !projects.is_object() {
+        *projects = json!({});
+    }
+    if let Some(projects) = projects.as_object_mut() {
+        projects.insert(project.to_owned(), json!(policy));
+    }
+    Value::Object(clients)
+}
+
+/// `policies` without the policy of `client` on the project at `project`: a client left with none goes, and none left
+/// is `null`, which takes the key out.
+pub fn forget_policy(policies: &Value, client: &str, project: &str) -> Value {
+    let mut clients = policies.as_object().cloned().unwrap_or_default();
+    if let Some(projects) = clients.get_mut(client).and_then(Value::as_object_mut) {
+        projects.remove(project);
+        if projects.is_empty() {
+            clients.remove(client);
+        }
+    }
+    if clients.is_empty() { Value::Null } else { Value::Object(clients) }
+}
+
+/// The policies that `policies` keeps, each as client, project and policy, in the order of the table: those that
+/// [`kept_policy`] would give.
+pub fn kept_policies(policies: &Value) -> Vec<(&str, &str, &str)> {
+    let Some(clients) = policies.as_object() else { return Vec::new() };
+    clients
+        .iter()
+        .flat_map(|(client, projects)| {
+            projects.as_object().into_iter().flatten().filter_map(move |(project, policy)| {
+                policy.as_str().filter(|policy| POLICIES.contains(policy)).map(|policy| (client.as_str(), project.as_str(), policy))
+            })
+        })
+        .collect()
+}
+
 /// Where the value of a key comes from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum From {
@@ -286,6 +328,7 @@ impl Stores {
             autopatch: on(AUTOPATCH),
             into_wire: on(INTO_WIRE),
             record_values: on(RECORD_VALUES),
+            ai: on(AI_ENABLED),
         }
     }
 }
@@ -334,6 +377,8 @@ pub struct Values {
     pub autopatch: bool,
     pub into_wire: bool,
     pub record_values: bool,
+    /// `ai.enabled`: the switch of AI (ide.md 8).
+    pub ai: bool,
 }
 
 impl Default for Values {
@@ -683,6 +728,18 @@ mod tests {
         assert!(key.refuses(&json!({ "visa": { "light": "#2563EB" } })).is_some());
         assert!(key.refuses(&json!({ "": "#2563EB" })).is_some());
         assert!(key.refuses(&json!(["visa"])).is_some());
+    }
+
+    #[test]
+    fn a_policy_is_kept_and_forgotten_and_the_last_one_takes_the_key_out() {
+        let kept = keep_policy(&Value::Null, "claude", "/p", "edits");
+        assert_eq!(kept, json!({ "claude": { "/p": "edits" } }));
+        let two = keep_policy(&kept, "claude", "/q", "all");
+        assert_eq!(kept_policies(&two), [("claude", "/p", "edits"), ("claude", "/q", "all")]);
+        assert_eq!(forget_policy(&two, "claude", "/q"), kept);
+        assert_eq!(forget_policy(&kept, "claude", "/p"), Value::Null);
+        assert_eq!(forget_policy(&kept, "cursor", "/p"), kept, "another client: as it was");
+        assert!(kept_policies(&json!({ "claude": { "/p": "sometimes" } })).is_empty(), "only a policy that is one");
     }
 
     /// `ai.policies` (ide.md 8): a client, a project, a policy; written as tables of tables, and read back the same.

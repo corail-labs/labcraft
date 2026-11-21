@@ -140,6 +140,7 @@ impl Session {
             session: 0,
             notices: self.notices.iter().chain(self.style_notice.iter()).cloned().collect(),
             waiting: self.waiting.clone(),
+            steps: Arc::new(self.engine.steps_done().take(labcraft_ide::host::RECENT_STEPS).map(labcraft_ide::host::LastStep::of).collect()),
         }
     }
 
@@ -302,6 +303,10 @@ impl Host for Handle {
 
     fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>) {
         let _ = self.sender.send(Message::Gesture(gesture));
+    }
+
+    fn serves_agents(&self) -> bool {
+        true
     }
 }
 

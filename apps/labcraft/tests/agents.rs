@@ -461,3 +461,60 @@ fn an_edit_cancelled_while_it_waits_for_a_gesture_never_runs() {
     assert!(agent.strays.is_empty(), "the cancelled request got an answer: {:?}", agent.strays);
     window.close();
 }
+
+/// Whether the window closed the connection of `client`: what it reads next is the end.
+fn closed(client: &mut Client) -> bool {
+    client.stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let mut line = String::new();
+    match client.lines.read_line(&mut line) {
+        Ok(read) => read == 0,
+        // Windows may reset the connection rather than end it; a read that times out is no closing.
+        Err(error) => matches!(error.kind(), std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted),
+    }
+}
+
+/// The pill of the window (ide.md 8): the agents attached by name and policy; another policy for this connection; a
+/// disconnection, which closes its connection.
+#[test]
+fn the_user_changes_the_policy_of_an_agent_and_disconnects_it() {
+    let scratch = Scratch::new("pill");
+    let window = Window::open(&scratch, |asks, _| match asks {
+        Asks::Connect => Answer::Policy { policy: Policy::Ask, keep: false },
+        Asks::Command { .. } => Answer::Refuse,
+    });
+    let mut agent = Client::attach(&window, "claude");
+    let agents = window.channel.as_ref().unwrap().agents();
+    agent.ok("file_read", json!({ "path": "check_voltage.lcf" }));
+    let listed = agents.connected_list();
+    assert_eq!(listed.iter().map(|agent| (agent.signed.as_str(), agent.policy)).collect::<Vec<_>>(), [("claude", Some(Policy::Ask))]);
+    // Under `Ask` the edit is refused by the user; under `Edits`, given from the pill, it runs without asking.
+    assert_eq!(agent.code("node_add", json!({ "file": "check_voltage.lcf", "call": "core.not" })), "agent.not_allowed");
+    agents.set_policy(listed[0].id, Policy::Edits);
+    agent.ok("node_add", json!({ "file": "check_voltage.lcf", "call": "core.not" }));
+    agents.disconnect(listed[0].id);
+    assert!(closed(&mut agent), "the connection closes");
+    window.close();
+}
+
+/// The switch of AI off (ide.md 8): the agents attached are disconnected, and a new one is refused, with the reason
+/// that `labcraft-cli mcp` gives as it stops.
+#[test]
+fn ai_off_disconnects_the_agents_and_refuses_a_new_one() {
+    let scratch = Scratch::new("ai-off");
+    let window = Window::open(&scratch, edits);
+    let mut agent = Client::attach(&window, "claude");
+    agent.ok("file_read", json!({ "path": "check_voltage.lcf" }));
+    let channel = window.channel.as_ref().unwrap();
+    channel.agents().set_enabled(false);
+    assert!(closed(&mut agent), "the agent attached is disconnected");
+    let entry = attach::read_entry(&channel.file()).unwrap();
+    match attach::connect(&entry) {
+        Err(attach::NotAttached::Refused(why)) => assert_eq!(why, labcraft::agents::AI_OFF),
+        other => panic!("refused: {other:?}"),
+    }
+    // On again, an agent attaches.
+    channel.agents().set_enabled(true);
+    let mut again = Client::attach(&window, "claude");
+    again.ok("file_read", json!({ "path": "check_voltage.lcf" }));
+    window.close();
+}
