@@ -404,6 +404,60 @@ fn booleans_and_select() {
     assert_eq!(text_of(&select(false)), "no");
 }
 
+/// The cases of the issue of these primitives, each worked out by hand in two's complement (A.1, "Bits and integer division").
+#[test]
+fn bits_shifts_and_integer_division() {
+    let mut world = World::new();
+    let bool_ty = world.ty(Ty::Bool);
+    let [i8_ty, i16_ty, i32_ty, u8_ty, u64_ty] =
+        [NumberKind::I8, NumberKind::I16, NumberKind::I32, NumberKind::U8, NumberKind::U64].map(|kind| world.number(kind, ""));
+    let two = |a: Value, b: Value, ty: TyId, name: &str| Case::new(&world, vec![(a, ty), (b, ty)], vec![ty]).one(Core, name);
+    assert!(matches!(two(Value::I32(0x1234), Value::I32(0x00FF), i32_ty, "and"), Value::I32(0x34)));
+    assert!(matches!(two(Value::I32(0x1200), Value::I32(0x0034), i32_ty, "or"), Value::I32(0x1234)));
+    assert!(matches!(two(Value::I32(0xFF), Value::I32(0x0F), i32_ty, "xor"), Value::I32(0xF0)));
+    assert!(matches!(two(Value::Bool(true), Value::Bool(false), bool_ty, "and"), Value::Bool(false)));
+    assert!(matches!(two(Value::Bool(true), Value::Bool(true), bool_ty, "xor"), Value::Bool(false)));
+    // -1 is all ones in two's complement: 0xF0 of an `i8` is -16, and -16 & 0x7F is 0x70.
+    assert!(matches!(two(Value::I8(-16), Value::I8(0x7F), i8_ty, "and"), Value::I8(0x70)));
+    // A `u8` and an `i32` meet in an `i32` (3.5): the `u8` 255 arrives as it is.
+    let mixed = Case::new(&world, vec![(Value::U8(255), u8_ty), (Value::I32(0x1234), i32_ty)], vec![i32_ty]).one(Core, "and");
+    assert!(matches!(mixed, Value::I32(0x34)));
+    assert!(matches!(two(Value::U64(u64::MAX), Value::U64(1 << 63), u64_ty, "and"), Value::U64(x) if x == 1 << 63));
+    let not = |x: Value, ty: TyId| Case::new(&world, vec![(x, ty)], vec![ty]).one(Core, "not");
+    assert!(matches!(not(Value::U8(0), u8_ty), Value::U8(255)));
+    assert!(matches!(not(Value::I8(0), i8_ty), Value::I8(-1)));
+    assert!(matches!(not(Value::Bool(false), bool_ty), Value::Bool(true)));
+    let shift = |x: Value, ty: TyId, count: i32| Case::new(&world, vec![(x, ty), (Value::I32(count), i32_ty)], vec![ty]);
+    assert!(matches!(shift(Value::U8(0x81), u8_ty, 1).one(Core, "shl"), Value::U8(0x02)), "258 mod 256");
+    assert!(matches!(shift(Value::I8(0x40), i8_ty, 1).one(Core, "shl"), Value::I8(-128)));
+    assert!(matches!(shift(Value::U8(0xFF), u8_ty, 8).one(Core, "shl"), Value::U8(0)));
+    assert!(matches!(shift(Value::I32(1), i32_ty, i32::MAX).one(Core, "shl"), Value::I32(0)));
+    assert!(matches!(shift(Value::I16(-8), i16_ty, 1).one(Core, "shr"), Value::I16(-4)));
+    assert!(matches!(shift(Value::U8(255), u8_ty, 4).one(Core, "shr"), Value::U8(15)));
+    assert!(matches!(shift(Value::I8(-1), i8_ty, 8).one(Core, "shr"), Value::I8(-1)));
+    assert!(matches!(shift(Value::U8(255), u8_ty, 9).one(Core, "shr"), Value::U8(0)));
+    assert!(matches!(shift(Value::U64(u64::MAX), u64_ty, 63).one(Core, "shr"), Value::U64(1)), "an unsigned type fills with 0");
+    assert_eq!(shift(Value::I32(1), i32_ty, -1).fault(Core, "shl"), FaultCode::OutOfRange);
+    assert_eq!(shift(Value::I32(1), i32_ty, -1).fault(Core, "shr"), FaultCode::OutOfRange);
+    let divide = |a: i32, b: i32, name: &str| match two(Value::I32(a), Value::I32(b), i32_ty, name) {
+        Value::I32(x) => x,
+        other => panic!("{other:?}"),
+    };
+    let both = |a: i32, b: i32| (divide(a, b, "quotient"), divide(a, b, "remainder"));
+    assert_eq!(both(-7, 2), (-4, 1));
+    assert_eq!(both(7, -2), (-4, -1));
+    assert_eq!(both(-7, -2), (3, -1));
+    assert_eq!(both(7, 2), (3, 1));
+    assert_eq!(both(-8, 2), (-4, 0), "exact: nothing to round");
+    let pair = |a: Value, b: Value, ty: TyId| Case::new(&world, vec![(a, ty), (b, ty)], vec![ty]);
+    assert_eq!(pair(Value::I32(7), Value::I32(0), i32_ty).fault(Core, "quotient"), FaultCode::OutOfRange);
+    assert_eq!(pair(Value::I32(7), Value::I32(0), i32_ty).fault(Core, "remainder"), FaultCode::OutOfRange);
+    assert_eq!(pair(Value::I8(-128), Value::I8(-1), i8_ty).fault(Core, "quotient"), FaultCode::OutOfRange, "128 is no `i8`");
+    assert!(matches!(pair(Value::I8(-128), Value::I8(-1), i8_ty).one(Core, "remainder"), Value::I8(0)));
+    assert!(matches!(pair(Value::U8(250), Value::U8(7), u8_ty).one(Core, "quotient"), Value::U8(35)), "250 = 7 × 35 + 5");
+    assert!(matches!(pair(Value::U8(250), Value::U8(7), u8_ty).one(Core, "remainder"), Value::U8(5)));
+}
+
 #[test]
 fn units_come_and_go() {
     let mut world = World::new();

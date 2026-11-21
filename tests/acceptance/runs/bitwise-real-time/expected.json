@@ -1,0 +1,143 @@
+{
+  "how": "The program and every value of `bitwise-and-integer-division` (same `run.json` but the mode, same folder): nothing in it depends on time or on the machine, so on the real clock the status, the 25 outputs and the resources are those of that case, worked out there from spec 3.4, 3.5 and A.1. Nothing waits and no instrument is opened, so no `instruments`. `clock.real_ms` is a range (README, `runs/`): the lower bound, 0, is the fact that a run cannot take negative time; the upper bound, 1000 ms, is a generous bound for 25 integer operations that wait for nothing, not a measured value, a second being far above any machine's cost for them.",
+  "status": "ok",
+  "mode": "real_time",
+  "outputs": [
+    {
+      "name": "low_byte",
+      "type": "i32",
+      "value": 52
+    },
+    {
+      "name": "joined",
+      "type": "i32",
+      "value": 4660
+    },
+    {
+      "name": "flipped",
+      "type": "i32",
+      "value": 240
+    },
+    {
+      "name": "none_set",
+      "type": "u8",
+      "value": 255
+    },
+    {
+      "name": "signed_none",
+      "type": "i8",
+      "value": -1
+    },
+    {
+      "name": "both",
+      "type": "bool",
+      "value": false
+    },
+    {
+      "name": "differ",
+      "type": "bool",
+      "value": false
+    },
+    {
+      "name": "negated",
+      "type": "bool",
+      "value": true
+    },
+    {
+      "name": "shifted",
+      "type": "u8",
+      "value": 2
+    },
+    {
+      "name": "signed_shifted",
+      "type": "i8",
+      "value": -128
+    },
+    {
+      "name": "shifted_out",
+      "type": "u8",
+      "value": 0
+    },
+    {
+      "name": "halved",
+      "type": "i16",
+      "value": -4
+    },
+    {
+      "name": "high_nibble",
+      "type": "u8",
+      "value": 15
+    },
+    {
+      "name": "sign_kept",
+      "type": "i8",
+      "value": -1
+    },
+    {
+      "name": "emptied",
+      "type": "u8",
+      "value": 0
+    },
+    {
+      "name": "floor",
+      "type": "i32",
+      "value": -4
+    },
+    {
+      "name": "wrapped",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "floor_of_negative_divisor",
+      "type": "i32",
+      "value": -4
+    },
+    {
+      "name": "sign_of_divisor",
+      "type": "i32",
+      "value": -1
+    },
+    {
+      "name": "both_negative",
+      "type": "i32",
+      "value": 3
+    },
+    {
+      "name": "rest_both_negative",
+      "type": "i32",
+      "value": -1
+    },
+    {
+      "name": "exact",
+      "type": "i32",
+      "value": 3
+    },
+    {
+      "name": "rest",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "rest_of_lowest",
+      "type": "i8",
+      "value": 0
+    },
+    {
+      "name": "met",
+      "type": "i32",
+      "value": 52
+    }
+  ],
+  "clock": {
+    "real_ms": {
+      "at_least": 0,
+      "below": 1000
+    }
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

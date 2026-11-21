@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use labcraft_diagram::Drawing;
 use labcraft_types::listing::{Slot as ListedSlot, SlotFit, Typed};
-use labcraft_types::{Fit, FitKey, MAX_NESTING, NumberKind, Unit, parse_unit};
+use labcraft_types::{Bound, Fit, FitKey, MAX_NESTING, NumberKind, Ty, Unit, parse_unit};
 
 /// An entry of `functions.list`, as the host reads it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -47,6 +47,8 @@ pub enum SlotTy {
     Named(String),
     /// A type variable bound to numbers (`N: Number`), or what such numbers give (`A·B`, `√N`).
     Numbers,
+    /// A type variable bound to the integers without a unit (`I: Integer`), or to them and `bool` (`B: Bits`, spec 3.5).
+    Bounded(Bound),
     /// A type variable without a bound, or a type the catalog cannot read: anything.
     Any,
     /// An array of a type variable: any array.
@@ -216,6 +218,7 @@ impl Catalog {
                 Some(_) => false,
                 None => wanted.family.is_empty() || wanted.family.starts_with("Number/0"),
             },
+            SlotTy::Bounded(bound) => bits_hold(*bound, wanted),
             SlotTy::AnyArray => wanted.text.is_empty() || wanted.text.starts_with('['),
             SlotTy::Key(expected) => match wanted.key {
                 Some(
@@ -243,6 +246,7 @@ impl Catalog {
                 Some(key) => matches!(key, FitKey::Number(..)),
                 None => wanted.family.is_empty() || wanted.family.starts_with("Number/") || wanted.family.starts_with("Unknown/0"),
             },
+            SlotTy::Bounded(bound) => bits_give(*bound, wanted),
             SlotTy::AnyArray => wanted.text.is_empty() || wanted.text.starts_with('['),
             SlotTy::Key(found) => match wanted.key {
                 Some(expected) => matches!(found.fit(&expected), Fit::Same | Fit::Coerce),
@@ -391,6 +395,27 @@ fn full_name(item: &Listed) -> String {
     if item.library.is_empty() || item.name.contains('.') { item.name.clone() } else { format!("{}.{}", item.library, item.name) }
 }
 
+/// Whether a variable bound by `Integer` or `Bits` holds the value (spec 3.5), as [`Bound::holds`] says of its type: an
+/// integer without a unit, and a `bool` for `Bits`. A wire whose type is not known yet goes by its family.
+fn bits_hold(bound: Bound, wanted: &Wanted) -> bool {
+    let with_bool = bound.holds(&Ty::Bool);
+    match wanted.key {
+        Some(FitKey::Number(kind, unit)) => bound.holds(&Ty::Number { kind, unit }),
+        Some(FitKey::Bool) => with_bool,
+        Some(_) => false,
+        None => wanted.family.is_empty() || wanted.family.starts_with("Number/0") || (with_bool && wanted.family.starts_with("Bool/0")),
+    }
+}
+
+/// Whether an output of a variable bound by `Integer` or `Bits` goes to an input of this type: what the bound holds, or a
+/// type that an integer widens to, an `f64` without a unit (spec 3.4).
+fn bits_give(bound: Bound, wanted: &Wanted) -> bool {
+    match wanted.key {
+        Some(FitKey::Number(NumberKind::F64, unit)) => unit == Unit::ONE,
+        _ => bits_hold(bound, wanted),
+    }
+}
+
 /// An input, an output, a field or a value, from what `functions.list` gives of it.
 fn slot(listed: &ListedSlot) -> Slot {
     Slot { name: listed.name.clone(), ty: slot_ty(listed), required: listed.required, variadic: listed.variadic }
@@ -405,13 +430,11 @@ fn slot_ty(listed: &ListedSlot) -> SlotTy {
         None => SlotTy::Any,
         Some(fit @ SlotFit::Number { .. }) => fit.key().map_or(SlotTy::Numbers, SlotTy::Key),
         Some(fit @ SlotFit::Base { .. }) => fit.key().map_or(SlotTy::Any, SlotTy::Key),
-        Some(SlotFit::Variable { bound, .. }) => {
-            if bound.as_deref() == Some("Number") {
-                SlotTy::Numbers
-            } else {
-                SlotTy::Any
-            }
-        }
+        Some(SlotFit::Variable { bound, .. }) => match bound.as_deref().and_then(Bound::from_name) {
+            Some(Bound::Number) => SlotTy::Numbers,
+            Some(bound) => SlotTy::Bounded(bound),
+            None => SlotTy::Any,
+        },
         Some(SlotFit::Numbers { .. }) => SlotTy::Numbers,
         Some(SlotFit::Array { .. }) => SlotTy::AnyArray,
         Some(SlotFit::Shape { shape }) => SlotTy::Named(shape.clone()),

@@ -160,6 +160,11 @@ pub enum Bound {
 }
 
 impl Bound {
+    /// The bound that the language writes so (`Number`), as a listing of functions names it.
+    pub fn from_name(text: &str) -> Option<Bound> {
+        [Bound::Number, Bound::Integer, Bound::Bits].into_iter().find(|bound| bound.as_str() == text)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Bound::Number => "Number",

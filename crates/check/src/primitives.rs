@@ -260,6 +260,8 @@ const NO_VARIABLE: Variables = Variables { names: &[], bound: None };
 const N: Variables = Variables { names: &["N"], bound: Some(Bound::Number) };
 const AB_NUMBERS: Variables = Variables { names: &["A", "B"], bound: Some(Bound::Number) };
 const T: Variables = Variables { names: &["T"], bound: None };
+const B: Variables = Variables { names: &["B"], bound: Some(Bound::Bits) };
+const I: Variables = Variables { names: &["I"], bound: Some(Bound::Integer) };
 
 #[derive(Clone, Copy, Debug)]
 pub struct Primitive {
@@ -301,7 +303,7 @@ use PrimitiveTy::{
 const V0: PrimitiveTy = Var(0);
 
 const SAME_TWICE: &[PrimitiveParam] = &[value("a", V0), value("b", V0)];
-const TWO_BOOLS: &[PrimitiveParam] = &[value("a", Bool), value("b", Bool)];
+const SHIFT: &[PrimitiveParam] = &[value("x", V0), value("count", I32)];
 const ONE_VALUE: &[PrimitiveParam] = &[value("x", V0)];
 const ONE_F64: &[PrimitiveParam] = &[value("x", F64)];
 const RESULT: &[&str] = &["result"];
@@ -345,9 +347,14 @@ pub const PRIMITIVES: &[Primitive] = &[
     f(Core, "ge", N, SAME_TWICE, RESULT, GIVES_BOOL),
     f(Core, "eq", T, SAME_TWICE, RESULT, GIVES_BOOL),
     f(Core, "ne", T, SAME_TWICE, RESULT, GIVES_BOOL),
-    f(Core, "and", NO_VARIABLE, TWO_BOOLS, RESULT, GIVES_BOOL),
-    f(Core, "or", NO_VARIABLE, TWO_BOOLS, RESULT, GIVES_BOOL),
-    f(Core, "not", NO_VARIABLE, &[value("a", Bool)], RESULT, GIVES_BOOL),
+    f(Core, "and", B, SAME_TWICE, RESULT, GIVES_V0),
+    f(Core, "or", B, SAME_TWICE, RESULT, GIVES_V0),
+    f(Core, "xor", B, SAME_TWICE, RESULT, GIVES_V0),
+    f(Core, "not", B, &[value("a", V0)], RESULT, GIVES_V0),
+    f(Core, "shl", I, SHIFT, RESULT, GIVES_V0),
+    f(Core, "shr", I, SHIFT, RESULT, GIVES_V0),
+    f(Core, "quotient", I, SAME_TWICE, RESULT, GIVES_V0),
+    f(Core, "remainder", I, SAME_TWICE, RESULT, GIVES_V0),
     f(Core, "select", T, &[value("condition", Bool), value("if_true", V0), value("if_false", V0)], RESULT, GIVES_V0),
     f(Core, "with_unit", NO_VARIABLE, &[value("x", F64), unit("unit")], RESULT, &[WithUnit]),
     f(Core, "unitless", N, &[value("x", V0), unit("unit")], RESULT, GIVES_F64),
@@ -450,7 +457,7 @@ mod tests {
     use super::*;
 
     /// What appendix A says "same for": they have no line of their own, and the same signature as the line that says it.
-    const WRITTEN_AS_ANOTHER: [(&str, &str); 5] = [("le", "lt"), ("gt", "lt"), ("ge", "lt"), ("ne", "eq"), ("or", "and")];
+    const WRITTEN_AS_ANOTHER: [(&str, &str); 6] = [("le", "lt"), ("gt", "lt"), ("ge", "lt"), ("ne", "eq"), ("or", "and"), ("xor", "and")];
 
     const SPEC: &str = include_str!("../../../docs/language-spec-v0.md");
 

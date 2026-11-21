@@ -1309,7 +1309,11 @@ impl<'a> Builder<'a> {
                                 _ if primitive.open && param.name == "template" => {
                                     Expects::Never("the template of `string.format` takes only text written in it, never a wire (spec 5.4)")
                                 }
-                                PrimitiveTy::Var(variable) => Expects::Variable { variable, numbers: primitive.variables.numbers() },
+                                // A variable that only numbers can be: `Number` or `Integer`, not `Bits`, which holds `bool` too (3.5).
+                                PrimitiveTy::Var(variable) => Expects::Variable {
+                                    variable,
+                                    numbers: primitive.variables.bound.is_some_and(|bound| !bound.holds(&labcraft_types::Ty::Bool)),
+                                },
                                 PrimitiveTy::Texts | PrimitiveTy::U8s => Expects::Family(primitive_family(param.ty)),
                                 PrimitiveTy::Bool
                                 | PrimitiveTy::I32

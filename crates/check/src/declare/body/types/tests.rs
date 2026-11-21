@@ -419,7 +419,8 @@ fn a_literal_of_rows_meets_an_array_of_two_dimensions() {
 #[test]
 fn an_empty_array_is_judged_where_it_goes() {
     assert_eq!(judged("", "o: f64", "o = []"), ["LC3003"]);
-    assert_eq!(gives("bool", "core.not([])"), ["LC3001"]);
+    assert_eq!(gives("f64", "core.select([], x, x)"), ["LC3001"]);
+    assert_eq!(gives("bool", "core.not([])"), ["LC3019"], "a constant that does not fit the target of a generic node changes nothing (3.5)");
     assert_eq!(judged("", "x: f64", "x = loop carry a: f64 = [] {\nnext a = a\nuntil true\n}"), ["LC3007"]);
     assert_eq!(judged("", "o: [i32]", "o = [1, []]"), ["LC3001"]);
     assert_eq!(judged("", "", "o = []"), ["LC3019"], "nothing says its type");
@@ -1267,4 +1268,27 @@ fn f({inputs}) -> ({outputs}) {{
     assert_eq!(with_bytes("d: bytes", "v: u16, err: error", "    v, err = bytes.read_u16(d, 0, little_endian: true)"), NOTHING);
     assert_eq!(with_bytes("xs: [i32]", "d: bytes", "    d = bytes.from_array(xs)"), ["LC3001"], "no conversion inside an array (3.4)");
     assert_eq!(with_bytes("a: bytes, b: bytes", "d: bytes", "    d = bytes.concat(a, b, a)"), NOTHING);
+}
+
+/// `Bits` holds `bool` and the integers without a unit, `Integer` the integers alone (3.5), and two integer types meet where
+/// both widen to: `u8` and `i32` give an `i32`, a `bool` and an integer do not meet (A.1).
+#[test]
+fn bits_and_integers_keep_to_their_bound() {
+    assert_eq!(gives("bool", "core.and(ok, ok)"), NOTHING);
+    assert_eq!(gives("bool", "core.xor<bool>(ok, true)"), NOTHING);
+    assert_eq!(gives("u8", "core.and(b, 0x0F)"), NOTHING, "the literal takes the type of the wire");
+    assert_eq!(gives("i32", "core.or(b, n)"), NOTHING, "a `u8` and an `i32` meet in an `i32`");
+    assert_eq!(gives("u8", "core.or(b, n)"), ["LC3003"], "and give no `u8`");
+    assert_eq!(gives("bool", "core.and(ok, 3)"), ["LC3001"]);
+    assert_eq!(gives("bool", "core.and(ok, b)"), ["LC3001"]);
+    assert_eq!(gives("i32", "core.and(nmv, nmv)"), ["LC3001", "LC3001"], "`i32[mV]` is not an integer without a unit");
+    assert_eq!(gives("f64", "core.not(x)"), ["LC3001"]);
+    assert_eq!(gives("i32", "core.not(k)"), NOTHING);
+    assert_eq!(gives("i32", "core.and<f64>(n, n)"), ["LC3019"]);
+    assert_eq!(gives("u8", "core.shl(b, 1)"), NOTHING);
+    assert_eq!(gives("u8", "core.shr(b, b)"), NOTHING, "a `u8` count widens to the `i32`");
+    assert_eq!(gives("bool", "core.shl(ok, 1)"), ["LC3001"], "`Integer` holds no `bool`");
+    assert_eq!(gives("i64", "core.quotient(m, n)"), NOTHING);
+    assert_eq!(gives("f64", "core.quotient(x, x)"), ["LC3001", "LC3001"]);
+    assert_eq!(gives("i32", "core.remainder(d, d)"), ["LC3001", "LC3001"], "a `duration` is no integer");
 }

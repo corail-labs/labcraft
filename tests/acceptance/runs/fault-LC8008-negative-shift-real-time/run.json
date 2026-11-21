@@ -1,0 +1,5 @@
+{
+  "function": "negative_shift",
+  "folder": "tests/acceptance/runs/fault-LC8008-negative-shift",
+  "mode": "real_time"
+}

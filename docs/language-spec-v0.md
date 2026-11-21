@@ -212,7 +212,7 @@ an output `power: f64[W]` bound to `core.mul(r, i)` is rejected, because R × I 
 - **`core.div`, `core.sqrt` and `core.pow` on integers give an `f64`**: `core.div(3, 2)` is `1.5`, and x/0
   is `inf` or `nan`. `core.add`, `core.sub` and `core.mul` stay integers. An `i64` or a `u64`, which does
   not widen to `f64`, is rejected there. The integer division is `core.quotient`, with its `core.remainder`, which stay
-  integers (0.5.0, appendix A.5).
+  integers (0.5.0, appendix A.1).
 - **A conversion applies to a number on a wire**, never inside an array or a struct: `[f32]` to `[f64]` is
   rejected. In an array literal, the first element that decides gives the type of the others, as for
   branches (R-7): `[1 V, 200 mV]` is an `[f64[V]]`.
@@ -266,7 +266,7 @@ whole type, unit included: for `mean` of a `[f64[V]]`, `T` is `f64[V]`, so the r
   counts as an `f64[s]`: `core.add` of two durations is an `f64[s]`. A variable without a bound stands
   for any type (`core.select`, appendix A).
 - **Two bounds for the bitwise primitives** (0.5.0): `Integer`, the integer types without a unit (`i8` to `u64`), and
-  `Bits`, `bool` or an `Integer`. They serve the primitives of appendix A.5 (`core.and`, `core.shl`, `core.quotient`…):
+  `Bits`, `bool` or an `Integer`. They serve the primitives of appendix A.1 (`core.and`, `core.shl`, `core.quotient`…):
   a function written by the user takes them with the generics of M2. Two integer types that meet in one of them give the
   smallest type that both widen to, as for `Number` (3.4): `core.and` of a `u8` and an `i32` is an `i32`; a `bool` and an
   integer do not meet, and `i32[mV]` is not an `Integer`.
@@ -1104,7 +1104,7 @@ an integer that overflows (`core.add` of two `i32` past 2^31, `core.neg` of a `u
 (3.1), and the empty separator of `string.split`. A silent value there would be a wrong measurement that looks right; a
 program that counts past 2^31 takes an `i64`. `core.div` of integers cannot be one, since it gives an `f64` (3.4); from
 0.5.0, `core.quotient` and `core.remainder` by 0, `core.quotient` of the lowest value of a signed type by −1, and a
-negative count of `core.shl` or `core.shr` are (appendix A.5).
+negative count of `core.shl` or `core.shr` are (appendix A.1).
 
 **Status of a run**, in every report (CLI, MCP, IDE): `ok`; `error` when the `err` output of the
 top-level function holds an error (7.5); `aborted`; `fault`.
@@ -2297,8 +2297,12 @@ fn core.max<N: Number>(a: N, b: N) -> (result: N)               // same dimensio
 
 fn core.lt<N: Number>(a: N, b: N) -> (result: bool)             // same for le, gt, ge; no complex numbers
 fn core.eq<T>(a: T, b: T) -> (result: bool)                     // same for ne
-fn core.and(a: bool, b: bool) -> (result: bool)                 // same for or; on integers from 0.5.0 (A.5)
-fn core.not(a: bool) -> (result: bool)
+fn core.and<B: Bits>(a: B, b: B) -> (result: B)                 // same for or, xor; logical on bool, bit by bit on an integer
+fn core.not<B: Bits>(a: B) -> (result: B)
+fn core.shl<I: Integer>(x: I, count: i32) -> (result: I)        // bits out are lost
+fn core.shr<I: Integer>(x: I, count: i32) -> (result: I)        // a signed type copies its sign bit
+fn core.quotient<I: Integer>(a: I, b: I) -> (result: I)         // rounded toward −∞; by 0: a fault
+fn core.remainder<I: Integer>(a: I, b: I) -> (result: I)        // a − b × quotient: the sign of b
 fn core.select<T>(condition: bool, if_true: T, if_false: T) -> (result: T)
 
 fn core.with_unit(x: f64, unit: kind unit) -> (result: f64[unit])     // `core.with_unit(raw, [V])`
@@ -2317,6 +2321,19 @@ as IEEE 754 does (`nan` equals nothing, `-0` equals `0`), texts and bytes by the
 items, structs and variants field by field, errors by category, code, message and the errors merged into them (not where
 they were made), opaque values by what they designate, references by the function. `core.to_i32` and `core.round_to_i32`
 of `nan` or of a value beyond the `i32` are a fault (8.2).
+
+**Bits and integer division** (0.5.0, decision of the owner, 2026-11-19). On a `bool`, `core.and`, `core.or`, `core.xor`
+and `core.not` are logical; on an `Integer` (3.5), they work bit by bit, on the bits of the value in two's complement for
+a signed type: `core.and(0x1234, 0x00FF)` is `0x34`, `core.not` of a `u8` 0 is 255, of an `i8` 0 is −1. `core.shl`
+moves the bits toward the high end and fills with 0, and the bits that leave the type are lost, which is no overflow;
+`core.shr` moves them toward the low end and fills with 0 for an unsigned type, with the sign bit for a signed one, so
+that `core.shr` of an `i16` −8 by 1 is −4. A `count` at or above the width of the type gives 0, or −1 for a negative
+value moved by `core.shr`; a negative `count` is a fault (8.2). `core.quotient` rounds toward −∞ and `core.remainder` is
+`a − b × quotient`, so that the remainder has the sign of `b` and an index wraps the right way: `core.quotient(−7, 2)`
+is −4 and `core.remainder(−7, 2)` is 1. By 0 both are a fault, and so is `core.quotient` of the lowest value of a signed
+type by −1, which its type cannot hold; `core.remainder` of it by −1 is 0. `core.and`, `core.or` and `core.not` keep
+their glyph on integers; `core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have the ordinary
+block ("Blocks of the primitives", below), outside the closed list of glyphs of the visual notation (3.2).
 
 `core.call` runs a function reference (section 4); its inputs after the first and its outputs are those
 of the referenced function. A reference that designates no function, the default of its type, fails with
@@ -2543,7 +2560,7 @@ fn scpi.query_block(session: visa.session, command: string,
 `visa` then uses the types of `serial` (its manifest gains `dependencies = ["serial"]`). `scpi.wait_complete` waits,
 within the timeout of the session, for the `1` of `*OPC?`, and fails with `scpi.unexpected_response` on any other
 answer; `scpi.event_status` and `scpi.status_byte` are `scpi.query_i32` of `*ESR?` and `*STB?`, whose bits the program
-reads with `core.and` (A.5). `scpi.query_block` writes the command, then reads a definite-length block of IEEE 488.2
+reads with `core.and` (A.1). `scpi.query_block` writes the command, then reads a definite-length block of IEEE 488.2
 with `visa.read_bytes`: `#`, one digit n from 1 to 9, n digits of a length, that many bytes, and the `\n` after them; it
 gives the bytes, and fails with `scpi.unexpected_response` on anything else (an indefinite block `#0` included). All
 are written in LabCraft over `visa`, `string` and `bytes`, as `query_f64` is. The functions of `net`, `serial` and
@@ -2577,32 +2594,3 @@ fn results_log.append_csv(results: [results_log.StepResult], err: error = none) 
 
 The libraries `instrument` (6.3), `sound` and `lamp` (5.3) are illustrative and have no signatures
 here. The signatures of `config` (Q-15) and `sim` (section 9) are not written yet.
-
-### A.5 Primitives of release 0.5.0 (M4), ahead of the implementation
-
-Specified with [io.md](io.md) on 2026-11-19, not built yet. They stay here, apart from A.1 and A.2, whose
-declarations the tests of `check` and `engine` compare with the primitives the tool has; the pull request that
-builds them moves them there, as the blocks of `AHEAD_OF_THE_PARSER` leave it once the parser reads them.
-
-```text
-fn core.and<B: Bits>(a: B, b: B) -> (result: B)                // replaces the `bool` one of A.1; same for or, xor
-fn core.not<B: Bits>(a: B) -> (result: B)                       // replaces the `bool` one of A.1
-fn core.shl<I: Integer>(x: I, count: i32) -> (result: I)        // bits out are lost
-fn core.shr<I: Integer>(x: I, count: i32) -> (result: I)        // a signed type copies its sign bit
-fn core.quotient<I: Integer>(a: I, b: I) -> (result: I)         // rounded toward −∞; by 0: a fault
-fn core.remainder<I: Integer>(a: I, b: I) -> (result: I)        // a − b × quotient: the sign of b
-```
-
-**Bits and integer division** (0.5.0, decision of the owner, 2026-11-19). On a `bool`, `core.and`, `core.or`, `core.xor`
-and `core.not` are logical; on an `Integer` (3.5), they work bit by bit, on the bits of the value in two's complement for
-a signed type: `core.and(0x1234, 0x00FF)` is `0x34`, `core.not` of a `u8` 0 is 255, of an `i8` 0 is −1. `core.shl`
-moves the bits toward the high end and fills with 0, and the bits that leave the type are lost, which is no overflow;
-`core.shr` moves them toward the low end and fills with 0 for an unsigned type, with the sign bit for a signed one, so
-that `core.shr` of an `i16` −8 by 1 is −4. A `count` at or above the width of the type gives 0, or −1 for a negative
-value moved by `core.shr`; a negative `count` is a fault (8.2). `core.quotient` rounds toward −∞ and `core.remainder` is
-`a − b × quotient`, so that the remainder has the sign of `b` and an index wraps the right way: `core.quotient(−7, 2)`
-is −4 and `core.remainder(−7, 2)` is 1. By 0 both are a fault, and so is `core.quotient` of the lowest value of a signed
-type by −1, which its type cannot hold; `core.remainder` of it by −1 is 0. `core.and`, `core.or` and `core.not` keep their glyph on integers;
-`core.xor`, `core.shl`, `core.shr`, `core.quotient` and `core.remainder` have the ordinary block (A.1, "Blocks of the primitives"), outside the
-closed list of glyphs of the visual notation (3.2).
-

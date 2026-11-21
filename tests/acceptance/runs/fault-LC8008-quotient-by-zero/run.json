@@ -1,0 +1,4 @@
+{
+  "function": "quotient_by_zero",
+  "folder": "tests/acceptance/runs/fault-LC8008-quotient-by-zero"
+}

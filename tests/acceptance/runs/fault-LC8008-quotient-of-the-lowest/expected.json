@@ -1,0 +1,20 @@
+{
+  "how": "`a` is -128, the lowest `i8`, and `b` is -1: the quotient is +128, which an `i8` cannot hold, so `core.quotient` faults (spec 8.2; A.1: \"so is `core.quotient` of the lowest value of a signed type by -1\"), reported as `LC8008` (cli.md 6.6), at the node `y`. No loop is around it; no output (spec 8.2), no resource. The simulated clock stays at 0 ms: nothing waits before the fault (spec 8).",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8008",
+    "function": "quotient_of_the_lowest",
+    "node": "y",
+    "file": "tests/acceptance/runs/fault-LC8008-quotient-of-the-lowest/quotient_of_the_lowest.lcf",
+    "loops": []
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}
