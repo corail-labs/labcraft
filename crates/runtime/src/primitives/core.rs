@@ -7,7 +7,7 @@ use labcraft_types::{NumberKind, Ty, Unit};
 use super::number::{
     Real, as_f64, complex_div, complex_mul, complex_power, complex_sqrt, kind_of, magnitude, magnitude_f32, maximum, meet, minimum, power, to_kind,
 };
-use super::{Call, Host, Outcome, input, input_type, output_type, wrong};
+use super::{Call, Host, Outcome, bool_input, i32_input, input, input_type, output_type, wrong};
 use crate::convert::Env;
 use crate::fault::Fault;
 use crate::value::{ErrorData, Value};
@@ -382,30 +382,135 @@ fn shown_shape(shape: &[usize]) -> &[usize] {
     }
 }
 
-fn boolean(call: &Call<'_>, index: usize, name: &str) -> Result<bool, Fault> {
-    match input(call, index)? {
-        Value::Bool(value) => Ok(*value),
-        _ => Err(wrong(name)),
+/// The bits of an integer kind; None for any other.
+fn width(kind: NumberKind) -> Option<u32> {
+    match kind {
+        NumberKind::I8 | NumberKind::U8 => Some(8),
+        NumberKind::I16 | NumberKind::U16 => Some(16),
+        NumberKind::I32 | NumberKind::U32 => Some(32),
+        NumberKind::I64 | NumberKind::U64 => Some(64),
+        _ => None,
     }
 }
 
+/// The low bits of `x` that the kind holds, in two's complement for a signed kind: what is above them is lost.
+fn wrapped(x: i128, kind: NumberKind) -> Option<Value> {
+    Some(match kind {
+        NumberKind::I8 => Value::I8(x as i8),
+        NumberKind::I16 => Value::I16(x as i16),
+        NumberKind::I32 => Value::I32(x as i32),
+        NumberKind::I64 => Value::I64(x as i64),
+        NumberKind::U8 => Value::U8(x as u8),
+        NumberKind::U16 => Value::U16(x as u16),
+        NumberKind::U32 => Value::U32(x as u32),
+        NumberKind::U64 => Value::U64(x as u64),
+        _ => return None,
+    })
+}
+
+/// The kind of the output, an integer: both inputs of a binary operation go to it first, where they meet (3.4).
+fn integer_kind(call: &Call<'_>, name: &str) -> Result<NumberKind, Fault> {
+    call.env.number_kind(output_type(call, 0)?).filter(|kind| kind.is_integer()).ok_or_else(|| wrong(name))
+}
+
+/// The input at `index`, in that kind, as an `i128`.
+fn integer_at(call: &Call<'_>, index: usize, kind: NumberKind, name: &str) -> Result<i128, Fault> {
+    to_kind(input(call, index)?, kind).and_then(|x| super::number::as_i128(&x)).ok_or_else(|| wrong(name))
+}
+
+/// Logical on two `bool`, bit by bit on two integers, in two's complement for a signed kind (A.1): the bits of an `i128`
+/// that holds the value, sign extended, are those of the value, so the low bits of the result are the result.
+fn bits(call: &mut Call<'_>, name: &str, bool_op: fn(bool, bool) -> bool, integer_op: fn(i128, i128) -> i128) -> Result<Outcome, Fault> {
+    if let (Value::Bool(a), Value::Bool(b)) = (input(call, 0)?, input(call, 1)?) {
+        return Ok(Outcome::Done(vec![Value::Bool(bool_op(*a, *b))]));
+    }
+    let kind = integer_kind(call, name)?;
+    let (a, b) = (integer_at(call, 0, kind, name)?, integer_at(call, 1, kind, name)?);
+    let result = wrapped(integer_op(a, b), kind).ok_or_else(|| wrong(name))?;
+    Ok(Outcome::Done(vec![result]))
+}
+
 pub fn and(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
-    let result = boolean(call, 0, "core.and")? && boolean(call, 1, "core.and")?;
-    Ok(Outcome::Done(vec![Value::Bool(result)]))
+    bits(call, "core.and", |a, b| a & b, |a, b| a & b)
 }
 
 pub fn or(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
-    let result = boolean(call, 0, "core.or")? || boolean(call, 1, "core.or")?;
-    Ok(Outcome::Done(vec![Value::Bool(result)]))
+    bits(call, "core.or", |a, b| a | b, |a, b| a | b)
 }
 
+pub fn xor(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
+    bits(call, "core.xor", |a, b| a ^ b, |a, b| a ^ b)
+}
+
+/// `core.not` of a `u8` 0 is 255, of an `i8` 0 is −1 (A.1).
 pub fn not(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
-    let result = !boolean(call, 0, "core.not")?;
-    Ok(Outcome::Done(vec![Value::Bool(result)]))
+    if let Value::Bool(a) = input(call, 0)? {
+        return Ok(Outcome::Done(vec![Value::Bool(!*a)]));
+    }
+    let kind = integer_kind(call, "core.not")?;
+    let result = wrapped(!integer_at(call, 0, kind, "core.not")?, kind).ok_or_else(|| wrong("core.not"))?;
+    Ok(Outcome::Done(vec![result]))
+}
+
+/// `x` moved by its count, which a negative count makes a fault (8.2, `LC8008`). A count at or above the width of the kind
+/// leaves what `beyond` gives of the value; below it, `within` moves it (A.1).
+fn shift(call: &Call<'_>, name: &str, within: fn(i128, u32) -> i128, beyond: fn(i128) -> i128) -> Result<Outcome, Fault> {
+    let kind = integer_kind(call, name)?;
+    let x = integer_at(call, 0, kind, name)?;
+    let count = i32_input(call, 1, name)?;
+    let count = u32::try_from(count).map_err(|_| Fault::out_of_range(format!("{name}: the count {count} is negative (8.2)")))?;
+    let bits = width(kind).ok_or_else(|| wrong(name))?;
+    let moved = if count >= bits { beyond(x) } else { within(x, count) };
+    Ok(Outcome::Done(vec![wrapped(moved, kind).ok_or_else(|| wrong(name))?]))
+}
+
+/// Toward the high end, filled with 0: the bits that leave the type are lost, which is no overflow (A.1).
+pub fn shl(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
+    shift(call, "core.shl", |x, count| x << count, |_| 0)
+}
+
+/// Toward the low end, filled with the sign bit of the value: 0 for an unsigned type, whose value is never negative (A.1).
+pub fn shr(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
+    shift(call, "core.shr", |x, count| x >> count, |x| if x < 0 { -1 } else { 0 })
+}
+
+/// A division of two integers in the kind of the output: its quotient rounded toward −∞, and the remainder of it,
+/// `a − b × quotient`, which has the sign of `b` (A.1).
+struct Division {
+    kind: NumberKind,
+    a: i128,
+    b: i128,
+    quotient: i128,
+    remainder: i128,
+}
+
+/// A division by 0 is a fault (8.2, `LC8008`). An `i128` holds every quotient of two values of 64 bits.
+fn floor_division(call: &Call<'_>, name: &str) -> Result<Division, Fault> {
+    let kind = integer_kind(call, name)?;
+    let (a, b) = (integer_at(call, 0, kind, name)?, integer_at(call, 1, kind, name)?);
+    if b == 0 {
+        return Err(Fault::out_of_range(format!("{name}: a division of {a} by 0 (8.2)")));
+    }
+    let (toward_zero, rest) = (a / b, a % b);
+    let (quotient, remainder) = if rest != 0 && (rest < 0) != (b < 0) { (toward_zero - 1, rest + b) } else { (toward_zero, rest) };
+    Ok(Division { kind, a, b, quotient, remainder })
+}
+
+/// `core.quotient(−7, 2)` is −4. Of the lowest value of a signed type by −1, the type cannot hold the result: `LC8008` (A.1).
+pub fn quotient(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
+    let Division { kind, a, b, quotient, .. } = floor_division(call, "core.quotient")?;
+    let result = crate::convert::integer(kind, quotient).ok_or_else(|| overflow("core.quotient", format!("{a} by {b}"), kind))?;
+    Ok(Outcome::Done(vec![result]))
+}
+
+/// `core.remainder(−7, 2)` is 1, and of the lowest value of a signed type by −1 it is 0 (A.1).
+pub fn remainder(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
+    let Division { kind, remainder, .. } = floor_division(call, "core.remainder")?;
+    Ok(Outcome::Done(vec![crate::convert::integer(kind, remainder).ok_or_else(|| wrong("core.remainder"))?]))
 }
 
 pub fn select(call: &mut Call<'_>, _: &mut dyn Host) -> Result<Outcome, Fault> {
-    let condition = boolean(call, 0, "core.select")?;
+    let condition = bool_input(call, 0, "core.select")?;
     let chosen = if condition { 1 } else { 2 };
     let value = call.inputs.get_mut(chosen).map(|slot| std::mem::replace(slot, Value::NONE)).ok_or_else(|| wrong("core.select"))?;
     Ok(Outcome::Done(vec![value]))

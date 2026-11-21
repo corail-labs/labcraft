@@ -1,0 +1,4 @@
+{
+  "function": "remainder_by_zero",
+  "folder": "tests/acceptance/runs/fault-LC8008-remainder-by-zero"
+}

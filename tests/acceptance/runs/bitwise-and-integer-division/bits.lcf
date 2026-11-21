@@ -1,0 +1,68 @@
+labcraft 1
+
+use core
+
+/// Bits, shifts and the integer division, on integers of several types and on `bool`.
+fn bits(
+    zero: u8 = 0,
+    signed_zero: i8 = 0,
+    high_and_low: u8 = 0x81,
+    forty: i8 = 0x40,
+    minus_eight: i16 = -8,
+    all: u8 = 255,
+    minus_one: i8 = -1,
+    lowest: i8 = -128,
+    word: i32 = 0x1234,
+) -> (
+    low_byte: i32,
+    joined: i32,
+    flipped: i32,
+    none_set: u8,
+    signed_none: i8,
+    both: bool,
+    differ: bool,
+    negated: bool,
+    shifted: u8,
+    signed_shifted: i8,
+    shifted_out: u8,
+    halved: i16,
+    high_nibble: u8,
+    sign_kept: i8,
+    emptied: u8,
+    floor: i32,
+    wrapped: i32,
+    floor_of_negative_divisor: i32,
+    sign_of_divisor: i32,
+    both_negative: i32,
+    rest_both_negative: i32,
+    exact: i32,
+    rest: i32,
+    rest_of_lowest: i8,
+    met: i32,
+) {
+    both = core.and(true, false)
+    both_negative = core.quotient(-7, -2)
+    differ = core.xor(true, true)
+    emptied = core.shr(all, 9)
+    exact = core.quotient(7, 2)
+    flipped = core.xor(0xFF, 0x0F)
+    floor = core.quotient(-7, 2)
+    floor_of_negative_divisor = core.quotient(7, -2)
+    halved = core.shr(minus_eight, 1)
+    high_nibble = core.shr(all, 4)
+    joined = core.or(0x1200, 0x0034)
+    low_byte = core.and(0x1234, 0x00FF)
+    met = core.and(all, word)
+    negated = core.not(false)
+    none_set = core.not(zero)
+    rest = core.remainder(7, 2)
+    rest_both_negative = core.remainder(-7, -2)
+    rest_of_lowest = core.remainder(lowest, -1)
+    shifted = core.shl(high_and_low, 1)
+    shifted_out = core.shl(all, 8)
+    sign_kept = core.shr(minus_one, 8)
+    sign_of_divisor = core.remainder(7, -2)
+    signed_none = core.not(signed_zero)
+    signed_shifted = core.shl(forty, 1)
+    wrapped = core.remainder(-7, 2)
+}

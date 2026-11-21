@@ -17,8 +17,8 @@ use labcraft_graph::{
     StatementKind, Target as Line, UnitExpr, UnitTerm,
 };
 use labcraft_types::{
-    Code, Diagnostic, Edit, Fit, Fix, FnParam, Interner, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit, Wire, cut_text,
-    parse_unit,
+    Bound as TypeBound, Code, Diagnostic, Edit, Fit, Fix, FnParam, Interner, LibraryId, MAX_TEXT, Name, Node, NumberKind, Related, Ty, TyId, Unit,
+    Wire, cut_text, parse_unit,
 };
 
 use super::super::{DeclaredFunction, Pass, Scope, add_use, path_text, unit_of};
@@ -549,6 +549,15 @@ fn is_ordered(primitive: &Primitive) -> bool {
     primitive.library == PrimitiveLibrary::Core && matches!(primitive.name, "lt" | "le" | "gt" | "ge" | "min" | "max")
 }
 
+/// What the bound of the variables of a primitive takes, as a message says it (3.5).
+fn bound_text(primitive: &Primitive) -> &'static str {
+    match primitive.variables.bound {
+        Some(TypeBound::Integer) => "an integer without a unit",
+        Some(TypeBound::Bits) => "a bool or an integer without a unit",
+        Some(TypeBound::Number) | None => "a number",
+    }
+}
+
 /// What `core.div`, `core.sqrt` and `core.pow` give: integers give an `f64` (3.4), and an `i64` or a `u64` does not widen to it.
 fn floated(kind: NumberKind) -> Option<NumberKind> {
     if !kind.is_integer() {
@@ -971,6 +980,17 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             Ty::Number { .. } => Some(ty),
             Ty::Duration => Some(self.number(NumberKind::F64, Unit::SECOND)),
             _ => None,
+        }
+    }
+
+    /// What a variable of this primitive is for this type, when its bound holds it (3.5): a `duration` counts as an `f64[s]`
+    /// for `Number`, and `Integer` and `Bits` hold it as it is. A type already in error is held, so that it says nothing more.
+    fn bounded(&mut self, primitive: &Primitive, ty: TyId) -> Option<TyId> {
+        match primitive.variables.bound {
+            _ if ty == TyId::ERROR => Some(ty),
+            None => Some(ty),
+            Some(TypeBound::Number) => self.as_number(ty),
+            Some(bound) => bound.holds(self.pass.table.get(ty)).then_some(ty),
         }
     }
 
@@ -2188,7 +2208,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             for (variable, written) in variables.iter_mut().zip(&bound.type_args) {
                 let refused = self.refuses_as_argument(primitive, *written, call.id);
                 // A `duration` counts as an `f64[s]`, wherever it comes from (3.5).
-                let as_written = if primitive.variables.numbers() { self.as_number(*written).unwrap_or(*written) } else { *written };
+                let as_written = self.bounded(primitive, *written).unwrap_or(*written);
                 *variable = Variable {
                     ty: Some(if refused { TyId::ERROR } else { as_written }),
                     fixed: true,
@@ -2236,10 +2256,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let Some(hint) = self.target_hint(Some(target)).filter(|hint| *hint != TyId::ERROR) else { continue };
             let element = if matches!(form, PrimitiveTy::Var(_)) { Some(hint) } else { self.element_in(form, hint) };
             let Some(mut element) = element else { continue };
-            if primitive.variables.numbers() {
-                let Some(number) = self.as_number(element) else { continue };
-                element = number;
-            }
+            let Some(held) = self.bounded(primitive, element) else { continue };
+            element = held;
             if is_ordered(primitive) && self.number_of(element).is_some_and(|(kind, _)| kind.is_complex()) {
                 continue;
             }
@@ -2305,12 +2323,12 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if written == TyId::ERROR {
             return false;
         }
-        let not_a_number = primitive.variables.numbers() && self.as_number(written).is_none();
+        let not_held = self.bounded(primitive, written).is_none();
         let no_order = is_ordered(primitive) && self.number_of(written).is_some_and(|(kind, _)| kind.is_complex());
-        if !not_a_number && !no_order {
+        if !not_held && !no_order {
             return false;
         }
-        let what = if no_order { "a real number" } else { "a number" };
+        let what = if no_order { "a real number" } else { bound_text(primitive) };
         let found = self.show(written);
         let message = format!("this type argument is `{found}`, and this function takes {what} (3.5)");
         self.say(Code::Lc3019, message, id, Details { found: Some(found), ..Details::default() });
@@ -2474,7 +2492,6 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         arguments: &[PrimitiveArgument<'a>],
         variables: &mut [Variable<'a>; 2],
     ) -> (bool, Vec<(Id, TyId, usize)>) {
-        let numbers = primitive.variables.numbers();
         let ordered = is_ordered(primitive);
         let is_sub = primitive.library == PrimitiveLibrary::Core && primitive.name == "sub";
         let mut kelvin = false;
@@ -2492,16 +2509,17 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             }
             let hint = if variable.fixed { variable.ty } else { self.rows_hint(operand, variable.ty) };
             let found = self.value_of(operand, hint);
+            let held = self.bounded(primitive, found);
             if found == TyId::ERROR {
                 variable.failed = true;
-            } else if numbers && self.as_number(found).is_none() {
-                self.not_a_number(operand, param.name, found, "a number");
+            } else if held.is_none() {
+                self.not_a_number(operand, param.name, found, bound_text(primitive));
                 variable.failed = true;
             } else if ordered && self.number_of(found).is_some_and(|(kind, _)| kind.is_complex()) {
                 self.not_a_number(operand, param.name, found, "a real number: complex numbers have no order");
                 variable.failed = true;
             } else {
-                let value = if numbers { self.as_number(found).unwrap_or(found) } else { found };
+                let value = held.unwrap_or(found);
                 match variable.ty {
                     None => {
                         variable.ty = Some(value);
@@ -2637,8 +2655,8 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
                         }
                     }
                 }
-            } else if numbers && self.as_number(found).is_none() {
-                self.not_a_number(operand, param.name, found, "a number");
+            } else if self.bounded(primitive, found).is_none() {
+                self.not_a_number(operand, param.name, found, bound_text(primitive));
                 variable.failed = true;
             } else {
                 match variable.ty {

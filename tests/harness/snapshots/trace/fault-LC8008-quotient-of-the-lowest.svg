@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 222 176" width="222" height="176" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="quotient_of_the_lowest">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect y="-40" width="222" height="176" style="fill: var(--canvas-fill)"/>
+<rect x="19" y="16" width="184" height="104" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn quotient_of_the_lowest</text>
+<g data-wire="a" data-from="fn.a" data-to="y.a">
+<path d="M19 68 L116.14 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="b" data-from="fn.b" data-to="y.b">
+<path d="M19 92 L99.14 92 Q105.14 92 105.14 86 L105.14 81.5 Q105.14 76 110.64 76 L116.14 76" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="y" data-from="y.result" data-to="fn.y">
+<path d="M156.14 68 L203 68" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g>
+<circle cx="19" cy="68" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="62.18" width="22.02" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="71.65" font-size="10" style="fill: var(--node-title)">a</text>
+<rect x="45.02" y="61" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="49.02" y="71.65" font-size="10" style="fill: var(--pill-text)">◂ -128</text>
+<circle cx="19" cy="92" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="86.18" width="22.02" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="95.65" font-size="10" style="fill: var(--node-title)">b</text>
+<rect x="45.02" y="85" width="32.08" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="49.02" y="95.65" font-size="10" style="fill: var(--pill-text)">◂ -1</text>
+<circle cx="203" cy="68" r="3" style="fill: var(--wire-data)"/>
+<rect x="180.98" y="62.18" width="18.02" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="184.98" y="71.65" font-size="10" style="fill: var(--node-title)">y</text>
+</g>
+<g data-node="y"><title>core.quotient</title>
+<rect x="116.14" y="60" width="40" height="40" rx="2" style="fill: var(--node-fill); stroke: var(--node-stroke); stroke-width: 1"/>
+<text x="125.31" y="78.04" font-size="9" style="fill: var(--node-title)">quot</text>
+<text x="125.31" y="88.52" font-size="9" style="fill: var(--node-title)">ient</text>
+<circle cx="116.14" cy="68" r="3" style="fill: var(--wire-data)"/>
+<circle cx="156.14" cy="68" r="3" style="fill: var(--wire-data)"/>
+<circle cx="116.14" cy="76" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g>
+<rect x="16" y="-24" width="190" height="20" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="20" y="-10.35" font-size="10" style="fill: var(--node-title)">The run stopped on a fault</text>
+</g>
+<g data-value="a"><title>-128</title>
+<rect x="45.02" y="60" width="44.12" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="49.02" y="71.65" font-size="10" style="fill: var(--node-title)">-128</text>
+</g>
+<g data-value="b"><title>-1</title>
+<rect x="45.02" y="84" width="32.08" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="49.02" y="95.65" font-size="10" style="fill: var(--node-title)">-1</text>
+</g>
+</svg>

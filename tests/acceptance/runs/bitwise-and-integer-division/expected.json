@@ -1,0 +1,139 @@
+{
+  "how": "Literals take the type expected where they go (spec 3.4, R-2): the operands of `core.and`, `core.or`, `core.xor`, `core.quotient` and `core.remainder` written as literals are `i32`, since the output is an `i32`; a literal that meets a wire takes the wire's type. Outputs follow the signature (commands.md 7). Bits, by hand, in two's complement (A.1, `Bits and integer division`): `low_byte` 0x1234 & 0x00FF = 0x34 = 52; `joined` 0x1200 | 0x0034 = 0x1234 = 4660; `flipped` 0xFF ^ 0x0F = 0xF0 = 240; `none_set` is `core.not` of the `u8` 0 = 0xFF = 255 and `signed_none` of the `i8` 0 = 0xFF read as -1. `both` true and false = false, `differ` true xor true = false, `negated` not false = true (logical on `bool`). `shifted` is `core.shl` of the `u8` 0x81 (1000_0001) by 1 = 1_0000_0010, whose bit out is lost (no overflow), so 0000_0010 = 2; `signed_shifted` is the `i8` 0x40 (0100_0000) by 1 = 1000_0000, the `i8` -128; `shifted_out` is `core.shl` of the `u8` 255 by 8, a count at the width of the type, 0. `halved` is `core.shr` of the `i16` -8 (0xFFF8) by 1, with the sign bit copied: 0xFFFC = -4; `high_nibble` is the `u8` 255 by 4, filled with 0, 0000_1111 = 15; `sign_kept` is the `i8` -1 by 8, a count at the width of a negative value, -1; `emptied` is the `u8` 255 by 9, above the width, 0. `met` is `core.and` of the `u8` 255 and the `i32` 0x1234, an `i32` (3.5, the smallest type both widen to): 0x34 = 52. Division (A.1, rounded toward minus infinity, `remainder` = a - b x quotient): `floor` quotient(-7, 2) = floor(-3.5) = -4; `wrapped` remainder(-7, 2) = -7 - 2(-4) = 1; `floor_of_negative_divisor` quotient(7, -2) = floor(-3.5) = -4; `sign_of_divisor` remainder(7, -2) = 7 - (-2)(-4) = -1; `both_negative` quotient(-7, -2) = floor(3.5) = 3; `rest_both_negative` remainder(-7, -2) = -7 - (-2)(3) = -1; `exact` quotient(7, 2) = 3 and `rest` remainder(7, 2) = 1; `rest_of_lowest` remainder of the `i8` -128 by -1 is 0, which A.1 says outright (only its quotient is a fault). Checked with a short Python script (arithmetic >> and // are the floor semantics). Nothing waits, so the simulated clock stays at 0 ms (spec 8), and nothing opens a resource; no simulation, so no `instruments` (commands.md 7).",
+  "status": "ok",
+  "outputs": [
+    {
+      "name": "low_byte",
+      "type": "i32",
+      "value": 52
+    },
+    {
+      "name": "joined",
+      "type": "i32",
+      "value": 4660
+    },
+    {
+      "name": "flipped",
+      "type": "i32",
+      "value": 240
+    },
+    {
+      "name": "none_set",
+      "type": "u8",
+      "value": 255
+    },
+    {
+      "name": "signed_none",
+      "type": "i8",
+      "value": -1
+    },
+    {
+      "name": "both",
+      "type": "bool",
+      "value": false
+    },
+    {
+      "name": "differ",
+      "type": "bool",
+      "value": false
+    },
+    {
+      "name": "negated",
+      "type": "bool",
+      "value": true
+    },
+    {
+      "name": "shifted",
+      "type": "u8",
+      "value": 2
+    },
+    {
+      "name": "signed_shifted",
+      "type": "i8",
+      "value": -128
+    },
+    {
+      "name": "shifted_out",
+      "type": "u8",
+      "value": 0
+    },
+    {
+      "name": "halved",
+      "type": "i16",
+      "value": -4
+    },
+    {
+      "name": "high_nibble",
+      "type": "u8",
+      "value": 15
+    },
+    {
+      "name": "sign_kept",
+      "type": "i8",
+      "value": -1
+    },
+    {
+      "name": "emptied",
+      "type": "u8",
+      "value": 0
+    },
+    {
+      "name": "floor",
+      "type": "i32",
+      "value": -4
+    },
+    {
+      "name": "wrapped",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "floor_of_negative_divisor",
+      "type": "i32",
+      "value": -4
+    },
+    {
+      "name": "sign_of_divisor",
+      "type": "i32",
+      "value": -1
+    },
+    {
+      "name": "both_negative",
+      "type": "i32",
+      "value": 3
+    },
+    {
+      "name": "rest_both_negative",
+      "type": "i32",
+      "value": -1
+    },
+    {
+      "name": "exact",
+      "type": "i32",
+      "value": 3
+    },
+    {
+      "name": "rest",
+      "type": "i32",
+      "value": 1
+    },
+    {
+      "name": "rest_of_lowest",
+      "type": "i8",
+      "value": 0
+    },
+    {
+      "name": "met",
+      "type": "i32",
+      "value": 52
+    }
+  ],
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

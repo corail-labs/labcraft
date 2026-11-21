@@ -1,0 +1,24 @@
+{
+  "how": "The program of `fault-LC8008-negative-shift` in real time: `count` takes its default -1 and `core.shl` of an `i32` by a negative count is a fault with no `err` (spec 8.2, A.1 `Bits and integer division`), `LC8008` (spec 8.2, Q-25; cli.md 6.6) at the node `y`, the line `y = core.shl(x, count)`; the mode changes neither the fault nor its place. No loop is around it; no output, no resource, no instrument. In real time `clock` gives `real_ms` only (commands.md 7: `simulated_ms` is for the deterministic mode). Nothing waits before the fault, so the run takes at least 0 ms (the lower bound is a fact); the upper bound, 1000 ms, is a generous tolerance for a machine (README, `runs/`), not derived from the documents.",
+  "status": "fault",
+  "mode": "real_time",
+  "outputs": [],
+  "fault": {
+    "code": "LC8008",
+    "function": "negative_shift",
+    "node": "y",
+    "file": "tests/acceptance/runs/fault-LC8008-negative-shift/negative_shift.lcf",
+    "loops": []
+  },
+  "clock": {
+    "real_ms": {
+      "at_least": 0,
+      "below": 1000
+    }
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

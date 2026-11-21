@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// An integer division by 0.
+fn quotient_by_zero(a: i32 = 7, b: i32 = 0) -> (y: i32) {
+    y = core.quotient(a, b)
+}

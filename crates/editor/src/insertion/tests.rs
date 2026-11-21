@@ -365,3 +365,36 @@ fn an_input_of_an_alias_of_a_number_takes_a_wire_of_that_dimension() {
     let amperes = Wanted { from_output: true, key: Some(amperes), text: "f64[A]".to_owned(), family: "Number/0".to_owned() };
     assert!(catalog.rows("", Some(&amperes), &[]).is_empty());
 }
+
+/// Spec 3.5 (#229): `Bits` takes `bool` and the integers without a unit, `Integer` the integers alone, never a real number
+/// nor an integer with a unit.
+#[test]
+fn bits_and_integers_take_what_their_bound_holds() {
+    let bounded = |name: &str, bound: &str| {
+        let fit = json!({ "variable": "B", "bound": bound });
+        listed(
+            "core",
+            name,
+            "function",
+            "",
+            json!({
+                "inputs": [{ "name": "a", "type": "B", "fit": fit, "required": true }],
+                "outputs": [{ "name": "result", "type": "B", "fit": fit }],
+            }),
+        )
+    };
+    let catalog = Catalog::new(&[bounded("core.not", "Bits"), bounded("core.shl", "Integer")]);
+    let wire = |key: FitKey, text: &str, family: &str| Wanted { from_output: true, key: Some(key), text: text.to_owned(), family: family.to_owned() };
+    let u8_wire = wire(FitKey::Number(NumberKind::U8, Unit::ONE), "u8", "Number/0");
+    assert_eq!(calls(&catalog, &catalog.rows("", Some(&u8_wire), &[])), ["core.not", "core.shl"]);
+    let bool_wire = wire(FitKey::Bool, "bool", "Bool/0");
+    assert_eq!(calls(&catalog, &catalog.rows("", Some(&bool_wire), &[])), ["core.not"]);
+    let real = wire(FitKey::Number(NumberKind::F64, Unit::ONE), "f64", "Number/0");
+    assert!(calls(&catalog, &catalog.rows("", Some(&real), &[])).is_empty());
+    let millivolts = wire(FitKey::Number(NumberKind::I32, parse_unit("mV", MAX_NESTING).unwrap()), "i32[mV]", "Number/0");
+    assert!(calls(&catalog, &catalog.rows("", Some(&millivolts), &[])).is_empty());
+    let back = Wanted { from_output: false, ..bool_wire };
+    assert_eq!(calls(&catalog, &catalog.rows("", Some(&back), &[])), ["core.not"], "and gives it back");
+    let to_real = Wanted { from_output: false, ..real };
+    assert_eq!(calls(&catalog, &catalog.rows("", Some(&to_real), &[])), ["core.not", "core.shl"], "an integer widens to an `f64` (3.4)");
+}

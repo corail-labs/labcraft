@@ -1,0 +1,20 @@
+{
+  "how": "`count` takes its default -1, and `core.shl` of an `i32` by a negative count is a fault (spec 8.2, A.1 `Bits and integer division`: \"a negative `count` is a fault\"; `core.shl` has no `err`). The fault is `LC8008`, the code of a number that its type cannot hold, as in `fault-LC8008-overflow` (spec 8.2; cli.md 6.6), at the node `y`, the line `y = core.shl(x, count)`. No loop is around it; no output (spec 8.2), no resource. The simulated clock stays at 0 ms: nothing waits before the fault (spec 8).",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8008",
+    "function": "negative_shift",
+    "node": "y",
+    "file": "tests/acceptance/runs/fault-LC8008-negative-shift/negative_shift.lcf",
+    "loops": []
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "how": "`b` takes its default 0, and `core.quotient(7, 0)` is a fault (spec 8.2; A.1: \"By 0 both are a fault\"; the primitive has no `err`), reported as `LC8008` like the other faults of this kind (cli.md 6.6), at the node `y`. No loop is around it; no output (spec 8.2), no resource. The simulated clock stays at 0 ms: nothing waits before the fault (spec 8).",
+  "status": "fault",
+  "outputs": [],
+  "fault": {
+    "code": "LC8008",
+    "function": "quotient_by_zero",
+    "node": "y",
+    "file": "tests/acceptance/runs/fault-LC8008-quotient-by-zero/quotient_by_zero.lcf",
+    "loops": []
+  },
+  "clock": {
+    "simulated_ms": 0.0
+  },
+  "resources": {
+    "opened": 0,
+    "open": [],
+    "leaked": []
+  }
+}

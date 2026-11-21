@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// The lowest `i8` by -1.
+fn quotient_of_the_lowest(a: i8 = -128, b: i8 = -1) -> (y: i8) {
+    y = core.quotient(a, b)
+}

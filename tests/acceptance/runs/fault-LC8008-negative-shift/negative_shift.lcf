@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// A shift by a negative count.
+fn negative_shift(x: i32 = 1, count: i32 = -1) -> (y: i32) {
+    y = core.shl(x, count)
+}

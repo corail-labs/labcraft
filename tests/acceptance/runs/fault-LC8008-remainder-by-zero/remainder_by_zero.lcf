@@ -1,0 +1,8 @@
+labcraft 1
+
+use core
+
+/// An integer remainder by 0.
+fn remainder_by_zero(a: u16 = 5, b: u16 = 0) -> (y: u16) {
+    y = core.remainder(a, b)
+}

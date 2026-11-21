@@ -106,13 +106,9 @@ impl<'a> Typer<'_, '_, '_, 'a> {
 
     /// A `duration` counts as an `f64[s]`, as for a node (3.5).
     fn bind_variable(&mut self, primitive: &'static Primitive, variables: &mut [Option<TyId>; 2], index: usize, ty: TyId) -> bool {
-        let mut ty = ty;
-        if primitive.variables.numbers() {
-            let Some(number) = self.as_number(ty) else { return false };
-            ty = number;
-            if is_ordered(primitive) && self.number_of(ty).is_some_and(|(kind, _)| kind.is_complex()) {
-                return false;
-            }
+        let Some(ty) = self.bounded(primitive, ty) else { return false };
+        if is_ordered(primitive) && self.number_of(ty).is_some_and(|(kind, _)| kind.is_complex()) {
+            return false;
         }
         let Some(slot) = variables.get_mut(index) else { return false };
         match slot {

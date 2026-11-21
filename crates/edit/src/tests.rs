@@ -35,7 +35,7 @@ impl Judge for Table {
             })
         };
         match call {
-            "core.add" | "core.mul" => function(Some("core"), vec![input("a", true), input("b", true)], &["result"]),
+            "core.add" | "core.mul" | "core.div" | "core.quotient" => function(Some("core"), vec![input("a", true), input("b", true)], &["result"]),
             "core.abs" => function(Some("core"), vec![input("x", true)], &["result"]),
             "visa.open" => function(Some("visa"), vec![input("resource", true), input("err", false)], &["session", "err"]),
             "sound.beep" => function(Some("sound"), vec![input("err", false)], &[]),
@@ -138,6 +138,9 @@ fn a_node_is_named_from_its_function_when_its_output_says_nothing() {
     let edited = gives(EMPTY, add("core.add"), "use core\n\nfn f(x: f64) -> (y: f64) {\n    sum = core.add()\n    y = x\n}\n");
     assert_eq!(edited.names.get("node").map(String::as_str), Some("sum"));
     gives(EMPTY, add("core.abs"), "use core\n\nfn f(x: f64) -> (y: f64) {\n    abs = core.abs()\n    y = x\n}\n");
+    // `core.div` gives a ratio, so that `quotient` is left to the integer division `core.quotient`.
+    gives(EMPTY, add("core.div"), "use core\n\nfn f(x: f64) -> (y: f64) {\n    ratio = core.div()\n    y = x\n}\n");
+    gives(EMPTY, add("core.quotient"), "use core\n\nfn f(x: f64) -> (y: f64) {\n    quotient = core.quotient()\n    y = x\n}\n");
 }
 
 #[test]

@@ -88,7 +88,7 @@ pub fn of_type(type_name: &str) -> String {
 const SAYS_NOTHING: &str = "result";
 
 /// What the outputs of `core` that say nothing give: `sum`, `product` (N-14). Another function gives its own name.
-const RESULTS: &[(&str, &str)] = &[("add", "sum"), ("sub", "difference"), ("mul", "product"), ("div", "quotient")];
+const RESULTS: &[(&str, &str)] = &[("add", "sum"), ("sub", "difference"), ("mul", "product"), ("div", "ratio")];
 
 /// The base of the name of an output of a node that calls `call` (N-14).
 pub(crate) fn of_output(callable: &Callable, call: &str, index: usize) -> Option<String> {

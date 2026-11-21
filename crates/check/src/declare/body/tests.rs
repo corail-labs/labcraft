@@ -185,7 +185,8 @@ fn a_value_can_bear_the_name_of_a_function_and_hides_it_in_an_argument() {
 #[test]
 fn a_function_reference_is_a_path_and_a_primitive_can_be_one() {
     assert_eq!(in_file("fn f() -> () {\n    x = g\n}"), NOTHING);
-    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.not\n}"), NOTHING);
+    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.to_f32\n}"), NOTHING);
+    assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.not\n}"), ["LC3019"], "`core.not` is generic, and nothing says its type (3.5)");
     assert_eq!(in_file("use core\n\nfn f() -> () {\n    x = core.nowhere\n}"), ["LC2002"]);
     assert_eq!(in_file("fn f() -> () {\n    x = core.add\n}"), ["LC2005"], "`core` is known to be a library");
     assert_eq!(in_file("fn f() -> () {\n    x = stpe.low\n}"), ["LC2001"], "a typo in a value is not told to add a `use`");
