@@ -1191,3 +1191,126 @@ fn a_file_with_cr_lf_is_written_at_the_first_pause() {
     assert!(harness.query_by_label_contains("The file changed while you typed").is_none());
     assert_eq!(file(&harness, "/p/main.lcf"), Some(format!("{MAIN}// z")), "written, its line endings LF");
 }
+
+/// The cursor of the view `Text` of `main` at a line and a column, from 0, by the keys.
+fn cursor_to(harness: &mut Harness<'_, State>, line: usize, column: usize) {
+    harness.key_press_modifiers(Modifiers::COMMAND, Key::Home);
+    for _ in 0..line {
+        harness.key_press(Key::ArrowDown);
+    }
+    for _ in 0..column {
+        harness.key_press(Key::ArrowRight);
+    }
+    harness.run_steps(1);
+}
+
+/// The error of a text typed that does not parse is in `Problems`, before the diagnostics of its file (step 7b).
+#[test]
+fn the_error_of_a_text_typed_is_in_problems() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("fn (");
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The text typed does not read").is_some(), "in Problems");
+    shot(&mut harness, "text-unparsed-underlined");
+}
+
+/// The field keeps the keyboard while a banner shows above it, or goes: what is typed goes on landing in the text (the
+/// owner's test of step 7b).
+#[test]
+fn the_field_keeps_the_focus_as_a_banner_comes_and_goes() {
+    use egui_kittest::kittest::NodeT as _;
+    let mut harness = text_of_main();
+    let focused = |harness: &Harness<'_, State>| harness.get_by_label("Text of main.lcf").accesskit_node().is_focused();
+    harness.input_mut().events.push(egui::Event::Text("\nfn (".to_owned()));
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The text does not read").is_some(), "the banner shows");
+    assert!(focused(&harness), "focused under the banner");
+    harness.input_mut().events.push(egui::Event::Text("x".to_owned()));
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(format!("{MAIN}\nfn (x")));
+    // Back to the text that reads: the banner goes, and the field still has the keyboard.
+    for _ in 0.."\nfn (x".len() {
+        harness.key_press(Key::Backspace);
+    }
+    harness.run_steps(5);
+    assert!(harness.query_by_label_contains("The text does not read").is_none(), "the banner went");
+    assert!(focused(&harness), "focused once the banner went");
+}
+
+/// Completion opens at the first character of a name typed, and Enter takes the entry chosen (ide.md 7): at the top of
+/// the file, after `us`, the word `use`.
+#[test]
+fn completion_opens_as_a_name_is_typed_and_enter_takes_it() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("\nus");
+    harness.run_steps(2);
+    assert!(harness.query_by_label("use").is_some(), "the list shows `use`");
+    shot(&mut harness, "text-completion");
+    harness.key_press(Key::Enter);
+    harness.run_steps(5);
+    // `use` alone does not parse: the text is kept, and holds the word taken, with no line ending added by Enter.
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(format!("{MAIN}\nuse")));
+}
+
+/// Ctrl+Space lists what a body can write, the values of the function first: Enter takes the first, `a`.
+#[test]
+fn ctrl_space_lists_the_values_of_the_body_first() {
+    let mut harness = text_of_main();
+    // The end of the line `    y = core.add(a, 1.0)`, then a new line, indented as it is.
+    cursor_to(&mut harness, 6, 0);
+    harness.key_press(Key::End);
+    harness.key_press(Key::Enter);
+    harness.key_press_modifiers(Modifiers::CTRL, Key::Space);
+    harness.run_steps(2);
+    harness.key_press(Key::Enter);
+    harness.run_steps(5);
+    let expected = MAIN.replace("    y = core.add(a, 1.0)\n", "    y = core.add(a, 1.0)\n    a\n");
+    assert_eq!(file(&harness, "/p/.labcraft/recovery/main.lcf"), Some(expected), "a line `a` alone does not parse: kept");
+}
+
+/// F12 on a value read takes the cursor to the line that binds it (decision of the owner, 2026-11-21).
+#[test]
+fn f12_goes_to_the_binding_of_a_value() {
+    let mut harness = text_of_main();
+    // On `a` in `    y = core.add(a, 1.0)`: line 6, column 17.
+    cursor_to(&mut harness, 6, 17);
+    harness.key_press(Key::F12);
+    harness.run_steps(2);
+    // The cursor is at `a` of `    a = core.mul(x, 2.0)`: what is typed goes there.
+    harness.get_by_label("Text of main.lcf").type_text("z");
+    harness.run_steps(5);
+    assert_eq!(file(&harness, "/p/main.lcf"), Some(MAIN.replace("    a = core.mul", "    za = core.mul")));
+}
+
+/// Shift+Alt+F in the view writes the text typed, then formats its file (`file.format`).
+#[test]
+fn shift_alt_f_formats_the_file_once_the_text_is_written() {
+    let mut harness = text_of_main();
+    harness.get_by_label("Text of main.lcf").type_text("\n\n");
+    harness.key_press_modifiers(Modifiers::SHIFT | Modifiers::ALT, Key::F);
+    harness.run_steps(6);
+    // The canonical form ends the file with one line ending (spec 5.2).
+    assert_eq!(file(&harness, "/p/main.lcf").as_deref(), Some(MAIN));
+    let history = harness.state().host.session.borrow_mut().execute("history.list", &json!({})).unwrap();
+    assert!(history["steps"].as_array().is_some_and(|steps| steps.len() >= 2), "written, then formatted: {history}");
+}
+
+/// A diagnostic of the check is underlined in the view, and its message and code show under the pointer at rest (ide.md
+/// 7): `nowhere`, which no line binds, in `broken`.
+#[test]
+fn a_diagnostic_is_underlined_and_its_message_shows_on_hover() {
+    let mut harness = harness(fake());
+    harness.state().host.session.borrow_mut().execute("view.show_function", &json!({ "function": "broken" })).unwrap();
+    harness.state().host.session.borrow_mut().execute("view.set_view", &json!({ "function": "broken", "view": "text" })).unwrap();
+    harness.run_steps(6);
+    let field = harness.get_by_label("Text of broken.lcf").rect();
+    // `nowhere` on line 5 (from 0), at columns 17 to 24: the pointer on its fourth character. The gutter is five
+    // characters wide (three digits and two spaces), in the monospace face of 13 points.
+    let glyph = harness.ctx.fonts_mut(|fonts| fonts.glyph_width(&egui::FontId::monospace(13.0), '0'));
+    let row = harness.ctx.fonts_mut(|fonts| fonts.row_height(&egui::FontId::monospace(13.0)));
+    let at = egui::pos2(field.min.x + glyph * (5.0 + 20.5), field.min.y + row * 5.5);
+    harness.input_mut().events.push(egui::Event::PointerMoved(at));
+    harness.run_steps(40);
+    assert!(harness.query_by_label_contains("error[LC").is_some(), "the message of the diagnostic, as the hover writes it");
+    shot(&mut harness, "text-hover");
+}

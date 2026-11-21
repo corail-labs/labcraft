@@ -25,6 +25,9 @@ use crate::host::{Host, Reply};
 pub enum Asked {
     /// Show this function: in preview after a single click, kept after a double one (ide.md 3).
     Show { function: String, preview: bool },
+    /// Show this function, and in its view `Text` this place of its file, lines and columns from 1: a click in
+    /// `Problems`.
+    ShowAt { function: String, file: String, line: u32, column: u32 },
     /// A command of the session.
     Command(String, Value),
     /// An action of the window (`ide.*`).
@@ -892,8 +895,17 @@ pub struct ProblemsFilter {
     pub shown_only: bool,
 }
 
-/// `Problems`: the diagnostics of the project, by file, error first; a click shows the function.
-pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter: &mut ProblemsFilter) -> Option<Asked> {
+/// The error of a text typed in the view `Text` that does not parse, which the file does not have: its file, its message
+/// and its line.
+pub struct Unparsed<'a> {
+    pub file: &'a str,
+    pub message: &'a str,
+    pub line: Option<u32>,
+}
+
+/// `Problems`: the diagnostics of the project, by file, error first, with the error of a text typed that does not parse
+/// before those of its file; a click shows the function, and in its view `Text` the place.
+pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter: &mut ProblemsFilter, unparsed: &[Unparsed<'_>]) -> Option<Asked> {
     let mut asked = None;
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("{}, {}", counted(published.errors, "error"), counted(published.warnings, "warning"))).strong());
@@ -903,15 +915,20 @@ pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter:
     if shown.kept {
         ui.label(RichText::new("This function does not draw now: its last drawing stays, with the diagnostics of its file.").weak());
     }
-    let Some(report) = &published.report else { return None };
     let shown_file = shown
         .function
         .as_ref()
         .and_then(|function| published.functions.iter().find(|listed| listed.function == *function))
         .map(|listed| listed.file.as_str());
+    let function_of = |file: &str| published.functions.iter().find(|listed| listed.file == file).map(|listed| listed.function.clone());
+    let diagnostics: &[labcraft_types::Diagnostic] = published.report.as_ref().map_or(&[], |report| report.diagnostics());
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         let mut by_file: BTreeMap<&str, Vec<&labcraft_types::Diagnostic>> = BTreeMap::new();
-        for diagnostic in report.diagnostics() {
+        let typed: Vec<&Unparsed<'_>> = unparsed.iter().filter(|text| !filter.shown_only || shown_file == Some(text.file)).collect();
+        for text in &typed {
+            by_file.entry(text.file).or_default();
+        }
+        for diagnostic in diagnostics {
             if filter.errors_only && diagnostic.severity() != Severity::Error {
                 continue;
             }
@@ -923,6 +940,16 @@ pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter:
         for (file, mut diagnostics) in by_file {
             diagnostics.sort_by_key(|diagnostic| diagnostic.severity() != Severity::Error);
             ui.label(RichText::new(if file.is_empty() { "(the project)" } else { file }).strong().small());
+            for text in typed.iter().filter(|text| text.file == file) {
+                let at = text.line.map(|line| format!(":{line}")).unwrap_or_default();
+                let said = format!("error, not written{at}  The text typed does not read: {}", text.message);
+                let response = ui.add(egui::Label::new(RichText::new(said).color(ui.visuals().error_fg_color)).sense(egui::Sense::click()).wrap());
+                if response.clicked()
+                    && let Some(function) = function_of(file)
+                {
+                    asked = Some(Asked::ShowAt { function, file: file.to_owned(), line: text.line.unwrap_or(1), column: 1 });
+                }
+            }
             for diagnostic in diagnostics {
                 let colour = if diagnostic.severity() == Severity::Error { ui.visuals().error_fg_color } else { ui.visuals().warn_fg_color };
                 let at = diagnostic.span.map(|span| format!(":{}:{}", span.start.line, span.start.column)).unwrap_or_default();
@@ -930,17 +957,17 @@ pub fn problems(ui: &mut egui::Ui, published: &Published, shown: &Shown, filter:
                     .color(colour);
                 let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()).wrap());
                 if response.clicked() {
-                    let function = diagnostic
-                        .function
-                        .clone()
-                        .or_else(|| published.functions.iter().find(|listed| listed.file == diagnostic.file).map(|listed| listed.function.clone()));
+                    let function = diagnostic.function.clone().or_else(|| function_of(&diagnostic.file));
                     if let Some(function) = function.filter(|function| published.functions.iter().any(|listed| listed.function == *function)) {
-                        asked = Some(Asked::Show { function, preview: false });
+                        asked = Some(match diagnostic.span {
+                            Some(span) => Asked::ShowAt { function, file: diagnostic.file.clone(), line: span.start.line, column: span.start.column },
+                            None => Asked::Show { function, preview: false },
+                        });
                     }
                 }
             }
         }
-        if report.diagnostics().is_empty() {
+        if diagnostics.is_empty() && typed.is_empty() {
             ui.label(RichText::new("No problem").weak());
         }
     });
