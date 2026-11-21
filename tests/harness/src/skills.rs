@@ -61,7 +61,7 @@ fn session_on(memory: Memory) -> Session {
         lib_paths: Vec::new(),
         limits: Limits::default(),
         shipped: crate::engine::shipped(),
-        natives: vec![Arc::new(labcraft_visa::Visa)],
+        natives: labcraft_libs::natives(),
         clock: Arc::new(labcraft_engine::Still),
         process: 0,
     };

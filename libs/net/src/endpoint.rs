@@ -6,6 +6,7 @@ use std::net::{IpAddr, Ipv6Addr};
 
 use labcraft_runtime::io::{INVALID_ARGUMENT, Reach};
 use labcraft_runtime::native::NativeOutcome;
+pub(crate) use labcraft_runtime::stream::shown;
 
 pub(crate) const HOST_NOT_FOUND: &str = "net.host_not_found";
 
@@ -102,10 +103,4 @@ pub(crate) fn of_file(text: &str) -> Option<(String, bool)> {
     }
     let port: u16 = digits.parse().ok()?;
     Some((format!("{}:{}:{port}", scheme(udp), written(host)), udp))
-}
-
-/// What a message shows of a text the program gave: its start, its control characters escaped.
-pub(crate) fn shown(text: &str) -> String {
-    let start: String = text.chars().take(64).flat_map(char::escape_debug).collect();
-    if text.chars().count() > 64 { format!("{start}…") } else { start }
 }

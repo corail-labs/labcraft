@@ -1,0 +1,4 @@
+# serial:S001: a key that the format does not have (`latency` for `latency_ms`).
+[[serial.device]]
+endpoint = "serial:COM3"
+latency = 2

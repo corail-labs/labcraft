@@ -983,3 +983,52 @@ fn a_run_tells_its_libraries_the_project_the_simulation_file_and_who_started_it(
     let context = context_of(&session, &agent, json!({ "function": "double", "args": { "x": 1 } }));
     assert!(matches!(context.judge(&tcp), Judged::Allowed));
 }
+
+/// Two libraries that simulate, each with a section whose keys are the endpoints it describes.
+struct Endpoints(&'static str);
+
+impl labcraft_runtime::native::NativeLibrary for Endpoints {
+    fn name(&self) -> &str {
+        self.0
+    }
+
+    fn codes(&self) -> &'static [labcraft_runtime::native::LibraryCode] {
+        &[]
+    }
+
+    fn simulates(&self) -> bool {
+        true
+    }
+
+    fn simulate(
+        &self,
+        section: &labcraft_runtime::native::Section<'_>,
+    ) -> Result<labcraft_runtime::native::Simulation, Vec<labcraft_runtime::native::LibraryDiagnostic>> {
+        let toml::de::DeValue::Table(table) = section.value.get_ref() else { return Err(Vec::new()) };
+        let keys: Vec<String> = table.iter().map(|(key, _)| key.get_ref().to_string()).collect();
+        Ok(Box::new(keys))
+    }
+
+    fn endpoints(&self, simulation: &labcraft_runtime::native::Simulation) -> Vec<String> {
+        simulation.downcast_ref::<Vec<String>>().cloned().unwrap_or_default()
+    }
+
+    fn start_run(&self, _: labcraft_runtime::native::Start<'_>) -> Box<dyn labcraft_runtime::native::LibraryRun> {
+        panic!("no run in this test")
+    }
+}
+
+/// Decision of the owner (2026-11-20): every library of a run is given the endpoints of the whole simulation file, the union
+/// of those its libraries describe, sorted in code point order, each once (`Context::endpoints`, for `serial.list`). By hand:
+/// `b` gives `serial:COM3` and `tcp:h:1`, `a` gives `serial:COM3` again and `serial:/dev/ttyUSB0`; without a file, none.
+#[test]
+fn a_run_gives_its_libraries_the_endpoints_of_the_whole_file() {
+    let memory = project();
+    memory.put("/p/bench.toml", "[b]\n\"serial:COM3\" = 1\n\"tcp:h:1\" = 1\n[a]\n\"serial:COM3\" = 1\n\"serial:/dev/ttyUSB0\" = 1\n");
+    let mut session = session(&memory);
+    session.config.natives = vec![Arc::new(Endpoints("a")), Arc::new(Endpoints("b"))];
+    let context = context_of(&session, &crate::Author::User, json!({ "function": "double", "args": { "x": 1 }, "sim": "bench.toml" }));
+    assert_eq!(*context.endpoints, ["serial:/dev/ttyUSB0".to_owned(), "serial:COM3".to_owned(), "tcp:h:1".to_owned()]);
+    let context = context_of(&session, &crate::Author::User, json!({ "function": "double", "args": { "x": 1 } }));
+    assert!(context.endpoints.is_empty());
+}

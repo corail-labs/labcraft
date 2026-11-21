@@ -1,0 +1,20 @@
+# The library serial shipped with LabCraft: serial ports in raw bytes (M4, docs/io.md); declarations here, native bodies in
+# its Rust crate.
+name = "serial"
+version = "0.1.0"
+description = "Serial ports in raw bytes; a simulation file gives devices by their exchanges"
+dependencies = []
+always = ["close"]
+resources = ["port"]
+categories = [
+    "io.closed",
+    "io.invalid_argument",
+    "io.invalid_text",
+    "io.needs_real_time",
+    "io.not_allowed",
+    "io.timeout",
+    "io.too_long",
+    "io.unsupported",
+    "serial.port_busy",
+    "serial.port_not_found",
+]

@@ -1,0 +1,9 @@
+labcraft 1
+
+/// Takes what has arrived, up to `max` bytes, at once, empty bytes included.
+extern rust(crate: "labcraft-serial", function: "read_available")
+fn read_available(
+    port: port,
+    max: i32 = 65536,
+    err: error = none,
+) -> (data: bytes, port: port, err: error)

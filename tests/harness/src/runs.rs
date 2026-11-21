@@ -98,7 +98,7 @@ fn session_with(memory: &Arc<Memory>, clock: Arc<dyn labcraft_engine::Clock>) ->
         lib_paths: Vec::new(),
         limits: Limits::default(),
         shipped: crate::engine::shipped(),
-        natives: vec![Arc::new(labcraft_visa::Visa)],
+        natives: labcraft_libs::natives(),
         clock,
         process: 0,
     };

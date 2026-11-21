@@ -1,0 +1,2 @@
+fn serial.read_available(port: port, max: i32 = 65536, err: error = none) -> (data: bytes, port: port, err: error)
+  native read_available  skip(err: 2)

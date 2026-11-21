@@ -1,0 +1,4 @@
+labcraft 1
+
+/// The stop bits of a serial port.
+type StopBits = enum { One, Two }

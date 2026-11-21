@@ -1,0 +1,9 @@
+# serial:S007: a request that is the start of another.
+[[serial.device]]
+endpoint = "serial:COM3"
+
+[[serial.device.reply]]
+request = "LED"
+
+[[serial.device.reply]]
+request = "LED ON"

@@ -1,0 +1,5 @@
+labcraft 1
+
+/// The ports the system has, sorted in code point order, each once; under `--sim`, the serial endpoints of the file.
+extern rust(crate: "labcraft-serial", function: "list")
+fn list(err: error = none) -> (ports: [string], err: error)

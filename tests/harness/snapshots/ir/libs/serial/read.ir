@@ -1,0 +1,2 @@
+fn serial.read(port: port, count: i32, err: error = none) -> (data: bytes, port: port, err: error)
+  native read  skip(err: 2)

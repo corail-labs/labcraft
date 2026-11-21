@@ -1,0 +1,2 @@
+fn serial.write(port: port, data: bytes, err: error = none) -> (port: port, err: error)
+  native write  skip(err: 2)

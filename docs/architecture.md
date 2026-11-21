@@ -505,7 +505,7 @@ apps/labcraft-cli ──> mcp ──> engine ──> runtime ──> ir ──> 
 | L4 | `ir` | The dataflow IR: [ir.md](ir.md) |
 | L5 | `runtime` | Values, the scheduler, the interpreter, the primitives, the interface of a native library, the report of a run |
 | L6 | `engine` | The session, the registry of commands, runs as tasks |
-| L6 | `labcraft-visa`, `labcraft-results-log` | The native crates of the libraries `visa` and `results_log` (and `labcraft-net` in M4) |
+| L6 | `labcraft-visa`, `labcraft-results-log`, `labcraft-net`, `labcraft-serial` | The native crates of the libraries `visa`, `results_log`, `net` and `serial` |
 | L7 | `mcp` | The MCP server over stdio, made from the registry |
 
 **A native crate lives beside the declarations it gives bodies to**: `labcraft-visa` in `libs/visa/`,
@@ -750,7 +750,7 @@ each `set`, which `runtime::trace` writes (10.7).
 ### 10.6 Native libraries
 
 *Status: implemented: the interface, `labcraft-visa` and `labcraft-results-log` (step 4), `Blocking` and the pool
-(step 8), the context of a run and `runtime::io`, and `labcraft-net` (M4).* The runtime defines what a library with native functions gives it (`runtime::native`):
+(step 8), the context of a run and `runtime::io`, `runtime::stream`, `labcraft-net` and `labcraft-serial` (M4).* The runtime defines what a library with native functions gives it (`runtime::native`):
 
 ```rust
 pub trait NativeLibrary: Send + Sync {
@@ -758,6 +758,7 @@ pub trait NativeLibrary: Send + Sync {
     fn codes(&self) -> &'static [LibraryCode];                           // `visa:S001`…, for `xtask codes`
     fn simulates(&self) -> bool;                                         // it reads a section of a simulation file
     fn simulate(&self, section: &Section) -> Result<Simulation, Vec<LibraryDiagnostic>>;
+    fn endpoints(&self, simulation: &Simulation) -> Vec<String>;         // the io.md 2 endpoints its section describes
     fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun>;
 }
 pub struct Start<'a> {                                                   // what one run of a library is given
@@ -771,6 +772,7 @@ pub struct Context {                                                     // what
     pub simulation_file: bool,                                           // `--sim` given, a section for this library or not
     pub project: Option<PathBuf>,
     pub started_by: StartedBy,                                           // Human, Agent { client, rights }
+    pub endpoints: Arc<[String]>,                                        // those of the whole file, every library's
 }
 pub trait Consent: Send + Sync { fn ask(&self, question: &Question<'_>) -> bool; } // io.md 4; it may wait
 pub struct Question<'a> { pub run: &'a str, pub client: &'a str, pub project: Option<&'a Path>, pub reach: &'a Reach }
@@ -828,6 +830,10 @@ pub enum NativeOutcome { Outputs(Vec<Value>), Fail { category, code, message } }
   and `visa` on one endpoint ask once. The `Question` names the run by its id, its client and its project, which the
   window shows; `Consent::ask` returns `false` when that run is aborted: the host that aborts the run takes its question
   away. A call that waits for a question holds a thread of the pool (10.4) while it waits.
+- **The endpoints of the whole file**: each library says the endpoints of io.md 2 that its section describes
+  (`NativeLibrary::endpoints`, none by default; `visa` none until its file takes real names, #237), and the engine gives
+  their union, sorted, to every library of the run (`Context::endpoints`), so that `serial.list` under `--sim` gives the
+  serial endpoints of the whole file (io.md 6).
 - **The order of the checks at an open** is the library's, and the same in every transport (io.md 3): its name first
   (`resource_not_found` for a text that is no name), then `io.unsupported`, then `open_real`, then the open itself.
 - **What a run holds is the library's own** (`LibraryRun`): its sessions and simulated instruments live and end with
@@ -890,6 +896,24 @@ needs, its timeout, or `close_ms`. One rule judges what a read takes, for both. 
 read, in text or in hexadecimal (`LogText::hex`), a read with no `sent`, kept by `native::ResourceLog` as `visa` keeps its commands. On WASM every open gives `io.unsupported`.
 `cargo xtask codes` compares `labcraft_net::CODES` with the table of its README; its tests start TCP and UDP servers on
 `127.0.0.1`.
+
+`runtime::stream` holds what `net` and `serial` share, so that a TCP connection and a port read the same: what a read
+needs and takes (`Need`, `Got`, `Terminator`, `Scan`, `Taken`), the simulated device of a stream and one step of a write
+or a read on it, and the reader of the keys every device of the file has (`latency_ms`, `reply`, `unknown`, the times,
+the bounds), with the codes of the library that reads its section (`stream::Codes`). What is a library's own stays in it:
+the datagrams of UDP, the endpoints, the faults, the settings of a port.
+
+`labcraft-serial` (M4, [libs/serial](../libs/serial/README.md)) holds the ports of a run, real or simulated, as `net` its
+connections: an open reduces the name to its endpoint (io.md 2), gives `io.unsupported` on a host without serial ports
+(WASM), then `io.invalid_argument` for a setting out of range, refuses a port open in this run (`serial.port_busy`, kept as
+a set of the endpoints open or opening), then follows `io::open_real`; a real open, read or write is `Blocking` work over
+`serial2`, which builds outside WASM only;
+`settle` sleeps on the clock of the run, then the input is emptied. A simulated device opened with settings it does not
+expect takes the writes and never answers, and the report says which settings differ (`InstrumentLog::settings`).
+`cargo xtask codes` compares `labcraft_serial::CODES` with the table of its README; no real port is in its tests (io.md 7).
+`labcraft_libs::natives()` is the one list of the native libraries shipped, which `labcraft-cli` (`run` and `mcp`), the
+harness and the fuzz targets give a session; the IDE (`apps/labcraft`) and the web host (`apps/labcraft-web`) give none
+yet.
 
 ### 10.7 The trace and the report
 

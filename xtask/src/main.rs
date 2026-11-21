@@ -36,12 +36,12 @@ commands:
   licences  no GPL, LGPL or AGPL dependency (D-23)
   libs      no crate of crates/ depends on libs/ or on a native crate of examples/, and none embeds their files but
             crates/check/src/core_blocks.rs those of libs/core
-  codes     the enumeration Code equals the tables of docs/cli.md, section 5, labcraft_visa::CODES those of simulation.md, 7, and labcraft_net::CODES that of libs/net
+  codes     the enumeration Code equals the tables of docs/cli.md, section 5, labcraft_visa::CODES those of simulation.md, 7, labcraft_net::CODES that of libs/net, and labcraft_serial::CODES that of libs/serial
   commands  the registry of engine equals the tables of docs/commands.md, section 6: ids, parameters, which are required, their defaults
   assets    every asset has its line in ATTRIBUTION.md, and every file that it names exists
   clean-room no LabVIEW file in the repository, tracked or about to be added (D-23)
   bounds    fmt, check, diagram and run of the cases of scenario 4 stay within their bounds, in release; memory on Linux only
-  wasm      format, check, trace, ir, runtime, net, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
+  wasm      format, check, trace, ir, runtime, net, serial, visa, results_log, diagram, engine, editor and labcraft-web build for wasm32-unknown-unknown, and the harness and labcraft-web pass there
   hooks     the Python tests of the hook of the agents (.claude/hooks); not part of ci
   web       clippy for WASM of labcraft-web, then trunk build --release into target/web; not part of ci
   web-serve serves target/web on http://127.0.0.1:8770/, to try the viewer in a browser; not part of ci
@@ -366,6 +366,8 @@ fn wasm() -> Result<(), String> {
         "labcraft-runtime",
         "--package",
         "labcraft-net",
+        "--package",
+        "labcraft-serial",
         "--package",
         "labcraft-visa",
         "--package",

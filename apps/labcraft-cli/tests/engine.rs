@@ -26,7 +26,7 @@ fn on_examples<T: Send>(work: impl FnOnce(&mut Session) -> T + Send) -> T {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    natives: labcraft_libs::natives(),
                     clock: Arc::new(labcraft_engine::Still),
                     process: 0,
                 };
@@ -144,7 +144,7 @@ fn a_run_on_the_disk_writes_its_trace_and_replaces_one_being_read() {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    natives: labcraft_libs::natives(),
                     clock: Arc::new(labcraft_engine::Still),
                     process: std::process::id(),
                 };
@@ -305,7 +305,7 @@ fn scenario_5_moving_a_node_changes_one_entry_of_layout() {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    natives: labcraft_libs::natives(),
                     clock: Arc::new(labcraft_engine::Still),
                     process: 0,
                 };
@@ -408,7 +408,7 @@ fn the_canvas_judges_a_wire_as_wire_connect_does() {
                     lib_paths: Vec::new(),
                     limits: Limits::default(),
                     shipped: labcraft_cli::shipped(),
-                    natives: vec![Arc::new(labcraft_visa::Visa)],
+                    natives: labcraft_libs::natives(),
                     clock: Arc::new(labcraft_engine::Still),
                     process: 0,
                 };

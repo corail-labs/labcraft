@@ -756,6 +756,16 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
             CheckPart::of_report(&report, run_checked.counts, given.deny_warnings, by_place(problems)).with_unlisted(arguments.unknown_counted.get());
         return Ok(Ready::Refused(refused_in(id, &given.function, given.real_time, check)));
     }
+    // The endpoints the file describes, every library's together, for each library of the run (io.md 6, `serial.list`).
+    let mut endpoints: Vec<String> = Vec::new();
+    for (native, simulation) in session.config.natives.iter().zip(&simulations) {
+        if let Some(simulation) = simulation {
+            endpoints.extend(native.endpoints(simulation));
+        }
+    }
+    endpoints.sort_unstable();
+    endpoints.dedup();
+    let endpoints: Arc<[String]> = endpoints.into();
     // The native libraries the program uses, each with its part of the simulation file.
     let used: Vec<(LibraryId, Arc<dyn NativeLibrary>)> = session
         .config
@@ -811,7 +821,7 @@ pub(crate) fn prepare(session: &Session, given: &Given, id: &str) -> Result<Read
         texts: given.line.texts,
         real_time: given.real_time,
         max_nesting,
-        context: Context { simulation_file: sim.is_some(), project: Some(session.root.clone()), started_by: given.by.clone() },
+        context: Context { simulation_file: sim.is_some(), project: Some(session.root.clone()), started_by: given.by.clone(), endpoints },
     })))
 }
 

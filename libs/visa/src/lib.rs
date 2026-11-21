@@ -84,6 +84,10 @@ impl NativeLibrary for Visa {
             .unwrap_or_default()
     }
 
+    // `endpoints` is the default, none: its file accepts only `SIM::` names, which are no endpoints of io.md 2. Once it
+    // accepts real names (`ASRL3::INSTR`, issue #237), it gives their endpoints (`serial:COM3`), which `serial.list` lists
+    // under `--sim`.
+
     fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun> {
         let bench = start.simulation.and_then(|simulation| simulation.downcast_ref::<Arc<Bench>>()).cloned();
         Box::new(VisaRun::new(start.library, bench, start.budget))

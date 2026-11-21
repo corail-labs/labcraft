@@ -1,0 +1,771 @@
+# serial:S008: more than 256 devices.
+[[serial.device]]
+endpoint = "serial:COM1"
+
+[[serial.device]]
+endpoint = "serial:COM2"
+
+[[serial.device]]
+endpoint = "serial:COM3"
+
+[[serial.device]]
+endpoint = "serial:COM4"
+
+[[serial.device]]
+endpoint = "serial:COM5"
+
+[[serial.device]]
+endpoint = "serial:COM6"
+
+[[serial.device]]
+endpoint = "serial:COM7"
+
+[[serial.device]]
+endpoint = "serial:COM8"
+
+[[serial.device]]
+endpoint = "serial:COM9"
+
+[[serial.device]]
+endpoint = "serial:COM10"
+
+[[serial.device]]
+endpoint = "serial:COM11"
+
+[[serial.device]]
+endpoint = "serial:COM12"
+
+[[serial.device]]
+endpoint = "serial:COM13"
+
+[[serial.device]]
+endpoint = "serial:COM14"
+
+[[serial.device]]
+endpoint = "serial:COM15"
+
+[[serial.device]]
+endpoint = "serial:COM16"
+
+[[serial.device]]
+endpoint = "serial:COM17"
+
+[[serial.device]]
+endpoint = "serial:COM18"
+
+[[serial.device]]
+endpoint = "serial:COM19"
+
+[[serial.device]]
+endpoint = "serial:COM20"
+
+[[serial.device]]
+endpoint = "serial:COM21"
+
+[[serial.device]]
+endpoint = "serial:COM22"
+
+[[serial.device]]
+endpoint = "serial:COM23"
+
+[[serial.device]]
+endpoint = "serial:COM24"
+
+[[serial.device]]
+endpoint = "serial:COM25"
+
+[[serial.device]]
+endpoint = "serial:COM26"
+
+[[serial.device]]
+endpoint = "serial:COM27"
+
+[[serial.device]]
+endpoint = "serial:COM28"
+
+[[serial.device]]
+endpoint = "serial:COM29"
+
+[[serial.device]]
+endpoint = "serial:COM30"
+
+[[serial.device]]
+endpoint = "serial:COM31"
+
+[[serial.device]]
+endpoint = "serial:COM32"
+
+[[serial.device]]
+endpoint = "serial:COM33"
+
+[[serial.device]]
+endpoint = "serial:COM34"
+
+[[serial.device]]
+endpoint = "serial:COM35"
+
+[[serial.device]]
+endpoint = "serial:COM36"
+
+[[serial.device]]
+endpoint = "serial:COM37"
+
+[[serial.device]]
+endpoint = "serial:COM38"
+
+[[serial.device]]
+endpoint = "serial:COM39"
+
+[[serial.device]]
+endpoint = "serial:COM40"
+
+[[serial.device]]
+endpoint = "serial:COM41"
+
+[[serial.device]]
+endpoint = "serial:COM42"
+
+[[serial.device]]
+endpoint = "serial:COM43"
+
+[[serial.device]]
+endpoint = "serial:COM44"
+
+[[serial.device]]
+endpoint = "serial:COM45"
+
+[[serial.device]]
+endpoint = "serial:COM46"
+
+[[serial.device]]
+endpoint = "serial:COM47"
+
+[[serial.device]]
+endpoint = "serial:COM48"
+
+[[serial.device]]
+endpoint = "serial:COM49"
+
+[[serial.device]]
+endpoint = "serial:COM50"
+
+[[serial.device]]
+endpoint = "serial:COM51"
+
+[[serial.device]]
+endpoint = "serial:COM52"
+
+[[serial.device]]
+endpoint = "serial:COM53"
+
+[[serial.device]]
+endpoint = "serial:COM54"
+
+[[serial.device]]
+endpoint = "serial:COM55"
+
+[[serial.device]]
+endpoint = "serial:COM56"
+
+[[serial.device]]
+endpoint = "serial:COM57"
+
+[[serial.device]]
+endpoint = "serial:COM58"
+
+[[serial.device]]
+endpoint = "serial:COM59"
+
+[[serial.device]]
+endpoint = "serial:COM60"
+
+[[serial.device]]
+endpoint = "serial:COM61"
+
+[[serial.device]]
+endpoint = "serial:COM62"
+
+[[serial.device]]
+endpoint = "serial:COM63"
+
+[[serial.device]]
+endpoint = "serial:COM64"
+
+[[serial.device]]
+endpoint = "serial:COM65"
+
+[[serial.device]]
+endpoint = "serial:COM66"
+
+[[serial.device]]
+endpoint = "serial:COM67"
+
+[[serial.device]]
+endpoint = "serial:COM68"
+
+[[serial.device]]
+endpoint = "serial:COM69"
+
+[[serial.device]]
+endpoint = "serial:COM70"
+
+[[serial.device]]
+endpoint = "serial:COM71"
+
+[[serial.device]]
+endpoint = "serial:COM72"
+
+[[serial.device]]
+endpoint = "serial:COM73"
+
+[[serial.device]]
+endpoint = "serial:COM74"
+
+[[serial.device]]
+endpoint = "serial:COM75"
+
+[[serial.device]]
+endpoint = "serial:COM76"
+
+[[serial.device]]
+endpoint = "serial:COM77"
+
+[[serial.device]]
+endpoint = "serial:COM78"
+
+[[serial.device]]
+endpoint = "serial:COM79"
+
+[[serial.device]]
+endpoint = "serial:COM80"
+
+[[serial.device]]
+endpoint = "serial:COM81"
+
+[[serial.device]]
+endpoint = "serial:COM82"
+
+[[serial.device]]
+endpoint = "serial:COM83"
+
+[[serial.device]]
+endpoint = "serial:COM84"
+
+[[serial.device]]
+endpoint = "serial:COM85"
+
+[[serial.device]]
+endpoint = "serial:COM86"
+
+[[serial.device]]
+endpoint = "serial:COM87"
+
+[[serial.device]]
+endpoint = "serial:COM88"
+
+[[serial.device]]
+endpoint = "serial:COM89"
+
+[[serial.device]]
+endpoint = "serial:COM90"
+
+[[serial.device]]
+endpoint = "serial:COM91"
+
+[[serial.device]]
+endpoint = "serial:COM92"
+
+[[serial.device]]
+endpoint = "serial:COM93"
+
+[[serial.device]]
+endpoint = "serial:COM94"
+
+[[serial.device]]
+endpoint = "serial:COM95"
+
+[[serial.device]]
+endpoint = "serial:COM96"
+
+[[serial.device]]
+endpoint = "serial:COM97"
+
+[[serial.device]]
+endpoint = "serial:COM98"
+
+[[serial.device]]
+endpoint = "serial:COM99"
+
+[[serial.device]]
+endpoint = "serial:COM100"
+
+[[serial.device]]
+endpoint = "serial:COM101"
+
+[[serial.device]]
+endpoint = "serial:COM102"
+
+[[serial.device]]
+endpoint = "serial:COM103"
+
+[[serial.device]]
+endpoint = "serial:COM104"
+
+[[serial.device]]
+endpoint = "serial:COM105"
+
+[[serial.device]]
+endpoint = "serial:COM106"
+
+[[serial.device]]
+endpoint = "serial:COM107"
+
+[[serial.device]]
+endpoint = "serial:COM108"
+
+[[serial.device]]
+endpoint = "serial:COM109"
+
+[[serial.device]]
+endpoint = "serial:COM110"
+
+[[serial.device]]
+endpoint = "serial:COM111"
+
+[[serial.device]]
+endpoint = "serial:COM112"
+
+[[serial.device]]
+endpoint = "serial:COM113"
+
+[[serial.device]]
+endpoint = "serial:COM114"
+
+[[serial.device]]
+endpoint = "serial:COM115"
+
+[[serial.device]]
+endpoint = "serial:COM116"
+
+[[serial.device]]
+endpoint = "serial:COM117"
+
+[[serial.device]]
+endpoint = "serial:COM118"
+
+[[serial.device]]
+endpoint = "serial:COM119"
+
+[[serial.device]]
+endpoint = "serial:COM120"
+
+[[serial.device]]
+endpoint = "serial:COM121"
+
+[[serial.device]]
+endpoint = "serial:COM122"
+
+[[serial.device]]
+endpoint = "serial:COM123"
+
+[[serial.device]]
+endpoint = "serial:COM124"
+
+[[serial.device]]
+endpoint = "serial:COM125"
+
+[[serial.device]]
+endpoint = "serial:COM126"
+
+[[serial.device]]
+endpoint = "serial:COM127"
+
+[[serial.device]]
+endpoint = "serial:COM128"
+
+[[serial.device]]
+endpoint = "serial:COM129"
+
+[[serial.device]]
+endpoint = "serial:COM130"
+
+[[serial.device]]
+endpoint = "serial:COM131"
+
+[[serial.device]]
+endpoint = "serial:COM132"
+
+[[serial.device]]
+endpoint = "serial:COM133"
+
+[[serial.device]]
+endpoint = "serial:COM134"
+
+[[serial.device]]
+endpoint = "serial:COM135"
+
+[[serial.device]]
+endpoint = "serial:COM136"
+
+[[serial.device]]
+endpoint = "serial:COM137"
+
+[[serial.device]]
+endpoint = "serial:COM138"
+
+[[serial.device]]
+endpoint = "serial:COM139"
+
+[[serial.device]]
+endpoint = "serial:COM140"
+
+[[serial.device]]
+endpoint = "serial:COM141"
+
+[[serial.device]]
+endpoint = "serial:COM142"
+
+[[serial.device]]
+endpoint = "serial:COM143"
+
+[[serial.device]]
+endpoint = "serial:COM144"
+
+[[serial.device]]
+endpoint = "serial:COM145"
+
+[[serial.device]]
+endpoint = "serial:COM146"
+
+[[serial.device]]
+endpoint = "serial:COM147"
+
+[[serial.device]]
+endpoint = "serial:COM148"
+
+[[serial.device]]
+endpoint = "serial:COM149"
+
+[[serial.device]]
+endpoint = "serial:COM150"
+
+[[serial.device]]
+endpoint = "serial:COM151"
+
+[[serial.device]]
+endpoint = "serial:COM152"
+
+[[serial.device]]
+endpoint = "serial:COM153"
+
+[[serial.device]]
+endpoint = "serial:COM154"
+
+[[serial.device]]
+endpoint = "serial:COM155"
+
+[[serial.device]]
+endpoint = "serial:COM156"
+
+[[serial.device]]
+endpoint = "serial:COM157"
+
+[[serial.device]]
+endpoint = "serial:COM158"
+
+[[serial.device]]
+endpoint = "serial:COM159"
+
+[[serial.device]]
+endpoint = "serial:COM160"
+
+[[serial.device]]
+endpoint = "serial:COM161"
+
+[[serial.device]]
+endpoint = "serial:COM162"
+
+[[serial.device]]
+endpoint = "serial:COM163"
+
+[[serial.device]]
+endpoint = "serial:COM164"
+
+[[serial.device]]
+endpoint = "serial:COM165"
+
+[[serial.device]]
+endpoint = "serial:COM166"
+
+[[serial.device]]
+endpoint = "serial:COM167"
+
+[[serial.device]]
+endpoint = "serial:COM168"
+
+[[serial.device]]
+endpoint = "serial:COM169"
+
+[[serial.device]]
+endpoint = "serial:COM170"
+
+[[serial.device]]
+endpoint = "serial:COM171"
+
+[[serial.device]]
+endpoint = "serial:COM172"
+
+[[serial.device]]
+endpoint = "serial:COM173"
+
+[[serial.device]]
+endpoint = "serial:COM174"
+
+[[serial.device]]
+endpoint = "serial:COM175"
+
+[[serial.device]]
+endpoint = "serial:COM176"
+
+[[serial.device]]
+endpoint = "serial:COM177"
+
+[[serial.device]]
+endpoint = "serial:COM178"
+
+[[serial.device]]
+endpoint = "serial:COM179"
+
+[[serial.device]]
+endpoint = "serial:COM180"
+
+[[serial.device]]
+endpoint = "serial:COM181"
+
+[[serial.device]]
+endpoint = "serial:COM182"
+
+[[serial.device]]
+endpoint = "serial:COM183"
+
+[[serial.device]]
+endpoint = "serial:COM184"
+
+[[serial.device]]
+endpoint = "serial:COM185"
+
+[[serial.device]]
+endpoint = "serial:COM186"
+
+[[serial.device]]
+endpoint = "serial:COM187"
+
+[[serial.device]]
+endpoint = "serial:COM188"
+
+[[serial.device]]
+endpoint = "serial:COM189"
+
+[[serial.device]]
+endpoint = "serial:COM190"
+
+[[serial.device]]
+endpoint = "serial:COM191"
+
+[[serial.device]]
+endpoint = "serial:COM192"
+
+[[serial.device]]
+endpoint = "serial:COM193"
+
+[[serial.device]]
+endpoint = "serial:COM194"
+
+[[serial.device]]
+endpoint = "serial:COM195"
+
+[[serial.device]]
+endpoint = "serial:COM196"
+
+[[serial.device]]
+endpoint = "serial:COM197"
+
+[[serial.device]]
+endpoint = "serial:COM198"
+
+[[serial.device]]
+endpoint = "serial:COM199"
+
+[[serial.device]]
+endpoint = "serial:COM200"
+
+[[serial.device]]
+endpoint = "serial:COM201"
+
+[[serial.device]]
+endpoint = "serial:COM202"
+
+[[serial.device]]
+endpoint = "serial:COM203"
+
+[[serial.device]]
+endpoint = "serial:COM204"
+
+[[serial.device]]
+endpoint = "serial:COM205"
+
+[[serial.device]]
+endpoint = "serial:COM206"
+
+[[serial.device]]
+endpoint = "serial:COM207"
+
+[[serial.device]]
+endpoint = "serial:COM208"
+
+[[serial.device]]
+endpoint = "serial:COM209"
+
+[[serial.device]]
+endpoint = "serial:COM210"
+
+[[serial.device]]
+endpoint = "serial:COM211"
+
+[[serial.device]]
+endpoint = "serial:COM212"
+
+[[serial.device]]
+endpoint = "serial:COM213"
+
+[[serial.device]]
+endpoint = "serial:COM214"
+
+[[serial.device]]
+endpoint = "serial:COM215"
+
+[[serial.device]]
+endpoint = "serial:COM216"
+
+[[serial.device]]
+endpoint = "serial:COM217"
+
+[[serial.device]]
+endpoint = "serial:COM218"
+
+[[serial.device]]
+endpoint = "serial:COM219"
+
+[[serial.device]]
+endpoint = "serial:COM220"
+
+[[serial.device]]
+endpoint = "serial:COM221"
+
+[[serial.device]]
+endpoint = "serial:COM222"
+
+[[serial.device]]
+endpoint = "serial:COM223"
+
+[[serial.device]]
+endpoint = "serial:COM224"
+
+[[serial.device]]
+endpoint = "serial:COM225"
+
+[[serial.device]]
+endpoint = "serial:COM226"
+
+[[serial.device]]
+endpoint = "serial:COM227"
+
+[[serial.device]]
+endpoint = "serial:COM228"
+
+[[serial.device]]
+endpoint = "serial:COM229"
+
+[[serial.device]]
+endpoint = "serial:COM230"
+
+[[serial.device]]
+endpoint = "serial:COM231"
+
+[[serial.device]]
+endpoint = "serial:COM232"
+
+[[serial.device]]
+endpoint = "serial:COM233"
+
+[[serial.device]]
+endpoint = "serial:COM234"
+
+[[serial.device]]
+endpoint = "serial:COM235"
+
+[[serial.device]]
+endpoint = "serial:COM236"
+
+[[serial.device]]
+endpoint = "serial:COM237"
+
+[[serial.device]]
+endpoint = "serial:COM238"
+
+[[serial.device]]
+endpoint = "serial:COM239"
+
+[[serial.device]]
+endpoint = "serial:COM240"
+
+[[serial.device]]
+endpoint = "serial:COM241"
+
+[[serial.device]]
+endpoint = "serial:COM242"
+
+[[serial.device]]
+endpoint = "serial:COM243"
+
+[[serial.device]]
+endpoint = "serial:COM244"
+
+[[serial.device]]
+endpoint = "serial:COM245"
+
+[[serial.device]]
+endpoint = "serial:COM246"
+
+[[serial.device]]
+endpoint = "serial:COM247"
+
+[[serial.device]]
+endpoint = "serial:COM248"
+
+[[serial.device]]
+endpoint = "serial:COM249"
+
+[[serial.device]]
+endpoint = "serial:COM250"
+
+[[serial.device]]
+endpoint = "serial:COM251"
+
+[[serial.device]]
+endpoint = "serial:COM252"
+
+[[serial.device]]
+endpoint = "serial:COM253"
+
+[[serial.device]]
+endpoint = "serial:COM254"
+
+[[serial.device]]
+endpoint = "serial:COM255"
+
+[[serial.device]]
+endpoint = "serial:COM256"
+
+[[serial.device]]
+endpoint = "serial:COM257"

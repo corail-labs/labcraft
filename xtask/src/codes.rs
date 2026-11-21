@@ -112,6 +112,13 @@ pub const LIBRARIES: &[Library] = &[
         codes: labcraft_visa::CODES,
     },
     Library { name: "net", document: "libs/net/README.md", heading: "## Simulation", list: "labcraft_net::CODES", codes: labcraft_net::CODES },
+    Library {
+        name: "serial",
+        document: "libs/serial/README.md",
+        heading: "## Simulation",
+        list: "labcraft_serial::CODES",
+        codes: labcraft_serial::CODES,
+    },
 ];
 
 impl Library {
