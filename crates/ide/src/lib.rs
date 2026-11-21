@@ -47,6 +47,7 @@ use labcraft_engine::view::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
+mod agent_view;
 pub mod agents;
 mod block;
 pub mod catalog;
@@ -56,6 +57,7 @@ mod insert;
 pub mod keys;
 pub mod pane;
 pub mod panels;
+mod pill;
 mod running;
 pub mod service;
 mod settings_dialog;
@@ -63,7 +65,7 @@ pub mod text;
 mod types;
 mod values;
 
-pub use host::{Host, Reply, Snapshot};
+pub use host::{Host, LastStep, Reply, Snapshot};
 pub use pane::Pane;
 
 /// What the window keeps for the user (ide.md 1: the layout is the user's), which the app stores: the keys of the store
@@ -268,6 +270,8 @@ pub struct Ide {
     settings_dialog: settings_dialog::Dialog,
     /// What the app asks the user about the agents attached (ide.md 8).
     agent_questions: agents::Questions,
+    /// What the window shows of the agents attached: the pill, the highlights, the dots on the tabs, the notice.
+    agent_view: agent_view::AgentView,
     workspace: Workspace<Pane>,
     platform: Platform,
     keymap: Keymap,
@@ -400,6 +404,7 @@ impl Ide {
             settings_kept: None,
             settings_dialog: settings_dialog::Dialog::default(),
             agent_questions: agents::Questions::default(),
+            agent_view: agent_view::AgentView::default(),
             prefs,
             prefs_changed,
             workspace,
@@ -500,6 +505,26 @@ impl Ide {
     /// The user's answers to the questions about the agents, since the last call.
     pub fn take_agent_answers(&mut self) -> Vec<(u64, agents::Answer)> {
         self.agent_questions.take_answers()
+    }
+
+    /// The agents attached, as the app holds them (ide.md 8): the pill shows them.
+    pub fn set_agents(&mut self, connected: Vec<agents::Connected>) {
+        self.agent_view.connected = connected;
+    }
+
+    /// What the user asked of the agents attached, from the pill, since the last call.
+    pub fn take_agent_asks(&mut self) -> Vec<agents::Asked> {
+        std::mem::take(&mut self.agent_view.asked)
+    }
+
+    /// Whether the window shows anything of the agents (ide.md 8): with a project whose session serves them, and AI on.
+    fn agents_shown(&self, host: Option<&dyn Host>) -> bool {
+        host.is_some_and(Host::serves_agents) && self.settings.ai
+    }
+
+    /// The switch of AI (`ai.enabled`, ide.md 8): off, the app refuses the agents on its channel.
+    pub fn ai_enabled(&self) -> bool {
+        self.settings.ai
     }
 
     /// Says a problem that the app met, as a failure of a command is said.
@@ -680,6 +705,12 @@ impl Ide {
         let view = snapshot.view.clone();
         self.canvas_gesture = None;
         self.waiting.clone_from(&snapshot.waiting);
+        // What the window shows of the agents (ide.md 8): nothing of it with AI off.
+        if self.agents_shown(host) {
+            self.agent_view.follow(&snapshot.steps, &view, self.now);
+        } else {
+            self.agent_view.clear(&snapshot.steps);
+        }
         self.follow_focus(ui.ctx());
         if let Some(host) = host {
             self.take_replies(host, &view);
@@ -711,7 +742,8 @@ impl Ide {
         let entries = if self.palette.is_open() { catalog::palette_entries(&self.keymap, host.is_some()) } else { Vec::new() };
         let workspaces = catalog::workspaces();
         let palette_key = keys::key_of(&self.keymap, &CommandRef::new(keys::PALETTE));
-        let right: Vec<Segment> = host.iter().map(|_| Segment::new("No agent").hover("Connecting an AI agent comes with step 8 of M1")).collect();
+        let right: Vec<Segment> =
+            if self.agents_shown(host) { vec![pill::segment(&self.agent_view.connected, self.waiting.as_deref())] } else { Vec::new() };
         // The interface of the window (decisions of the owner, 2026-11-16): the theme, then the detached mode to come.
         let tools = [
             Tool { icon: Icon::Settings, hover: "Settings".to_owned(), command: keys::SETTINGS.to_owned(), planned: false },
@@ -764,6 +796,8 @@ impl Ide {
                 Answer::Workspace(WorkspaceAsked::Planned(planned)) => self.card.open(planned),
                 Answer::OpenPalette => self.open_palette(&view),
                 Answer::Segment(command) => self.run(CommandRef::new(command), host, &view, &mut outward),
+                Answer::Opens(command, below) if command == pill::COMMAND => self.agent_view.pill.toggle(below),
+                Answer::Opens(command, _) => self.run(CommandRef::new(command), host, &view, &mut outward),
             }
         }
         let notices: Vec<String> = snapshot.notices.iter().chain(self.failures.iter()).cloned().collect();
@@ -787,11 +821,12 @@ impl Ide {
         }
         self.in_memory = start.in_memory;
         let status = self.status(&view);
-        if let Some(command) = egui::Panel::bottom("ide-status")
+        let status_bar = egui::Panel::bottom("ide-status")
             .frame(kit_shell::theme::bar_frame(&tokens).inner_margin(egui::Margin::symmetric(8, 3)))
-            .show(ui, |ui| kit_shell::status::show(ui, &status.0, &status.1))
-            .inner
-        {
+            .show(ui, |ui| kit_shell::status::show(ui, &status.0, &status.1));
+        // The notice of an agent stands over the right end of the status bar.
+        let notice_corner = status_bar.response.rect.right_top();
+        if let Some(command) = status_bar.inner {
             self.run(CommandRef::new(command), host, &view, &mut outward);
         }
         match host {
@@ -836,12 +871,47 @@ impl Ide {
         if let Some(policies) = self.agent_questions.show(ui.ctx(), &self.prefs.settings) {
             self.write_setting(keyed::AI_POLICIES, policies, false, host, &view, &mut outward);
         }
+        if let Some(host) = host.filter(|&host| self.agents_shown(Some(host))) {
+            self.show_agents(ui.ctx(), host, &snapshot, notice_corner, &mut outward);
+        }
         // The content reaches under the title bar of macOS: a drag that starts on a control of the top bar must not
         // move the window.
         #[cfg(target_os = "macos")]
         craft_window::title_bar::sync_movable(ui.ctx(), &mut self.movable);
         self.say_gesture(ui.ctx(), host, &view);
         outward
+    }
+
+    /// The menu of the pill and the notice of the last step of an agent (ide.md 8), and what they ask.
+    fn show_agents(&mut self, ctx: &egui::Context, host: &dyn Host, snapshot: &Snapshot, notice_corner: egui::Pos2, outward: &mut Vec<Outward>) {
+        let view = snapshot.view.clone();
+        let agent_view::AgentView { pill, connected, .. } = &mut self.agent_view;
+        for out in pill.show(ctx, connected, &self.prefs.settings) {
+            match out {
+                pill::Out::Agent(asked) => self.agent_view.asked.push(asked),
+                pill::Out::Keep(policies) => self.write_setting(keyed::AI_POLICIES, policies, false, Some(host), &view, outward),
+                pill::Out::Settings => self.settings_dialog.open(),
+            }
+        }
+        let undoable = snapshot.steps.first().map(|step| step.number) == self.agent_view.notice.as_ref().map(|notice| notice.step);
+        match self.agent_view.show_notice(ctx, self.now, undoable, notice_corner) {
+            Some(agent_view::Clicked::Show(function)) => {
+                if view.is_detached(&function) {
+                    self.raise = Some(function.clone());
+                } else if view.main.function.as_deref() != Some(function.as_str()) {
+                    let reply = host.send("view.show_function", json!({ "function": function }));
+                    self.asking_show = Some((function.clone(), reply));
+                }
+                if let Some(touched) = self.agent_view.notice.as_ref().and_then(|notice| notice.touched.clone()) {
+                    self.agent_view.again = Some((function, touched));
+                }
+            }
+            // That step, or nothing when another came since (`file.stale`).
+            Some(agent_view::Clicked::Undo(step)) => {
+                self.run(CommandRef::with_params("history.undo", json!({ "step": step })), Some(host), &view, outward);
+            }
+            None => {}
+        }
     }
 
     /// Tells the host when a gesture of the user starts and ends, from what the frame drew: a canvas in a gesture, or a
@@ -924,6 +994,8 @@ impl Ide {
         self.placing.clear();
         self.palette_in = None;
         self.history = History::default();
+        // The steps of another session count from 1 again.
+        self.agent_view.reset();
         // A run of the project before is not followed into this session, whose runs count from the start again.
         self.running = None;
         self.outcomes.clear();
@@ -1349,14 +1421,33 @@ impl Ide {
                 if let Some(drawing) = &shown.drawing
                     && !drawn.canvas.drawing().is_some_and(|before| Arc::ptr_eq(before, drawing))
                 {
-                    let first = drawn.canvas.drawing().is_none();
+                    let before = drawn.canvas.drawing().cloned();
+                    let first = before.is_none();
                     // The glide when the file of the function changed; the first drawing of a tab is fitted.
                     drawn.canvas.set_drawing(drawing.clone(), shown.glide && !first);
                     if first {
                         drawn.canvas.fit();
                         drawn.fit_values = true;
                     }
+                    // A step of an agent: what it touched, highlighted for a moment (ide.md 8).
+                    if let Some(before) = before
+                        && self.agent_view.is_pending(function)
+                    {
+                        let touched = labcraft_editor::touched(&before, drawing);
+                        // A drawing that changes nothing, drawn again for another reason, leaves it waiting.
+                        if !touched.is_empty() {
+                            self.agent_view.drawn(function, &touched);
+                            drawn.canvas.highlight(touched, self.now);
+                        }
+                    }
                 }
+            }
+            // Show, on the notice: highlighted again once the function is shown.
+            if self.agent_view.again.as_ref().is_some_and(|(again, _)| again == function)
+                && drawn.canvas.drawing().is_some()
+                && let Some((_, touched)) = self.agent_view.again.take()
+            {
+                drawn.canvas.highlight(touched, self.now);
             }
             if drawn.overlay_generation != Some(shown.overlay_generation) {
                 drawn.overlay_generation = Some(shown.overlay_generation);
@@ -1496,7 +1587,7 @@ impl Ide {
         Ok(())
     }
 
-    /// The status bar: the file shown, the last step; the agent, color by type, the zoom. Of the window that has focus.
+    /// The status bar: the file shown, the last step; color by type, the zoom. Of the window that has focus.
     fn status(&self, view: &Published) -> (Vec<Segment>, Vec<Segment>) {
         let shown = self.target(view).function.as_deref();
         let mut left = Vec::new();
@@ -1509,13 +1600,6 @@ impl Ide {
         }
         if let Some(last) = &self.history.last {
             left.push(Segment::new(last.clone()).hover("The last step of the history"));
-        }
-        // Until the pill of the agent (ide.md 8; decision of the owner, 2026-11-21).
-        if let Some(agent) = &self.waiting {
-            left.push(Segment::new(format!("{agent} waits for the end of your gesture")).hover(format!(
-                "Its edit runs when your gesture ends, on what it gives; after {} s it gives up and changes nothing",
-                labcraft_engine::gesture::WAIT.as_secs()
-            )));
         }
         let mut right = Vec::new();
         if shown.is_some() {
@@ -2680,11 +2764,11 @@ impl DockContent<Pane> for Content<'_> {
     }
 
     fn label(&mut self, _ui: &egui::Ui, pane: &Pane, logical: &str, _font: &FontId, _color: egui::Color32) -> egui::WidgetText {
-        // A tab in preview has its title in italics (ide.md 3).
-        match pane {
-            Pane::Function(function) if self.view.preview.as_deref() == Some(function.as_str()) => RichText::new(logical).italics().into(),
-            _ => logical.into(),
-        }
+        // A tab in preview has its title in italics (ide.md 3); one that an agent edited while it was not shown, a dot
+        // (ide.md 8).
+        let Pane::Function(function) = pane else { return logical.into() };
+        let text = if self.ide.agent_view.dots.contains(function) { RichText::new(format!("{logical} ●")) } else { RichText::new(logical) };
+        if self.view.preview.as_deref() == Some(function.as_str()) { text.italics().into() } else { text.into() }
     }
 
     fn permissions(&self, pane: &Pane) -> Permissions {

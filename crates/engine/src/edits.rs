@@ -1594,10 +1594,16 @@ fn step_text(step: &crate::history::Step) -> String {
 }
 
 /// `history.undo`: the last step, whoever made it, for the user; only its own, for an agent (9.5).
-pub(crate) fn undo(session: &mut Session, author: &Author) -> Result<Value, CommandError> {
+pub(crate) fn undo(session: &mut Session, author: &Author, params: &Params) -> Result<Value, CommandError> {
     let Some(step) = session.history.to_undo().cloned() else {
         return Err(CommandError::new("history.empty", "there is nothing to undo"));
     };
+    // The step meant, as the notice of an agent names it (ide.md 8): another one came since.
+    if let Some(meant) = params.u64("step")
+        && meant != step.number
+    {
+        return Err(CommandError::new("file.stale", format!("the last step is now {}, not step {meant}", step_text(&step))));
+    }
     if author.is_agent() && step.author != *author {
         return Err(CommandError::new("history.not_yours", format!("the last step is not yours: {}", step_text(&step))));
     }

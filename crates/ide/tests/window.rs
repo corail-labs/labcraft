@@ -37,7 +37,9 @@ impl Host for Fake {
     }
 
     fn snapshot(&self) -> Snapshot {
-        Snapshot { view: self.session.borrow().view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0, waiting: None }
+        let session = self.session.borrow();
+        let steps = Arc::new(session.steps_done().map(labcraft_ide::LastStep::of).collect());
+        Snapshot { view: session.view().clone(), project: Some("/p".to_owned()), notices: Vec::new(), session: 0, waiting: None, steps }
     }
 
     fn set_zoom(&self, function: &str, zoom: f32) {
@@ -50,6 +52,10 @@ impl Host for Fake {
 
     fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>) {
         self.session.borrow_mut().set_gesture(gesture);
+    }
+
+    fn serves_agents(&self) -> bool {
+        true
     }
 }
 
@@ -1402,4 +1408,38 @@ fn a_text_that_does_not_parse_holds_the_lock_until_its_tab_closes() {
     harness.state().host.session.borrow_mut().execute("view.close_function", &json!({ "function": "main" })).unwrap();
     harness.run_steps(4);
     assert_eq!(gesture(&harness), None);
+}
+
+/// What the window shows of an agent (ide.md 8): the pill, then for its step the notice and the highlight of what it
+/// touched; Undo on the notice takes the step back; with AI off, nothing of it.
+#[test]
+fn an_edit_of_an_agent_shows_in_its_pill_its_notice_and_its_highlight_and_the_notice_undoes_it() {
+    use labcraft_ide::agents::{Connected, Policy};
+    let mut harness = harness(fake());
+    assert!(harness.query_by_label("No agent").is_some());
+    let claude = Connected { id: 1, client: "claude".to_owned(), signed: "claude".to_owned(), project: "/p".to_owned(), policy: Some(Policy::Edits) };
+    harness.state_mut().ide.set_agents(vec![claude]);
+    harness.run_steps(2);
+    assert!(harness.query_by_label("● claude · Edits").is_some());
+    let before = text_of(&harness, "/p/main.lcf");
+    let agent = labcraft_engine::Author::Agent("claude".to_owned());
+    {
+        // A call of an agent, as the session of the app runs it.
+        let mut session = harness.state().host.session.borrow_mut();
+        session.execute_as(&agent, "node.add", &json!({ "file": "main.lcf", "call": "core.not" })).unwrap();
+    }
+    harness.run_steps(2);
+    // Its file, written, is drawn again once the watcher of the app sees it: after the step.
+    harness.state().host.session.borrow_mut().files_changed();
+    harness.run_steps(2);
+    assert!(harness.query_by_label_contains("in main").is_some(), "the notice says what it did, and where");
+    assert!(harness.state_mut().ide.shown_canvas("main").unwrap().0.highlighted().is_some_and(|touched| !touched.nodes.is_empty()));
+    click_role(&mut harness, "Undo", egui::accesskit::Role::Button);
+    assert_eq!(text_of(&harness, "/p/main.lcf"), before, "Undo on the notice takes the step back");
+    assert!(harness.query_by_label_contains("in main").is_none(), "and the notice goes");
+    // AI off: no pill.
+    let mut off = harness_with(fake(), prefs_with(labcraft_engine::settings::AI_ENABLED, json!(false)));
+    off.run_steps(2);
+    assert!(off.query_by_label("No agent").is_none());
+    assert!(!off.state().ide.ai_enabled());
 }

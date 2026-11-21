@@ -1,5 +1,5 @@
-//! The status bar (ide.md 2): short segments on the left (the file shown, the last step), and on the right (the agent,
-//! the colour by type, the zoom). A segment with a command runs it when clicked.
+//! The status bar (ide.md 2): short segments on the left (the file shown, the last step), and on the right (the
+//! colour by type, the zoom). A segment with a command runs it when clicked.
 
 use egui::RichText;
 
@@ -10,6 +10,8 @@ pub struct Segment {
     pub hover: Option<String>,
     /// What a click runs, by its id; none, the segment only says.
     pub command: Option<String>,
+    /// In the top bar, a click opens a menu under the segment: the bar answers its command with where it is.
+    pub opens: bool,
 }
 
 impl Segment {
@@ -24,6 +26,12 @@ impl Segment {
 
     pub fn command(mut self, id: impl Into<String>) -> Segment {
         self.command = Some(id.into());
+        self
+    }
+
+    /// A click opens a menu under it (the top bar).
+    pub fn opens(mut self) -> Segment {
+        self.opens = true;
         self
     }
 }

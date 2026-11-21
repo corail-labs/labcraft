@@ -148,6 +148,11 @@ impl History {
         }
     }
 
+    /// The steps that undo would take back, the next one first.
+    pub fn done(&self) -> impl Iterator<Item = &Step> {
+        self.done.iter().rev()
+    }
+
     /// The step that undo would take back.
     pub fn to_undo(&self) -> Option<&Step> {
         self.done.last()

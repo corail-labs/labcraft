@@ -163,7 +163,10 @@ const PROJECT_ERRORS: &[&str] = &[
 ];
 
 const HISTORY_ERRORS: &[&str] =
-    &["command.not_enabled", "params.unknown", "history.empty", "history.not_yours", "file.stale", "file.unwritable", "internal"];
+    &["command.not_enabled", "params.unknown", "params.invalid", "history.empty", "history.not_yours", "file.stale", "file.unwritable", "internal"];
+
+/// The largest number of a step that `history.undo` takes, the largest integer that JSON keeps exact.
+const MAX_STEP: u64 = (1 << 53) - 1;
 
 const RESULT: &str = "the result of an edit: `step`, `files` and their revisions, `names`, `renamed`, `diagnostics`, `summary`";
 
@@ -321,8 +324,19 @@ pub(super) fn catalog() -> Vec<Command> {
             id: "history.undo",
             label: "Undo",
             summary: "Undo the last step of the project",
-            description: "Undoes the last step of the project, whoever made it, and returns what an editing command returns for the files it restored, with the `author` and the `label` of the step. Called by an agent, it undoes only a step of its own: otherwise `history.not_yours`, which names the author. A file that changed since the step is `file.stale`. Nothing to undo is `history.empty`.",
-            params: object(&[], &[]),
+            description: "Undoes the last step of the project, whoever made it, and returns what an editing command returns for the files it restored, with the `author` and the `label` of the step. Called by an agent, it undoes only a step of its own: otherwise `history.not_yours`, which names the author. A file that changed since the step is `file.stale`, and so is a `step` given that is not the last one. Nothing to undo is `history.empty`.",
+            params: object(
+                &[(
+                    "step",
+                    integer(
+                        "The number of the step meant (`history.list`): another step last is `file.stale`, and nothing changes.",
+                        1,
+                        MAX_STEP,
+                        None,
+                    ),
+                )],
+                &[],
+            ),
             result: RESULT,
             errors: HISTORY_ERRORS,
             effects: &[Effect::Files],

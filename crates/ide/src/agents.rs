@@ -6,8 +6,8 @@
 
 use egui::RichText;
 use labcraft_engine::registry::Effect;
-use labcraft_engine::settings::AI_POLICIES;
-use serde_json::{Map, Value, json};
+use labcraft_engine::settings::{AI_POLICIES, keep_policy};
+use serde_json::{Map, Value};
 
 /// What an agent may do without asking (ide.md 8), by the effects of a command (commands.md 1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +82,29 @@ pub struct Question {
     pub asks: Asks,
     /// How long it waits for the user, from when it was asked.
     pub seconds_left: u64,
+}
+
+/// An agent attached to the window, as its pill shows it (ide.md 8).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Connected {
+    /// Its connection, by which the user disconnects it or changes its policy.
+    pub id: u64,
+    /// The name of its client (`clientInfo.name`), as `ai.policies` keys it.
+    pub client: String,
+    /// The name its steps are signed with.
+    pub signed: String,
+    /// The canonical folder of the project, as `ai.policies` keys it.
+    pub project: String,
+    /// Its policy; none while the question of its first connection waits.
+    pub policy: Option<Policy>,
+}
+
+/// What the user asks of an agent attached, from the pill.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asked {
+    Disconnect(u64),
+    /// Another policy, for this connection.
+    Policy(u64, Policy),
 }
 
 /// The user's answer.
@@ -160,12 +183,8 @@ impl Questions {
         self.answer(question.id, answer);
         match answer {
             Answer::Policy { policy, keep: true } => {
-                let mut policies = settings.get(AI_POLICIES).and_then(Value::as_object).cloned().unwrap_or_default();
-                let projects = policies.entry(question.client.clone()).or_insert_with(|| json!({}));
-                if let Some(projects) = projects.as_object_mut() {
-                    projects.insert(question.project.clone(), json!(policy.as_str()));
-                }
-                Some(Value::Object(policies))
+                let kept = settings.get(AI_POLICIES).unwrap_or(&Value::Null);
+                Some(keep_policy(kept, &question.client, &question.project, policy.as_str()))
             }
             _ => None,
         }

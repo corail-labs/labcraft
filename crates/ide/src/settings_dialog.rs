@@ -4,7 +4,7 @@
 //! itself: it says what to set, and the window sets it, by `settings.set` with a project, in its settings without one.
 
 use egui::RichText;
-use labcraft_engine::settings::{From, GROUPS, KEYS, Key, Kind, LIBRARY_COLORS, Stores};
+use labcraft_engine::settings::{AI_POLICIES, From, GROUPS, KEYS, Key, Kind, LIBRARY_COLORS, Stores, forget_policy, kept_policies};
 use serde_json::{Map, Value, json};
 
 /// The dialog, open or not.
@@ -68,7 +68,8 @@ impl Dialog {
             // A fixed height: a modal whose size changes moves under the pointer between two frames.
             egui::ScrollArea::vertical().max_height(height - 120.0).min_scrolled_height(height - 120.0).auto_shrink([false, false]).show(ui, |ui| {
                 let mut any = false;
-                for (group, title) in GROUPS {
+                // The web serves no agent (ide.md 12): no setting of AI there.
+                for (group, title) in GROUPS.iter().filter(|(group, _)| *group != "ai" || !cfg!(target_arch = "wasm32")) {
                     let keys: Vec<&Key> = KEYS.iter().filter(|key| key.group() == *group && matches(key, &search)).collect();
                     if keys.is_empty() {
                         continue;
@@ -128,7 +129,7 @@ impl Dialog {
                             }
                         }
                     }
-                    // The policies of the agents are listed with the switch of AI, not here (ide.md 8).
+                    // Listed under it.
                     Kind::LibraryColors | Kind::Policies => {
                         ui.label(key.title);
                     }
@@ -143,8 +144,10 @@ impl Dialog {
                 });
             });
             ui.label(RichText::new(key.help).weak().small());
-            if key.kind == Kind::LibraryColors {
-                self.library_colors(ui, &value, libraries, asked);
+            match key.kind {
+                Kind::LibraryColors => self.library_colors(ui, &value, libraries, asked),
+                Kind::Policies => policies(ui, &value, asked),
+                _ => {}
             }
         });
     }
@@ -190,6 +193,28 @@ impl Dialog {
             libraries.insert(name, json!(hex(colour)));
             asked.push(colours(libraries));
         }
+    }
+}
+
+/// One row per policy kept, with what removes it (ide.md 8): the next connection of that client to that project asks.
+fn policies(ui: &mut egui::Ui, value: &Value, asked: &mut Vec<Set>) {
+    let kept = kept_policies(value);
+    if kept.is_empty() {
+        ui.label(RichText::new("None kept: the first connection of each client to a project asks").weak());
+        return;
+    }
+    for (client, project, policy) in kept {
+        ui.horizontal(|ui| {
+            ui.add_space(12.0);
+            ui.label(RichText::new(client).strong());
+            ui.add(egui::Label::new(RichText::new(crate::agents::shown_folder(project)).weak()).truncate());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Remove").on_hover_text("Its next connection to this project asks again").clicked() {
+                    asked.push(Set { key: AI_POLICIES, value: forget_policy(value, client, project), project: false });
+                }
+                ui.label(crate::block::capital(policy));
+            });
+        });
     }
 }
 

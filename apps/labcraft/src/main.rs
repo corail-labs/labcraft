@@ -345,10 +345,13 @@ impl App {
         let root = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
         let sender = handle.sender();
         let wake = ctx.clone();
+        let ai = self.ide.ai_enabled();
         let (opened, receiver) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new().name("labcraft-channel".to_owned()).spawn(move || {
             let repaint = wake.clone();
             let agents = Arc::new(Agents::new(&root, Box::new(move || repaint.request_repaint())));
+            // With AI off, no agent is let in, from the first connection on (ide.md 8).
+            agents.set_enabled(ai);
             let channel = match session::served(&sender) {
                 Some(served) => Channel::open(&root, sender, served, agents),
                 None => Err("the session did not answer".to_owned()),
@@ -358,12 +361,13 @@ impl App {
         });
         match spawned {
             Ok(_) => self.channel_opening = Some(receiver),
-            Err(error) => self.ide.say(format!("No AI agent can attach to this window: {error}")),
+            Err(error) if self.ide.ai_enabled() => self.ide.say(format!("No AI agent can attach to this window: {error}")),
+            Err(_) => {}
         }
     }
 
-    /// The channel once open; the questions about the agents to the window, when they changed or one is shown, and its
-    /// answers to them.
+    /// The channel once open; the switch of AI, the agents attached and the questions about them to the window, when
+    /// they changed or one is shown, and its answers to them, and what the user asked of them from the pill.
     fn ask_about_agents(&mut self) {
         if let Some(opened) = self.channel_opening.as_ref().and_then(|receiver| receiver.try_recv().ok()) {
             self.channel_opening = None;
@@ -372,11 +376,22 @@ impl App {
                     self.channel = channel;
                     self.keep_policies();
                 }
-                Err(why) => self.ide.say(format!("No AI agent can attach to this window: {why}")),
+                // Nothing of AI while it is off.
+                Err(why) if self.ide.ai_enabled() => self.ide.say(format!("No AI agent can attach to this window: {why}")),
+                Err(_) => {}
             }
         }
         let Some(channel) = &self.channel else { return };
         let agents = channel.agents();
+        let ai = self.ide.ai_enabled();
+        agents.set_enabled(ai);
+        for asked in self.ide.take_agent_asks() {
+            match asked {
+                labcraft_ide::agents::Asked::Disconnect(id) => agents.disconnect(id),
+                labcraft_ide::agents::Asked::Policy(id, policy) => agents.set_policy(id, policy),
+            }
+        }
+        self.ide.set_agents(if ai { agents.connected_list() } else { Vec::new() });
         for (id, answer) in self.ide.take_agent_answers() {
             agents.answer(id, answer);
         }
