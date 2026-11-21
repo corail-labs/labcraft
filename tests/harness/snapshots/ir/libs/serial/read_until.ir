@@ -1,0 +1,2 @@
+fn serial.read_until(port: port, terminator: bytes, max: i32 = 65536, err: error = none) -> (data: bytes, port: port, err: error)
+  native read_until  skip(err: 3)

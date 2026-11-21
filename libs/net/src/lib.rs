@@ -24,7 +24,6 @@ use labcraft_types::Severity;
 mod device;
 mod endpoint;
 mod file;
-mod log;
 #[cfg(not(target_arch = "wasm32"))]
 mod real;
 mod run;
@@ -90,6 +89,11 @@ impl NativeLibrary for Net {
 
     fn resources(&self, simulation: &Simulation) -> Vec<String> {
         devices(simulation).map(|devices| devices.endpoints()).unwrap_or_default()
+    }
+
+    /// Its devices are endpoints of io.md 2 already: `tcp:…` and `udp:…`.
+    fn endpoints(&self, simulation: &Simulation) -> Vec<String> {
+        self.resources(simulation)
     }
 
     fn start_run(&self, start: Start<'_>) -> Box<dyn LibraryRun> {

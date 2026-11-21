@@ -1,0 +1,4 @@
+# serial:S005: a setting out of the range of `open`.
+[[serial.device]]
+endpoint = "serial:COM3"
+parity = "mark"

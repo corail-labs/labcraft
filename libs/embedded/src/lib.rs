@@ -52,6 +52,18 @@ pub fn shipped() -> labcraft_engine::Shipped {
     )
 }
 
+/// Every native library shipped with LabCraft (`docs/architecture.md`, 10.6), in one list for what gives a session its
+/// libraries: `labcraft-cli` (`run` and `mcp`), the harness and the fuzz targets; the IDE and the web host give none yet.
+/// `visa`, `net`, `serial` and `results_log` (the native library of the examples). No crate of `crates/` may hold it (`cargo xtask libs`), so it is here, beside the declarations it goes with.
+pub fn natives() -> Vec<std::sync::Arc<dyn labcraft_runtime::native::NativeLibrary>> {
+    vec![
+        std::sync::Arc::new(labcraft_visa::Visa),
+        std::sync::Arc::new(labcraft_net::Net),
+        std::sync::Arc::new(labcraft_serial::Serial),
+        std::sync::Arc::new(labcraft_results_log::ResultsLog),
+    ]
+}
+
 /// Names are compared exactly, even on a file system that ignores case (`docs/cli.md`, section 3).
 pub fn find(name: &str) -> Option<&'static Library> {
     LIBRARIES.iter().find(|library| library.name == name)
@@ -83,7 +95,7 @@ mod tests {
     #[test]
     fn the_libraries_are_those_of_the_folder() {
         let names: Vec<&str> = LIBRARIES.iter().map(|library| library.name).collect();
-        assert_eq!(names, ["net", "scpi", "visa"]);
+        assert_eq!(names, ["net", "scpi", "serial", "visa"]);
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         for library in LIBRARIES {
             let on_disk: BTreeSet<String> = std::fs::read_dir(root.join(library.name))
@@ -103,6 +115,12 @@ mod tests {
         assert_eq!((source.name.as_str(), source.origin), ("visa", Origin::Shipped));
         assert!(source.files.iter().any(|file| file.shown == "<labcraft>/visa/close.lcf"));
         assert!(source.manifest.is_some());
+    }
+
+    #[test]
+    fn every_native_library_is_given() {
+        let names: Vec<String> = natives().iter().map(|native| native.name().to_owned()).collect();
+        assert_eq!(names, ["visa", "net", "serial", "results_log"]);
     }
 
     #[test]

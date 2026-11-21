@@ -1,0 +1,2 @@
+fn serial.list(err: error = none) -> (ports: [string], err: error)
+  native list  skip(err: 0)

@@ -1,0 +1,6 @@
+# serial:S006: an empty request.
+[[serial.device]]
+endpoint = "serial:COM3"
+
+[[serial.device.reply]]
+request = ""

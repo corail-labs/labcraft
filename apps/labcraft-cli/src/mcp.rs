@@ -103,7 +103,7 @@ fn session_at(options: &McpOptions, root: PathBuf, background: bool) -> Result<S
         lib_paths: options.lib_paths.clone(),
         limits: options.limits.clone(),
         shipped: crate::shipped(),
-        natives: vec![Arc::new(labcraft_visa::Visa), Arc::new(labcraft_net::Net), Arc::new(labcraft_results_log::ResultsLog)],
+        natives: labcraft_libs::natives(),
         clock: Arc::new(crate::clock::Real::new()),
         process: std::process::id(),
     };

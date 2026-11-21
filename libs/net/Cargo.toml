@@ -9,7 +9,6 @@ publish.workspace = true
 
 [dependencies]
 labcraft-runtime = { workspace = true }
-labcraft-trace = { workspace = true }
 labcraft-types = { workspace = true }
 toml = { workspace = true }
 

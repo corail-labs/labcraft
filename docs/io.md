@@ -47,7 +47,9 @@ consent covers it (decision of the owner, 2026-11-19):
   one program and one simulation file mean the same on Windows, Linux, macOS and in the browser: `COM<n>` (`n` from
   1) is compared without case and written upper case (`com3` is `serial:COM3`); any other name, a path such as
   `/dev/ttyUSB0` or `/dev/cu.usbserial-1410`, is compared exactly. Which device a name opens is the system's: a
-  `COM` name on Linux names no port, and the open gives `serial.port_not_found`.
+  `COM` name on Linux names no port, and the open gives `serial.port_not_found`. `COM<n>` is written without zeros in
+  front, so `COM03` and `COM0` are other names, compared exactly; a name with a control character names no port:
+  `serial.port_not_found` at once, and `serial:S003` in a simulation file (decision of the owner, 2026-11-20).
 - **A VISA name reduces to its endpoint**, its VISA words and its host without case, as VISA reads its names, a path
   inside it exactly: `TCPIP[n]::HOST::PORT::SOCKET` to `tcp:HOST:PORT`; `ASRL<n>::INSTR` (`n` from 1) to
   `serial:COM<n>` on every system, whose real open reaches `COM<n>` on Windows and `/dev/ttyS<n−1>` elsewhere, the
@@ -84,6 +86,8 @@ consent covers it (decision of the owner, 2026-11-19):
   right of section 4, `io.not_allowed` or the question; then the open of the hardware, which may give
   `resource_not_found` after its timeout. No question is asked whose answer could not be used: an agent that opens a
   real name in deterministic mode gets `io.needs_real_time`, and no window.
+- **`serial.list` reaches no device**: without `--sim` it gives the ports of the system in both modes, with no consent;
+  with `--sim`, the serial endpoints of the file (section 6).
 
 ## 4. Consent
 

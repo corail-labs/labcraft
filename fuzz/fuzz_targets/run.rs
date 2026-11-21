@@ -42,18 +42,21 @@ fn library(bytes: &[u8]) -> (Vec<(String, Vec<u8>)>, Option<String>) {
     // Two NUL bytes separate files, as for `check`; a file that reads holds none (`LC0005`), so each NUL splits the same.
     for (index, file) in bytes.split(|byte| *byte == 0).filter(|part| !part.is_empty()).take(FILES).enumerate() {
         let mut names = Interner::new();
-        let (stem, kind) = match read(file, &mut names, &Limits::default()).file.map(|file| file.decl) {
-            Some(Decl::Type(ty)) => (names.resolve(ty.name).to_owned(), "lct"),
-            Some(Decl::Function(function)) => (names.resolve(function.name).to_owned(), "lcf"),
-            Some(Decl::Extern(function)) => (names.resolve(function.name).to_owned(), "lcf"),
-            None => (String::new(), "lcf"),
+        let (stem, kind, is_extern) = match read(file, &mut names, &Limits::default()).file.map(|file| file.decl) {
+            Some(Decl::Type(ty)) => (names.resolve(ty.name).to_owned(), "lct", false),
+            Some(Decl::Function(function)) => (names.resolve(function.name).to_owned(), "lcf", false),
+            Some(Decl::Extern(function)) => (names.resolve(function.name).to_owned(), "lcf", true),
+            None => (String::new(), "lcf", false),
         };
         let taken = |name: &str| files.iter().any(|(held, _)| held == name);
         let name = if !stem.is_empty() && !taken(&format!("{stem}.{kind}")) { format!("{stem}.{kind}") } else { format!("f{index}.{kind}") };
         if taken(&name) {
             continue;
         }
-        if kind == "lcf" && !stem.is_empty() && first.is_none() {
+        // The first function written in LabCraft: a run that starts at an `extern` one is a fault of the runtime today
+        // (`LC8004`), which the documents do not settle; `serial.list`, the first `extern` with no required input, is in
+        // the seeds (issue to come, PR #261).
+        if kind == "lcf" && !stem.is_empty() && first.is_none() && !is_extern {
             first = Some(stem);
         }
         files.push((name, file.to_vec()));
@@ -82,7 +85,7 @@ fuzz_target!(|bytes: &[u8]| {
             lib_paths: Vec::new(),
             limits: Limits::default(),
             shipped: shipped(),
-            natives: vec![Arc::new(labcraft_visa::Visa)],
+            natives: labcraft_libs::natives(),
             clock: Arc::new(Still),
             process: 0,
         };

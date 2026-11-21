@@ -22,8 +22,8 @@ use labcraft_runtime::simulation::read;
 use labcraft_runtime::{Handle, Value};
 
 use crate::Net;
-use crate::device::{Got, Need, Scan, Terminator};
 use crate::endpoint::{of_call, of_file};
+use labcraft_runtime::stream::{Got, Need, Scan, Terminator};
 
 const MS: i64 = 1_000_000;
 

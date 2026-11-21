@@ -1,0 +1,6 @@
+# serial:S004: an endpoint defined again (`serial:com3` is `serial:COM3`).
+[[serial.device]]
+endpoint = "serial:COM3"
+
+[[serial.device]]
+endpoint = "serial:com3"

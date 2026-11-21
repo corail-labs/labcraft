@@ -1,42 +1,25 @@
 //! Real TCP and UDP, over the standard library of Rust (`docs/io.md`, section 7). Each function here blocks, and runs in the
-//! `Blocking` work of its call, away from the thread of the diagram. A connection holds the bytes received and not taken yet,
-//! behind a mutex that its work owns while it runs; a clone of its stream stays outside, so that a release shuts it down
+//! `Blocking` work of its call, away from the thread of the diagram. A connection is a real stream of `runtime::stream`,
+//! behind a mutex that its work owns while it runs; a clone of its socket stays outside, so that a release shuts it down
 //! without waiting for that mutex.
 
 #![expect(clippy::disallowed_methods, reason = "never built for WASM, where the clock traps: real sockets need the real clock")]
 
-use std::collections::VecDeque;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use labcraft_runtime::io::{CLOSED, TIMEOUT};
-use labcraft_trace::number::duration_text;
+use labcraft_runtime::stream::real::{Buffered, Stop, Wire, broke, buffer, code, locked, timed_out, within};
+use labcraft_runtime::stream::{Failure, Need, Taken};
 
-use crate::device::{Got, Need, Scan, Taken};
 use crate::endpoint::HOST_NOT_FOUND;
-use crate::run::{CONNECTION_REFUSED, DATAGRAM_TOO_LONG, Failure, wanted};
-
-/// A datagram is received whole into this many bytes, more than the largest one UDP carries; and one read of a stream takes
-/// at most this many.
-const BUFFER: usize = 65_536;
-
-fn code(error: &std::io::Error) -> i64 {
-    error.raw_os_error().map_or(0, i64::from)
-}
+use crate::run::{CONNECTION_REFUSED, DATAGRAM_TOO_LONG};
 
 fn fail(category: &'static str, error: &std::io::Error, message: String) -> Failure {
     Failure { category, code: code(error), message }
-}
-
-fn timed_out(error: &std::io::Error) -> bool {
-    matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock)
-}
-
-fn within(timeout: Duration) -> String {
-    duration_text(i64::try_from(timeout.as_nanos()).unwrap_or(i64::MAX))
 }
 
 /// `io.timeout` of an open.
@@ -46,7 +29,7 @@ fn no_connection(endpoint: &str, timeout: Duration, code: i64) -> Failure {
 
 /// `io.closed` when the other end has closed.
 fn other_end_closed(endpoint: &str) -> Failure {
-    Failure { category: CLOSED, code: 0, message: format!("{endpoint}: the other end closed the connection") }
+    Failure::new(CLOSED, format!("{endpoint}: the other end closed the connection"))
 }
 
 /// An error of a write or a send: `io.timeout` when the system could not take the bytes in time, else `io.closed`.
@@ -58,28 +41,12 @@ fn sending_error(error: &std::io::Error, endpoint: &str, timeout: Duration) -> F
     }
 }
 
-/// A buffer of [`BUFFER`] bytes, made at its first use.
-fn buffer(buffer: &mut Vec<u8>) -> &mut [u8] {
-    if buffer.len() < BUFFER {
-        buffer.resize(BUFFER, 0);
-    }
-    buffer
-}
-
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 /// A name that does not resolve is not found (README, `connect`).
 fn resolve(host: &str, port: u16, endpoint: &str) -> Result<Vec<SocketAddr>, Failure> {
     match (host, port).to_socket_addrs() {
         Ok(addresses) => {
             let addresses: Vec<SocketAddr> = addresses.collect();
-            if addresses.is_empty() {
-                Err(Failure { category: HOST_NOT_FOUND, code: 0, message: format!("{endpoint}: the host has no address") })
-            } else {
-                Ok(addresses)
-            }
+            if addresses.is_empty() { Err(Failure::new(HOST_NOT_FOUND, format!("{endpoint}: the host has no address"))) } else { Ok(addresses) }
         }
         Err(error) => Err(fail(HOST_NOT_FOUND, &error, format!("{endpoint}: the host does not resolve: {error}"))),
     }
@@ -95,46 +62,47 @@ fn open_error(error: &std::io::Error, endpoint: &str, timeout: Duration) -> Fail
     }
 }
 
+/// A TCP socket as a stream reads it.
+pub(crate) struct Socket(TcpStream);
+
+impl Wire for Socket {
+    fn read_within(&mut self, buffer: &mut [u8], wait: Duration) -> std::io::Result<usize> {
+        let _ = self.0.set_read_timeout(Some(wait));
+        self.0.read(buffer)
+    }
+
+    /// Without blocking, within a drain. An error ends the stream, as a read of 0 bytes does: what waits is still read.
+    fn read_now(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        match self.0.read(buffer) {
+            Err(error) if !timed_out(&error) && error.kind() != ErrorKind::Interrupted => Ok(0),
+            read => read,
+        }
+    }
+
+    /// The socket stops blocking for the whole drain; when it cannot, the drain reads nothing.
+    fn start_drain(&mut self) -> bool {
+        self.0.set_nonblocking(true).is_ok()
+    }
+
+    fn end_drain(&mut self) {
+        let _ = self.0.set_nonblocking(false);
+    }
+
+    fn write_within(&mut self, data: &[u8], wait: Duration) -> std::io::Result<usize> {
+        let _ = self.0.set_write_timeout(Some(wait.max(Duration::from_micros(1))));
+        self.0.write(data)
+    }
+}
+
+/// The connection of a `Blocking` work.
+pub(crate) type Shared = Arc<Mutex<Buffered<Socket>>>;
+
 /// A real TCP connection.
 pub(crate) struct Tcp {
     state: Shared,
     /// The same socket, to shut it down from the thread of the run.
     shutter: Option<TcpStream>,
     broken: Arc<AtomicBool>,
-}
-
-/// Whether a call met a reset or an abort, after which the connection or the socket is closed (decision of the owner,
-/// 2026-11-19).
-fn broke(broken: &AtomicBool, error: &std::io::Error) {
-    if !timed_out(error) && error.kind() != ErrorKind::Interrupted {
-        broken.store(true, Ordering::Relaxed);
-    }
-}
-
-/// The connection of a `Blocking` work.
-pub(crate) type Shared = Arc<Mutex<Stream>>;
-
-pub(crate) struct Stream {
-    stream: TcpStream,
-    endpoint: String,
-    /// What each read and write may wait: the timeout of the open.
-    timeout: Duration,
-    /// Received, not taken yet, in order.
-    waiting: VecDeque<u8>,
-    /// The other end has closed.
-    ended: bool,
-    buffer: Vec<u8>,
-    broken: Arc<AtomicBool>,
-}
-
-/// What one read of the system gave.
-enum Polled {
-    Bytes,
-    Ended,
-    /// Nothing yet: the timeout passed, or it would block.
-    Nothing,
-    /// A signal came first: try again.
-    Again,
 }
 
 impl Tcp {
@@ -154,15 +122,7 @@ impl Tcp {
                     let _ = stream.set_nodelay(true);
                     let shutter = stream.try_clone().ok();
                     let broken = Arc::new(AtomicBool::new(false));
-                    let state = Stream {
-                        stream,
-                        endpoint: endpoint.to_owned(),
-                        timeout,
-                        waiting: VecDeque::new(),
-                        ended: false,
-                        buffer: Vec::new(),
-                        broken: Arc::clone(&broken),
-                    };
+                    let state = Buffered::new(Socket(stream), endpoint.to_owned(), timeout, Arc::clone(&broken));
                     return Ok(Tcp { state: Arc::new(Mutex::new(state)), shutter, broken });
                 }
                 Err(error) => last = Some(error),
@@ -192,122 +152,26 @@ impl Drop for Tcp {
     }
 }
 
-/// Writes every byte within the timeout of the connection, counted from `since`, the start of the call: each send of the
-/// system waits what is left of it.
+/// Writes every byte within the timeout of the connection, counted from `since`, the start of the call.
 pub(crate) fn write(shared: &Shared, data: &[u8], since: Instant) -> Result<(), Failure> {
     let mut state = locked(shared);
-    let Stream { stream, endpoint, timeout, broken, .. } = &mut *state;
-    let deadline = since + *timeout;
-    let mut sent = 0;
-    let mut tried = false;
-    while let Some(rest) = data.get(sent..).filter(|rest| !rest.is_empty()) {
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() && tried {
-            return Err(Failure {
-                category: TIMEOUT,
-                code: 0,
-                message: format!("{endpoint}: the bytes could not be sent within {}", within(*timeout)),
-            });
-        }
-        tried = true;
-        let _ = stream.set_write_timeout(Some(left.max(Duration::from_micros(1))));
-        match stream.write(rest) {
-            Ok(0) => return Err(Failure { category: CLOSED, code: 0, message: format!("{endpoint}: the connection is closed") }),
-            Ok(written) => sent += written,
-            Err(error) if timed_out(&error) || error.kind() == ErrorKind::Interrupted => {}
-            Err(error) => {
-                broke(broken, &error);
-                return Err(sending_error(&error, endpoint, *timeout));
-            }
-        }
-    }
-    Ok(())
-}
-
-impl Stream {
-    /// One read of the system, what it gives added to what waits.
-    fn poll_once(&mut self) -> std::io::Result<Polled> {
-        let Stream { stream, waiting, ended, buffer: chunk, .. } = self;
-        match stream.read(buffer(chunk)) {
-            Ok(0) => {
-                *ended = true;
-                Ok(Polled::Ended)
-            }
-            Ok(read) => {
-                waiting.extend(chunk.get(..read).unwrap_or_default());
-                Ok(Polled::Bytes)
-            }
-            Err(error) if timed_out(&error) => Ok(Polled::Nothing),
-            Err(error) if error.kind() == ErrorKind::Interrupted => Ok(Polled::Again),
-            Err(error) => Err(error),
-        }
-    }
-
-    /// What the system holds already, without waiting, until `limit` bytes wait: the end of the stream, or an error, ends it.
-    fn drain(&mut self, limit: usize) {
-        if self.ended || self.stream.set_nonblocking(true).is_err() {
-            return;
-        }
-        while self.waiting.len() < limit {
-            match self.poll_once() {
-                Ok(Polled::Bytes | Polled::Again) => {}
-                Ok(Polled::Ended | Polled::Nothing) => break,
-                Err(_) => {
-                    self.ended = true;
-                    break;
-                }
-            }
-        }
-        let _ = self.stream.set_nonblocking(false);
-    }
-}
-
-/// The most bytes a read looks at: what a drain of the system stops at.
-fn limit(need: &Need) -> usize {
-    match need {
-        Need::Exactly(count) => *count,
-        Need::Until(_, max) | Need::Available(max) => *max,
-    }
+    state.write_all(data, since).map_err(|stop| match stop {
+        Stop::TimedOut(failure) => failure,
+        Stop::Ended => Failure::new(CLOSED, format!("{}: the connection is closed", state.endpoint)),
+        Stop::Error(error) => sending_error(&error, &state.endpoint, state.timeout),
+    })
 }
 
 /// A read that started at `since`: what `need` takes of the bytes that wait, waiting for more up to the timeout of the
-/// connection; `io.timeout` then, taking nothing.
+/// connection; `io.timeout` then, taking nothing. When the other end has closed, what has arrived is still read.
 pub(crate) fn read(shared: &Shared, need: &Need, since: Instant) -> Result<Taken, Failure> {
     let mut state = locked(shared);
-    let deadline = since + state.timeout;
-    if matches!(need, Need::Available(_)) {
-        state.drain(limit(need));
-    }
-    let mut drained = false;
-    let mut scan = Scan::default();
-    loop {
-        match need.judge(state.waiting.make_contiguous(), &mut scan) {
-            Got::Take(0) if state.ended && state.waiting.is_empty() => return Err(other_end_closed(&state.endpoint)),
-            Got::Take(count) => return Ok(Taken::Bytes(state.waiting.drain(..count).collect())),
-            Got::TooLong(count) => return Ok(Taken::TooLong(state.waiting.drain(..count).collect())),
-            Got::More => {}
-        }
-        if state.ended {
-            return Err(other_end_closed(&state.endpoint));
-        }
-        let left = deadline.saturating_duration_since(Instant::now());
-        if left.is_zero() {
-            // What the system holds already counts, a timeout of 0 included.
-            if !drained {
-                drained = true;
-                state.drain(limit(need));
-                continue;
-            }
-            let message = format!("{}: {} within {}", state.endpoint, wanted(need), within(state.timeout));
-            return Err(Failure { category: TIMEOUT, code: 0, message });
-        }
-        let _ = state.stream.set_read_timeout(Some(left));
-        if let Err(error) = state.poll_once() {
-            // A reset or an abort (decision of the owner, 2026-11-19).
-            broke(&state.broken, &error);
-            return Err(fail(CLOSED, &error, format!("{}: the connection is closed: {error}", state.endpoint)));
-        }
-    }
+    state.read(need, since).map_err(|stop| match stop {
+        Stop::TimedOut(failure) => failure,
+        Stop::Ended => other_end_closed(&state.endpoint),
+        // A reset or an abort (decision of the owner, 2026-11-19).
+        Stop::Error(error) => fail(CLOSED, &error, format!("{}: the connection is closed: {error}", state.endpoint)),
+    })
 }
 
 /// A real UDP socket, connected to its endpoint.
@@ -343,7 +207,7 @@ impl Udp {
         }
         Err(match last {
             Some(error) => open_error(&error, endpoint, Duration::ZERO),
-            None => Failure { category: HOST_NOT_FOUND, code: 0, message: format!("{endpoint}: the host has no address") },
+            None => Failure::new(HOST_NOT_FOUND, format!("{endpoint}: the host has no address")),
         })
     }
 
@@ -363,9 +227,7 @@ pub(crate) fn send(shared: &Mutex<Datagrams>, data: &[u8], since: Instant) -> Re
     let _ = state.socket.set_write_timeout(Some(left.max(Duration::from_micros(1))));
     match state.socket.send(data) {
         Ok(sent) if sent == data.len() => Ok(()),
-        Ok(sent) => {
-            Err(Failure { category: DATAGRAM_TOO_LONG, code: 0, message: format!("{}: {sent} of {} bytes sent", state.endpoint, data.len()) })
-        }
+        Ok(sent) => Err(Failure::new(DATAGRAM_TOO_LONG, format!("{}: {sent} of {} bytes sent", state.endpoint, data.len()))),
         Err(error) => {
             broke(&state.broken, &error);
             Err(sending_error(&error, &state.endpoint, state.timeout))
@@ -383,7 +245,7 @@ pub(crate) fn receive(shared: &Mutex<Datagrams>, max: usize, since: Instant) -> 
         let left = deadline.saturating_duration_since(Instant::now());
         let received = if left.is_zero() {
             if polled {
-                return Err(Failure { category: TIMEOUT, code: 0, message: format!("{endpoint}: no datagram within {}", within(*timeout)) });
+                return Err(Failure::new(TIMEOUT, format!("{endpoint}: no datagram within {}", within(*timeout))));
             }
             polled = true;
             let _ = socket.set_nonblocking(true);

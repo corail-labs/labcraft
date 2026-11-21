@@ -2202,10 +2202,7 @@ dependencies = [
  "labcraft-format",
  "labcraft-libs",
  "labcraft-mcp",
- "labcraft-net",
- "labcraft-results-log",
  "labcraft-types",
- "labcraft-visa",
  "serde",
  "serde_json",
 ]
@@ -2343,6 +2340,11 @@ version = "0.4.0-dev"
 dependencies = [
  "labcraft-check",
  "labcraft-engine",
+ "labcraft-net",
+ "labcraft-results-log",
+ "labcraft-runtime",
+ "labcraft-serial",
+ "labcraft-visa",
 ]
 
 [[package]]
@@ -2360,7 +2362,6 @@ name = "labcraft-net"
 version = "0.4.0-dev"
 dependencies = [
  "labcraft-runtime",
- "labcraft-trace",
  "labcraft-types",
  "toml",
 ]
@@ -2385,6 +2386,16 @@ dependencies = [
  "serde_json",
  "toml",
  "toml_parser",
+]
+
+[[package]]
+name = "labcraft-serial"
+version = "0.4.0-dev"
+dependencies = [
+ "labcraft-runtime",
+ "labcraft-types",
+ "serial2",
+ "toml",
 ]
 
 [[package]]
@@ -3820,6 +3831,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "serial2"
+version = "0.2.39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c924c7ef58d1fb741cfecb65b9b38a9e049841edd1e419544089f0cbb5a127e7"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5327,6 +5349,7 @@ dependencies = [
  "labcraft-engine",
  "labcraft-net",
  "labcraft-runtime",
+ "labcraft-serial",
  "labcraft-types",
  "labcraft-visa",
  "serde_json",

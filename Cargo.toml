@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "kit/*", "apps/*", "libs/embedded", "libs/net", "libs/visa", "examples/results_log", "tests/harness", "xtask"]
+members = ["crates/*", "kit/*", "apps/*", "libs/embedded", "libs/net", "libs/serial", "libs/visa", "examples/results_log", "tests/harness", "xtask"]
 
 [workspace.package]
 version = "0.4.0-dev"
@@ -27,6 +27,7 @@ labcraft-ide = { path = "crates/ide" }
 labcraft-cli = { path = "apps/labcraft-cli" }
 labcraft-libs = { path = "libs/embedded" }
 labcraft-net = { path = "libs/net" }
+labcraft-serial = { path = "libs/serial" }
 labcraft-visa = { path = "libs/visa" }
 labcraft-results-log = { path = "examples/results_log" }
 
@@ -55,6 +56,8 @@ ctrlc = "3.4"
 dirs = "7"
 # The token of the control channel, new at each launch (ide.md 8).
 getrandom = "0.3"
+# Serial ports (libs/serial), `BSD-2-Clause OR Apache-2.0`, taken under Apache-2.0 (docs/io.md, 11).
+serial2 = "0.2.39"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
 # The text of the `Text` panel (kit-text; decision of the owner, 2026-11-21). Lines end at LF only, as `format` reads

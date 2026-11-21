@@ -739,7 +739,7 @@ fn run_bound(case: &RunBound) -> (Duration, String) {
         lib_paths: Vec::new(),
         limits: Limits::default(),
         shipped: labcraft_libs::shipped(),
-        natives: vec![Arc::new(labcraft_visa::Visa)],
+        natives: labcraft_libs::natives(),
         clock: Arc::new(labcraft_engine::Still),
         process: 0,
     };

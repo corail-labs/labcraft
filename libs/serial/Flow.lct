@@ -1,0 +1,4 @@
+labcraft 1
+
+/// The flow control of a serial port: `Software` is XON/XOFF, `Hardware` is RTS/CTS.
+type Flow = enum { None, Software, Hardware }

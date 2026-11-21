@@ -1,0 +1,10 @@
+labcraft 1
+
+/// Takes the bytes up to `terminator`, which it includes; `io.too_long` without it in `max` bytes, which it takes.
+extern rust(crate: "labcraft-serial", function: "read_until")
+fn read_until(
+    port: port,
+    terminator: bytes,
+    max: i32 = 65536,
+    err: error = none,
+) -> (data: bytes, port: port, err: error)
