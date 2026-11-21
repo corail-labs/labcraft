@@ -1285,3 +1285,575 @@ fn a_stateless_highlighter_colours_only_the_line_asked_for() {
     let _ = colours.spans(999, 1_000, |_| String::new());
     assert_eq!(calls.get(), 1);
 }
+
+// ---- edits, marks, positions, completion (written from the doc comments) ----
+
+mod service_tests {
+    use crate::complete::{Completion, is_name_char};
+    use crate::field::{Action, Edit, Field, MAX_EDITS, Selection};
+    use crate::lsp_types::{CompletionItem, Diagnostic, DiagnosticSeverity, Position, Range as LspRange};
+    use crate::marks::{Mark, Marks};
+    use crate::service::{ENCODING, LanguageService, Published, Silent, offset_in, offset_of, position_of};
+    use crate::{Code, Colours, Highlighter, Span};
+
+    fn at_cursor(text: &str, at: usize) -> Field {
+        let mut field = Field::new(text);
+        field.apply(Action::Select(Selection::cursor(at)));
+        field
+    }
+
+    fn type_text(field: &mut Field, text: &str) {
+        for c in text.chars() {
+            field.apply(Action::Insert(c.to_string()));
+        }
+    }
+
+    fn pos(line: u32, character: u32) -> Position {
+        Position { line, character }
+    }
+
+    fn diagnostic(line: u32, from: u32, to: u32, severity: Option<DiagnosticSeverity>, message: &str) -> Diagnostic {
+        Diagnostic { range: LspRange { start: pos(line, from), end: pos(line, to) }, severity, message: message.to_string(), ..Diagnostic::default() }
+    }
+
+    fn item(label: &str) -> CompletionItem {
+        CompletionItem { label: label.to_string(), ..CompletionItem::default() }
+    }
+
+    /// A service that gives a fixed list of completions and the diagnostics it was loaded with, once.
+    #[derive(Default)]
+    struct Fixed {
+        items: Vec<CompletionItem>,
+        published: Vec<Published>,
+    }
+
+    impl LanguageService for Fixed {
+        fn diagnostics(&mut self) -> Vec<Published> {
+            std::mem::take(&mut self.published)
+        }
+
+        fn completion(&mut self, _: &Field, _: Position) -> Vec<CompletionItem> {
+            self.items.clone()
+        }
+
+        fn hover(&mut self, _: &Field, _: Position) -> Option<crate::lsp_types::Hover> {
+            None
+        }
+
+        fn definition(&mut self, _: &Field, _: Position) -> Option<crate::lsp_types::GotoDefinitionResponse> {
+            None
+        }
+    }
+
+    fn fixed(labels: &[&str]) -> Fixed {
+        Fixed { items: labels.iter().map(|label| item(label)).collect(), published: Vec::new() }
+    }
+
+    fn labels(completion: &Completion) -> Vec<String> {
+        completion.shown().0.iter().map(|item| item.label.clone()).collect()
+    }
+
+    // ---- Edit::range ----
+
+    /// An edit before a range moves it by the difference of lengths.
+    #[test]
+    fn edit_before_a_range_moves_it() {
+        assert_eq!(Edit { at: 0, removed: 0, inserted: 2 }.range(5..8), Some(7..10));
+        assert_eq!(Edit { at: 0, removed: 2, inserted: 0 }.range(5..8), Some(3..6));
+        assert_eq!(Edit { at: 1, removed: 2, inserted: 5 }.range(5..8), Some(8..11));
+    }
+
+    /// An edit after a range leaves it as it was.
+    #[test]
+    fn edit_after_a_range_leaves_it() {
+        assert_eq!(Edit { at: 10, removed: 0, inserted: 2 }.range(5..8), Some(5..8));
+        assert_eq!(Edit { at: 9, removed: 3, inserted: 1 }.range(5..8), Some(5..8));
+    }
+
+    /// Typing inside a range grows it; removing inside shrinks it.
+    #[test]
+    fn edit_inside_a_range_grows_or_shrinks_it() {
+        assert_eq!(Edit { at: 6, removed: 0, inserted: 3 }.range(5..8), Some(5..11));
+        assert_eq!(Edit { at: 6, removed: 1, inserted: 0 }.range(5..8), Some(5..7));
+    }
+
+    /// Text typed right after the end of a range does not extend it.
+    #[test]
+    fn typing_at_the_end_of_a_range_does_not_extend_it() {
+        assert_eq!(Edit { at: 8, removed: 0, inserted: 1 }.range(5..8), Some(5..8));
+    }
+
+    /// An edit that removes the whole range drops it.
+    #[test]
+    fn edit_over_a_whole_range_drops_it() {
+        assert_eq!(Edit { at: 5, removed: 3, inserted: 0 }.range(5..8), None);
+        assert_eq!(Edit { at: 4, removed: 6, inserted: 0 }.range(5..8), None);
+    }
+
+    /// A point at the place of an insertion stays where it is.
+    #[test]
+    fn a_point_at_an_insertion_stays() {
+        assert_eq!(Edit { at: 5, removed: 0, inserted: 1 }.range(5..5), Some(5..5));
+    }
+
+    // ---- Field::edits_since ----
+
+    /// For the current revision there is nothing since: an empty list, not `None`.
+    #[test]
+    fn edits_since_the_current_revision_is_empty() {
+        let field = Field::new("abc");
+        assert_eq!(field.edits_since(field.revision()).map(|edits| edits.count()), Some(0));
+    }
+
+    /// The edits since an older revision come oldest first, in characters.
+    #[test]
+    fn edits_since_an_older_revision_lists_them_oldest_first() {
+        let mut field = at_cursor("abc", 3);
+        let before = field.revision();
+        type_text(&mut field, "xy");
+        let all: Vec<Edit> = field.edits_since(before).unwrap().copied().collect();
+        assert_eq!(all, vec![Edit { at: 3, removed: 0, inserted: 1 }, Edit { at: 4, removed: 0, inserted: 1 }]);
+        let last: Vec<Edit> = field.edits_since(before + 1).unwrap().copied().collect();
+        assert_eq!(last, vec![Edit { at: 4, removed: 0, inserted: 1 }]);
+    }
+
+    /// A revision the field never had (one to come) gives `None`.
+    #[test]
+    fn edits_since_a_revision_to_come_is_none() {
+        let field = Field::new("abc");
+        assert!(field.edits_since(field.revision() + 5).is_none());
+    }
+
+    /// Past `MAX_EDITS` edits, the oldest are forgotten: `None` for a revision before them.
+    #[test]
+    fn edits_since_a_revision_past_the_limit_is_none() {
+        let mut field = at_cursor("", 0);
+        let start = field.revision();
+        for _ in 0..=MAX_EDITS {
+            field.apply(Action::Insert("a".to_string()));
+        }
+        assert!(field.edits_since(start).is_none());
+        assert_eq!(field.edits_since(start + 1).map(|edits| edits.count()), Some(MAX_EDITS));
+    }
+
+    /// A `Replace` is one edit, and one step of undo, with the cursor after the new text.
+    #[test]
+    fn replace_is_one_edit_and_one_undo_step() {
+        let mut field = at_cursor("hello world", 0);
+        let before = field.revision();
+        field.apply(Action::Replace { range: 0..5, text: "howdy!".to_string() });
+        assert_eq!(field.text(), "howdy! world");
+        assert_eq!(field.selection(), Selection::cursor(6));
+        let all: Vec<Edit> = field.edits_since(before).unwrap().copied().collect();
+        assert_eq!(all, vec![Edit { at: 0, removed: 5, inserted: 6 }]);
+        field.apply(Action::Undo);
+        assert_eq!(field.text(), "hello world");
+    }
+
+    // ---- Mark ----
+
+    /// A diagnostic with no severity is an error.
+    #[test]
+    fn a_mark_with_no_severity_is_an_error() {
+        let mark = Mark { range: 0..1, diagnostic: diagnostic(0, 0, 1, None, "m"), source: 0 };
+        assert_eq!(mark.severity(), DiagnosticSeverity::ERROR);
+        let warning = Mark { range: 0..1, diagnostic: diagnostic(0, 0, 1, Some(DiagnosticSeverity::WARNING), "m"), source: 0 };
+        assert_eq!(warning.severity(), DiagnosticSeverity::WARNING);
+    }
+
+    /// A range covers its characters but not its end; a point covers itself and the character after.
+    #[test]
+    fn a_mark_covers_its_range_or_its_point() {
+        let range = Mark { range: 2..5, diagnostic: Diagnostic::default(), source: 0 };
+        assert!(!range.covers(1));
+        assert!(range.covers(2) && range.covers(4));
+        assert!(!range.covers(5));
+        let point = Mark { range: 3..3, diagnostic: Diagnostic::default(), source: 0 };
+        assert!(!point.covers(2));
+        assert!(point.covers(3) && point.covers(4));
+        assert!(!point.covers(5));
+    }
+
+    // ---- Marks ----
+
+    /// A diagnostic is placed from its line and character.
+    #[test]
+    fn publish_places_a_diagnostic_by_line_and_character() {
+        let text = "let a\nlet foo = 1";
+        let field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, field.revision(), text, vec![diagnostic(1, 4, 7, None, "m")]);
+        assert_eq!(marks.marks().len(), 1);
+        assert_eq!(marks.marks()[0].range, 10..13);
+        assert_eq!(marks.revision(), field.revision());
+    }
+
+    /// Typing inside an underlined name keeps it underlined and grows it; typing before moves it.
+    #[test]
+    fn marks_follow_typing() {
+        let text = "let foo = 1";
+        let mut field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, field.revision(), text, vec![diagnostic(0, 4, 7, None, "m")]);
+        field.apply(Action::Select(Selection::cursor(5)));
+        type_text(&mut field, "xx");
+        marks.follow(&field);
+        assert_eq!(marks.marks()[0].range, 4..9);
+        field.apply(Action::Select(Selection::cursor(0)));
+        type_text(&mut field, "  ");
+        marks.follow(&field);
+        assert_eq!(marks.marks()[0].range, 6..11);
+        assert_eq!(marks.revision(), field.revision());
+    }
+
+    /// Text typed right after an underlined name does not extend the underline.
+    #[test]
+    fn marks_do_not_grow_at_their_end() {
+        let text = "let foo = 1";
+        let mut field = at_cursor(text, 7);
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, field.revision(), text, vec![diagnostic(0, 4, 7, None, "m")]);
+        type_text(&mut field, "z");
+        marks.follow(&field);
+        assert_eq!(marks.marks()[0].range, 4..7);
+    }
+
+    /// A mark whose text is wholly removed is dropped.
+    #[test]
+    fn marks_over_removed_text_are_dropped() {
+        let text = "let foo = 1";
+        let mut field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, field.revision(), text, vec![diagnostic(0, 4, 7, None, "m")]);
+        field.apply(Action::Replace { range: 3..8, text: String::new() });
+        marks.follow(&field);
+        assert!(marks.marks().is_empty());
+    }
+
+    /// Diagnostics given for an older revision are moved by the edits typed since.
+    #[test]
+    fn publish_for_an_older_revision_moves_by_later_edits() {
+        let text = "let foo = 1";
+        let mut field = at_cursor(text, 0);
+        let old = field.revision();
+        type_text(&mut field, "ab");
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, old, text, vec![diagnostic(0, 4, 7, None, "m")]);
+        assert_eq!(marks.marks()[0].range, 6..9);
+        assert_eq!(marks.revision(), field.revision());
+    }
+
+    /// Diagnostics given for a revision the field no longer keeps the edits of are dropped.
+    #[test]
+    fn publish_for_a_forgotten_revision_is_dropped() {
+        let mut field = at_cursor("", 0);
+        let old = field.revision();
+        for _ in 0..=MAX_EDITS {
+            field.apply(Action::Insert("a".to_string()));
+        }
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, old, "", vec![diagnostic(0, 0, 0, None, "m")]);
+        assert!(marks.marks().is_empty());
+    }
+
+    /// A position past the end of the text is kept at the end.
+    #[test]
+    fn publish_keeps_a_position_past_the_text_at_its_end() {
+        let text = "ab";
+        let field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 0, field.revision(), text, vec![diagnostic(5, 1, 3, None, "m")]);
+        assert_eq!(marks.marks()[0].range, 2..2);
+    }
+
+    /// A second set of a source replaces its first; the other sources stay; the marks are in the order of the text.
+    #[test]
+    fn publish_replaces_its_own_source_only() {
+        let text = "aaaa bbbb cccc";
+        let field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 1, field.revision(), text, vec![diagnostic(0, 10, 14, None, "one")]);
+        marks.publish(&field, 2, field.revision(), text, vec![diagnostic(0, 0, 4, None, "two")]);
+        marks.publish(&field, 1, field.revision(), text, vec![diagnostic(0, 5, 9, None, "one again")]);
+        let found: Vec<(u8, String)> = marks.marks().iter().map(|mark| (mark.source, mark.diagnostic.message.clone())).collect();
+        assert_eq!(found, vec![(2, "two".to_string()), (1, "one again".to_string())]);
+        marks.publish(&field, 1, field.revision(), text, Vec::new());
+        assert_eq!(marks.marks().len(), 1);
+        assert_eq!(marks.marks()[0].source, 2);
+    }
+
+    /// `clear` removes the marks of one source.
+    #[test]
+    fn clear_removes_one_source() {
+        let text = "aaaa bbbb";
+        let field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 1, field.revision(), text, vec![diagnostic(0, 0, 4, None, "a")]);
+        marks.publish(&field, 2, field.revision(), text, vec![diagnostic(0, 5, 9, None, "b")]);
+        marks.clear(1);
+        assert_eq!(marks.marks().len(), 1);
+        assert_eq!(marks.marks()[0].source, 2);
+    }
+
+    /// `at` gives the marks under a position, errors first, whatever the order they came in.
+    #[test]
+    fn at_gives_errors_first() {
+        let text = "abcdef";
+        let field = Field::new(text);
+        let mut marks = Marks::default();
+        marks.publish(&field, 1, field.revision(), text, vec![diagnostic(0, 0, 4, Some(DiagnosticSeverity::WARNING), "warning")]);
+        marks.publish(&field, 2, field.revision(), text, vec![diagnostic(0, 1, 5, Some(DiagnosticSeverity::ERROR), "error")]);
+        marks.publish(&field, 3, field.revision(), text, vec![diagnostic(0, 2, 3, Some(DiagnosticSeverity::HINT), "hint")]);
+        let found: Vec<&str> = marks.at(2).iter().map(|mark| mark.diagnostic.message.as_str()).collect();
+        assert_eq!(found, vec!["error", "warning", "hint"]);
+        let outside: Vec<&str> = marks.at(5).iter().map(|mark| mark.diagnostic.message.as_str()).collect();
+        assert!(outside.is_empty());
+    }
+
+    // ---- positions ----
+
+    /// Positions count lines and characters from 0, in code points.
+    #[test]
+    fn position_of_counts_lines_and_code_points() {
+        let field = Field::new("ab\ncd\né😀x");
+        assert_eq!(position_of(&field, 0), pos(0, 0));
+        assert_eq!(position_of(&field, 4), pos(1, 1));
+        assert_eq!(position_of(&field, 6), pos(2, 0));
+        assert_eq!(position_of(&field, 8), pos(2, 2));
+        assert_eq!(ENCODING, crate::lsp_types::PositionEncodingKind::UTF32);
+    }
+
+    /// `offset_of` is the reverse of `position_of`, kept within the line and the text.
+    #[test]
+    fn offset_of_is_kept_within_the_text() {
+        let field = Field::new("ab\ncd");
+        assert_eq!(offset_of(&field, pos(1, 1)), 4);
+        assert_eq!(offset_of(&field, pos(0, 99)), 2);
+        assert_eq!(offset_of(&field, pos(9, 0)), 5);
+    }
+
+    /// `offset_in` on a text: in a line, past the end of a line, past the last line.
+    #[test]
+    fn offset_in_is_kept_within_line_and_text() {
+        let text = "ab\ncd\n\u{e9}x";
+        assert_eq!(offset_in(text, pos(0, 0)), 0);
+        assert_eq!(offset_in(text, pos(1, 1)), 4);
+        assert_eq!(offset_in(text, pos(2, 1)), 7);
+        assert_eq!(offset_in(text, pos(0, 99)), 2);
+        assert_eq!(offset_in(text, pos(1, 99)), 5);
+        assert_eq!(offset_in(text, pos(9, 0)), 8);
+        assert_eq!(offset_in("", pos(0, 3)), 0);
+        assert_eq!(offset_in("ab\n", pos(1, 0)), 3);
+        assert_eq!(offset_in("ab\n", pos(2, 0)), 3);
+    }
+
+    /// The silent service says nothing.
+    #[test]
+    fn silent_says_nothing() {
+        let field = Field::new("abc");
+        let mut service = Silent;
+        assert!(service.completion(&field, pos(0, 1)).is_empty());
+        assert!(service.hover(&field, pos(0, 1)).is_none());
+        assert!(service.definition(&field, pos(0, 1)).is_none());
+        assert!(service.diagnostics().is_empty());
+    }
+
+    // ---- Completion ----
+
+    /// A name char is a letter, a digit or `_`.
+    #[test]
+    fn name_chars() {
+        assert!(is_name_char('a') && is_name_char('Z') && is_name_char('_') && is_name_char('7') && is_name_char('\u{e9}'));
+        assert!(!is_name_char(' ') && !is_name_char('.') && !is_name_char('-') && !is_name_char('\n'));
+    }
+
+    /// Typing the first characters of a name opens the list with the entries that start as it does, shorter first.
+    #[test]
+    fn typed_name_opens_the_list() {
+        let field = at_cursor("let fo", 6);
+        let mut completion = Completion::default();
+        assert!(!completion.is_open());
+        completion.open(&field, &mut fixed(&["foobar", "bar", "foo"]), false);
+        assert!(completion.is_open());
+        assert_eq!(labels(&completion), vec!["foo", "foobar"]);
+        assert_eq!(completion.shown().1, 0);
+        assert_eq!(completion.start(), Some(4));
+    }
+
+    /// Typed, the list stays closed on a digit, on no name, and when nothing starts as the name does.
+    #[test]
+    fn typed_open_is_refused_on_a_digit_an_empty_name_or_no_match() {
+        let mut service = fixed(&["foo", "bar"]);
+        let mut completion = Completion::default();
+        completion.open(&at_cursor("12", 2), &mut service, false);
+        assert!(!completion.is_open());
+        completion.open(&at_cursor("let ", 4), &mut service, false);
+        assert!(!completion.is_open());
+        completion.open(&at_cursor("zz", 2), &mut service, false);
+        assert!(!completion.is_open());
+        assert_eq!(completion.start(), None);
+        assert!(completion.shown().0.is_empty());
+    }
+
+    /// Asked by its key, the list opens on no name at all, with everything.
+    #[test]
+    fn asked_open_works_on_an_empty_name() {
+        let mut completion = Completion::default();
+        completion.open(&at_cursor("let ", 4), &mut fixed(&["foo", "bar"]), true);
+        assert!(completion.is_open());
+        assert_eq!(completion.start(), Some(4));
+        assert_eq!(labels(&completion).len(), 2);
+    }
+
+    /// The list does not open when something is selected.
+    #[test]
+    fn no_list_over_a_selection() {
+        let mut field = at_cursor("foo", 0);
+        field.apply(Action::Select(Selection { anchor: 0, head: 2 }));
+        let mut completion = Completion::default();
+        completion.open(&field, &mut fixed(&["foo"]), true);
+        assert!(!completion.is_open());
+    }
+
+    /// The match is made without regard to case.
+    #[test]
+    fn matching_ignores_case() {
+        let mut completion = Completion::default();
+        completion.open(&at_cursor("FO", 2), &mut fixed(&["foo", "bar"]), false);
+        assert_eq!(labels(&completion), vec!["foo"]);
+    }
+
+    /// Typing narrows the list; the list closes when nothing is left.
+    #[test]
+    fn typing_narrows_the_list() {
+        let mut field = at_cursor("f", 1);
+        let mut completion = Completion::default();
+        completion.open(&field, &mut fixed(&["foo", "foobar", "fig"]), false);
+        assert_eq!(labels(&completion), vec!["fig", "foo", "foobar"]);
+        type_text(&mut field, "o");
+        completion.follow(&field);
+        assert_eq!(labels(&completion), vec!["foo", "foobar"]);
+        type_text(&mut field, "ob");
+        completion.follow(&field);
+        assert_eq!(labels(&completion), vec!["foobar"]);
+        type_text(&mut field, "z");
+        completion.follow(&field);
+        assert!(!completion.is_open());
+    }
+
+    /// The list closes when the cursor leaves the name, by a character that ends it or by a move.
+    #[test]
+    fn leaving_the_name_closes_the_list() {
+        let mut field = at_cursor("fo", 2);
+        let mut completion = Completion::default();
+        completion.open(&field, &mut fixed(&["foo"]), false);
+        type_text(&mut field, " ");
+        completion.follow(&field);
+        assert!(!completion.is_open());
+
+        let mut field = at_cursor("x fo", 4);
+        completion.open(&field, &mut fixed(&["foo"]), false);
+        assert!(completion.is_open());
+        field.apply(Action::Select(Selection::cursor(0)));
+        completion.follow(&field);
+        assert!(!completion.is_open());
+    }
+
+    /// Erasing the whole name closes a list opened by typing, but not one that was asked for.
+    #[test]
+    fn erasing_the_name_closes_only_a_typed_list() {
+        let mut field = at_cursor("f", 1);
+        let mut completion = Completion::default();
+        completion.open(&field, &mut fixed(&["foo"]), false);
+        field.apply(Action::Replace { range: 0..1, text: String::new() });
+        completion.follow(&field);
+        assert!(!completion.is_open());
+
+        let mut field = at_cursor("f", 1);
+        completion.open(&field, &mut fixed(&["foo"]), true);
+        field.apply(Action::Replace { range: 0..1, text: String::new() });
+        completion.follow(&field);
+        assert!(completion.is_open());
+    }
+
+    /// `close` closes it.
+    #[test]
+    fn close_closes() {
+        let mut completion = Completion::default();
+        completion.open(&at_cursor("fo", 2), &mut fixed(&["foo"]), false);
+        completion.close();
+        assert!(!completion.is_open());
+    }
+
+    /// The choice goes to the next entry or the one before, around the ends.
+    #[test]
+    fn choose_wraps_around() {
+        let mut completion = Completion::default();
+        completion.open(&at_cursor("f", 1), &mut fixed(&["fa", "fbb", "fccc"]), false);
+        assert_eq!(completion.shown().1, 0);
+        completion.choose(1);
+        assert_eq!(completion.shown().1, 1);
+        completion.choose(1);
+        completion.choose(1);
+        assert_eq!(completion.shown().1, 0);
+        completion.choose(-1);
+        assert_eq!(completion.shown().1, 2);
+        completion.set_chosen(1);
+        assert_eq!(completion.shown().1, 1);
+        completion.set_chosen(7);
+        assert_eq!(completion.shown().1, 1);
+    }
+
+    /// Taking writes the label in place of the name typed, the cursor after it, as one step of undo.
+    #[test]
+    fn take_writes_the_label_as_one_undo_step() {
+        let mut field = at_cursor("let fo = 1", 6);
+        let mut completion = Completion::default();
+        completion.open(&field, &mut fixed(&["foo", "foobar"]), false);
+        completion.choose(1);
+        assert!(completion.take(&mut field));
+        assert_eq!(field.text(), "let foobar = 1");
+        assert_eq!(field.selection(), Selection::cursor(10));
+        assert!(!completion.is_open());
+        field.apply(Action::Undo);
+        assert_eq!(field.text(), "let fo = 1");
+    }
+
+    /// Taking with no list open writes nothing.
+    #[test]
+    fn take_with_no_list_does_nothing() {
+        let mut field = at_cursor("fo", 2);
+        let mut completion = Completion::default();
+        assert!(!completion.take(&mut field));
+        assert_eq!(field.text(), "fo");
+    }
+
+    // ---- Code ----
+
+    struct Plain;
+
+    impl Highlighter for Plain {
+        type State = ();
+        fn line(&mut self, _: &(), _: &str, _: &mut Vec<Span>) {}
+    }
+
+    /// `take_published` places what the service published, for the revision it names, and brings the marks to the field.
+    #[test]
+    fn take_published_places_the_marks_of_the_service() {
+        let mut code = Code::new(Plain);
+        code.field = Field::new("let foo = 1");
+        let revision = code.field.revision();
+        code.field.apply(Action::Select(Selection::cursor(0)));
+        type_text(&mut code.field, "  ");
+        let mut service = Fixed::default();
+        service.published.push(Published { source: 4, revision, text: "let foo = 1".into(), diagnostics: vec![diagnostic(0, 4, 7, None, "m")] });
+        code.take_published(&mut service);
+        assert_eq!(code.marks.marks().len(), 1);
+        assert_eq!(code.marks.marks()[0].range, 6..9);
+        assert_eq!(code.marks.marks()[0].source, 4);
+        assert_eq!(code.marks.revision(), code.field.revision());
+        code.take_published(&mut service);
+        assert_eq!(code.marks.marks().len(), 1);
+        let _ = Colours::new(Plain);
+    }
+}

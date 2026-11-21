@@ -2,12 +2,20 @@
 //! monospace face, edited by hand. Its colours come from the lexer of `format`, so that they never disagree with
 //! `check`. The text is written when it parses, after a pause of the keys or when the view loses the focus (`text.save`),
 //! one step each; one that does not parse stays here, with a banner, and in the recovery folder, and the diagram of the
-//! function cannot be edited until it parses again. The diagnostics underlined and completion come with step 7b.
+//! function cannot be edited until it parses again. The diagnostics of the check, and the error of a text that does not
+//! parse, are underlined and follow what is typed; completion, hover and definitions come from the language service of
+//! [`crate::service`].
+
+use std::sync::Arc;
 
 use egui::{Color32, FontId, RichText};
-use kit_text::{Colours, Field, Highlighter, Span};
+use kit_text::lsp_types::GotoDefinitionResponse;
+use kit_text::{Code, Highlighter, LanguageService, Published, Span, position_of};
 use labcraft_format::{Lexer, TokenKind};
 use labcraft_types::{Interner, Report};
+
+pub use crate::service::Known;
+use crate::service::{self, Scanned, Service};
 use serde_json::{Value, json};
 
 use crate::host::{Host, Reply};
@@ -115,8 +123,8 @@ impl Highlighter for Lexed {
     }
 }
 
-/// The look of the field in a theme.
-pub fn style(dark: bool, select: Color32) -> kit_text_egui::Style {
+/// The look of the field in a theme: the waves of the diagnostics in the colours of `Problems`.
+pub fn style(dark: bool, select: Color32, visuals: &egui::Visuals) -> kit_text_egui::Style {
     let text = colour(Class::Plain, dark);
     kit_text_egui::Style {
         font: FontId::new(13.0, egui::FontFamily::Monospace),
@@ -126,6 +134,9 @@ pub fn style(dark: bool, select: Color32) -> kit_text_egui::Style {
         cursor: text,
         current_line: text.gamma_multiply(0.05),
         gutter: colour(Class::Comment, dark),
+        error: visuals.error_fg_color,
+        warning: visuals.warn_fg_color,
+        info: visuals.hyperlink_color,
     }
 }
 
@@ -192,11 +203,20 @@ pub enum Asked {
     Discard,
 }
 
+/// What the view says after a frame.
+#[derive(Default)]
+pub struct Said {
+    pub asked: Option<Asked>,
+    /// Ctrl+click on a name, or F12: where it is defined.
+    pub definition: Option<GotoDefinitionResponse>,
+    /// A definition was asked, and there is none there.
+    pub nowhere: bool,
+}
+
 /// The text of a file, as the view edits it.
 pub struct Editing {
     pub file: String,
-    pub field: Field,
-    colours: Colours<Lexed>,
+    pub code: Code<Lexed>,
     /// The text of the file as the view last read or wrote it: the field had it at revision `field`.
     base: Option<Base>,
     reading: Option<Reading>,
@@ -224,6 +244,17 @@ pub struct Editing {
     pub recovered: Option<String>,
     /// The widget of the field, once drawn: whether it has the focus decides a write.
     pub field_id: Option<egui::Id>,
+    /// The diagnostics to publish into the field, at its next frame.
+    published: Vec<Published>,
+    /// The report whose diagnostics were published last.
+    checked: Option<Arc<Report>>,
+    scanned: Scanned,
+    /// Show this position of the text, scrolled into view, at the next frame: a click in `Problems`, a definition.
+    pub reveal: Option<usize>,
+    /// "Format file" waits for the text typed to be written.
+    format_asked: bool,
+    /// F12 asks where the name at the cursor is defined, at the next frame of the view.
+    pub go_to_definition: bool,
 }
 
 struct Base {
@@ -260,8 +291,7 @@ impl Editing {
     pub fn new(file: &str) -> Editing {
         Editing {
             file: file.to_owned(),
-            field: Field::default(),
-            colours: Colours::new(Lexed),
+            code: Code::new(Lexed),
             base: None,
             reading: None,
             checks: None,
@@ -278,6 +308,12 @@ impl Editing {
             failure: None,
             recovered: None,
             field_id: None,
+            published: Vec::new(),
+            checked: None,
+            scanned: Scanned::default(),
+            reveal: None,
+            format_asked: false,
+            go_to_definition: false,
         }
     }
 
@@ -287,7 +323,7 @@ impl Editing {
 
     /// The text differs from what the file was when the view read or wrote it.
     pub fn dirty(&self) -> bool {
-        self.base.as_ref().is_some_and(|base| base.field != self.field.revision())
+        self.base.as_ref().is_some_and(|base| base.field != self.code.field.revision())
     }
 
     /// The diagram of the function cannot be edited: its text does not parse (commands.md 9.1).
@@ -297,19 +333,19 @@ impl Editing {
 
     /// Once a frame, shown or not: takes the replies, reads the file again after a check, writes after a pause.
     /// Whether it waits for something: a reply, or a pause to end.
-    pub fn update(&mut self, host: &dyn Host, checks: u64, now: f64, focused: bool) -> bool {
-        if self.field.revision() != self.seen {
-            self.seen = self.field.revision();
+    pub fn update(&mut self, host: &dyn Host, checks: u64, report: Option<&Arc<Report>>, now: f64, focused: bool) -> bool {
+        if self.code.field.revision() != self.seen {
+            self.seen = self.code.field.revision();
             self.changed_at = now;
         }
-        self.take_saved();
+        self.take_saved(host);
         self.take_read(host);
         if self.checks != Some(checks) && self.reading.is_none() && self.saving.is_none() {
             self.checks = Some(checks);
             self.reading = Some(Reading { text: String::new(), reply: host.send("file.read", json!({ "path": self.file })) });
         }
         let paused = now - self.changed_at >= PAUSE || !focused;
-        let fresh = self.sent != Some(self.field.revision());
+        let fresh = self.sent != Some(self.code.field.revision());
         if self.dirty() && fresh && paused && !self.too_large && self.status != Status::Stale && self.saving.is_none() && self.reading.is_none() {
             self.save(host, Save::Write);
         }
@@ -318,11 +354,25 @@ impl Editing {
         if self.dirty() && fresh && paused && self.status == Status::Stale && self.saving.is_none() {
             self.save(host, Save::Keep);
         }
+        // The diagnostics of a check, once the view holds the file it checked: those of a file changed under a text typed
+        // would not fall on that text.
+        let settled = self.checks == Some(checks) && self.reading.is_none() && self.status != Status::Stale;
+        if let (true, Some(report), Some(base)) = (settled, report, &self.base)
+            && !self.checked.as_ref().is_some_and(|checked| Arc::ptr_eq(checked, report))
+        {
+            self.checked = Some(report.clone());
+            self.published.push(Published {
+                source: service::CHECKED,
+                revision: base.field,
+                text: Arc::from(base.text.as_str()),
+                diagnostics: service::after_bom(&base.text, service::diagnostics_of(report, &self.file)),
+            });
+        }
         self.reading.is_some() || self.saving.is_some() || (self.dirty() && fresh && !self.too_large)
     }
 
     fn save(&mut self, host: &dyn Host, how: Save) {
-        let text = self.field.text();
+        let text = self.code.field.text();
         let mut params = json!({ "path": self.file, "text": text });
         if let (false, Some(base), Some(object)) = (how == Save::Over, &self.base, params.as_object_mut()) {
             object.insert("expected_revision".to_owned(), json!(base.revision));
@@ -330,12 +380,12 @@ impl Editing {
         if let (Save::Keep, Some(object)) = (how, params.as_object_mut()) {
             object.insert("keep".to_owned(), json!(true));
         }
-        let field = self.field.revision();
+        let field = self.code.field.revision();
         self.sent = Some(field);
         self.saving = Some(Saving { reply: host.send("text.save", params), text, field, keep_only: how == Save::Keep });
     }
 
-    fn take_saved(&mut self) {
+    fn take_saved(&mut self, host: &dyn Host) {
         let Some(result) = self.saving.as_ref().and_then(|saving| saving.reply.take()) else { return };
         let Some(saving) = self.saving.take() else { return };
         if saving.keep_only {
@@ -344,10 +394,16 @@ impl Editing {
         match result {
             Ok(saved) if saved.get("written").and_then(Value::as_bool) == Some(true) => {
                 let revision = saved.get("revision").and_then(Value::as_str).unwrap_or_default().to_owned();
+                self.code.marks.clear(service::UNPARSED);
                 self.base = Some(Base { text: saving.text, revision, field: saving.field });
                 self.status = Status::Clean;
                 self.unparsed = false;
                 self.outside = None;
+                // Formatted once the file holds the text of the field: typed since, at the next write.
+                if self.format_asked && saving.field == self.code.field.revision() {
+                    self.format_asked = false;
+                    drop(host.send("file.format", json!({ "path": self.file })));
+                }
             }
             Ok(saved) if saved.get("stale").and_then(Value::as_bool) == Some(true) => self.status = Status::Stale,
             Ok(saved) => {
@@ -355,8 +411,17 @@ impl Editing {
                 let message = error.and_then(|error| error.get("message")).and_then(Value::as_str).unwrap_or("the text does not parse").to_owned();
                 let line =
                     error.and_then(|error| error.pointer("/span/start/line")).and_then(Value::as_u64).and_then(|line| u32::try_from(line).ok());
+                if let Some(diagnostic) = error.and_then(service::diagnostic_of_error) {
+                    self.published.push(Published {
+                        source: service::UNPARSED,
+                        revision: saving.field,
+                        text: Arc::from(saving.text.as_str()),
+                        diagnostics: service::after_bom(&saving.text, vec![diagnostic]),
+                    });
+                }
                 self.status = Status::Unparsed { message, line };
                 self.unparsed = true;
+                self.format_asked = false;
             }
             Err(error) => self.status = Status::Failed(error.message),
         }
@@ -397,18 +462,18 @@ impl Editing {
         let adopt = std::mem::take(&mut self.adopt);
         match &self.base {
             None => {
-                self.field.reset(&text);
+                self.code.field.reset(&text);
                 self.adopt_file(text, revision);
             }
             // "Show the file": the view takes it, whatever it holds.
             _ if adopt => {
-                self.field.replace_all(&text);
+                self.code.field.replace_all(&text);
                 self.adopt_file(text, revision);
             }
             Some(base) if base.text == text => return false,
             // The view follows the file: one step of the undo of the field (commands.md 9.1).
             _ if !self.dirty() => {
-                self.field.replace_all(&text);
+                self.code.field.replace_all(&text);
                 self.adopt_file(text, revision);
             }
             // The same text of the file as at the last read: kept already.
@@ -424,9 +489,11 @@ impl Editing {
     }
 
     fn adopt_file(&mut self, text: String, revision: String) {
-        self.base = Some(Base { text, revision, field: self.field.revision() });
-        self.sent = Some(self.field.revision());
-        self.seen = self.field.revision();
+        // The error of a text that did not parse goes with it.
+        self.code.marks.clear(service::UNPARSED);
+        self.base = Some(Base { text, revision, field: self.code.field.revision() });
+        self.sent = Some(self.code.field.revision());
+        self.seen = self.code.field.revision();
         self.status = Status::Clean;
         self.outside = None;
     }
@@ -436,12 +503,12 @@ impl Editing {
         match asked {
             Asked::ShowFile => {
                 // Kept in the recovery folder first, if typed since: `text.save` against the revision it was made from.
-                if self.sent != Some(self.field.revision()) && self.saving.is_none() {
+                if self.sent != Some(self.code.field.revision()) && self.saving.is_none() {
                     self.save(host, Save::Keep);
                 }
                 match self.outside.take() {
                     Some(text) => {
-                        self.field.replace_all(&text);
+                        self.code.field.replace_all(&text);
                         let revision = labcraft_engine::revision(text.as_bytes());
                         self.adopt_file(text, revision);
                     }
@@ -454,7 +521,7 @@ impl Editing {
             Asked::KeepText => self.save(host, Save::Over),
             Asked::TakeBack => {
                 if let Some(text) = self.recovered.take() {
-                    self.field.replace_all(&text);
+                    self.code.field.replace_all(&text);
                 }
             }
             Asked::Discard => {
@@ -464,16 +531,61 @@ impl Editing {
         }
     }
 
-    /// The view: its banner, then the field. What a banner asked for.
-    pub fn show(&mut self, ui: &mut egui::Ui, dark: bool, select: Color32, tints: &[(usize, Color32)]) -> Option<Asked> {
+    /// "Format file" (Shift+Alt+F, `file.format`): at once when the file holds the text, else once the text typed is
+    /// written. What to say when it cannot be.
+    pub fn format(&mut self, host: &dyn Host) -> Option<&'static str> {
+        if self.too_large || self.loading() {
+            return Some("This text cannot be formatted here");
+        }
+        // The text that does not parse is the one sent last: nothing will be written to format.
+        if matches!(self.status, Status::Unparsed { .. }) && self.saving.is_none() && self.sent == Some(self.code.field.revision()) {
+            return Some("The text does not read: fix it before formatting");
+        }
+        if self.status == Status::Stale {
+            return Some("The file changed while you typed: choose a text first");
+        }
+        if self.dirty() || self.saving.is_some() {
+            self.format_asked = true;
+            if self.saving.is_none() && self.sent != Some(self.code.field.revision()) {
+                self.save(host, Save::Write);
+            }
+            return None;
+        }
+        drop(host.send("file.format", json!({ "path": self.file })));
+        None
+    }
+
+    /// Where a place of the file that `check` read is now in the text, lines and columns from 1: the diagnostic that
+    /// starts there, as the edits since moved it, else the same line and column.
+    pub fn place_of(&self, line: u32, column: u32) -> usize {
+        let mut at = kit_text::lsp_types::Position { line: line.saturating_sub(1), character: column.saturating_sub(1) };
+        if at.line == 0 && self.base.as_ref().is_some_and(|base| base.text.starts_with('\u{FEFF}')) {
+            at.character += 1;
+        }
+        let marked = self.code.marks.marks().iter().find(|mark| mark.source == service::CHECKED && mark.diagnostic.range.start == at);
+        marked.map_or_else(|| kit_text::offset_of(&self.code.field, at), |mark| mark.range.start)
+    }
+
+    /// The error of the text typed, which does not parse: for `Problems`.
+    pub fn unparsed(&self) -> Option<(&str, Option<u32>)> {
+        match &self.status {
+            Status::Unparsed { message, line } => Some((message.as_str(), *line)),
+            _ => None,
+        }
+    }
+
+    /// The view: its banner, then the field. What a banner asked for, and a definition asked by Ctrl+click.
+    pub fn show(&mut self, ui: &mut egui::Ui, dark: bool, select: Color32, tints: &[(usize, Color32)], known: &Known<'_>) -> Said {
         let mut asked = None;
         if let Some(failure) = &self.failure {
             ui.label(RichText::new(failure).color(ui.visuals().warn_fg_color));
-            return None;
+            self.go_to_definition = false;
+            return Said::default();
         }
         if self.loading() {
             ui.label(RichText::new("Reading…").weak());
-            return None;
+            self.go_to_definition = false;
+            return Said::default();
         }
         let warn = ui.visuals().warn_fg_color;
         if self.recovered.is_some() {
@@ -518,12 +630,16 @@ impl Editing {
             };
             ui.label(RichText::new(why).weak());
         }
-        let style = style(dark, select);
+        let style = style(dark, select, ui.visuals());
         let label = format!("Text of {}", self.file);
-        let shown = kit_text_egui::Shown { read_only: self.too_large, tints, reveal: None, label: &label };
-        let response = kit_text_egui::show(ui, ("ide-text", &self.file), &mut self.field, &mut self.colours, &style, &shown);
-        self.field_id = Some(response.id);
-        asked
+        let shown = kit_text_egui::Shown { read_only: self.too_large, tints, reveal: self.reveal.take(), label: &label };
+        let mut service = Service { file: &self.file, known, published: &mut self.published, scanned: &mut self.scanned };
+        let output = kit_text_egui::show(ui, ("ide-text", &self.file), &mut self.code, &mut service, &style, &shown);
+        // Ctrl+click there, or F12 at the cursor.
+        let asked_at = output.definition.or_else(|| std::mem::take(&mut self.go_to_definition).then(|| self.code.field.selection().head));
+        let definition = asked_at.and_then(|at| service.definition(&self.code.field, position_of(&self.code.field, at)));
+        self.field_id = Some(output.response.id);
+        Said { asked, nowhere: asked_at.is_some() && definition.is_none(), definition }
     }
 }
 

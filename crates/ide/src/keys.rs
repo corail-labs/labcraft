@@ -73,6 +73,11 @@ pub const QUICK_INSERT: &str = "ide.quick_insert";
 pub const DELETE: &str = "ide.delete";
 /// F2 (notation 2.6): the name of the node selected in a field in place, or its label.
 pub const RENAME: &str = "ide.rename";
+/// F12 in the view `Text`, and Ctrl+click there: where the name at the cursor is defined (decision of the owner,
+/// 2026-11-21).
+pub const DEFINITION: &str = "ide.go_to_definition";
+/// Shift+Alt+F in the view `Text`: "Format file", `file.format` of its file (decision of the owner, 2026-11-21).
+pub const FORMAT: &str = "ide.format_file";
 /// Copy, cut, paste and duplicate (notation 2.6): the selection as the text of a function `clipboard` on the clipboard of
 /// the system (`fragment.copy`), then `node.delete` for cut; the text of the clipboard into the frame (`fragment.paste`);
 /// copy and paste 16 to the right and 16 below, without the clipboard, for duplicate.
@@ -144,6 +149,8 @@ pub fn setting_of(id: &str) -> Option<&'static str> {
 
 /// The scope of the keys that act on the canvas that has the focus.
 pub const DIAGRAM_SCOPE: &str = "Diagram";
+/// The scope of the keys that act on the view `Text` that has the focus.
+pub const TEXT_SCOPE: &str = "Text";
 
 /// The actions of the window, with their labels, for the command palette: each `ide.*` once.
 pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
@@ -178,6 +185,8 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (QUICK_INSERT, "Quick insertion"),
     (DELETE, "Delete the selection"),
     (RENAME, "Rename the node selected"),
+    (DEFINITION, "Go to definition"),
+    (FORMAT, "Format file"),
     (COPY, "Copy the selection"),
     (CUT, "Cut the selection"),
     (PASTE, "Paste into the frame"),
@@ -206,7 +215,16 @@ fn bindable(command: CommandRef, label: &str, keys: &[&str]) -> Bindable {
 
 /// A key that acts on the canvas that has the focus only (notation 2.6: the focus decides).
 fn on_canvas(id: &str, label: &str, keys: &[&str]) -> Option<Bindable> {
-    let scope = Scope::new(DIAGRAM_SCOPE)?;
+    in_scope(DIAGRAM_SCOPE, id, label, keys)
+}
+
+/// A key that acts on the view `Text` that has the focus only.
+fn on_text(id: &str, label: &str, keys: &[&str]) -> Option<Bindable> {
+    in_scope(TEXT_SCOPE, id, label, keys)
+}
+
+fn in_scope(scope: &str, id: &str, label: &str, keys: &[&str]) -> Option<Bindable> {
+    let scope = Scope::new(scope)?;
     Some(keys.iter().filter_map(|key| binding(key)).fold(Bindable::new(CommandRef::new(id), label, scope), Bindable::with_default))
 }
 
@@ -239,10 +257,12 @@ pub fn keymap(platform: Platform) -> Keymap {
         on_canvas(CUT, "Cut", &["Cmd+X"]),
         on_canvas(PASTE, "Paste", &["Cmd+V"]),
         on_canvas(DUPLICATE, "Duplicate", &["Cmd+D"]),
+        on_text(DEFINITION, "Go to definition", &["F12"]),
+        on_text(FORMAT, "Format file", &["Shift+Alt+F"]),
     ];
     let catalog = catalog.into_iter().chain(canvas.into_iter().flatten()).collect();
-    // A key of the canvas never acts when the canvas does not have the focus.
-    Keymap::new(catalog, Scopes::new().with_panel(DIAGRAM_SCOPE).with_panel_fallthrough(false), platform)
+    // A key of the canvas never acts when the canvas does not have the focus, nor one of the view Text out of it.
+    Keymap::new(catalog, Scopes::new().with_panel(DIAGRAM_SCOPE).with_panel(TEXT_SCOPE).with_panel_fallthrough(false), platform)
 }
 
 /// The key of a command, as the platform shows it.
@@ -296,6 +316,9 @@ pub fn menus() -> MenuBar {
             item(DUPLICATE, "Duplicate"),
             item(DELETE, "Delete"),
             item(RENAME, "Rename…"),
+            Node::Separator,
+            item(DEFINITION, "Go to definition"),
+            item(FORMAT, "Format file"),
             Node::Separator,
             item(SURROUND_MATCH, "Surround with match…"),
             item(SURROUND_HANDLE, "Surround with handle…"),
@@ -378,7 +401,7 @@ mod tests {
             &["Cmd+0"],
             &["Cmd+A"],
             &["Alt+Left", "Alt+Right", "Shift+Alt+Left", "Shift+Alt+Right"],
-            &["W", "Space", "Delete", "Backspace", "Shift+Alt+F"],
+            &["W", "Space", "Delete", "Backspace", "Shift+Alt+F", "F12"],
             &["Cmd+C", "Cmd+X", "Cmd+V", "Cmd+D"],
         ] {
             for key in keys {

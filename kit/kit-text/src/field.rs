@@ -1,6 +1,7 @@
 //! The text of a field, its one cursor and the undo of the field (ide.md 7). Positions are characters from the start of
 //! the text; a line ends at LF only, as the lexer of the language reads it.
 
+use std::collections::VecDeque;
 use std::ops::Range;
 
 use ropey::Rope;
@@ -13,6 +14,8 @@ pub const MAX_STEPS: usize = 1_000;
 pub const MAX_UNDO_BYTES: usize = 64 << 20;
 /// Typing goes on in a step of at most this much text *(proposed)*: a key never copies a large paste.
 const MAX_MERGED: usize = 4 << 10;
+/// The field keeps the last edits of the text, so many *(proposed)*: what was placed on an older revision is dropped.
+pub const MAX_EDITS: usize = 4_096;
 
 /// The cursor, `head`, and the other end of the selection, `anchor`: the same when nothing is selected.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -82,6 +85,11 @@ pub enum Action {
     Copy,
     /// The text selected, for the clipboard, removed.
     Cut,
+    /// A range replaced by a text, the cursor after it, as one step of undo: a completion taken.
+    Replace {
+        range: Range<usize>,
+        text: String,
+    },
 }
 
 /// Lines of the text replaced by an edit: the `removed` lines from `line` became the `inserted` lines from `line`.
@@ -90,6 +98,37 @@ pub struct Splice {
     pub line: usize,
     pub removed: usize,
     pub inserted: usize,
+}
+
+/// One edit of the text, in characters: at `at`, `removed` characters became `inserted` ones. Whoever keeps positions
+/// on the text (the diagnostics underlined) moves them with [`Edit::range`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edit {
+    pub at: usize,
+    pub removed: usize,
+    pub inserted: usize,
+}
+
+impl Edit {
+    /// Where a range goes after the edit: as it was before it, moved after it, or grown or shrunk by an edit inside it
+    /// (typing in an underlined name keeps it underlined). `None` when the edit removed all of it.
+    pub fn range(&self, range: Range<usize>) -> Option<Range<usize>> {
+        let end = self.at + self.removed;
+        let moved = |at: usize| at - self.removed + self.inserted;
+        // Before the edit: a range that ends where text is typed, and a point there, stay where they are.
+        if range.end < self.at || range.end == self.at && (self.removed == 0 || !range.is_empty()) {
+            return Some(range);
+        }
+        if range.start >= end {
+            return Some(moved(range.start)..moved(range.end));
+        }
+        if self.removed > 0 && range.start >= self.at && range.end <= end {
+            return None;
+        }
+        let start = if range.start < self.at { range.start } else { self.at + self.inserted };
+        let end = if range.end > end { moved(range.end) } else { self.at + self.inserted };
+        Some(start..end.max(start))
+    }
 }
 
 /// One change: at `at`, `removed` became `inserted`.
@@ -135,6 +174,9 @@ pub struct Field {
     typing: Option<Typing>,
     revision: u64,
     splices: Vec<Splice>,
+    /// The last edits, oldest first: the one that made revision `r` is at `r - 1 - first`, where `first` is the revision
+    /// the oldest one started from.
+    edits: VecDeque<Edit>,
     /// The most characters a line has had since the text was given: the width of the view never shrinks while one types.
     widest: usize,
 }
@@ -149,6 +191,7 @@ impl Field {
     /// A new text, with no undo: the text that a file holds when the field opens it.
     pub fn reset(&mut self, text: &str) {
         let old_lines = self.rope.len_lines();
+        let old_chars = self.rope.len_chars();
         self.rope = Rope::from_str(text);
         self.selection = Selection::default();
         self.goal = None;
@@ -158,6 +201,7 @@ impl Field {
         self.typing = None;
         self.revision += 1;
         self.splices.push(Splice { line: 0, removed: old_lines, inserted: self.rope.len_lines() });
+        self.log(Edit { at: 0, removed: old_chars, inserted: self.rope.len_chars() });
         self.widest = self.rope.lines().map(|line| line_len(&line)).max().unwrap_or(0);
     }
 
@@ -220,6 +264,17 @@ impl Field {
         self.selection
     }
 
+    /// The character at a position.
+    pub fn char_at(&self, at: usize) -> Option<char> {
+        self.rope.get_char(at)
+    }
+
+    /// The text of a range, kept within the text.
+    pub fn slice(&self, range: Range<usize>) -> String {
+        let len = self.rope.len_chars();
+        self.rope.get_slice(range.start.min(len)..range.end.min(len)).map(|slice| slice.to_string()).unwrap_or_default()
+    }
+
     pub fn selected(&self) -> String {
         let range = self.selection.range();
         self.rope.get_slice(range).map(|slice| slice.to_string()).unwrap_or_default()
@@ -228,6 +283,21 @@ impl Field {
     /// Changes with each change of the text.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// The edits since `revision`, oldest first; `None` when the field no longer keeps them all ([`MAX_EDITS`]), or for
+    /// a revision it never had.
+    pub fn edits_since(&self, revision: u64) -> Option<impl Iterator<Item = &Edit>> {
+        let behind = usize::try_from(self.revision.checked_sub(revision)?).ok()?;
+        let skip = self.edits.len().checked_sub(behind)?;
+        Some(self.edits.iter().skip(skip))
+    }
+
+    fn log(&mut self, edit: Edit) {
+        if self.edits.len() == MAX_EDITS {
+            self.edits.pop_front();
+        }
+        self.edits.push_back(edit);
     }
 
     /// The lines that changed since the last call, for whoever keeps something by line (the colours).
@@ -325,6 +395,7 @@ impl Field {
                 let len = self.rope.len_chars();
                 self.selection = Selection { anchor: selection.anchor.min(len), head: selection.head.min(len) };
             }
+            Action::Replace { range, text } => self.replace(range, &text.replace("\r\n", "\n"), None, false),
             Action::Undo => self.undo(),
             Action::Redo => self.redo(),
             Action::Copy => return Some(self.selected()).filter(|text| !text.is_empty()),
@@ -450,6 +521,7 @@ impl Field {
         let removed = change.removed.matches('\n').count() + 1;
         let inserted = change.inserted.matches('\n').count() + 1;
         self.splices.push(Splice { line, removed, inserted });
+        self.log(Edit { at: change.at, removed: removed_chars, inserted: change.inserted.chars().count() });
         for line in line..line + inserted {
             self.widest = self.widest.max(self.line_len(line));
         }

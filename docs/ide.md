@@ -215,7 +215,11 @@ The `Text` view (the `Text` panel of commands.md 9.1 and of notation 2.6) edits 
 does not read, is in [commands.md](commands.md) 9.1. In M1 it has: the colours of the tokens of the language, from the
 lexer of LabCraft itself, so that it never disagrees with `check`; the diagnostics underlined, with their message on
 hover and in `Problems`; completion of names (functions, values, types, keywords of the section it is in) in a popup,
-opened by typing or by Ctrl+Space, taken with Enter or Tab; one cursor; the keys of a text field (notation 2.6).
+opened by typing or by Ctrl+Space, taken with Enter or Tab; the name under the pointer at rest (the signature of a
+function, the type of a value) on hover; "Go to definition" (F12, or Ctrl+click, Cmd+click on a Mac), to the line that binds a
+value or to the tab of a function of the project (a type, whose file has no tab yet, is named with its file); "Format file" (Shift+Alt+F, `file.format`) once the text typed is written; one
+cursor; the keys of a text field (notation 2.6). Between two checks, the diagnostics underlined follow what is typed,
+and the error of a text that does not parse is underlined and in `Problems` too.
 Multiple cursors, folding and search come later.
 
 It is a component of its own (section 11): a core with no egui (the text, the selection, the undo of the field,

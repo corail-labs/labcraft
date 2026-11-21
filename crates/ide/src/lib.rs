@@ -56,6 +56,7 @@ pub mod keys;
 pub mod pane;
 pub mod panels;
 mod running;
+pub mod service;
 mod settings_dialog;
 pub mod text;
 mod types;
@@ -343,6 +344,8 @@ pub struct Ide {
     /// The function whose canvas had the keyboard, and the widget of that canvas: the keys of the canvas act on it while
     /// egui still gives it the focus (notation 2.6).
     canvas_focus: Option<(String, egui::Id)>,
+    /// The file whose view `Text` has the keyboard: its keys act on it (F12, Shift+Alt+F).
+    text_focus: Option<String>,
     /// Where the pointer was last, on the screen: quick insertion opens under it (notation 2.6).
     pointer: Option<egui::Pos2>,
     /// The list of quick insertion, while it is open (notation 2.6).
@@ -437,6 +440,7 @@ impl Ide {
             failures: Vec::new(),
             canvas_rect: None,
             canvas_focus: None,
+            text_focus: None,
             pointer: None,
             quick: None,
             values: None,
@@ -598,7 +602,16 @@ impl Ide {
             self.canvas_focus = None;
         }
         let typing = ctx.egui_wants_keyboard_input() && self.canvas_focus.is_none();
-        let panel = self.canvas_focus.as_ref().map(|_| keys::DIAGRAM_SCOPE);
+        self.text_focus = self
+            .texts
+            .values()
+            .find(|editing| editing.field_id.is_some_and(|id| ctx.memory(|memory| memory.has_focus(id))))
+            .map(|editing| editing.file.clone());
+        let panel = match (&self.canvas_focus, &self.text_focus) {
+            (Some(_), _) => Some(keys::DIAGRAM_SCOPE),
+            (None, Some(_)) => Some(keys::TEXT_SCOPE),
+            (None, None) => None,
+        };
         let asked = self
             .asked_paste(ctx)
             .map(|(function, text)| CommandRef::with_params(keys::PASTE, json!({ "function": function, "text": text, "menu": true })));
@@ -884,7 +897,7 @@ impl Ide {
         let mut waiting = false;
         for editing in self.texts.values_mut() {
             let focused = editing.field_id.is_some_and(|id| ctx.memory(|memory| memory.has_focus(id)));
-            waiting |= editing.update(host, view.checks, self.now, focused);
+            waiting |= editing.update(host, view.checks, view.report.as_ref(), self.now, focused);
         }
         if waiting {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -1390,6 +1403,7 @@ impl Ide {
                 | keys::CONTINUE_ON_ERROR
                 | keys::PARALLEL
                 | keys::RENAME => ItemState { enabled: shown.is_some(), checked: None },
+                keys::DEFINITION | keys::FORMAT => ItemState { enabled: self.text_file(view, shown).is_some(), checked: None },
                 keys::AUTOPATCH => {
                     ItemState { enabled: !view.settings.project.contains_key(keyed::AUTOPATCH), checked: Some(self.settings.autopatch) }
                 }
@@ -1647,6 +1661,17 @@ impl Ide {
                 self.brought = None;
                 let params = if preview { json!({ "function": function, "preview": true }) } else { json!({ "function": function }) };
                 self.run(CommandRef::with_params("view.show_function", params), host, view, outward);
+            }
+            // A place of a file: in its view Text, when its tab shows one.
+            panels::Asked::ShowAt { function, file, line, column } => {
+                // Only in a view Text shown: a place kept for later would move the cursor unasked.
+                let tab = tab_of(view, &function);
+                if (tab.view == ViewKind::Text || tab.split == Some(ViewKind::Text))
+                    && let Some(editing) = self.texts.get_mut(&file)
+                {
+                    editing.reveal = Some(editing.place_of(line, column));
+                }
+                self.panel_asked(panels::Asked::Show { function, preview: false }, host, view, outward);
             }
             panels::Asked::Command(id, params) => self.run(CommandRef::with_params(id, params), host, view, outward),
             panels::Asked::Window(id) => self.run(CommandRef::new(id), host, view, outward),
@@ -1953,6 +1978,18 @@ impl Ide {
         self.selecting.push((selection, function.to_owned(), reply));
     }
 
+    /// The file of the view `Text` that a key or a menu acts on: the one that has the keyboard, else that of the function
+    /// shown when its tab shows the view `Text`.
+    fn text_file(&self, view: &Published, shown: Option<&str>) -> Option<String> {
+        if let Some(file) = &self.text_focus {
+            return Some(file.clone());
+        }
+        let function = shown?;
+        let tab = tab_of(view, function);
+        let texts = tab.view == ViewKind::Text || tab.split == Some(ViewKind::Text);
+        texts.then(|| file_of(view, function)).flatten().filter(|file| self.texts.contains_key(file))
+    }
+
     /// Runs a command of a menu, a key, the palette, a button: an action of the window here, a command of the session
     /// through the host. What takes the function shown takes that of the window that has focus.
     fn run(&mut self, command: CommandRef, host: Option<&dyn Host>, view: &Published, outward: &mut Vec<Outward>) {
@@ -2163,6 +2200,28 @@ impl Ide {
                         self.paste(host, view, &function, text, pointer);
                     }
                     None => self.paste_asked = Some((function, true, self.now)),
+                }
+            }
+            // F12 (decision of the owner, 2026-11-21): where the name at the cursor of the view Text is defined.
+            keys::DEFINITION => {
+                let Some(file) = self.text_file(view, shown.as_deref()) else {
+                    self.say("Go to definition: put the cursor on a name in the view Text");
+                    return;
+                };
+                // The view asks its service at its next frame, where it knows the project and the drawing.
+                if let Some(editing) = self.texts.get_mut(&file) {
+                    editing.go_to_definition = true;
+                }
+            }
+            // Shift+Alt+F in the view Text (decision of the owner, 2026-11-21): `file.format` of its file, once the text
+            // typed is written.
+            keys::FORMAT => {
+                let (Some(host), Some(file)) = (host, self.text_file(view, shown.as_deref())) else {
+                    self.say("Format file: show the view Text of a function");
+                    return;
+                };
+                if let Some(why) = self.texts.get_mut(&file).and_then(|editing| editing.format(host)) {
+                    self.say(why);
                 }
             }
             // F2 (notation 2.6): the name of the node selected, or its label, in a field in place.
@@ -2493,6 +2552,37 @@ fn start_actions(keymap: &Keymap) -> Vec<palette::Entry> {
     actions
 }
 
+/// Where a definition takes the view (decision of the owner, 2026-11-21).
+enum Going {
+    /// A place of the text shown.
+    Here(kit_text::lsp_types::Position),
+    /// Another function of the project: its tab.
+    Function(String),
+    /// A type, whose `.lct` has no tab yet.
+    Type { name: String, file: String },
+}
+
+fn going(view: &Published, from: &str, found: kit_text::lsp_types::GotoDefinitionResponse) -> Option<Going> {
+    use kit_text::lsp_types::GotoDefinitionResponse;
+    let (uri, at) = match found {
+        GotoDefinitionResponse::Scalar(location) => (location.uri, location.range.start),
+        GotoDefinitionResponse::Array(locations) => locations.into_iter().next().map(|location| (location.uri, location.range.start))?,
+        GotoDefinitionResponse::Link(links) => links.into_iter().next().map(|link| (link.target_uri, link.target_selection_range.start))?,
+    };
+    let file = service::path_of(&uri)?;
+    if file == from {
+        return Some(Going::Here(at));
+    }
+    if let Some(listed) = view.functions.iter().find(|listed| listed.file == file) {
+        return Some(Going::Function(listed.function.clone()));
+    }
+    view.types.iter().find(|listed| listed.file == file).map(|listed| Going::Type { name: listed.name.clone(), file: listed.file.clone() })
+}
+
+fn no_tab(name: &str, file: &str) -> String {
+    format!("The type `{name}` is defined in `{file}`, which has no tab yet")
+}
+
 /// What the dock draws in each pane, and what the windows of the system asked for while it drew them.
 struct Content<'a> {
     ide: &'a mut Ide,
@@ -2614,7 +2704,15 @@ impl Content<'_> {
                 None
             }
             Pane::Inspector => panels::inspector(ui, view, &view.main, &self.ide.callables),
-            Pane::Problems => panels::problems(ui, view, focused, &mut self.ide.problems),
+            Pane::Problems => {
+                let unparsed: Vec<panels::Unparsed<'_>> = self
+                    .ide
+                    .texts
+                    .values()
+                    .filter_map(|editing| editing.unparsed().map(|(message, line)| panels::Unparsed { file: &editing.file, message, line }))
+                    .collect();
+                panels::problems(ui, view, focused, &mut self.ide.problems, &unparsed)
+            }
             Pane::Run => {
                 let said = self.ide.run_said(focused.function.as_deref(), ui.input(|input| input.time));
                 panels::run(ui, focused, self.ide.settings.values_shown, said.as_ref())
@@ -3062,10 +3160,20 @@ impl Content<'_> {
             lines.iter().filter_map(|&line| usize::try_from(line).ok()?.checked_sub(1)).map(|line| (line, tint)).collect();
         let editing = self.ide.texts.entry(file.to_owned()).or_insert_with(|| text::Editing::new(file));
         if editing.loading() {
-            editing.update(self.host, self.view.checks, self.ide.now, false);
+            editing.update(self.host, self.view.checks, self.view.report.as_ref(), self.ide.now, false);
         }
-        if let Some(asked) = editing.show(ui, dark, select, &tints) {
+        let drawing = self.ide.drawn.get(function).and_then(|drawn| drawn.canvas.drawing()).map(|drawing| drawing.as_ref());
+        let known = text::Known { callables: &self.ide.callables.list, functions: &self.view.functions, types: &self.view.types, drawing };
+        let said = editing.show(ui, dark, select, &tints, &known);
+        if let Some(asked) = said.asked {
             editing.answer(self.host, asked);
+        }
+        match said.definition.and_then(|found| going(self.view, file, found)) {
+            Some(Going::Here(at)) => editing.reveal = Some(kit_text::offset_of(&editing.code.field, at)),
+            Some(Going::Function(function)) => self.asked.push(panels::Asked::Show { function, preview: false }),
+            Some(Going::Type { name, file }) => self.ide.say(no_tab(&name, &file)),
+            None if said.nowhere => self.ide.say("Go to definition: no definition of a value, a function or a type of the project there"),
+            None => {}
         }
     }
 }
