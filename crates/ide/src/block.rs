@@ -73,6 +73,13 @@ struct Picking {
     changed: bool,
 }
 
+impl BlockPane {
+    /// A size or a colour is being typed, dragged or picked, and not written yet (the gesture lock, architecture 12.5).
+    pub fn typing(&self) -> bool {
+        self.top.is_some() || self.left.is_some() || self.picking.as_ref().is_some_and(|picking| picking.changed)
+    }
+}
+
 /// What the view of a function keeps between two frames.
 #[derive(Default)]
 pub struct BlockPane {

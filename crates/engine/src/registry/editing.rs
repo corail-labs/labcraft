@@ -1246,12 +1246,12 @@ pub(super) fn catalog() -> Vec<Command> {
         ),
         Command {
             direct: true,
-            result: "`{ \"workspace\", \"windows\", \"truncated\" }`: the tabs, the selection and the zoom of each window",
+            result: "`{ \"workspace\", \"windows\", \"gesture\", \"truncated\" }`: the tabs, the selection and the zoom of each window, and the gesture of the user",
             ..window(
                 "view.get_state",
                 "Get View State",
-                "Return the tabs, the selection and the zoom of the windows",
-                "Returns `{ \"workspace\": \"edit\", \"windows\": [{ \"tabs\", \"shown\", \"selection\", \"zoom\" }], \"truncated\": false }`: for each window of the project, its tabs (the function, its file, its view and the second view of a split), the index of the tab shown, the selection of the tab shown as the editing commands name it, and the zoom. It is the one command of the window that an attached agent may call.",
+                "Return the tabs, the selection and the zoom of the windows, and the gesture of the user",
+                "Returns `{ \"workspace\": \"edit\", \"windows\": [{ \"tabs\", \"shown\", \"selection\", \"zoom\" }], \"gesture\", \"truncated\": false }`: for each window of the project, its tabs (the function, its file, its view and the second view of a split), the index of the tab shown, the selection of the tab shown as the editing commands name it, and the zoom; the gesture of the user in progress (`rectangle`, `move`, `wire`, `route`, `resize`, `field`) or `null`: meanwhile an editing command of an agent waits for its end, at most 30 s, then is `gesture.busy`. It is the one command of the window that an attached agent may call.",
                 object(&[], &[]),
                 WINDOW_ERRORS,
             )

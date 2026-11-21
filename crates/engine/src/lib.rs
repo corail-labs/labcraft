@@ -28,6 +28,7 @@ mod files;
 pub mod fmt;
 pub mod folders;
 mod functions;
+pub mod gesture;
 pub mod guide;
 pub mod history;
 pub mod journal;
@@ -49,6 +50,7 @@ pub mod workspace;
 
 pub use edits::revision;
 pub use error::CommandError;
+pub use gesture::Gesture;
 pub use history::Author;
 pub use runs::{Clock, JsonProblem, Patient, Runs, Still, Waiter, read_json, run_to_end};
 pub use session::{Config, Session};

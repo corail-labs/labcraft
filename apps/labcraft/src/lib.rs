@@ -17,6 +17,7 @@ pub mod agents;
 pub mod args;
 pub mod examples;
 pub mod frames;
+pub mod held;
 pub mod session;
 pub mod style_file;
 pub mod watch;

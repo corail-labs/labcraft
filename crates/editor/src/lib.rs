@@ -205,7 +205,7 @@ pub enum Intent {
     ResetBlock { file: String },
 }
 
-/// A gesture in progress: the canvas's own state, which the host follows (the gesture lock comes with step 8).
+/// A gesture in progress: the canvas's own state, which the host follows, for the gesture lock (architecture 12.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gesture {
     /// A rectangle of selection is being drawn.

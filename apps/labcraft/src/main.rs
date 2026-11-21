@@ -282,6 +282,7 @@ impl App {
             user_settings: self.ide.prefs().settings,
             style: self.options.style.clone(),
             new,
+            gesture_wait: labcraft_engine::gesture::WAIT,
         };
         let wake = ctx.clone();
         match Handle::spawn(opening, Box::new(move || wake.request_repaint())) {

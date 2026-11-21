@@ -258,9 +258,19 @@ impl Waiter for Client<'_, '_> {
     }
 
     fn progress(&self, report: &Json) {
+        self.tell(&tools::progress_message(report));
+    }
+
+    fn waiting_for_the_user(&self) {
+        self.tell("waiting for the user");
+    }
+}
+
+impl Client<'_, '_> {
+    /// A progress notification, when the call carries a `progressToken`.
+    fn tell(&self, message: &str) {
         let Some(token) = self.token else { return };
         let progress = self.sent.fetch_add(1, Ordering::SeqCst) + 1;
-        let message = tools::progress_message(report);
         self.shared.send(&json!({
             "jsonrpc": "2.0",
             "method": "notifications/progress",

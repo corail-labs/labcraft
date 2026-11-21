@@ -224,6 +224,8 @@ pub struct View {
     appearance: labcraft_diagram::Appearance,
     /// A command wrote files since the folder was read.
     pub(crate) stale: bool,
+    /// The gesture of the user in progress, as the window last said it (`Session::set_gesture`).
+    pub(crate) gesture: Option<crate::Gesture>,
     /// The functions never drawn, whose drawing stopped a worker of the web viewer before (architecture 11.5).
     pub(crate) skipped: BTreeSet<String>,
     /// The function that the next `view.open` shows instead of the first one, when the folder has it (architecture

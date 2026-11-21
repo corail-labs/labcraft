@@ -309,6 +309,17 @@ impl Session {
         self.view.set_zoom(function, zoom);
     }
 
+    /// The gesture of the user in progress, which `view.get_state` returns (architecture 12.5). Not a command: the window
+    /// says it, as it says its zoom; the app holds the editing commands of the agents that wait for its end.
+    pub fn set_gesture(&mut self, gesture: Option<crate::Gesture>) {
+        self.view.gesture = gesture;
+    }
+
+    /// The gesture of the user in progress.
+    pub fn gesture(&self) -> Option<crate::Gesture> {
+        self.view.gesture
+    }
+
     /// A session of the command line, which runs one command per process: it keeps no history, so `history.*` is not
     /// enabled and a command makes no step (commands.md 9.5), and its journal is `cli.jsonl` (architecture 12.5).
     pub fn for_command_line(&mut self) {

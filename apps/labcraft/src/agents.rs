@@ -21,7 +21,7 @@ use std::io::BufReader;
 use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -33,6 +33,7 @@ use labcraft_ide::agents::{Answer, Asks, Policy, Question, runs};
 use labcraft_mcp::{Executor, Gate, Served};
 use serde_json::{Value, json};
 
+use crate::held::{Call, Flags};
 use crate::session::Message;
 
 /// How long a question waits for the user's answer *(proposed)* (ide.md 8): unanswered, the agent is refused.
@@ -452,14 +453,34 @@ struct Attached {
 }
 
 impl Attached {
-    /// Sends a call to the thread of the session, and waits for its result.
-    fn send(&self, author: &Author, id: &str, params: Value) -> Result<Value, CommandError> {
+    /// Sends a call to the thread of the session, and waits for its result. While the call waits for the end of a
+    /// gesture of the user, its client is told so each second (`waiting for the user`) and may cancel it: it then
+    /// never runs (architecture 12.5).
+    #[expect(clippy::disallowed_methods, reason = "the desktop app, never built for WASM, where the clock traps")]
+    fn send(&self, author: &Author, id: &str, params: Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
         let (reply, result) = std::sync::mpsc::channel();
-        let message = Message::Agent { author: author.clone(), id: id.to_owned(), params, reply };
-        if self.session.send(message).is_err() {
+        let flags = Arc::new(Flags::default());
+        let call = Call { author: author.clone(), id: id.to_owned(), params, reply, flags: Arc::clone(&flags) };
+        if self.session.send(Message::Agent(call)).is_err() {
             return Err(CommandError::internal("the window closed its project"));
         }
-        result.recv().unwrap_or_else(|_| Err(CommandError::internal("the window closed its project before it answered")))
+        let mut told: Option<Instant> = None;
+        loop {
+            match result.recv_timeout(LOOK) {
+                Ok(result) => return result,
+                Err(RecvTimeoutError::Disconnected) => return Err(CommandError::internal("the window closed its project before it answered")),
+                Err(RecvTimeoutError::Timeout) => {}
+            }
+            // A request cancelled before it runs never runs, and gets no answer (mcp.md 4); one that runs is waited for, so
+            // that what it did is known (a run started is the client's).
+            if waiter.stopped() && flags.cancel() {
+                return Err(CommandError::internal("the client cancelled the call"));
+            }
+            if flags.held() && told.is_none_or(|told| told.elapsed() >= HELD_PROGRESS) {
+                waiter.waiting_for_the_user();
+                told = Some(Instant::now());
+            }
+        }
     }
 
     fn on_runs(&self, id: &str, params: &Value, waiter: &dyn Waiter) -> Result<Value, CommandError> {
@@ -474,13 +495,13 @@ impl Attached {
             wait.as_str().and_then(|text| labcraft_engine::runs::duration_ns(text).ok()).is_some_and(|ns| (0..=MAX_WAIT_NS).contains(&ns))
         });
         if !judged {
-            return self.send(author, "run.start", params.clone());
+            return self.send(author, "run.start", params.clone(), waiter);
         }
         let mut started = params.clone();
         if let Some(params) = started.as_object_mut() {
             params.insert("wait".to_owned(), json!("0 s"));
         }
-        let report = self.send(author, "run.start", started)?;
+        let report = self.send(author, "run.start", started, waiter)?;
         let Some(run) = report.get("run").and_then(Value::as_str).map(str::to_owned) else { return Ok(report) };
         self.agents.started(self.connection, &run);
         if report.get("status").and_then(Value::as_str) != Some("running") {
@@ -491,6 +512,9 @@ impl Attached {
         self.on_runs("run.wait", &json!({ "run": run, "wait": wait }), waiter)
     }
 }
+
+/// How often a client whose call waits for a gesture is told so.
+const HELD_PROGRESS: Duration = Duration::from_secs(1);
 
 /// The longest `wait` of `run.start` (commands.md 6.4), in nanoseconds.
 const MAX_WAIT_NS: i64 = 300_000_000_000;
@@ -508,7 +532,7 @@ impl Executor for Attached {
             // The calls on a run that the server does not answer at once (`at_once`), and that need no session.
             "run.wait" | "run.trace" => self.on_runs(id, &params, waiter),
             "run.start" => self.start(author, &params, waiter),
-            _ => self.send(author, id, params),
+            _ => self.send(author, id, params, waiter),
         }
     }
 
