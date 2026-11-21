@@ -508,12 +508,6 @@ fn cost_of_unit(unit: &UnitExpr) -> u64 {
     unit.rest.iter().fold(of_term(&unit.first), |cost, (_, term)| cost.saturating_add(of_term(term)))
 }
 
-fn integer_value(negative: bool, digits: &str) -> Option<i128> {
-    let digits: String = digits.chars().filter(|c| *c != '_').collect();
-    let value: i128 = digits.parse().ok()?;
-    Some(if negative { -value } else { value })
-}
-
 /// Whether the type holds this integer exactly: a floating type holds what its digits can write (3.4).
 fn fits_kind(value: i128, kind: NumberKind) -> bool {
     let magnitude = value.unsigned_abs();
@@ -1091,7 +1085,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     fn exponent_in(&self, operand: &Operand) -> Option<i32> {
         let Operand::Number(_, numeral, None) = operand else { return None };
         let NumeralKind::Int(digits) = numeral.kind else { return None };
-        integer_value(numeral.negative, self.text(digits)).and_then(|value| i32::try_from(value).ok())
+        labcraft_types::integer::value(numeral.negative, self.text(digits)).and_then(|value| i32::try_from(value).ok())
     }
 
     /// A line that gives a constant a name makes a named constant (5.1). A line that binds an output or a carry is a terminal.
@@ -1218,7 +1212,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if !integer_fits(numeral.negative, text) {
             return false;
         }
-        let Some(value) = integer_value(numeral.negative, text) else { return false };
+        let Some(value) = labcraft_types::integer::value(numeral.negative, text) else { return false };
         if fits_kind(value, kind) {
             return true;
         }
@@ -1226,7 +1220,9 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         let kind_name = kind.as_str();
         let written = cut_text(text);
         let message = if kind.is_inexact() {
-            format!("`{sign}{written}` would change value as a `{kind_name}`: write a decimal to accept the rounding")
+            // A decimal accepts the rounding: `16777217.0`, written from the value, since a `BASED` has no decimal (3.4).
+            let decimal = value.unsigned_abs();
+            format!("`{sign}{written}` would change value as a `{kind_name}`: write `{sign}{decimal}.0` to accept the rounding")
         } else {
             format!("`{sign}{written}` does not fit a value of type `{kind_name}`")
         };
@@ -1235,7 +1231,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
     }
 
     fn kind_that_holds(&self, numeral: Numeral, digits: Name) -> NumberKind {
-        let value = integer_value(numeral.negative, self.text(digits));
+        let value = labcraft_types::integer::value(numeral.negative, self.text(digits));
         [NumberKind::I32, NumberKind::I64].into_iter().find(|kind| value.is_some_and(|value| fits_kind(value, *kind))).unwrap_or(NumberKind::U64)
     }
 
@@ -1250,8 +1246,11 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             return true;
         }
         let text = self.text(digits);
-        let written: String = text.chars().filter(|c| *c != '_').collect();
-        let value = written.parse::<f64>().unwrap_or(0.0).abs();
+        let value = match numeral.kind {
+            // `INT` or `BASED` (3.4); one beyond `u128` has its `LC1006`.
+            NumeralKind::Int(_) => labcraft_types::integer::magnitude(text).map_or(0.0, |value| value as f64),
+            _ => text.chars().filter(|c| *c != '_').collect::<String>().parse::<f64>().unwrap_or(0.0).abs(),
+        };
         let scaled = value * unit.ratio_to(&goes_to);
         let fits = value == 0.0 || if single { (scaled as f32).is_finite() } else { scaled.is_finite() };
         if fits {
@@ -2189,7 +2188,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             for (variable, written) in variables.iter_mut().zip(&bound.type_args) {
                 let refused = self.refuses_as_argument(primitive, *written, call.id);
                 // A `duration` counts as an `f64[s]`, wherever it comes from (3.5).
-                let as_written = if primitive.variables.numbers { self.as_number(*written).unwrap_or(*written) } else { *written };
+                let as_written = if primitive.variables.numbers() { self.as_number(*written).unwrap_or(*written) } else { *written };
                 *variable = Variable {
                     ty: Some(if refused { TyId::ERROR } else { as_written }),
                     fixed: true,
@@ -2237,7 +2236,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let Some(hint) = self.target_hint(Some(target)).filter(|hint| *hint != TyId::ERROR) else { continue };
             let element = if matches!(form, PrimitiveTy::Var(_)) { Some(hint) } else { self.element_in(form, hint) };
             let Some(mut element) = element else { continue };
-            if primitive.variables.numbers {
+            if primitive.variables.numbers() {
                 let Some(number) = self.as_number(element) else { continue };
                 element = number;
             }
@@ -2251,7 +2250,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             let outer = self.trying.replace(false);
             let mut fits = true;
             for (operand, param) in &own {
-                if primitive.variables.numbers && self.leaves_its_temperature_scale(operand, param.ty, element) {
+                if primitive.variables.numbers() && self.leaves_its_temperature_scale(operand, param.ty, element) {
                     fits = false;
                 }
                 let expected = if matches!(param.ty, PrimitiveTy::Var(_)) { element } else { self.array_for(param.ty, element) };
@@ -2306,7 +2305,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         if written == TyId::ERROR {
             return false;
         }
-        let not_a_number = primitive.variables.numbers && self.as_number(written).is_none();
+        let not_a_number = primitive.variables.numbers() && self.as_number(written).is_none();
         let no_order = is_ordered(primitive) && self.number_of(written).is_some_and(|(kind, _)| kind.is_complex());
         if !not_a_number && !no_order {
             return false;
@@ -2442,18 +2441,18 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             if found == TyId::ERROR {
                 slot.failed = true;
             } else if let Some(element) = self.element_of_argument(param.ty, operand, found) {
-                if primitive.variables.numbers && self.as_number(element).is_none() && element != TyId::ERROR {
+                if primitive.variables.numbers() && self.as_number(element).is_none() && element != TyId::ERROR {
                     self.not_a_number(operand, param.name, found, "an array of numbers");
                     slot.failed = true;
                 } else if let Some(known) = variable.ty {
-                    let value = if primitive.variables.numbers { self.as_number(element).unwrap_or(element) } else { element };
+                    let value = if primitive.variables.numbers() { self.as_number(element).unwrap_or(element) } else { element };
                     if !self.pass.table.matches(known, value) {
                         let expected = self.array_for(param.ty, known);
                         self.judge_input(operand, found, expected, param.name);
                         slot.failed = true;
                     }
                 } else {
-                    slot.ty = Some(if primitive.variables.numbers { self.as_number(element).unwrap_or(element) } else { element });
+                    slot.ty = Some(if primitive.variables.numbers() { self.as_number(element).unwrap_or(element) } else { element });
                     slot.fixed = true;
                     slot.first = Some((*operand, param.name));
                 }
@@ -2475,7 +2474,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
         arguments: &[PrimitiveArgument<'a>],
         variables: &mut [Variable<'a>; 2],
     ) -> (bool, Vec<(Id, TyId, usize)>) {
-        let numbers = primitive.variables.numbers;
+        let numbers = primitive.variables.numbers();
         let ordered = is_ordered(primitive);
         let is_sub = primitive.library == PrimitiveLibrary::Core && primitive.name == "sub";
         let mut kelvin = false;
@@ -2589,7 +2588,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
 
     /// Literals decide last: an integer takes the type around it, and `[]` needs one (3.4).
     fn bind_flexible(&mut self, primitive: &'static Primitive, arguments: &[PrimitiveArgument<'a>], variables: &mut [Variable<'a>; 2]) {
-        let numbers = primitive.variables.numbers;
+        let numbers = primitive.variables.numbers();
         let ranks: Vec<u8> = arguments.iter().map(|(operand, _)| self.rank(operand)).collect();
         let mut in_order: Vec<_> = arguments.iter().zip(ranks).filter(|(_, rank)| *rank > 0).collect();
         in_order.sort_by_key(|(_, rank)| *rank);

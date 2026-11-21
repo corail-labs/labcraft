@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod code;
+pub mod integer;
 mod limits;
 pub mod listing;
 mod name;
@@ -28,5 +29,5 @@ pub use report::{
     CheckCounts, CheckDocument, CheckSummary, Diagnostic, Edit, FileCounts, FileEntry, FileResult, Fix, FmtDocument, FmtSummary, MAX_LIST, MAX_TEXT,
     Node, Position, Related, Report, Span, Status, Wire, cut_text,
 };
-pub use ty::{Fit, FitKey, FnParam, LibraryId, MAX_ARRAY_DIMENSIONS, NumberKind, Ty, TyId, TypeOutOfBounds, TypeTable, Variant};
+pub use ty::{Bound, Fit, FitKey, FnParam, LibraryId, MAX_ARRAY_DIMENSIONS, NumberKind, Ty, TyId, TypeOutOfBounds, TypeTable, Variant};
 pub use unit::{Unit, UnitError, parse_unit};

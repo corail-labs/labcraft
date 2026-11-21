@@ -148,6 +148,51 @@ pub struct Variant {
     pub values: Vec<TyId>,
 }
 
+/// The bound of a type variable (spec 3.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Bound {
+    /// Integers, floats and complex numbers, with any unit; a `duration` counts as an `f64[s]`.
+    Number,
+    /// The integer types without a unit, `i8` to `u64` (0.5.0).
+    Integer,
+    /// `bool` or an `Integer` (0.5.0).
+    Bits,
+}
+
+impl Bound {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Bound::Number => "Number",
+            Bound::Integer => "Integer",
+            Bound::Bits => "Bits",
+        }
+    }
+
+    /// Whether the bound holds this type: `i32[mV]` is a `Number`, and neither an `Integer` nor a `Bits`.
+    pub fn holds(self, ty: &Ty) -> bool {
+        let integer = matches!(ty, Ty::Number { kind, unit } if kind.is_integer() && *unit == Unit::ONE);
+        match self {
+            Bound::Number => matches!(ty, Ty::Number { .. } | Ty::Duration),
+            Bound::Integer => integer,
+            Bound::Bits => integer || matches!(ty, Ty::Bool),
+        }
+    }
+
+    /// Where two types of an `Integer` or a `Bits` meet: the smallest type that both widen to (3.4, 3.5), so that a `u8` and
+    /// an `i32` give an `i32`, and two `bool` a `bool`; `None` when they do not meet (a `bool` and an integer, a `u64` and an
+    /// `i8`) or when the bound does not hold one of them. Two numbers of `Number` meet in `check`, which converts their units.
+    pub fn meeting(self, a: &Ty, b: &Ty) -> Option<Ty> {
+        if self == Bound::Number || !self.holds(a) || !self.holds(b) {
+            return None;
+        }
+        match (a, b) {
+            (Ty::Bool, Ty::Bool) => Some(Ty::Bool),
+            (Ty::Number { kind: a, .. }, Ty::Number { kind: b, .. }) => a.meeting(*b).map(|kind| Ty::Number { kind, unit: Unit::ONE }),
+            _ => None,
+        }
+    }
+}
+
 /// An argument of a function type: `fn(f64[V], err: error)`. Its name says how `call` can wire it,
 /// and is not part of the type (spec 4): see [`TypeTable::matches`].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -535,6 +580,46 @@ impl TypeWriter<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plain(kind: NumberKind) -> Ty {
+        Ty::Number { kind, unit: Unit::ONE }
+    }
+
+    /// Spec 3.5: what each bound holds, read off its sentence.
+    #[test]
+    fn the_bounds_hold_what_spec_3_5_says() {
+        let millivolts = Ty::Number { kind: NumberKind::I32, unit: crate::unit::parse_unit("mV", 256).unwrap() };
+        assert!(Bound::Number.holds(&millivolts));
+        assert!(!Bound::Integer.holds(&millivolts), "`i32[mV]` is not an `Integer`");
+        assert!(!Bound::Bits.holds(&millivolts));
+        assert!(Bound::Bits.holds(&Ty::Bool) && !Bound::Integer.holds(&Ty::Bool), "`bool` is a `Bits`, not an `Integer`");
+        assert!(!Bound::Number.holds(&Ty::Bool));
+        assert!(Bound::Number.holds(&Ty::Duration) && !Bound::Integer.holds(&Ty::Duration), "a `duration` is an `f64[s]`");
+        for kind in NumberKind::ALL {
+            assert_eq!(Bound::Integer.holds(&plain(kind)), kind.is_integer(), "{}", kind.as_str());
+            assert_eq!(Bound::Bits.holds(&plain(kind)), kind.is_integer(), "{}", kind.as_str());
+            assert!(Bound::Number.holds(&plain(kind)), "{}", kind.as_str());
+        }
+    }
+
+    /// Spec 3.5 and the list of widening of 3.4: `i8` and `u8` both widen to `i16`; nothing signed widens to `u64`, and a
+    /// `u64` widens to nothing.
+    #[test]
+    fn two_types_of_a_bound_meet_at_the_smallest_that_both_widen_to() {
+        use NumberKind::{F64, I8, I16, I32, I64, U8, U32, U64};
+        for bound in [Bound::Integer, Bound::Bits] {
+            assert_eq!(bound.meeting(&plain(U8), &plain(I32)), Some(plain(I32)), "spec 3.5");
+            assert_eq!(bound.meeting(&plain(I32), &plain(U8)), Some(plain(I32)));
+            assert_eq!(bound.meeting(&plain(I8), &plain(U8)), Some(plain(I16)));
+            assert_eq!(bound.meeting(&plain(I32), &plain(U32)), Some(plain(I64)));
+            assert_eq!(bound.meeting(&plain(U64), &plain(U64)), Some(plain(U64)));
+            assert_eq!(bound.meeting(&plain(U64), &plain(I8)), None);
+            assert_eq!(bound.meeting(&plain(I32), &plain(F64)), None, "an `f64` is no `Integer`");
+            assert_eq!(bound.meeting(&Ty::Bool, &plain(I32)), None, "a `bool` and an integer do not meet");
+        }
+        assert_eq!(Bound::Bits.meeting(&Ty::Bool, &Ty::Bool), Some(Ty::Bool));
+        assert_eq!(Bound::Integer.meeting(&Ty::Bool, &Ty::Bool), None);
+    }
 
     struct Fixture {
         table: TypeTable,
