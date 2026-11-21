@@ -246,13 +246,52 @@ impl Sized {
     }
 }
 
-/// The paint of a terminal's family (notation 4.1).
+thread_local! {
+    /// The mode of color by type (notation 4.3) in force on this thread, for the time of [`by_type`].
+    static BY_TYPE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `work` with the mode of color by type `on` on this thread, then puts back the mode that was.
+pub fn by_type<R>(on: bool, work: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            BY_TYPE.with(|mode| mode.set(self.0));
+        }
+    }
+    let _restore = Restore(BY_TYPE.with(|mode| mode.replace(on)));
+    work()
+}
+
+/// The token of a data family in the mode of color by type (notation 4.3): none for the others, which keep theirs.
+fn type_token(family: Family) -> Option<Token> {
+    if !BY_TYPE.with(std::cell::Cell::get) {
+        return None;
+    }
+    match family.base {
+        Base::Number => Some("type.number"),
+        Base::Bool => Some("type.boolean"),
+        Base::Text => Some("type.text"),
+        Base::Enum => Some("type.enum"),
+        Base::Struct => Some("type.struct"),
+        Base::Function => Some("type.function"),
+        Base::Session | Base::Error | Base::Order | Base::Unknown => None,
+    }
+}
+
+/// The paint of a terminal's family (notation 4.1); in the mode of color by type, that of its family (4.3), an array
+/// that of its element.
 pub fn wire_token(family: Family) -> Token {
     match family.base {
         Base::Session => "wire.resource",
         Base::Error => "wire.error",
-        _ => "wire.data",
+        _ => type_token(family).unwrap_or("wire.data"),
     }
+}
+
+/// The paint of the name of a wire (notation 4): muted, or in the mode of color by type the colour of its family (4.3).
+pub fn name_token(family: Family) -> Token {
+    type_token(family).unwrap_or("ink.muted")
 }
 
 /// How a wire of a family is drawn (notation 4.1); `core` is the fill of the frame it runs in.

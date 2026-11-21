@@ -1473,7 +1473,8 @@ icon 32 {
   `accent` gives a shape an accent color, designated by a theme token (`accent wire.error`), never
   by a value: a token of the visual notation, section 8, whose parts are names (`frame.fill.1` is not
   one), but `select.stroke` and `node.active`, the colours of what the viewer selects and of what runs, which would
-  make the icon seem selected or running.
+  make the icon seem selected or running. Nor the tokens of color by type (`type.number`…, visual notation 4.3), which
+  `type`, a reserved word, keeps out: they are the reader's colours of the editor, which an export does not define.
 - **No script, no link, no image**: the notation can neither run nor load anything. An icon coming
   from a third-party package can be drawn safely. The IDE imports and exports SVG (commands
   `icon.import`, `icon.export`) for drawing in a drawing program.

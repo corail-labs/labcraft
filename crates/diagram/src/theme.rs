@@ -50,7 +50,18 @@ pub const TOKENS: &[TokenValue] = &[
     token("select.stroke", "#0E7490", "#22D3EE"),
     token("ink.light", "#FFFFFF", "#FFFFFF"),
     token("ink.dark", "#1F2328", "#1F2328"),
+    token("type.number", "#034E41", "#7DA695"),
+    token("type.boolean", "#AE1395", "#EF6CD9"),
+    token("type.text", "#7F593D", "#BE9679"),
+    token("type.enum", "#346D17", "#55B326"),
+    token("type.struct", "#815A0E", "#CF9117"),
+    token("type.function", "#94476E", "#C78CAA"),
 ];
+
+/// Whether `token` is the token of a family in the mode of color by type (notation 4.3).
+pub fn is_type(token: &str) -> bool {
+    token.starts_with("type.")
+}
 
 /// The name of the CSS variable of a token: `wire.error` gives `--wire-error` (notation 8).
 pub fn variable(token: &str) -> String {
@@ -61,8 +72,14 @@ pub fn variable(token: &str) -> String {
 /// on its own fill at 4.5:1, every outline at 3:1; each as (ink, background, least ratio), for both themes.
 pub fn contrasts() -> Vec<(&'static str, &'static str, f64)> {
     const BACKGROUNDS: [&str; 5] = ["canvas.fill", "frame.fill.1", "frame.fill.2", "frame.fill.3", "frame.fill.4"];
-    const INKS: [&str; 10] = [
+    const INKS: [&str; 16] = [
         "wire.data",
+        "type.number",
+        "type.boolean",
+        "type.text",
+        "type.enum",
+        "type.struct",
+        "type.function",
         "wire.resource",
         "wire.error",
         "wire.order",
@@ -137,7 +154,7 @@ mod tests {
     #[test]
     fn the_contrasts_of_notation_8_hold() {
         assert_eq!(crate::style::contrast_problems(&crate::style::Style::default()), Vec::<String>::new());
-        assert_eq!(contrasts().len(), 5 * 16 + 12);
+        assert_eq!(contrasts().len(), 5 * 22 + 12);
     }
 
     /// The ratio of WCAG 2, by hand: white on black 21:1, a colour on itself 1:1, `#777777` on white 4.48:1.

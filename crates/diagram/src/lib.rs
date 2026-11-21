@@ -94,6 +94,9 @@ pub struct Appearance {
     /// `appearance.library_colors`: the `color` of the blocks of a library, by its name, in place of that of its mask
     /// (spec 11.3); a function's own `color` stays.
     pub library_colors: BTreeMap<String, labcraft_graph::Rgb>,
+    /// `appearance.color_by_type`: the data wires, their terminals and their names in the colour of their family
+    /// (notation 4.3). Never in an export, which keeps the colours of notation 8.
+    pub by_type: bool,
 }
 
 /// `--max-diagram-nodes` (`docs/cli.md`, 7.6).
@@ -164,10 +167,10 @@ pub fn draw(checked: &Checked, file: usize, names: &Interner, view: &ViewState, 
 }
 
 /// The block of the function of `checked.files[file]`, alone, as its callers see it, for the view `Block` (ide.md 3): what
-/// a session puts in [`Drawing::block`] of the function that a window shows. Never computed by [`draw`], which the CLI and
-/// the exports call: they never show it.
-pub fn own_block(checked: &Checked, file: usize, names: &Interner, limits: &DiagramLimits) -> Option<OwnBlock> {
-    own::of(checked, checked.files.get(file)?, names, limits)
+/// a session puts in [`Drawing::block`] of the function that a window shows, in the reader's `appearance`. Never computed
+/// by [`draw`], which the CLI and the exports call: they never show it.
+pub fn own_block(checked: &Checked, file: usize, names: &Interner, appearance: &Appearance, limits: &DiagramLimits) -> Option<OwnBlock> {
+    own::of(checked, checked.files.get(file)?, names, appearance, limits)
 }
 
 /// A data wire between two nodes of one body, by where its reader reads it: where the figure of stability puts a
@@ -291,7 +294,13 @@ fn title(kind: &Kind<'_>) -> String {
 /// what a change recomputes cuts it (architecture 12.4): the sizes of the nodes, their placement, the routes and the
 /// shapes, then the extent of the whole and its margin.
 fn drawing(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<&labcraft_types::TypeTable>) -> Drawing {
-    let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), ..Drawing::default() };
+    size::by_type(view.appearance.by_type, || drawing_in_mode(graph, names, view, types))
+}
+
+/// [`drawing`], with the mode of color by type in force (notation 4.3).
+fn drawing_in_mode(graph: &Graph<'_>, names: &Interner, view: &ViewState, types: Option<&labcraft_types::TypeTable>) -> Drawing {
+    let by_type = view.appearance.by_type;
+    let mut drawing = Drawing { function: graph.function.clone(), style: style::current(), by_type, ..Drawing::default() };
     let mut sized = sizes(graph, names, view, &mut drawing.icons, &mut drawing.outlines);
     let titles = titles(graph, view);
     let placement = place::place(graph, &mut sized, &titles, (style::margin(), style::margin()));
@@ -1482,7 +1491,10 @@ fn wire_groups(
                     _ => false,
                 })
                 .collect();
-            shapes.extend(wire_names(&value, &routed.branches, (named_at_start, &named_at_end[..]), &mut obstacles));
+            // The colour of the value, which an order (`after:`) that reads it first does not have (notation 4.3).
+            let data = routed.wires.iter().filter_map(|wire| of.wires.get(*wire)).find(|wire| wire.family.base != graph::Base::Order);
+            let token = size::name_token(data.unwrap_or(first).family);
+            shapes.extend(wire_names(&value, token, &routed.branches, (named_at_start, &named_at_end[..]), &mut obstacles));
             let from = terminal_form(graph, of, body, &first.from, true, &ordinals);
             let mut to: Vec<String> = routed
                 .wires
@@ -1600,6 +1612,7 @@ fn frame_obstacles(of: &graph::BodyOf, frame: &place::FrameAt, named: bool, obst
 /// that holds the first name, by the same rule.
 fn wire_names(
     value: &str,
+    token: shape::Token,
     branches: &[Vec<(i64, i64)>],
     (named_at_start, named_at_end): (bool, &[bool]),
     obstacles: &mut names::Obstacles,
@@ -1630,7 +1643,7 @@ fn wire_names(
         }
         obstacles.rect(x, top, x + text.width, bottom);
         // Its baseline 3 above the wire, its line above that, as the extent of a text counts it.
-        shapes.push(text.at(x, bottom - (cap + 1) / 2, "ink.muted"));
+        shapes.push(text.at(x, bottom - (cap + 1) / 2, token));
         true
     };
     // The first name: the first horizontal of the first branch where it fits, the segment that holds it kept.

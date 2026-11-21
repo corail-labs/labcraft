@@ -951,6 +951,7 @@ saying so (decision of the owner, 2026-11-15).
 | `appearance.reduced_motion` | boolean | `false` | no | No glide (visual notation 2.1) |
 | `appearance.block_fill` | `code`, `neutral` | `code` | no | `neutral` draws every block in the neutral tokens, whatever its `color`, `fill` and `stroke` (spec 11.2) |
 | `appearance.library_colors` | a table: library → `"#RRGGBB"` | `{}` | no | The `color` of a library's blocks, in place of that of its mask (spec 11.3), from which the theme derives the band and the tint in both themes, as for a `color` written; a function's own `color` stays |
+| `appearance.color_by_type` | boolean | `true` | no | The data wires, their terminals and their names in the colour of their family (visual notation 4.3) |
 | `view.standard_everywhere` | boolean | `false` | no | Every node in standard view (visual notation 3); `view.set_standard_view` writes it |
 | `view.values_shown` | boolean | `true` | no | The values of the last run on the wires (visual notation 6.1) |
 | `view.preview_tabs` | boolean | `true` | no | A single click on a file opens it as a preview (ide.md 3) |

@@ -1598,7 +1598,7 @@ fn two_nodes_that_the_file_places_one_over_the_other_get_lc7005() {
 fn a_wire_has_no_name_beside_a_terminal_that_shows_it() {
     let count = |branch: Vec<(i64, i64)>, start: bool, end: bool| {
         let mut obstacles = crate::names::Obstacles::default();
-        crate::wire_names("period", &[branch], (start, &[end]), &mut obstacles).len()
+        crate::wire_names("period", "ink.muted", &[branch], (start, &[end]), &mut obstacles).len()
     };
     let long_first = || vec![(0, 0), (20000, 0), (20000, 4000), (24000, 4000)];
     assert_eq!(count(long_first(), false, false), 1);
@@ -1612,7 +1612,7 @@ fn a_wire_has_no_name_beside_a_terminal_that_shows_it() {
     let mut obstacles = crate::names::Obstacles::default();
     let first = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000)];
     let second = vec![(0, 0), (500, 0), (500, 1000), (30000, 1000), (30000, 3000)];
-    assert_eq!(crate::wire_names("period", &[first, second], (false, &[false, false]), &mut obstacles).len(), 1);
+    assert_eq!(crate::wire_names("period", "ink.muted", &[first, second], (false, &[false, false]), &mut obstacles).len(), 1);
 }
 
 /// Notation 5, 7: the function has a frame without fill; a wire leaves the centre of a terminal of a frame, under its
@@ -2622,7 +2622,7 @@ fn the_colour_of_a_mask_gives_the_band_and_tints_the_body_as_a_color_line_does()
 #[test]
 fn the_reader_colours_a_library_or_draws_every_block_neutral() {
     let colour = |hex: &str| labcraft_graph::Rgb::parse(hex).unwrap();
-    let reader = crate::Appearance { neutral_blocks: false, library_colors: [("lib".to_owned(), colour("#2F6F9F"))].into() };
+    let reader = crate::Appearance { neutral_blocks: false, library_colors: [("lib".to_owned(), colour("#2F6F9F"))].into(), ..Default::default() };
     let mask = Some("[mask]\ncolor = \"#9F2F2F\"\n");
     let coloured = masked_appearing(mask, "", &reader).0;
     assert_eq!(fills(&coloured), fills(&masked(Some("[mask]\ncolor = \"#2F6F9F\"\n"), "").0), "in place of the mask's");
@@ -2713,6 +2713,11 @@ fn a_mask_with_only_the_default_band_place_draws_the_same_shapes_as_no_mask() {
 
 /// The block of the function of `shown` among `files`.
 fn own_of(files: &[(&str, &str)], manifest: Option<&str>, shown: &str) -> crate::OwnBlock {
+    own_appearing(files, manifest, shown, &crate::Appearance::default())
+}
+
+/// [`own_of`], in the reader's `appearance`.
+fn own_appearing(files: &[(&str, &str)], manifest: Option<&str>, shown: &str, appearance: &crate::Appearance) -> crate::OwnBlock {
     let mut names = Interner::new();
     let mut root = LibrarySource::new(String::new(), String::new(), Origin::Project);
     let mut lib = LibrarySource::new("lib".to_owned(), "lib".to_owned(), Origin::Project);
@@ -2729,7 +2734,7 @@ fn own_of(files: &[(&str, &str)], manifest: Option<&str>, shown: &str) -> crate:
     // An export never has it: only a session asks for it.
     let Drawn::Drawing(drawing) = draw(&checked, index, &names, &ViewState::default(), &DiagramLimits::default()) else { panic!("not drawn") };
     assert!(drawing.block.is_none());
-    crate::own_block(&checked, index, &names, &DiagramLimits::default()).expect("the block of the function")
+    crate::own_block(&checked, index, &names, appearance, &DiagramLimits::default()).expect("the block of the function")
 }
 
 #[test]
@@ -2798,4 +2803,98 @@ fn f(a: f64, b: f64, c: f64, d: f64, e: f64, g: f64) -> (n: i64) {
     let own = own_of(&[("f.lcf", f)], None, "f.lcf");
     assert_eq!(own.least, (1, 6));
     assert_eq!((own.written.top, own.written.left), (None, None));
+}
+
+/// Color by type (notation 4.3): in the mode the number wires of `ARMS` (`f64`, `i64`), their terminals and their names
+/// take `type.number`, which the SVG then defines; without it, as in an export, no `type.*` is drawn or defined (8). A
+/// name in either paint is still the one that a bubble of a run moves (6.1).
+#[test]
+fn color_by_type_paints_the_number_wires_and_only_its_svg_defines_the_tokens() {
+    let mode = ViewState { appearance: crate::Appearance { by_type: true, ..Default::default() }, ..ViewState::default() };
+    let (plain, coloured) = (drawn_with(&ViewState::default()), drawn_with(&mode));
+    assert!(!plain.by_type && coloured.by_type);
+    let names = |drawing: &crate::Drawing| -> Vec<&'static str> {
+        let texts = drawing.groups.iter().filter(|group| group.wire.is_some()).flat_map(|group| &group.shapes);
+        texts
+            .filter(|shape| crate::values::is_wire_name(shape))
+            .filter_map(|shape| match shape {
+                Shape::Text { runs, .. } => runs.first().map(|run| run.token),
+                _ => None,
+            })
+            .collect()
+    };
+    let (plain_names, coloured_names) = (names(&plain), names(&coloured));
+    assert!(!coloured_names.is_empty() && coloured_names.len() == plain_names.len(), "{plain_names:?} {coloured_names:?}");
+    assert!(plain_names.iter().all(|token| *token == "ink.muted") && coloured_names.iter().all(|token| *token == "type.number"));
+    let (plain_svg, coloured_svg) = (svg(&plain, crate::Theme::Light), svg(&coloured, crate::Theme::Light));
+    assert!(!plain_svg.contains("type-"), "{plain_svg}");
+    assert!(coloured_svg.contains("--type-number: #034E41;") && coloured_svg.contains("var(--type-number)"), "{coloured_svg}");
+}
+
+/// Notation 4.3, by its list: in the mode each data family has its token, an array that of its element; error,
+/// resource and order keep theirs, and the name of a wire of theirs stays muted. Out of the mode, `wire.data`.
+#[test]
+fn each_family_has_its_token_in_the_mode_and_the_others_keep_theirs() {
+    let family = |base: Base, dimensions: u8| Family { base, dimensions };
+    let coloured = [
+        (Base::Number, "type.number"),
+        (Base::Bool, "type.boolean"),
+        (Base::Text, "type.text"),
+        (Base::Enum, "type.enum"),
+        (Base::Struct, "type.struct"),
+        (Base::Function, "type.function"),
+    ];
+    for (base, token) in coloured {
+        for dimensions in [0, 1, 2] {
+            let of = family(base, dimensions);
+            assert_eq!(crate::size::by_type(true, || (crate::size::wire_token(of), crate::size::name_token(of))), (token, token));
+            assert_eq!((crate::size::wire_token(of), crate::size::name_token(of)), ("wire.data", "ink.muted"));
+        }
+    }
+    for (base, token) in [(Base::Error, "wire.error"), (Base::Session, "wire.resource"), (Base::Order, "wire.order")] {
+        let of = family(base, 0);
+        assert_eq!(
+            crate::size::by_type(true, || (crate::size::wire_style(of, "node.fill").token, crate::size::name_token(of))),
+            (token, "ink.muted")
+        );
+    }
+}
+
+/// Notation 4.3: a value that an `after:` reads before a node reads it as data keeps the colour of its family on its
+/// name; the order wire keeps `wire.order`.
+#[test]
+fn the_name_of_a_value_read_first_as_an_order_takes_its_family() {
+    let main = "labcraft 1\n\nuse core\n\nfn main(x: f64, w: f64) -> (y: f64, z: f64) {\n    a = core.add(x, 1.0)\n    y = core.mul(w, 2.0, after: a)\n    z = core.neg(a)\n}\n";
+    let (checked, names) = checked(&[("main.lcf", main)]);
+    assert!(checked.report.diagnostics().is_empty(), "{:?}", checked.report.diagnostics());
+    let mode = ViewState { appearance: crate::Appearance { by_type: true, ..Default::default() }, ..ViewState::default() };
+    let Drawn::Drawing(drawing) = draw(&checked, index_of(&checked, "main.lcf"), &names, &mode, &DiagramLimits::default()) else { panic!() };
+    let group = drawing.groups.iter().find(|group| group.wire.as_ref().is_some_and(|wire| wire.value == "a")).unwrap();
+    let painted: Vec<&str> = group
+        .shapes
+        .iter()
+        .filter(|shape| crate::values::is_wire_name(shape))
+        .filter_map(|shape| match shape {
+            Shape::Text { runs, .. } => runs.first().map(|run| run.token),
+            _ => None,
+        })
+        .collect();
+    assert!(!painted.is_empty() && painted.iter().all(|token| *token == "type.number"), "{painted:?}");
+}
+
+/// The view `Block` draws the block as the canvas draws its calls, in the reader's appearance: in the mode of color by type
+/// its number terminals take `type.number` (notation 4.3), and without it none does.
+#[test]
+fn the_view_block_follows_color_by_type() {
+    let g = "labcraft 1
+
+fn g(x: f64, y: bool) -> (n: i64) {
+    n = 1
+}
+";
+    let mode = crate::Appearance { by_type: true, ..Default::default() };
+    let coloured = svg(&own_appearing(&[("g.lcf", g)], None, "g.lcf", &mode).drawing, crate::Theme::Light);
+    let plain = svg(&own_of(&[("g.lcf", g)], None, "g.lcf").drawing, crate::Theme::Light);
+    assert!(coloured.contains("var(--type-number)") && coloured.contains("var(--type-boolean)"), "{coloured}");
+    assert!(!plain.contains("type-"), "{plain}");
 }

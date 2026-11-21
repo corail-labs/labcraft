@@ -473,7 +473,8 @@ pub fn set_standard_view(session: &mut Session, params: &Params) -> Result<Value
 pub(crate) fn settings_changed(session: &mut Session) {
     let values = session.settings.drawn().values();
     let standard = values.standard_everywhere;
-    let appearance = labcraft_diagram::Appearance { neutral_blocks: values.neutral_blocks, library_colors: values.library_colors };
+    let appearance =
+        labcraft_diagram::Appearance { neutral_blocks: values.neutral_blocks, library_colors: values.library_colors, by_type: values.by_type };
     let drawn_again = standard != session.view.now.standard_everywhere || appearance != session.view.appearance;
     session.view.now.settings = Arc::new(session.settings.stores.clone());
     session.view.now.standard_everywhere = standard;
@@ -972,7 +973,7 @@ fn render(view: &View, name: &str, file: &str) -> Option<(Arc<Drawing>, bool, Va
             (view.shows_block(name), drawing.as_mut(), loaded.checked.as_ref(), files.get(file))
         {
             // A bug of the tool there leaves the view without its block, and says so; never the session without its drawing.
-            let work = || labcraft_diagram::own_block(checked, index, &loaded.names, &DiagramLimits::default());
+            let work = || labcraft_diagram::own_block(checked, index, &loaded.names, &state.appearance, &DiagramLimits::default());
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
                 Ok(block) => drawing.block = block.map(Box::new),
                 Err(_) => {

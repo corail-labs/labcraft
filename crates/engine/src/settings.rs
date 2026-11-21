@@ -44,6 +44,7 @@ pub const LOOK: &str = "appearance.look";
 pub const REDUCED_MOTION: &str = "appearance.reduced_motion";
 pub const BLOCK_FILL: &str = "appearance.block_fill";
 pub const LIBRARY_COLORS: &str = "appearance.library_colors";
+pub const COLOR_BY_TYPE: &str = "appearance.color_by_type";
 pub const STANDARD_EVERYWHERE: &str = "view.standard_everywhere";
 pub const VALUES_SHOWN: &str = "view.values_shown";
 pub const PREVIEW_TABS: &str = "view.preview_tabs";
@@ -77,6 +78,13 @@ pub const KEYS: &[Key] = &[
         false,
     ),
     key(LIBRARY_COLORS, "Library colors", "The colour of a library's blocks, in place of the colour of its mask.", Kind::LibraryColors, false),
+    key(
+        COLOR_BY_TYPE,
+        "Color wires by type",
+        "The data wires, their terminals and their names in the colour of their family.",
+        Kind::Bool(true),
+        false,
+    ),
     key(STANDARD_EVERYWHERE, "Standard view everywhere", "Every node in standard view, its terminals named.", Kind::Bool(false), false),
     key(VALUES_SHOWN, "Values on the wires", "The values of the last run on the wires.", Kind::Bool(true), false),
     key(PREVIEW_TABS, "Preview tabs", "A single click on a file opens it as a preview.", Kind::Bool(true), false),
@@ -218,6 +226,7 @@ impl Stores {
             reduced_motion: on(REDUCED_MOTION),
             neutral_blocks: named(BLOCK_FILL) == "neutral",
             library_colors,
+            by_type: on(COLOR_BY_TYPE),
             standard_everywhere: on(STANDARD_EVERYWHERE),
             values_shown: on(VALUES_SHOWN),
             preview_tabs: on(PREVIEW_TABS),
@@ -264,6 +273,8 @@ pub struct Values {
     pub neutral_blocks: bool,
     /// The `color` that the user gives the blocks of a library, by its name.
     pub library_colors: BTreeMap<String, labcraft_graph::Rgb>,
+    /// `appearance.color_by_type`.
+    pub by_type: bool,
     pub standard_everywhere: bool,
     pub values_shown: bool,
     pub preview_tabs: bool,

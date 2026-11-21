@@ -694,6 +694,9 @@ pub struct Drawing {
     pub type_keys: Vec<labcraft_types::FitKey>,
     /// The values of the notation it was drawn with (notation 10), which the SVG and the canvas paint it with.
     pub style: std::sync::Arc<crate::style::Style>,
+    /// Drawn in the mode of color by type (notation 4.3): the SVG then defines the tokens of the families too.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub by_type: bool,
     /// What drawing found to say about the file, its warnings (`LC7005`), with no file name: the caller gives it. Not
     /// in the SVG.
     #[cfg_attr(feature = "serde", serde(skip))]
