@@ -1309,7 +1309,7 @@ impl<'a> Builder<'a> {
                                 _ if primitive.open && param.name == "template" => {
                                     Expects::Never("the template of `string.format` takes only text written in it, never a wire (spec 5.4)")
                                 }
-                                PrimitiveTy::Var(variable) => Expects::Variable { variable, numbers: primitive.variables.numbers },
+                                PrimitiveTy::Var(variable) => Expects::Variable { variable, numbers: primitive.variables.numbers() },
                                 PrimitiveTy::Texts | PrimitiveTy::U8s => Expects::Family(primitive_family(param.ty)),
                                 PrimitiveTy::Bool
                                 | PrimitiveTy::I32

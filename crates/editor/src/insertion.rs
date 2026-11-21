@@ -364,6 +364,15 @@ pub fn constant_type(text: &str) -> Option<SlotTy> {
         return Some(SlotTy::AnyArray);
     }
     let digits = text.strip_prefix('-').unwrap_or(text);
+    // `0x00FF`, `0b1010_0001 V` (spec 3.4): an integer, with or without a unit.
+    let (word, after) = digits.split_once(' ').unwrap_or((digits, ""));
+    if !labcraft_types::integer::is_decimal(word) && labcraft_types::integer::is_integer(word) {
+        let after = after.trim();
+        if after.is_empty() {
+            return Some(SlotTy::Key(FitKey::Number(NumberKind::I32, Unit::ONE)));
+        }
+        return Some(SlotTy::Key(FitKey::Number(NumberKind::F64, parse_unit(after, MAX_NESTING).ok()?)));
+    }
     let number: String = digits.chars().take_while(|c| c.is_ascii_digit() || matches!(c, '.' | '_' | 'e' | 'E')).collect();
     if !number.starts_with(|c: char| c.is_ascii_digit()) {
         return None;

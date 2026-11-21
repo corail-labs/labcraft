@@ -86,8 +86,8 @@ pub fn primitive_signature(primitive: &Primitive) -> String {
     let variables = primitive.variables.names;
     let generics = if variables.is_empty() {
         String::new()
-    } else if primitive.variables.numbers {
-        format!("<{}>", variables.iter().map(|name| format!("{name}: Number")).collect::<Vec<_>>().join(", "))
+    } else if let Some(bound) = primitive.variables.bound {
+        format!("<{}>", variables.iter().map(|name| format!("{name}: {}", bound.as_str())).collect::<Vec<_>>().join(", "))
     } else {
         format!("<{}>", variables.join(", "))
     };
@@ -117,7 +117,7 @@ fn variable_name(variables: &Variables, index: usize) -> String {
 }
 
 fn primitive_variable(variables: &Variables, index: usize) -> SlotFit {
-    SlotFit::Variable { variable: variable_name(variables, index), bound: variables.numbers.then(|| "Number".to_owned()) }
+    SlotFit::Variable { variable: variable_name(variables, index), bound: variables.bound.map(|bound| bound.as_str().to_owned()) }
 }
 
 /// What the rule of fit reads of a type of appendix A; None for a parameter of a kind, which takes no wire.

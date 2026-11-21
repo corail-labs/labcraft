@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 558 640" width="558" height="640" font-family="Hack, DejaVu Sans Mono, Menlo, monospace" data-schema="labcraft-diagram/1" data-function="masks">
+<style>
+svg { --canvas-fill: #F7F7F5; --canvas-grid: #E6E6E2; --node-fill: #FFFFFF; --node-stroke: #777D88; --node-title: #1F2328; --node-active: #15803D; --node-divider: #E1E3E6; --frame-fill-1: #F0F1F3; --frame-fill-2: #E9EBEE; --frame-fill-3: #E2E5E9; --frame-fill-4: #DBDFE4; --frame-stroke: #777D88; --frame-divider: #C9CDD2; --wire-data: #3D4148; --wire-resource: #1A63A4; --wire-error: #AD3A0B; --wire-order: #5C6168; --mark-coercion: #752FEC; --mark-invalid: #BD1E1E; --coercion-fill: #F1EAFE; --ink-muted: #5D6168; --ink-faint: #5D6168; --pill-fill: #F0F1F3; --pill-stroke: #777D88; --pill-text: #3D4148; --probe-fill: #FFF7D6; --probe-stroke: #777D88; --badge-fill: #1F2328; --badge-text: #FFFFFF; --tab-fill: #E1E4E8; --band-fill: #E1E4E8; --band-text: #1F2328; --select-stroke: #0E7490; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; }
+@media (prefers-color-scheme: dark) { svg { --canvas-fill: #16181C; --canvas-grid: #23262B; --node-fill: #20242A; --node-stroke: #7B8390; --node-title: #ECEFF3; --node-active: #4ADE80; --node-divider: #343A43; --frame-fill-1: #1C1F24; --frame-fill-2: #22262C; --frame-fill-3: #282D34; --frame-fill-4: #2E343C; --frame-stroke: #7B8390; --frame-divider: #434A55; --wire-data: #C5CBD3; --wire-resource: #5BA8F0; --wire-error: #FF8F5E; --wire-order: #A3ABB6; --mark-coercion: #B197FC; --mark-invalid: #FF6E6E; --coercion-fill: #2E2646; --ink-muted: #A3ABB6; --ink-faint: #979EAA; --pill-fill: #2B3038; --pill-stroke: #7B8390; --pill-text: #C5CBD3; --probe-fill: #3A3419; --probe-stroke: #7B8390; --badge-fill: #ECEFF3; --badge-text: #16181C; --tab-fill: #2B3038; --band-fill: #2B3038; --band-text: #ECEFF3; --select-stroke: #22D3EE; --ink-light: #FFFFFF; --ink-dark: #1F2328; --rgb-64748B-64748B: #64748B; } }
+text { direction: ltr; unicode-bidi: isolate; white-space: pre; }
+</style>
+<rect width="558" height="640" style="fill: var(--canvas-fill)"/>
+<defs>
+<symbol id="icon-a464ab62d3482605" viewBox="0 0 32 32" overflow="hidden">
+<path d="M16 10.556l0 10.889" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+<path d="M10.556 16l10.889 0" style="fill: none; stroke: var(--ink-light); stroke-width: 2.33; stroke-linecap: round; stroke-linejoin: round"/>
+</symbol>
+</defs>
+<defs>
+<polygon id="outline-0" points="0,2 0.15,1.23 0.59,0.59 1.23,0.15 2,0 15.17,0 15.94,0.15 16.59,0.59 23.41,7.41 23.85,8.06 24,8.83 24,23.17 23.85,23.94 23.41,24.59 16.59,31.41 15.94,31.85 15.17,32 2,32 1.23,31.85 0.59,31.41 0.15,30.77 0,30"/>
+</defs>
+<rect x="19" y="16" width="520" height="608" rx="2" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="31" y="31.65" font-size="10" style="fill: var(--node-title)">fn masks</text>
+<g data-wire="byte" data-from="fn.byte">
+<path d="M19 212 L289.52 212" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="digit" data-from="digit.digit" data-to="fn.digit">
+<path d="M425.52 388 L443.52 388 Q449.52 388 449.52 394 L449.52 566 Q449.52 572 455.52 572 L539 572" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="high" data-from="high.value" data-to="fn.high word.a">
+<path d="M215.4 476 L220.9 476 Q226.4 476 226.4 481.5 L226.4 506 Q226.4 512 232.4 512 L435.52 512 Q441.52 512 441.52 506 L441.52 482 Q441.52 476 447.52 476 L539 476" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M226.4 476 L226.4 470 Q226.4 464 232.4 464 L289.52 464" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="226.4" cy="476" r="3" style="fill: var(--wire-data)"/>
+<text x="321.92" y="509" font-size="10" style="fill: var(--ink-muted)">high</text>
+</g>
+<g data-wire="word" data-from="word.result" data-to="fn.word">
+<path d="M313.52 472 L427.52 472 Q433.52 472 433.52 478 L433.52 590 Q433.52 596 439.52 596 L539 596" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<text x="317.52" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
+</g>
+<g data-wire="flags" data-from="flags.value" data-to="fn.flags">
+<path d="M409.85 68 L467.52 68 Q473.52 68 473.52 74 L473.52 494 Q473.52 500 479.52 500 L539 500" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="low" data-from="low.value" data-to="fn.low">
+<path d="M367.7 116 L459.52 116 Q465.52 116 465.52 122 L465.52 518 Q465.52 524 471.52 524 L539 524" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g data-wire="lowest" data-from="lowest.value" data-to="fn.lowest">
+<path d="M379.74 164 L451.52 164 Q457.52 164 457.52 170 L457.52 542 Q457.52 548 463.52 548 L539 548" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+</g>
+<g>
+<circle cx="19" cy="212" r="3" style="fill: var(--wire-data)"/>
+<rect x="23" y="206.18" width="40.08" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="31" y="215.65" font-size="10" style="fill: var(--node-title)">byte</text>
+<rect x="63.08" y="205" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="67.08" y="215.65" font-size="10" style="fill: var(--pill-text)">◂ 0x37</text>
+<circle cx="539" cy="476" r="3" style="fill: var(--wire-data)"/>
+<rect x="498.92" y="470.18" width="36.08" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="502.92" y="479.65" font-size="10" style="fill: var(--node-title)">high</text>
+<circle cx="539" cy="500" r="3" style="fill: var(--wire-data)"/>
+<rect x="492.9" y="494.18" width="42.1" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="496.9" y="503.65" font-size="10" style="fill: var(--node-title)">flags</text>
+<circle cx="539" cy="524" r="3" style="fill: var(--wire-data)"/>
+<rect x="504.94" y="518.18" width="30.06" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="508.94" y="527.65" font-size="10" style="fill: var(--node-title)">low</text>
+<circle cx="539" cy="548" r="3" style="fill: var(--wire-data)"/>
+<rect x="486.88" y="542.18" width="48.12" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="490.88" y="551.65" font-size="10" style="fill: var(--node-title)">lowest</text>
+<circle cx="539" cy="572" r="3" style="fill: var(--wire-data)"/>
+<rect x="492.9" y="566.18" width="42.1" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="496.9" y="575.65" font-size="10" style="fill: var(--node-title)">digit</text>
+<circle cx="539" cy="596" r="3" style="fill: var(--wire-data)"/>
+<rect x="498.92" y="590.18" width="36.08" height="11.64" style="fill: var(--canvas-fill)"/>
+<text x="502.92" y="599.65" font-size="10" style="fill: var(--node-title)">word</text>
+</g>
+<g data-node="digit"><title>match byte</title>
+<rect x="289.52" y="200" width="136" height="232" rx="2" style="fill: var(--frame-fill-1); stroke: var(--frame-stroke); stroke-width: 1"/>
+<polyline points="301.52,212 306.32,212" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<polyline points="313.52,207.2 306.32,207.2 306.32,216.8 313.52,216.8" style="fill: none; stroke: var(--frame-stroke); stroke-width: 1.5"/>
+<text x="317.52" y="215.65" font-size="10" style="fill: var(--node-title)">match byte</text>
+<circle cx="289.52" cy="212" r="3" style="fill: var(--wire-data)"/>
+<circle cx="425.52" cy="388" r="3" style="fill: var(--wire-data)"/>
+<path d="M409.52 292 L413.52 292 Q417.52 292 417.52 296 L417.52 384 Q417.52 388 421.52 388 L425.52 388" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<path d="M409.52 388 L425.52 388" style="fill: none; stroke: var(--wire-data); stroke-width: 1.5"/>
+<circle cx="417.52" cy="388" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g data-arm="0x30..=0x39">
+<rect x="305.52" y="240" width="104" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="317.52" y="255.65" font-size="10" style="fill: var(--ink-muted)">0x30..=0x39</text>
+</g>
+<g data-arm="other">
+<rect x="305.52" y="336" width="104" height="80" rx="2" style="fill: var(--frame-fill-2); stroke: var(--frame-stroke); stroke-width: 1"/>
+<text x="317.52" y="351.65" font-size="10" style="fill: var(--ink-muted)">other</text>
+</g>
+<g data-arm="0x30..=0x39">
+<circle cx="409.52" cy="292" r="3" style="fill: var(--wire-data)"/>
+<rect x="329.36" y="286.18" width="42.1" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="333.36" y="295.65" font-size="10" style="fill: var(--node-title)">digit</text>
+<rect x="371.46" y="285" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="375.46" y="295.65" font-size="10" style="fill: var(--pill-text)">◂ 1</text>
+</g>
+<g data-arm="other">
+<circle cx="409.52" cy="388" r="3" style="fill: var(--wire-data)"/>
+<rect x="329.36" y="382.18" width="42.1" height="11.64" style="fill: var(--frame-fill-2)"/>
+<text x="333.36" y="391.65" font-size="10" style="fill: var(--node-title)">digit</text>
+<rect x="371.46" y="381" width="26.06" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="375.46" y="391.65" font-size="10" style="fill: var(--pill-text)">◂ 0</text>
+</g>
+<g data-node="high"><title>high = 0xFF00</title>
+<text x="131.2" y="479.65" font-size="10" style="fill: var(--node-title)">high</text>
+<rect x="163.28" y="469" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="167.28" y="479.65" font-size="10" style="fill: var(--pill-text)">0xFF00</text>
+<circle cx="215.4" cy="476" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="word"><title>core.add</title>
+<use href="#outline-0" x="289.52" y="456" style="fill: var(--rgb-64748B-64748B); stroke: var(--node-stroke); stroke-width: 1"/>
+<use href="#icon-a464ab62d3482605" x="289.52" y="460" width="24" height="24"/>
+<circle cx="289.52" cy="464" r="3" style="fill: var(--wire-data)"/>
+<circle cx="289.52" cy="480" r="3" style="fill: var(--wire-data)"/>
+<circle cx="313.52" cy="472" r="3" style="fill: var(--wire-data)"/>
+<rect x="234.4" y="473" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="238.4" y="483.65" font-size="10" style="fill: var(--pill-text)">0x0034</text>
+</g>
+<g data-node="flags"><title>flags = 0b1010_0001</title>
+<text x="289.52" y="71.65" font-size="10" style="fill: var(--node-title)">flags</text>
+<rect x="327.62" y="61" width="74.23" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="331.62" y="71.65" font-size="10" style="fill: var(--pill-text)">0b1010_0001</text>
+<circle cx="409.85" cy="68" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="low"><title>low = 0x00FF</title>
+<text x="289.52" y="119.65" font-size="10" style="fill: var(--node-title)">low</text>
+<rect x="315.58" y="109" width="44.12" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="319.58" y="119.65" font-size="10" style="fill: var(--pill-text)">0x00FF</text>
+<circle cx="367.7" cy="116" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g data-node="lowest"><title>lowest = -0x80</title>
+<text x="289.52" y="167.65" font-size="10" style="fill: var(--node-title)">lowest</text>
+<rect x="333.64" y="157" width="38.1" height="14" rx="7" style="fill: var(--pill-fill); stroke: var(--pill-stroke); stroke-width: 1"/>
+<text x="337.64" y="167.65" font-size="10" style="fill: var(--pill-text)">-0x80</text>
+<circle cx="379.74" cy="164" r="3" style="fill: var(--wire-data)"/>
+</g>
+<g>
+<rect x="305.52" y="336" width="104" height="80" rx="2" style="fill: var(--frame-fill-2); opacity: 0.6"/>
+</g>
+<g data-value="byte"><title>55</title>
+<rect x="63.08" y="204" width="44.12" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="67.08" y="215.65" font-size="10" style="fill: var(--node-title)">55</text>
+</g>
+<g data-value="digit"><title>1</title>
+<rect x="429.52" y="368" width="14.02" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="433.52" y="379.65" font-size="10" style="fill: var(--node-title)">1</text>
+</g>
+<g data-value="word"><title>65332</title>
+<rect x="317.52" y="461.71" width="24.08" height="9.65" style="fill: var(--canvas-fill)"/>
+<text x="359.62" y="469" font-size="10" style="fill: var(--ink-muted)">word</text>
+<rect x="317.52" y="452" width="38.1" height="16" rx="3" style="fill: var(--probe-fill); stroke: var(--probe-stroke); stroke-width: 1"/>
+<text x="321.52" y="463.65" font-size="10" style="fill: var(--node-title)">65332</text>
+</g>
+</svg>

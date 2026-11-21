@@ -475,6 +475,7 @@ pub struct Numeral {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NumeralKind {
+    /// `INT`, or `BASED` with its prefix (`0x00FF`, `0b1010_0001`, spec 14.1), as written: `labcraft_types::integer` reads both.
     Int(Name),
     Float(Name),
     Inf,

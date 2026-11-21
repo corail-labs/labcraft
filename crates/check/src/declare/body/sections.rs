@@ -215,7 +215,8 @@ impl<'a> Sections<'_, 'a> {
     fn coordinate(&mut self, numeral: Numeral, id: Id) {
         if !self.is_coordinate(numeral) {
             let text = numeral_text(numeral, self.names());
-            let message = format!("`{text}` is not a coordinate: a coordinate is an integer between -1000000 and 1000000, written in digits (11)");
+            let message =
+                format!("`{text}` is not a coordinate: a coordinate is an integer between -1000000 and 1000000, written in decimal (3.4, 11)");
             self.say(Code::Lc5005, message, id, Vec::new());
         }
     }

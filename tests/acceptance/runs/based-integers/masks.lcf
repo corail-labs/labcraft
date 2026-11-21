@@ -1,0 +1,16 @@
+labcraft 1
+
+use core
+
+/// Based integers: hexadecimal and binary literals, as a value and in a pattern.
+fn masks(byte: u8 = 0x37) -> (high: i32, flags: i32, low: u16, lowest: i8, digit: i32, word: i32) {
+    digit = match byte {
+        0x30..=0x39 => yield 1
+        _ => yield 0
+    }
+    high = 0xFF00
+    word = core.add(high, 0x0034)
+    flags = 0b1010_0001
+    low = 0x00FF
+    lowest = -0x80
+}

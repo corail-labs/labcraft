@@ -258,12 +258,7 @@ const FUNCTION_BODY: u32 = 1;
 
 /// Whether an integer fits `i64` or `u64` (`LC1006`). Beyond them no type could hold it.
 fn integer_fits(negative: bool, digits: &str) -> bool {
-    let digits: String = digits.chars().filter(|c| *c != '_').collect();
-    let digits = digits.trim_start_matches('0');
-    match digits.parse::<u64>() {
-        Ok(value) => !negative || value <= 1 << 63,
-        Err(_) => digits.is_empty(),
-    }
+    labcraft_types::integer::magnitude(digits).is_some_and(|value| value <= u128::from(u64::MAX) && (!negative || value <= 1 << 63))
 }
 
 /// Whether a decimal literal fits `f64`. One too small to tell from zero reads as zero.

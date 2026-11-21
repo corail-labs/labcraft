@@ -77,6 +77,9 @@ pub enum TokenKind<'a> {
     Int(&'a str),
     /// The text as written: `1_000.5_0`, `1e3`, `1e-3`.
     Float(&'a str),
+    /// `BASED` (0.5.0), the text as written, its prefix included: `0x00FF`, `0b1010_0001`. An integer where a value or a
+    /// bound of a pattern is read (spec 3.4); where a number stays decimal, the parser expects an `Int` and refuses it.
+    Based(&'a str),
     /// What lies between the quotes, escapes unread; they are known to be valid.
     String(&'a str),
     /// What follows `//`, up to the line ending.
@@ -161,6 +164,17 @@ fn is_mark(c: char) -> bool {
 
 fn is_name_char(c: char) -> bool {
     is_letter(c) || c.is_ascii_digit() || c == '_' || is_mark(c)
+}
+
+/// The length of a `BASED` literal at the start of `text` (spec 14.1): `0x` then a hexadecimal digit, then those and `_`,
+/// or `0b` then `0` or `1`, then those and `_`, with no other character of a name after it. Any other word (`0X10`, `0x`,
+/// `0x_1`, `0b102`, `0xFFg`) reads as before 0.5.0: `0` followed by a unit (spec 3.4).
+fn based_length(text: &str) -> Option<usize> {
+    if !text.starts_with("0x") && !text.starts_with("0b") {
+        return None;
+    }
+    let end = text.get(2..)?.find(|c: char| !is_name_char(c)).map_or(text.len(), |end| end + 2);
+    labcraft_types::integer::is_integer(text.get(..end)?).then_some(end)
 }
 
 /// Whether this text is one name of the language, as the lexer would read it: not a reserved word (14.1, R-20).
@@ -304,6 +318,11 @@ impl<'a, 'b> Lexer<'a, 'b> {
     /// `1..5` is two integers, `1.5` one float, and `5e` an integer and a name.
     fn number(&mut self) -> TokenKind<'a> {
         let start = self.rest;
+        if let Some(length) = based_length(start) {
+            let (text, rest) = start.split_at(length);
+            self.rest = rest;
+            return TokenKind::Based(text);
+        }
         self.digits();
         let mut float = false;
         if self.peek() == Some('.') && self.peek_second().is_some_and(|c| c.is_ascii_digit()) {
@@ -472,6 +491,7 @@ mod tests {
                 T::Keyword(keyword) => format!("kw:{}", keyword.as_str()),
                 T::Int(text) => format!("int:{text}"),
                 T::Float(text) => format!("float:{text}"),
+                T::Based(text) => format!("based:{text}"),
                 T::String(text) => format!("str:{text}"),
                 T::Comment(text) => format!("comment:{text}"),
                 T::Doc(text) => format!("doc:{text}"),
@@ -503,6 +523,22 @@ mod tests {
             tokens("#a: p = add(x, 1 V)\n"),
             ["Hash", "name:a", "Colon", "name:p", "Equals", "name:add", "LeftParen", "name:x", "Comma", "int:1", "name:V", "RightParen", "Newline",]
         );
+    }
+
+    /// Spec 14.1, `BASED` (0.5.0): a lower-case prefix, then a digit of the base, then those and `_`; what else would read as
+    /// `0` followed by a unit reads so still (#228).
+    #[test]
+    fn a_based_integer_is_one_token_and_any_other_word_reads_as_before() {
+        assert_eq!(tokens("0xFF00"), ["based:0xFF00"]);
+        assert_eq!(tokens("0x00ff"), ["based:0x00ff"]);
+        assert_eq!(tokens("0b1010_0001"), ["based:0b1010_0001"]);
+        assert_eq!(tokens("0x30..=0x39"), ["based:0x30", "DotDot", "Equals", "based:0x39"]);
+        assert_eq!(tokens("-0x80"), ["Minus", "based:0x80"]);
+        assert_eq!(tokens("0xFF V"), ["based:0xFF", "name:V"]);
+        assert_eq!(tokens("(0b1,0x_1)"), ["LeftParen", "based:0b1", "Comma", "int:0", "name:x_1", "RightParen"]);
+        for before in ["0X10", "0x", "0b", "0b102", "0xFFg", "0b_1"] {
+            assert_eq!(tokens(before), ["int:0".to_owned(), format!("name:{}", before.strip_prefix('0').unwrap_or(before))], "{before}");
+        }
     }
 
     #[test]

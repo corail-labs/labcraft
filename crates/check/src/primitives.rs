@@ -3,6 +3,8 @@
 //! kinds, defaults, how many outputs. Pass 4 reads their types and the rules of units. A test compares this table with
 //! appendix A, defaults included.
 
+use labcraft_types::Bound;
+
 /// A library of the language, which a `use` always finds and nothing replaces (`docs/cli.md`, section 3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PrimitiveLibrary {
@@ -243,14 +245,21 @@ const fn element(name: &'static str) -> PrimitiveParam {
 #[derive(Clone, Copy, Debug)]
 pub struct Variables {
     pub names: &'static [&'static str],
-    /// They are bound by `Number` (3.5).
-    pub numbers: bool,
+    /// What bounds them all (3.5): `None` for a variable that stands for any type.
+    pub bound: Option<Bound>,
 }
 
-const NO_VARIABLE: Variables = Variables { names: &[], numbers: false };
-const N: Variables = Variables { names: &["N"], numbers: true };
-const AB_NUMBERS: Variables = Variables { names: &["A", "B"], numbers: true };
-const T: Variables = Variables { names: &["T"], numbers: false };
+impl Variables {
+    /// They are bound by `Number` (3.5).
+    pub fn numbers(self) -> bool {
+        self.bound == Some(Bound::Number)
+    }
+}
+
+const NO_VARIABLE: Variables = Variables { names: &[], bound: None };
+const N: Variables = Variables { names: &["N"], bound: Some(Bound::Number) };
+const AB_NUMBERS: Variables = Variables { names: &["A", "B"], bound: Some(Bound::Number) };
+const T: Variables = Variables { names: &["T"], bound: None };
 
 #[derive(Clone, Copy, Debug)]
 pub struct Primitive {
@@ -617,7 +626,7 @@ mod tests {
             let generics: Vec<String> = variables
                 .names
                 .iter()
-                .map(|variable| if variables.numbers { format!("{variable}: Number") } else { (*variable).to_owned() })
+                .map(|variable| variables.bound.map_or_else(|| (*variable).to_owned(), |bound| format!("{variable}: {}", bound.as_str())))
                 .collect();
             assert_eq!(generics, declaration.generics, "{name}");
             let params: Vec<&String> = declaration.params.iter().filter(|param| param.as_str() != "…").collect();

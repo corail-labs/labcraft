@@ -153,9 +153,7 @@ fn number_in(numeral: Numeral, kind: NumberKind, names: &Interner) -> Result<Con
     let float = |x: f64| if kind.is_complex() { ConstValue::Complex { re: x, im: 0.0 } } else { ConstValue::Float(x) };
     match numeral.kind {
         NumeralKind::Int(digits) => {
-            let text = digits_of(names.resolve(digits));
-            let magnitude: i128 = text.parse().map_err(|_| ConversionError)?;
-            let value = if numeral.negative { -magnitude } else { magnitude };
+            let value = labcraft_types::integer::value(numeral.negative, names.resolve(digits)).ok_or(ConversionError)?;
             if kind.is_integer() {
                 Ok(ConstValue::Int(value))
             } else if is_single(kind) {

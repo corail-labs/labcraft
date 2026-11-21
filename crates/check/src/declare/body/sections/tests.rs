@@ -121,7 +121,8 @@ fn a_node_has_one_entry() {
 
 #[test]
 fn a_coordinate_is_an_integer_in_the_range() {
-    for point in ["(1.5, 2)", "(1e3, 2)", "(1, 1000001)", "(-1000001, 1)"] {
+    // A based integer is not one (spec 3.4: the numbers of the sections stay decimal, #228).
+    for point in ["(1.5, 2)", "(1e3, 2)", "(1, 1000001)", "(-1000001, 1)", "(0x10, 2)", "(1, -0b1)"] {
         assert_eq!(layout_of_nodes(&format!("node k at {point}")), ["LC5005"], "{point}");
         assert_eq!(layout_of_nodes(&format!("wire k -> y via (1, 1) {point}")), ["LC5005"], "{point}");
     }
@@ -373,6 +374,9 @@ fn an_invalid_shape_is_an_error() {
         // The colour of a selection in the viewer (decision of the owner, 2026-11-13).
         "line (1, 1) (2, 2) accent select.stroke",
         "line (1, 1) (2, 2) accent node.active",
+        // The numbers of a section stay decimal (spec 3.4, #228).
+        "line (0x1, 1) (2, 2)",
+        "circle (16, 16) 0b10",
     ] {
         assert_eq!(icon(item), ["LC5008"], "{item}");
     }
