@@ -117,7 +117,14 @@ fn project_describe_lists_the_shipped_simulation_files_with_their_resources() {
     let simulations = described["simulations"].as_array().unwrap();
     let bench = simulations.iter().find(|file| file["file"] == "<labcraft>/visa/sim/bench.toml").unwrap();
     assert_eq!(bench["resources"], json!(["SIM::DMM0", "SIM::PSU0", "SIM::RELAY0"]));
-    assert_eq!(simulations.len(), 15, "the files of libs/visa/sim");
+    let shipped = simulations.iter().filter(|file| file["file"].as_str().is_some_and(|file| file.starts_with("<labcraft>/visa/sim/"))).count();
+    assert_eq!(shipped, 15, "the files of libs/visa/sim");
+    // The project's own: the two simulated servers of `examples/modbus_tcp`, one endpoint each.
+    for name in ["modbus_tcp/exception.toml", "modbus_tcp/server.toml"] {
+        let own = simulations.iter().find(|file| file["file"] == name).unwrap_or_else(|| panic!("{name}: {simulations:?}"));
+        assert_eq!(own["resources"], json!(["tcp:10.0.0.7:502"]), "{name}");
+    }
+    assert_eq!(simulations.len(), 17, "nothing else");
     let root = described["libraries"].as_array().unwrap().iter().find(|library| library["folder"] == ".").unwrap();
     let check_voltage = root["files"].as_array().unwrap().iter().find(|file| file["file"] == "check_voltage.lcf").unwrap();
     assert_eq!(check_voltage["declares"], json!({ "function": "check_voltage" }));

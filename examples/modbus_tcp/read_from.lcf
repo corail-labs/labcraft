@@ -1,0 +1,17 @@
+labcraft 1
+
+use net
+
+/// Connects to the Modbus TCP server at `host`, reads `count` holding registers from `first` of `unit`, and closes.
+fn read_from(
+    host: string,
+    port: u16 = 502,
+    unit: u8 = 1,
+    first: u16 = 0,
+    count: u16 = 1,
+    err: error = none,
+) -> (registers: [u16], err: error) {
+    c1, e1 = net.connect(host, port, err: err)
+    registers, c2, e2 = read_holding_registers(c1, unit: unit, first: first, count: count, err: e1)
+    #close: err = net.close(c2, err: e2)
+}

@@ -31,6 +31,11 @@ fn report_of(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|error| panic!("{error}: {}", String::from_utf8_lossy(&output.stdout)))
 }
 
+/// The value of the output `name` of a report.
+fn output(report: &Value, name: &str) -> Value {
+    report["outputs"].as_array().unwrap().iter().find(|output| output["name"] == name).unwrap()["value"].clone()
+}
+
 /// A folder of its own for a test, empty.
 struct Scratch(PathBuf);
 
@@ -477,7 +482,7 @@ fn a_frame_of_bytes_is_the_same_in_both_modes() {
         args.extend_from_slice(mode);
         args.extend_from_slice(&["--arg", "address=107", "p", "frame"]);
         let report = report_of(&cli_in(&scratch.0, &args));
-        let value = |name: &str| report["outputs"].as_array().unwrap().iter().find(|output| output["name"] == name).unwrap()["value"].clone();
+        let value = |name: &str| output(&report, name);
         // By hand: 0001 0000 0006 11 03 006b 0002, 12 bytes (107 is 0x6b), whose base64 Python's `base64.b64encode` gives;
         // the two bytes at 8 are 006b again; `bytes` and `none` as commands.md, section 5, writes them.
         assert_eq!(value("request"), json!({ "base64": "AAEAAAAGEQMAawAC" }), "{mode:?}: {report}");
@@ -511,10 +516,8 @@ fn a_program_of_net_runs_against_a_simulated_device() {
         report_of(&cli_in(&scratch.0, &["run", "--json", "--no-trace", "--sim", "board.toml", "--arg", &host, "p", "ask"]))
     };
     let report = run("board.local");
-    let value =
-        |report: &Value, name: &str| report["outputs"].as_array().unwrap().iter().find(|output| output["name"] == name).unwrap()["value"].clone();
-    assert_eq!(value(&report, "text"), json!("23.5"), "{report}");
-    assert_eq!(value(&report, "err"), Value::Null, "{report}");
+    assert_eq!(output(&report, "text"), json!("23.5"), "{report}");
+    assert_eq!(output(&report, "err"), Value::Null, "{report}");
     assert_eq!(
         report["instruments"],
         json!([{ "resource": "tcp:board.local:23", "commands": [
@@ -524,7 +527,110 @@ fn a_program_of_net_runs_against_a_simulated_device() {
         "{report}"
     );
     let report = run("other.local");
-    assert!(value(&report, "err").to_string().contains("net.host_not_found"), "{report}");
+    assert!(output(&report, "err").to_string().contains("net.host_not_found"), "{report}");
     assert_eq!(report["clock"]["simulated_ms"], json!(2000.0), "{report}");
     assert!(report.get("instruments").is_none(), "nothing reached: {report}");
+}
+
+/// The example Modbus TCP (io.md 10, issue #240) against its simulated servers, `examples/modbus_tcp/server.toml` and
+/// `exception.toml`. By hand, from the exchange of io.md 6: the request is 0001 0000 0006 01 03 0000 0002 (transaction 1,
+/// protocol 0, length 6, unit 1, function 3, first register 0, count 2); the header of the response is 7 bytes, whose
+/// length 7 counts the unit, so 6 bytes follow: 03 04 00e6 0019, the registers 0x00e6 = 230 and 0x0019 = 25. The exception
+/// response 0001 0000 0003 01 83 02 has 0x83 & 0x80 set, length 3, so 2 bytes follow, 83 02: exception code 2. A first
+/// register of 1 matches no exchange of the file, so nothing answers and the read of the header fails `io.timeout`.
+#[test]
+fn the_example_modbus_tcp_reads_its_simulated_server() {
+    let run = |file: &str, first: &str| {
+        let sim = format!("examples/modbus_tcp/{file}.toml");
+        let first = format!("first={first}");
+        let args = ["run", "--json", "--no-trace", "--sim", &sim, "--arg", "host=10.0.0.7", "--arg", "count=2", "--arg", &first];
+        report_of(&cli(&[&args[..], &["examples", "modbus_tcp.read_from"]].concat()))
+    };
+    let report = run("server", "0");
+    assert_eq!(output(&report, "registers"), json!([230, 25]), "{report}");
+    assert_eq!(output(&report, "err"), Value::Null, "{report}");
+    let exchange = |header: &str, rest: &str| {
+        json!([{ "resource": "tcp:10.0.0.7:502", "commands": [
+            { "t_ms": 0.0, "sent": "000100000006010300000002", "answer": null, "hex": true },
+            { "t_ms": 0.0, "sent": null, "answer": header, "hex": true },
+            { "t_ms": 0.0, "sent": null, "answer": rest, "hex": true }
+        ] }])
+    };
+    assert_eq!(report["instruments"], exchange("00010000000701", "030400e60019"), "{report}");
+    let report = run("exception", "0");
+    let err = output(&report, "err");
+    assert_eq!((&err["category"], &err["code"]), (&json!("modbus_tcp.exception"), &json!(2)), "{report}");
+    assert_eq!(output(&report, "registers"), json!([]), "{report}");
+    assert_eq!(report["instruments"], exchange("00010000000301", "8302"), "{report}");
+    // The request for register 1 is written, and the read of the header waits for the 2 s of the connection.
+    let report = run("server", "1");
+    assert_eq!(output(&report, "err")["category"], json!("io.timeout"), "{report}");
+    assert_eq!(
+        report["instruments"],
+        json!([{ "resource": "tcp:10.0.0.7:502", "commands": [
+            { "t_ms": 0.0, "sent": "000100000006010300010002", "answer": null, "hex": true }
+        ] }]),
+        "{report}"
+    );
+    assert_eq!(report["clock"]["simulated_ms"], json!(2000.0), "{report}");
+}
+
+/// What `examples/modbus_tcp` refuses (decisions of the owner on #240): a count outside 1..125, which Modbus cannot read
+/// at once, before anything is sent; and a response that is not function 3 with two bytes per register, here function 4
+/// (0x04, high bit clear) answering the request of io.md 6, or one cut short. None gives a register.
+#[test]
+fn the_example_modbus_tcp_refuses_a_wrong_count_and_a_wrong_response() {
+    let scratch = Scratch::new("modbus");
+    fs::write(
+        scratch.0.join("function4.toml"),
+        "[[net.device]]
+endpoint = \"tcp:10.0.0.7:502\"
+
+[[net.device.reply]]
+request_hex = \"0001 0000 0006 01 03 0000 0002\"
+response_hex = \"0001 0000 0007 01 04 04 00e6 0019\"
+",
+    )
+    .unwrap();
+    let examples = repository().join("examples");
+    let run = |sim: &Path, count: &str| {
+        let (sim, count) = (sim.to_str().unwrap(), format!("count={count}"));
+        let args = [
+            "run",
+            "--json",
+            "--no-trace",
+            "--sim",
+            sim,
+            "--arg",
+            "host=10.0.0.7",
+            "--arg",
+            &count,
+            examples.to_str().unwrap(),
+            "modbus_tcp.read_from",
+        ];
+        report_of(&cli(&args))
+    };
+    for count in ["0", "126", "40000"] {
+        let report = run(&repository().join("examples/modbus_tcp/server.toml"), count);
+        assert_eq!(output(&report, "err")["category"], json!("io.invalid_argument"), "{count}: {report}");
+        assert_eq!(output(&report, "registers"), json!([]), "{count}: {report}");
+        assert!(report.get("instruments").is_none(), "{count}: nothing sent: {report}");
+    }
+    // Cut short: the byte count says 4, but the length of 5 leaves 2 bytes after it (unit, function, count, then 00e6).
+    fs::write(
+        scratch.0.join("cut.toml"),
+        "[[net.device]]
+endpoint = \"tcp:10.0.0.7:502\"
+
+[[net.device.reply]]
+request_hex = \"0001 0000 0006 01 03 0000 0002\"
+response_hex = \"0001 0000 0005 01 03 04 00e6\"
+",
+    )
+    .unwrap();
+    for sim in ["function4.toml", "cut.toml"] {
+        let report = run(&scratch.0.join(sim), "2");
+        assert_eq!(output(&report, "err")["category"], json!("modbus_tcp.invalid_response"), "{sim}: {report}");
+        assert_eq!(output(&report, "registers"), json!([]), "{sim}: {report}");
+    }
 }

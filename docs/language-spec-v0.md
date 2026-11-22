@@ -2575,14 +2575,23 @@ crate of `visa`.
 
 ### A.4 Libraries of the examples
 
-`dmm_driver`, `relays`, `psu` and `results_log` belong to the examples (section 13), not to the
-libraries shipped with LabCraft. They are sub-folders of `examples/`: `dmm_driver`, `relays` and
-`psu` written in LabCraft over `visa` and `scpi`, like real drivers; `results_log`, which writes a
+`dmm_driver`, `relays`, `psu`, `results_log` and `modbus_tcp` belong to the examples (section 13; io.md 10
+for `modbus_tcp`), not to the libraries shipped with LabCraft. They are sub-folders of `examples/`: `dmm_driver`,
+`relays` and `psu` written in LabCraft over `visa` and `scpi`, like real drivers; `results_log`, which writes a
 file, as an `extern rust` function, whose native body, in its crate
 `labcraft-results-log` (as it did in the proof of concept), keeps the results in memory, and the report of the run shows them (`logs`,
-commands.md 7).
+commands.md 7). `modbus_tcp` (0.5.0, M4) is the model of a protocol written in LabCraft over `net` and `bytes`
+([io.md](io.md) 10): function code 3, read holding registers; a response whose function code has its high bit set gives
+the error `modbus_tcp.exception`, with the exception code as its code, and one that is not function 3 with two bytes
+per register `modbus_tcp.invalid_response`; its simulated servers are
+`examples/modbus_tcp/server.toml` and `exception.toml`.
 
 ```text
+fn modbus_tcp.read_holding_registers(connection: net.connection, unit: u8 = 1, first: u16 = 0,
+                                     count: u16 = 1, transaction: u16 = 1, err: error = none)
+                                     -> (registers: [u16], connection: net.connection, err: error)
+fn modbus_tcp.read_from(host: string, port: u16 = 502, unit: u8 = 1, first: u16 = 0, count: u16 = 1,
+                        err: error = none) -> (registers: [u16], err: error)
 fn dmm_driver.read_dc_volts(session: visa.session,
                             err: error = none) -> (volts: f64[V], session: visa.session, err: error)
 fn relays.apply(bank: relays.bank, route: string,
