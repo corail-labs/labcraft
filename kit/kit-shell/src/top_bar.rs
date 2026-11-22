@@ -58,6 +58,8 @@ pub enum Answer {
     OpenPalette,
     /// The command of a segment or a tool of the right.
     Segment(String),
+    /// The command of a segment that opens a menu, and where the segment is: the menu opens under it.
+    Opens(String, egui::Rect),
 }
 
 /// Shows the bar in `ui`, a top panel.
@@ -125,7 +127,7 @@ pub fn show(ui: &mut egui::Ui, bar: &Bar) -> Vec<Answer> {
                 if response.clicked()
                     && let Some(command) = &segment.command
                 {
-                    answers.push(Answer::Segment(command.clone()));
+                    answers.push(if segment.opens { Answer::Opens(command.clone(), response.rect) } else { Answer::Segment(command.clone()) });
                 }
             }
             // The middle: the project, and the field of the palette.

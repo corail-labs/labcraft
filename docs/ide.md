@@ -37,7 +37,7 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
 │           ├───────────────────────────────────────────────────────────────┤             │
 │           │ Problems │ Run                                                   │             │
 ├───────────┴───────────────────────────────────────────────────────────────┴─────────────┤
-│ file · saved │ last step and its author                      agent │ color by type │ zoom │
+│ file · saved │ last step and its author                            │ color by type │ zoom │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -57,7 +57,7 @@ NI (D-23). Its pieces that another IDE can use are written for that from the sta
 - **Right: what is selected.** `Inspector` (section 4).
 - **Bottom: what happens.** `Problems` and `Run`.
 - **The status bar**: the file shown and whether it is written; the last step of the history and its author
-  ([commands.md](commands.md) 9.1); in the `Text` view, the line and the column; the state of the agent; color by type
+  ([commands.md](commands.md) 9.1); in the `Text` view, the line and the column; color by type
   (notation 4.3); the zoom.
 
 Every panel can be moved, docked elsewhere, folded or closed (`craft-ui`, docking); `View > Reset layout` brings back
@@ -232,8 +232,8 @@ same work again in each IDE; tree-sitter, which would need a second grammar of t
 ## 8. The agent attached to the IDE
 
 The channel is that of [mcp.md](mcp.md) 9: on `127.0.0.1` only, a token for each launch in a file only the user can
-read, a file that gives the port, so that `labcraft-cli mcp` finds the open window. It is open while the window is,
-unless the user turns it off. With several projects open, each has its channel. `labcraft-cli mcp` attaches to the
+read, a file that gives the port, so that `labcraft-cli mcp` finds the open window. It is open while the window is; with
+the switch of AI off it refuses every agent. With several projects open, each has its channel. `labcraft-cli mcp` attaches to the
 window whose project is its project, `--project DIR` or the current folder (mcp.md 1); when no window shows that
 project, it starts headless, as in M0b, so that an agent never writes into a project other than the one it was started
 on (decision of the owner, 2026-11-15).
@@ -262,12 +262,19 @@ on (decision of the owner, 2026-11-15).
   view of each tab, the selection (`view.get_state`), so that "this node" means something. It never changes what the user
   sees: it does not select, scroll, zoom or switch tabs, and the `view.*` commands that would are refused to it
   (mcp.md 2).
-- **What the user sees of it.** The pill of the top bar: no agent, or which one is connected, and its policy; a click
-  disconnects it or changes its policy. Its edits go into the one history, signed with its name (commands.md 9.1,
-  9.5); the nodes and wires it touched are highlighted for a moment; an edit in a function that is not shown puts a
-  dot on its tab; a short notice says what it did, with Show and Undo.
-- **One switch for AI**, in the settings, on by default: off, it closes the channel and takes every trace of AI out of
-  the window, the pill and the notices included.
+- **What the user sees of it.** The pill of the top bar: no agent, or which one is connected, and its policy, or that
+  its edit waits for the end of the user's gesture; a click opens its menu, which disconnects it or changes its policy
+  for this connection, and keeps that policy for that client and that project when the user asks (decision of the
+  owner, 2026-11-21). Its edits go into the one history, signed with its name (commands.md 9.1, 9.5); the nodes and
+  wires it touched are highlighted for 2 s *(proposed)*: a node new, changed or moved, a wire new or whose waypoints
+  moved; an edit in a function that is not shown puts a dot on its tab, until it is shown; a short notice says what
+  it did, for 8 s *(proposed)*, with Show, which shows the function and highlights again what it touched there if a
+  window showed it, and Undo, which undoes that step while it is the last one.
+- **One switch for AI**, in the settings (`ai.enabled`, commands.md 9.7), on by default: off, the agents attached are
+  disconnected, and the window takes every trace of AI out of it, the pill and the notices included. The window still
+  answers on its channel, to refuse: a `labcraft-cli mcp` started on its project then stops and says why, rather than
+  edit the project from a session of its own (decision of the owner, 2026-11-21). The policies kept are listed under
+  it, each with what removes it.
 - **Connect an AI agent**, in `Help` and on the start page, writes the entry of the server in the configuration of
   the MCP clients found on the computer, changing nothing else in those files (`mcp setup`, mcp.md 9), and says
   which.

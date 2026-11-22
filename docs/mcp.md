@@ -52,9 +52,9 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   side, that nonce and the token). Then `mcp` relays stdin and stdout to the window, whose server runs the calls on the
   session of the window: `--lib-path` and the limits are then those of the window. A file whose port takes no
   connection is left over from a window that did not close, and the server starts headless. What takes the connection
-  and refuses it, or does not prove it holds the token, stops the server (exit 2, the reason and the file on stderr):
-  it would otherwise edit the project of a window from a session of its own, or give the agent what another process
-  says. When the window closes the connection, `mcp` ends (exit 1).
+  and refuses it, or does not prove it holds the token, stops the server (exit 2, the reason and the file on stderr), as
+  does a window whose switch of AI is off ([ide.md](ide.md) 8): it would otherwise edit the project of a window from a
+  session of its own, or give the agent what another process says. When the window closes the connection, `mcp` ends (exit 1).
 - **Ends** when stdin closes: a run still going is aborted (spec 8.2) and its resources are released. Attached, only a
   run that the agent started is aborted, not one of the user.
 

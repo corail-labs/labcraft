@@ -42,6 +42,7 @@ pub(crate) mod select;
 pub(crate) mod series;
 mod signature;
 mod sizing;
+pub mod touched;
 pub(crate) mod view;
 pub(crate) mod wiring;
 
@@ -53,6 +54,7 @@ pub use parts::PartAsked;
 pub use quick::{Dragged, Quick, Source};
 pub use select::{Selection, Step};
 pub use signature::{default_is_cut, frame_default, frame_height, frame_terminal, own_name};
+pub use touched::{HIGHLIGHT_SECONDS, Touched, touched};
 pub use view::{GLIDE_SECONDS, MAX_ZOOM, MIN_ZOOM};
 
 use moving::Moving;
@@ -330,6 +332,8 @@ pub struct Canvas {
     context_at: Option<Pos2>,
     /// What the command palette asked of the canvas, for the next frame to give back.
     queued: Vec<Intent>,
+    /// What an edit of an agent touched, highlighted for a moment (ide.md 8).
+    highlight: Option<touched::Highlight>,
 }
 
 /// The wires of a value that the file routes (`via`), as `layout.arrange` names them in `wires`.
@@ -531,7 +535,22 @@ impl Canvas {
             terminal_context: None,
             context_at: None,
             queued: Vec::new(),
+            highlight: None,
         }
+    }
+
+    /// Highlights for a moment, from `now` on the clock of egui, what an edit of an agent touched (ide.md 8): found by
+    /// their keys on the drawings that follow, until it is over.
+    pub fn highlight(&mut self, touched: Touched, now: f64) {
+        self.highlight = (!touched.is_empty()).then(|| touched::Highlight::new(touched, now));
+        if let (Some(highlight), Some(drawing)) = (&mut self.highlight, &self.drawing) {
+            highlight.find_on(drawing);
+        }
+    }
+
+    /// What is highlighted now, if anything.
+    pub fn highlighted(&self) -> Option<&Touched> {
+        self.highlight.as_ref().map(|highlight| &highlight.touched)
     }
 
     /// The values of a run over the drawing shown (notation 6.1), made for it, with the trace they come from and the
@@ -635,6 +654,9 @@ impl Canvas {
         self.pinned = None;
         self.drag = None;
         self.generation = self.generation.wrapping_add(1);
+        if let Some(highlight) = &mut self.highlight {
+            highlight.find_on(&drawing);
+        }
         self.drawing = Some(drawing);
         self.set_values(None, None);
         self.moving = going;
@@ -2382,6 +2404,18 @@ impl Canvas {
                 let painted =
                     self.painter.made(ctx, drawing, Over::Inputs(placed), theme, step, || labcraft_diagram::inputs_of(drawing, overlay, placed));
                 put(&painted, Vec2::ZERO);
+            }
+        }
+        // What an edit of an agent touched, over the selection (ide.md 8).
+        if let Some(highlight) = &self.highlight {
+            match highlight.strength(frame.now, self.reduced_motion) {
+                Some(strength) => {
+                    let offset_of = |placed: usize| frame.offset_of(Some(placed));
+                    let gliding: Option<&dyn Fn(usize) -> Vec2> = frame.offsets.is_some().then_some(&offset_of);
+                    highlight.paint(&painter, drawing, theme.color("select.stroke").gamma_multiply(strength), zoom, gliding, &to_screen);
+                    ctx.request_repaint_after(highlight.next_change(frame.now, gliding.is_some(), self.reduced_motion));
+                }
+                None => self.highlight = None,
             }
         }
         if frame.offsets.is_none() {

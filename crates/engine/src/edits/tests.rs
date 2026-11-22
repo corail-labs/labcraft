@@ -89,6 +89,20 @@ fn undo_gives_back_every_byte_and_redo_replays() {
     assert_eq!(session.execute("history.redo", &json!({})).map_err(|error| error.code), Err("history.empty"));
 }
 
+/// The notice of an agent undoes the step it names, or nothing (ide.md 8).
+#[test]
+fn an_undo_of_a_step_named_undoes_it_only_while_it_is_the_last() {
+    let (mut session, memory) = session();
+    ok(&mut session, "node.add", json!({ "file": "g.lcf", "call": "core.add" }));
+    ok(&mut session, "constant.add", json!({ "file": "g.lcf", "value": "240 V" }));
+    let after = text(&memory, "/p/g.lcf");
+    let error = refused(&mut session, &Author::User, "history.undo", json!({ "step": 1 }));
+    assert_eq!(error.code, "file.stale");
+    assert!(error.message.contains("not step 1"), "{}", error.message);
+    assert_eq!(text(&memory, "/p/g.lcf"), after, "nothing changed");
+    assert_eq!(ok(&mut session, "history.undo", json!({ "step": 2 }))["step"], json!(2));
+}
+
 #[test]
 fn a_stale_revision_changes_nothing() {
     let (mut session, memory) = session();

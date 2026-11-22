@@ -1215,7 +1215,7 @@ pub fn extent(shape: &Shape) -> (i64, i64, i64, i64) {
 }
 
 /// A shape moved by `(dx, dy)`.
-fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
+pub fn moved(shape: Shape, dx: i64, dy: i64) -> Shape {
     match shape {
         Shape::Rect { x, y, width, height, radius, paint } => Shape::Rect { x: x + dx, y: y + dy, width, height, radius, paint },
         Shape::Circle { x, y, radius, paint } => Shape::Circle { x: x + dx, y: y + dy, radius, paint },

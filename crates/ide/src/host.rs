@@ -22,6 +22,36 @@ pub struct Snapshot {
     pub session: u64,
     /// The agent whose editing command waits for the end of the gesture of the user, by its name (architecture 12.5).
     pub waiting: Option<String>,
+    /// The last steps of the history, at most [`RECENT_STEPS`], newest first, the first the one that undo would take
+    /// back: what the window says of the edits of an agent (ide.md 8). None where no agent attaches (the web).
+    pub steps: Arc<Vec<LastStep>>,
+}
+
+/// The steps a snapshot gives *(proposed)*: more than a burst of an agent between two frames of the window.
+pub const RECENT_STEPS: usize = 16;
+
+/// A step of the history, as the window shows what an agent did (ide.md 8).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LastStep {
+    pub number: u64,
+    /// The name of its author, `user`, `external` or the name an agent signs with (commands.md 9.5).
+    pub author: String,
+    pub agent: bool,
+    pub label: String,
+    /// The files it changed, as commands show them, from the root.
+    pub files: Vec<String>,
+}
+
+impl LastStep {
+    pub fn of(step: &labcraft_engine::history::Step) -> LastStep {
+        LastStep {
+            number: step.number,
+            author: step.author.name().to_owned(),
+            agent: step.author.is_agent(),
+            label: step.label.clone(),
+            files: step.changes.iter().map(|change| change.shown.clone()).collect(),
+        }
+    }
 }
 
 /// The result of a command, when it comes.
@@ -80,4 +110,9 @@ pub trait Host {
     /// The gesture of the user in progress, or none: said as it starts and as it ends, so that an editing command of an
     /// agent waits for its end (architecture 12.5). Not a command, as the zoom.
     fn set_gesture(&self, gesture: Option<labcraft_engine::Gesture>);
+
+    /// Whether agents can attach to the session (ide.md 8): the desktop, not the web, which shows nothing of AI.
+    fn serves_agents(&self) -> bool {
+        false
+    }
 }

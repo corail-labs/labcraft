@@ -29,12 +29,15 @@ use labcraft_cli::attach;
 use labcraft_engine::registry::{self, Effect};
 use labcraft_engine::settings::kept_policy;
 use labcraft_engine::{Author, CommandError, Waiter};
-use labcraft_ide::agents::{Answer, Asks, Policy, Question, runs};
+use labcraft_ide::agents::{Answer, Asks, Connected, Policy, Question, runs};
 use labcraft_mcp::{Executor, Gate, Served};
 use serde_json::{Value, json};
 
 use crate::held::{Call, Flags};
 use crate::session::Message;
+
+/// Why a connection is refused while AI is off (ide.md 8): `labcraft-cli mcp` says it, and stops.
+pub const AI_OFF: &str = "AI is turned off in this window of LabCraft (Settings, AI agents)";
 
 /// How long a question waits for the user's answer *(proposed)* (ide.md 8): unanswered, the agent is refused.
 pub const ANSWER_WAIT: Duration = Duration::from_secs(60);
@@ -67,6 +70,18 @@ struct Connection {
     standing: Standing,
     /// The runs it started.
     runs: Vec<String>,
+    /// Its stream, which the user's disconnection, or AI turned off, shuts.
+    stream: Option<TcpStream>,
+}
+
+impl Connection {
+    /// Its calls are refused from now on, and its connection closes.
+    fn refuse(&mut self) {
+        self.standing = Standing::Refused;
+        if let Some(stream) = &self.stream {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
 }
 
 struct Waiting {
@@ -106,6 +121,8 @@ pub struct Agents {
     changed: Condvar,
     /// The questions changed since the window last took them.
     asked: AtomicBool,
+    /// The switch of AI (`ai.enabled`, ide.md 8): off, a connection is refused once it proved it holds the token.
+    enabled: AtomicBool,
     /// Asks the window for a frame: a question came or went.
     wake: Box<dyn Fn() + Send + Sync>,
 }
@@ -123,6 +140,7 @@ impl Agents {
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             asked: AtomicBool::new(false),
+            enabled: AtomicBool::new(true),
             wake,
         }
     }
@@ -142,15 +160,32 @@ impl Agents {
         self.lock().kept = policies;
     }
 
-    /// A connection that proved it holds the token: its id, none when [`MAX_CONNECTIONS`] are served.
-    fn connected(&self) -> Option<u64> {
+    /// A connection that proved it holds the token: its id; why it is refused when AI is off, or when
+    /// [`MAX_CONNECTIONS`] are served.
+    fn connected(&self) -> Result<u64, String> {
+        if !self.enabled() {
+            return Err(AI_OFF.to_owned());
+        }
         let mut state = self.lock();
         if state.connections.len() >= MAX_CONNECTIONS {
-            return None;
+            return Err(format!("{MAX_CONNECTIONS} agents are attached already"));
         }
         let id = state.next_id();
-        state.connections.push(Connection { id, client: None, standing: Standing::Unnamed, runs: Vec::new() });
-        Some(id)
+        state.connections.push(Connection { id, client: None, standing: Standing::Unnamed, runs: Vec::new(), stream: None });
+        Ok(id)
+    }
+
+    /// The stream of a connection admitted, which [`Agents::disconnect`] shuts. AI turned off meanwhile: shut at once.
+    fn hold_stream(&self, connection: u64, stream: TcpStream) {
+        let mut state = self.lock();
+        let off = !self.enabled();
+        if let Some(held) = state.connection(connection) {
+            held.stream = Some(stream);
+            // Refused before its stream was held: by the switch, or by the user.
+            if off || held.standing == Standing::Refused {
+                held.refuse();
+            }
+        }
     }
 
     /// The connection closed: its questions go.
@@ -163,6 +198,76 @@ impl Agents {
         self.questions_changed();
     }
 
+    /// The agents attached, as the pill of the window shows them (ide.md 8): those that gave their name and that the user
+    /// did not refuse, in the order they came.
+    pub fn connected_list(&self) -> Vec<Connected> {
+        let state = self.lock();
+        state
+            .connections
+            .iter()
+            .filter_map(|held| {
+                let (client, signed) = held.client.clone()?;
+                let policy = match held.standing {
+                    Standing::Given(policy) => Some(policy),
+                    Standing::Asking(_) => None,
+                    Standing::Unnamed | Standing::Refused => return None,
+                };
+                Some(Connected { id: held.id, client, signed, project: self.project.clone(), policy })
+            })
+            .collect()
+    }
+
+    /// The user disconnects an agent, from the pill: its calls are refused, and its connection closes.
+    pub fn disconnect(&self, connection: u64) {
+        let mut state = self.lock();
+        if let Some(held) = state.connection(connection) {
+            held.refuse();
+        }
+        state.questions.retain(|waiting| waiting.connection != connection);
+        drop(state);
+        self.changed.notify_all();
+        self.questions_changed();
+    }
+
+    /// The user gives an agent another policy, from the pill, for this connection (ide.md 8): a call of it that waits for
+    /// the user's answer and that the new policy lets run, runs. One whose first connection is still asked is let be:
+    /// the question answers it.
+    pub fn set_policy(&self, connection: u64, policy: Policy) {
+        let mut state = self.lock();
+        let Some(held) = state.connection(connection).filter(|held| matches!(held.standing, Standing::Given(_))) else { return };
+        held.standing = Standing::Given(policy);
+        for waiting in state.questions.iter_mut().filter(|waiting| waiting.connection == connection && waiting.answer.is_none()) {
+            if let Asks::Command { effects, .. } = &waiting.question.asks
+                && !asks(policy, effects)
+            {
+                waiting.answer = Some(Answer::Allow);
+            }
+        }
+        drop(state);
+        self.changed.notify_all();
+        self.questions_changed();
+    }
+
+    /// The switch of AI (`ai.enabled`, ide.md 8): off, every agent attached is disconnected and the questions go, and a
+    /// new connection is refused, so that `labcraft-cli mcp` stops rather than edit the project from a session of its
+    /// own.
+    pub fn set_enabled(&self, on: bool) {
+        if self.enabled.swap(on, Ordering::SeqCst) == on || on {
+            return;
+        }
+        let mut state = self.lock();
+        state.connections.iter_mut().for_each(Connection::refuse);
+        state.questions.clear();
+        drop(state);
+        self.changed.notify_all();
+        self.questions_changed();
+    }
+
+    /// Whether AI is on.
+    pub fn enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
     /// The name a connection signs with: that of its client, numbered when another connection signs with it already
     /// (`agent`, `agent 2`); and its policy, kept or asked.
     fn introduce(&self, connection: u64, author: Author) -> Author {
@@ -171,6 +276,8 @@ impl Agents {
         let taken = |state: &State, candidate: &str| {
             state.connections.iter().any(|held| held.id != connection && held.client.as_ref().is_some_and(|(_, signed)| signed == candidate))
         };
+        // The pill names it from now on.
+        (self.wake)();
         let mut signed = name.clone();
         let mut number = 1_u32;
         while taken(&state, &signed) {
@@ -300,10 +407,13 @@ impl Agents {
         }
         let label = command_label(id, params);
         let question = self.ask(&mut state, connection, &client, &signed, Asks::Command { label: label.clone(), effects });
-        match self.wait_for(state, question, waiter).1 {
+        let (mut state, answer) = self.wait_for(state, question, waiter);
+        let refused = state.connection(connection).is_none_or(|held| held.standing == Standing::Refused);
+        match answer {
             Some(Answer::Allow) => Ok(()),
             Some(_) => Err(not_allowed(format!("the user refused `{label}`"))),
             None if waiter.stopped() => Err(not_allowed("the agent stopped waiting for the user".to_owned())),
+            None if refused => Err(not_allowed(format!("the user disconnected {signed}"))),
             None => Err(not_allowed(format!("the user did not answer about `{label}` in {} s", self.wait.as_secs()))),
         }
     }
@@ -379,17 +489,40 @@ impl Agents {
         Some(questions)
     }
 
-    /// The user answered the question `id`; one that went, or expired, is let be.
+    /// The user answered the question `id`; one that went, or expired, is let be. The answer to a first connection
+    /// gives its policy at once, so that the pill shows it before the agent calls again.
     pub fn answer(&self, id: u64, answer: Answer) {
         let mut state = self.lock();
         let wait = self.wait;
-        if let Some(waiting) =
-            state.questions.iter_mut().find(|waiting| waiting.question.id == id && waiting.answer.is_none() && waiting.asked.elapsed() < wait)
-        {
-            waiting.answer = Some(answer);
+        let Some(at) =
+            state.questions.iter().position(|waiting| waiting.question.id == id && waiting.answer.is_none() && waiting.asked.elapsed() < wait)
+        else {
+            return;
+        };
+        let connect = state.questions.get(at).filter(|waiting| waiting.question.asks == Asks::Connect).map(|waiting| waiting.connection);
+        match connect {
+            Some(connection) => {
+                state.questions.remove(at);
+                if let Some(held) = state.connection(connection)
+                    && held.standing == Standing::Asking(id)
+                {
+                    held.standing = match answer {
+                        Answer::Policy { policy, .. } => Standing::Given(policy),
+                        _ => Standing::Refused,
+                    };
+                }
+            }
+            None => {
+                if let Some(waiting) = state.questions.get_mut(at) {
+                    waiting.answer = Some(answer);
+                }
+            }
         }
         drop(state);
         self.changed.notify_all();
+        if connect.is_some() {
+            self.questions_changed();
+        }
     }
 }
 
@@ -655,11 +788,14 @@ fn accept(listener: &TcpListener, closing: &AtomicBool, streams: &Streams, servi
 fn serve_connection(mut stream: TcpStream, serving: &Serving) {
     let mut connection = None;
     let greeted = attach::greet(&mut stream, &serving.token, || {
-        connection = serving.agents.connected();
-        connection.map(|_| ()).ok_or_else(|| format!("{MAX_CONNECTIONS} agents are attached already"))
+        connection = Some(serving.agents.connected()?);
+        Ok(())
     });
     serving.greeting.fetch_sub(1, Ordering::SeqCst);
     let Some(connection) = connection else { return };
+    if let Ok(held) = stream.try_clone() {
+        serving.agents.hold_stream(connection, held);
+    }
     if greeted.is_ok()
         && let Ok(output) = stream.try_clone()
     {
@@ -808,6 +944,75 @@ mod tests {
         waiter.0.store(true, Ordering::SeqCst);
         assert_eq!(run.join().unwrap().unwrap_err().code, "agent.not_allowed");
         assert!(agents.questions(true).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_pill_lists_the_agents_named_and_not_refused_and_changes_their_policy() {
+        let agents = agents(ANSWER_WAIT);
+        let (one, two, _unnamed) = (agents.connected().unwrap(), agents.connected().unwrap(), agents.connected().unwrap());
+        let claude = agents.introduce(one, Author::Agent("claude".to_owned()));
+        agents.introduce(two, Author::Agent("cursor".to_owned()));
+        assert_eq!(answer(&agents, Answer::Policy { policy: Policy::Ask, keep: false }), Asks::Connect);
+        let listed = agents.connected_list();
+        // The third gave no name; `cursor` is still asked.
+        assert_eq!(
+            listed.iter().map(|agent| (agent.signed.as_str(), agent.policy)).collect::<Vec<_>>(),
+            [("claude", Some(Policy::Ask)), ("cursor", None)]
+        );
+        assert_eq!(listed[0].project, "/p");
+        // Under `Edits` from the pill, an edit no longer asks.
+        agents.set_policy(one, Policy::Edits);
+        assert!(agents.allow(one, &claude, "node.delete", &json!({}), &Stopping::default()).is_ok());
+        assert!(agents.questions(true).unwrap().iter().all(|question| question.asks == Asks::Connect));
+        // A policy for one still asked is let be: the question answers it.
+        agents.set_policy(two, Policy::All);
+        assert_eq!(agents.connected_list()[1].policy, None);
+        // Disconnected: refused, and no longer listed; its question goes.
+        agents.disconnect(two);
+        assert_eq!(agents.connected_list().len(), 1);
+        assert!(agents.questions(true).unwrap().is_empty());
+    }
+
+    /// Waits until a call of the agent waits for the user's answer.
+    fn until_asked(agents: &Agents) {
+        while !agents.questions(true).unwrap().iter().any(|question| matches!(question.asks, Asks::Command { .. })) {
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
+    fn a_call_that_waits_runs_once_the_pill_lets_it_and_says_so_when_its_agent_is_disconnected() {
+        let agents = agents(ANSWER_WAIT);
+        let connection = agents.connected().unwrap();
+        let claude = agents.introduce(connection, Author::Agent("claude".to_owned()));
+        assert_eq!(answer(&agents, Answer::Policy { policy: Policy::Ask, keep: false }), Asks::Connect);
+        let (asked, author) = (agents.clone(), claude.clone());
+        let edit = std::thread::spawn(move || asked.allow(connection, &author, "node.delete", &json!({}), &Stopping::default()));
+        until_asked(&agents);
+        // `Edits` lets an edit run: the question waiting is answered.
+        agents.set_policy(connection, Policy::Edits);
+        assert!(edit.join().unwrap().is_ok());
+        let (asked, author) = (agents.clone(), claude);
+        let run = std::thread::spawn(move || asked.allow(connection, &author, "run.start", &json!({}), &Stopping::default()));
+        until_asked(&agents);
+        agents.disconnect(connection);
+        assert_eq!(run.join().unwrap().unwrap_err().message, "the user disconnected claude");
+    }
+
+    #[test]
+    fn ai_off_refuses_every_agent_and_lets_none_in_until_it_is_on_again() {
+        let agents = agents(ANSWER_WAIT);
+        let one = agents.connected().unwrap();
+        let claude = agents.introduce(one, Author::Agent("claude".to_owned()));
+        assert!(!agents.questions(true).unwrap().is_empty());
+        agents.set_enabled(false);
+        assert!(!agents.enabled());
+        assert!(agents.questions(true).unwrap().is_empty(), "the questions go");
+        assert!(agents.connected_list().is_empty());
+        assert_eq!(agents.allow(one, &claude, "file.read", &json!({}), &Stopping::default()).unwrap_err().code, "agent.not_allowed");
+        assert_eq!(agents.connected().unwrap_err(), AI_OFF);
+        agents.set_enabled(true);
+        assert!(agents.connected().is_ok());
     }
 
     #[test]

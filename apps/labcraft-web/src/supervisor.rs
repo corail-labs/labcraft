@@ -524,6 +524,7 @@ impl Supervisor {
             notices: self.notices(),
             session: self.counts.opened,
             waiting: None,
+            steps: Default::default(),
         }
     }
 }

@@ -539,7 +539,7 @@ caller (spec 11.2, 11.3, 11.4). A function or a library that the project does no
 
 | Command | Parameters | What it does |
 |---|---|---|
-| `history.undo` | | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. For an agent, see 9.5 |
+| `history.undo` | *`step`* | Undoes the last step of the project (9.1), and returns what an editing command returns, for the files it restored. When there is nothing to undo, it is `history.empty`. With `step`, the number of the step meant (`history.list`), another step last is `file.stale` and nothing changes, so that a step that came since is never undone in its place (the notice of an agent, ide.md 8; decision of the owner, 2026-11-21). For an agent, see 9.5 |
 | `history.redo` | | Redoes the last step undone, under the same rules |
 | `history.list` | *`limit`* (`50`) | The steps, newest first, and where undo and redo stand: `{ "steps": [{ "step", "author", "label", "files", "time" }], "undo": 42, "redo": null, "truncated": false }` |
 | `commands.execute` | `id`, *`params`* (`{}`) | Runs the command `id` with `params`, as its own tool would (mcp.md 2): the MCP server reaches through it every command that is not a tool of its own. It returns what that command returns, and its errors. Its effects are those of the command it runs: the policy of an agent (ide.md 8), the author, the line of the journal and the label of the step are that command's. `commands.execute` itself and `commands.batch` are `params.invalid`, and so is `commands.execute` inside a batch |
@@ -985,6 +985,7 @@ saying so (decision of the owner, 2026-11-15).
 | `editor.autopatch` | boolean | `true` | yes | Autopatch from the keyboard (visual notation 2.6) |
 | `editor.into_wire` | boolean | `true` | yes | Inserting into a wire (visual notation 2.6) |
 | `run.record_values` | boolean | `false` | no | A run records its values, its trace, for the wires (ide.md 3) |
+| `ai.enabled` | boolean | `true` | no | The switch of AI: off, no agent attaches to the window, and the window shows nothing of AI (ide.md 8) |
 | `ai.policies` | a table: MCP client → canonical folder of a project → `ask`, `edits` or `all` | `{}` | no | The policy the user kept for a client on a project, which answers its first connection without asking (ide.md 8) |
 
 The settings of AI and of the agents (`ai.*`, ide.md 8) are the user's: an agent neither reads nor writes them
