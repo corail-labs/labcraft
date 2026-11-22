@@ -22,12 +22,13 @@ pub const REDUCED_MOTION: &str = "ide.reduced_motion";
 pub const VALUES: &str = "ide.values";
 pub const OPEN_TRACE: &str = "ide.open_trace";
 pub const ABOUT: &str = "ide.about";
+/// `Connect an AI agent` (ide.md 8): the entry of the MCP server in the MCP clients found, as `labcraft-cli mcp setup`.
+pub const CONNECT_AGENT: &str = "ide.connect_agent";
 /// The inspector and the palette of functions beside the canvas of a detached window (ide.md 9).
 pub const DETACHED_INSPECTOR: &str = "ide.detached_inspector";
 pub const DETACHED_PALETTE: &str = "ide.detached_palette";
 /// The entries to come, each with its card (ide.md 6).
 pub const PLANNED_INSTRUMENTS: &str = "ide.planned.instruments";
-pub const PLANNED_AGENT: &str = "ide.planned.agent";
 pub const PLANNED_PAUSE: &str = "ide.planned.pause";
 pub const PLANNED_BREAKPOINT: &str = "ide.planned.breakpoint";
 pub const PLANNED_WATCH: &str = "ide.planned.watch";
@@ -203,6 +204,7 @@ pub const WINDOW_ACTIONS: &[(&str, &str)] = &[
     (AUTOPATCH, "Autopatch from the keyboard"),
     (INTO_WIRE, "Insert into a wire on a drop"),
     (ABOUT, "About LabCraft"),
+    (CONNECT_AGENT, "Connect an AI agent…"),
 ];
 
 fn binding(text: &str) -> Option<Binding> {
@@ -281,7 +283,8 @@ pub fn set_view(view: &str, split: Option<&str>) -> CommandRef {
 }
 
 /// The menus `File`, `Edit`, `View`, `Run`, `Help`, before the layout of the platform.
-pub fn menus() -> MenuBar {
+/// The menus; `Connect an AI agent` in `Help` only with `ai`, where the window shows something of AI (ide.md 8).
+pub fn menus(ai: bool) -> MenuBar {
     let item = |id: &str, label: &str| Node::Item(Item::new(CommandRef::new(id), label));
     let file = Menu::new(
         "File",
@@ -380,8 +383,12 @@ pub fn menus() -> MenuBar {
             item(PLANNED_BUILD, "Build  ·  Planned, M6"),
         ],
     );
-    let help = Menu::new("Help", vec![item(PLANNED_AGENT, "Connect an AI agent  ·  Planned"), Node::Separator, item(ABOUT, "About LabCraft")])
-        .role(MenuRole::Help);
+    let mut help = Vec::new();
+    if ai {
+        help.extend([item(CONNECT_AGENT, "Connect an AI agent…"), Node::Separator]);
+    }
+    help.push(item(ABOUT, "About LabCraft"));
+    let help = Menu::new("Help", help).role(MenuRole::Help);
     MenuBar { menus: vec![file, edit, view, run, help], documents: Vec::new() }
 }
 

@@ -24,6 +24,7 @@ labcraft-cli check [--json] [--deny-warnings] [--lib-path DIR]... [options] FOLD
 labcraft-cli run   [--json] [run options] [options] FOLDER FUNCTION
 labcraft-cli diagram --svg --out DIR [--json] [diagram options] [options] FOLDER [FUNCTION]...
 labcraft-cli mcp  [--project DIR] [--lib-path DIR]... [options]
+labcraft-cli mcp setup [--dry-run] [--client NAME]...
 labcraft-cli exec [--project DIR] [--lib-path DIR]... [options] ID [PARAMS]
 labcraft-cli version
 labcraft-cli --help
@@ -1152,7 +1153,19 @@ It is how a script, or an agent without MCP, edits a project from the command li
   wrong usage (no id, parameters that are not one JSON object, an unknown option), with the reason and the usage on
   stderr, nothing written.
 
-## 10. Left for later
+## 10. `mcp setup`, the MCP clients
+
+```text
+labcraft-cli mcp setup [--dry-run] [--client NAME]...
+```
+
+Writes the server `labcraft` in the configuration of the MCP clients found on the computer, changing nothing else in
+their files, as `Connect an AI agent` does in the IDE: which clients, which files, and what it says, are in
+[mcp.md](mcp.md), section 9. `--client` names one, and can be given several times; `--dry-run` writes nothing. Exit
+codes: 0; 1 when a client could not be set up; 2 for wrong usage (an unknown client or option), with the
+reason and the usage on stderr, nothing written.
+
+## 11. Left for later
 
 No scenario of M0a needs these, and each can be added without breaking anything: applying fixes
 (`check --fix`), reading from stdin, a `--diff` for `fmt`, per-project configuration of severities,

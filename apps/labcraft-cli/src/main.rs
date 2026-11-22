@@ -11,7 +11,7 @@
 )]
 #![forbid(unsafe_code)]
 
-use labcraft_cli::{args, check, diagram, exec, fmt, mcp, run, walk};
+use labcraft_cli::{args, check, diagram, exec, fmt, mcp, run, setup, walk};
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -33,6 +33,8 @@ commands:
                                               report what it did
   mcp [options]                               serve the commands of LabCraft to an agent over MCP,
                                               on stdio, until stdin closes
+  mcp setup [--dry-run] [--client NAME]...    add the server `labcraft` to the MCP clients found on
+                                              this computer, changing nothing else in their files
   exec [options] ID [PARAMS]                  run one command of LabCraft, its parameters as one JSON
                                               object, and print what it returns as JSON
   version                                     print the version
@@ -82,6 +84,12 @@ options of mcp:
   --lib-path DIR         as for check
   --json is not taken: stdout is MCP's
 
+options of mcp setup:
+  --client NAME          only this client; can be given several times: claude-code, codex, copilot,
+                         cursor, gemini, opencode, vscode, windsurf, zed
+  --dry-run              say what would be written, and write nothing
+  exit codes: 0 ok, 1 a client could not be set up, 2 wrong usage
+
 options of exec:
   --project DIR, --lib-path DIR               as for mcp
   exit codes: 0 ok, 1 the command returned an error, 2 wrong usage
@@ -121,6 +129,10 @@ fn main() -> ExitCode {
         },
         (Some("run"), _) => match args::parse_run(rest).and_then(|options| args::refuse_a_file_as_folder(&options).map(|()| options)) {
             Ok(options) => run_run(&options),
+            Err(message) => usage_error(&message),
+        },
+        (Some("mcp"), [setup, rest @ ..]) if setup == "setup" => match args::parse_setup(rest) {
+            Ok(options) => run_setup(&options),
             Err(message) => usage_error(&message),
         },
         (Some("mcp"), _) => match args::parse_mcp(rest).and_then(|options| mcp::start(&options)) {
@@ -177,6 +189,20 @@ fn run_exec(options: &args::ExecOptions) -> ExitCode {
         Some(message) => usage_error(&message),
         None => code,
     }
+}
+
+/// `mcp setup` (cli.md 10): a line for each client found; 1 when one could not be set up.
+fn run_setup(options: &args::SetupOptions) -> ExitCode {
+    let exe = match setup::this_executable() {
+        Ok(exe) => exe,
+        Err(why) => {
+            let _ = writeln!(std::io::stderr(), "error: {why}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let outcomes = setup::setup(&setup::Env::of_the_process(), &exe, &options.clients, options.dry_run);
+    let code = stdout(&setup::report(&outcomes, &options.clients, options.dry_run));
+    if outcomes.iter().any(|outcome| outcome.done.is_err()) { ExitCode::FAILURE } else { code }
 }
 
 fn run_diagram(options: &args::DiagramOptions) -> ExitCode {

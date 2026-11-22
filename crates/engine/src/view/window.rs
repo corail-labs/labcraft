@@ -24,14 +24,17 @@ pub const WINDOW_ONLY: &[&str] = &[
     "view.toggle_panel",
     "view.reset_layout",
     "view.set_workspace",
+    "agents.disconnect",
+    "agents.set_policy",
     "text.save",
     "text.recovered",
     "text.discard",
 ];
 
 /// The commands of the window that the window runs itself, never the session: a project is opened by the app, which
-/// makes its session, and the layout of the panels is a setting of the user.
-pub const RUN_BY_THE_WINDOW: &[&str] = &["project.new", "project.open", "view.toggle_panel", "view.reset_layout"];
+/// makes its session, the layout of the panels is a setting of the user, and the app holds the agents attached.
+pub const RUN_BY_THE_WINDOW: &[&str] =
+    &["project.new", "project.open", "view.toggle_panel", "view.reset_layout", "agents.disconnect", "agents.set_policy"];
 
 /// At most this many items of a selection, in `view.select` and in what `view.get_state` returns *(proposed)*.
 pub const MAX_SELECTED: usize = 1_000;

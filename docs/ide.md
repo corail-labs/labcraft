@@ -231,7 +231,7 @@ same work again in each IDE; tree-sitter, which would need a second grammar of t
 
 ## 8. The agent attached to the IDE
 
-The channel is that of [mcp.md](mcp.md) 9: on `127.0.0.1` only, a token for each launch in a file only the user can
+The channel is that of [mcp.md](mcp.md) 1: on `127.0.0.1` only, a token for each launch in a file only the user can
 read, a file that gives the port, so that `labcraft-cli mcp` finds the open window. It is open while the window is; with
 the switch of AI off it refuses every agent. With several projects open, each has its channel. `labcraft-cli mcp` attaches to the
 window whose project is its project, `--project DIR` or the current folder (mcp.md 1); when no window shows that
@@ -265,7 +265,8 @@ on (decision of the owner, 2026-11-15).
 - **What the user sees of it.** The pill of the top bar: no agent, or which one is connected, and its policy, or that
   its edit waits for the end of the user's gesture; a click opens its menu, which disconnects it or changes its policy
   for this connection, and keeps that policy for that client and that project when the user asks (decision of the
-  owner, 2026-11-21). Its edits go into the one history, signed with its name (commands.md 9.1, 9.5); the nodes and
+  owner, 2026-11-21). The menu calls the commands of the window `agents.disconnect` and `agents.set_policy`
+  ([commands.md](commands.md) 6.7), which the command palette and a key call as well, and an agent never. Its edits go into the one history, signed with its name (commands.md 9.1, 9.5); the nodes and
   wires it touched are highlighted for 2 s *(proposed)*: a node new, changed or moved, a wire new or whose waypoints
   moved; an edit in a function that is not shown puts a dot on its tab, until it is shown; a short notice says what
   it did, for 8 s *(proposed)*, with Show, which shows the function and highlights again what it touched there if a
@@ -276,8 +277,10 @@ on (decision of the owner, 2026-11-15).
   edit the project from a session of its own (decision of the owner, 2026-11-21). The policies kept are listed under
   it, each with what removes it.
 - **Connect an AI agent**, in `Help` and on the start page, writes the entry of the server in the configuration of
-  the MCP clients found on the computer, changing nothing else in those files (`mcp setup`, mcp.md 9), and says
-  which.
+  the MCP clients found on the computer, changing nothing else in those files, as `labcraft-cli mcp setup` does with
+  the `labcraft-cli` installed beside the IDE ([mcp.md](mcp.md) 9). A dialog then says, a line for each client, what
+  it did, and that the clients written must be restarted. It writes only when the user asks, never at a launch
+  (decision of the owner, 2026-11-22). With the switch of AI off, it is not there.
 - **Its files.** An agent reads and writes only the project of its window, as `labcraft-cli mcp --project DIR`.
 
 A chat panel inside the window, and a visible pointer of the agent, are left for later (section 13).

@@ -1,13 +1,15 @@
 //! The pill of the agents in the top bar (ide.md 8): no agent, or which one is attached and its policy, or that its edit
 //! waits for the end of the user's gesture; a click opens its menu, where the user changes the policy of an agent for this
-//! connection, keeps it for that client and that project (`ai.policies`), or disconnects it.
+//! connection, keeps it for that client and that project (`ai.policies`), or disconnects it: by the commands
+//! `agents.set_policy` and `agents.disconnect` (#298), as the command palette and a key call them.
 
+use craft_keymap::CommandRef;
 use egui::RichText;
 use kit_shell::status::Segment;
-use labcraft_engine::settings::{AI_POLICIES, forget_policy, keep_policy, kept_policy};
-use serde_json::{Map, Value};
+use labcraft_engine::settings::{AI_POLICIES, forget_policy, kept_policy};
+use serde_json::{Map, Value, json};
 
-use crate::agents::{Asked, Connected, Policy};
+use crate::agents::{self, Connected, Policy};
 
 /// The command of the pill: it opens its menu.
 pub const COMMAND: &str = "ide.agents";
@@ -15,10 +17,10 @@ pub const COMMAND: &str = "ide.agents";
 /// What the menu asks for.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Out {
-    /// Of an agent attached, to the app.
-    Agent(Asked),
-    /// The new value of `ai.policies` (null: none left).
-    Keep(Value),
+    /// A command of the window about an agent attached: `agents.disconnect` or `agents.set_policy`.
+    Command(CommandRef),
+    /// The new value of `ai.policies` once a policy is no longer kept (null: none left).
+    Forget(Value),
     /// The `Settings` dialog, where the switch of AI and the policies kept are.
     Settings,
 }
@@ -96,7 +98,11 @@ impl Pill {
             });
         // A click on the pill itself is its toggle, drawn before.
         let on_the_pill = ctx.input(|input| input.pointer.interact_pos().is_some_and(|at| below.contains(at)));
-        let done = out.iter().any(|asked| matches!(asked, Out::Settings | Out::Agent(Asked::Disconnect(_))));
+        let done = out.iter().any(|asked| match asked {
+            Out::Settings => true,
+            Out::Command(command) => command.id == agents::DISCONNECT,
+            Out::Forget(_) => false,
+        });
         if done || ctx.input(|input| input.key_pressed(egui::Key::Escape)) || (area.response.clicked_elsewhere() && !on_the_pill) {
             self.open = None;
         }
@@ -110,7 +116,7 @@ fn agent_rows(ui: &mut egui::Ui, agent: &Connected, kept: &Value, out: &mut Vec<
         ui.label(RichText::new(&agent.signed).strong());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui.small_button("Disconnect").clicked() {
-                out.push(Out::Agent(Asked::Disconnect(agent.id)));
+                out.push(Out::Command(CommandRef::with_params(agents::DISCONNECT, json!({ "agent": agent.signed }))));
             }
         });
     });
@@ -122,20 +128,19 @@ fn agent_rows(ui: &mut egui::Ui, agent: &Connected, kept: &Value, out: &mut Vec<
     for choice in Policy::ALL {
         let chosen = ui.radio(policy == choice, RichText::new(choice.label()).strong()).on_hover_text(choice.help()).clicked();
         if chosen && choice != policy {
-            out.push(Out::Agent(Asked::Policy(agent.id, choice)));
-            if remembered {
-                out.push(Out::Keep(keep_policy(kept, &agent.client, &agent.project, choice.as_str())));
-            }
+            // A policy kept follows the change.
+            out.push(Out::Command(set_policy(agent, choice, remembered)));
         }
     }
     let mut keep = remembered;
     if ui.checkbox(&mut keep, "Remember for this client and this project").changed() {
-        out.push(Out::Keep(if keep {
-            keep_policy(kept, &agent.client, &agent.project, policy.as_str())
-        } else {
-            forget_policy(kept, &agent.client, &agent.project)
-        }));
+        out.push(if keep { Out::Command(set_policy(agent, policy, true)) } else { Out::Forget(forget_policy(kept, &agent.client, &agent.project)) });
     }
+}
+
+/// `agents.set_policy` for the agent.
+fn set_policy(agent: &Connected, policy: Policy, keep: bool) -> CommandRef {
+    CommandRef::with_params(agents::SET_POLICY, json!({ "agent": agent.signed, "policy": policy.as_str(), "keep": keep }))
 }
 
 #[cfg(test)]
@@ -157,5 +162,15 @@ mod tests {
         assert_eq!(segment(&two, Some("cursor")).text, "● cursor waits for your gesture");
         let pill = segment(&[], None);
         assert!(pill.opens && pill.command.as_deref() == Some(COMMAND));
+    }
+
+    /// The menu asks by the commands of the window (#298), the agent named as its steps are signed.
+    #[test]
+    fn the_menu_calls_the_commands_of_the_agents() {
+        let command = set_policy(&agent(2, "claude 2", Some(Policy::Ask)), Policy::All, true);
+        assert_eq!(command.id, "agents.set_policy");
+        assert_eq!(command.params, serde_json::json!({ "agent": "claude 2", "policy": "all", "keep": true }));
+        assert!(labcraft_engine::registry::command("agents.set_policy").is_some_and(|command| command.window));
+        assert!(labcraft_engine::registry::command("agents.disconnect").is_some_and(|command| command.window));
     }
 }

@@ -110,6 +110,38 @@ pub fn parse_mcp(args: &[OsString]) -> Result<McpOptions, String> {
     Ok(options)
 }
 
+/// `labcraft-cli mcp setup [--dry-run] [--client NAME]...` (cli.md 10; mcp.md 9).
+#[derive(Debug, PartialEq, Eq)]
+pub struct SetupOptions {
+    /// The clients named, or none for every client found.
+    pub clients: Vec<crate::setup::Client>,
+    pub dry_run: bool,
+}
+
+pub fn parse_setup(args: &[OsString]) -> Result<SetupOptions, String> {
+    let mut options = SetupOptions { clients: Vec::new(), dry_run: false };
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        let text = arg.to_string_lossy();
+        match text.as_ref() {
+            "--dry-run" => options.dry_run = true,
+            "--client" => {
+                let name = args.next().ok_or("--client needs a name")?.to_string_lossy().into_owned();
+                let Some(client) = crate::setup::Client::named(&name) else {
+                    let names: Vec<&str> = crate::setup::Client::ALL.iter().map(|client| client.name()).collect();
+                    return Err(format!("unknown client `{name}`: one of {}", names.join(", ")));
+                };
+                if !options.clients.contains(&client) {
+                    options.clients.push(client);
+                }
+            }
+            _ if text.starts_with('-') => return Err(format!("unknown option `{text}`")),
+            _ => return Err(format!("`mcp setup` takes no path, not `{text}`")),
+        }
+    }
+    Ok(options)
+}
+
 /// `labcraft-cli exec ID [PARAMS]` (cli.md 9): one command of the registry, its parameters as one JSON object.
 #[derive(Debug)]
 pub struct ExecOptions {
@@ -804,6 +836,17 @@ mod tests {
         }
         let message = run(&["f", "g", "--timeout", "30"]).unwrap_err();
         assert!(message.contains("`30s`"), "the form to write: {message}");
+    }
+
+    #[test]
+    fn setup_takes_its_clients_and_dry_run() {
+        let setup = |args: &[&str]| parse_setup(&args.iter().map(OsString::from).collect::<Vec<_>>());
+        assert_eq!(setup(&[]), Ok(SetupOptions { clients: Vec::new(), dry_run: false }));
+        let options = setup(&["--client", "cursor", "--dry-run", "--client", "codex", "--client", "cursor"]).unwrap();
+        assert_eq!(options.clients, [crate::setup::Client::Cursor, crate::setup::Client::Codex]);
+        assert!(options.dry_run);
+        assert!(setup(&["--client", "claude-desktop"]).unwrap_err().starts_with("unknown client `claude-desktop`: one of claude-code, "));
+        assert!(setup(&["--client"]).is_err() && setup(&["here"]).is_err() && setup(&["--json"]).is_err());
     }
 
     #[cfg(unix)]

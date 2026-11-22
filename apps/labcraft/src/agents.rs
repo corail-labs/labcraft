@@ -799,7 +799,8 @@ fn serve_connection(mut stream: TcpStream, serving: &Serving) {
     if greeted.is_ok()
         && let Ok(output) = stream.try_clone()
     {
-        let options = labcraft_mcp::Options { viewer: true, version: env!("CARGO_PKG_VERSION").to_owned(), max_request: labcraft_mcp::MAX_REQUEST };
+        let options =
+            labcraft_mcp::Options { viewer: true, version: env!("CARGO_PKG_VERSION").to_owned(), max_request: labcraft_mcp::MAX_REQUEST, note: None };
         let gate = Gating { agents: serving.agents.clone(), connection, served: serving.served.clone() };
         let mut executor = Attached { agents: serving.agents.clone(), connection, session: serving.session.clone(), served: serving.served.clone() };
         let mut input = BufReader::new(stream);

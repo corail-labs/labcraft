@@ -98,7 +98,7 @@ fn window(channel: &Path, root: &Path) -> (attach::Published, Arc<AtomicUsize>, 
             let served = Served::of(&session, true);
             let mut executor = Counted { session, calls: counted };
             let output = stream.try_clone().unwrap();
-            let options = labcraft_mcp::Options { viewer: true, version: "window".to_owned(), max_request: labcraft_mcp::MAX_REQUEST };
+            let options = labcraft_mcp::Options { viewer: true, version: "window".to_owned(), max_request: labcraft_mcp::MAX_REQUEST, note: None };
             labcraft_mcp::serve_with(&mut executor, &served, &Open, &mut BufReader::new(stream), Box::new(output), &options);
         })
         .unwrap();

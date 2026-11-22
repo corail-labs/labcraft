@@ -1361,6 +1361,36 @@ pub(super) fn catalog() -> Vec<Command> {
             object(&[("workspace", string("The workspace: `edit`."))], &["workspace"]),
             WINDOW_ERRORS,
         ),
+        // The agents attached, as the pill shows them (ide.md 8; #298): the user's, never an agent's.
+        window(
+            "agents.disconnect",
+            "Disconnect Agent",
+            "Disconnect an agent attached to the window",
+            "Closes the connection of the agent, as Disconnect in the menu of the pill: its call in progress ends, and its MCP client sees the server go. Only the user calls it.",
+            object(
+                &[(
+                    "agent",
+                    string("The name its steps are signed with, as the pill shows it (`claude`, `claude 2`); by default, the one agent attached."),
+                )],
+                &[],
+            ),
+            WINDOW_ERRORS,
+        ),
+        window(
+            "agents.set_policy",
+            "Set Agent Policy",
+            "Change the policy of an agent attached, for this connection or for its client and this project",
+            "Sets the policy of the agent for this connection: `ask`, `edits` or `all`, as the menu of the pill does. With `keep`, also keeps it for its client and this project in `ai.policies`, which answers its next connection without asking. Only the user calls it.",
+            object(
+                &[
+                    ("agent", string("The name its steps are signed with, as the pill shows it; by default, the one agent attached.")),
+                    ("policy", json!({ "type": "string", "description": "The policy.", "enum": ["ask", "edits", "all"] })),
+                    ("keep", json!({ "type": "boolean", "description": "Also keep it for its client and this project.", "default": false })),
+                ],
+                &["policy"],
+            ),
+            WINDOW_ERRORS,
+        ),
         // The `Text` panel (commands.md 9.1; decision of the owner, 2026-11-21).
         Command {
             effects: &[Effect::Files],

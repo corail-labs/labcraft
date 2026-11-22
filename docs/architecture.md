@@ -1868,7 +1868,7 @@ fuzzing looks for (12.10).
   `cli.jsonl` or cuts it: the time, the author, the id, the parameters (cut beyond 64 KiB
   *(proposed)*, the cut said), the result as a code (`ok` or the error) and the revisions of the files written. It is
   appended through `Workspace::append`, which the apps implement, at most 16 MiB per file, and the 20 newest files are
-  kept *(proposed)*, `cli.jsonl` apart, cut to its newest half when it passes 16 MiB. It is for replaying a bug: the crash reports of mcp.md 9 will be built on it. Git does not see it
+  kept *(proposed)*, `cli.jsonl` apart, cut to its newest half when it passes 16 MiB. It is for replaying a bug: the crash reports of mcp.md 10 will be built on it. Git does not see it
   (commands.md 9.1). In WASM the journal is kept in memory, the last 1,000 lines. It never fails a command: a journal
   that cannot be written (a read-only folder, the viewer) is given up, and so is one whose file is a link: a line never
   goes out of the project. A line names at most 1,000 files *(proposed)*, and `files_cut` counts them all. `labcraft-cli exec` writes `cli.jsonl`;
@@ -2117,7 +2117,7 @@ pub struct CanvasResponse { pub intents: Vec<Intent>, pub gesture: Option<Gestur
 
 - **`labcraft`** (desktop): eframe, the disk with atomic writes and `append`, the watch of the files (11.5), a thread of
   `format::STACK_SIZE` per project for its session, the window of `ide`, a window of the system for each detached tab
-  (`craft-window`), and the control channel of mcp.md 9: a listener on `127.0.0.1`, the token and the port in a file of
+  (`craft-window`), and the control channel of mcp.md 1: a listener on `127.0.0.1`, the token and the port in a file of
   the folder of the user that only the user can read, one channel per project. The files are no longer read-only.
   In step 1a, one project per window is one process per project: a project opened from a window that shows one starts
   the program again on that folder, with the same `--lib-path` and `--style`. `New project` makes the folder, refuses

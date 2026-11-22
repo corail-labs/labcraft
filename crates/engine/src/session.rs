@@ -381,12 +381,13 @@ impl Session {
             let near: Vec<&str> = labcraft_runtime::simulation::nearest(id, &ids).into_iter().collect();
             return Err(CommandError::new("command.unknown", format!("no command has the id `{id}`{}", did_you_mean(id, &ids))).expecting(&near));
         };
+        // An agent attached to the IDE reads the window and does not change what it shows (ide.md 8, commands.md 6.7),
+        // whether the window or the session runs the command; without a window, it is not enabled.
+        if author.is_agent() && self.has_window && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
+            return Err(CommandError::new("agent.not_allowed", format!("`{id}` is a command of the window: only the user calls it")));
+        }
         if let Some(reason) = self.not_enabled(command) {
             return Err(CommandError::new("command.not_enabled", format!("`{id}` is not enabled: {reason}")));
-        }
-        // An agent attached to the IDE reads the window and does not change what it shows (ide.md 8, commands.md 6.7).
-        if author.is_agent() && crate::view::window::WINDOW_ONLY.contains(&id) && id != "view.get_state" {
-            return Err(CommandError::new("agent.not_allowed", format!("`{id}` is a command of the window: only the user calls it")));
         }
         // The settings of AI and of the agents are the user's, whatever the policy of the agent (ide.md 8).
         if author.is_agent()

@@ -41,7 +41,11 @@ labcraft-cli mcp [--project DIR] [--lib-path DIR]... [--max-report N] [--max-fil
   result, so that a tool that checks answers in the time of the libraries it touched
   ([commands.md](commands.md), section 6.2). From M1, when a window of the IDE shows the
   project, the same server attaches to it through a local control channel protected by a token, so that the human
-  watches the agent work (D-18; [ide.md](ide.md) 8); otherwise it stays headless. The tools stay the same.
+  watches the agent work (D-18; [ide.md](ide.md) 8); otherwise it stays headless. The tools stay the same. Headless
+  while windows show other projects, it says so after its instructions (`initialize`) and on stderr: which projects
+  they show, at most 4 *(proposed)*, and that the user starts the client in that folder or gives `--project`, so that
+  the agent asks for it rather than drive the window of LabCraft through its interface (decision of the owner,
+  2026-11-22). It never attaches to another project by itself.
 - **Attached** (M1). A window that shows a project listens on `127.0.0.1`, on a port the system gives, and writes a
   file that only the user can read (mode `0600` on Unix; on Windows, the inherited rights removed and the user alone
   given them): `<hash of the canonical folder of the project>.json` in `labcraft/attach/` of the local data of the user,
@@ -209,7 +213,58 @@ What a direct agent spends, to check the bound of 20 calls *(proposed)*:
 Nine calls, with room for two or three rounds of fixes. The scripted client of the CI plays the same
 loop over real stdio ([acceptance-m0.md](acceptance-m0.md), scenario 1, verification).
 
-## 9. Left for later
+## 9. Connecting the MCP clients: `mcp setup`
+
+```text
+labcraft-cli mcp setup [--dry-run] [--client NAME]...
+```
+
+`Connect an AI agent`, in the IDE ([ide.md](ide.md) 8), does the same. Both write the server `labcraft`, whose
+command is the full path of the `labcraft-cli` that writes it (for the IDE, the one installed beside it) and whose
+argument is `mcp`, in the configuration of the user of each MCP client found on the computer (decisions of the owner,
+2026-11-22, after SolidCraft's `mcp setup`):
+
+| `--client` | Client | File, and the object that lists its servers |
+|---|---|---|
+| `claude-code` | Claude Code | `~/.claude.json`, `mcpServers` |
+| `codex` | Codex (its command line, its extension and its app) | `config.toml` of `$CODEX_HOME`, else of `~/.codex`, `[mcp_servers.labcraft]` |
+| `copilot` | GitHub Copilot CLI | `~/.copilot/mcp-config.json`, `mcpServers` |
+| `cursor` | Cursor | `~/.cursor/mcp.json`, `mcpServers` |
+| `gemini` | Gemini CLI | `~/.gemini/settings.json`, `mcpServers` |
+| `opencode` | OpenCode | `opencode.json`, or `opencode.jsonc` when only it is there, of `$XDG_CONFIG_HOME/opencode`, else of `~/.config/opencode`, `mcp` |
+| `vscode` | VS Code | `mcp.json` of its folder of the user: `%APPDATA%\Code\User`, `~/Library/Application Support/Code/User`, `~/.config/Code/User`; `servers` |
+| `windsurf` | Windsurf | `~/.codeium/windsurf/mcp_config.json`, `mcpServers` |
+| `zed` | Zed | `settings.json` of `%APPDATA%\Zed`, else of `~/.config/zed`, `context_servers` |
+
+- **Found**: a client is found when its folder of configuration is there (for Claude Code, `~/.claude.json` or
+  `~/.claude`). No program of a client is started. Claude Desktop is not among them: it starts a server in no folder of
+  a project, and `mcp` would serve none (section 1).
+- **The project**: the entry has no `--project`. `mcp` serves the folder the client starts it in, that of its session
+  or of its workspace (section 1), and attaches to the window that shows it: the user opens the same folder in the
+  client and in LabCraft. For a client that starts it elsewhere (an app may start it in a folder of its own), the user
+  adds `--project` by hand, and setup then leaves that entry as it is.
+- **Only the entry changes.** The rest of the file (other servers, other settings, comments, trailing commas, order,
+  line endings, a byte order mark) stays as it was, byte for byte: in a TOML file, the new table goes after what the
+  file holds. A file that is a link is written where it leads. A file is replaced at once, its version before kept beside it as
+  `NAME.bak`, and only when it did not change since it was read: a client shares no lock with LabCraft, so this narrows
+  the race with its own writes without excluding one. A file that does not read as JSON (comments allowed) or as TOML,
+  or that holds over 64 MiB *(proposed)*, is left alone, and said.
+- **An entry already there**: one that runs this `labcraft-cli` with `mcp` stays. One that runs a `labcraft-cli` from
+  another folder with `mcp`, as after an update moved it, gets this path, its other fields kept. Any other (another
+  program, other arguments, a `labcraft-cli` without a folder, found on the `PATH`) is the user's, and stays as
+  written.
+- **What it says**: a line for each client found (added, set up already, path updated, left as written, or nothing
+  written and why), and for each client named with `--client` that is not found; then, when it wrote, that those
+  clients must be quit and started again, since one left open may write its file again without the entry; with none
+  found, which it looked for.
+  `--dry-run` says what it would do and writes nothing. Exit codes: 0; 1 when a client could not be set up (its file
+  does not read, changed meanwhile, or could not be written); 2 for wrong usage, as in [cli.md](cli.md), section 1.
+- **By hand**, for a client not listed: a server on stdio whose command is the full path of `labcraft-cli` and whose
+  argument is `mcp`, started in the folder of the project (or given `--project DIR`), as
+  `claude mcp add labcraft -- PATH/labcraft-cli mcp`. Taking the entry out is done by hand too, or by the client
+  (`claude mcp remove labcraft`).
+
+## 10. Left for later
 
 Taken from SolidCraft, each when what it serves exists:
 
@@ -219,6 +274,4 @@ Taken from SolidCraft, each when what it serves exists:
   command `commands.batch` ([commands.md](commands.md), 9.4), and so the tool `commands_batch`.
 - **`crash_reports`**: the crash reports of this computer, each with the commands that led to the bug,
   so that it replays.
-- **`mcp setup`**: writes the entry of the server in the configuration of the MCP clients found on the
-  computer (Claude Code, Cursor, Codex…), changing nothing else in those files.
 - **Resources**: the catalog and the project as MCP resources, for the clients that read them.

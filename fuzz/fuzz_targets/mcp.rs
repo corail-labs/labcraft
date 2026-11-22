@@ -181,7 +181,7 @@ fuzz_target!(|bytes: &[u8]| {
             process: 0,
         };
         let session = Session::new(Arc::new(memory) as Arc<dyn labcraft_engine::Workspace>, config, false).expect("a session in memory");
-        let options = Options { viewer: false, version: "0.0.0-fuzz".to_owned(), max_request: 65_536 };
+        let options = Options { viewer: false, version: "0.0.0-fuzz".to_owned(), max_request: 65_536, note: None };
         serve(session, &mut BufReader::new(client), Box::new(written), &options);
     };
     std::thread::Builder::new().stack_size(STACK_SIZE).spawn(work).expect("a thread").join().expect("the server");
