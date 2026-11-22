@@ -139,7 +139,7 @@ The server is described in [docs/mcp.md](docs/mcp.md), and the skills an agent c
 | [skills/](skills/README.md) | Skills for agents: writing, debugging and testing a program, which the MCP server serves through `guide_read` |
 | [libs/visa/README.md](libs/visa/README.md) | The `visa` library: its functions, its sessions, and what it guarantees on them (atomic calls, one command at a time, release after an abort; implemented for M0b) |
 | [libs/visa/simulation.md](libs/visa/simulation.md) | Simulated instruments of `visa`: the format of simulation files, how an instrument answers, the files shipped in `libs/visa/sim/` (implemented for M0b) |
-| [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine |
+| [examples/](examples/) | Example programs (`.lcf` functions, `.lct` types), from a multimeter check to a test station state machine, and `modbus_tcp`, a protocol written in LabCraft on `net` and `bytes` |
 | [docs/glossary.md](docs/glossary.md) | Terms used across the documents |
 
 **The project**

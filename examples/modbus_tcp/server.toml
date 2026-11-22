@@ -1,0 +1,7 @@
+# A Modbus TCP server that answers one request: read two holding registers from 0 of unit 1 (docs/io.md, section 6).
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+
+[[net.device.reply]]
+request_hex = "0001 0000 0006 01 03 0000 0002"
+response_hex = "0001 0000 0007 01 03 04 00e6 0019"

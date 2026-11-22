@@ -297,9 +297,12 @@ appendix A.2).
 it builds the MBAP header (transaction, protocol 0, length, unit) and the PDU (function code 3, first register, count),
 in big endian, writes them with `net.write`, reads the 7 bytes of the header of the response with `net.read`, then the
 rest by the length it gives, and turns a response whose function code has its high bit set (`core.and(code, 0x80)`)
-into an error with the exception code. It proves that the primitives are enough, serves as the model of a protocol for
+into an error with the exception code (`modbus_tcp.exception`), and one that is not function 3 with two bytes per register
+into `modbus_tcp.invalid_response`. It proves that the primitives are enough, serves as the model of a protocol for
 contributors, and avoids `tokio-modbus`, which relies on tokio. It is tested by `check` and against a simulated server
-(section 6) in the CI, and by hand against a Modbus test server written in Rust for the tests, and against the hardware
+(section 6) in the CI, and by hand against a Modbus test server written in Rust for the tests
+(`cargo run -p labcraft-harness --bin modbus_server`, on `127.0.0.1:5020`; then `labcraft-cli run --real-time
+--arg host=127.0.0.1 --arg port=5020 --arg count=2 examples modbus_tcp.read_from`), and against the hardware
 of the final trial.
 
 ## 11. What 0.5.0 leaves for later

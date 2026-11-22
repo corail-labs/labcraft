@@ -1,0 +1,8 @@
+# A Modbus TCP server that answers the same request with exception 2, illegal data address: function 3 with its high
+# bit set, then the exception code.
+[[net.device]]
+endpoint = "tcp:10.0.0.7:502"
+
+[[net.device.reply]]
+request_hex = "0001 0000 0006 01 03 0000 0002"
+response_hex = "0001 0000 0003 01 83 02"

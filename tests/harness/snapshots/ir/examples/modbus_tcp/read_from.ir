@@ -1,0 +1,5 @@
+fn modbus_tcp.read_from(host: string, port: u16 = 502, unit: u8 = 1, first: u16 = 0, count: u16 = 1, err: error = none) -> (registers: [u16], err: error)
+  region (host, port, unit, first, count, err) -> (registers, err)
+    0 c1, e1 = native net.connect(host, port, 2000000000 ns, err)  skip(err: 3)
+    1 registers, c2, e2 = call modbus_tcp.read_holding_registers(c1, unit, first, count, 1, e1)  runs
+    2 err = native net.close(c2, e2)  skip(err: 1, always)
