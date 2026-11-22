@@ -1075,6 +1075,11 @@ fn layout_body(graph: &Graph<'_>, index: usize, sized: &[Sized], header: i64, ti
     if let Some(track) = plan.lowest {
         height = height.max(track + style::wire_gap() + style::frame_pad());
     }
+    // The body of a structure grows in steps of the grid of the tracks: a track that goes over the structure, on that
+    // grid, then rises as much as the structure does, and the frame keeps its origin (decision of the owner, 2026-11-22).
+    if index != 0 {
+        height = size::up(size::up_to(height, style::wire_gap()));
+    }
     let rise = size::up(header + style::frame_pad() - highest);
     BodyPlace {
         width,

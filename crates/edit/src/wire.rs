@@ -290,7 +290,7 @@ fn lift(
         return no_loop();
     }
     // Up to the body that both see: the reader's own, or the one around a sibling structure that holds the reader.
-    let common = |seen_in: &[scope::Step]| seen_in.iter().zip(reader).take_while(|(a, b)| a == b).count();
+    let common = |seen_in: &[scope::Step]| scope::common_depth(seen_in, reader);
     let deeper: Vec<Value> = values.into_iter().filter(|value| !seen(value) && value.seen_in.len() > common(&value.seen_in)).collect();
     // A name of several bodies names none of them (9.2).
     if deeper.len() > 1 {
@@ -852,7 +852,16 @@ pub(crate) fn node_name_of(edit: &Edit, judge: &dyn Judge, function: &Function, 
 fn to_output(edit: &mut Edit, judge: &dyn Judge, value: &Value, output: Name, replace: bool, edited: &mut Edited) -> Result<(), EditError> {
     let function = edit.body_function()?.clone();
     let output_text = edit.text(output).to_owned();
+    // The node that binds the output gives it already: the wire is there, which only `replace` passes, as for an input
+    // (commands.md 6.7, `wire.occupied`). The input of the same name (R-2) is #195.
     if value.name == output {
+        if !replace && !matches!(value.bound, Bound::Input) {
+            return Err(EditError::new(
+                "wire.occupied",
+                format!("the output `{output_text}` is already given by its node: pass `replace` to replace it"),
+            )
+            .of("to"));
+        }
         return Ok(());
     }
     // What the output holds already.
@@ -1484,9 +1493,7 @@ fn resolve_start(
     let mut candidates: Vec<Value> = scope::values(function).into_iter().filter(|value| value.name == name).collect();
     // Reading a name that is an input and an output reads the input (R-2): the line of the function that binds it binds
     // the output.
-    if candidates.iter().any(|value| matches!(value.bound, Bound::Input)) {
-        candidates.retain(|value| !matches!(&value.bound, Bound::Line(loc, _) if loc.body.is_empty()));
-    }
+    candidates.retain(|value| !scope::binds_the_output_of_an_input(function, value));
     if candidates.is_empty() {
         let known: Vec<String> =
             scope::values(function).iter().map(|value| edit.text(value.name).to_owned()).collect::<BTreeSet<_>>().into_iter().collect();
@@ -1509,21 +1516,21 @@ fn resolve_start(
     }
 }
 
-/// Why the reader at `reader` does not see `value`: it is inside an arm or a loop around which the reader is, or in
-/// another arm or structure.
+/// Why the reader at `reader` does not see `value`: it is inside a loop, up to the body that both see (the reader's own,
+/// or the one around a structure that holds the reader), which `through` takes it out of; or in another arm or
+/// structure.
 fn unseen(function: &Function, from: &str, value: &Value, reader: &[scope::Step]) -> EditError {
-    let below = (value.seen_in.len() > reader.len() && value.seen_in.starts_with(reader))
-        .then(|| scope::frame(function, value.seen_in.get(..=reader.len()).unwrap_or(&[])))
-        .flatten();
-    match below {
-        Some(Frame::Arm) => step_five("from", "a wire out of an arm, which adds an output to its structure,"),
-        Some(Frame::Loop) => EditError::new(
-            "wire.out_of_scope",
-            format!("`{from}` is inside a loop: pass `through`, `last` (its value at the last iteration), `collect` (an array of its values) or `carry`, to take it out"),
+    let common = scope::common_depth(&value.seen_in, reader);
+    let in_a_loop =
+        (common + 1..=value.seen_in.len()).any(|depth| scope::frame(function, value.seen_in.get(..depth).unwrap_or(&[])) == Some(Frame::Loop));
+    let message = if in_a_loop {
+        format!(
+            "`{from}` is inside a loop: pass `through`, `last` (its value at the last iteration), `collect` (an array of its values) or `carry`, to take it out"
         )
-        .of("from"),
-        _ => EditError::new("wire.out_of_scope", format!("`{from}` cannot be seen from there: it is a value of another arm or structure")).of("from"),
-    }
+    } else {
+        format!("`{from}` cannot be seen from there: it is a value of another arm or structure")
+    };
+    EditError::new("wire.out_of_scope", message).of("from")
 }
 
 /// Whether wiring what the statement `made_by` makes into the statement at `reader` closes a cycle (spec 5.2): that

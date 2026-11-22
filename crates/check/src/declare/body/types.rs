@@ -2567,13 +2567,7 @@ impl<'p, 'c, 'w, 'a> Typer<'p, 'c, 'w, 'a> {
             variable.failed = true;
             return;
         }
-        let met = first_kind.meeting(kind).and_then(|met| {
-            // A change of scale goes through a floating-point number (3.4).
-            if first_unit == unit || met.is_inexact() {
-                return Some(met);
-            }
-            (met.widens_to(NumberKind::F64)).then_some(NumberKind::F64)
-        });
+        let met = first_kind.meeting_scaled(kind, first_unit == unit);
         let Some(met) = met else {
             self.judge_input(operand, value, known, param);
             variable.failed = true;

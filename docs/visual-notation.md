@@ -133,7 +133,10 @@ are the nodes that a `layout` section does not place (spec 11).
   on its way still has its straight line.
 - **A partial `layout` section.** The nodes it places never move. A frame grows upward to hold the nodes that
   they push out of it *(proposed)*; the positions of the file are still measured from the corner it has without
-  them. A node that it does not place goes into
+  them. Without a `frame … size` entry, the body of a structure is as high as a whole number of gaps between
+  wires (8 by default), then up to the grid, so that a wire that goes over the structure rises with it when a node
+  inside moves, and the frame stays where it was (decision of the owner,
+  2026-11-22). A node that it does not place goes into
   free space between what it connects: right of what feeds it, left of what it feeds, above the error
   chain if there is one. The other unplaced nodes move apart only as far as needed. With no position in
   the file, this gives the placement above. What the file writes always wins: around a position or a

@@ -91,8 +91,8 @@ pub enum Expects {
     /// A parameter of a primitive of one family, whose elements the call settles (`[string]`).
     Family(Family),
     /// A parameter of a primitive of a type variable: the type of another input of the node of the same variable, which
-    /// settles it; a number when the variable is bound by `Number` (spec 3.5).
-    Variable { variable: usize, numbers: bool },
+    /// settles it; with the bound of the variable (spec 3.5).
+    Variable { variable: usize, bound: Option<labcraft_types::Bound> },
     /// A parameter whose type the call settles: any value.
     Any,
     /// An input that no wire reaches yet, and why: the template of `string.format`, which takes only text written in it
@@ -1309,11 +1309,7 @@ impl<'a> Builder<'a> {
                                 _ if primitive.open && param.name == "template" => {
                                     Expects::Never("the template of `string.format` takes only text written in it, never a wire (spec 5.4)")
                                 }
-                                // A variable that only numbers can be: `Number` or `Integer`, not `Bits`, which holds `bool` too (3.5).
-                                PrimitiveTy::Var(variable) => Expects::Variable {
-                                    variable,
-                                    numbers: primitive.variables.bound.is_some_and(|bound| !bound.holds(&labcraft_types::Ty::Bool)),
-                                },
+                                PrimitiveTy::Var(variable) => Expects::Variable { variable, bound: primitive.variables.bound },
                                 PrimitiveTy::Texts | PrimitiveTy::U8s => Expects::Family(primitive_family(param.ty)),
                                 PrimitiveTy::Bool
                                 | PrimitiveTy::I32
